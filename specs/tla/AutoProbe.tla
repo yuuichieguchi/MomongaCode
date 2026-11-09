@@ -87,6 +87,9 @@
 (*                 the fm probe does                                       *)
 (*   PreconditionCheck a request checks the preconditions first, and a     *)
 (*                 definite refusal answers 412 with the remedy at once    *)
+(*   RejectStale   a request whose record was measured under another key   *)
+(*                 (another fm binary or OS build, another server identity *)
+(*                 or digest) is answered 412, no probe                    *)
 (*   Backoff       after a probe that started and failed, the gateway      *)
 (*                 starts no probe of that key for one Retry-After interval *)
 (*                                                                         *)
@@ -104,8 +107,11 @@
 (* The OS build is read with the cache and can change only by an OS        *)
 (* update, which restarts the machine and so the gateway: OsUpdate is      *)
 (* enabled only while the gateway is down. An endpoint key changes when    *)
-(* the server reports another identity, at any time (BinaryChange stands   *)
-(* for both).                                                              *)
+(* the server reports another identity (chat-completions: the identity of  *)
+(* the listed model; ollama: the model digest), at any time (BinaryChange  *)
+(* stands for an identity change of every adapter). A record of another    *)
+(* key is no record: the request takes the probe path, never a 412 for the *)
+(* mismatch (gateway/src/probe/record.ts recordForIdentity).               *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
@@ -127,6 +133,7 @@ CONSTANTS
     Adapter,
     EndpointLocked,
     PreconditionCheck,
+    RejectStale,
     Backoff,
     MaxRefusalChanges
 
@@ -147,6 +154,7 @@ ASSUME /\ Cardinality(Keys) >= 2
        /\ Adapter \in {"fm", "endpoint"}
        /\ EndpointLocked \in BOOLEAN
        /\ PreconditionCheck \in BOOLEAN
+       /\ RejectStale \in BOOLEAN
        /\ Backoff \in BOOLEAN
        /\ MaxRefusalChanges \in Nat
 
@@ -219,18 +227,20 @@ Refuses == PreconditionCheck /\ refused
 
 Waits == Backoff /\ AskKey \in backoff
 
-StartsProbe == Seen # AskKey /\ ~Guess /\ ~Reject412 /\ ~Refuses /\ ~Waits /\ ~Blocked(AskKey, "gw") /\ started < MaxProbes
+StaleRejected == RejectStale /\ rec # NoKey /\ Seen # AskKey /\ rec # AskKey
+
+StartsProbe == Seen # AskKey /\ ~Guess /\ ~Reject412 /\ ~StaleRejected /\ ~Refuses /\ ~Waits /\ ~Blocked(AskKey, "gw") /\ started < MaxProbes
 
 Request ==
     /\ gwUp /\ requests < MaxRequests
-    /\ Seen = AskKey \/ Guess \/ Reject412 \/ Refuses \/ Waits \/ StartsProbe \/ Blocked(AskKey, "gw")
+    /\ Seen = AskKey \/ Guess \/ Reject412 \/ StaleRejected \/ Refuses \/ Waits \/ StartsProbe \/ Blocked(AskKey, "gw")
     /\ requests' = requests + 1
     /\ LET k == AskKey
            present == (rec = k)
            seen == (Seen = k)
            startIt == StartsProbe
            probesAfter == IF startIt THEN probes \cup {NewProbe("gw")} ELSE probes
-           kind == IF seen \/ Guess THEN "200" ELSE IF Reject412 \/ Refuses THEN "412" ELSE "503"
+           kind == IF seen \/ Guess THEN "200" ELSE IF Reject412 \/ StaleRejected \/ Refuses THEN "412" ELSE "503"
            src == IF seen THEN "record" ELSE "guess"
        IN /\ probes' = probesAfter
           /\ started' = IF startIt THEN started + 1 ELSE started
@@ -239,6 +249,7 @@ Request ==
                  src |-> src,
                  recordPresent |-> present,
                  recordMatchesWorld |-> (rec = worldKey),
+                 staleGot412 |-> (kind = "412" /\ ~refused /\ rec # NoKey /\ rec # k),
                  refused |-> refused,
                  backoffAfter |-> (k \in backoff),
                  probingAfter |-> (\E p \in probesAfter : p.key = k)]}
@@ -356,8 +367,12 @@ RecordSeenAtOnce == \A x \in respLog : x.recordPresent => x.kind = "200"
 FailedWritesNothing == recSrc # "failed"
 
 (* P6: a record answers only for the key it was measured under, so a new   *)
-(* key is never served from an old measurement                             *)
-RecordMatchesKey == \A x \in respLog : x.kind = "200" => x.recordMatchesWorld
+(* key is never served from an old measurement, and a changed key starts  *)
+(* a new probe: a record of another key never answers 412 for itself      *)
+RecordMatchesKey ==
+    \A x \in respLog :
+        /\ x.kind = "200" => x.recordMatchesWorld
+        /\ ~x.staleGot412
 
 (* P7: a measurement that spanned a key change is not recorded *)
 RecordIsClean == recSrc # "tainted"

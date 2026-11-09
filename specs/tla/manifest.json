@@ -2854,9 +2854,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1266624,
-      "measuredSeconds": 29.06,
-      "measuredCpuSeconds": 27.11,
-      "budgetCpuSeconds": 58
+      "measuredSeconds": 33.05,
+      "measuredCpuSeconds": 29.1,
+      "budgetCpuSeconds": 62
     },
     {
       "config": "AutoProbe.twoProbes",
@@ -2868,8 +2868,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 11,
-      "measuredSeconds": 3.09,
-      "measuredCpuSeconds": 1.77,
+      "measuredSeconds": 2.71,
+      "measuredCpuSeconds": 1.67,
       "budgetCpuSeconds": 7
     },
     {
@@ -2882,8 +2882,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 14,
-      "measuredSeconds": 3.14,
-      "measuredCpuSeconds": 1.76,
+      "measuredSeconds": 3.03,
+      "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
     {
@@ -2896,8 +2896,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 2.98,
-      "measuredCpuSeconds": 1.65,
+      "measuredSeconds": 1.91,
+      "measuredCpuSeconds": 1.64,
       "budgetCpuSeconds": 7
     },
     {
@@ -2910,8 +2910,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 2.39,
-      "measuredCpuSeconds": 1.82,
+      "measuredSeconds": 2.35,
+      "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
     {
@@ -2924,8 +2924,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 64,
-      "measuredSeconds": 2.37,
-      "measuredCpuSeconds": 1.93,
+      "measuredSeconds": 2.48,
+      "measuredCpuSeconds": 1.65,
       "budgetCpuSeconds": 7
     },
     {
@@ -2938,7 +2938,7 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 15,
-      "measuredSeconds": 1.82,
+      "measuredSeconds": 2.15,
       "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     },
@@ -2952,8 +2952,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 265,
-      "measuredSeconds": 2.06,
-      "measuredCpuSeconds": 1.96,
+      "measuredSeconds": 2.26,
+      "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7
     },
     {
@@ -2966,8 +2966,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 27,
-      "measuredSeconds": 2.01,
-      "measuredCpuSeconds": 1.72,
+      "measuredSeconds": 2.22,
+      "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
     {
@@ -2980,8 +2980,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 82,
-      "measuredSeconds": 2.18,
-      "measuredCpuSeconds": 1.85,
+      "measuredSeconds": 2.54,
+      "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
     {
@@ -2991,9 +2991,9 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 1266624,
-      "measuredSeconds": 36.34,
-      "measuredCpuSeconds": 28.12,
-      "budgetCpuSeconds": 60
+      "measuredSeconds": 35.71,
+      "measuredCpuSeconds": 28.94,
+      "budgetCpuSeconds": 61
     },
     {
       "config": "AutoProbe.reprobeRefused",
@@ -3005,8 +3005,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 32,
-      "measuredSeconds": 1.96,
-      "measuredCpuSeconds": 1.9,
+      "measuredSeconds": 2.11,
+      "measuredCpuSeconds": 1.77,
       "budgetCpuSeconds": 7
     },
     {
@@ -3019,8 +3019,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 69,
-      "measuredSeconds": 1.88,
-      "measuredCpuSeconds": 1.93,
+      "measuredSeconds": 2.31,
+      "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
     {
@@ -3033,8 +3033,22 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 15,
-      "measuredSeconds": 1.9,
-      "measuredCpuSeconds": 1.79,
+      "measuredSeconds": 2.12,
+      "measuredCpuSeconds": 1.73,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.rejectStale",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordMatchesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 266,
+      "measuredSeconds": 2.27,
+      "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7
     }
   ]

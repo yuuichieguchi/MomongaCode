@@ -49,6 +49,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       Adapter: constantOf('Adapter'),
       EndpointLocked: constantOf('EndpointLocked'),
       PreconditionCheck: constantOf('PreconditionCheck'),
+      RejectStale: constantOf('RejectStale'),
       Backoff: constantOf('Backoff'),
     }).toEqual({
       SingleFlight: '"shared"',
@@ -62,6 +63,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       Adapter: '"fm"',
       EndpointLocked: 'TRUE',
       PreconditionCheck: 'TRUE',
+      RejectStale: 'FALSE',
       Backoff: 'TRUE',
     });
   });
@@ -111,5 +113,20 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
     expect(spec).toContain('file identity');
     expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
     expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
+  });
+
+  it('decides a record of another key by one comparison for every adapter, and keeps the evidence that a 412 for the mismatch breaks P6', () => {
+    const rejectStale = fs.readFileSync(path.join(specDir, 'AutoProbe.rejectStale.cfg'), 'utf8');
+    const sourceOf = (file: string): string => fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+
+    expect(rejectStale).toMatch(/RejectStale = TRUE/);
+    expect(rejectStale).toMatch(/RecordMatchesKey/);
+    expect(spec).toContain('record.ts recordForIdentity');
+    for (const file of ['probe/record.ts', 'probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
+      expect(sourceOf(file)).toContain('recordForIdentity(');
+    }
+    for (const file of ['probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
+      expect(sourceOf(file)).not.toContain('is stale');
+    }
   });
 });

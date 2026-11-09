@@ -91,16 +91,29 @@ describe('chat-completions target with toolCalling auto', () => {
     expect((completions(fake)[0]?.body as { max_completion_tokens?: number }).max_completion_tokens).toBe(400);
   });
 
-  it('refuses a record whose identity differs from what the server shows now, and says the record is stale', async () => {
+  it('P6 RecordMatchesKey: treats a record whose identity differs from what the server shows now as no record, answers 503 target_probing and measures again', async () => {
     const { home, fake, probeDir, endpoint, identityFields } = await autoSetup();
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, 'identity-of-an-older-pull', identityFields, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureEndpoint: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
+    const client = clientFor(handle.socketPath);
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+    const response = await readJson(await postJson(client, '/v1/responses', request));
+    const listing = await getJson(client, '/v1/momonga/models');
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.message).toContain('stale');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(response.headers['retry-after']).toBe('120');
+    expect(measured).toEqual([{ endpoint, model: 'system' }]);
+    expect(listing.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities.toolCalling.state).toBe('probing');
     expect(completions(fake)).toEqual([]);
   });
 
