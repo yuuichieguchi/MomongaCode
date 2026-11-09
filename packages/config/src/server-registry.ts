@@ -1,11 +1,9 @@
 import path from 'node:path';
-import { MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
+import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import type { DeclaredServer } from './settings.ts';
 
 export type ServerRegistry = Readonly<Record<string, ManagedServerDescription>>;
-
-const DECLARED_READY_LIMIT_MS = 10_000;
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
@@ -14,10 +12,10 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
   binary: { defaultPath: declared.command },
   launch: { argv: [...declared.args] },
   endpoint: { kind: 'unix' },
-  ready: { method: 'GET', path: declared.readyPath, status: 200, limitMs: DECLARED_READY_LIMIT_MS },
+  ready: { method: 'GET', path: declared.readyPath, status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [],
   identity: ['binarySha256', 'hostOsBuild'],
-  restart: { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 },
+  restart: MANAGED_RESTART_POLICY,
   models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
   toolForms: ['native', 'envelope'],
   tokenCount: 'estimated',
