@@ -13,6 +13,7 @@ export interface UdsRequestOptions {
   headers?: Record<string, string>;
   body?: string | Uint8Array;
   signal?: AbortSignal;
+  bodyTimeoutMs?: number;
 }
 
 export interface UdsResponse {
@@ -50,6 +51,7 @@ export const createUdsClient = (socketPath: string, options: UdsClientOptions = 
         ...(options.headers === undefined ? {} : { headers: options.headers }),
         ...(options.body === undefined ? {} : { body: options.body }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
       });
       const headers: Record<string, string> = {};
       for (const [name, value] of Object.entries(response.headers)) {

@@ -13,6 +13,8 @@ import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
+import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
+import type { ContentWatch } from '../shared/content-idle.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
@@ -128,6 +130,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     };
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
+    let watch: ContentWatch | undefined;
     try {
       const vocabulary = withGuardrailMatcher(baseVocabulary, guardrailMatcher(ctx.target));
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
@@ -141,6 +144,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         },
         body: JSON.stringify(upstreamModel === undefined ? body : { ...body, model: upstreamModel }),
         signal,
+        ...watchedPostOf(options.liveness),
       });
       if (response.status !== 200) {
         throw await httpErrorOf(
@@ -151,13 +155,14 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         );
       }
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) });
+      watch = watchContent(options.liveness);
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 
       let opening: StreamEvent[] | undefined = driver.start();
       try {
-        for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
+        for await (const message of decodeSse(boundedSseBytes(watch.source(response.body), MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
           const errorEvent = upstreamErrorEventBody(message);
           if (errorEvent !== undefined) throw upstreamErrorFailure(vocabulary, response.status, errorEvent.body);
@@ -189,6 +194,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         yield event;
       }
     } finally {
+      watch?.dispose();
       upstream.abort();
     }
   }

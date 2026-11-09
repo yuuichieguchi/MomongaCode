@@ -27,6 +27,7 @@ import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
 import { taskHandleOf } from './task-handle.ts';
+import type { McpTransportKind } from './call-bounds.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS, settleTask } from './tasks.ts';
 import type { SettleTaskOptions, TaskRequester } from './tasks.ts';
 import { pause, systemTimers } from './timers.ts';
@@ -70,10 +71,13 @@ export type McpCallToolInput = {
   tracestate?: string;
   resume?: McpResume;
   onCheckpoint?(checkpoint: McpCheckpoint): void;
+  onProgress?(): void;
+  pollCeilingMs?: number;
 };
 
 export interface McpServerConnection {
   readonly name: string;
+  readonly transportKind: McpTransportKind;
   readonly protocolVersion: string | undefined;
   readonly protocolEra: ProtocolEra | undefined;
   readonly serverInfo: Implementation | undefined;
@@ -81,6 +85,7 @@ export interface McpServerConnection {
   listTools(options?: { signal?: AbortSignal }): Promise<Tool[]>;
   callTool(input: McpCallToolInput): Promise<CallToolResult>;
   releaseCheckpoint(checkpoint: McpCheckpoint, options?: { signal?: AbortSignal }): Promise<void>;
+  cancelOutcome(taskId: string): Promise<boolean> | undefined;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
   close(): Promise<void>;
@@ -214,10 +219,13 @@ class ManagedConnection implements McpServerConnection {
   private pendingTransport: ConnectionTransport | undefined;
   private readonly lifetime = new AbortController();
   private readonly inputs: ParkedInputs;
+  private readonly cancels = new Map<string, Promise<boolean>>();
+  readonly transportKind: McpTransportKind;
 
   constructor(options: McpConnectionOptions) {
     this.options = options;
     this.name = options.name;
+    this.transportKind = 'url' in options.config ? 'network' : 'stdio';
     this.random = options.random ?? Math.random;
     this.timers = options.timers ?? systemTimers;
     this.inputs = createParkedInputs(options.clock.now(), this.timers);
@@ -329,7 +337,7 @@ class ManagedConnection implements McpServerConnection {
 
   async callTool(input: McpCallToolInput): Promise<CallToolResult> {
     return this.withLiveSession(undefined, async (session, attempt) => {
-      const timeout = input.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+      const timeout = input.timeoutMs;
       const resume = attempt.taskCheckpoint === undefined ? input.resume : { checkpoint: attempt.taskCheckpoint, answers: input.resume?.answers ?? {} };
       const current: McpCallToolInput = { ...input, ...(resume === undefined ? {} : { resume }) };
       try {
@@ -362,6 +370,10 @@ class ManagedConnection implements McpServerConnection {
     });
   }
 
+  cancelOutcome(taskId: string): Promise<boolean> | undefined {
+    return this.cancels.get(taskId);
+  }
+
   close(): Promise<void> {
     this.closing ??= this.shutdown();
     return this.closing;
@@ -380,7 +392,7 @@ class ManagedConnection implements McpServerConnection {
     return listed;
   }
 
-  private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, attempt: Attempt, timeout: number, endBudget: () => void): Promise<CallToolResult> {
+  private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, attempt: Attempt, timeout: number | undefined, endBudget: () => void): Promise<CallToolResult> {
     const { client } = session;
     const maxRounds = this.options.mrtrMaxRounds ?? MRTR_MAX_ROUNDS;
     const stop = input.signal ?? this.lifetime.signal;
@@ -403,7 +415,13 @@ class ManagedConnection implements McpServerConnection {
             ...(requestState === undefined ? {} : { requestState }),
             ...(Object.keys(meta).length === 0 ? {} : { _meta: meta }),
           },
-          { signal: stop, timeout: SDK_TIMER_CEILING_MS, allowInputRequired: true, toolDefinition: callableTool },
+          {
+            signal: stop,
+            timeout: SDK_TIMER_CEILING_MS,
+            allowInputRequired: true,
+            toolDefinition: callableTool,
+            ...(input.onProgress === undefined ? {} : { onprogress: () => input.onProgress?.() }),
+          },
         );
       } catch (error) {
         const handle = error instanceof ProtocolError ? taskHandleOf(error.code, error.data) : undefined;
@@ -435,14 +453,14 @@ class ManagedConnection implements McpServerConnection {
     input: McpCallToolInput,
     attempt: Attempt,
     start: SettleTaskOptions['start'],
-    timeout: number,
+    timeout: number | undefined,
   ): Promise<CallToolResult> {
     const { signal } = input;
     const stop = new AbortController();
     const forward = (): void => stop.abort(signal?.reason);
     if (signal?.aborted === true) forward();
     signal?.addEventListener('abort', forward, { once: true });
-    const deadline = this.timers.setTimeout(() => stop.abort(new Error(`task did not finish within ${timeout}ms`)), timeout);
+    const deadline = timeout === undefined ? undefined : this.timers.setTimeout(() => stop.abort(new Error(`task did not finish within ${timeout}ms`)), timeout);
     const request = this.taskRequester(client);
     try {
       return await settleTask({
@@ -456,17 +474,27 @@ class ManagedConnection implements McpServerConnection {
           attempt.taskCheckpoint = next;
           input.onCheckpoint?.(next);
         },
-        trackCancel: (outcome) =>
-          void outcome.catch((error: unknown) => {
-            this.lastError = `tasks/cancel for an aborted call failed: ${errorMessage(error)}`;
-          }),
+        trackCancel: (outcome, taskId) => {
+          this.cancels.set(
+            taskId,
+            outcome.then(
+              () => true,
+              (error: unknown) => {
+                this.lastError = `tasks/cancel for an aborted call failed: ${errorMessage(error)}`;
+                return false;
+              },
+            ),
+          );
+        },
+        ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+        ...(input.pollCeilingMs === undefined ? {} : { pollCeilingMs: input.pollCeilingMs }),
         accept: async (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
           return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value, stop.signal);
         },
       });
     } finally {
-      this.timers.clearTimeout(deadline);
+      if (deadline !== undefined) this.timers.clearTimeout(deadline);
       signal?.removeEventListener('abort', forward);
     }
   }

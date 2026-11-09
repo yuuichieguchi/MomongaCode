@@ -1,22 +1,20 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { ToolExecutionError } from '@momonga/tools';
-import type { ToolContext, ToolSet } from '@momonga/tools';
-import { UNBOUNDED_OUTPUT_FIT } from '@momonga/testkit';
+import { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS } from '@momonga/mcp';
+import type { ToolSet } from '@momonga/tools';
 import {
   MODERN_FIXTURE_AUDIO_BYTES,
   MODERN_FIXTURE_BLOB_BYTES,
   MODERN_FIXTURE_HOSTILE_DESCRIPTION,
   MODERN_FIXTURE_IMAGE_BYTES,
   MODERN_FIXTURE_LONG_TOOL_NAME,
-  createFakeClock,
 } from '@momonga/testkit';
 import { callRecords, entry, legacyConfig, makeExecutor, makePool, makeRecordFile, modernConfig, readRecords, waitForRecord } from './mcp-harness.ts';
 
 const TRACEPARENT = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
 const UNKNOWN_EFFECTS = 'Its side effects are unknown; inspect the current state before retrying.';
 
-const modernSet = async (options: { requestTimeoutMs?: number } = {}): Promise<{ set: ToolSet; recordFile: string }> => {
+const modernSet = async (options: { requestTimeoutMs?: number; toolIdleTimeoutMs?: number } = {}): Promise<{ set: ToolSet; recordFile: string }> => {
   const recordFile = makeRecordFile();
   const harness = makePool([entry('modern', modernConfig(recordFile))], options);
   return { set: await harness.snapshot(), recordFile };
@@ -166,11 +164,12 @@ describe('MCP tool definitions', () => {
     expect(set.get(name)).toMatchObject({ kind, sideEffect });
   });
 
-  it('uses an mcp subject with the normalized tool part and the request timeout', async () => {
+  it('uses an mcp subject with the normalized tool part, the stdio idle window and the overall limit, not the request timeout', async () => {
     const { set } = await modernSet({ requestTimeoutMs: 45_000 });
     const tool = set.get(DOTTED);
     expect(tool?.subject({}, { cwd: '/', workingDirectory: '/', home: '/', roots: [] })).toEqual({ kind: 'mcp', server: 'modern', tool: DOTTED_PART });
-    expect(tool?.timeoutMs).toBe(45_000);
+    expect(tool?.idleTimeoutMs).toBe(MCP_TOOL_IDLE_TIMEOUT_MS.stdio);
+    expect(tool?.timeoutMs).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS);
     expect(tool?.prepare).toBeUndefined();
     expect(tool?.reconcile).toBeUndefined();
   });
@@ -238,14 +237,14 @@ describe('MCP trace context', () => {
     });
     expect(seen).toContain('call-1');
     const [call] = callRecords(recordFile, 'echo');
-    expect(call?.type === 'call' ? call.meta : undefined).toEqual({ traceparent: TRACEPARENT, tracestate: 'vendor=fixture' });
+    expect(call?.type === 'call' ? call.meta : undefined).toEqual({ traceparent: TRACEPARENT, tracestate: 'vendor=fixture', progressToken: expect.anything() });
   });
 
   it('omits tracestate when only traceparent is given', async () => {
     const { set, recordFile } = await modernSet();
     await makeExecutor().resultOf(set, 'mcp__modern__echo', { text: 'x' }, { traceparentFor: () => ({ traceparent: TRACEPARENT }) });
     const [call] = callRecords(recordFile, 'echo');
-    expect(call?.type === 'call' ? call.meta : undefined).toEqual({ traceparent: TRACEPARENT });
+    expect(call?.type === 'call' ? call.meta : undefined).toEqual({ traceparent: TRACEPARENT, progressToken: expect.anything() });
   });
 
   it('sends no trace context when traceparentFor is absent', async () => {
@@ -259,39 +258,21 @@ describe('MCP trace context', () => {
 });
 
 describe('MCP timeouts and cancellation', () => {
-  it('times out at the run deadline with the executor message and the server records the cancellation', async () => {
+  it('stops at the run deadline with the MCP stop text and the server records the cancellation', async () => {
     const { set, recordFile } = await modernSet();
     const harness = makeExecutor();
     const result = await harness.resultOf(set, 'mcp__modern__slow', {}, { deadlineAt: harness.clock.now() + 500 });
-    expect(result).toEqual({ status: 'failed', output: `mcp__modern__slow timed out after 500 ms. ${UNKNOWN_EFFECTS}` });
+    expect(result).toEqual({ status: 'failed', output: 'The call to slow on MCP server "modern" reached the run deadline after 500 ms and was stopped. The server may have run it; check before repeating it.' });
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });
 
-  it('bounds the SDK request by the remaining deadline even when the signal never aborts', async () => {
-    const { set, recordFile } = await modernSet();
-    const tool = set.get('mcp__modern__slow');
-    const clock = createFakeClock(5_000);
-    const ctx = {
-      cwd: '/',
-      home: '/',
-      roots: [],
-      runId: 'run-direct',
-      step: 1,
-      callId: 'call-direct',
-      idemKey: 'idem-direct',
-      outputFit: UNBOUNDED_OUTPUT_FIT,
-      env: {},
-      signal: new AbortController().signal,
-      deadlineAt: clock.now() + 300,
-      clock,
-      update: () => undefined,
-      attachProcess: () => undefined,
-    } as unknown as ToolContext;
-    const startedAt = performance.now();
-    const execution = (tool as NonNullable<typeof tool>).execute({}, ctx, undefined);
-    await expect(execution).rejects.toBeInstanceOf(ToolExecutionError);
-    await expect(execution).rejects.toThrow(/^MCP server "modern" failed: /);
-    expect(performance.now() - startedAt).toBeLessThan(3000);
+  it('ends a stdio call that sends no progress at mcp.toolIdleTimeoutMs with the idle text, and the server records the cancellation', async () => {
+    const { set, recordFile } = await modernSet({ toolIdleTimeoutMs: 300 });
+    const result = await makeExecutor().resultOf(set, 'mcp__modern__slow', {});
+    expect(result).toEqual({
+      status: 'failed',
+      output: 'MCP server "modern" sent no response or progress for 300 ms, so the call to slow was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.',
+    });
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });
 

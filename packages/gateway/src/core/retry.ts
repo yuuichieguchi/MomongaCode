@@ -188,7 +188,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             break;
           }
           verdict = breakerVerdictOf(classified.error.type, classified.error.code);
-          if (!classified.retryable) throw plainError(classified);
+          if (!classified.retryable || classified.stalled === true) throw plainError(classified);
           lastFailure = { kind: 'upstream', classified };
           const decision = nextWait({
             attempt: sends - 1,

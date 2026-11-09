@@ -695,7 +695,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
-    const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs };
+    const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs, timers };
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {

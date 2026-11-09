@@ -12,6 +12,7 @@ import {
   UNSUPPORTED_REQUEST,
   UnsupportedInputError,
   UpstreamHttpError,
+  UpstreamStall,
 } from './failures.ts';
 
 const CONNECTION_CODES: ReadonlySet<string> = new Set([
@@ -21,10 +22,9 @@ const CONNECTION_CODES: ReadonlySet<string> = new Set([
   'EPIPE',
   'UND_ERR_SOCKET',
   'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_HEADERS_TIMEOUT',
-  'UND_ERR_BODY_TIMEOUT',
   'UND_ERR_CLOSED',
 ]);
+const STALL_CODES: ReadonlySet<string> = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 const MAX_CAUSE_DEPTH = 8;
 
 const codeOf = (error: unknown): string | undefined => {
@@ -32,6 +32,20 @@ const codeOf = (error: unknown): string | undefined => {
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : undefined;
 };
+
+const carriesCode = (codes: ReadonlySet<string>, error: unknown, depth: number): boolean => {
+  if (depth > MAX_CAUSE_DEPTH || typeof error !== 'object' || error === null) return false;
+  const code = codeOf(error);
+  if (code === 'UND_ERR_ABORTED' || (error as { name?: unknown }).name === 'AbortError') return false;
+  if (code !== undefined && codes.has(code)) return true;
+  if (carriesCode(codes, (error as { cause?: unknown }).cause, depth + 1)) return true;
+  const nested = (error as { errors?: unknown }).errors;
+  return Array.isArray(nested) && nested.some((entry) => carriesCode(codes, entry, depth + 1));
+};
+
+const isStall = (error: unknown): boolean => carriesCode(STALL_CODES, error, 0);
+
+const isRawConnectionFailure = (error: unknown): boolean => isStall(error) || carriesCode(CONNECTION_CODES, error, 0);
 
 const PROXY_REFUSAL_TRANSIENT_STATUS = 500;
 
@@ -55,16 +69,6 @@ export const isConnectionFailure = (error: unknown): boolean => {
   const outbound = findOutboundError(error);
   return outbound === undefined ? isRawConnectionFailure(error) : isTransientOutbound(outbound);
 };
-
-function isRawConnectionFailure(error: unknown, depth = 0): boolean {
-  if (depth > MAX_CAUSE_DEPTH || typeof error !== 'object' || error === null) return false;
-  const code = codeOf(error);
-  if (code === 'UND_ERR_ABORTED' || (error as { name?: unknown }).name === 'AbortError') return false;
-  if (code !== undefined && CONNECTION_CODES.has(code)) return true;
-  if (isRawConnectionFailure((error as { cause?: unknown }).cause, depth + 1)) return true;
-  const nested = (error as { errors?: unknown }).errors;
-  return Array.isArray(nested) && nested.some((entry) => isRawConnectionFailure(entry, depth + 1));
-}
 
 const body = (type: ErrorBody['type'], code: string | null, message: string, param: string | null = null): ErrorBody => ({
   type,
@@ -103,6 +107,9 @@ export const createUpstreamClassifier =
     if (error instanceof CompactionReplyError) {
       return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
     }
+    if (error instanceof UpstreamStall) {
+      return { retryable: true, stalled: true, error: body(error.errorType, error.code, error.message) };
+    }
     if (error instanceof StreamFailure) {
       return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
     }
@@ -117,6 +124,7 @@ export const createUpstreamClassifier =
       const transient = isTransientOutbound(outbound);
       return {
         retryable: transient,
+        ...(isStall(outbound) ? { stalled: true as const } : {}),
         error: transient
           ? body('server_error', 'provider_unavailable', `the ${label} upstream is unreachable: ${outbound.message}`)
           : body('server_error', OUTBOUND_CODES[outbound.failure.kind], `the ${label} upstream failed: ${outbound.message}`),
@@ -125,6 +133,7 @@ export const createUpstreamClassifier =
     if (isConnectionFailure(error)) {
       return {
         retryable: true,
+        ...(isStall(error) ? { stalled: true as const } : {}),
         error: body('server_error', 'provider_unavailable', `the ${label} upstream is unreachable`),
       };
     }
