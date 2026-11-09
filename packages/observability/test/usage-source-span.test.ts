@@ -11,6 +11,7 @@ import {
   startAgentSpan,
   startChatSpan,
 } from '@momonga/observability';
+import type { SpanRecord } from '@momonga/observability';
 import { harness } from './helpers.ts';
 
 const AT = Date.parse('2026-07-10T00:00:00Z');
@@ -22,15 +23,45 @@ const recorded = async (sources: readonly Source[]) => {
   const h = harness();
   const agent = startAgentSpan(h.telemetry.tracer, { agentName: 'momonga', agentId: 'momonga', conversationId: 's', runId: 'run-a' });
   const parent = trace.setSpan(ROOT_CONTEXT, agent);
+  const storedBeforeUsageSource: SpanRecord[] = [];
   for (const [index, source] of sources.entries()) {
     h.clock.set(AT + index);
+    if (source === 'unrecorded') {
+      storedBeforeUsageSource.push({
+        traceId: agent.spanContext().traceId,
+        spanId: `00000000000000${String(index).padStart(2, '0')}`,
+        parentSpanId: agent.spanContext().spanId,
+        name: 'chat m1',
+        kind: 'CLIENT',
+        startMs: AT + index,
+        endMs: AT + index,
+        status: 'UNSET',
+        attributes: {
+          'gen_ai.operation.name': 'chat',
+          'gen_ai.provider.name': 'acme',
+          'gen_ai.request.model': 'm1',
+          'gen_ai.request.stream': true,
+          'momonga.run_id': 'run-a',
+          'momonga.step': index + 1,
+          'momonga.attempt': 1,
+          'momonga.billing': 'metered',
+          'gen_ai.response.finish_reasons': ['stop'],
+          'gen_ai.usage.input_tokens': 1_000_000,
+          'gen_ai.usage.output_tokens': 0,
+          'gen_ai.usage.cache_read.input_tokens': 0,
+        },
+        events: [],
+        runId: 'run-a',
+      });
+      continue;
+    }
     const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1 }, parent);
-    if (source !== 'unrecorded') chat.setAttribute('momonga.usage_source', source);
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usageSource: source, usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());
   await h.telemetry.forceFlush();
+  h.store.writeSpans(storedBeforeUsageSource);
   const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
   const billed = billedCallsOfRun(h.store, 'run-a', TABLE);
   const breakdown = buildCostBreakdown(

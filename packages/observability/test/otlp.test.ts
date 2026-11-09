@@ -112,6 +112,7 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
       'momonga.step': 1,
       'momonga.attempt': 1,
       'momonga.billing': 'metered',
+      'momonga.usage_source': 'reported',
     });
     expect(toolSpan.attributes).toEqual({
       'gen_ai.operation.name': 'execute_tool',
