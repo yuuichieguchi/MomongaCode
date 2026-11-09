@@ -33,6 +33,8 @@ const PROPERTY_OF_INVARIANT: Record<string, string> = {
   RefusalGetsRemedy: 'P8',
   NoProbeInBackoff: 'P9',
   RecordUnderLock: 'P10',
+  NoRecordUnderUnknown: 'P11',
+  MemoryIsThisInstance: 'P12',
 };
 
 describe('the code conforms to specs/tla/AutoProbe.tla', () => {
@@ -46,11 +48,13 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       FailWrites: constantOf('FailWrites'),
       TaintCheck: constantOf('TaintCheck'),
       Manual: constantOf('Manual'),
-      Adapter: constantOf('Adapter'),
-      EndpointLocked: constantOf('EndpointLocked'),
+      HostKeyed: constantOf('HostKeyed'),
+      LockAll: constantOf('LockAll'),
       PreconditionCheck: constantOf('PreconditionCheck'),
       RejectStale: constantOf('RejectStale'),
       Backoff: constantOf('Backoff'),
+      Unreadable: constantOf('Unreadable'),
+      UnknownWrites: constantOf('UnknownWrites'),
     }).toEqual({
       SingleFlight: '"shared"',
       KeyView: '"perRequest"',
@@ -60,11 +64,13 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       FailWrites: 'FALSE',
       TaintCheck: 'TRUE',
       Manual: 'TRUE',
-      Adapter: '"fm"',
-      EndpointLocked: 'TRUE',
+      HostKeyed: 'TRUE',
+      LockAll: 'TRUE',
       PreconditionCheck: 'TRUE',
       RejectStale: 'FALSE',
       Backoff: 'TRUE',
+      Unreadable: 'TRUE',
+      UnknownWrites: 'FALSE',
     });
   });
 
@@ -108,8 +114,8 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
   it('checks the endpoint adapter under the same properties, and names its key source and the backoff in the model', () => {
     const endpoint = fs.readFileSync(path.join(specDir, 'AutoProbe.endpoint.cfg'), 'utf8');
 
-    expect(endpoint).toMatch(/Adapter = "endpoint"/);
-    expect(endpoint).toMatch(/EndpointLocked = TRUE/);
+    expect(endpoint).toMatch(/HostKeyed = FALSE/);
+    expect(endpoint).toMatch(/LockAll = TRUE/);
     expect(spec).toContain('file identity');
     expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
     expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
