@@ -73,6 +73,15 @@ assert_executable_format() {
   esac
 }
 
+assert_embedded_ripgrep() {
+  local file="$1" target="$2"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY_RUN: ripgrep-manifest %s %s\n' "$file" "$target"
+    return
+  fi
+  node "$ROOT/scripts/embedded-ripgrep.ts" check "$file" "$target" || fail "$file does not embed the ripgrep manifest of $target"
+}
+
 assert_binary_version() {
   local built
   if [ "$DRY_RUN" = "1" ]; then
@@ -146,6 +155,7 @@ run npm run test:packaging
 step "build single executable"
 run mkdir -p "$OUT_DIR"
 run npm run sea -- --unsigned --output "$BINARY" "${UPDATE_SOURCE_FLAGS[@]}"
+assert_embedded_ripgrep "$BINARY" darwin-arm64
 
 step "sign with Developer ID (hardened runtime, JIT entitlement)"
 run codesign --sign "$SIGNING_IDENTITY" --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" "$BINARY"
@@ -174,6 +184,9 @@ done
 assert_executable_format "$OUT_DIR/momonga-linux-x64" ELF
 assert_executable_format "$OUT_DIR/momonga-linux-arm64" ELF
 assert_executable_format "$OUT_DIR/momonga-win-x64.exe" PE
+for index in "${!OTHER_TARGETS[@]}"; do
+  assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
+done
 
 step "checksums and their signature"
 run write_checksums

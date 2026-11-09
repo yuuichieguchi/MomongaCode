@@ -10,16 +10,20 @@ import { HAS_POSIX_SHELL } from './support/host.ts';
 const STUB_SOURCES: Record<string, string> = {
   npm: `case " $* " in *" \${STUB_NPM_FAIL:-no-such-script} "*) exit 1 ;; esac
 output=""
+target="darwin-arm64"
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "--output" ]; then output="$2"; fi
+  if [ "$1" = "--target" ]; then target="$2"; fi
   shift
 done
 if [ -n "$output" ]; then
   case "$output" in
     *.exe) printf 'MZ stub' > "$output" ;;
     *linux*) if [ "\${STUB_LINUX_NOT_ELF:-0}" = "1" ]; then printf 'not elf' > "$output"; else printf '\\177ELF stub' > "$output"; fi ;;
-    *) printf '#!/bin/sh\\necho "%s"\\n' "\${STUB_BINARY_VERSION:-1.2.3}" > "$output" ;;
+    *) printf '#!/bin/sh\\necho "%s"\\nexit 0\\n' "\${STUB_BINARY_VERSION:-1.2.3}" > "$output" ;;
   esac
+  embedded="\${STUB_RIPGREP_TARGET:-$target}"
+  printf '{"version":"%s","target":"%s","binary":{"asset":"ripgrep.br","sha256":"%s","size":1,"name":"rg"},"notices":{"asset":"ripgrep-notices.txt","sha256":"%s"}}\\n' "\${STUB_RIPGREP_VERSION:-15.2.0}" "$embedded" "$(printf 'a%.0s' $(seq 64))" "$(printf 'b%.0s' $(seq 64))" >> "$output"
   chmod 755 "$output"
 fi`,
   ditto: `for last; do :; done
@@ -147,6 +151,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.copyFileSync(`${repoRoot}scripts/release.sh`, path.join(work, 'scripts/release.sh'));
     fs.copyFileSync(`${repoRoot}scripts/sea-entitlements.plist`, path.join(work, 'scripts/sea-entitlements.plist'));
     fs.copyFileSync(`${repoRoot}scripts/release-key.ts`, path.join(work, 'scripts/release-key.ts'));
+    for (const script of ['embedded-ripgrep.ts', 'ripgrep-release.ts', 'node-runtime.ts', 'z3-assets.ts', 'bundle.ts']) fs.symlinkSync(`${repoRoot}scripts/${script}`, path.join(work, 'scripts', script));
     fs.copyFileSync(`${repoRoot}THIRD-PARTY-NOTICES.md`, path.join(work, 'THIRD-PARTY-NOTICES.md'));
     for (const [file, content] of Object.entries(installers(PINNED_KEY))) fs.writeFileSync(path.join(work, file), content);
     fs.symlinkSync(`${repoRoot}node_modules`, path.join(work, 'node_modules'));
@@ -179,6 +184,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       'npm run',
       'mkdir -p',
       'npm run',
+      `ripgrep-manifest ${work}/dist/release/momonga-darwin-arm64`,
       'codesign --sign',
       'codesign --verify',
       'codesign --display',
@@ -193,6 +199,9 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
       `check ${work}/dist/release/momonga-linux-x64`,
       `check ${work}/dist/release/momonga-linux-arm64`,
       `check ${work}/dist/release/momonga-win-x64.exe`,
+      `ripgrep-manifest ${work}/dist/release/momonga-linux-x64`,
+      `ripgrep-manifest ${work}/dist/release/momonga-linux-arm64`,
+      `ripgrep-manifest ${work}/dist/release/momonga-win-x64.exe`,
       'write_checksums',
       'rm -f',
       'ssh-keygen -Y',
@@ -316,6 +325,18 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(notes).toContain('- third change (');
     expect(notes).toContain('- second change (');
     expect(notes).not.toContain('first change');
+  });
+
+  it.each([
+    ['the darwin-arm64 executable', { STUB_RIPGREP_TARGET: 'linux-x64' }, 'momonga-darwin-arm64 embeds the ripgrep manifest of linux-x64, not of darwin-arm64'],
+    ['a cross-built executable', { STUB_RIPGREP_VERSION: '14.1.0' }, 'embeds ripgrep 14.1.0, not the pinned 15.2.0'],
+  ] as const)('stops before publishing when %s does not embed the ripgrep manifest of its own target', (_label, env, message) => {
+    commit('second change');
+    const result = release(env);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(message);
+    expect(loggedNames()).not.toContain('gh');
+    expect(originTags()).toBe('');
   });
 
   it('stops at a failed Gatekeeper assessment before publishing', () => {
