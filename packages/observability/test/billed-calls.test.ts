@@ -91,7 +91,8 @@ describe('billedCallsOfRun', () => {
     expect(calls).toHaveLength(2);
     expect(calls[0]).toMatchObject({ step: 1, provider: 'acme', model: 'm1', billing: 'metered', usage: { inputTokens: 100, cachedInputTokens: 10, cacheWriteInputTokens: 20 } });
     expect(calls[0]?.role).toBeUndefined();
-    expect(calls[1]).toMatchObject({ role: 'classifier', usage: { inputTokens: 30, cachedInputTokens: 0, cacheWriteInputTokens: 0 } });
+    expect(calls[1]).toMatchObject({ role: 'classifier', usage: { inputTokens: 30, cacheWriteInputTokens: 0 } });
+    expect(calls[1]?.usage).not.toHaveProperty('cachedInputTokens');
     expect(calls[0]?.price.kind).toBe('priced');
   });
 
@@ -178,7 +179,7 @@ describe('one pricing rule', () => {
         { step: 1, input: 1000, cached: 400, cacheWrite: 100 },
         { step: 2, provider: 'home', model: 'free', billing: 'local', input: 500 },
         { step: 3, provider: 'nowhere', model: 'tiny', billing: 'local', input: 700 },
-        { step: 4, provider: 'other', model: 'unlisted', input: 900 },
+        { step: 4, provider: 'other', model: 'unlisted', input: 900, cached: 0 },
       ],
       h,
     );

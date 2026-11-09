@@ -103,7 +103,7 @@ describe('a value a person did not write stays on its own line in command output
     const span = (overrides: Partial<RunTraceSpan>): RunTraceSpan => ({ traceId: 't', parentSpanId: null, kind: 'INTERNAL', startMs: 0, endMs: 1, status: 'OK', attributes: {}, spanId: 's', name: 'n', ...overrides });
     const view: RunTraceView = {
       runId: 'run-1',
-      summary: { steps: 1, chatCalls: 1, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, errorCount: 0, durationMs: 1, chatResults: [] },
+      summary: { steps: 1, chatCalls: 1, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 1, chatResults: [] },
       spans: [span({ name: `root ${FORGED}` }), span({ spanId: 'c', parentSpanId: 's', name: 'chat', attributes: { 'momonga.target': 't', 'momonga.failure_message': FORGED } })],
     };
     const usage = { total: { input_tokens: 1, output_tokens: 1 }, responses: [] } as unknown as UsageReport;

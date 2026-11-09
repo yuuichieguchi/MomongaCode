@@ -51,6 +51,7 @@ describe('summarizeRun', () => {
       inputTokens: 300,
       outputTokens: 40,
       cachedInputTokens: 60,
+      cacheReadNotReportedCalls: 1,
       errorCount: 1,
       durationMs: 260,
       chatResults: [
@@ -70,6 +71,7 @@ describe('summarizeRun', () => {
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
+      cacheReadNotReportedCalls: 0,
       errorCount: 0,
       durationMs: 0,
       chatResults: [],

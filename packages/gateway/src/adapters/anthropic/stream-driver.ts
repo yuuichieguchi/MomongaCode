@@ -1,3 +1,4 @@
+import { cachedDetailOf } from '@momonga/protocol';
 import type { ErrorType, StreamEvent, Usage } from '@momonga/protocol';
 import { CONTEXT_WINDOW_EXCEEDED, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
@@ -27,7 +28,7 @@ const usageOf = (fields: AnthropicUsageFields): Usage | undefined => {
     input_tokens: input,
     output_tokens: output,
     total_tokens: input + output,
-    input_tokens_details: { cached_tokens: fields.cache_read_input_tokens ?? 0 },
+    input_tokens_details: cachedDetailOf(fields.cache_read_input_tokens),
     output_tokens_details: { reasoning_tokens: 0 },
   };
 };

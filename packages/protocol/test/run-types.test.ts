@@ -157,7 +157,7 @@ describe('run event payloads', () => {
         input_tokens_details?: { cached_tokens: number };
         output_tokens_details?: { reasoning_tokens: number };
       };
-      momonga?: { cacheWriteInputTokens?: number; cost?: ModelCost };
+      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost };
       timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{

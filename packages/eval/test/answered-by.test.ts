@@ -45,8 +45,8 @@ const realModelCheck = (baseline: ContextReport, candidate: ContextReport) =>
   compareContextReports(baseline, candidate, { seed: 1 }).gate.checks.find((check) => check.name === 'real_model');
 
 describe('the transcript records what answered', () => {
-  it('is format momonga-transcript/6', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/6');
+  it('is format momonga-transcript/7', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/7');
   });
 
   it('an unknown answerer without adapter and upstreamModel is written and parsed back without those fields', () => {
@@ -60,7 +60,7 @@ describe('the transcript records what answered', () => {
     const header = { format: 'momonga-transcript/5', caseId: 'a-on', runIndex: 0, run: recorded('a-on', 0, []).run, children: [], policy: {}, codeDigest: 'c'.repeat(64), answeredBy: [REAL_TARGET] };
     const text = `${JSON.stringify(header)}\n${JSON.stringify({ end: true, events: 0, childEvents: 0 })}\n`;
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
-    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(/momonga-transcript\/5 transcripts do not record .*momonga-transcript\/6/);
+    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(/momonga-transcript\/5 transcripts do not record .*momonga-transcript\/7/);
   });
 
   it('answeredBy is written and parsed back', () => {
@@ -83,12 +83,12 @@ describe('the transcript records what answered', () => {
 });
 
 describe('the report computes its model kind from answeredBy', () => {
-  it('is format momonga-eval-context-report/4, and /2 and /3 are retired', () => {
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/4');
+  it('is format momonga-eval-context-report/5, and /2 and /3 are retired', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/5');
     const old = JSON.stringify({ format: 'momonga-eval-context-report/2' });
     expect(() => parseContextReport(old, 'old.json')).toThrow(/momonga-eval-context-report\/2/);
     const previous = encodeContextReport({ ...build(transcriptsBy(() => [REAL_TARGET])), format: 'momonga-eval-context-report/3' } as unknown as ContextReport);
-    expect(() => parseContextReport(previous, 'previous.json')).toThrow(/momonga-eval-context-report\/3 reports do not record .*retired.*momonga-eval-context-report\/4/);
+    expect(() => parseContextReport(previous, 'previous.json')).toThrow(/momonga-eval-context-report\/3 reports do not record .*retired.*momonga-eval-context-report\/5/);
   });
 
   it('a report answered in part by an unknown answerer is unknown, and parses back with that answerer lacking adapter and upstreamModel', () => {

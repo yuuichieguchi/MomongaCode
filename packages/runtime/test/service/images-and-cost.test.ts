@@ -3,7 +3,7 @@ import { toPublicRunEvent } from '@momonga/protocol';
 import { expectError, startService } from './helpers.ts';
 
 const PNG_BYTES = Buffer.from('fake png bytes');
-const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'] };
+const totals = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'] };
 const IMAGE = { mediaType: 'image/png', data: PNG_BYTES.toString('base64') };
 
 describe('POST /v1/sessions/:id/runs with images', () => {

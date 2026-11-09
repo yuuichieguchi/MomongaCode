@@ -5,13 +5,14 @@ import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/6';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/7';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
   'momonga-transcript/3': 'the policy and the code digest of the run',
   'momonga-transcript/4': 'what answered the run (the answering targets and whether each is a model or a script)',
   'momonga-transcript/5': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
+  'momonga-transcript/6': 'whether the upstream reported the cache reads of each call',
 };
 
 export type TranscriptRun = {

@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -349,15 +349,17 @@ const compactOnce = async (
           at: attempt.startedAtMs,
           table: services.priceTable,
         });
+  const wire = wireUsageOf(outcome.value.usage);
   return {
     id: resourceId,
     object: 'response.compaction',
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
-    usage: outcome.value.usage,
+    usage: wire.usage,
     momonga: {
       target: outcome.target.name,
       ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
+      ...(wire.cacheReadNotReported === undefined ? {} : { cacheReadNotReported: wire.cacheReadNotReported }),
       ...(cost === null ? {} : { cost }),
     },
   };

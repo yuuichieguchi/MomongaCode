@@ -75,6 +75,7 @@ describe('token anatomy end to end', () => {
     expect(forRun.calls).toBe(2);
     expect(forRun.billed).toEqual({
       inputTokens: input,
+      reportedInputTokens: input,
       uncachedInputTokens: uncached,
       cacheReadTokens: CACHED_SECOND,
       cacheWriteTokens: 0,
@@ -102,14 +103,15 @@ describe('token anatomy end to end', () => {
     const text = await runCli(routed.home, ['cost', runId, '--breakdown']);
     expect(text.code).toBe(0);
     expect(text.stdout).toContain('calls: 2');
-    expect(text.stdout).toContain(`billed tokens: input ${input} = uncached ${uncached} + cache read ${CACHED_SECOND} + cache write 0; output ${2 * COMPLETION_TOKENS} (reasoning ${REASONING_FIRST + REASONING_SECOND})`);
+    expect(text.stdout).toContain(`billed tokens: input ${input}; output ${2 * COMPLETION_TOKENS} (reasoning ${REASONING_FIRST + REASONING_SECOND})`);
+    expect(text.stdout).toContain(`cache split of ${input} input token(s) in 2 of 2 call(s): uncached ${uncached} + cache read ${CACHED_SECOND} + cache write 0`);
     expect(text.stdout).toContain(`cache hit ratio: ${((100 * CACHED_SECOND) / input).toFixed(1)}%`);
     expect(text.stdout).toContain(`cost: ${amount} USD`);
     expect(text.stdout).toMatch(/time to first token: median \d+ ms, p95 \d+ ms \(n=2\)/);
     expect(text.stdout).toMatch(/duration: median \d+ ms, p95 \d+ ms \(n=2\)/);
     expect(text.stdout).toMatch(/history\.toolOutputs \d+\.\d%/);
     const sessionText = await runCli(routed.home, ['cost', '--session', sessionId, '--breakdown']);
-    expect(sessionText.stdout).toContain(`billed tokens: input ${input} = uncached ${uncached}`);
+    expect(sessionText.stdout).toContain(`cache split of ${input} input token(s) in 2 of 2 call(s): uncached ${uncached}`);
 
     const trace = await runCli(routed.home, ['trace', runId]);
     expect(trace.code).toBe(0);

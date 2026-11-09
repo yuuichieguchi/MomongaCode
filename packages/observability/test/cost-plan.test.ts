@@ -101,7 +101,7 @@ describe('the cost report on plan calls', () => {
     await record(
       'run-a',
       [
-        { billing: 'metered', input: 1_000_000, output: 0 },
+        { billing: 'metered', input: 1_000_000, output: 0, cached: 0 },
         { billing: 'plan', input: 300, output: 40, cached: 100 },
         { billing: 'plan', input: 50, output: 5, role: 'classifier' },
       ],
@@ -153,7 +153,7 @@ describe('the cost breakdown on plan calls', () => {
     await record(
       'run-a',
       [
-        { billing: 'metered', input: 1_000_000, output: 0 },
+        { billing: 'metered', input: 1_000_000, output: 0, cached: 0 },
         { billing: 'plan', input: 300, output: 40 },
       ],
       h,

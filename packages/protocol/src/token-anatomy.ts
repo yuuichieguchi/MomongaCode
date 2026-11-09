@@ -40,9 +40,10 @@ export type BilledDetail = { responseId?: string; cachedInputTokens?: number; ca
 
 export type BilledTokensView = {
   inputTokens: number;
-  uncachedInputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
+  reportedInputTokens: number | null;
+  uncachedInputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
   outputTokens: number;
   reasoningTokens: number;
 };
@@ -73,6 +74,7 @@ export type CostBreakdownView = {
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCallView[];
   inconsistentUsage: UnpricedCallView[];
+  cacheReadNotReported: number;
   callsWithoutResponseId: number;
   unjoined: UnjoinedView[];
 };
@@ -89,7 +91,7 @@ export type BilledCallView = {
   model: string;
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
-  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
 };
 

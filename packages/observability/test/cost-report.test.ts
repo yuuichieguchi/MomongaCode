@@ -32,10 +32,10 @@ describe('buildCostReport', () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 400_000, output: 500_000, at: AT_MARCH },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 1_000_000, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 1_000_000, at: AT_JULY },
     ], h);
-    await recordCalls('run-b', [{ provider: 'acme', model: 'm1', input: 3, output: 7, at: AT_MARCH }], h);
-    await recordCalls('run-c', [{ provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY }], h);
+    await recordCalls('run-b', [{ provider: 'acme', model: 'm1', input: 3, cached: 0, output: 7, at: AT_MARCH }], h);
+    await recordCalls('run-c', [{ provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY }], h);
 
     const report = buildCostReport(h.store, [
       { runId: 'run-a', sessionId: 'session-1' },
@@ -69,9 +69,9 @@ describe('buildCostReport', () => {
   it('counts a call without a price entry as unpriced instead of pricing it at zero', async () => {
     const h = harness();
     await recordCalls('run-a', [
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
-      { provider: 'acme', model: 'unlisted', input: 5, output: 5, at: AT_JULY },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'unlisted', input: 5, cached: 0, output: 5, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, amount: 1, inputTokens: 2_000_005 });
@@ -82,7 +82,7 @@ describe('buildCostReport', () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'acme', model: 'm1', input: 0, output: 0, at: AT_JULY, fail: true },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 1 });
@@ -90,7 +90,7 @@ describe('buildCostReport', () => {
 
   it('reports a call with no price entry as unpriced and a run with no chat spans as empty', async () => {
     const h = harness();
-    await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY }], h);
+    await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, cached: 0, output: 10, at: AT_JULY }], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
     expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, inputTokens: 100 });
     expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, amount: 0, priceVersions: [] });
@@ -100,7 +100,7 @@ describe('buildCostReport', () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY, billing: 'local' },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 2, localCalls: 1, unpricedCalls: 0, amount: 1, inputTokens: 1_000_100, outputTokens: 10 });

@@ -17,15 +17,16 @@ import { grade } from './graders.ts';
 import { describeProportion, percent, proportionOrUndefined } from './report.ts';
 import { EvalError, transcriptsByCase } from './runner.ts';
 import type { Proportion } from './stats.ts';
-import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
+import { caseTotalsOf, hasInconsistentCacheRead, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Answerer, Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/4';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/5';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
   'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
   'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
+  'momonga-eval-context-report/4': 'which calls the upstream reported cache reads for (an unreported cache read was recorded as 0)',
 };
 
 export const CONTEXT_MODELS = MODEL_KINDS;
@@ -371,6 +372,50 @@ const describeRatio = (name: string, metric: RatioMetric | undefined, absence: s
 
 const decimals = (digits: number) => (value: number): string => value.toFixed(digits);
 
+export type CacheReadMetric = 'uncachedInputPerSuccess' | 'cacheHitRatio';
+
+type CacheReadCounts = { calls: number; notReported: number; casesWithNotReported: number };
+
+const CACHE_READ_CAUSES = {
+  notReportedInAll: (counts: CacheReadCounts): string => `cache reads not reported in all ${counts.calls} call(s)`,
+  notReportedInSome: (counts: CacheReadCounts): string => `cache reads not reported in ${counts.notReported} of ${counts.calls} call(s)`,
+  measuredOver: (counts: CacheReadCounts): string =>
+    `over ${counts.calls - counts.notReported} of ${counts.calls} call(s), cache reads not reported in ${counts.notReported} call(s) of ${counts.casesWithNotReported} case(s)`,
+  inconsistent: 'a call reports more cached and written input than input',
+  unsettled: 'a reflection is pending, running past its bound or not recorded',
+  noSuccess: 'no run succeeded',
+  noInput: 'no input was sent',
+} as const;
+
+const tokenTotalsOf = (cases: readonly ContextCaseReport[]): CaseTokenTotals[] => cases.flatMap((entry) => (entry.tokens === undefined ? [] : [entry.tokens]));
+
+const cacheReadCountsOf = (cases: readonly ContextCaseReport[]): CacheReadCounts => {
+  const totals = tokenTotalsOf(cases);
+  return {
+    calls: totals.reduce((sum, entry) => sum + entry.calls, 0),
+    notReported: totals.reduce((sum, entry) => sum + entry.cacheReadNotReportedCalls, 0),
+    casesWithNotReported: totals.filter((entry) => entry.cacheReadNotReportedCalls > 0).length,
+  };
+};
+
+export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly ContextCaseReport[]): string => {
+  const totals = tokenTotalsOf(cases);
+  const counts = cacheReadCountsOf(cases);
+  if (totals.some((entry) => entry.unsettledReflections > 0)) return CACHE_READ_CAUSES.unsettled;
+  if (counts.calls === 0) return CACHE_READ_CAUSES.noInput;
+  if (counts.notReported === counts.calls) return CACHE_READ_CAUSES.notReportedInAll(counts);
+  if (metric === 'uncachedInputPerSuccess' && counts.notReported > 0) return CACHE_READ_CAUSES.notReportedInSome(counts);
+  if (totals.some(hasInconsistentCacheRead)) return CACHE_READ_CAUSES.inconsistent;
+  return metric === 'uncachedInputPerSuccess' ? CACHE_READ_CAUSES.noSuccess : CACHE_READ_CAUSES.noInput;
+};
+
+const cacheHitRatioLine = (metric: RatioMetric | undefined, cases: readonly ContextCaseReport[]): string => {
+  if (metric === undefined) return `cacheHitRatio n/a (${unmeasuredCauseOf('cacheHitRatio', cases)})`;
+  const counts = cacheReadCountsOf(cases);
+  const over = counts.notReported === 0 ? '' : `, ${CACHE_READ_CAUSES.measuredOver(counts)}`;
+  return `cacheHitRatio ${percent(metric.value)} (95% bootstrap ${percent(metric.low)}..${percent(metric.high)} over ${metric.clusters} case(s); ${metric.numerator} / ${metric.denominator}), n=${metric.clusters}${over}`;
+};
+
 const unsettledLine = (cases: readonly ContextCaseReport[]): string[] => {
   const unsettled = cases.filter((entry) => (entry.tokens?.unsettledReflections ?? 0) > 0);
   if (unsettled.length === 0) return [];
@@ -383,12 +428,10 @@ const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]
   return [
     ...unsettledLine(cases),
     describeRatio('costPerSuccess', metrics.costPerSuccess, 'a call has no price or no run succeeded', decimals(6), ''),
-    describeRatio('uncachedInputPerSuccess', metrics.uncachedInputPerSuccess, 'a call reports no cached input or no run succeeded', decimals(1), ''),
+    describeRatio('uncachedInputPerSuccess', metrics.uncachedInputPerSuccess, unmeasuredCauseOf('uncachedInputPerSuccess', cases), decimals(1), ''),
     describeRatio('callsPerSuccess', metrics.callsPerSuccess, 'no call was recorded or no run succeeded', decimals(3), ''),
     describeRatio('latencyPerSuccess', metrics.latencyPerSuccess, 'a call has no timing or no run succeeded', decimals(1), ' ms'),
-    metrics.cacheHitRatio === undefined
-      ? 'cacheHitRatio n/a (a call reports no cached input or no input was sent)'
-      : `cacheHitRatio ${percent(metrics.cacheHitRatio.value)} (95% bootstrap ${percent(metrics.cacheHitRatio.low)}..${percent(metrics.cacheHitRatio.high)} over ${metrics.cacheHitRatio.clusters} case(s); ${metrics.cacheHitRatio.numerator} / ${metrics.cacheHitRatio.denominator}), n=${metrics.cacheHitRatio.clusters}`,
+    cacheHitRatioLine(metrics.cacheHitRatio, cases),
     shares.length === 0 ? 'layerShares n/a (no request recorded its layers)' : `layerShares ${shares.join(', ')} (estimated)`,
   ];
 };
@@ -462,13 +505,15 @@ const caseTokensSchema = closed(
   {
     calls: count,
     unsettledReflections: count,
+    cacheReadNotReportedCalls: count,
     inputTokens: count,
+    cacheReportedInputTokens: count,
     cachedInputTokens: count,
     uncachedInputTokens: { type: 'number' },
     cost: rate,
     latencyMs: rate,
   },
-  ['calls', 'unsettledReflections'],
+  ['calls', 'unsettledReflections', 'cacheReadNotReportedCalls'],
 );
 
 const { $schema: _policyDialect, ...policySchema } = POLICY_OVERLAY_SCHEMA;

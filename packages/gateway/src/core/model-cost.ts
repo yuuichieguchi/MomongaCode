@@ -20,7 +20,7 @@ export const modelCostOf = (input: ModelCostInput): ModelCost | null => {
     usage: {
       inputTokens: input.usage.input_tokens,
       outputTokens: input.usage.output_tokens,
-      cachedInputTokens: input.usage.input_tokens_details.cached_tokens,
+      ...(input.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: input.usage.input_tokens_details.cached_tokens }),
       ...(input.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: input.cacheWriteInputTokens }),
     },
     at: new Date(input.at),
