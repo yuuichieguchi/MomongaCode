@@ -12,6 +12,8 @@ import { reapToolMarkers } from '../../src/process/tool-markers.ts';
 import { START_MS, makeTempHome } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const holderProbe = vi.hoisted(() => ({ findHolderCalls: 0 }));
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
@@ -115,7 +117,7 @@ const warnings = () => {
   return { messages, onWarning: (message: string) => void messages.push(message) };
 };
 
-describe('reapToolMarkers on hook markers', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('reapToolMarkers on hook markers', () => {
   it('reaps the holder of a hook marker that has no idempotency record', async () => {
     const temp = await makeTempHome();
     const marker = markerOf(temp, `hook-${keyOf(7)}`);
@@ -127,7 +129,7 @@ describe('reapToolMarkers on hook markers', { timeout: REAL_PROCESS_TEST_TIMEOUT
   });
 });
 
-describe('reapToolMarkers (real processes, system timers, except where fake timers are stated)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('reapToolMarkers (real processes, system timers, except where fake timers are stated)', () => {
   it('a store error propagates and no reap is called (D2: every lookup happens before any reap)', async () => {
     const temp = await makeTempHome();
     const first = markerOf(temp, keyOf(1));
@@ -356,7 +358,7 @@ const deadLetterStore = (lookups: Record<string, IdempotencyLookup>, runs: reado
 
 const terminalWarning = (marker: string, runId: string): string => `tool marker ${marker}: run ${runId} is terminal, so its holder was reaped`;
 
-describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
   it('PENDING with a dead-lettered run is reaped with the pgid recorded in the marker file and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(1);
@@ -420,7 +422,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REA
   });
 });
 
-describe('reapToolMarkers by event: the sweep reads the unowned markers only', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('reapToolMarkers by event: the sweep reads the unowned markers only', () => {
   it('a dead-lettered run is reaped with the pgid recorded in the marker file and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(5);

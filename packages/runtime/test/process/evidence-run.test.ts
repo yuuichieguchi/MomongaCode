@@ -1,10 +1,12 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { closeMarkerDescriptor, ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const bytes = async function* (text: string): AsyncGenerator<Uint8Array> {
   yield new TextEncoder().encode(text);
@@ -23,7 +25,7 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
   return { sandbox, spawned };
 };
 
-describe('the evidence runner', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the evidence runner', () => {
   it('runs the command in the sandbox with the project as the only writable root and no network, and returns the exit code and the output', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);

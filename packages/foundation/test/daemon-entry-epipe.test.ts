@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const PROTECTED = path.join(FIXTURES, 'epipe-daemon.ts');
@@ -90,7 +92,7 @@ const expectGracefulLog = (home: string): void => {
   expect(lines.at(-1)).toMatchObject({ msg: 'entry.exit', code: 0, path: 'close', clean: true, trigger: 'lifeline' });
 };
 
-describe('daemon entry with a vanished supervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('daemon entry with a vanished supervisor', () => {
   it('supervisor death with the file target: graceful close', async (context) => {
     const home = prepareHome(context);
     const daemon = await startDaemon(context, PROTECTED, home, 'file');

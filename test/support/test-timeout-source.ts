@@ -91,7 +91,7 @@ export const perTestTimeouts = (source: string): string[] => {
   return found;
 };
 
-export const timeoutKeys = (source: string): string[] => source.match(/\b(?:test|hook)?[tT]imeout\s*:\s*[^,}\n]*/g) ?? [];
+export const timeoutKeys = (source: string): string[] => source.match(/\b(?:test|hook)Timeout\s*:\s*[^,}\n]*/g) ?? [];
 
 export const fileLevelTestTimeout = (source: string, constant: string): boolean =>
   new RegExp(`^vi\\.setConfig\\(\\{\\s*testTimeout:\\s*${constant}\\s*\\}\\);?\\s*$`, 'm').test(source);

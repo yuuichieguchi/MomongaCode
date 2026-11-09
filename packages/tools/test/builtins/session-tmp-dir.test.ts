@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
@@ -9,7 +9,7 @@ import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { RunExtra } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const fixture = async () => {
   const tools = await makeBuiltins({ realSandbox: true });
@@ -29,7 +29,7 @@ const fixture = async () => {
 };
 
 describe.runIf(HAS_REAL_SANDBOX)('Bash session tmp dir (real sandbox, production policy)', () => {
-  it('keeps $TMPDIR files across Bash calls of one session', PROCESS_TIMEOUT, async () => {
+  it('keeps $TMPDIR files across Bash calls of one session', async () => {
     const fx = await fixture();
     const first = resultOf(await fx.tools.run('Bash', { command: 'printf persisted > "$TMPDIR/f"; printf %s "$TMPDIR"' }, fx.extra, 'allow_once'));
     expect(first.status).toBe('completed');
@@ -41,7 +41,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash session tmp dir (real sandbox, production
     expect(second.output).toBe('persisted');
   });
 
-  it('cannot list the sessions root', PROCESS_TIMEOUT, async () => {
+  it('cannot list the sessions root', async () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Bash', { command: `touch '${fx.marker}' && ls '${fx.sessions}'` }, fx.extra, 'allow_once'));
     expect(fs.existsSync(fx.marker)).toBe(true);
@@ -49,7 +49,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash session tmp dir (real sandbox, production
     expect(result.output).not.toContain('session-2');
   });
 
-  it("cannot read a sibling session's file", PROCESS_TIMEOUT, async () => {
+  it("cannot read a sibling session's file", async () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Bash', { command: `touch '${fx.marker}' && cat '${path.join(fx.sibling, 'secret')}'` }, fx.extra, 'allow_once'));
     expect(fs.existsSync(fx.marker)).toBe(true);

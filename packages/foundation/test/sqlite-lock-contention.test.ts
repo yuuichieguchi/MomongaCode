@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from '@momonga/foundation';
 import type { SqliteLockOps } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SOURCE = path.resolve(import.meta.dirname, '..', 'src', 'platform', 'sqlite-lock.ts');
 
@@ -14,7 +16,7 @@ const claimOrThrow = async (lockPath: string) => {
   return outcome.lock;
 };
 
-describe('a held lock of the Linux and Windows mechanism, polled from its own process', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a held lock of the Linux and Windows mechanism, polled from its own process', () => {
   it('still excludes another process after one contended claim in the holding process', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const lock = await claimOrThrow(lockPath);

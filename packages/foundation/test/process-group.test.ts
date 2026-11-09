@@ -2,9 +2,11 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FORK_STORM_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
@@ -325,7 +327,7 @@ describe('forceKillGroup', () => {
     expect(outcomes).toEqual(Array.from({ length: FORK_LOOP_ITERATIONS }, () => 'gone=true alive=false'));
   });
 
-  it('signals a live group at least once even when the deadline has already passed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('signals a live group at least once even when the deadline has already passed', async () => {
     const group = await spawnGroup('normal');
     await forceKillGroup(group.pgid, { deadline: Date.now() - 1 });
     expect(await settlesWithin(group.exited, LEADER_REAP_WAIT_MS)).toBe(true);

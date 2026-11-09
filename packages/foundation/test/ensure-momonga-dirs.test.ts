@@ -3,9 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, withTempDir } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const tempDirs: string[] = [];
 
@@ -125,7 +127,7 @@ describe('ensureMomongaDirs under concurrency', () => {
     for (const dir of directoriesOf(paths)) expect(modeOf(dir), dir).toBe(0o700);
   });
 
-  it('lets concurrent child processes create a fresh home', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('lets concurrent child processes create a fresh home', async () => {
     const home = makeHome();
     const entry = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts')).href;
     const script = `const f = await import(${JSON.stringify(entry)}); await f.ensureMomongaDirs(f.momongaPaths(${JSON.stringify(home)}, 'darwin', {}));`;

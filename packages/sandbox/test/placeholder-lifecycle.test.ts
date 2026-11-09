@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { createBubblewrapSandbox, createPlaceholderJournal, nodeFilesystemPort, recoverPlaceholders } from '@momonga/sandbox';
 import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const STAND_IN_BWRAP = `#!/bin/sh
 while [ "$1" != "--" ]; do
@@ -40,7 +42,7 @@ const failingJournal = (inner: PlaceholderJournal, failure: Failure): Placeholde
   };
 };
 
-describe('the life of a placeholder (stand-in bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the life of a placeholder (stand-in bwrap)', () => {
   let base = '';
   let work = '';
   let tmpRoot = '';

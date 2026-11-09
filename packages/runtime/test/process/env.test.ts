@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
@@ -18,9 +18,9 @@ import {
   writeUserSettings,
 } from './helpers.ts';
 
-const SENTINEL = 'MOMONGA_ENV_TEST_SENTINEL';
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const SENTINEL = 'MOMONGA_ENV_TEST_SENTINEL';
 const withSentinel = async <T>(task: () => Promise<T>): Promise<T> => {
   process.env[SENTINEL] = 'leaked-from-process-env';
   try {
@@ -55,7 +55,7 @@ const realPools = async () => {
 
 describe('tool env at use time (system timers)', () => {
   describe.runIf(HAS_SEATBELT)('real Seatbelt, real executor', () => {
-    it('a process.env sentinel is absent from Bash env and the MCP env dump', PROCESS_TIMEOUT, async () => {
+    it('a process.env sentinel is absent from Bash env and the MCP env dump', async () => {
       const temp = await makeTempHome();
       const f = await makeRuntimeFixture({
         temp,
@@ -81,7 +81,7 @@ describe('tool env at use time (system timers)', () => {
       });
     });
 
-    it('a variable declared as apiKeyEnv after session create is stripped at use time from Bash and from MCP', PROCESS_TIMEOUT, async () => {
+    it('a variable declared as apiKeyEnv after session create is stripped at use time from Bash and from MCP', async () => {
       const temp = await makeTempHome();
       const f = await makeRuntimeFixture({
         temp,

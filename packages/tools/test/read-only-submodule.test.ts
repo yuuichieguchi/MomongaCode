@@ -1,10 +1,12 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const withPlantedSubmodule = (workspace: RealWorkspace, nested = false): { fired(): boolean } => {
   const marker = path.join(workspace.outside, 'fired');
@@ -39,7 +41,7 @@ const plantedKey = (workspace: RealWorkspace, key: string, value: string, nested
   if (result.status !== 0) throw new Error(result.stderr);
 };
 
-describe('review 2: a submodule whose configuration names a program is judged, an ordinary one is approved', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('review 2: a submodule whose configuration names a program is judged, an ordinary one is approved', () => {
   const ENTERING = ['git status', 'git diff', 'git status --porcelain=v2', 'git diff --submodule=diff', 'git log -p --submodule=diff -1', 'git show --submodule=diff'];
   const NOT_ENTERING = ['git status --ignore-submodules=all', 'git diff --ignore-submodules=dirty', 'git log -p -1', 'git rev-parse HEAD', 'git log --submodule=log -1'];
 
@@ -101,7 +103,7 @@ describe('review 2: a submodule whose configuration names a program is judged, a
   });
 });
 
-describe('the submodule rule: plain git status is approved again', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the submodule rule: plain git status is approved again', () => {
   it.each(['git status', 'git diff', 'git status --porcelain=v2', 'git diff --stat', 'git status --ignore-submodules=untracked'])('%s is allowed as read-only with a planted submodule fsmonitor', (command) => {
     const workspace = makeRealWorkspace();
     withPlantedSubmodule(workspace);

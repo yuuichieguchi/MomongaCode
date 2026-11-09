@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
@@ -12,6 +12,8 @@ import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-ho
 import { endpointRecordFileName } from '@momonga/gateway';
 import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
 import type { CliPorts } from '../src/ports.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const directories: string[] = [];
 
@@ -107,7 +109,7 @@ describe('the timer of a case', () => {
   });
 });
 
-describe('the environment of a session inside a case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the environment of a session inside a case', () => {
   const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles }) as unknown as CliPorts;
 
   const personEnv = {

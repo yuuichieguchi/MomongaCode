@@ -5,7 +5,7 @@ import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal } from '@momonga/testkit';
@@ -14,6 +14,8 @@ import { createControlRequestHandler, respondShutdown, startControlServer } from
 import type { ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -440,7 +442,7 @@ const firstStdoutLine = (child: ChildProcess, predicate: (line: string) => boole
     child.once('exit', (code, signal) => reject(new Error(`${description}: exited ${String(code)} ${String(signal)} before the line: ${errors}`)));
   });
 
-describe('control API transport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('control API transport', () => {
   it('no TCP listener', async (context) => {
     const listener = spawnTracked(context, process.execPath, [TCP_LISTENER_FIXTURE], { stdio: ['ignore', 'pipe', 'pipe'] });
     const listening = JSON.parse(await firstStdoutLine(listener, (line) => line.includes('"listening"'), 'tcp listener')) as { listening: number };

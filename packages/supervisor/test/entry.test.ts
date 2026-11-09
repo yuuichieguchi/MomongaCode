@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
@@ -24,6 +24,8 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { FakeSpawn, FakeSpawnOptions, MarkerCalls, RealWorkScope } from './fixtures/p3-harness.ts';
 import type { MarkerPorts } from '../src/orphans.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type EntryRun = {
   realWork: RealWorkScope;
@@ -138,7 +140,7 @@ const exitOf = async (run: EntryRun, maxMs = 200_000): Promise<number> => {
 
 const lastLine = (run: EntryRun): JsonLine | undefined => run.supervisorLog().at(-1);
 
-describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('runSupervisorEntry', () => {
   it('ready line goes to stdout only and carries the control socket', async (context) => {
     const run = startEntry(context);
     await ready(run);

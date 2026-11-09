@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
@@ -15,6 +15,8 @@ import { HOST_SANDBOX_KIND } from './helpers.ts';
 import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const FIXED_DATE = '2001-01-01T00:00:00Z';
 const GLOB_BUDGET_MS = 60_000;
 const PLAIN_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
@@ -22,7 +24,7 @@ const PLAIN_OUTPUT_LIMIT_BYTES = 64 * 1024 * 1024;
 const FORMS = approvableForms(process.platform);
 const OTHER_PLATFORM: NodeJS.Platform = process.platform === 'darwin' ? 'linux' : 'darwin';
 
-describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same under the read-only sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same under the read-only sandbox', () => {
   let base = '';
   let project = '';
   let home = '';

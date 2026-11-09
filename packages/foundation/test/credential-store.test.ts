@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe.each([
   ['memory', () => createMemoryCredentialStore()],
@@ -81,7 +83,7 @@ describe('file credential store updates', () => {
   });
 });
 
-describe('file credential store while another process holds the key lock', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('file credential store while another process holds the key lock', () => {
   const steppedPorts = (): FileLockPorts => {
     let now = 1_000_000;
     return {

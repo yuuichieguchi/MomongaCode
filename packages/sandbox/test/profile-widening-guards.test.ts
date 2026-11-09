@@ -9,6 +9,8 @@ import type { SandboxPolicy, SeatbeltProfile } from '@momonga/sandbox';
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const created: string[] = [];
 const locked: string[] = [];
 
@@ -110,7 +112,7 @@ const sandboxExec = (profile: SeatbeltProfile, script: string, cwd: string): num
   return result.status ?? -1;
 };
 
-describe.runIf(process.platform === 'darwin')('guarded ancestors inside a widening allow area under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('guarded ancestors inside a widening allow area under real Seatbelt', () => {
   it('refuses a sandboxed mv of an ancestor of the launcher literal, which succeeds without the area guards', () => {
     const guarded = area();
     const bin = path.dirname(guarded.literal);

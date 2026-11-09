@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { formatStopMessage } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, withTempDir } from '@momonga/testkit';
@@ -8,6 +8,8 @@ import { startControlServer } from '../src/control-server.ts';
 import { writeSettings } from './support/p2-manager-harness.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200 };
 const FIRST_DAEMON_STOP_BOUND_MS = 30_000 + 1000 + 10 * 200 + 4 * 25 + 48_000 + 3000;
@@ -33,7 +35,7 @@ const gatewayLifeline = (harness: SupervisorHarness): { lines: string[]; boundsA
 
 const spawnedBoth = (harness: SupervisorHarness) => waitFor(() => harness.port.children.length >= 2, { description: 'both children to spawn' });
 
-describe('the supervisor reads the stop values once, when its stop begins', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the supervisor reads the stop values once, when its stop begins', () => {
   it('a close it begins itself sends the values read at its begin to the gateway, and reports their bound in its health', async (context) => {
     const harness = await startSupervisorHarness(context, { settings: { gateway: FIRST } });
     await spawnedBoth(harness);

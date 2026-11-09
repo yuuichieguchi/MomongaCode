@@ -122,7 +122,6 @@ export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from '
 export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_MODEL, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeManagedServer } from './fake-managed-server.ts';
 export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
-  BUILT_BINARY_TEST_TIMEOUT_MS,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
   TEST_HEARTBEAT_MS,

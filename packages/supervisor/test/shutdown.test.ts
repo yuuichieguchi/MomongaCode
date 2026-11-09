@@ -37,6 +37,8 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const DEFAULT_DRAIN = 30_000;
 const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(DEFAULT_DRAIN) + SHUTDOWN_MARGIN_MS;
 const GATEWAY_TERM_BOUND = gatewayStopBudgetMs(DEFAULT_STOP_VALUES);
@@ -68,7 +70,7 @@ describe('childCloseBudgetMs', () => {
   });
 });
 
-describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('shutdown order and bounds', () => {
   it('runtime stops before the gateway is signalled', async (context) => {
     const h = await running(context);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });

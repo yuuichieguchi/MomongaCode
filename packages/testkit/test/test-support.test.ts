@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, assertHomeSocketBudget, registerCleanup, spawnTracked, tempDirPrefixFor, testRunToken, withTempDir } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const readLine = (stream: NodeJS.ReadableStream): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -79,7 +81,7 @@ describe('registerCleanup', () => {
   });
 });
 
-describe('spawnTracked', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('spawnTracked', () => {
   const pids: number[] = [];
 
   it('spawns a child in its own process group and its grandchild with it', async (context) => {

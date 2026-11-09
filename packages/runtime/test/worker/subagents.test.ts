@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
@@ -9,6 +9,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, usageOf } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const agentsPortOf = (env: Env, aliases: readonly string[] = ['fm']): AgentsPort =>
   createAgentsPort({
@@ -40,7 +42,7 @@ const developerAndSystem = (env: Env, index: number): string => {
 
 const instructionsOf = (env: Env, index: number): string => `${env.gateway.streams[index]?.body.instructions ?? ''}\n${developerAndSystem(env, index)}`;
 
-describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('worker subagents', () => {
   it('runs a child in its own context while the parent waits, then hands the child final text to the parent', async () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer', 'tools: Echo\n', 'You review code. Be terse.');

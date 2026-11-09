@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError, loadMcpServers } from '@momonga/config';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
@@ -26,7 +26,7 @@ import {
 } from './helpers.ts';
 import type { RuntimeFixture } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const fixtureServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] };
 
@@ -94,7 +94,7 @@ const gatedSource = (): { source: ToolSource; listing: () => boolean } => {
 };
 
 describe('MCP pools through toolSet (real fixture processes; fake timers for the idle close)', () => {
-  it('two runs in one project share one pool (one spawn)', PROCESS_TIMEOUT, async () => {
+  it('two runs in one project share one pool (one spawn)', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
     const first = newRun(f);
@@ -113,7 +113,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.counting.created[0]?.projectDir).toBe(f.temp.project);
   });
 
-  it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', PROCESS_TIMEOUT, async () => {
+  it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
     const set = await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
@@ -121,7 +121,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(set.tools.find((tool) => tool.name === 'mcp__fx__echo')).toMatchObject({ idleTimeoutMs: 600_000, timeoutMs: 7_200_000 });
   });
 
-  it('offers the tools of the servers a session carries and reports a name the user settings already use', PROCESS_TIMEOUT, async () => {
+  it('offers the tools of the servers a session carries and reports a name the user settings already use', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { taken: fixtureServer } });
     const session = createSession(f.store, f.temp.project, { mcpServers: { fx: fixtureServer, taken: fixtureServer } });
@@ -138,7 +138,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
   });
 
   describe('a new pool for the next run after', () => {
-    it('an approval change', PROCESS_TIMEOUT, async () => {
+    it('an approval change', async () => {
       const f = await makeRuntimeFixture();
       f.store.trust.set(f.temp.project, 'trusted');
       writeJson(path.join(f.temp.project, '.mcp.json'), { mcpServers: { a: fixtureServer, b: fixtureServer } });
@@ -179,7 +179,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     });
   });
 
-  it('an idle pool closes after 5 minutes and its marker is removed', PROCESS_TIMEOUT, async () => {
+  it('an idle pool closes after 5 minutes and its marker is removed', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
     const runId = newRun(f);
@@ -214,7 +214,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.toolRuntime.mcpPools.release(runId)).toBe(true);
   });
 
-  it('concurrent toolSet calls create one pool', PROCESS_TIMEOUT, async () => {
+  it('concurrent toolSet calls create one pool', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
     const runs = [newRun(f), newRun(f), newRun(f)];
@@ -352,7 +352,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.pools.pools[0]?.closes).toBe(1);
   });
 
-  it('an aborted signal rejects toolSet promptly during a slow connect', PROCESS_TIMEOUT, async () => {
+  it('an aborted signal rejects toolSet promptly during a slow connect', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { mute: { command: '/bin/sh', args: ['-c', 'exec sleep 30'] } } });
     const controller = new AbortController();
@@ -365,7 +365,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(await rejectionOf(pending)).toBe(reason);
   });
 
-  it('the pool key hash is never logged', PROCESS_TIMEOUT, async () => {
+  it('the pool key hash is never logged', async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
     const runId = newRun(f);

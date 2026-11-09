@@ -18,6 +18,8 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS;
 
 const PLAN_POLL_SUSPECT_MS = 100;
@@ -51,7 +53,7 @@ const planCount = (h: Harness): number => h.log.withMsg('plan.begin').length;
 
 const after = (order: readonly string[], from: number): string[] => order.slice(from).filter((entry) => !entry.startsWith('ready') && entry !== 'reapMarkedProcesses');
 
-describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('supervisor-level settings evaluation', () => {
   it('a settings watch that cannot be established is one settings.warning, not a fatal', async (context) => {
     const throwingWatch = (() => {
       throw Object.assign(new Error('watch EMFILE'), { code: 'EMFILE' });

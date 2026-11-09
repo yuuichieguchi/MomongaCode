@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor } from '../helpers.ts';
 import { makeBuiltins, resultOf, trackPid, waitFor } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const LSOF = '/usr/sbin/lsof';
 
@@ -57,7 +57,7 @@ const isAlive = (pid: number): boolean => {
 const ESCAPED = (ready: string) => `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"; echo ok`;
 
 describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T0 Bash with a listing that takes 6000 ms', () => {
-  it('(a) F not proved: returns the real output, stops the holder the listing named, and asks lsof without any private timeout under the call signal', PROCESS_TIMEOUT, async () => {
+  it('(a) F not proved: returns the real output, stops the holder the listing named, and asks lsof without any private timeout under the call signal', async () => {
     const calls: Recorded[] = [];
     const tools = await builtinsWith(slowLsof(6000, calls), notProved);
     const ready = path.join(tools.layout.project, 'ready');
@@ -73,7 +73,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T0 Bash with 
     expect(await waitFor(() => !isAlive(escaped), 10_000)).toBe(true);
   });
 
-  it('(b) F proved: a command that leaves nothing behind is settled by the lock and lsof is never run', PROCESS_TIMEOUT, async () => {
+  it('(b) F proved: a command that leaves nothing behind is settled by the lock and lsof is never run', async () => {
     const calls: Recorded[] = [];
     const tools = await builtinsWith(forbiddenLsof(calls), proved);
     const result = resultOf(await tools.run('Bash', { command: 'echo ok' }, {}, 'allow_once', 'quiet'));
@@ -84,7 +84,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T0 Bash with 
 });
 
 describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T2 Bash when the holder state is not free', () => {
-  it('a failed listing returns the real result with the unknown note, keeps the marker and stops nothing', PROCESS_TIMEOUT, async () => {
+  it('a failed listing returns the real result with the unknown note, keeps the marker and stops nothing', async () => {
     const calls: Recorded[] = [];
     const tools = await builtinsWith(failingLsof(calls), notProved);
     const result = resultOf(await tools.run('Bash', { command: 'echo ok' }, {}, 'allow_once', 'unknown'));
@@ -96,7 +96,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T2 Bash when 
     expect(fs.existsSync(path.join(tools.markerDir, keyFor('run-1', 1, 'unknown')))).toBe(true);
   });
 
-  it('a failed command keeps its own status and exit code when the holder state is unknown', PROCESS_TIMEOUT, async () => {
+  it('a failed command keeps its own status and exit code when the holder state is unknown', async () => {
     const tools = await builtinsWith(failingLsof([]), notProved);
     const result = resultOf(await tools.run('Bash', { command: 'echo before; exit 3' }, {}, 'allow_once', 'failed-unknown'));
     expect(result).toMatchObject({ status: 'failed', exitCode: 3 });
@@ -106,7 +106,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T2 Bash when 
 });
 
 describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('PT 3H rule 4: a free marker is asked about once ("so their post-exit check and the executor see the same answer, and a free marker is asked about once")', () => {
-  it('on the listing path a command that leaves nothing behind costs one listing, and its marker is removed', PROCESS_TIMEOUT, async () => {
+  it('on the listing path a command that leaves nothing behind costs one listing, and its marker is removed', async () => {
     const calls: Recorded[] = [];
     const tools = await builtinsWith(slowLsof(0, calls), notProved);
     const result = resultOf(await tools.run('Bash', { command: 'echo ok' }, {}, 'allow_once', 'once'));

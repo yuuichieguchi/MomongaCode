@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { Claim } from '@momonga/store';
 import { LEASE_MS, START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, registerCleanup } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const STORE_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/index.ts')).href;
 
@@ -73,7 +75,7 @@ const startChild = async (dbPath: string): Promise<Child> => {
   };
 };
 
-describe('claims across processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('claims across processes', () => {
   it('hands a single queued run to exactly one process per round, with both sides winning', async () => {
     const { dbPath, store } = harness();
     const child = await startChild(dbPath);

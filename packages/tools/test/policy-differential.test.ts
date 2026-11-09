@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { GIT_OPTION_TABLES } from '@momonga/policy';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { RELOCATABLE_LINKS, makeDifferentialWorkspace } from './differential/fixture.ts';
 import { generate, seededRng } from './differential/generator.ts';
 import { runCase } from './differential/oracles.ts';
 import type { Case } from './differential/oracles.ts';
 import { PLACEHOLDER_PATHS, SEPARATE_WORD_SUBCOMMANDS, editSeeds, optionWordSweep, readSeeds, separateWordSweep } from './differential/seeds.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const DIFFERENTIAL_CORPUS_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 const DIFFERENTIAL_SWEEP_TEST_TIMEOUT_MS = 10 * REAL_PROCESS_TEST_TIMEOUT_MS;
@@ -27,7 +29,7 @@ const failures = async (cases: readonly Case[], run: (input: Case) => ReturnType
   return { approved, failures: found };
 };
 
-describe('every command decide approves does what the analysis reported, on real /bin/bash and real git', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('every command decide approves does what the analysis reported, on real /bin/bash and real git', () => {
   const readCount = readSeeds(PLACEHOLDER_PATHS).length;
 
   it.each(Array.from({ length: Math.ceil(readCount / SEED_CHUNK) }, (_, chunk) => chunk))('bypasses reported in both review rounds, chunk %i', async (chunk) => {
@@ -80,7 +82,7 @@ describe('every command decide approves does what the analysis reported, on real
   }, DIFFERENTIAL_SWEEP_TEST_TIMEOUT_MS);
 });
 
-describe('the oracle reports what an approved command really did, whatever decide said', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the oracle reports what an approved command really did, whatever decide said', () => {
   const approvingAll = (): ReturnType<typeof makeDifferentialWorkspace> => {
     const workspace = makeDifferentialWorkspace();
     return { ...workspace, decideExpanding: async () => ({ kind: 'allow', reason: 'forced by the oracle test' }) as Awaited<ReturnType<typeof workspace.decideExpanding>> };
