@@ -1,18 +1,19 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedFmTarget } from '@momonga/gateway';
-import type { FmServe, ProbeRecordKey } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedTarget } from '@momonga/gateway';
+import type { ManagedServer } from '@momonga/gateway';
+import type { KnownProbeKey } from '@momonga/config';
 import { TARGET_PROBING } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
-import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import { fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
-const servingFake = (socketPath: string): FmServe => ({
+const servingFake = (socketPath: string): ManagedServer => ({
   restarts: 0,
   start: async () => ({ kind: 'unix', socketPath }),
   ensureRunning: async () => ({ kind: 'unix', socketPath }),
@@ -20,13 +21,14 @@ const servingFake = (socketPath: string): FmServe => ({
   health: async () => ({ ok: true }),
 });
 
-const RECORD_KEY = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
+const RECORD_KEY: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
 
 const unprobedFm = async (toolCallingSetting: 'auto' | 'native') => {
   const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
-  const starts: ProbeRecordKey[] = [];
-  const managed = await createManagedFmTarget({
-    fmServe: servingFake(fake.socketPath),
+  const starts: KnownProbeKey[] = [];
+  const managed = await createManagedTarget({
+    ...fmTargetBase(),
+    server: servingFake(fake.socketPath),
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '20\n', stderr: '' }),
     probeRecordDir: path.join(makeDir(), 'probe'),

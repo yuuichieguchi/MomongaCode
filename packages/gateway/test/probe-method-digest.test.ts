@@ -3,6 +3,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { PROBE_METHOD_VERSION, runProbe } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -18,7 +19,7 @@ const KNOWN_REQUEST_DIGESTS: Readonly<Record<number, string>> = {
 const requestDigestOfProbe = async (): Promise<string> => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', contextSizeExposure: 'models', contextWindow: 8192 });
   servers.push(fake);
-  await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, now: () => new Date('2026-11-06T00:00:00.000Z') });
+  await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, now: () => new Date('2026-11-06T00:00:00.000Z') });
   const bodies = fake.requests.filter((request) => request.path === '/v1/chat/completions').map((request) => canonicalJson(request.body)).sort();
   return sha256Hex(canonicalJson(bodies));
 };

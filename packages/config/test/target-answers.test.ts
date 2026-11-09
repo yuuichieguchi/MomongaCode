@@ -9,7 +9,7 @@ const TARGETS: Record<string, Record<string, unknown>> = {
   'open-responses': { adapter: 'open-responses', provider: 'fake', model: 'llama-fake', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: CAPABILITIES },
   anthropic: { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: CAPABILITIES },
   ollama: { adapter: 'ollama', model: 'llama3', baseUrl: 'http://127.0.0.1:11434', capabilities: CAPABILITIES },
-  fm: { adapter: 'fm' },
+  fm: { adapter: 'managed', server: 'fm' },
 };
 
 const load = (target: Record<string, unknown>) => {

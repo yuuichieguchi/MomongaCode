@@ -1,7 +1,8 @@
 export { capabilitiesFromProbe, decideToolCalling } from './probe/decide.ts';
 export type { DecideThresholds, ToolCallingDecision } from './probe/decide.ts';
 export { loadProbeRecord, resolveToolCalling, saveProbeRecord } from './probe/record.ts';
-export type { ProbeRecordKey, ResolvedToolCalling } from './probe/record.ts';
+export type { ManagedRecordCurrency, ManagedRecordKey, ResolvedToolCalling } from './probe/record.ts';
+export { managedRecordPath } from './probe/record.ts';
 export { endpointIdentityOf, endpointRecordFileName, loadEndpointRecord, saveEndpointRecord, stableIdentityFieldsOf } from './probe/endpoint-record.ts';
 export type { EndpointKey, EndpointRecord } from './probe/endpoint-record.ts';
 export { probeEndpointTarget } from './probe/probe-endpoint.ts';
@@ -9,26 +10,18 @@ export type { ProbeEndpointTargetOptions, ProbeEndpointTargetResult } from './pr
 export { endpointKeyOf } from './probe/endpoint-target.ts';
 export { ProbeTimeoutError } from './probe/client.ts';
 export { runProbe } from './probe/run-probe.ts';
-export { probeManagedFm } from './probe/probe-fm.ts';
+export { UnreadableProbeKeyError, managedCurrencyOf, managedKeyReader, measureManagedServer, probeManagedFm } from './probe/probe-fm.ts';
+export { createInstanceProbe, unreadableKeyNotice } from './probe/instance-probe.ts';
+export type { InstanceProbe, InstanceProbeEnsured, InstanceProbeOptions } from './probe/instance-probe.ts';
 export { ProbeInProgressError, ProbeKeyChangedError, acquireProbeLock, createAutoProbe, probeLockPath } from './probe/auto-probe.ts';
 export type { AutoProbe, MeasureProbe, PreconditionVerdict, ProbePrecondition, ProbeSubject } from './probe/auto-probe.ts';
 export { endpointLockKeyOf } from './probe/endpoint-record.ts';
-export type { ProbeManagedFmOptions, ProbeManagedFmResult } from './probe/probe-fm.ts';
+export type { MeasureManagedServerOptions, ProbeManagedOptions, ProbeManagedResult } from './probe/probe-fm.ts';
 export type { ProbeOptions } from './probe/run-probe.ts';
-export { FmServeError, createFmServe } from './managed/fm-serve.ts';
+export { MANAGED_SERVER_BEHAVIOUR, ManagedServerError, createManagedServer } from './managed/server.ts';
 export { PreconditionFailedError } from './adapters/shared/failures.ts';
-export type {
-  ExecFn,
-  ExecOptions,
-  ExecResult,
-  FmChild,
-  FmServe,
-  FmServeEndpoint,
-  FmServeFailureReason,
-  FmServeOptions,
-  FmServeTimers,
-  SpawnFn,
-} from './managed/fm-serve.ts';
+export type { ManagedChild, ManagedEndpoint, ManagedServer, ManagedServerFailureReason, ManagedServerOptions, ManagedServerTimers, SpawnFn } from './managed/server.ts';
+export type { ExecFn, ExecOptions, ExecResult } from './managed/preconditions.ts';
 export { targetCounterOf } from './target-counter.ts';
 export type { TargetCounterInput } from './target-counter.ts';
 export { createGateway } from './server/gateway.ts';
@@ -48,7 +41,7 @@ export type {
   ProviderAdapter,
 } from '@momonga/protocol';
 export { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
-export { CHAT_COMPLETIONS_VOCABULARY, FM_VOCABULARY } from './adapters/chat-completions/vocabulary.ts';
+export { CHAT_COMPLETIONS_VOCABULARY, vocabularyOf } from './adapters/chat-completions/vocabulary.ts';
 export type { ErrorVocabulary, UpstreamErrorKind } from './adapters/shared/vocabulary.ts';
 export { COMPACTION_INSTRUCTIONS_MARKER } from './adapters/shared/compact.ts';
 export { wireOf } from './adapters/chat-completions/wire.ts';
@@ -59,15 +52,16 @@ export type {
   ChatCompletionsAdapterOptions,
   ChatCompletionsEndpoint,
 } from './adapters/chat-completions/types.ts';
-export { createManagedFmTarget } from './managed/fm-target.ts';
-export type { ExecWithStdinFn, ManagedFmTarget, ManagedFmTargetOptions } from './managed/fm-target.ts';
+export { createManagedTarget } from './managed/target.ts';
+export type { ExecWithStdinFn, ManagedTarget, ManagedTargetOptions } from './managed/target.ts';
 export type { KeywordSupport } from './dialect/keyword-support.ts';
 export type { UserDialects } from './dialect/choice.ts';
 export type { EnvelopeShape } from './probe/envelope.ts';
 export { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 export { IDENTITY_READ_TIMEOUT_MS } from './probe/endpoint-target.ts';
-export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
+export { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
 export { gatewayConfigOf, startGatewayProcess } from './process.ts';
+export { systemProcessFiles } from './process-ports.ts';
 export type { GatewayCloseResult, GatewayProcess, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';
 export type { GatewayEntryDeps } from './entry.ts';

@@ -176,7 +176,7 @@ const harness = (behaviour: Behaviour = {}) => {
       if (value === undefined) throw new Error(`no such secret ${name}`);
       return value;
     },
-    copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
+    copyProbeRecord: async (source, paths) => void probeCopies.push(`${source.target} ${source.server} ${source.binary} -> ${paths.probe}`),
     copyEndpointProbeRecord: async (probe, paths) =>
       void endpointProbeCopies.push(`${probe.endpoint} ${probe.model} -> ${paths.probe}`),
     listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? []), ...(behaviour.legacyRoots ?? [])],
@@ -402,13 +402,13 @@ describe('the settings, credentials and probe records of a live run', () => {
     expect(context.roots.size).toBe(0);
   });
 
-  it('copies the probe record of an fm target into every case home', async () => {
+  it('copies the probe record of a managed target into every case home', async () => {
     const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
     const context = harness();
     await runContextLive(context.effects, input({ models }));
-    expect(context.probeCopies).toEqual(['t -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
+    expect(context.probeCopies).toEqual(['t fm /usr/bin/fm -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't fm /usr/bin/fm -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
   });
 
   it('names the endpoint probe record of a chat-completions target with toolCalling auto', () => {
@@ -559,13 +559,13 @@ describe('the models of a live run', () => {
     expect(settings.models.targets?.['t']).toMatchObject({ apiKeyEnv: 'MOMONGA_EVAL_KEY_0' });
   });
 
-  it('names the fm targets whose probe record a case needs', () => {
+  it('names the managed targets whose probe record a case needs, with the server, binary and model the probe key is read from', () => {
     const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
     const settings = liveSettingsFor(models, ['default']);
-    expect(settings.fmTargets).toEqual(['t']);
-    expect(settings.models.targets?.['t']).toEqual({ adapter: 'fm' });
+    expect(settings.managedTargets).toEqual([{ target: 't', server: 'fm', binary: '/usr/bin/fm', model: 'system' }]);
+    expect(settings.models.targets?.['t']).toEqual({ adapter: 'managed', server: 'fm' });
   });
 
   it('carries the sandbox the person set, and none when the person set none', () => {

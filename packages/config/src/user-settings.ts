@@ -14,16 +14,17 @@ import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { ResolvedModels } from './models.ts';
 import type { ModelsSettings, SandboxSetting } from './settings.ts';
+import type { ManagedServerDescription } from '@momonga/protocol';
 
-export type LoadUserSettingsOptions = { home: string };
+export type LoadUserSettingsOptions = { home: string; managedServers?: readonly ManagedServerDescription[] };
 
 export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: string[]; files: string[] };
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-const userSettingsFrom = (home: string, read: JsonFile): UserSettingsLoad => {
+const userSettingsFrom = (home: string, read: JsonFile, managedServers?: readonly ManagedServerDescription[]): UserSettingsLoad => {
   try {
-    const user = userLayerFrom(home, read);
+    const user = userLayerFrom(home, read, managedServers);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
@@ -35,8 +36,8 @@ const userSettingsFrom = (home: string, read: JsonFile): UserSettingsLoad => {
   }
 };
 
-const loadUserSettingsSync = (home: string): LoadUserSettingsResult => {
-  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home));
+const loadUserSettingsSync = (home: string, managedServers: readonly ManagedServerDescription[] | undefined): LoadUserSettingsResult => {
+  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), managedServers);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
@@ -59,7 +60,7 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
   }
 };
 
-export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
+export const loadUserSettings = async ({ home, managedServers }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, managedServers);
 
 export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords };
 
@@ -160,7 +161,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
 };
 
 
-export const readUserStopValues = (home: string): StopValues => loadUserSettingsSync(home).settings.gateway;
+export const readUserStopValues = (home: string): StopValues => loadUserSettingsSync(home, undefined).settings.gateway;
 
 export type StopValuesReaderOptions = { load(): StopValues; onNotice(message: string): void };
 

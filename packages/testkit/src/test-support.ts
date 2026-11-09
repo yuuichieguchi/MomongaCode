@@ -16,6 +16,8 @@ export const BUILT_BINARY_TEST_TIMEOUT_MS = 3 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const PROCESS_KILL_DEADLINE_MS = 5000;
 
+export const realProcessTestSignal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
+
 export const testRunToken = (): string => process.env[TEST_RUN_ENV] ?? 'x';
 
 export const tempDirPrefixFor = (token: string): string => `${TEMP_DIR_PREFIX}${token}-`;
@@ -71,10 +73,15 @@ const removeTempDir = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+
+export const isUnderTestTempBase = (dir: string): boolean =>
+  [tempDirBase(true), tempDirBase(false)].some((base) => dir.startsWith(`${fs.realpathSync(base)}${path.sep}`));
+
 export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
   assertTestContext(context, 'withTempDir');
   const asHome = options.asHome === true;
-  const created = fs.mkdtempSync(path.join(asHome ? shortTempBase(process.platform) : os.tmpdir(), tempDirPrefixFor(testRunToken())));
+  const created = fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken())));
   context.onTestFinished(async () => {
     if (asHome) await stopSupervisorHolder(created);
     removeTempDir(created);

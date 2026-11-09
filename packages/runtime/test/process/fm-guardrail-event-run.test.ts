@@ -7,6 +7,8 @@ import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
+import { FM_SERVER } from '@momonga/protocol';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const GUARDRAIL_TRIGGER = 'FORBIDDEN-TOPIC';
@@ -33,20 +35,26 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const dumpFile = path.join(temp.root, 'fm-invocations.jsonl');
   fm.configure({ envDumpFile: dumpFile, serve: { guardrailTrigger: GUARDRAIL_TRIGGER } });
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
-  writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
+  writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native' } } } });
   await probeManagedFm({
     paths: temp.paths,
+    instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
+    description: FM_SERVER,
     target: 'fm',
     binary: fm.binaryPath,
-    socketPath: path.join(temp.root, 'fm-probe.sock'),
+    readyTimeoutMs: FM_SERVER.ready.limitMs,
     env: sessionEnvFor(temp.home),
     exec: fakeExec,
     samples: 1,
+    signal: new AbortController().signal,
+    hashes: createBinaryHashCache(),
+    isUsableBinary: async () => true,
+    readStopGraceMs: () => 1_000,
     onWarning: () => undefined,
   });
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec });
     onCleanup(async () => {
       await gateway.close();
     });

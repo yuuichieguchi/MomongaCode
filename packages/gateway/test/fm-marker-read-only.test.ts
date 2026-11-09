@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readMarkerGroup } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
@@ -13,7 +14,7 @@ const WRITE_THROUGH_MARKER = [
   'fs.writeFileSync(process.argv[1], outcome);',
 ].join(' ');
 
-describe('the marker descriptor the fm group spawn hands to its child', () => {
+describe('the marker descriptor the managed group spawn hands to its child, whose marker holds the attempt record of decision 12', () => {
   it('is read-only: the child writing through fd 3 gets EBADF', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeHome();
     const markers = path.join(dir, 'markers');
@@ -21,9 +22,13 @@ describe('the marker descriptor the fm group spawn hands to its child', () => {
     const outcomeFile = path.join(dir, 'outcome');
     createGroupSpawn({ env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: () => undefined })(process.execPath, ['-e', WRITE_THROUGH_MARKER, outcomeFile]);
     const [marker] = fs.readdirSync(markers);
-    const pid = Number(fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').trim());
+    const markerFile = path.join(markers, marker ?? '');
+    await until(() => fs.readFileSync(markerFile, 'utf8').includes('\ng'), 'the group line of the attempt record');
+    const pid = (await readMarkerGroup(markerFile)) ?? 0;
+    expect(pid).toBeGreaterThan(1);
     registerCleanup(() => killGroupsForCleanup([pid]));
     await until(() => fs.existsSync(outcomeFile) && fs.readFileSync(outcomeFile, 'utf8') !== '', 'the child to report its write');
     expect(fs.readFileSync(outcomeFile, 'utf8')).toBe('EBADF');
+    expect(fs.readFileSync(markerFile, 'utf8')).toBe(`r00000\ng${String(pid).padStart(10, '0')}\n`);
   });
 });

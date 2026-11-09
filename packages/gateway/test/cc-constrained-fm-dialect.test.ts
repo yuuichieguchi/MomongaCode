@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
+import { vocabularyOf, runProbe } from '@momonga/gateway';
 import type { AdapterRequest, ProbeKeyword } from '@momonga/protocol';
 import { collect, listDirTool, makeAdapter, readFileTool, startFake, terminalOf, userText } from './cc-support.ts';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const UNPROBED_FM_SUPPORT: Record<ProbeKeyword, boolean> = {
   enum: true,
@@ -37,9 +39,9 @@ describe('constrained tool calling against fm', () => {
     const probed = await startFake({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' });
     const report = await runProbe({
       socketPath: probed.socketPath,
-      managedHealthRoute: true,
+      managed: FM_PROBE_ROUTES,
       samples: 2,
-      vocabulary: FM_VOCABULARY,
+      vocabulary: vocabularyOf(FM_SERVER),
     });
 
     const { keywordSupport, schemaDialect } = report;

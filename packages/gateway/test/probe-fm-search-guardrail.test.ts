@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
+import { vocabularyOf, runProbe } from '@momonga/gateway';
 import { FM_CONTEXT_OVERFLOW_ERROR, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -54,9 +56,9 @@ describe('the fm context window search against the guardrail fm applies to a rep
 
     const report = await runProbe({
       socketPath: fake.socketPath,
-      managedHealthRoute: true,
+      managed: FM_PROBE_ROUTES,
       samples: 2,
-      vocabulary: FM_VOCABULARY,
+      vocabulary: vocabularyOf(FM_SERVER),
       countTokens: fmCountTokens,
     });
 

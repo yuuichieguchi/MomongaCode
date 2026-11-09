@@ -1,144 +1,202 @@
-import { declaredChildEnv, minimalChildEnv } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
-import type { DialectId, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
+import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths } from '@momonga/foundation';
+import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
+import type { ProbeKey } from '@momonga/config';
+import type { DialectId, ManagedServerDescription, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
-import { FM_SERVE_DEFAULTS } from '../defaults.ts';
+import { vocabularyOf } from '../adapters/chat-completions/vocabulary.ts';
 import { createExecFn, createExecWithStdin } from '../managed/fm-processes.ts';
-import { readOsBuild, sha256OfFile } from '../managed/fm-record-key.ts';
-import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, createFmServe, outputOf } from '../managed/fm-serve.ts';
-import type { ExecFn, FmServe, FmServeOptions, FmServeTimers, SpawnFn } from '../managed/fm-serve.ts';
-import { parseCount } from '../managed/fm-target.ts';
-import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
+import { createManagedServer } from '../managed/server.ts';
+import type { ManagedServer, ManagedServerTimers, SpawnFn } from '../managed/server.ts';
+import { missingExecutableVerdict, runPreconditions } from '../managed/preconditions.ts';
+import type { ExecFn } from '../managed/preconditions.ts';
+import { parseCount } from '../managed/target.ts';
+import type { ExecWithStdinFn } from '../managed/target.ts';
 import { decideToolCalling } from './decide.ts';
-import type { DialectCurrency } from '../dialect/candidates.ts';
 import { recordProbe } from './auto-probe.ts';
-import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
-import { saveProbeRecord } from './record.ts';
-import type { ProbeRecordKey } from './record.ts';
-import { PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
+import type { MeasureProbe, ProbeLockKey, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
+import { managedRecordPath, saveProbeRecord } from './record.ts';
+import type { ManagedRecordCurrency } from './record.ts';
+import { DEFAULT_STEP_TIMEOUT_MS, PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
 
-export const FM_CHILD_ENV_NAMES: readonly string[] = [];
+export const MANAGED_CHILD_ENV_NAMES: readonly string[] = [];
 
-export type ProbeManagedFmOptions = {
-  paths: Pick<MomongaPaths, 'probe'>;
+export const managedChildEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> => ({ ...minimalChildEnv(env), ...declaredChildEnv(env, MANAGED_CHILD_ENV_NAMES) });
+
+export type ManagedKeyReaderOptions = {
+  description: ManagedServerDescription;
+  binary: string;
+  model: string | undefined;
+  exec: ExecFn;
+  platform: NodeJS.Platform;
+  hashes: BinaryHashCache;
+  host?: HeldHostReadings;
+};
+
+export const managedKeyReader =
+  (options: ManagedKeyReaderOptions) =>
+  async (signal: AbortSignal): Promise<ProbeKey> =>
+    probeKeyOf({
+      subject: options.description.id,
+      identity: options.description.identity,
+      readings: await readProbeKeyComponents({ identity: options.description.identity, binary: options.binary, platform: options.platform, exec: options.exec, signal, hashes: options.hashes, ...(options.host === undefined ? {} : { host: options.host }) }),
+      model: options.model,
+    });
+
+export const lockKeyOf = (key: Extract<ProbeKey, { kind: 'known' }>): ProbeLockKey => JSON.parse(key.canonical) as ProbeLockKey;
+
+export const managedCurrencyOf = (description: ManagedServerDescription, options: { userDialects?: UserDialects; declaredDialect?: DialectId }): ManagedRecordCurrency => ({
+  userDialects: options.userDialects ?? NO_USER_DIALECTS,
+  probeMethod: PROBE_METHOD_VERSION,
+  ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+  descriptionDigest: managedServerDigest(description),
+});
+
+export type MeasureManagedServerOptions = {
+  description: ManagedServerDescription;
   target: string;
   binary: string;
-  socketPath: string;
+  instance: ManagedInstancePaths;
+  readyTimeoutMs: number;
+  env: Readonly<Record<string, string>>;
+  exec: ExecFn;
+  execWithStdin: ExecWithStdinFn;
+  model?: string;
+  samples?: number;
+  userDialects?: UserDialects;
+  declaredDialect?: DialectId;
+  servers?: Set<ManagedServer>;
+  spawn?: SpawnFn;
+  timers?: ManagedServerTimers;
+  readStopGraceMs: () => number;
+  onWarning(message: string): void;
+};
+
+export const measureManagedServer =
+  (options: MeasureManagedServerOptions): MeasureProbe<ProbeLockKey, ProbeReport> =>
+  async ({ signal }) => {
+    const { description } = options;
+    const server = createManagedServer({
+      description,
+      target: options.target,
+      binary: options.binary,
+      socketPath: options.instance.socketPath,
+      lockPath: options.instance.lockPath,
+      markerDirectory: options.instance.markerDirectory,
+      readyTimeoutMs: options.readyTimeoutMs,
+      env: options.env,
+      exec: options.exec,
+      readStopGraceMs: options.readStopGraceMs,
+      onWarning: options.onWarning,
+      ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+      ...(options.timers === undefined ? {} : { timers: options.timers }),
+    });
+    options.servers?.add(server);
+    const { tokenCount } = description;
+    try {
+      const endpoint = await server.start(signal);
+      return await runProbe({
+        socketPath: endpoint.socketPath,
+        managed: { readyPath: description.ready.path, listPath: description.models.listPath, idPath: description.models.idPath },
+        vocabulary: vocabularyOf(description),
+        ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
+        ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+        ...(options.model === undefined ? {} : { model: options.model }),
+        ...(tokenCount === 'estimated' ? {} : { countTokens: async (text: string) => parseCount(options.target, await options.execWithStdin(options.binary, tokenCount.argv, text, signal)) }),
+        ...(options.samples === undefined ? {} : { samples: options.samples }),
+        signal,
+      });
+    } finally {
+      await server.stop({ stopGraceMs: options.readStopGraceMs() });
+      options.servers?.delete(server);
+    }
+  };
+
+export const managedPrecondition = (description: ManagedServerDescription, target: string, binary: string, exec: ExecFn, isUsableBinary: (binary: string) => Promise<boolean>, boundMs: number): ProbePrecondition => ({
+  boundMs,
+  check: async (signal) => ((await isUsableBinary(binary)) ? runPreconditions(description, binary, exec, signal) : missingExecutableVerdict(target, binary)),
+});
+
+export type ManagedProbeSubjectOptions = {
+  target: string;
+  precondition: ProbePrecondition;
+  probeRecordDir: string;
+  readKey: (signal: AbortSignal) => Promise<ProbeKey>;
+  keySignal: () => AbortSignal;
+  measure: MeasureProbe<ProbeLockKey, ProbeReport>;
+  currency: ManagedRecordCurrency;
+};
+
+export class UnreadableProbeKeyError extends Error {
+  constructor(target: string, component: string, reason: string) {
+    super(`the target "${target}" is not ready: its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}`);
+    this.name = 'UnreadableProbeKeyError';
+  }
+}
+
+export const managedProbeSubject = (options: ManagedProbeSubjectOptions): ProbeSubject<ProbeLockKey, ProbeReport> => ({
+  target: options.target,
+  readKey: async () => {
+    const key = await options.readKey(options.keySignal());
+    if (key.kind === 'unknown') throw new UnreadableProbeKeyError(options.target, key.component, key.reason);
+    return lockKeyOf(key);
+  },
+  precondition: options.precondition,
+  measure: options.measure,
+  save: (key, report) => saveProbeRecord(options.probeRecordDir, knownKeyOf(key), report, options.currency),
+});
+
+export type ProbeManagedOptions = {
+  paths: MomongaPaths;
+  instance: ManagedInstancePaths;
+  description: ManagedServerDescription;
+  target: string;
+  binary: string;
+  readyTimeoutMs: number;
   env: Readonly<Record<string, string | undefined>>;
   model?: string;
   samples?: number;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
-  signal?: AbortSignal;
+  signal: AbortSignal;
   exec?: ExecFn;
+  hashes: BinaryHashCache;
+  isUsableBinary: (binary: string) => Promise<boolean>;
+  readStopGraceMs: () => number;
   onWarning(message: string): void;
 };
 
-export type ProbeManagedFmResult = { report: ProbeReport; toolCalling: ToolCallingMode; record: ProbeRecordKey };
+export type ProbeManagedResult = { report: ProbeReport; toolCalling: ToolCallingMode; recordFile: string };
 
-export type MeasureManagedFmOptions = Omit<ProbeManagedFmOptions, 'paths' | 'target' | 'signal'> & {
-  markerDirectory?: string;
-  serves?: Set<FmServe>;
-  spawn?: SpawnFn;
-  timers?: FmServeTimers;
-  createServe?: (options: FmServeOptions) => FmServe;
-  readStopGraceMs?: () => number;
-};
-
-const childEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> => ({ ...minimalChildEnv(env), ...declaredChildEnv(env, FM_CHILD_ENV_NAMES) });
-
-export const readFmRecordKey = async (target: string, binary: string, exec: ExecFn, signal?: AbortSignal): Promise<ProbeRecordKey> => ({
-  target,
-  binarySha256: await sha256OfFile(binary),
-  osBuild: await readOsBuild(exec, signal),
-});
-
-export const measureManagedFm =
-  (options: MeasureManagedFmOptions): MeasureProbe<ProbeRecordKey, ProbeReport> =>
-  async ({ signal }) => {
-    const childEnv = childEnvOf(options.env);
-    const exec = options.exec ?? createExecFn(childEnv);
-    const execWithStdin = createExecWithStdin(childEnv);
-    const fmServe = (options.createServe ?? createFmServe)({
-      ...FM_SERVE_DEFAULTS,
-      binary: options.binary,
-      socketPath: options.socketPath,
-      env: childEnv,
-      onWarning: options.onWarning,
-      exec,
-      ...(options.markerDirectory === undefined ? {} : { markerDirectory: options.markerDirectory }),
-      ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-      ...(options.timers === undefined ? {} : { timers: options.timers }),
-      ...(options.readStopGraceMs === undefined ? {} : { readStopGraceMs: options.readStopGraceMs }),
-    });
-    options.serves?.add(fmServe);
-    try {
-      const endpoint = await fmServe.start(signal);
-      return await runProbe({
-        socketPath: endpoint.socketPath,
-        managedHealthRoute: true,
-        vocabulary: FM_VOCABULARY,
-        ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
-        ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
-        ...(options.model === undefined ? {} : { model: options.model }),
-        countTokens: async (text) => parseCount(await execWithStdin(options.binary, ['count-tokens', '-q'], text, signal)),
-        ...(options.samples === undefined ? {} : { samples: options.samples }),
-        signal,
-      });
-    } finally {
-      await fmServe.stop(options.readStopGraceMs === undefined ? undefined : { stopGraceMs: options.readStopGraceMs() });
-      options.serves?.delete(fmServe);
-    }
-  };
-
-export const fmPrecondition = (binary: string, exec: ExecFn): ProbePrecondition => ({
-  boundMs: FM_SERVE_DEFAULTS.healthTimeoutMs,
-  check: async (signal) => {
-    const license = await exec(binary, ['license', '--status'], { signal });
-    if (license.exitCode === LICENSE_NOT_ACCEPTED_EXIT_CODE) return { kind: 'refused', message: PRECONDITION_MESSAGE, detail: outputOf(license), remedy: LICENSE_REMEDIATION };
-    if (license.exitCode !== 0) return { kind: 'refused', message: PRECONDITION_MESSAGE, detail: outputOf(license), remedy: undefined };
-    const available = await exec(binary, ['available'], { signal });
-    if (available.exitCode !== 0) return { kind: 'refused', message: 'the fm system model is not available', detail: outputOf(available), remedy: undefined };
-    return { kind: 'met' };
-  },
-});
-
-export const fmDialectCurrencyOf = (options: Pick<ProbeManagedFmOptions, 'userDialects' | 'declaredDialect'>): DialectCurrency => ({
-  userDialects: options.userDialects ?? NO_USER_DIALECTS,
-  probeMethod: PROBE_METHOD_VERSION,
-  ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
-});
-
-export type FmProbeSubjectOptions = {
-  target: string;
-  binary: string;
-  exec: ExecFn;
-  probeRecordDir: string;
-  readKey: () => Promise<ProbeRecordKey>;
-  measure: MeasureProbe<ProbeRecordKey, ProbeReport>;
-  currency: DialectCurrency;
-};
-
-export const fmProbeSubject = (options: FmProbeSubjectOptions): ProbeSubject<ProbeRecordKey, ProbeReport> => ({
-  target: options.target,
-  readKey: options.readKey,
-  precondition: fmPrecondition(options.binary, options.exec),
-  measure: options.measure,
-  save: (key, report) => saveProbeRecord(options.probeRecordDir, key, report, options.currency),
-});
-
-export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<ProbeManagedFmResult> => {
-  const exec = options.exec ?? createExecFn(childEnvOf(options.env));
-  const subject = fmProbeSubject({
+export const probeManagedFm = async (options: ProbeManagedOptions): Promise<ProbeManagedResult> => {
+  const childEnv = managedChildEnvOf(options.env);
+  const exec = options.exec ?? createExecFn(childEnv);
+  const readKey = managedKeyReader({ description: options.description, binary: options.binary, model: options.model, exec, platform: process.platform, hashes: options.hashes });
+  const subject = managedProbeSubject({
     target: options.target,
-    binary: options.binary,
-    exec,
+    precondition: managedPrecondition(options.description, options.target, options.binary, exec, options.isUsableBinary, DEFAULT_STEP_TIMEOUT_MS),
     probeRecordDir: options.paths.probe,
-    readKey: () => readFmRecordKey(options.target, options.binary, exec),
-    measure: measureManagedFm(options),
-    currency: fmDialectCurrencyOf(options),
+    readKey,
+    keySignal: () => options.signal,
+    measure: measureManagedServer({
+      description: options.description,
+      target: options.target,
+      binary: options.binary,
+      instance: options.instance,
+      readyTimeoutMs: options.readyTimeoutMs,
+      env: childEnv,
+      exec,
+      execWithStdin: createExecWithStdin(childEnv),
+      readStopGraceMs: options.readStopGraceMs,
+      onWarning: options.onWarning,
+      ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.samples === undefined ? {} : { samples: options.samples }),
+      ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
+      ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+    }),
+    currency: managedCurrencyOf(options.description, options),
   });
-  const { key, report } = await recordProbe(subject, options.paths.probe, options.signal ?? new AbortController().signal);
-  return { report, toolCalling: decideToolCalling(report).mode, record: key };
+  const { key, report } = await recordProbe(subject, options.paths.probe, options.signal);
+  return { report, toolCalling: decideToolCalling(report).mode, recordFile: managedRecordPath(options.paths.probe, knownKeyOf(key)) };
 };

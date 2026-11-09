@@ -19,7 +19,7 @@ describe('gatewayConfigOf billing', () => {
   it('declares an fm target local, a remote target metered unless the user declares it local', async () => {
     const targets = await targetsFor({
       targets: {
-        onDevice: { adapter: 'fm' },
+        onDevice: { adapter: 'managed', server: 'fm' },
         hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
         selfHosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', provider: 'vllm', billing: 'local', capabilities: CAPABILITIES },
       },
@@ -37,7 +37,7 @@ describe('gatewayConfigOf provider names', () => {
   it('names an fm target apple, and a chat-completions target by its provider setting', async () => {
     const targets = await targetsFor({
       targets: {
-        onDevice: { adapter: 'fm' },
+        onDevice: { adapter: 'managed', server: 'fm' },
         hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
         local: { adapter: 'chat-completions', provider: 'vllm', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', capabilities: CAPABILITIES },
       },

@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { createOwnedDirectory, currentGenerationLock, ensureMomongaDirs, hostKernelLock, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, currentGenerationLock, ensureMomongaDirs, hostKernelLock, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
+import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -10,7 +11,7 @@ import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
-import type { ContextHostEffects, EvalOwner } from './context-host.ts';
+import type { ContextHostEffects, EvalOwner, ManagedRecordSource } from './context-host.ts';
 
 export const MAX_TIMER_MS = 2_147_483_647;
 
@@ -37,11 +38,17 @@ const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, target: string): Promise<boolean> => {
-  const text = await files.readTextIfPresent(path.join(from, `${target}.json`));
+export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, signal: AbortSignal): Promise<boolean> => {
+  const { managedKeyReader, managedRecordPath } = await import('@momonga/gateway');
+  const description = managedServerOf(MANAGED_SERVERS, source.server);
+  if (description === undefined) throw new Error(`the target ${source.target} names the server ${source.server}, which this build does not support`);
+  const exec = createHostExec();
+  const key = await managedKeyReader({ description, binary: source.binary, model: source.model, exec, platform: process.platform, hashes: createBinaryHashCache() })(signal);
+  if (key.kind === 'unknown') return false;
+  const text = await files.readTextIfPresent(managedRecordPath(from, key));
   if (text === undefined) return false;
   await fs.mkdir(to, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-  await files.writeText(path.join(to, `${target}.json`), text);
+  await files.writeText(managedRecordPath(to, key), text);
   return true;
 };
 
@@ -121,7 +128,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     copyEndpointProbeRecord: async (probe, paths) => {
       await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
     },
-    copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, target)),
+    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
     listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),

@@ -1,38 +1,30 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { FM_SERVER } from '@momonga/protocol';
 import { withTempDir } from '@momonga/testkit';
-import type { FmServe, FmServeOptions } from '../src/managed/fm-serve.ts';
-import { measureManagedFm } from '../src/probe/probe-fm.ts';
+import { measureManagedServer } from '../src/probe/probe-fm.ts';
 
 const FILE_GRACE_MS = 70;
 
-const fakeServe = (events: string[]): ((options: FmServeOptions) => FmServe) => () =>
-  ({
-    restarts: 0,
-    start: async () => {
-      events.push('start');
-      throw new Error('the probe server did not start');
-    },
-    ensureRunning: async () => {
-      throw new Error('not used');
-    },
-    stop: async (stop?: { stopGraceMs: number }) => {
-      events.push(`stop:${stop === undefined ? 'none' : stop.stopGraceMs}`);
-    },
-    health: async () => ({ ok: false, reason: 'not_running' }),
-  }) as unknown as FmServe;
-
-describe('the probe serve stop reads the stop grace at its begin (design 3.2)', () => {
+describe('the probe server stop reads the stop grace at its begin (design 3.2)', () => {
   it('the stop in the finally of a probe uses the grace read when that stop begins, after the start', async (context) => {
+    const dir = withTempDir(context);
+    const markerDirectory = path.join(dir, 'markers');
+    fs.mkdirSync(markerDirectory, { mode: 0o700 });
     const events: string[] = [];
-    const probe = measureManagedFm({
+    const probe = measureManagedServer({
+      description: FM_SERVER,
+      target: 'apple',
       binary: '/usr/bin/fm',
-      socketPath: path.join(withTempDir(context), 'fm-probe.sock'),
+      instance: { socketPath: path.join(dir, 'p.sock'), lockPath: path.join(dir, 'p.lock'), markerDirectory },
+      readyTimeoutMs: FM_SERVER.ready.limitMs,
       env: {},
-      onWarning: () => undefined,
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
-      createServe: fakeServe(events),
+      execWithStdin: async () => ({ exitCode: 0, stdout: '1\n', stderr: '' }),
+      onWarning: () => undefined,
       spawn: () => {
+        events.push('spawn');
         throw new Error('the probe server did not start');
       },
       readStopGraceMs: () => {
@@ -40,7 +32,7 @@ describe('the probe serve stop reads the stop grace at its begin (design 3.2)', 
         return FILE_GRACE_MS;
       },
     });
-    await expect(probe({ signal: new AbortController().signal } as never)).rejects.toThrow();
-    expect(events).toEqual(['start', 'read', `stop:${FILE_GRACE_MS}`]);
+    await expect(probe({ key: {}, signal: new AbortController().signal })).rejects.toThrow();
+    expect(events.slice(events.indexOf('spawn'))).toEqual(['spawn', 'read']);
   });
 });

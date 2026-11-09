@@ -14,6 +14,8 @@ import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
 import { markerReapClockBoundMs } from './process-contract.ts';
+import { RETRY_KINDS, claimRetry, parseRecordedGroup, readAttemptRecord } from './platform/marker-record.ts';
+import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
 export type ReapTiming = ProbeTiming;
 
@@ -314,7 +316,7 @@ const readRecordedGroup = async (marker: string): Promise<number | undefined> =>
   } finally {
     await handle.close();
   }
-  return MARKER_CONTENT.test(content) ? Number(content.trim()) : undefined;
+  return MARKER_CONTENT.test(content) ? Number(content.trim()) : parseRecordedGroup(content);
 };
 
 const lstatIfPresent = async (target: string): Promise<fs.Stats | undefined> => {
@@ -474,6 +476,7 @@ export type ReapMarkerDirectoryOptions = {
   timing?: ReapTiming;
   signal?: AbortSignal | undefined;
   inspector?: ProcessInspector;
+  occasion?: RetryKind;
 };
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -503,6 +506,39 @@ const markerFilesUnder = async (dir: string): Promise<string[]> => {
   return nested.flat();
 };
 
+export const survivorNoticeText = (label: string, name: string): string =>
+  `a ${label} process (marker ${name}) may still be running. MomongaCode has used its ${RETRY_KINDS.length} retries and will not try again. If it can stay running, run /markers ignore ${name}.`;
+
+const allRetriesSpent = (record: AttemptRecord): boolean => RETRY_KINDS.every((kind) => record.spent[kind]);
+
+type MarkerReap = (marker: string) => Promise<{ removed: boolean }>;
+
+const readRecordIfPresent = async (marker: string): Promise<AttemptRecord | undefined> => {
+  try {
+    return await readAttemptRecord(marker);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+};
+
+const reapOnOccasion = async (marker: string, occasion: RetryKind, label: string, onWarning: (message: string) => void, signal: AbortSignal, reap: MarkerReap): Promise<{ removed: boolean }> => {
+  const record = await readRecordIfPresent(marker);
+  if (record === undefined) return { removed: true };
+  if (record.ignored) return { removed: false };
+  const tellPerson = (): void => onWarning(survivorNoticeText(label, path.basename(marker)));
+  if (record.spent[occasion]) {
+    if (allRetriesSpent(record)) tellPerson();
+    return { removed: false };
+  }
+  const claim = await claimRetry(marker, occasion, { signal });
+  if (claim === 'absent') return { removed: true };
+  if (claim !== 'claimed') return { removed: false };
+  const reaped = await reap(marker);
+  if (!reaped.removed && allRetriesSpent({ ...record, spent: { ...record.spent, [occasion]: true } })) tellPerson();
+  return reaped;
+};
+
 export const reapMarkerDirectory = async ({
   dir,
   killGraceMs,
@@ -512,12 +548,15 @@ export const reapMarkerDirectory = async ({
   timing,
   signal,
   inspector,
+  occasion,
 }: ReapMarkerDirectoryOptions): Promise<{ reaped: number; kept: number }> => {
   const markers = await markerFilesUnder(dir);
+  const reap: MarkerReap = (marker) =>
+    reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, ...(inspector === undefined ? {} : { inspector }) });
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {
-        const { removed } = await reapMarkedProcesses({ marker, killGraceMs, label, onWarning, ...(kill === undefined ? {} : { kill }), ...(timing === undefined ? {} : { timing }), signal, ...(inspector === undefined ? {} : { inspector }) });
+        const { removed } = occasion === undefined ? await reap(marker) : await reapOnOccasion(marker, occasion, label, onWarning, signal ?? new AbortController().signal, reap);
         return { marker, removed };
       } catch (failure) {
         return { marker, failure };

@@ -18,6 +18,8 @@ export type ProbeEndpoint =
 
 export type ProbeRoute = 'health' | 'models' | 'chat';
 
+export type ManagedProbeRoutes = { readonly readyPath: string; readonly listPath: string; readonly idPath: readonly string[] };
+
 export interface ProbeClient {
   readonly hasHealthRoute: boolean;
   get(route: 'health' | 'models'): Promise<HttpResult>;
@@ -75,9 +77,12 @@ export const createProbeClient = (
   endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
-  hasHealthRoute = false,
+  managedRoutes?: ManagedProbeRoutes,
 ): ProbeClient => {
-  const { uds, paths, headers: authHeaders } = transportOf(endpoint, stepTimeoutMs);
+  const transport = transportOf(endpoint, stepTimeoutMs);
+  const { uds, headers: authHeaders } = transport;
+  const paths: Record<ProbeRoute, string> = managedRoutes === undefined ? transport.paths : { ...transport.paths, health: managedRoutes.readyPath, models: managedRoutes.listPath };
+  const hasHealthRoute = managedRoutes !== undefined;
 
   const withTimeout = async <T>(
     method: string,

@@ -44,7 +44,7 @@ export type ContextHostEffects = {
   ownerPid: number;
   ownerHome: string;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
-  copyProbeRecord(target: string, paths: MomongaPaths): Promise<void>;
+  copyProbeRecord(source: ManagedRecordSource, paths: MomongaPaths): Promise<void>;
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
   readOwner(root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined>;
@@ -86,18 +86,18 @@ export type LiveSettings = {
   models: ModelsSettings;
   sandbox?: SandboxSetting;
   credentials: SecretCredential[];
-  fmTargets: string[];
+  managedTargets: ManagedRecordSource[];
 };
 
 const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
-const PROBE_TARGET_NAME = /^[A-Za-z0-9._-]+$/;
+export type ManagedRecordSource = { target: string; server: string; binary: string; model: string | undefined };
 
 export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const aliasMembers: Record<string, string[]> = {};
   const credentials: SecretCredential[] = [];
-  const fmTargets: string[] = [];
+  const managedTargets: ManagedRecordSource[] = [];
   const endpointProbes: EndpointProbe[] = [];
   const copied = new Set<string>();
   const copyTarget = (alias: string, name: string): void => {
@@ -108,16 +108,15 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     const declared = user.declared.targets?.[name];
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
     const recordKey = probeRecordKeyOf(name, resolved);
-    if (declared.adapter === 'fm' || resolved.adapter === 'fm') {
-      if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
-      fmTargets.push(name);
+    if (resolved.adapter === 'managed') {
+      managedTargets.push({ target: name, server: resolved.server, binary: resolved.binary, model: resolved.model });
       targets[name] = declared;
       return;
     }
     if (recordKey?.kind === 'endpoint') {
       endpointProbes.push(recordKey.key);
     }
-    if (resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
+    if ('apiKeySecret' in resolved && resolved.apiKeySecret !== undefined && 'apiKeySecret' in declared) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
       const { apiKeySecret: _secret, ...rest } = declared;
       credentials.push({ envName, secretName: resolved.apiKeySecret });
@@ -136,7 +135,7 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     models: { aliases: aliasMembers, targets },
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
-    fmTargets,
+    managedTargets,
     endpointProbes,
   };
 };
@@ -245,7 +244,7 @@ export type Homes = {
 export type HomesOptions = {
   credentialValues: Readonly<Record<string, string>>;
   reflection: ReflectionBounds;
-  fmTargets: readonly string[];
+  managedTargets: readonly ManagedRecordSource[];
   endpointProbes: readonly EndpointProbe[];
   guideline?: string;
   interrupt?: AbortSignal;
@@ -285,7 +284,7 @@ export const createHomes = (effects: ContextHostEffects, options: HomesOptions):
     record.paths = paths;
     await effects.prepare(paths);
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
-    for (const target of options.fmTargets) await effects.copyProbeRecord(target, paths);
+    for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths);
     for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
@@ -361,12 +360,12 @@ export const createContextHosts = (
   effects: ContextHostEffects,
   options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
 ): ContextHosts => {
-  const { models, sandbox, fmTargets, endpointProbes } = options.settings;
+  const { models, sandbox, managedTargets, endpointProbes } = options.settings;
   const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
   const homes = createHomes(effects, {
     credentialValues: options.credentialValues,
     reflection: options.reflection,
-    fmTargets,
+    managedTargets,
     endpointProbes,
     ...(options.guideline === undefined ? {} : { guideline: options.guideline }),
     ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),

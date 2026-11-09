@@ -48,7 +48,7 @@ describe('liveSettingsFor takes a list of aliases (N1)', () => {
     const settings = liveSettingsFor(userModels(), ['guard']);
     expect(settings.models).toEqual({ aliases: { guard: ['g'] }, targets: { g: declared('guard-model') } });
     expect(settings.credentials).toEqual([]);
-    expect(settings.fmTargets).toEqual([]);
+    expect(settings.managedTargets).toEqual([]);
   });
 
   it('maps each listed alias to its members and unites their targets', () => {

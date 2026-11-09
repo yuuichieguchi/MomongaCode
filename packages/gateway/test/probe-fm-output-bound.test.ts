@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
+import { vocabularyOf, runProbe } from '@momonga/gateway';
 import { FM_CONTEXT_OVERFLOW_ERROR, countFakeRequestTokens, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { TARGET, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const FM_WINDOW = 4096;
 
@@ -37,7 +39,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('finishes when an unbounded constrained sample would generate until fm reports the transcript over its context size', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
+    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) });
 
     expect(report.constrained.accepted).toBe(true);
     expect(fake.routeHits).toEqual([0]);
@@ -46,7 +48,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('sends every request whose prompt fits the window with an output bound fm honours, and prompt plus bound within the window it reports', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY }).catch(() => undefined);
+    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) }).catch(() => undefined);
 
     const window = report?.contextWindow.value ?? FM_WINDOW;
     const fitting = fake.requests
@@ -64,7 +66,7 @@ describe('the fm probe bounds what the model generates by the window it measures
 describe('a run against fm bounds what the model generates', () => {
   it('sends the output bound of a run in the field fm honours', async () => {
     const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
-    const adapter = makeAdapter(fake, { vocabulary: FM_VOCABULARY });
+    const adapter = makeAdapter(fake, { vocabulary: vocabularyOf(FM_SERVER) });
 
     const { error } = await collect(adapter, { model: TARGET.model, input: [userText('hello fm')], max_output_tokens: 300 });
 

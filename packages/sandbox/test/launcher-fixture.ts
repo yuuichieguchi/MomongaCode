@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isUnderTestTempBase } from '@momonga/testkit';
 
 export type LauncherLayout = 'plain' | 'symlinked' | 'custom';
 
@@ -15,11 +16,10 @@ export const TARGET_CONTENT = 'versioned-binary';
 
 export const assertFakeHome = (home: string): void => {
   const realHome = fs.realpathSync(os.homedir());
-  const realTmp = fs.realpathSync(os.tmpdir());
   if (home === realHome || home.startsWith(`${realHome}${path.sep}`) || realHome.startsWith(`${home}${path.sep}`)) {
     throw new Error(`refusing to use the real home directory for launcher tests: ${home}`);
   }
-  if (!home.startsWith(`${realTmp}${path.sep}`)) throw new Error(`launcher test home must live under the temp dir: ${home}`);
+  if (!isUnderTestTempBase(home)) throw new Error(`launcher test home must live under the temp dir: ${home}`);
 };
 
 export const createLauncherFixture = (home: string, layout: LauncherLayout, targetDir = path.join(home, '.momonga', 'bin', 'versions', '1.0.0')): LauncherFixture => {
