@@ -103,11 +103,13 @@ describe('a fallback that changes the billing kind needs the user policy (M9, I-
   });
 
   it('judges the next hop from the last member sent a request, so a member passed over by its breaker does not change the kind', async () => {
-    const adapters = {
-      plan: adapterOf(PLAN_FAILING),
-      local: adapterOf({ name: 'local', billing: 'local', fails: true }),
-      metered: adapterOf(METERED),
-    };
+    const local = createScriptedAdapter({
+      calls: [
+        { failure: { status: 503, message: 'local is unavailable' } },
+        { events: textResponseEvents({ model: 'model-local', chunks: ['served'], usage: usageOf(5, 1) }) },
+      ],
+    });
+    const adapters = { plan: adapterOf(PLAN_FAILING), local, metered: adapterOf(METERED) };
     const harness = await startGateway({
       adapters,
       config: {
@@ -123,9 +125,9 @@ describe('a fallback that changes the billing kind needs the user policy (M9, I-
     });
     expect((await readJson(await postJson(harness.client, '/v1/responses', { model: 'warm', input: userInput('hi') }))).status).toBe(502);
     const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
-    expect(response.status).toBe(502);
-    expect(adapters.local.calls).toHaveLength(1);
     expect(adapters.metered.calls).toHaveLength(0);
-    expect(response.body.error.message.endsWith(' Model target "metered" was not tried: changing from plan to metered billing is not allowed (models.billingChanges).')).toBe(true);
+    expect(local.calls).toHaveLength(2);
+    expect(response.status).toBe(200);
+    expect(response.body.momonga.fallbackCauses).toMatchObject([{ target: 'plan', fromBilling: 'plan', toBilling: 'local', reason: 'billing_change_allowed' }]);
   });
 });
