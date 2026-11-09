@@ -158,14 +158,18 @@
 (* model spends one, so the model admits more retries at one occasion than *)
 (* the product makes, never more retries in all.                           *)
 (*                                                                         *)
-(* Fairness. The asking limits, the stops, the restart timer, the          *)
-(* instance's entry after its wait and the supervisor's reap are weakly    *)
-(* fair. The end of the claim is strongly fair: the claim runs to its own  *)
-(* outcome even when a stop arrives (fm-serve.ts:483-485 and :441-442 see  *)
-(* the stop only after claimSocketPath; the stop waits for the pending     *)
-(* start, :561-562), while the model's Close may cut a claim; strong       *)
-(* fairness states that a claim that recurs is not cut every time. It does *)
-(* not choose the claim's outcome: the kept reap stays possible each time. *)
+(* Fairness and the environment. The asking limits, the stops, the        *)
+(* restart timer, the instance's entry after its wait, the end of the      *)
+(* claim and the supervisor's reap are weakly fair; nothing is strongly    *)
+(* fair. The environment's events are bounded, each by its own counter:    *)
+(* gateway closes (MaxCloses), gateway crashes, CLI cancels and kills, key *)
+(* changes, child crashes and refusal toggles. A close or a crash may cut  *)
+(* a claim (the model's Close moves it to stopping; in the code the claim  *)
+(* runs to its own outcome first, fm-serve.ts:483-485 and :441-442, and    *)
+(* the stop waits for the pending start, :561-562); with the closes        *)
+(* bounded, a claim that recurs ends by its own outcome, and weak fairness *)
+(* does not choose that outcome: the kept reap stays possible each time.   *)
+(* A behaviour with more closes than MaxCloses is not checked.             *)
 (*                                                                         *)
 (* Dropped evidence. ManagedServer.stopDuringStart (a stop that does not   *)
 (* abort a start in progress) is not a configuration. With the start that  *)
@@ -182,20 +186,22 @@
 (* Configurations and what they leave uncovered.                           *)
 (*   every-run, holding:                                                   *)
 (*     ManagedServer: safety; one target, one restart, one child crash,    *)
-(*       one gateway crash, one key change, two refusal toggles, one       *)
-(*       cancel, both gateway flights, Retries 4                           *)
-(*     ManagedServer.live: liveness; one gateway crash and one cancel, so  *)
-(*       orphans of a crashed gateway and of a killed CLI; one gateway     *)
-(*       flight, no key change                                             *)
+(*       two gateway closes, one gateway crash, one key change, two        *)
+(*       refusal toggles, one cancel, both gateway flights, Retries 4      *)
+(*     ManagedServer.live: liveness; two gateway closes, one gateway crash *)
+(*       and one cancel, so orphans of a stopped gateway, of a crashed     *)
+(*       gateway and of a killed CLI; one gateway flight, no key change    *)
 (*     ManagedServer.liveWait: liveness; both gateway flights and one key  *)
-(*       change, so the wait of item 12; no crash and no cancel            *)
+(*       change, so the wait of item 12; one gateway close, no crash and   *)
+(*       no cancel                                                         *)
 (*   deep, holding:                                                        *)
 (*     ManagedServer.deep: safety; two restarts and two child crashes      *)
 (*       added to ManagedServer's events, Retries 4                        *)
-(*     ManagedServer.twoTargets: safety; two targets, one gateway crash,   *)
-(*       one gateway flight, no other event                                *)
+(*     ManagedServer.twoTargets: safety; two targets, one gateway close,   *)
+(*       one gateway flight, no other event (with a gateway crash added it *)
+(*       passed the 30 CPU-minute bound of a run)                          *)
 (*     ManagedServer.deepLive: liveness; the events of live and liveWait   *)
-(*       together                                                          *)
+(*       together, with one gateway close                                  *)
 (*   Retries is 1 in the liveness configurations and in twoTargets. The    *)
 (*   liveness of StartAfterOrphanServes needs the count finite, not its    *)
 (*   value, and 1 is the smallest finite count. twoTargets checks what two *)
@@ -208,10 +214,11 @@
 (*   three is the arithmetic of RM5 (packages/verify/test/proofs/          *)
 (*   managed-bounds.test.ts). Two targets share no variable but the        *)
 (*   gateway's up and down, the supervisor's reap and the precondition     *)
-(*   world, which twoTargets checks for safety only. Liveness with a child *)
-(*   crash, a refusal toggle or two restarts, two key changes, more than   *)
-(*   one cancel or gateway crash, and Retries above 1 under liveness are   *)
-(*   not checked.                                                          *)
+(*   world, which twoTargets checks for safety only, with one close and no *)
+(*   crash. Not checked: liveness with a child crash, a refusal toggle or  *)
+(*   two restarts; two key changes; more than one cancel or gateway crash; *)
+(*   more than two gateway closes in any configuration; Retries above 1    *)
+(*   under liveness.                                                       *)
 (*                                                                         *)
 (* Switches. The holding configurations set the design.                    *)
 (*   GwFlights      1: the gateway runs one flight per target; 2: also a   *)
@@ -242,6 +249,7 @@ CONSTANTS
     MaxKeyChanges,
     MaxRefusals,
     MaxCancels,
+    MaxCloses,
     GwFlights,
     SingleFlight,
     InstanceWait,
@@ -258,6 +266,7 @@ ASSUME /\ MaxRestarts \in Nat \ {0}
        /\ MaxKeyChanges \in Nat
        /\ MaxRefusals \in Nat
        /\ MaxCancels \in Nat
+       /\ MaxCloses \in Nat
        /\ GwFlights \in {1, 2}
        /\ SingleFlight \in {"key", "none"}
        /\ InstanceWait \in BOOLEAN
@@ -280,10 +289,10 @@ Gone == {"idle", "failed"}
 Free == {"idle", "wait"}
 
 VARIABLES
-    gw, gwCrashes, childCrashes, keyChanges, refusals, cancels,
+    gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes,
     st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped
 
-vars == <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+vars == <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, st, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 Partner(f) == IF f = "p1" THEN "p3" ELSE "p1"
 LiveFlights(t, n) ==
@@ -303,6 +312,7 @@ TypeOK ==
     /\ keyChanges \in 0..MaxKeyChanges
     /\ refusals \in 0..MaxRefusals
     /\ cancels \in 0..MaxCancels
+    /\ closes \in 0..MaxCloses
     /\ st \in [Targets -> [Flights -> States]]
     /\ alive \in [Targets -> [Flights -> 0..1]]
     /\ orphan \in [Targets -> [Insts -> 0..3]]
@@ -316,7 +326,7 @@ TypeOK ==
     /\ reaped \in BOOLEAN
 
 Init ==
-    /\ gw = "up" /\ gwCrashes = 0 /\ childCrashes = 0 /\ keyChanges = 0 /\ refusals = 0 /\ cancels = 0
+    /\ gw = "up" /\ gwCrashes = 0 /\ childCrashes = 0 /\ keyChanges = 0 /\ refusals = 0 /\ cancels = 0 /\ closes = 0
     /\ st = [t \in Targets |-> [f \in Flights |-> "idle"]]
     /\ alive = [t \in Targets |-> [f \in Flights |-> 0]]
     /\ orphan = [t \in Targets |-> [n \in Insts |-> 0]]
@@ -339,25 +349,25 @@ StartServe(t) ==
     /\ pre' = [pre EXCEPT ![t] = "unknown"]
     /\ cc' = [cc EXCEPT ![t] = 0]
     /\ gt' = [gt EXCEPT ![t] = 0]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, reaped>>
 
 Health(t) ==
     /\ gw = "up" /\ pre[t] = "unknown"
     /\ pre' = [pre EXCEPT ![t] = IF cond = "ok" THEN "met" ELSE IF CacheRefusal THEN "refused" ELSE "unknown"]
     /\ pre' # pre
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 PreOk(t, f) ==
     /\ st[t][f] = "pre" /\ cond = "ok"
     /\ st' = [st EXCEPT ![t][f] = "claim"]
     /\ pre' = [pre EXCEPT ![t] = IF f = "s" THEN "met" ELSE pre[t]]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 PreBad(t, f) ==
     /\ st[t][f] = "pre" /\ cond = "bad"
     /\ st' = [st EXCEPT ![t][f] = "idle"]
     /\ pre' = [pre EXCEPT ![t] = IF f = "s" /\ CacheRefusal THEN "refused" ELSE pre[t]]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 ClaimOk(t, f) ==
     LET n == InstOf(f) IN
@@ -366,7 +376,7 @@ ClaimOk(t, f) ==
     /\ orphan' = [orphan EXCEPT ![t][n] = 0]
     /\ tries' = [tries EXCEPT ![t][n] = 0]
     /\ alive' = IF n = "g" THEN [alive EXCEPT ![t][Partner(f)] = 0] ELSE alive
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, taint, hung, cond, pre, cc, gt, reaped>>
 
 ClaimKept(t, f) ==
     LET n == InstOf(f) IN
@@ -374,33 +384,33 @@ ClaimKept(t, f) ==
     /\ st' = [st EXCEPT ![t][f] = EndOf(t, f)]
     /\ pre' = Cleared(t, f)
     /\ tries' = [tries EXCEPT ![t][n] = Spend(t, n)]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, taint, hung, cond, cc, gt, reaped>>
 
 ClaimBusy(t, f) ==
     LET n == InstOf(f) IN
     /\ st[t][f] = "claim" /\ ~hung[t][f] /\ OnInst(t, n) > 0 /\ ~MayReap(t, n)
     /\ st' = [st EXCEPT ![t][f] = EndOf(t, f)]
     /\ pre' = Cleared(t, f)
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 ClaimEnd(t, f) == ClaimOk(t, f) \/ ClaimKept(t, f) \/ ClaimBusy(t, f)
 
 Hang(t, f) ==
     /\ ~ClaimBounded /\ st[t][f] = "claim" /\ ~hung[t][f]
     /\ hung' = [hung EXCEPT ![t][f] = TRUE]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, cond, pre, cc, gt, reaped>>
 
 Spawn(t, f) ==
     /\ st[t][f] = "spawn"
     /\ st' = [st EXCEPT ![t][f] = "ready"]
     /\ alive' = [alive EXCEPT ![t][f] = 1]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 Ready(t, f) ==
     /\ st[t][f] = "ready" /\ alive[t][f] = 1
     /\ st' = [st EXCEPT ![t][f] = IF f = "s" THEN "running" ELSE "measure"]
     /\ cc' = [cc EXCEPT ![t] = IF f = "s" /\ ResetOnReady THEN 0 ELSE cc[t]]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, gt, reaped>>
 
 ChildCrash(t, f) ==
     /\ childCrashes < MaxChildCrashes /\ alive[t][f] = 1 /\ st[t][f] \in {"ready", "running", "measure"}
@@ -408,30 +418,30 @@ ChildCrash(t, f) ==
     /\ alive' = [alive EXCEPT ![t][f] = 0]
     /\ st' = [st EXCEPT ![t][f] = EndOf(t, f)]
     /\ pre' = Cleared(t, f)
-    /\ UNCHANGED <<gw, gwCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 ExpirePre(t, f) ==
     /\ st[t][f] = "pre"
     /\ st' = [st EXCEPT ![t][f] = "idle"]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 ExpireSpawn(t, f) ==
     /\ st[t][f] = "spawn"
     /\ st' = [st EXCEPT ![t][f] = EndOf(t, f)]
     /\ pre' = Cleared(t, f)
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 ExpireReady(t, f) ==
     /\ st[t][f] = "ready"
     /\ alive' = [alive EXCEPT ![t][f] = 0]
     /\ st' = [st EXCEPT ![t][f] = EndOf(t, f)]
     /\ pre' = Cleared(t, f)
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, orphan, tries, taint, hung, cond, cc, gt, reaped>>
 
 ExpireMeasure(t, f) ==
     /\ f \in Probes /\ st[t][f] = "measure"
     /\ st' = [st EXCEPT ![t][f] = "stopping"]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 Expire(t, f) == ExpirePre(t, f) \/ ExpireSpawn(t, f) \/ ExpireReady(t, f) \/ ExpireMeasure(t, f)
 
@@ -441,13 +451,13 @@ TimerFires(t) ==
     /\ pre' = [pre EXCEPT ![t] = "unknown"]
     /\ cc' = [cc EXCEPT ![t] = cc[t] + 1]
     /\ gt' = [gt EXCEPT ![t] = gt[t] + 1]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, reaped>>
 
 WindowDone(t) ==
     /\ st[t]["s"] = "running" /\ (cc[t] > 0 \/ gt[t] > 0)
     /\ cc' = [cc EXCEPT ![t] = 0]
     /\ gt' = [gt EXCEPT ![t] = 0]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, hung, cond, pre, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, orphan, tries, taint, hung, cond, pre, reaped>>
 
 ProbeStart(t, f) ==
     /\ f \in Probes /\ st[t][f] = "idle"
@@ -456,12 +466,12 @@ ProbeStart(t, f) ==
     /\ (SingleFlight = "none" \/ \A j \in Probes \ {f} : st[t][j] = "idle" \/ taint[t][j])
     /\ st' = [st EXCEPT ![t][f] = IF InstanceWait /\ InstanceBusy(t, f) THEN "wait" ELSE "pre"]
     /\ taint' = [taint EXCEPT ![t][f] = FALSE]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, hung, cond, pre, cc, gt, reaped>>
 
 Enter(t, f) ==
     /\ st[t][f] = "wait" /\ ~InstanceBusy(t, f)
     /\ st' = [st EXCEPT ![t][f] = "pre"]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 StopEnd(t, f) ==
     LET n == InstOf(f) IN
@@ -473,13 +483,13 @@ StopEnd(t, f) ==
     /\ pre' = Cleared(t, f)
     /\ taint' = [taint EXCEPT ![t][f] = FALSE]
     /\ hung' = [hung EXCEPT ![t][f] = FALSE]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, tries, cond, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, tries, cond, cc, gt, reaped>>
 
 Cancel(t) ==
     /\ cancels < MaxCancels /\ st[t]["p2"] \in {"pre", "claim", "spawn", "ready", "measure"}
     /\ st' = [st EXCEPT ![t]["p2"] = "stopping"]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, alive, orphan, tries, taint, hung, cond, pre, cc, gt, reaped>>
 
 CliCrash(t) ==
     /\ cancels < MaxCancels /\ st[t]["p2"] # "idle"
@@ -489,11 +499,12 @@ CliCrash(t) ==
     /\ taint' = [taint EXCEPT ![t]["p2"] = FALSE]
     /\ hung' = [hung EXCEPT ![t]["p2"] = FALSE]
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, tries, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, tries, cond, pre, cc, gt, reaped>>
 
 Close ==
-    /\ gw = "up"
+    /\ gw = "up" /\ closes < MaxCloses
     /\ gw' = "down"
+    /\ closes' = closes + 1
     /\ st' = [t \in Targets |-> [f \in Flights |->
             IF f \in GwOwned /\ st[t][f] \in {"backoff", "wait"} THEN "idle"
             ELSE IF f \in GwOwned /\ st[t][f] \in {"pre", "claim", "spawn", "ready", "running", "measure"} THEN "stopping"
@@ -515,7 +526,7 @@ Crash ==
     /\ cc' = [t \in Targets |-> 0]
     /\ gt' = [t \in Targets |-> 0]
     /\ reaped' = FALSE
-    /\ UNCHANGED <<childCrashes, keyChanges, refusals, cancels, tries, cond>>
+    /\ UNCHANGED <<closes, childCrashes, keyChanges, refusals, cancels, tries, cond>>
 
 SupervisorReap ==
     /\ gw = "down" /\ ~reaped
@@ -528,7 +539,7 @@ SupervisorReap ==
                 IF ~Signalled(t, n) THEN tries[t][n]
                 ELSE IF kill[t][n] THEN 0
                 ELSE Spend(t, n) ]]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, taint, hung, cond, pre, cc, gt>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, refusals, cancels, st, alive, taint, hung, cond, pre, cc, gt>>
 
 GwUp ==
     /\ gw = "down" /\ reaped
@@ -537,23 +548,23 @@ GwUp ==
     /\ hung' = [t \in Targets |-> [f \in Flights |-> IF f \in GwOwned THEN FALSE ELSE hung[t][f]]]
     /\ cc' = [t \in Targets |-> 0]
     /\ gt' = [t \in Targets |-> 0]
-    /\ UNCHANGED <<gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, cond, pre, reaped>>
+    /\ UNCHANGED <<closes, gwCrashes, childCrashes, keyChanges, refusals, cancels, alive, orphan, tries, taint, cond, pre, reaped>>
 
 KeyChange ==
     /\ keyChanges < MaxKeyChanges
     /\ keyChanges' = keyChanges + 1
     /\ taint' = [t \in Targets |-> [f \in Flights |-> taint[t][f] \/ (f \in Probes /\ st[t][f] # "idle")]]
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, refusals, cancels, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, refusals, cancels, st, alive, orphan, tries, hung, cond, pre, cc, gt, reaped>>
 
 Refuse ==
     /\ cond = "ok" /\ refusals < MaxRefusals
     /\ cond' = "bad" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, cancels, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, cancels, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped>>
 
 Fix ==
     /\ cond = "bad" /\ refusals < MaxRefusals
     /\ cond' = "ok" /\ refusals' = refusals + 1
-    /\ UNCHANGED <<gw, gwCrashes, childCrashes, keyChanges, cancels, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped>>
+    /\ UNCHANGED <<closes, gw, gwCrashes, childCrashes, keyChanges, cancels, st, alive, orphan, tries, taint, hung, pre, cc, gt, reaped>>
 
 Next ==
     \/ \E t \in Targets :
@@ -572,7 +583,7 @@ Fairness ==
             /\ WF_vars(Expire(t, f))
             /\ WF_vars(StopEnd(t, f))
             /\ WF_vars(Enter(t, f))
-            /\ SF_vars(ClaimEnd(t, f))
+            /\ WF_vars(ClaimEnd(t, f))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
