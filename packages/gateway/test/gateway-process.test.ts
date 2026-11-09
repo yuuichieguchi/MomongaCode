@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
 import { START_MS, expectErrorBody, getJson, outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { startFake } from './cc-support.ts';
@@ -72,7 +72,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
 
   it('raises ConfigError for invalid user settings, releases the lock and creates no database', async () => {
     const home = makeHome();
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
+    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const paths = homePaths(home);
     const failure = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }).then(
       () => undefined,
@@ -226,17 +226,6 @@ describe('gateway defaults', () => {
       sseKeepAliveMs: 15_000,
       detachedMaxMs: 30 * 60 * 1000,
       websocketConnectionMs: 60 * 60 * 1000,
-    });
-  });
-
-  it('pins the FmServe defaults table', () => {
-    expect(FM_SERVE_DEFAULTS).toEqual({
-      healthTimeoutMs: 10_000,
-      restartBackoffMs: 1000,
-      stopGraceMs: 3000,
-      maxRestarts: 5,
-      restartResetMs: 60_000,
-      preconditionTtlMs: 60_000,
     });
   });
 });

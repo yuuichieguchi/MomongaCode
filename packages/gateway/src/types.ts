@@ -36,6 +36,7 @@ export type GatewayTimers = {
 export type DebugTcpOptions = { host: string; port: number; token: string };
 
 export type GatewayOptions = {
+  startSignal?: AbortSignal;
   config: GatewayConfig;
   adapters: Record<string, ProviderAdapter>;
   credentials: readonly string[];

@@ -1,6 +1,7 @@
 import type { Clock } from '@momonga/foundation';
 import type {
   AdapterSampling,
+  AliasRoomFacts,
   AdapterTarget,
   Capabilities,
   ConstructSupport,
@@ -33,6 +34,7 @@ export type ChatCompletionsAdapterOptions = {
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
+  roomFacts?: (target: AdapterTarget) => Promise<AliasRoomFacts>;
   vocabulary?: ErrorVocabulary;
   isGuardrail?: (target: AdapterTarget, status: number, body: unknown) => boolean;
   close?: (stop?: AdapterStop) => Promise<void>;

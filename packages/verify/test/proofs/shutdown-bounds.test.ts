@@ -12,7 +12,7 @@ import {
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
   daemonStopBoundMs,
-  fmServeStopBoundMs,
+  managedServerStopBoundMs,
   gatewayAbortBudgetMs,
   gatewayMaxCloseMs,
   gatewayStopBudgetMs,
@@ -46,7 +46,7 @@ const stageTermsOf = (arith: ProofArith, drainTimeout: ProofInt): ReadonlyArray<
     ['drain', constant(arith, SHUTDOWN_DRAIN_BOUND_MS)],
     ['runtimeStop', runtimeCloseOf(arith, drainTimeout).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['runtimeKilledChildSettle', killedChildSettle],
-    ['gatewayStop', constant(arith, DEFAULT_STOP_VALUES.closeGraceMs).add(constant(arith, fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs))).add(constant(arith, SHUTDOWN_MARGIN_MS))],
+    ['gatewayStop', constant(arith, DEFAULT_STOP_VALUES.closeGraceMs).add(constant(arith, managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs))).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['gatewayKilledChildSettle', killedChildSettle],
     ['managedServerReap', constant(arith, managedServerReapBoundMs(DEFAULT_STOP_VALUES))],
     ['reap', constant(arith, SHUTDOWN_REAP_BOUND_MS)],
@@ -65,7 +65,7 @@ const SUPERVISOR_FIXED_CLOSE_MS =
   SHUTDOWN_MARGIN_MS +
   2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) +
   DEFAULT_STOP_VALUES.closeGraceMs +
-  fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs) +
+  managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs) +
   SHUTDOWN_MARGIN_MS +
   managedServerReapBoundMs(DEFAULT_STOP_VALUES) +
   SHUTDOWN_REAP_BOUND_MS +
@@ -80,7 +80,7 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
       expect(runtimeMaxCloseMs(drainTimeout)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS);
       expect(supervisorMaxCloseMs(drainTimeout, DEFAULT_STOP_VALUES)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + fixedTerms);
     }
-    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
     expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(SUPERVISOR_FIXED_CLOSE_MS);
     expect(SUPERVISOR_FIXED_CLOSE_MS).toBe(88_100);
     expect(managedServerReapBoundMs(DEFAULT_STOP_VALUES)).toBe(markerReapClockBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
@@ -191,7 +191,7 @@ describe('read-at-stop: the values a stop carries bound every wait of that stop 
   const z3 = useZ3();
 
   it('reads the closed forms the arithmetic below uses, from the code, at sampled values', () => {
-    expect(fmServeStopBoundMs(1000)).toBe(MANAGED_WAITS_PER_STOP * 1000);
+    expect(managedServerStopBoundMs(1000)).toBe(MANAGED_WAITS_PER_STOP * 1000);
     expect(managedServerReapBoundMs({ closeGraceMs: 0, managedServerStopGraceMs: 1000 })).toBe(MANAGED_REAP_WINDOWS * (1000 + REAP_POLL_INTERVAL_MS));
     for (const grace of [0, 1, 567, 3000, STOP_GRACE_MAX_MS]) expect(managedServerReapBoundMs({ closeGraceMs: 0, managedServerStopGraceMs: grace })).toBe(markerReapClockBoundMs(grace));
     expect(REAP_POLL_INTERVAL_MS).toBe(25);
@@ -202,7 +202,7 @@ describe('read-at-stop: the values a stop carries bound every wait of that stop 
     expect(daemonStopBoundMs(sample)).toBe(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS + 1234 + 10 * 567 + 4 * 25 + SUPERVISOR_STAGES_FIXED_MS + ENTRY_HARD_EXIT_MARGIN_MS);
     expect(daemonStopBoundMs({ closeGraceMs: CLOSE_GRACE_MAX_MS, managedServerStopGraceMs: STOP_GRACE_MAX_MS })).toBe(981_100);
     expect(SUPERVISOR_STAGES_FIXED_MS).toBe(48_000);
-    expect(fmServeStopBoundMs(0)).toBe(0);
+    expect(managedServerStopBoundMs(0)).toBe(0);
     expect(STOP_GRACE_MAX_MS).toBe(STARTUP_TIMEOUT_MS);
     expect(SHUTDOWN_MARGIN_MS + ENTRY_HARD_EXIT_MARGIN_MS).toBe(8000);
   });

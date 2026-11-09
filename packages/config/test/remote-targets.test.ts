@@ -189,7 +189,7 @@ describe('secretNames and credentialEnvNames', () => {
       d: openResponsesTarget({ apiKeySecret: 'zeta' }),
       e: openResponsesTarget({ apiKeyEnv: 'OPENROUTER_API_KEY' }),
       f: openResponsesTarget(),
-      g: { adapter: 'fm' },
+      g: { adapter: 'managed', server: 'fm' },
     });
     const { settings } = await loadUserSettings({ home: tree.home });
     expect(secretNames(settings)).toEqual(['alpha', 'zeta']);

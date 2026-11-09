@@ -92,15 +92,28 @@ export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClien
   };
 };
 
-export const isUnixSocketLive = (socketPath: string): Promise<boolean> =>
+export const isUnixSocketLive = (socketPath: string, signal: AbortSignal): Promise<boolean> =>
   new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
     const probe = net.connect(socketPath);
-    probe.once('connect', () => {
+    const onAbort = (): void => {
       probe.destroy();
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    const settle = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      probe.destroy();
+    };
+    probe.once('connect', () => {
+      settle();
       resolve(true);
     });
     probe.once('error', (error: NodeJS.ErrnoException) => {
-      probe.destroy();
+      settle();
       if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT') resolve(false);
       else reject(error);
     });
@@ -125,7 +138,8 @@ const listenPipe = async (server: net.Server, pipePath: string): Promise<void> =
   }
 };
 
-export const listenUnix = async (server: net.Server, socketPath: string, lockOptions?: AcquireProcessLockOptions): Promise<void> => {
+export const listenUnix = async (server: net.Server, socketPath: string, lockOptions: AcquireProcessLockOptions | undefined, signal: AbortSignal): Promise<void> => {
+  if (!(signal instanceof AbortSignal)) throw new TypeError(`listening on ${socketPath} needs the signal of the operation that asked for it`);
   assertSocketPathLength(socketPath);
   if (isPipePath(socketPath)) return listenPipe(server, socketPath);
   const directory = path.dirname(socketPath);
@@ -153,7 +167,7 @@ export const listenUnix = async (server: net.Server, socketPath: string, lockOpt
     });
     if (existing !== undefined) {
       if (!existing.isSocket()) throw new Error(`${socketPath} exists and is not a socket`);
-      if (await isUnixSocketLive(socketPath)) throw new Error(`${socketPath} is already in use by a live server`);
+      if (await isUnixSocketLive(socketPath, signal)) throw new Error(`${socketPath} is already in use by a live server`);
       await fs.promises.unlink(socketPath);
     }
     await listen(server, socketPath);

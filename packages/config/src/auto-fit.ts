@@ -1,13 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, isRecord, nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { AutoClassifierView } from '@momonga/protocol';
+import { canonicalJson, isRecord, nodeFileSystem, readProbeKeyComponents, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import type { BinaryHashCache, HeldHostReadings, HostExec } from '@momonga/foundation';
+import { managedServerOf } from '@momonga/protocol';
+import type { AutoClassifierView, ManagedServerDescription } from '@momonga/protocol';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
 import { ConfigError } from './config-error.ts';
 import { isAbsentPathError } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import type { ResolvedModels } from './models.ts';
 import { endpointKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
+import { knownKeyOf, probeKeyOf } from './probe-key.ts';
+import type { KnownProbeKey, ProbeKey } from './probe-key.ts';
 import type { ResolvedModelTarget } from './settings.ts';
 
 export const AUTO_GATE_BOUNDS = { falseAllowHigh: 0.05, falseBlockHigh: 0.1, unobservedMax: 0.25, wilsonZ: 1.959963984540054 } as const;
@@ -71,18 +75,61 @@ export const autoFitViewOf = (alias: string, key: AutoFitKey, record: AutoFitRec
   };
 };
 
-export const classifierIdentityOf = (target: ResolvedModelTarget): string =>
-  target.adapter === 'fm'
-    ? ['fm', target.model ?? ''].join('|')
-    : [target.adapter, target.model, endpointKeyOf(upstreamEndpointOf(target))].join('|');
+export const classifierIdentityOf = (target: ResolvedModelTarget, probeKey: KnownProbeKey | undefined): string => {
+  if (target.adapter !== 'managed') return knownKeyOf({ subject: 'endpoint', endpoint: endpointKeyOf(upstreamEndpointOf(target)), model: target.model }).canonical;
+  if (probeKey === undefined) throw new Error(`the managed target of the classifier has no probe key that was read`);
+  return probeKey.canonical;
+};
 
-export const classifierAliasIdentityOf = (models: ResolvedModels, alias: string): string => {
+export type ClassifierProbeKeys = ReadonlyMap<string, ProbeKey>;
+
+export type ClassifierKeyPorts = {
+  servers: readonly ManagedServerDescription[];
+  exec: HostExec;
+  hashes: BinaryHashCache;
+  host?: HeldHostReadings;
+  platform: NodeJS.Platform;
+  signal: AbortSignal;
+};
+
+const aliasMembersOf = (models: ResolvedModels, alias: string): string[] => {
   const members = models.aliases[alias];
   if (members === undefined) throw new ConfigError(`the auto mode classifier alias ${alias} is not defined in models.aliases`);
-  return [members]
-    .flat()
-    .map((name) => classifierIdentityOf(models.targets[name] as ResolvedModelTarget))
-    .join(' > ');
+  return [members].flat();
+};
+
+export const readClassifierProbeKeys = async (models: ResolvedModels, alias: string, ports: ClassifierKeyPorts): Promise<ClassifierProbeKeys> => {
+  const keys = new Map<string, ProbeKey>();
+  for (const name of aliasMembersOf(models, alias)) {
+    const target = models.targets[name] as ResolvedModelTarget;
+    if (target.adapter !== 'managed') continue;
+    const description = managedServerOf(ports.servers, target.server);
+    if (description === undefined) throw new ConfigError(`the target ${name} names the managed server ${target.server}, which is not registered`);
+    const readings = await readProbeKeyComponents({
+      identity: description.identity,
+      binary: target.binary,
+      platform: ports.platform,
+      exec: ports.exec,
+      signal: ports.signal,
+      hashes: ports.hashes,
+      ...(ports.host === undefined ? {} : { host: ports.host }),
+    });
+    keys.set(name, probeKeyOf({ subject: description.id, identity: description.identity, readings, model: target.model }));
+  }
+  return keys;
+};
+
+export type ClassifierIdentity = { kind: 'known'; identity: string } | { kind: 'unknown'; target: string; component: string; reason: string };
+
+export const classifierAliasIdentityOf = (models: ResolvedModels, alias: string, probeKeys: ClassifierProbeKeys): ClassifierIdentity => {
+  const identities: string[] = [];
+  for (const name of aliasMembersOf(models, alias)) {
+    const target = models.targets[name] as ResolvedModelTarget;
+    const key = probeKeys.get(name);
+    if (key?.kind === 'unknown') return { kind: 'unknown', target: name, component: key.component, reason: key.reason };
+    identities.push(classifierIdentityOf(target, key));
+  }
+  return { kind: 'known', identity: identities.join(' > ') };
 };
 
 export const classifierCodeDigestOf = (code: ClassifierCode): string => sha256Hex(canonicalJson({ instructions: code.instructions, verdictSchema: code.verdictSchema }));
@@ -96,11 +143,13 @@ export const autoModeDatasetDigest = (): string => {
   return datasetDigest;
 };
 
-export const autoFitKeyOf = (models: ResolvedModels, classifierAlias: string, code: ClassifierCode): AutoFitKey => ({
-  classifier: classifierAliasIdentityOf(models, classifierAlias),
-  codeDigest: classifierCodeDigestOf(code),
-  datasetDigest: autoModeDatasetDigest(),
-});
+export type AutoFitKeyResult = { kind: 'known'; key: AutoFitKey } | Extract<ClassifierIdentity, { kind: 'unknown' }>;
+
+export const autoFitKeyOf = (models: ResolvedModels, classifierAlias: string, code: ClassifierCode, probeKeys: ClassifierProbeKeys): AutoFitKeyResult => {
+  const identity = classifierAliasIdentityOf(models, classifierAlias, probeKeys);
+  if (identity.kind === 'unknown') return identity;
+  return { kind: 'known', key: { classifier: identity.identity, codeDigest: classifierCodeDigestOf(code), datasetDigest: autoModeDatasetDigest() } };
+};
 
 export const autoFitDirectoryOf = (home: string): string => path.join(layoutOf(home).state, 'auto-fit');
 

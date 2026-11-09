@@ -6,9 +6,9 @@ type ResolvedTarget = Awaited<ReturnType<typeof loadUserSettings>>['settings']['
 export type TargetCounterInput = {
   target: ResolvedTarget;
   codeDigest: string;
-  fm?: { binarySha256: string | null; osBuild: string };
+  probeKey?: string;
   upstreamIdentity?: string;
 };
 
-export const targetCounterOf = ({ target, codeDigest, fm, upstreamIdentity }: TargetCounterInput): string =>
-  sha256Hex(canonicalJson({ definition: target, codeDigest, fm: fm ?? null, upstreamIdentity: upstreamIdentity ?? null }));
+export const targetCounterOf = ({ target, codeDigest, probeKey, upstreamIdentity }: TargetCounterInput): string =>
+  sha256Hex(canonicalJson({ definition: target, codeDigest, ...(probeKey === undefined ? {} : { probeKey }), ...(upstreamIdentity === undefined ? {} : { upstreamIdentity }) }));

@@ -1,6 +1,8 @@
 import path from 'node:path';
-import { appendPermissionRule, autoFitKeyOf, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
+import { MANAGED_SERVERS } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -33,10 +35,14 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
 
   const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
 
-  const autoFitKeyFor = (resolved: ResolvedSettings): AutoFitKey | undefined => {
+  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform: process.platform };
+
+  const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
     const classifier = resolved.autoMode?.classifier;
     if (classifier === undefined || !Object.hasOwn(resolved.models.aliases, classifier)) return undefined;
-    return autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE);
+    const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS) });
+    const result = autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE, probeKeys);
+    return result.kind === 'known' ? result.key : undefined;
   };
 
   const refusalOf = (error: ConfigError): ConfigError =>
@@ -66,11 +72,11 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read');
 
-  const sessionSettingsFrom = (snapshot: UserSnapshot, loaded: LoadSettingsResult): SessionCreateSettings => {
+  const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
     const classifier = snapshot.settings.autoMode?.classifier;
-    const autoModeKey = autoFitKeyFor(snapshot.settings);
+    const autoModeKey = await autoFitKeyFor(snapshot.settings);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),

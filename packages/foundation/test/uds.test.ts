@@ -7,7 +7,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, inspectProcessLock, listenUnix, setSocketBind, fixedSocket } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
 
 const SQLITE_JOURNAL_SUFFIX = '-journal';
@@ -76,7 +76,7 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('listens on a socket in a 0700 directory and leaves the socket mode 0600', async () => {
     const socketPath = path.join(makeDir(), 's.sock');
     const server = echoServer();
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     expect(server.listening).toBe(true);
     const stat = fs.statSync(socketPath);
     expect(stat.isSocket()).toBe(true);
@@ -86,7 +86,7 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('rejects when the parent directory is not 0700', async () => {
     const socketPath = path.join(makeDir(0o755), 's.sock');
     const server = echoServer();
-    await expect(listenUnix(server, socketPath)).rejects.toThrow();
+    await expect(listenUnix(server, socketPath, undefined, realProcessTestSignal())).rejects.toThrow();
     expect(server.listening).toBe(false);
     expect(fs.existsSync(socketPath)).toBe(false);
   });
@@ -112,7 +112,7 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const socketPath = pathOfLength(dir, limit);
     expect(Buffer.byteLength(socketPath)).toBe(limit);
     const server = echoServer();
-    const error = await listenUnix(server, socketPath).catch((caught: unknown) => caught);
+    const error = await listenUnix(server, socketPath, undefined, realProcessTestSignal()).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain(socketPath);
     expect((error as Error).message).toContain('ENAMETOOLONG');
@@ -129,7 +129,7 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     setSocketBind(fake.bind);
     cleanups.push(() => setSocketBind(undefined));
     const socketPath = pathOfLength(dir, limit - 1);
-    await listenUnix(echoServer(), socketPath);
+    await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal());
     expect(fake.attempts).toHaveLength(1);
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
   });
@@ -140,16 +140,16 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     spawnSync(process.execPath, ['-e', script]);
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
     const server = echoServer();
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     const response = await client(socketPath).request({ method: 'GET', path: '/alive' });
     expect(response.status).toBe(200);
   });
 
   it('refuses to take over a socket that a live server is using', async () => {
     const socketPath = path.join(makeDir(), 'live.sock');
-    await listenUnix(echoServer(), socketPath);
+    await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal());
     const intruder = echoServer();
-    await expect(listenUnix(intruder, socketPath)).rejects.toThrow();
+    await expect(listenUnix(intruder, socketPath, undefined, realProcessTestSignal())).rejects.toThrow();
     expect(intruder.listening).toBe(false);
     const response = await client(socketPath).request({ method: 'GET', path: '/still-there' });
     expect(response.status).toBe(200);
@@ -161,7 +161,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     import net from 'node:net';
     import { listenUnix } from ${JSON.stringify(path.resolve(import.meta.dirname, '../src/uds.ts'))};
     try {
-      await listenUnix(net.createServer(), ${JSON.stringify(socketPath)});
+      await listenUnix(net.createServer(), ${JSON.stringify(socketPath)}, undefined, AbortSignal.timeout(${REAL_PROCESS_TEST_TIMEOUT_MS}));
       process.stdout.write('won\\n');
       process.stdin.resume();
     } catch {
@@ -199,7 +199,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const deadPid = finished.pid;
     fs.writeFileSync(`${socketPath}.lock`, String(deadPid), { mode: 0o600 });
     const server = echoServer();
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     expect(server.listening).toBe(true);
     expect(fs.readFileSync(`${socketPath}.lock`, 'utf8')).toBe(String(process.pid));
   });
@@ -208,7 +208,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const socketPath = path.join(withTempDir(context), 'held.sock');
     const holder = await startHolder(context, `${socketPath}.lock`);
     const server = echoServer();
-    await expect(listenUnix(server, socketPath)).rejects.toThrow(/in use/);
+    await expect(listenUnix(server, socketPath, undefined, realProcessTestSignal())).rejects.toThrow(/in use/);
     expect(server.listening).toBe(false);
     expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: holder.pid });
   });
@@ -234,7 +234,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
 
   it('holds the kernel lock without any temporary file beside the socket', async (context) => {
     const socketPath = path.join(withTempDir(context), 'atomic.sock');
-    await listenUnix(echoServer(), socketPath);
+    await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal());
     expect(fs.readdirSync(path.dirname(socketPath)).sort()).toEqual(filesBesideHeldSocket('atomic.sock'));
     expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
   });
@@ -244,7 +244,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const lockPath = `${socketPath}.lock`;
     fs.writeFileSync(lockPath, '', { mode: 0o600 });
     const server = echoServer();
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     expect(server.listening).toBe(true);
     expect(fs.readFileSync(lockPath, 'utf8')).toBe(String(process.pid));
   });
@@ -253,7 +253,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const socketPath = path.join(withTempDir(context), 'reused.sock');
     const lockPath = `${socketPath}.lock`;
     const holder = await startHolder(context, lockPath);
-    const error = await listenUnix(echoServer(), socketPath).catch((e: unknown) => e);
+    const error = await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal()).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
     expect((error as Error).message).toBe(`${socketPath} is already in use by process ${holder.pid} (lock ${lockPath})`);
   });
@@ -261,7 +261,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
   it('releases the lock when the server closes', async () => {
     const socketPath = path.join(makeDir(), 'release.sock');
     const server = echoServer();
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'held', pid: process.pid });
     await new Promise<void>((resolve) => {
       server.closeAllConnections();
@@ -274,7 +274,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const dir = makeDir();
     const socketPath = path.join(dir, 'file.sock');
     fs.writeFileSync(socketPath, 'not a socket');
-    await expect(listenUnix(echoServer(), socketPath)).rejects.toThrow(/not a socket/);
+    await expect(listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal())).rejects.toThrow(/not a socket/);
     expect(await inspectProcessLock(`${socketPath}.lock`)).toEqual({ state: 'free' });
   });
 });
@@ -282,7 +282,7 @@ describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
 describe('createUdsClient', () => {
   const listenEcho = async (): Promise<string> => {
     const socketPath = path.join(makeDir(), 'e.sock');
-    await listenUnix(echoServer(), socketPath);
+    await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal());
     return socketPath;
   };
 
@@ -315,7 +315,7 @@ describe('createUdsClient', () => {
         setTimeout(() => response.end('part-2'), 10);
       }),
     );
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     const response = await client(socketPath).request({ method: 'GET', path: '/' });
     const decoder = new TextDecoder();
     let text = '';
@@ -334,7 +334,7 @@ describe('createUdsClient', () => {
         response.write('first');
       }),
     );
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     const controller = new AbortController();
     const response = await client(socketPath).request({ method: 'GET', path: '/', signal: controller.signal });
     const iterator = response.body[Symbol.asyncIterator]();
@@ -373,7 +373,7 @@ describe('createUdsClient close', () => {
         connections -= 1;
       });
     });
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     const created = createUdsClient(fixedSocket(socketPath));
     expect((await created.request({ method: 'GET', path: '/' })).status).toBe(200);
     expect(connections).toBe(1);
@@ -383,7 +383,7 @@ describe('createUdsClient close', () => {
 
   it('rejects requests made after close', async () => {
     const socketPath = path.join(makeDir(), 'd.sock');
-    await listenUnix(echoServer(), socketPath);
+    await listenUnix(echoServer(), socketPath, undefined, realProcessTestSignal());
     const created = createUdsClient(fixedSocket(socketPath));
     await created.close();
     await expect(created.request({ method: 'GET', path: '/' })).rejects.toThrow();
@@ -405,7 +405,7 @@ describe('createUdsClient timeouts', () => {
         setTimeout(() => response.end('late'), delayMs);
       }),
     );
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     return socketPath;
   };
 
@@ -442,7 +442,7 @@ describe('listenUnix lock options', () => {
       adoptInherited: undefined,
     };
     const server = http.createServer();
-    await expect(listenUnix(server, socketPath, { mechanism })).rejects.toBeInstanceOf(ProcessLockHeldError);
+    await expect(listenUnix(server, socketPath, { mechanism }, realProcessTestSignal())).rejects.toBeInstanceOf(ProcessLockHeldError);
     expect(claims).toEqual([`${socketPath}.lock`]);
     expect(server.listening).toBe(false);
   });

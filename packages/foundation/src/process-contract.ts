@@ -15,11 +15,13 @@ export const RUNTIME_ABORT_BUDGET_MS = 5000;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 export const STARTUP_TIMEOUT_MS = 60_000;
+
+export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);
 export const ORPHAN_REAP_GRACE_MS = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
-const FM_TERMINATE_GRACE_WAITS = 2;
+export const MANAGED_SERVER_TERMINATE_GRACE_WAITS = 2;
 export const MARKER_REAP_GRACE_WINDOWS = 4;
 export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
-export const fmServeStopBoundMs = (stopGraceMs: number): number => (FM_TERMINATE_GRACE_WAITS + MARKER_REAP_GRACE_WINDOWS) * stopGraceMs;
+export const managedServerStopBoundMs = (stopGraceMs: number): number => (MANAGED_SERVER_TERMINATE_GRACE_WAITS + MARKER_REAP_GRACE_WINDOWS) * stopGraceMs;
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
 export const STDIO_EXIT_FLUSH_MS = 1000;
@@ -79,11 +81,11 @@ export const parseStopValues = (input: unknown): StopValuesParse => {
   return { kind: 'values', values: { closeGraceMs: record['closeGraceMs'] as number, managedServerStopGraceMs: record['managedServerStopGraceMs'] as number } };
 };
 
-export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + fmServeStopBoundMs(values.managedServerStopGraceMs);
+export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + managedServerStopBoundMs(values.managedServerStopGraceMs);
 
 export const gatewayStopBudgetMs = (values: StopValues): number => gatewayMaxCloseMs(values) + SHUTDOWN_MARGIN_MS;
 
-export const gatewayAbortCloseMs = (values: StopValues): number => fmServeStopBoundMs(values.managedServerStopGraceMs);
+export const gatewayAbortCloseMs = (values: StopValues): number => managedServerStopBoundMs(values.managedServerStopGraceMs);
 
 export const gatewayAbortBudgetMs = (values: StopValues): number => gatewayAbortCloseMs(values) + SHUTDOWN_MARGIN_MS;
 

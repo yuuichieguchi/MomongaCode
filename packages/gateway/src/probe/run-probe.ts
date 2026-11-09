@@ -26,7 +26,7 @@ import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
 import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
-import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
+import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ManagedProbeRoutes, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import type { ProbeTool } from './envelope.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -40,14 +40,14 @@ import type { Chat, ChatResult, ProbeOutcome } from './probe-chat.ts';
 import { fillerText } from './filler.ts';
 import { JSON_MODE_PROBE_PROMPT, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
-import { field, firstOf, isRecord, listedEntryOf, parseJson } from './json.ts';
+import { field, firstOf, isRecord, listedEntryOf, parseJson, valueAtPath } from './json.ts';
 
 export interface ProbeOptions {
   socketPath?: string;
   baseUrl?: string;
   network?: OutboundNetwork;
   headers?: Record<string, string>;
-  managedHealthRoute?: boolean;
+  managed?: ManagedProbeRoutes;
   vocabulary?: ErrorVocabulary;
   userDialects?: UserDialects;
   declaredDialect?: DialectId;
@@ -143,7 +143,7 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
-  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managedHealthRoute === true);
+  const client = createProbeClient(endpointOf(options), options.signal, options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS, options.managed);
   try {
     return await probeWith(client, options);
   } finally {
@@ -161,10 +161,9 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const modelsResult = await client.get('models');
   expectStatus(modelsResult, [200], 'models');
   const modelsBody = parseJson(modelsResult.text);
-  const listedModel = firstOf(field(modelsBody, 'data'));
-  const listedId = field(listedModel, 'id');
+  const listedId = options.managed === undefined ? field(firstOf(field(modelsBody, 'data')), 'id') : valueAtPath(modelsBody, options.managed.idPath);
   const model = options.model ?? listedId;
-  if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
+  if (typeof model !== 'string') throw new Error(`Probe could not determine a model id from ${options.managed?.listPath ?? '/v1/models'}`);
 
   const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
   const send: Chat = async (body) => {

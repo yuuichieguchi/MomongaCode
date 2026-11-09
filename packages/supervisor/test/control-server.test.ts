@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer } from '../src/control-server.ts';
@@ -233,7 +233,7 @@ describe('startControlServer', () => {
   it('negative control: server.close alone is held by a half-sent request', async (context) => {
     const socketPath = path.join(runDir(context), 'control.sock');
     const server = http.createServer(() => undefined);
-    await listenUnix(server, socketPath);
+    await listenUnix(server, socketPath, undefined, realProcessTestSignal());
     const raw = net.connect(socketPath);
     raw.on('error', () => undefined);
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));

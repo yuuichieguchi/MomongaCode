@@ -9,7 +9,7 @@ import { registerProductCommands } from './commands/register.ts';
 import { runUpdate } from './commands/update.ts';
 import { describeFailure } from './failure.ts';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
-import { DEFAULT_FM_BINARY, probeTarget } from './commands/gateway.ts';
+import { probeTarget } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
@@ -176,13 +176,11 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
   const gateway = program.command('gateway').description('inspect and tune the model gateway');
   gateway
     .command('probe <target>')
-    .description('measure an fm, chat-completions or ollama target (an ollama target: trained context length, tools, vision, thinking and model digest; the others: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage) and record the result for the gateway')
-    .option('--fm-binary <path>', 'the fm executable to probe (fm targets only)', DEFAULT_FM_BINARY)
+    .description('measure a managed server, chat-completions or ollama target and record the result for the gateway (an ollama target: trained context length, tools, vision, thinking and model digest; a managed or chat-completions target: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
-    .action(async (target: string, options: { fmBinary: string; samples?: number }) => {
+    .action(async (target: string, options: { samples?: number }) => {
       deps.complete(
         await probeTarget(ports, await pathsOf(ports), target, {
-          fmBinary: options.fmBinary,
           interrupt: deps.interrupt,
           ...(options.samples === undefined ? {} : { samples: options.samples }),
         }),

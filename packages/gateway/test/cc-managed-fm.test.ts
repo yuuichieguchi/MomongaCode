@@ -7,11 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   capabilitiesFromProbe,
   createChatCompletionsAdapter,
-  createFmServe,
-  createManagedFmTarget,
+  createManagedServer,
+  createManagedTarget,
   saveProbeRecord,
 } from '@momonga/gateway';
-import type { ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKey } from '@momonga/gateway';
+import type { ExecResult, ManagedServer, ManagedServerTimers, ManagedTarget } from '@momonga/gateway';
 import { ESTIMATED_ERROR_SHAPE, TARGET_PROBING, errorBoundOfShape } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
@@ -20,19 +20,26 @@ import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startG
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
-import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import type { Probing } from '@momonga/protocol';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import type { KnownProbeKey } from '@momonga/config';
+import { FM_SERVER } from '@momonga/protocol';
+
+const countTokensOf = (managed: { countTokens?: ManagedTarget['countTokens'] }): NonNullable<ManagedTarget['countTokens']> => {
+  if (managed.countTokens === undefined) throw new Error('the fm description declares a token counter, so the managed target counts tokens');
+  return managed.countTokens;
+};
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
 const LICENSE_NOTICE = 'YOU HAVE NOT AGREED TO THE FM TERMS';
-const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
+const RECORD_KEY: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
 const { tokenCalibration: _calibration, ...uncalibrated } = makeReport(1, 1);
 const UNCALIBRATED_REPORT: ProbeReport = uncalibrated;
 const ALL_TRUE = { enum: true, anyOf: true, const: true, pattern: true, minimum: true, nested: true, additionalProperties: true };
 
-class FakeFmChild extends EventEmitter {
+class FakeManagedChild extends EventEmitter {
   private server: FakeChatCompletionsServer | undefined;
   private alive = true;
   private readonly socketPath: string;
@@ -69,7 +76,7 @@ class FakeFmChild extends EventEmitter {
 
 type ExecCall = { file: string; args: readonly string[]; stdin: string };
 
-const pollingTimers = (clock: FakeClock): FmServeTimers => ({
+const pollingTimers = (clock: FakeClock): ManagedServerTimers => ({
   setTimeout: (callback, ms) => {
     if (ms === POLL_MS) setImmediate(callback);
     return undefined;
@@ -91,16 +98,16 @@ const setup = async (config: Setup = {}) => {
   const socketPath = path.join(dir, 'fm.sock');
   const recordDir = path.join(dir, 'probe');
   const recorded = config.unprobed === true ? undefined : (config.report ?? UNCALIBRATED_REPORT);
-  if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
-  const probeStarts: ProbeRecordKey[] = [];
-  const startProbe = async (key: ProbeRecordKey): Promise<Probing> => {
+  if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, FM_CURRENCY);
+  const probeStarts: KnownProbeKey[] = [];
+  const startProbe = async (key: KnownProbeKey): Promise<Probing> => {
     probeStarts.push(key);
     return probingAnswer();
   };
   const clock = createFakeClock(START_MS);
-  const children: FakeFmChild[] = [];
+  const children: FakeManagedChild[] = [];
   const spawn = vi.fn((_file: string, _args: readonly string[]) => {
-    const child = new FakeFmChild(socketPath);
+    const child = new FakeManagedChild(socketPath);
     children.push(child);
     return child;
   });
@@ -109,18 +116,17 @@ const setup = async (config: Setup = {}) => {
       ? { exitCode: config.licenseExitCode, stdout: '', stderr: 'The license agreement has not been accepted.' }
       : { exitCode: 0, stdout: '', stderr: '' };
   const warnings: string[] = [];
-  const fmServe: FmServe = createFmServe({
+  const fmServe: ManagedServer = createManagedServer({
+    description: FM_SERVER,
+    target: 'fm',
+    lockPath: `${socketPath}.lock`,
+    readyTimeoutMs: 400,
+    readStopGraceMs: () => 30,
     binary: BINARY,
     socketPath,
     exec: serveExec,
     spawn,
     timers: pollingTimers(clock),
-    healthTimeoutMs: 400,
-    restartBackoffMs: 50,
-    stopGraceMs: 30,
-    maxRestarts: 3,
-    restartResetMs: 5000,
-    preconditionTtlMs: 1000,
     onWarning: (message) => warnings.push(message),
   });
   registerCleanup(async () => {
@@ -135,8 +141,9 @@ const setup = async (config: Setup = {}) => {
       ? { exitCode: 0, stdout: config.countStdout ?? '20\n', stderr: '' }
       : { exitCode: config.countExitCode, stdout: '', stderr: LICENSE_NOTICE };
   };
-  const managed: ManagedFmTarget = await createManagedFmTarget({
-    fmServe,
+  const managed: ManagedTarget = await createManagedTarget({
+    ...fmTargetBase(),
+    server: fmServe,
     binary: BINARY,
     exec,
     probeRecordDir: recordDir,
@@ -147,18 +154,18 @@ const setup = async (config: Setup = {}) => {
   return { managed, spawn, socketPath, execCalls, clock, children, probeStarts };
 };
 
-const adapterFor = (managed: ManagedFmTarget, clock: FakeClock) => {
+const adapterFor = (managed: ManagedTarget, clock: FakeClock) => {
   const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   registerCleanup(() => adapter.close());
   return adapter;
 };
 
-describe('createManagedFmTarget endpoint', () => {
+describe('createManagedTarget endpoint', () => {
   it('starts fm serve on first use and reuses it afterwards', async () => {
     const { managed, spawn, socketPath } = await setup();
     expect(spawn).not.toHaveBeenCalled();
-    const [first, second] = await Promise.all([managed.resolveEndpoint(TARGET), managed.resolveEndpoint(TARGET)]);
-    const third = await managed.resolveEndpoint(TARGET);
+    const [first, second] = await Promise.all([managed.resolveEndpoint(TARGET, new AbortController().signal), managed.resolveEndpoint(TARGET, new AbortController().signal)]);
+    const third = await managed.resolveEndpoint(TARGET, new AbortController().signal);
     expect(first).toEqual({ kind: 'unix', socketPath });
     expect(second).toEqual(first);
     expect(third).toEqual(first);
@@ -173,7 +180,7 @@ describe('createManagedFmTarget endpoint', () => {
   });
 });
 
-describe('createManagedFmTarget probe-derived settings', () => {
+describe('createManagedTarget probe-derived settings', () => {
   it('decides tool calling and keyword support from the probe record', async () => {
     const report: ProbeReport = {
       ...makeReport(0.5, 1),
@@ -245,11 +252,11 @@ describe('createManagedFmTarget probe-derived settings', () => {
   });
 });
 
-describe('createManagedFmTarget token counting', () => {
+describe('createManagedTarget token counting', () => {
   it('counts with fm count-tokens on stdin and applies the probed calibration', async () => {
     const report = { ...makeReport(1, 1), tokenCalibration: { ratio: 1.25, errorBound: 0.25 } };
     const { managed, execCalls } = await setup({ report, countStdout: '20\n' });
-    const result = await managed.countTokens(TARGET, { model: 'fast', instructions: 'Be terse.', input: [userText('count these words')] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'fast', instructions: 'Be terse.', input: [userText('count these words')] }, new AbortController().signal);
     expect(result).toEqual({ input_tokens: 25, method: 'calibrated', error_bound: 7, error_shape: { ratio: 0.25, minimum: 1 } });
     expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
     expect(execCalls).toHaveLength(1);
@@ -261,21 +268,21 @@ describe('createManagedFmTarget token counting', () => {
 
   it('reports an estimated count without a calibration', async () => {
     const { managed } = await setup({ countStdout: '20\n' });
-    const result = await managed.countTokens(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal);
     expect(result).toEqual({ input_tokens: 20, method: 'estimated', error_bound: 6, error_shape: ESTIMATED_ERROR_SHAPE });
     expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
   });
 
   it('counts a request with no text as zero tokens without running fm count-tokens', async () => {
     const { managed, execCalls } = await setup({ countStdout: '20\n' });
-    const result = await managed.countTokens(TARGET, { model: 'fast', input: [], tools: [] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: [], tools: [] }, new AbortController().signal);
     expect(result.input_tokens).toBe(0);
     expect(execCalls.filter((call) => call.args[0] === 'count-tokens')).toEqual([]);
   });
 
   it('still runs fm count-tokens with the text of a non-empty request', async () => {
     const { managed, execCalls } = await setup({ countStdout: '20\n' });
-    const result = await managed.countTokens(TARGET, { model: 'fast', input: [userText('hello')] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: [userText('hello')] }, new AbortController().signal);
     expect(result.input_tokens).toBe(20);
     expect(execCalls).toEqual([{ file: BINARY, args: ['count-tokens', '-q'], stdin: 'hello' }]);
   });
@@ -286,7 +293,7 @@ describe('createManagedFmTarget token counting', () => {
       { type: 'function' as const, name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } } }, strict: true },
       { type: 'function' as const, name: 'Bash', description: 'Run a command', parameters: { type: 'object', properties: {} } },
     ];
-    await managed.countTokens(TARGET, { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }, new AbortController().signal);
+    await countTokensOf(managed)(TARGET, { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }, new AbortController().signal);
     const lines = (execCalls[0]?.stdin ?? '').split('\n');
     expect(lines).toEqual([
       'Be terse.',
@@ -297,27 +304,25 @@ describe('createManagedFmTarget token counting', () => {
   });
 });
 
-describe('createManagedFmTarget unlicensed token counting', () => {
-  it('rejects fm count-tokens exit 69 with a precondition failure carrying the remedy', async () => {
+describe('createManagedTarget token counter failure: one generic text for every exit code, with no exit code given a meaning of its own (design-managed-servers section 9, text table)', () => {
+  it('rejects a counter exit 69 with the generic token counter text, not a licence precondition', async () => {
     const { managed } = await setup({ countExitCode: 69 });
-    await expect(managed.countTokens(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal)).rejects.toMatchObject({
-      name: 'PreconditionFailedError',
-      detail: LICENSE_NOTICE,
-      remediation: 'sudo fm license',
-    });
+    const failure = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).name).not.toBe('PreconditionFailedError');
+    expect((failure as Error).message).toMatch(/^the target "fm": the token counter failed with exit code 69: /);
   });
 
-  it('answers /v1/momonga/count_tokens with a non-retryable precondition_failed carrying the remedy', async () => {
+  it('answers /v1/momonga/count_tokens with 502 adapter_error carrying that text when the counter exits 69', async () => {
     const { managed, clock, execCalls } = await setup({ countExitCode: 69 });
     const { client } = await startGateway({
       adapters: { fm: adapterFor(managed, clock) },
       config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
     });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'count these words' }));
-    expect(response.status).toBe(412);
-    expect(response.body.error).toMatchObject({ type: 'invalid_request', code: 'precondition_failed' });
-    expect(response.body.error.message).toContain('sudo fm license');
-    expect(response.body.error.message).toContain(LICENSE_NOTICE);
+    expect(response.status).toBe(502);
+    expect(response.body.error).toMatchObject({ code: 'adapter_error' });
+    expect(response.body.error.message).toMatch(/the target "fm": the token counter failed with exit code 69: /);
     expect(execCalls).toHaveLength(1);
   });
 
@@ -329,11 +334,11 @@ describe('createManagedFmTarget unlicensed token counting', () => {
   });
 });
 
-describe('createManagedFmTarget health', () => {
+describe('createManagedTarget health', () => {
   it('delegates to fm serve health', async () => {
     const { managed } = await setup();
     expect(await managed.health(TARGET)).toMatchObject({ ok: true, detail: 'idle; starts on demand' });
-    await managed.resolveEndpoint(TARGET);
+    await managed.resolveEndpoint(TARGET, new AbortController().signal);
     expect(await managed.health(TARGET)).toEqual({ ok: true });
   });
 
@@ -351,7 +356,7 @@ describe('createManagedFmTarget health', () => {
   });
 });
 
-describe('createManagedFmTarget compaction and wire counting', () => {
+describe('createManagedTarget compaction and wire counting', () => {
   it('advertises compact through the chat-completions adapter and answers through fake-fm', async () => {
     const { managed, clock } = await setup();
     const adapter = adapterFor(managed, clock);

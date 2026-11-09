@@ -5,7 +5,7 @@ import {
   ENTRY_HARD_EXIT_MARGIN_MS,
   SHUTDOWN_MARGIN_MS,
   daemonStopBoundMs,
-  fmServeStopBoundMs,
+  managedServerStopBoundMs,
   gatewayAbortBudgetMs,
   gatewayAbortCloseMs,
   gatewayMaxCloseMs,
@@ -45,7 +45,7 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
   });
 
   it('GW: the gateway close is the close grace plus the managed-server stop bound (FmBound)', () => {
-    for (const values of SAMPLED_VALUES) expect(gatewayMaxCloseMs(values) - values.closeGraceMs, JSON.stringify(values)).toBe(fmServeStopBoundMs(values.managedServerStopGraceMs));
+    for (const values of SAMPLED_VALUES) expect(gatewayMaxCloseMs(values) - values.closeGraceMs, JSON.stringify(values)).toBe(managedServerStopBoundMs(values.managedServerStopGraceMs));
   });
 
   it('CHILD: the child stop budget is the gateway close plus one fixed margin', () => {
@@ -70,7 +70,7 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
 
   it('ABUD: the abort budget is the managed-server stop bound plus the same margin, never more than the child stop budget', () => {
     for (const values of SAMPLED_VALUES) {
-      expect(gatewayAbortCloseMs(values), JSON.stringify(values)).toBe(fmServeStopBoundMs(values.managedServerStopGraceMs));
+      expect(gatewayAbortCloseMs(values), JSON.stringify(values)).toBe(managedServerStopBoundMs(values.managedServerStopGraceMs));
       expect(gatewayAbortBudgetMs(values) - gatewayAbortCloseMs(values), JSON.stringify(values)).toBe(SHUTDOWN_MARGIN_MS);
       expect(gatewayAbortBudgetMs(values)).toBeLessThanOrEqual(gatewayStopBudgetMs(values));
     }

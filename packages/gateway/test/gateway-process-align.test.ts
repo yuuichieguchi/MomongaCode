@@ -158,7 +158,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
   it('ConfigError from settings is rethrown as ConfigError and the lock is released', async (context) => {
     resetControl(context);
     const home = withTempDir(context, { asHome: true });
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
+    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const error = await rejectionOf(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }));
     expect(error).toBeInstanceOf(ConfigError);
     expect((await inspectProcessLock(homePaths(home).lock)).state).toBe('free');

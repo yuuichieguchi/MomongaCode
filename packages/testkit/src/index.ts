@@ -119,6 +119,8 @@ export type { ModernFixtureRecord } from './mcp-fixtures.ts';
 export { CLEANUP_KILL_DEADLINE_MS, killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
+export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_MODEL, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeManagedServer } from './fake-managed-server.ts';
+export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
   BUILT_BINARY_TEST_TIMEOUT_MS,
   DAEMON_PROCESS_TEST_TIMEOUT_MS,
@@ -132,6 +134,7 @@ export {
   tempDirPrefixFor,
   testRunToken,
   withTempDir,
+  realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';

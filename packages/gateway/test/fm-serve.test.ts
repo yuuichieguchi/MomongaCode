@@ -6,8 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
-import { createFmServe, type ExecOptions, type ExecResult, type FmServe, type FmServeTimers } from '@momonga/gateway';
+import { createManagedServer, type ExecOptions, type ExecResult, type ManagedServer, type ManagedServerTimers } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
+import { FM_SERVER } from '@momonga/protocol';
 
 interface FakeChildOptions {
   manualServe?: boolean;
@@ -106,7 +107,7 @@ const createManualTimers = () => {
   let nextId = 1;
   const pending = new Map<number, PendingTimer>();
   const scheduled: number[] = [];
-  const timers: FmServeTimers = {
+  const timers: ManagedServerTimers = {
     setTimeout: (callback, ms) => {
       if (ms === POLL_MS) {
         setImmediate(callback);
@@ -139,6 +140,8 @@ const createManualTimers = () => {
     },
   };
 };
+
+const asking = (): AbortSignal => new AbortController().signal;
 
 const POLL_MS = 25;
 const HEALTH_MS = 400;
@@ -197,20 +200,18 @@ const setup = (config: SetupConfig = {}) => {
     return child;
   });
   const warnings: string[] = [];
-  const server: FmServe = createFmServe({
+  const server: ManagedServer = createManagedServer({
+    description: { ...FM_SERVER, restart: { backoffMs: BACKOFF_MS, maxRestarts: config.maxRestarts ?? 3, windowMs: RESET_MS } },
+    target: 'fm',
+    lockPath: `${socketPath}.lock`,
+    readyTimeoutMs: HEALTH_MS,
+    readStopGraceMs: config.readStopGraceMs ?? (() => GRACE_MS),
     binary: '/usr/bin/fm',
     socketPath,
     exec,
     spawn,
     timers: manual.timers,
-    healthTimeoutMs: HEALTH_MS,
-    restartBackoffMs: BACKOFF_MS,
-    stopGraceMs: GRACE_MS,
-    maxRestarts: config.maxRestarts ?? 3,
-    restartResetMs: RESET_MS,
-    preconditionTtlMs: config.preconditionTtlMs ?? 1000,
     onWarning: (message) => warnings.push(message),
-    ...(config.readStopGraceMs === undefined ? {} : { readStopGraceMs: config.readStopGraceMs }),
     ...(config.markerDirectory === undefined ? {} : { markerDirectory: config.markerDirectory }),
   });
   cleanups.push(async () => {
@@ -225,7 +226,7 @@ const failingLicense = (state: { failing: boolean }) => async (_file: string, ar
     ? { exitCode: 69, stdout: '', stderr: 'The license agreement has not been accepted.' }
     : { exitCode: 0, stdout: '', stderr: '' };
 
-describe('createFmServe preconditions', () => {
+describe('createManagedServer preconditions', () => {
   it('reports precondition_failed with the sudo fm license remediation when the license status exits 69', async () => {
     const exec = async (_file: string, args: readonly string[]): Promise<ExecResult> =>
       args[0] === 'license'
@@ -235,7 +236,7 @@ describe('createFmServe preconditions', () => {
     await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
     expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['license', '--status'], { signal: expect.any(AbortSignal) });
-    const health = await server.health();
+    const health = await server.health(asking());
     expect(health.ok).toBe(false);
     expect(health.reason).toBe('precondition_failed');
     expect(health.remediation).toBe('sudo fm license');
@@ -250,7 +251,7 @@ describe('createFmServe preconditions', () => {
     await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
     expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['available'], { signal: expect.any(AbortSignal) });
-    const health = await server.health();
+    const health = await server.health(asking());
     expect(health.ok).toBe(false);
     expect(health.reason).toBe('precondition_failed');
     expect(health.detail).toContain('Apple Intelligence is not enabled on this device.');
@@ -259,35 +260,33 @@ describe('createFmServe preconditions', () => {
 
   it('reports idle-ok before start when preconditions hold', async () => {
     const { server, spawn } = setup();
-    expect(await server.health()).toMatchObject({ ok: true });
+    expect(await server.health(asking())).toMatchObject({ ok: true });
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it('does not re-run the precondition commands within the ttl and does again after it expires', async () => {
-    const { server, exec, manual } = setup({ preconditionTtlMs: 1000 });
+  it('reuses a met verdict with no clock (rule C1): health checks after any time run no precondition while the child runs', async () => {
+    const { server, exec, manual } = setup();
     await server.start();
     const afterStart = exec.mock.calls.length;
-    expect(await server.health()).toEqual({ ok: true });
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
+    manual.advance(60_000);
+    expect(await server.health(asking())).toEqual({ ok: true });
     expect(exec.mock.calls.length).toBe(afterStart);
-    manual.advance(1000);
-    expect(await server.health()).toEqual({ ok: true });
-    expect(exec.mock.calls.length).toBe(afterStart + 2);
   });
 
   it('invalidates the cached preconditions when the child exits unexpectedly', async () => {
     const { server, exec } = setup();
     await server.start();
     const afterStart = exec.mock.calls.length;
-    await server.health();
+    await server.health(asking());
     expect(exec.mock.calls.length).toBe(afterStart);
     await children[0]?.crash(1, null);
-    await server.health();
+    await server.health(asking());
     expect(exec.mock.calls.length).toBe(afterStart + 2);
   });
 });
 
-describe('createFmServe a child that exits while its health body is being read', () => {
+describe('createManagedServer a child that exits while its health body is being read', () => {
   const serveHealthThenExit = async (socketPath: string, exit: () => Promise<void>): Promise<net.Server> => {
     const server = net.createServer((socket) => {
       socket.on('error', () => undefined);
@@ -313,11 +312,11 @@ describe('createFmServe a child that exits while its health body is being read',
       await children[0]?.crash(1, null);
     });
     expect(await outcome).toBe('failed');
-    expect((await server.health()).ok).toBe(false);
+    expect((await server.health(asking())).ok).toBe(false);
   });
 });
 
-describe('createFmServe start', () => {
+describe('createManagedServer start', () => {
   it('spawns fm serve with exactly the socket argv and resolves only after the socket serves /health', async () => {
     const { server, spawn, socketPath, events } = setup({ child: { manualServe: true } });
     let resolved = false;
@@ -332,7 +331,7 @@ describe('createFmServe start', () => {
     expect(await starting).toEqual({ kind: 'unix', socketPath });
     expect(spawn).toHaveBeenCalledWith('/usr/bin/fm', ['serve', '--socket', socketPath]);
     expect(events).toEqual(['spawn:1000', 'serving:1000', 'resolved']);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('terminates the child with SIGTERM when start fails as unhealthy, and a retried start spawns exactly one new child', async () => {
@@ -346,11 +345,11 @@ describe('createFmServe start', () => {
     await rejected;
     expect(children[0]?.signals).toEqual(['SIGTERM']);
     expect(children[0]?.alive).toBe(false);
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' });
     expect(spawn).toHaveBeenCalledTimes(1);
     await server.start();
     expect(spawn).toHaveBeenCalledTimes(2);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('escalates to SIGKILL when the child ignores SIGTERM after a failed start', async () => {
@@ -383,11 +382,11 @@ describe('createFmServe start', () => {
     const failure = Object.assign(new Error('spawn /usr/bin/fm ENOENT'), { code: 'ENOENT' });
     const { server, spawn } = setup({ child: (index) => (index === 0 ? { errorOnSpawn: failure } : {}) });
     await expect(server.start()).rejects.toMatchObject({
-      name: 'FmServeError',
+      name: 'ManagedServerError',
       reason: 'not_running',
-      detail: 'spawn /usr/bin/fm ENOENT',
+      message: 'the target "fm": the server could not be run: spawn /usr/bin/fm ENOENT',
     });
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     await server.start();
     expect(spawn).toHaveBeenCalledTimes(2);
   });
@@ -410,7 +409,7 @@ describe('createFmServe start', () => {
     await server.stop();
     await rejected;
     expect(children[0]?.signals).toEqual(['SIGTERM']);
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
@@ -445,7 +444,7 @@ describe('createFmServe start', () => {
     await firstRejected;
     await second;
     expect(spawn).toHaveBeenCalledTimes(2);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('can be started again after stop', async () => {
@@ -454,19 +453,26 @@ describe('createFmServe start', () => {
     await server.stop();
     await server.start();
     expect(spawn).toHaveBeenCalledTimes(2);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 });
 
-describe('createFmServe socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('rejects start as unhealthy when another live server owns the socket path', async () => {
+describe('createManagedServer socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('waits for a live server that owns the socket path without the instance lock only until the start deadline, then ends unhealthy with no launch and leaves that socket (items 12 and 18; section 18, item 7)', async () => {
     const socketPath = makeSocketPath();
     const owner = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath });
     cleanups.push(() => owner.close());
-    const { server, spawn } = setup({ socketPath });
-    await expect(server.start()).rejects.toMatchObject({
+    const { server, spawn, manual } = setup({ socketPath });
+    const outcome = server.start(asking()).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+    manual.fire(HEALTH_MS);
+    expect(await outcome).toMatchObject({
+      name: 'ManagedServerError',
       reason: 'unhealthy',
-      detail: expect.stringContaining('another process'),
+      message: 'the target "fm": the server was not ready before the request ended',
     });
     expect(spawn).not.toHaveBeenCalled();
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
@@ -479,7 +485,7 @@ describe('createFmServe socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
     const { server } = setup({ socketPath });
     await server.start();
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('rejects start as unhealthy without touching a path that is not a socket', async () => {
@@ -495,7 +501,7 @@ describe('createFmServe socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_
   });
 });
 
-describe('createFmServe restarts', () => {
+describe('createManagedServer restarts', () => {
   it('restarts the child after the backoff following an unexpected exit and counts restarts', async () => {
     const { server, spawn, manual } = setup();
     await server.start();
@@ -506,7 +512,7 @@ describe('createFmServe restarts', () => {
     manual.fire(BACKOFF_MS);
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
     expect(server.restarts).toBe(1);
-    await vi.waitFor(async () => expect(await server.health()).toEqual({ ok: true }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toEqual({ ok: true }));
   });
 
   it('doubles the backoff on each failed restart and stops at maxRestarts with an unhealthy state', async () => {
@@ -521,7 +527,7 @@ describe('createFmServe restarts', () => {
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS * 2]));
     manual.fire(BACKOFF_MS * 2);
     await vi.waitFor(async () =>
-      expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy', detail: expect.stringContaining('2 restarts') }),
+      expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy', detail: expect.stringContaining('2 restarts') }),
     );
     expect(manual.delays()).toEqual([]);
     expect(manual.scheduled.filter((ms) => ms !== HEALTH_MS)).toEqual([BACKOFF_MS, BACKOFF_MS * 2]);
@@ -542,7 +548,7 @@ describe('createFmServe restarts', () => {
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS * 2]));
     manual.fire(BACKOFF_MS * 2);
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(3));
-    await vi.waitFor(async () => expect(await server.health()).toEqual({ ok: true }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toEqual({ ok: true }));
     expect(server.restarts).toBe(2);
   });
 
@@ -559,7 +565,7 @@ describe('createFmServe restarts', () => {
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await vi.waitFor(() => expect(children[1]?.signals).toEqual(['SIGTERM']));
-    await vi.waitFor(async () => expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' }));
   });
 
   it('re-runs the preconditions before restarting and surfaces a failure without restarting again', async () => {
@@ -571,18 +577,18 @@ describe('createFmServe restarts', () => {
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
     manual.fire(BACKOFF_MS);
     await vi.waitFor(async () =>
-      expect(await server.health()).toMatchObject({ ok: false, reason: 'precondition_failed', remediation: 'sudo fm license' }),
+      expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'precondition_failed', remediation: 'sudo fm license' }),
     );
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(manual.delays()).toEqual([]);
+    await vi.waitFor(() => expect(manual.delays()).toEqual([]));
     license.failing = false;
     manual.advance(1000);
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 });
 
-describe('createFmServe restart edge cases', () => {
+describe('createManagedServer restart edge cases', () => {
   it('does not spawn when stop is called while the socket path is being claimed for a restart', async () => {
     const { server, spawn, manual } = setup();
     await server.start();
@@ -620,7 +626,7 @@ describe('createFmServe restart edge cases', () => {
     license.failing = false;
     await server.start();
     expect(closedAgents(closes)).toBe(1);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
     await server.stop();
     expect(closedAgents(closes)).toBe(2);
   });
@@ -642,11 +648,11 @@ describe('createFmServe restart edge cases', () => {
     const { server } = setup({ maxRestarts: 0 });
     await server.start();
     await children[0]?.crash(1, null);
-    await vi.waitFor(async () => expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' }));
     expect(closedAgents(closes)).toBe(0);
     await server.start();
     expect(closedAgents(closes)).toBe(1);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('keeps the backoff growing when the restarted child is not stable for restartResetMs', async () => {
@@ -661,7 +667,7 @@ describe('createFmServe restart edge cases', () => {
     manual.fire(BACKOFF_MS * 2);
     await vi.waitFor(() => expect(manual.delays()).toEqual([RESET_MS]));
     await children[2]?.crash(1, null);
-    await vi.waitFor(async () => expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' }));
     expect(server.restarts).toBe(2);
   });
 
@@ -682,12 +688,12 @@ describe('createFmServe restart edge cases', () => {
     manual.fire(RESET_MS);
     await children[2]?.crash(1, null);
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     expect(server.restarts).toBe(2);
   });
 });
 
-describe('createFmServe injected timers', () => {
+describe('createManagedServer injected timers', () => {
   it('routes the health poll and the health deadline through the injected timers', async () => {
     const { server, manual } = setup({ child: { manualServe: true } });
     const starting = server.start();
@@ -699,11 +705,11 @@ describe('createFmServe injected timers', () => {
   });
 });
 
-describe('createFmServe stop and health', () => {
+describe('createManagedServer stop and health', () => {
   it('leaves no pending timer behind after a successful health check', async () => {
     const { server, manual } = setup();
     await server.start();
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
     expect(manual.delays()).toEqual([]);
   });
 
@@ -716,7 +722,7 @@ describe('createFmServe stop and health', () => {
     expect(manual.delays()).toEqual([]);
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(server.restarts).toBe(0);
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
   });
 
   it('sends SIGTERM to a running child on stop', async () => {
@@ -725,7 +731,7 @@ describe('createFmServe stop and health', () => {
     await server.stop();
     expect(children[0]?.signals).toEqual(['SIGTERM']);
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
   });
 
   it('escalates to SIGKILL after stopGraceMs when SIGTERM is ignored', async () => {
@@ -739,19 +745,22 @@ describe('createFmServe stop and health', () => {
     expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
   });
 
-  it('bounds health by the health timeout when the server accepts connections but never replies', async () => {
+  it('bounds health by the caller signal when the server accepts connections but never replies, with no timer of its own (design 8.3, wait 6)', async () => {
     const { server, manual } = setup();
     await server.start();
     await children[0]?.replaceServerWithSilentOne();
-    const checking = server.health();
-    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
-    manual.fire(HEALTH_MS);
-    expect(await checking).toEqual({ ok: false, reason: 'unhealthy' });
+    const caller = new AbortController();
+    const checking = server.health(caller.signal);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(manual.delays()).toEqual([]);
+    const ended = new Error('the caller ended');
+    caller.abort(ended);
+    const answer = await checking.catch((error: unknown) => error);
+    expect(answer === ended || (answer as { ok?: boolean }).ok === false).toBe(true);
   });
 });
 
-describe('createFmServe ensureRunning', () => {
+describe('createManagedServer ensureRunning', () => {
   it('starts once for concurrent callers and returns the endpoint without spawning when running', async () => {
     const { server, spawn, socketPath } = setup();
     const [first, second] = await Promise.all([server.ensureRunning(), server.ensureRunning()]);
@@ -772,10 +781,10 @@ describe('createFmServe ensureRunning', () => {
     manual.fire(BACKOFF_MS);
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS * 2]));
     manual.fire(BACKOFF_MS * 2);
-    await vi.waitFor(async () => expect(await server.health()).toMatchObject({ ok: false, reason: 'unhealthy' }));
+    await vi.waitFor(async () => expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'unhealthy' }));
     await server.ensureRunning();
     expect(spawn).toHaveBeenCalledTimes(4);
-    expect(await server.health()).toEqual({ ok: true });
+    expect(await server.health(asking())).toEqual({ ok: true });
   });
 
   it('returns the endpoint while a restart is pending', async () => {
@@ -787,7 +796,7 @@ describe('createFmServe ensureRunning', () => {
   });
 });
 
-describe('createFmServe stopped', () => {
+describe('createManagedServer stopped', () => {
   it('does not restart through ensureRunning after stop', async () => {
     const { server, spawn } = setup();
     await server.ensureRunning();
@@ -805,10 +814,10 @@ describe('createFmServe stopped', () => {
   });
 });
 
-describe('createFmServe idle health', () => {
+describe('createManagedServer idle health', () => {
   it('reports ok while idle with passing preconditions', async () => {
     const { server, spawn } = setup();
-    expect(await server.health()).toEqual({ ok: true, detail: 'idle; starts on demand' });
+    expect(await server.health(asking())).toEqual({ ok: true, detail: 'idle; starts on demand' });
     expect(spawn).not.toHaveBeenCalled();
   });
 
@@ -816,14 +825,14 @@ describe('createFmServe idle health', () => {
     const exec = async (_file: string, args: readonly string[]): Promise<ExecResult> =>
       args[0] === 'license' ? { exitCode: 69, stdout: '', stderr: 'no' } : { exitCode: 0, stdout: '', stderr: '' };
     const { server } = setup({ exec });
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'precondition_failed', remediation: 'sudo fm license' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'precondition_failed', remediation: 'sudo fm license' });
   });
 
   it('reports not_running after stop', async () => {
     const { server } = setup();
     await server.ensureRunning();
     await server.stop();
-    expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+    expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
   });
 });
 
@@ -838,47 +847,32 @@ const hangingOn =
     });
   };
 
-describe('createFmServe bounds each precondition command by healthTimeoutMs', () => {
+describe('createManagedServer bounds each precondition command by the asking operation (design 8.2, row healthTimeoutMs (a))', () => {
   it.each([
-    ['license', 'fm license --status'],
-    ['available', 'fm available'],
-  ])('reports fm as not ready when %s hangs, naming the command and the limit, and aborts the child', async (hungCommand, commandText) => {
+    ['license', 'license --status'],
+    ['available', 'available'],
+  ])('cancels a hanging %s command when the asker ends, with no clock of its own, naming the command', async (hungCommand, argvText) => {
     const signals: AbortSignal[] = [];
     const { server, spawn, manual } = setup({ exec: hangingOn(hungCommand, signals) });
-    const checking = server.health();
+    const asker = new AbortController();
+    const starting = server.start(asker.signal).catch((error: unknown) => error);
     await vi.waitFor(() => expect(signals).toHaveLength(1));
-    expect(manual.delays()).toContain(HEALTH_MS);
-    expect(signals[0]?.aborted).toBe(false);
-    manual.fire(HEALTH_MS);
-    expect(await checking).toEqual({
-      ok: false,
-      reason: 'precondition_failed',
-      detail: `${commandText} did not finish within ${HEALTH_MS} ms`,
-    });
-    expect(signals[0]?.aborted).toBe(true);
-    expect(spawn).not.toHaveBeenCalled();
     expect(manual.delays()).toEqual([]);
-  });
-
-  it('rejects start with PreconditionFailedError when fm license --status hangs past the limit', async () => {
-    const signals: AbortSignal[] = [];
-    const { server, spawn, manual } = setup({ exec: hangingOn('license', signals) });
-    const starting = expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
-    await vi.waitFor(() => expect(signals).toHaveLength(1));
-    manual.fire(HEALTH_MS);
-    await starting;
+    expect(signals[0]?.aborted).toBe(false);
+    asker.abort(new Error('the request ended'));
+    expect(await starting).toMatchObject({ message: `the precondition "${argvText}" was cancelled before it answered` });
     expect(signals[0]?.aborted).toBe(true);
     expect(spawn).not.toHaveBeenCalled();
   });
 
   it('clears the limit timer when the command finishes in time', async () => {
     const { server, manual } = setup();
-    expect(await server.health()).toMatchObject({ ok: true });
+    expect(await server.health(asking())).toMatchObject({ ok: true });
     expect(manual.delays()).toEqual([]);
   });
 });
 
-describe('createFmServe bounds the wait after SIGKILL by stopGraceMs', () => {
+describe('createManagedServer bounds the wait after SIGKILL by stopGraceMs', () => {
   it('reports the stop as not confirmed after a second stopGraceMs when the child ignores SIGKILL', async () => {
     const { server, manual, warnings } = setup({ child: { ignoreSigterm: true, ignoreSigkill: true } });
     await server.start();
@@ -889,13 +883,13 @@ describe('createFmServe bounds the wait after SIGKILL by stopGraceMs', () => {
     await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
     manual.fire(GRACE_MS);
     await stopping;
-    expect(warnings).toEqual([`fm serve was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
+    expect(warnings).toEqual([`the target "fm": the server process was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
     warnings.splice(0);
     expect(children[0]?.alive).toBe(true);
   });
 });
 
-describe('createFmServe stops with the stop grace of the stop that asks', () => {
+describe('createManagedServer stops with the stop grace of the stop that asks', () => {
   it('a stop grace of 0 sends SIGKILL right after SIGTERM and never waits the configured grace', async () => {
     const { server, manual } = setup({ child: { ignoreSigterm: true } });
     await server.start();
@@ -910,7 +904,7 @@ describe('createFmServe stops with the stop grace of the stop that asks', () => 
   });
 });
 
-describe('createFmServe stops begun outside a close read the stop grace at their begin (design 3.2)', () => {
+describe('createManagedServer stops begun outside a close read the stop grace at their begin (design 3.2)', () => {
   const FILE_GRACE_MS = 70;
 
   it('terminates a child after a failed start with the grace read at that stop begin, not the configured default', async () => {

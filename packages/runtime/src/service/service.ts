@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
+import { canonicalPath, comparableContains, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
 import type { Clock, Redactor } from '@momonga/foundation';
@@ -29,6 +29,7 @@ const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const TWO_MIB = 2 * 1024 * 1024;
 
 export type RunServiceOptions = {
+  startSignal?: AbortSignal;
   markerOwners?: MarkerOwners;
   store: RuntimeStore;
   clock: Clock;
@@ -134,7 +135,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
   });
 
   const server = http.createServer(getRequestListener((request, env) => app.fetch(request, env)));
-  await listenUnix(server, options.socketPath);
+  await listenUnix(server, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
 
   let sweeper: { close(): Promise<void> } | undefined;
   let searchSweeper: { close(): Promise<void> } | undefined;

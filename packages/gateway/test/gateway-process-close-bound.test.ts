@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
-import type { FmChild } from '@momonga/gateway';
+import type { ManagedChild } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
@@ -29,9 +29,9 @@ type FakeServes = { managed: FakeChatCompletionsServer[]; probe: FakeChatComplet
 
 const unkillableFmSpawn = (dir: string, clock: FakeClock, timers: FakeTimers, probePhase: ProbePhase, serves: FakeServes) => {
   let nextPid = 5000;
-  return (_file: string, args: readonly string[]): FmChild => {
+  return (_file: string, args: readonly string[]): ManagedChild => {
     const socketPath = args[2] ?? '';
-    const isProbe = path.basename(socketPath).startsWith('fm-probe-');
+    const isProbe = path.basename(socketPath).startsWith('_probe-');
     const pid = nextPid++;
     const marker = path.join(dir, `marker-${pid}`);
     fs.writeFileSync(marker, `${pid}\n`, { mode: 0o600 });
@@ -61,7 +61,7 @@ const unkillableFmSpawn = (dir: string, clock: FakeClock, timers: FakeTimers, pr
         });
       },
       once: (event: 'exit' | 'error', listener: (...args: never[]) => void) => events.once(event, listener as (...args: unknown[]) => void),
-    } as FmChild;
+    } as ManagedChild;
   };
 };
 
@@ -85,10 +85,10 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], other: ['spare'] },
-      targets: { fm: { adapter: 'fm' }, spare: { adapter: 'fm' } },
+      targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath }, spare: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, model: 'spare-model' } },
     },
   });
-  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
+  await saveFakeFmRecord(home, fm.binaryPath);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const serves: FakeServes = { managed: [], probe: [], spawned: [], probeTerminatedAt: [] };
@@ -100,7 +100,6 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,
-    fmBinary: fm.binaryPath,
     exec: hostExec,
     execWithStdin: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     spawn: unkillableFmSpawn(dir, clock, timers, probePhase, serves),

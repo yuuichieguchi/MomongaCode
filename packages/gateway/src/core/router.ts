@@ -1,3 +1,5 @@
+import { aliasRoomVerdict } from '@momonga/config';
+import type { AliasMember } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, agentReadiness, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
@@ -180,6 +182,21 @@ export const createRouter = (options: RouterOptions): Router => {
     return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
+  const roomMemberOf = async (target: TargetRuntime): Promise<AliasMember> => {
+    const adapterTarget = { name: target.name, model: target.model };
+    if (target.adapter.roomFacts !== undefined) return { target: target.name, measuring: false, ...(await target.adapter.roomFacts(adapterTarget)) };
+    const capabilities = await capabilitiesOf(target);
+    return { target: target.name, measuring: false, outputBounded: capabilities.outputBoundField !== 'none', contextWindow: capabilities.contextWindow, maxOutputTokens: capabilities.maxOutputTokens };
+  };
+
+  const checkAliasRoom = async (alias: string, members: readonly TargetRuntime[]): Promise<void> => {
+    if (!members.some((member) => member.adapter.roomFacts !== undefined)) return;
+    const verdict = aliasRoomVerdict(alias, await Promise.all(members.map(roomMemberOf)));
+    if (verdict.kind === 'serve') return;
+    if (verdict.kind === 'wait') throw new Error(`model alias "${alias}": every member was read with its values, yet the input room check asked to wait`);
+    throw invalidRequest(PRECONDITION_FAILED_CODE, verdict.message, 'model', 412);
+  };
+
   const aliasCapabilitiesOf = async (alias: string): Promise<AliasCapabilities> => {
     const all = await Promise.all(targetsOf(alias).map((target) => capabilitiesOf(target)));
     const [first, ...rest] = all;
@@ -297,7 +314,11 @@ export const createRouter = (options: RouterOptions): Router => {
     targetsOf,
     capabilitiesOf,
     aliasCapabilitiesOf,
-    candidates: (alias, requirements) => narrow(alias, targetsOf(alias), requirements),
+    candidates: async (alias, requirements) => {
+      const members = targetsOf(alias);
+      await checkAliasRoom(alias, members);
+      return narrow(alias, members, requirements);
+    },
     narrow,
     health: async () => {
       const entries = await Promise.all(
