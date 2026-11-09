@@ -78,6 +78,7 @@ describe('a breakdown in which no call reported its cache reads', () => {
     expect(breakdown.billed.reportedInputTokens).toBeNull();
     expect(breakdown.billed.uncachedInputTokens).toBeNull();
     expect(breakdown.billed.cacheReadTokens).toBeNull();
+    expect(breakdown.billed.cacheWriteTokens).toBeNull();
     expect(breakdown.cacheHitRatio).toBeNull();
     expect(breakdown.cacheReadNotReported).toBe(2);
   });

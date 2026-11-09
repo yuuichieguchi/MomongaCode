@@ -51,6 +51,7 @@ describe('the cost, breakdown and run-summary wires hold null for a figure no ca
       expect(breakdown.billed.cacheReadTokens === null).toBe(absent);
       expect(breakdown.billed.uncachedInputTokens === null).toBe(absent);
       expect(breakdown.billed.reportedInputTokens === null).toBe(absent);
+      expect(breakdown.billed.cacheWriteTokens === null).toBe(absent);
       expect(typeof report.total.cacheReadUnpricedCalls).toBe('number');
     });
   }
@@ -88,7 +89,7 @@ describe('the closed wire schemas', () => {
     const { breakdown } = await surfacesOf(MIXES['no call reported, metered'] ?? []);
     const { reportedInputTokens: _reported, ...withoutReported } = breakdown.billed;
 
-    expect(acceptsBreakdown({ ...breakdown, billed: { ...breakdown.billed, reportedInputTokens: null, uncachedInputTokens: null, cacheReadTokens: null } }), errorsOf(acceptsBreakdown)).toBe(true);
+    expect(acceptsBreakdown({ ...breakdown, billed: { ...breakdown.billed, reportedInputTokens: null, uncachedInputTokens: null, cacheReadTokens: null, cacheWriteTokens: null } }), errorsOf(acceptsBreakdown)).toBe(true);
     expect(acceptsBreakdown({ ...breakdown, billed: withoutReported })).toBe(false);
   });
 

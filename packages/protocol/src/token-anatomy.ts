@@ -43,7 +43,7 @@ export type BilledTokensView = {
   reportedInputTokens: number | null;
   uncachedInputTokens: number | null;
   cacheReadTokens: number | null;
-  cacheWriteTokens: number;
+  cacheWriteTokens: number | null;
   outputTokens: number;
   reasoningTokens: number;
 };

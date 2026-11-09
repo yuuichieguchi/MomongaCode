@@ -709,7 +709,7 @@ const costBreakdownView = closed(
         reportedInputTokens: nullable(nonNegativeInteger),
         uncachedInputTokens: nullable(nonNegativeInteger),
         cacheReadTokens: nullable(nonNegativeInteger),
-        cacheWriteTokens: nonNegativeInteger,
+        cacheWriteTokens: nullable(nonNegativeInteger),
         outputTokens: nonNegativeInteger,
         reasoningTokens: nonNegativeInteger,
       },

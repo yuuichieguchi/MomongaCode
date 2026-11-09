@@ -48,7 +48,7 @@ export type CostBreakdown = {
     reportedInputTokens: number | null;
     uncachedInputTokens: number | null;
     cacheReadTokens: number | null;
-    cacheWriteTokens: number;
+    cacheWriteTokens: number | null;
     outputTokens: number;
     reasoningTokens: number;
   };
@@ -195,7 +195,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     reportedInputTokens: splitAbsent ? null : split.reportedInputTokens,
     uncachedInputTokens: splitAbsent ? null : split.uncachedInputTokens,
     cacheReadTokens: splitAbsent ? null : split.cacheReadTokens,
-    cacheWriteTokens: split.cacheWriteTokens,
+    cacheWriteTokens: splitAbsent ? null : split.cacheWriteTokens,
     outputTokens: totals.outputTokens,
     reasoningTokens: totals.reasoningTokens,
   };
@@ -256,7 +256,7 @@ const causeLine = (label: string, counts: CauseCounts): string[] => {
 
 const splitLineOf = (breakdown: CostBreakdown): string => {
   const { billed } = breakdown;
-  if (billed.reportedInputTokens === null || billed.uncachedInputTokens === null || billed.cacheReadTokens === null) {
+  if (billed.reportedInputTokens === null || billed.uncachedInputTokens === null || billed.cacheReadTokens === null || billed.cacheWriteTokens === null) {
     return CACHE_READ_TEXT.splitUnavailable({ notReported: breakdown.cacheReadNotReported > 0, inconsistent: breakdown.inconsistentUsage.length > 0 });
   }
   return CACHE_READ_TEXT.split({
