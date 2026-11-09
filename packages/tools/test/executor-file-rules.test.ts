@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -153,6 +154,40 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(await tools.run('Read', { file_path: denied }, options)).status).toBe('failed');
     const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
     expect(resultOf(listed).output).toBe(inProject(tools, carved));
+  });
+
+  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const argumentLimit = Number(execFileSync('/usr/bin/getconf', ['ARG_MAX'], { encoding: 'utf8' }).trim());
+    const stem = 'd'.repeat(230);
+    const deniedDirectory = path.join(tools.layout.project, 'many');
+    fs.mkdirSync(deniedDirectory);
+    const count = Math.ceil(argumentLimit / stem.length) + 100;
+    for (let index = 0; index < count; index += 1) fs.writeFileSync(path.join(deniedDirectory, `${stem}-${index}.env`), 'secret');
+    const visible = tools.write('notes.txt', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('line\nbreak.env', 'secret');
+    tools.write('trailing.env ', 'secret');
+    tools.write('#hash.env', 'secret');
+    const visible = tools.write('line\tbreak.envx', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', 'Read(trailing.env*)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  it.runIf(HAS_RG)('lets no glob the model passes bring back a denied file, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('.env', 'secret');
+    const visible = tools.write('sample.envrc', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, glob: '*.env*' }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
