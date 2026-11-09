@@ -38,16 +38,16 @@ In Momonga Code, memory and context are built by the runtime from recorded event
 
 ### Agent Token Efficiency Engineering
 
-Each token-saving mechanism is a setting, and `momonga eval` measures a change against a baseline before it is trusted.
+Every token-saving mechanism is on by default; each has a setting only so you can turn it off, and `momonga eval` measures it against a base with it off.
 
-- **Prompt cache.** `context.cachePrefix` keeps the leading part of each request stable between calls in a run, so a provider's prompt cache can apply. The runtime records which events may change the prefix and reports a notice when a request keeps fewer leading items than those events allow.
-- **Tool deferral.** `tools.deferral` replaces the definitions of tools that were offered in each of the last 20 runs of a folder and called in none of them (nothing is deferred before a folder has 20 runs) with a one-line catalog and a `LoadTools` tool. A tool's full definition is sent only after the model loads it.
-- **Concise tool descriptions.** `tools.conciseDescriptions`.
-- **Output formatters.** `context.outputFormatters` takes any of `log`, `json`, `grep`, `identicalOutput` to shrink tool output before it enters the context.
-- **Loop guidance.** `context.loopGuidance` warns the model, with the repeated call and the commands that failed, before a run that repeats the same call is stopped.
-- **Observed capacity.** `context.observedCapacity`.
+- **Prompt cache.** On by default; turn off with `context.cachePrefix: false`. It keeps the leading part of each request stable between calls in a run, so a provider's prompt cache can apply. The runtime records which events may change the prefix and reports a notice when a request keeps fewer leading items than those events allow.
+- **Tool deferral.** On by default; turn off with `tools.deferral: false`. It replaces the definitions of tools that were offered in each of the last 20 runs of a folder and called in none of them (nothing is deferred before a folder has 20 runs) with a one-line catalog and a `LoadTools` tool. A tool's full definition is sent only after the model loads it.
+- **Concise tool descriptions.** On by default; turn off with `tools.conciseDescriptions: false`.
+- **Output formatters.** On by default with every formatter (`log`, `json`, `grep`, `identicalOutput`) shrinking tool output before it enters the context; turn some off by listing the rest in `context.outputFormatters`, or all with `[]`.
+- **Loop guidance.** On by default; turn off with `context.loopGuidance: false`. It warns the model, with the repeated call and the commands that failed, before a run that repeats the same call is stopped.
+- **Observed capacity.** On by default; turn off with `context.observedCapacity: false`.
 - **Cost visibility.** `momonga cost --breakdown` shows what the requests were made of, the billed tokens by kind, the cache hit ratio, the timing, and the cost.
-- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges a token policy against a baseline report.
+- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges the defaults against a base report built with `--settings packages/eval/policies/core-off.json` (every core feature off).
 
 All of these settings are off by default (see Configuration).
 
@@ -235,13 +235,15 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 | `mcpServers` | User MCP servers (`stdio` with `command`, `args`, `env`, `cwd`; or `http` with `url`, `headers`, `oauth`) |
 | `enabledMcpjsonServers`, `disabledMcpjsonServers`, `enableAllProjectMcpServers` | Which servers of a project `.mcp.json` are used |
 | `autoMode.classifier` | The alias that judges approvals in auto mode |
-| `memory.reflection.enabled` (default `false`), `memory.reflection.maxTokens` | Let the agent propose memories after a run |
+| `memory.reflection.enabled`, `memory.reflection.maxTokens` | Let the agent propose memories after a verified run. On by default; turn off with `memory.reflection.enabled: false` |
 | `memory.forgetAfterDays` | Default 90 |
-| `memory.repositoryFacts` (default `false`) | Propose a procedure memory from a verification command that passed in a verified run |
+| `memory.repositoryFacts` | Propose a procedure memory from a verification command that passed in a verified run. On by default; turn off with `false` |
 | `verification.commands`, `verification.manifests` | Commands (default `npm test`, `pnpm test`, `yarn test`, `cargo test`, `pytest`, `go test ./...`, `swift test`, `make test`) and manifest files that count as verification |
-| `context.adaptiveBudget` (default `false`) | Adjust the memory share of the context budget (see section 2) |
-| `context.cachePrefix`, `context.outputFormatters`, `context.loopGuidance`, `context.observedCapacity` | Token settings (see section 2). All off by default |
-| `tools.deferral`, `tools.conciseDescriptions` | Token settings (see section 2). Both off by default |
+| `context.adaptiveBudget` | Adjust the memory share of the context budget (see section 2). On by default; turn off with `false` |
+| `context.autoCompact` | Compact the conversation automatically when it nears the context window. On by default; turn off with `false` |
+| `context.unboundedOutputReserve` | Reserve room for the largest declared output when a target bounds no output. On by default; turn off with `false` |
+| `context.cachePrefix`, `context.outputFormatters`, `context.loopGuidance`, `context.observedCapacity` | Token settings (see section 2). On by default; turn off with `false` (`[]` for `context.outputFormatters`) |
+| `tools.deferral`, `tools.conciseDescriptions` | Token settings (see section 2). On by default; turn off with `false` |
 | `pricing` | Per-million-token prices by provider and model, for `momonga cost` |
 | `telemetry.otlp.endpoint`, `telemetry.otlp.headers`, `telemetry.captureMessageContent`, `telemetry.contentRetentionDays` | OTLP export. Retention default 30 days |
 | `autoUpdates` | Boolean |

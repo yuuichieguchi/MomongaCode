@@ -1,11 +1,15 @@
-import { anatomyLayerEntries, reportedCachedTokensOf } from '@momonga/protocol';
-import type { ModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome } from '@momonga/protocol';
+import { USAGE_CHARGE_PURPOSES, anatomyLayerEntries, reportedCachedTokensOf } from '@momonga/protocol';
+import type { ModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome, UsageChargePurpose } from '@momonga/protocol';
 import { ratioBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { eventsOfType } from './observe.ts';
+import { EvalError } from './runner.ts';
 import type { TranscriptReflection } from './transcript.ts';
 
+export type CallKind = 'run' | 'reflection' | UsageChargePurpose;
+
 export type CallFacts = {
+  kind: CallKind;
   inputTokens: number;
   cachedInputTokens: number | undefined;
   cacheWriteInputTokens: number;
@@ -26,7 +30,10 @@ export type TokenFacts = {
   unsettledReflections: number;
 };
 
+export type ReflectionColumn = { calls?: number; inputTokens?: number; cost?: number; settled: boolean };
+
 export type CaseTokenTotals = {
+  reflection: ReflectionColumn;
   calls: number;
   unsettledReflections: number;
   cacheReadNotReportedCalls: number;
@@ -52,6 +59,9 @@ export type TokenMetrics = {
   latencyPerSuccess: RatioMetric | undefined;
   cacheHitRatio: RatioMetric | undefined;
   layerShares: Record<string, RatioMetric> | undefined;
+  reflectionCostPerSuccess: RatioMetric | undefined;
+  reflectionCallsPerSuccess: RatioMetric | undefined;
+  costPerSuccessAll: RatioMetric | undefined;
 };
 
 const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { calls: CallFacts[]; unsettled: boolean } => {
@@ -61,6 +71,7 @@ const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { call
     unsettled: state === 'pending' || state === 'running',
     calls: charges.map(
       (charge): CallFacts => ({
+        kind: 'reflection',
         inputTokens: charge.inputTokens,
         cachedInputTokens: charge.detail?.cachedInputTokens,
         cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
@@ -69,6 +80,13 @@ const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { call
       }),
     ),
   };
+};
+
+const isChargePurpose = (purpose: string): purpose is UsageChargePurpose => (USAGE_CHARGE_PURPOSES as readonly string[]).includes(purpose);
+
+const chargePurposeOf = (purpose: string): UsageChargePurpose => {
+  if (!isChargePurpose(purpose)) throw new EvalError(`a usage.charged event has the purpose ${JSON.stringify(purpose)}, which is none of ${USAGE_CHARGE_PURPOSES.join(', ')}`);
+  return purpose;
 };
 
 export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], reflection: TranscriptReflection | undefined): TokenFacts => {
@@ -81,6 +99,7 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
       for (const [name, tokens] of anatomyLayerEntries(requested.anatomy.layers)) layers.set(name, (layers.get(name) ?? 0) + tokens);
     }
     const responded = eventsOfType(events, 'model.responded').map(({ response }): CallFacts => ({
+      kind: 'run',
       inputTokens: response.usage.input_tokens,
       cachedInputTokens: reportedCachedTokensOf(response.usage, response.momonga),
       cacheWriteInputTokens: response.momonga?.cacheWriteInputTokens ?? 0,
@@ -89,6 +108,7 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
     }));
     const charged = eventsOfType(events, 'usage.charged').map(
       (event): CallFacts => ({
+        kind: chargePurposeOf(event.purpose),
         inputTokens: event.inputTokens,
         cachedInputTokens: event.cachedInputTokens,
         cacheWriteInputTokens: event.cacheWriteInputTokens ?? 0,
@@ -139,18 +159,27 @@ const priceOutcomeTotalsOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals
   return { ...(Object.keys(unpriced).length === 0 ? {} : { unpriced }), ...(unrecordedPrice === 0 ? {} : { unrecordedPrice }) };
 };
 
+const reflectionColumnOf = (calls: readonly CallFacts[], settled: boolean): ReflectionColumn => {
+  if (!settled) return { settled };
+  const cost = sumOver(calls, (call) => call.cost);
+  return { calls: calls.length, inputTokens: calls.reduce((sum, call) => sum + call.inputTokens, 0), ...(cost === undefined ? {} : { cost }), settled };
+};
+
 export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
-  const calls = facts.flatMap((entry) => entry.calls);
+  const every = facts.flatMap((entry) => entry.calls);
+  const calls = every.filter((call) => call.kind !== 'reflection');
   const unsettledReflections = facts.reduce((sum, entry) => sum + entry.unsettledReflections, 0);
-  const cacheReadNotReportedCalls = calls.length - calls.filter(isCacheReadReported).length;
-  if (unsettledReflections > 0) return { calls: calls.length, unsettledReflections, cacheReadNotReportedCalls };
   const inputTokens = sumOver(calls, (call) => call.inputTokens);
   const cost = sumOver(calls, (call) => call.cost);
   const latencyMs = sumOver(calls, (call) => call.durationMs);
   return {
+    reflection: reflectionColumnOf(
+      every.filter((call) => call.kind === 'reflection'),
+      unsettledReflections === 0,
+    ),
     calls: calls.length,
     unsettledReflections,
-    cacheReadNotReportedCalls,
+    cacheReadNotReportedCalls: calls.length - calls.filter(isCacheReadReported).length,
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...cacheFiguresOf(calls),
     ...(cost === undefined ? {} : { cost }),
@@ -160,9 +189,9 @@ export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
 };
 
 export const hasInconsistentCacheRead = (totals: CaseTokenTotals): boolean =>
-  totals.unsettledReflections === 0 && totals.calls > totals.cacheReadNotReportedCalls && totals.cachedInputTokens === undefined;
+  totals.calls > totals.cacheReadNotReportedCalls && totals.cachedInputTokens === undefined;
 
-export const uncachedInputOf = (totals: CaseTokenTotals): number | undefined =>
+export const uncachedInputOf = (totals: Omit<CaseTokenTotals, 'reflection'>): number | undefined =>
   totals.cacheReadNotReportedCalls === 0 ? totals.uncachedInputTokens : undefined;
 
 export type CaseForMetrics = { totals: CaseTokenTotals; passedRuns: number; facts: readonly TokenFacts[] };
@@ -181,22 +210,24 @@ const ratioOf = (clusters: readonly Cluster[], seed: number): RatioMetric | unde
 };
 
 const perSuccess = (cases: readonly CaseForMetrics[], numeratorOf: (totals: CaseTokenTotals) => number | undefined, seed: number): RatioMetric | undefined => {
+  if (cases.every((entry) => entry.totals.calls === 0)) return undefined;
+  return ratioPerSuccess(cases, numeratorOf, seed);
+};
+
+const ratioPerSuccess = (cases: readonly CaseForMetrics[], numeratorOf: (totals: CaseTokenTotals) => number | undefined, seed: number): RatioMetric | undefined => {
   const clusters: Cluster[] = [];
   for (const entry of cases) {
-    if (entry.totals.unsettledReflections > 0) return undefined;
     const numerator = numeratorOf(entry.totals);
     if (numerator === undefined) return undefined;
     clusters.push({ numerator, denominator: entry.passedRuns });
   }
-  if (clusters.length === 0 || cases.every((entry) => entry.totals.calls === 0)) return undefined;
-  return ratioOf(clusters, seed);
+  return clusters.length === 0 ? undefined : ratioOf(clusters, seed);
 };
 
 const cacheHitRatioOf = (cases: readonly CaseForMetrics[], seed: number): RatioMetric | undefined => {
   const clusters: Cluster[] = [];
   for (const entry of cases) {
-    const { unsettledReflections, cacheReportedInputTokens, cachedInputTokens } = entry.totals;
-    if (unsettledReflections > 0) return undefined;
+    const { cacheReportedInputTokens, cachedInputTokens } = entry.totals;
     if (hasInconsistentCacheRead(entry.totals)) return undefined;
     if (cacheReportedInputTokens === undefined || cachedInputTokens === undefined) continue;
     if (cacheReportedInputTokens > 0) clusters.push({ numerator: cachedInputTokens, denominator: cacheReportedInputTokens });
@@ -224,4 +255,7 @@ export const tokenMetricsOf = (cases: readonly CaseForMetrics[], seed: number): 
   latencyPerSuccess: perSuccess(cases, (totals) => totals.latencyMs, seed),
   cacheHitRatio: cacheHitRatioOf(cases, seed),
   layerShares: layerSharesOf(cases, seed),
+  reflectionCostPerSuccess: ratioPerSuccess(cases, (totals) => totals.reflection.cost, seed),
+  reflectionCallsPerSuccess: ratioPerSuccess(cases, (totals) => totals.reflection.calls, seed),
+  costPerSuccessAll: perSuccess(cases, (totals) => (totals.cost === undefined || totals.reflection.cost === undefined ? undefined : totals.cost + totals.reflection.cost), seed),
 });
