@@ -21,9 +21,9 @@ import {
   withNulls,
 } from './dialect-support.ts';
 import type { Rng } from './dialect-support.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
 const CASES = Number(process.env['MOMONGA_DIALECT_GATE_CASES'] ?? 400);
-const PROPERTY_TIMEOUT_MS = 600_000;
 const TOOL = 'gen';
 
 type Klass = 'P' | 'N' | 'W' | 'R';

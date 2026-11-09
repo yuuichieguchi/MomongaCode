@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import type { RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
-import { fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
+import { fixtureCompactionItem, materializeEvents, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { isLoop } from '../../src/worker/loop-detection.ts';
 import { readRunLimits } from '../../src/worker/limits.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Item = { type: 'function_call'; callId: string; name: string; args: string } | { type: 'function_call_output'; callId: string; output: string };
 

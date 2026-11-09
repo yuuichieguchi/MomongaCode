@@ -12,8 +12,9 @@ import { mustRun, rawDb } from '../../../store/test/helpers.ts';
 import { CWD, directFidelity } from './record-cut-support.ts';
 import type { FidelityRequest } from './record-cut-support.ts';
 import type { FidelityReply } from './fidelity-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 600_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type MemoStore = RuntimeStore & { recordFidelityVerdicts(runId: string, cwd: string, reply: FidelityReply): void };
 

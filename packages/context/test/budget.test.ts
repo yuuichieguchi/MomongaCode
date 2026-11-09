@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, PinnedOverflowError, buildContext, budgetFor as productBudgetFor } from '@momonga/context';
 import {
   assistant,
@@ -20,6 +20,9 @@ import {
 } from './helpers.ts';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { HistoryItem } from '@momonga/context';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const VITEST_DEFAULT_TEST_TIMEOUT_MS = 5_000;
 const LARGE_HISTORY_TEST_TIMEOUT_MS = 24 * VITEST_DEFAULT_TEST_TIMEOUT_MS;

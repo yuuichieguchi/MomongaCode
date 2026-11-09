@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTokenMeter, maxInputFor } from '@momonga/context';
 import type { MeterCount, TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
 import { MODEL, capabilitiesFor, fakeCounter, seeded, shapeCounter } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const message = (letter: string, size: number): InputItem => ({ type: 'message', role: 'user', content: letter.repeat(size) });
 

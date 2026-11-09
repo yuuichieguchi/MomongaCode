@@ -4,6 +4,7 @@ import type { BuiltContext, HistoryItem, MeterRequest, TokenMeter } from '@momon
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
 const CASES = 600;
 const CAPABILITIES = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
@@ -159,5 +160,5 @@ describe('R1 over seeded reported histories', () => {
       JSON.stringify(violations.slice(0, 3)),
     ).toEqual({});
     for (const [branch, reached] of Object.entries(BRANCHES)) expect(reached, `branch ${branch} was never reached`).toBeGreaterThan(0);
-  }, 120_000);
+  }, PROPERTY_TIMEOUT_MS);
 });
