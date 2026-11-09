@@ -7,7 +7,7 @@ import { answer, keepAliveOnly, startRealGateway, within } from './keep-alive-ga
 const IDLE_MS = 300;
 const CYCLE_WINDOW_MS = 20 * IDLE_MS;
 
-describe('G1 test 7: a keep-alive-only upstream ends with the idle stop, and the run follows the cut-stream policy', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('G1 test 7: a keep-alive-only upstream ends with the idle stop under the default retry policy, the gateway does not retry it, and the run follows the cut-stream policy; the breaker is held closed so that each requeued attempt reaches the one target', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('requeues each idle stop of the real gateway, refunds the first three, counts the fourth, and completes once the model answers, long before the run deadline', async () => {
     const env = await makeEnv();
     const real = await startRealGateway({ clock: env.clock, idleTimeoutMs: IDLE_MS, script: [keepAliveOnly, keepAliveOnly, keepAliveOnly, keepAliveOnly, answer('Answered.')] });

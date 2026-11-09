@@ -123,6 +123,25 @@ describe('G2: the call reports progress to the executor instead of extending its
   });
 });
 
+describe('every stop of an MCP call uses the MCP stop text, whatever bound ended it (audit-unbounded-waits-2026-11-07.md, Settled at Stage C, rule 2)', () => {
+  it('ends a call stopped by the run deadline with the MCP stop text, which says the server may have run it', async () => {
+    const connection = fakeConnection({ transportKind: 'network', call: (input) => new Promise((resolve) => input.signal?.addEventListener('abort', () => resolve(DONE), { once: true })) });
+    const harness = makeExecutor();
+    const registry = createToolRegistry();
+    registry.addSource(createMcpToolSource({ server: 'jobs', connection, toolIdleTimeoutMs: 0 }));
+    const result = await harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {}, { deadlineAt: harness.clock.now() + 120 });
+    expect(result.status).toBe('failed');
+    expect(result.output).toBe('The call to long_job on MCP server "jobs" reached the run deadline after 120 ms and was stopped. The server may have run it; check before repeating it.');
+  });
+
+  it('names the run deadline in hours, and adds the outcome of tasks/cancel for a task', async () => {
+    const tool = await toolOf(fakeConnection({ transportKind: 'network', cancelled: { 'task-1': true } }));
+    expect(await tool.stopText?.(stopOf('deadline', 6 * 60 * 60 * 1000, { kind: 'task', taskId: 'task-1', answered: [] }))).toBe(
+      'The call to long_job on MCP server "jobs" reached the run deadline after 6 hours and was stopped. The server may have run it; check before repeating it. The task was cancelled on the server.',
+    );
+  });
+});
+
 describe('G2: the English text of each stop', () => {
   it('names the idle window in minutes on a network transport and on stdio', async () => {
     const network = await toolOf(fakeConnection({ transportKind: 'network' }));

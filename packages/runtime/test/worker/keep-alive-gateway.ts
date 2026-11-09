@@ -26,6 +26,8 @@ export type RealGateway = { client: GatewayClient; upstream: FakeChatCompletions
 
 const TARGET = 'upstream';
 
+export const BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARGET = Number.MAX_SAFE_INTEGER;
+
 export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutMs: number; script: FakeScriptedReply[] }): Promise<RealGateway> => {
   const dir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'ka-'));
   fs.chmodSync(dir, 0o700);
@@ -48,8 +50,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
           [TARGET]: { kind: 'chat-completions', provider: 'fake', model: 'system', billing: 'metered', maxConcurrency: 1, admissionTimeoutMs: 5_000, counter: createHash('sha256').update(TARGET).digest('hex') },
         },
       },
-      retry: { ...GATEWAY_CONFIG_DEFAULTS.retry, totalWaitMs: 1 },
-      breaker: { ...GATEWAY_CONFIG_DEFAULTS.breaker, failureThreshold: Number.MAX_SAFE_INTEGER },
+      breaker: { ...GATEWAY_CONFIG_DEFAULTS.breaker, failureThreshold: BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARGET },
     },
     adapters: { [TARGET]: adapter },
     credentials: [],
