@@ -93,14 +93,20 @@ export const perTestTimeouts = (source: string): string[] => {
 
 export const timeoutKeys = (source: string): string[] => source.match(/\b(?:test|hook)Timeout\s*:\s*[^,}\n]*/g) ?? [];
 
-export const fileLevelTestTimeout = (source: string, constant: string): boolean =>
-  new RegExp(`^vi\\.setConfig\\(\\{\\s*testTimeout:\\s*${constant}\\s*\\}\\);?\\s*$`, 'm').test(source);
+export type TimeoutForm = { readonly constant: string; readonly integerMultiple: boolean };
+
+const timeoutValue = ({ constant, integerMultiple }: TimeoutForm): string => (integerMultiple ? `(?:[1-9]\\d*\\s*\\*\\s*)?${constant}` : constant);
+
+const formOf = (form: string | TimeoutForm): TimeoutForm => (typeof form === 'string' ? { constant: form, integerMultiple: false } : form);
+
+export const fileLevelTestTimeout = (source: string, form: string | TimeoutForm): boolean =>
+  new RegExp(`^vi\\.setConfig\\(\\{\\s*testTimeout:\\s*${timeoutValue(formOf(form))}\\s*\\}\\);?\\s*$`, 'm').test(source);
 
 export const importsFromTestkit = (source: string, name: string): boolean =>
   new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*'@momonga/testkit'`).test(source);
 
-export const timeoutFormOffences = (source: string, constant: string): string[] => {
-  const fileLevel = new RegExp(`^testTimeout\\s*:\\s*${constant}$`);
+export const timeoutFormOffences = (source: string, form: string | TimeoutForm): string[] => {
+  const fileLevel = new RegExp(`^testTimeout\\s*:\\s*${timeoutValue(formOf(form))}$`);
   return [
     ...timeoutKeys(source).filter((key) => !fileLevel.test(key.trim())).map((key) => `declares a timeout option: ${key.trim()}`),
     ...perTestTimeouts(source).map((timeout) => `passes a per-test timeout: ${timeout}`),

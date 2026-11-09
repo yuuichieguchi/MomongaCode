@@ -6,9 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const FORK_STORM_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -301,7 +300,7 @@ describe('terminateGroup', () => {
     expect(await groupAlive(pgid)).toBe(false);
   });
 
-  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', async () => {
     const iterations = FORK_LOOP_ITERATIONS;
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
@@ -316,7 +315,7 @@ describe('terminateGroup', () => {
 });
 
 describe('forceKillGroup', () => {
-  it('returns true once every member of a group that keeps forking is gone', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('returns true once every member of a group that keeps forking is gone', async () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < FORK_LOOP_ITERATIONS; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();

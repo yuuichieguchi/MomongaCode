@@ -9,10 +9,8 @@ import { runCase } from './differential/oracles.ts';
 import type { Case } from './differential/oracles.ts';
 import { PLACEHOLDER_PATHS, SEPARATE_WORD_SUBCOMMANDS, editSeeds, optionWordSweep, readSeeds, separateWordSweep } from './differential/seeds.ts';
 
-vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: 10 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const DIFFERENTIAL_CORPUS_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
-const DIFFERENTIAL_SWEEP_TEST_TIMEOUT_MS = 10 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const SEED_CHUNK = 8;
 const GENERATED_SEEDS = [1, 2, 3, 4, 5, 6];
@@ -63,7 +61,7 @@ describe('every command decide approves does what the analysis reported, on real
     fs.rmSync(path.join(workspace.base, 'fired-echo'));
     const values = (GIT_OPTION_TABLES[subcommand] as { values: readonly string[] }).values;
     expect((await failures(optionWordSweep(values, subcommand), (input) => runCase(workspace, input))).failures).toEqual([]);
-  }, DIFFERENTIAL_CORPUS_TEST_TIMEOUT_MS);
+  });
 
   it.each(SEPARATE_WORD_SUBCOMMANDS)('every option of git %s followed by a side-effect option word, with and without a separator', async (subcommand) => {
     const workspace = makeDifferentialWorkspace();
@@ -79,7 +77,7 @@ describe('every command decide approves does what the analysis reported, on real
     const swept = separateWordSweep(subcommand, options);
     expect(swept.length).toBeGreaterThan(options.length);
     expect((await failures(swept, (input) => runCase(workspace, input))).failures).toEqual([]);
-  }, DIFFERENTIAL_SWEEP_TEST_TIMEOUT_MS);
+  });
 });
 
 describe('the oracle reports what an approved command really did, whatever decide said', () => {

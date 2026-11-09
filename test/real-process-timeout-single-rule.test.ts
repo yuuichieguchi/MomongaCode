@@ -33,11 +33,13 @@ const realProcessTests = (): Array<{ file: string; source: string }> =>
       (callsRealStart(source) || namesRealProcessGuard(source)) && !file.startsWith('test/real-process-timeout-single-rule') && !IN_PROCESS_HARNESS_FILES.includes(file),
   );
 
+const REAL_PROCESS_FORM = { constant: 'REAL_PROCESS_TEST_TIMEOUT_MS', integerMultiple: true } as const;
+
 const offendersOf = (file: string, source: string): string[] => {
   const reasons: string[] = [];
   if (!importsFromTestkit(source, 'REAL_PROCESS_TEST_TIMEOUT_MS')) reasons.push('does not import REAL_PROCESS_TEST_TIMEOUT_MS from @momonga/testkit');
-  if (!fileLevelTestTimeout(source, 'REAL_PROCESS_TEST_TIMEOUT_MS')) reasons.push('has no file-level vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS })');
-  reasons.push(...timeoutFormOffences(source, 'REAL_PROCESS_TEST_TIMEOUT_MS'));
+  if (!fileLevelTestTimeout(source, REAL_PROCESS_FORM)) reasons.push('has no file-level vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS })');
+  reasons.push(...timeoutFormOffences(source, REAL_PROCESS_FORM));
   return reasons.map((reason) => `${file}: ${reason}`);
 };
 
@@ -107,6 +109,27 @@ describe('every test file that starts a real gateway or runtime sets REAL_PROCES
     ['an options object before the body', "it('x', { timeout: 5e3 }, async () => {});"],
   ])('refuses %s beside the file-level form', (_form, line) => {
     const source = `import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });\n${line}\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).not.toEqual([]);
+  });
+
+  it.each([
+    ['the guard itself', 'REAL_PROCESS_TEST_TIMEOUT_MS'],
+    ['an integer multiple of the guard', '4 * REAL_PROCESS_TEST_TIMEOUT_MS'],
+  ])('accepts %s at file level', (_form, value) => {
+    const source = `import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: ${value} });\nit('x', async () => {});\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).toEqual([]);
+  });
+
+  it.each([
+    ['a sum of constants', 'REAL_PROCESS_TEST_TIMEOUT_MS + REAL_PROCESS_TEST_TIMEOUT_MS'],
+    ['a fractional multiple', '1.5 * REAL_PROCESS_TEST_TIMEOUT_MS'],
+    ['a zero multiple', '0 * REAL_PROCESS_TEST_TIMEOUT_MS'],
+    ['a multiple through another identifier', 'K * REAL_PROCESS_TEST_TIMEOUT_MS'],
+    ['a number', '360_000'],
+  ])('refuses %s at file level', (_form, value) => {
+    const source = `import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: ${value} });\nit('x', async () => {});\n`;
 
     expect(offendersOf('fixture.test.ts', source)).not.toEqual([]);
   });

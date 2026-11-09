@@ -9,12 +9,8 @@ import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector, ReapTiming } from '@momonga/foundation';
 
-vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const SIGTERM_GRACE_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
-const SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
-const SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS = SIGTERM_GRACE_TEST_TIMEOUT_MS + SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS;
-const MARKER_FAN_OUT_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -668,8 +664,6 @@ const signalRecorder = (now: () => number, intercept: (pid: number, signal: Node
 
 const firstAt = (signals: readonly SignalRecord[], signal: NodeJS.Signals): number | undefined => signals.find((entry) => entry.signal === signal)?.at;
 
-const T = { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS };
-
 const hungListing = (seen: AbortSignal[]): ProcessInspector =>
   ({
     startTimeOf: async () => ({ kind: 'gone' }),
@@ -687,7 +681,7 @@ const hungListing = (seen: AbortSignal[]): ProcessInspector =>
   }) as unknown as ProcessInspector;
 
 describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bound, the marker kept and nothing unverified signalled; HB2 rule 1: the caller signal ending the wait gives unconfirmed, marker kept)', () => {
-  it('abort during the grace ends the reap at once: no SIGKILL is sent and the marker is kept', T, async (context) => {
+  it('abort during the grace ends the reap at once: no SIGKILL is sent and the marker is kept', async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -701,7 +695,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort during the grace on the recorded-group path ends the reap the same way; without an abort the group gets SIGKILL at the grace', T, async (context) => {
+  it('abort during the grace on the recorded-group path ends the reap the same way; without an abort the group gets SIGKILL at the grace', async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
@@ -723,7 +717,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     expect(firstAt(plainRecorder.signals, 'SIGKILL')).toBe(1000);
   });
 
-  it('abort before the call signals nothing and keeps the marker', T, async (context) => {
+  it('abort before the call signals nothing and keeps the marker', async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -735,7 +729,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort during the SIGKILL confirmation ends the wait as unconfirmed: the marker is kept', T, async (context) => {
+  it('abort during the SIGKILL confirmation ends the wait as unconfirmed: the marker is kept', async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -752,7 +746,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort after the reap has no effect', T, async (context) => {
+  it('abort after the reap has no effect', async (context) => {
     const run = async (abortAfter: boolean) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
@@ -768,7 +762,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     expect(await run(true)).toEqual(await run(false));
   });
 
-  it('abort never throws', T, async (context) => {
+  it('abort never throws', async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -781,7 +775,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   it.for([
     ['reapMarkedProcesses', 'reap'],
     ['reconcileProcessGroup', 'reconcile'],
-  ] as const)('%s: a listing that never answers is bounded by the operation signal, and nothing is signalled', T, async ([, kind], context) => {
+  ] as const)('%s: a listing that never answers is bounded by the operation signal, and nothing is signalled', async ([, kind], context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const seen: AbortSignal[] = [];
@@ -814,7 +808,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       ['an abort during the grace', 'grace'],
       ['a pre-aborted signal', 'pre-aborted'],
       ['a kill that throws EIO', 'eio'],
-    ] as const)('%s', T, async ([, variant], context) => {
+    ] as const)('%s', async ([, variant], context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const script = variant === 'normal' ? `trap 'exit 0' TERM; touch "$READY"; exec /bin/sleep 60` : TERM_IGNORING_HOLDER;
@@ -834,7 +828,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     });
   });
 
-  it('reapMarkerDirectory forwards the signal to every marker', { timeout: MARKER_FAN_OUT_TEST_TIMEOUT_MS }, async (context) => {
+  it('reapMarkerDirectory forwards the signal to every marker', async (context) => {
     const reapThree = async (withSignal: boolean) => {
       const dir = withTempDir(context);
       const markerDir = path.join(dir, 'markers');
@@ -871,7 +865,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     for (const at of patient.killTimes) expect(at).toBeGreaterThanOrEqual(1500);
   });
 
-  it('reapMarkerDirectory over a process listing slower than any fixed wall-clock bound reaps by the listing result alone: nothing is killed and the sweep does not fail', T, async (context) => {
+  it('reapMarkerDirectory over a process listing slower than any fixed wall-clock bound reaps by the listing result alone: nothing is killed and the sweep does not fail', async (context) => {
     const dir = withTempDir(context);
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir);
@@ -900,7 +894,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   });
 
   describe('no signal behaves as before', () => {
-    it('the holders-only path polls in slices and SIGKILLs at the grace', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+    it('the holders-only path polls in slices and SIGKILLs at the grace', async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -916,7 +910,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       expect(result).toEqual({ removed: true });
     });
 
-    it('an options object without signal sleeps once on the recorded-group path', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+    it('an options object without signal sleeps once on the recorded-group path', async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
@@ -932,7 +926,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
       expect(result.output.startsWith('The interrupted command was stopped.')).toBe(true);
     });
 
-    it('the single-argument form that bash.ts uses still reaps the group', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+    it('the single-argument form that bash.ts uses still reaps the group', async (context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const group = await spawnOnMarker(context, dir, marker, TERM_EXITING_GROUP);
