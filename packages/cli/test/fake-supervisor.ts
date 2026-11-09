@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
+import { FIRST_GENERATION, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
@@ -12,7 +14,36 @@ export type FakeSupervisorOptions = {
   unresponsiveShutdown?: { onRequest(): void };
   stopBoundMs?: number;
   keepsLock?: boolean;
+  pid?: number;
+  generation?: number;
+  work?: FakeWork;
+  publishGate?: Promise<void>;
 };
+
+export type FakeWork = {
+  track<T>(work: Promise<T>): Promise<T>;
+  settled(): Promise<void>;
+};
+
+export const createFakeWork = (): FakeWork => {
+  const open = new Set<Promise<unknown>>();
+  return {
+    track: (work) => {
+      const settled = work.then(
+        () => undefined,
+        () => undefined,
+      );
+      open.add(settled);
+      void settled.then(() => open.delete(settled));
+      return work;
+    },
+    settled: async () => {
+      while (open.size > 0) await Promise.all(open);
+    },
+  };
+};
+
+const untracked: FakeWork = { track: (work) => work, settled: async () => undefined };
 
 export const readyChildren = (): SupervisorChildHealth[] => [
   { role: 'gateway', state: 'ready', pid: 101, restarts: 0, consecutiveFailures: 0 },
@@ -22,12 +53,21 @@ export const readyChildren = (): SupervisorChildHealth[] => [
 export type FakeSupervisor = {
   readonly shutdowns: number;
   readonly shutdownBodies: readonly string[];
+  readonly healthRequests: number;
+  becomeReady(): Promise<void>;
   stop(): Promise<void>;
 };
 
-export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promise<FakeSupervisor> => {
+export const startFakeSupervisor = (options: FakeSupervisorOptions): Promise<FakeSupervisor> => (options.work ?? untracked).track(serveFakeSupervisor(options));
+
+const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<FakeSupervisor> => {
   const { paths } = options;
+  const work = options.work ?? untracked;
+  const generation = options.generation ?? FIRST_GENERATION;
+  const layout = generationLayout(path.dirname(paths.root), generation);
   let phase = options.phase ?? 'running';
+  let children = options.children ?? readyChildren();
+  let healthRequests = 0;
   let shutdowns = 0;
   const shutdownBodies: string[] = [];
   const server = http.createServer((request, response) => {
@@ -36,15 +76,16 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
       return;
     }
     if (request.method === 'GET' && request.url === '/v1/health') {
+      healthRequests += 1;
       const health: SupervisorHealth = {
         status: 'ok',
         version: options.version,
         apiVersion: 1,
-        pid: process.pid,
+        pid: options.pid ?? process.pid,
         startedAt: '2026-01-01T00:00:00.000Z',
         phase,
         env: 'frozen at supervisor start',
-        children: options.children ?? readyChildren(),
+        children,
         logs: { droppedLines: 0 },
         ...(options.stopBoundMs === undefined ? {} : { stopBoundMs: options.stopBoundMs }),
       };
@@ -68,16 +109,25 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
     }
     response.writeHead(404).end();
   });
-  fs.writeFileSync(paths.locks.supervisor, String(process.pid));
+  fs.mkdirSync(layout.dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(layout.locks.supervisor, String(process.pid));
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(paths.sockets.supervisor, resolve);
+    server.listen(layout.sockets.supervisor, resolve);
   });
+  const publish = async (): Promise<void> => {
+    await options.publishGate;
+    await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
+  };
+  const publishWhenServing = (): Promise<void> =>
+    phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
+  const startPublish = publishWhenServing();
+  if (options.publishGate === undefined) await startPublish;
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
     stopping ??= new Promise<void>((resolve) => {
       server.close(() => {
-        fs.rmSync(paths.locks.supervisor, { force: true });
+        fs.rmSync(layout.locks.supervisor, { force: true });
         resolve();
       });
       server.closeAllConnections();
@@ -91,15 +141,23 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
     get shutdownBodies() {
       return shutdownBodies;
     },
+    get healthRequests() {
+      return healthRequests;
+    },
+    becomeReady: async () => {
+      children = readyChildren();
+      await publishWhenServing();
+    },
     stop,
   };
 };
 
-export const virtualClock = (): CliClock => {
+export const virtualClock = (work: FakeWork = untracked): CliClock => {
   let now = 0;
   return {
     now: () => now,
     sleep: async (ms) => {
+      await work.settled();
       now += ms;
       await new Promise<void>((resolve) => setImmediate(resolve));
     },

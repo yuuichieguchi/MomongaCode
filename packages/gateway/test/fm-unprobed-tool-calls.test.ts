@@ -10,6 +10,7 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome,
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const servingFake = (socketPath: string): FmServe => ({
   restarts: 0,
@@ -58,7 +59,7 @@ describe('every other auto target with a probe and no probe record', { timeout: 
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
 
@@ -76,7 +77,7 @@ describe('every other auto target with a probe and no probe record', { timeout: 
         targets: { local: { adapter: 'ollama', model: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } } },
       },
     });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
 

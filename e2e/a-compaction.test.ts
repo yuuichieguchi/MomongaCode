@@ -36,6 +36,7 @@ import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { chatCompletions } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
 const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
@@ -263,12 +264,12 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
 
     const planningHome = await createE2eHome();
     await startStack({ home: planningHome, sandbox: 'none', target, routes: [summaryRoute(summary)] });
-    const planningCount = createGatewayCountClient(planningHome.paths.sockets.gateway);
+    const planningCount = createGatewayCountClient(firstGeneration(planningHome.paths).sockets.gateway);
     const capabilities = await planningCount.capabilities();
-    const plan = await planScript({ spec, home, haystack, gatewaySocket: planningHome.paths.sockets.gateway, summary }, capabilities);
+    const plan = await planScript({ spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, capabilities);
 
     const stack = await startStack({ home, sandbox: 'none', target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
-    const count = createGatewayCountClient(home.paths.sockets.gateway);
+    const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     expect(await count.capabilities()).toEqual(capabilities);
     const runId = await runToEnd(home);
     const observed = observe(stack, runId);
@@ -283,7 +284,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     writeHaystack(home.project);
     const target = acceptanceTarget('constrained');
     const stack = await startStack({ home, sandbox: 'none', target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
-    const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
+    const capabilities = await createGatewayCountClient(firstGeneration(home.paths).sockets.gateway).capabilities();
     const runId = await runToEnd(home);
     const row = runRowOf(home, runId);
     expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });

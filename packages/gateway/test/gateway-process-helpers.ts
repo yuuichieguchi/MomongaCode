@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { createUdsClient, secretStoreEnvFor } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { killPidsForCleanup } from '@momonga/testkit';
@@ -25,11 +25,12 @@ export const makeHome = (): string => {
 
 export const homePaths = (home: string) => {
   const root = path.join(home, '.momonga');
+  const own = generationLayout(home, FIRST_GENERATION);
   return {
     root,
     settings: path.join(root, 'settings.json'),
-    socket: path.join(root, 'run', 'gateway.sock'),
-    lock: path.join(root, 'run', 'gateway.lock'),
+    socket: own.sockets.gateway,
+    lock: own.locks.gateway,
     fmSocket: path.join(root, 'run', 'fm.sock'),
     fmMarkers: path.join(root, 'run', 'markers', 'targets', 'fm'),
     db: path.join(root, 'state', 'gateway.db'),
@@ -91,7 +92,7 @@ export const launchGateway = async (options: GatewayProcessOptions): Promise<Gat
 };
 
 export const clientFor = (socketPath: string): UdsClient => {
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
   return client;
 };

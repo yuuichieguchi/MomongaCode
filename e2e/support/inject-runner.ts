@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import { buildInjectionReport, parseInjectionScenarios } from '@momonga/eval';
@@ -11,7 +10,7 @@ import type { ReliabilityReport } from '@momonga/reliability';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
-import { createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import { createE2eHome, disposeAll, e2eTmpRoot, registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
 import type { RunEventStream, RuntimeClient } from './runtime-client.ts';
@@ -443,9 +442,9 @@ const sweepOf = async (scenario: InjectionScenario): Promise<ScenarioResult[]> =
 const notRunReason = (scenario: InjectionScenario, host: InjectionHost): string | undefined => {
   if (scenario.requires === 'any') return undefined;
   if (!host.linuxContainer) return `linux-container: scenario ${scenario.id} needs the Linux container, where the state directory sits on a size-limited filesystem`;
-  const { blocks, bsize } = fs.statfsSync(os.tmpdir());
+  const { blocks, bsize } = fs.statfsSync(e2eTmpRoot());
   if (blocks * bsize > SMALL_FILESYSTEM_MAX_BYTES) {
-    return `linux-container: the filesystem under ${os.tmpdir()} holds ${blocks * bsize} bytes, more than the ${SMALL_FILESYSTEM_MAX_BYTES} a scenario may fill`;
+    return `linux-container: the filesystem under ${e2eTmpRoot()} holds ${blocks * bsize} bytes, more than the ${SMALL_FILESYSTEM_MAX_BYTES} a scenario may fill`;
   }
   return undefined;
 };

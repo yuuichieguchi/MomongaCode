@@ -1,6 +1,6 @@
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { request } from 'undici';
-import { Deadline, createOutboundDispatcher, createUdsClient } from '@momonga/foundation';
+import { Deadline, createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { OutboundNetwork, UdsClient } from '@momonga/foundation';
 
 export interface HttpResult {
@@ -35,7 +35,7 @@ const tcpPathsOf = (baseUrl: string): Record<ProbeRoute, string> => {
 };
 
 const transportOf = (endpoint: ProbeEndpoint, stepTimeoutMs: number): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
-  if (endpoint.kind === 'unix') return { uds: createUdsClient(endpoint.socketPath), paths: UNIX_PATHS, headers: {} };
+  if (endpoint.kind === 'unix') return { uds: createUdsClient(fixedSocket(endpoint.socketPath)), paths: UNIX_PATHS, headers: {} };
   return { uds: createTcpClient(new URL(endpoint.baseUrl).origin, endpoint.network, stepTimeoutMs), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
 };
 

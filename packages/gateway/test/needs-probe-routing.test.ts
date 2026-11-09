@@ -7,6 +7,7 @@ import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 type Kind = 'fm' | 'chat-completions' | 'ollama';
 
@@ -44,6 +45,7 @@ const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets:
   const home = makeHome();
   writeSettings(home, { models: { aliases: { fast: aliasTargets }, targets: { local: target, ...extraTargets } } });
   const handle = await launchGateway({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,

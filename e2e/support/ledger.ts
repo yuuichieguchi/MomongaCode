@@ -4,9 +4,10 @@ import path from 'node:path';
 import { ProbeFailedError, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
+import { appendHarnessFile } from './run-env.ts';
 
 export const TOOL_GROUPS_SQL = 'SELECT pgid FROM idempotency WHERE pgid IS NOT NULL';
 export const UNREACHABLE_ERRNO_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT']);
@@ -162,7 +163,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
     const entry: LedgerEntry = { pgid: pid, startTime: valueOrThrow(`reading the start time of ${pid}`, await ports.startTimeOf(pid), undefined), source };
     if (entries.has(pid)) return;
     entries.set(pid, entry);
-    fs.appendFileSync(pidsFile, formatPidsLine(entry), { mode: 0o600 });
+    appendHarnessFile(pidsFile, formatPidsLine(entry));
   };
 
   const collectHealth = async (health: () => Promise<SupervisorHealth>): Promise<void> => {
@@ -181,7 +182,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
-    const text = readTextIfPresent(paths.locks.supervisor);
+    const text = readTextIfPresent(firstGeneration(paths).locks.supervisor);
     const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
     if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
   };

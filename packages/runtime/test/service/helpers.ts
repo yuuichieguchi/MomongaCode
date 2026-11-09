@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -570,7 +570,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     await service.close();
   };
   onCleanup(closeService);
-  const client = createUdsClient(layout.socketPath);
+  const client = createUdsClient(fixedSocket(layout.socketPath));
   onCleanup(() => client.close());
   let rawDb: DatabaseSync | undefined;
   onCleanup(() => rawDb?.close());

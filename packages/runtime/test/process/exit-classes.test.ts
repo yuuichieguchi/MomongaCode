@@ -2,11 +2,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, ProcessLockHeldError, ensureMomongaDirs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
@@ -26,7 +26,7 @@ const spawnDetachedSleeper = (): number => {
 };
 
 const startFailure = (temp: RunHome, extra: Record<string, unknown> = {}): Promise<unknown> =>
-  failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra }));
+  failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra }));
 
 describe('exit classes of startRuntimeProcess errors (system timers)', () => {
   it('exit 75 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', PROCESS_TIMEOUT, async () => {
@@ -34,10 +34,10 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     await launchRuntime(stack.temp);
     const error = await startFailure(stack.temp);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
-    expect((error as ProcessLockHeldError).lockPath).toBe(stack.temp.paths.locks.runtime);
+    expect((error as ProcessLockHeldError).lockPath).toBe(firstGeneration(stack.temp.paths).locks.runtime);
     expect(exitClassOf(error)).toBe(75);
 
-    const foreign = new ProcessLockHeldError('held', stack.temp.paths.locks.runtime, 4242);
+    const foreign = new ProcessLockHeldError('held', firstGeneration(stack.temp.paths).locks.runtime, 4242);
     expect(exitClassOf(foreign)).toBe(1);
   });
 
@@ -45,10 +45,11 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
-    const holder = (await startLockHolder(context, `${temp.paths.sockets.runtime}.lock`)).pid;
+    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    const holder = (await startLockHolder(context, `${firstGeneration(temp.paths).sockets.runtime}.lock`)).pid;
     const error = await startFailure(temp);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
-    expect((error as ProcessLockHeldError).lockPath).toBe(`${temp.paths.sockets.runtime}.lock`);
+    expect((error as ProcessLockHeldError).lockPath).toBe(`${firstGeneration(temp.paths).sockets.runtime}.lock`);
     expect(exitClassOf(error)).toBe(1);
   });
 
@@ -63,7 +64,8 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     const occupied = makeRunHome();
     writeUserSettings(occupied.home, { sandbox: 'none' });
     await ensureMomongaDirs(occupied.paths);
-    fs.writeFileSync(occupied.paths.sockets.runtime, 'not a socket');
+    await ensureGenerationDirs(occupied.paths, FIRST_GENERATION);
+    fs.writeFileSync(firstGeneration(occupied.paths).sockets.runtime, 'not a socket');
     const other = await startFailure(occupied);
     expect(other).toBeInstanceOf(Error);
     expect(other).not.toBeInstanceOf(ConfigError);

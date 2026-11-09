@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { createJsonLogger, momongaPaths } from '@momonga/foundation';
+import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
@@ -511,7 +511,7 @@ export const httpOver = async (
   body?: string,
 ): Promise<SimpleResponse> => {
   const { createUdsClient } = await import('@momonga/foundation');
-  const client = createUdsClient(socketPath, { headersTimeoutMs: 5000 });
+  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 5000 });
   registerCleanup(context, () => client.destroy());
   const response = await client.request({ method, path: requestPath, ...(body === undefined ? {} : { body, headers: { 'content-type': 'application/json' } }) });
   const text = await response.text();

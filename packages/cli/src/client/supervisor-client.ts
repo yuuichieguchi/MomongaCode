@@ -1,5 +1,5 @@
 import { SUPERVISOR_RESPONSE_BOUND_MS, createUdsClient, isRecord } from '@momonga/foundation';
-import type { StopValues } from '@momonga/foundation';
+import type { SocketResolver, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth, SupervisorPhase, SupervisorShutdownResponse } from '@momonga/protocol';
 
 export type ChildRole = SupervisorChildHealth['role'];
@@ -10,7 +10,7 @@ export type SupervisorClient = {
   close(): Promise<void>;
 };
 
-export type SupervisorClientOptions = { socketPath: string; responseBoundMs?: number; onHealth?: (health: SupervisorHealth) => Promise<void> };
+export type SupervisorClientOptions = { resolveSocket: SocketResolver; responseBoundMs?: number; onHealth?: (health: SupervisorHealth) => Promise<void> };
 
 const PHASES: ReadonlySet<string> = new Set<SupervisorPhase>(['reaping-orphans', 'running', 'draining']);
 const ROLES: ReadonlySet<string> = new Set<ChildRole>(['gateway', 'runtime']);
@@ -45,7 +45,7 @@ const isShutdownResponse = (value: unknown): value is SupervisorShutdownResponse
 
 export const createSupervisorClient = (options: SupervisorClientOptions): SupervisorClient => {
   const responseBoundMs = options.responseBoundMs ?? SUPERVISOR_RESPONSE_BOUND_MS;
-  const http = createUdsClient(options.socketPath, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
+  const http = createUdsClient(options.resolveSocket, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
 
   const health = async (): Promise<SupervisorHealth> => {
     const response = await http.request({ method: 'GET', path: '/v1/health' });

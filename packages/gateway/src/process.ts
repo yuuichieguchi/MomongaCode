@@ -9,12 +9,13 @@ import {
   createGivenSecretStore,
   givenSecretStoreChildEnv,
   EntryUsageError,
-  ensureMomongaDirs,
   minimalChildEnv,
   adapterSocketPath,
   codeDigestOfRunningProcess,
   momongaPaths,
   secretKeyFile,
+  ensureGenerationDirs,
+  generationLayout,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
 import type { Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
@@ -87,6 +88,7 @@ import type { GatewayConfig, GatewayTimers } from './types.ts';
 
 export type StartGatewayProcessOptions = {
   home: string;
+  generation: number;
   env: Readonly<Record<string, string | undefined>>;
   version: string;
   clock?: Clock;
@@ -515,9 +517,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, process.platform, {});
   signal?.throwIfAborted();
-  await ensureMomongaDirs(paths);
+  const own = generationLayout(options.home, options.generation);
+  await ensureGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
-  const lock = await (options.acquireLock ?? acquireProcessLock)(paths.locks.gateway);
+  const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
   const unwind = async (): Promise<Error[]> => {
     const failures: Error[] = [];
@@ -773,7 +776,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       random,
       dbPath: paths.databases.gateway,
       hmacKey,
-      socketPath: paths.sockets.gateway,
+      socketPath: own.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
       telemetry,
       priceTable,

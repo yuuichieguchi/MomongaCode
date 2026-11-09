@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import util from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { MomongaDirectoryError, SocketPathUnsupportedError, ensureMomongaDirs, listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
+import { FIRST_GENERATION, MomongaDirectoryError, SocketPathUnsupportedError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
 
 const HOME = '/Users/alice';
 
@@ -16,16 +16,8 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     root,
     settingsFile: path.join(root, 'settings.json'),
     run,
-    sockets: {
-      gateway: path.join(run, 'gateway.sock'),
-      runtime: path.join(run, 'runtime.sock'),
-      supervisor: path.join(run, 'supervisor.sock'),
-    },
-    locks: {
-      gateway: path.join(run, 'gateway.lock'),
-      runtime: path.join(run, 'runtime.lock'),
-      supervisor: path.join(run, 'supervisor.lock'),
-    },
+    current: path.join(run, 'current'),
+    generationLock: path.join(run, 'generation.lock'),
     callLocks: path.join(run, 'call-locks'),
     grepArguments: path.join(run, 'grep-arguments'),
     lockProof: path.join(run, 'lock-proof'),
@@ -92,26 +84,26 @@ describe('momongaPaths', () => {
   });
 
   it('builds a socket path of 104 bytes without refusing it, since the limit is measured when the socket is bound', () => {
-    const home = `/${'h'.repeat(74)}`;
-    const socket = `${home}/.momonga/run/supervisor.sock`;
+    const home = `/${'h'.repeat(71)}`;
+    const socket = `${home}/.momonga/run/g1/supervisor.sock`;
     expect(Buffer.byteLength(socket)).toBe(104);
-    expect(momongaPaths(home, 'darwin', {}).sockets.supervisor).toBe(socket);
+    expect(generationLayout(home, FIRST_GENERATION, 'darwin').sockets.supervisor).toBe(socket);
   });
 
   it('builds a socket path of 104 bytes counted in multibyte characters without refusing it', () => {
-    const home = `/${'é'.repeat(37)}`;
-    const socket = `${home}/.momonga/run/supervisor.sock`;
+    const home = `/${'é'.repeat(35)}h`;
+    const socket = `${home}/.momonga/run/g1/supervisor.sock`;
     expect(Buffer.byteLength(socket)).toBe(104);
-    expect(momongaPaths(home, 'linux', {}).sockets.supervisor).toBe(socket);
+    expect(generationLayout(home, FIRST_GENERATION, 'linux').sockets.supervisor).toBe(socket);
   });
 
   it('refuses a too-long socket path when listenUnix binds it, with the bind probe evidence', async () => {
     const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
     try {
-      const run = momongaPaths(home, 'darwin', {}).run;
-      fs.mkdirSync(run, { recursive: true, mode: 0o700 });
-      fs.chmodSync(run, 0o700);
-      const socket = momongaPaths(home, 'darwin', {}).sockets.supervisor;
+      const own = generationLayout(home, FIRST_GENERATION, 'darwin');
+      fs.mkdirSync(own.dir, { recursive: true, mode: 0o700 });
+      fs.chmodSync(own.dir, 0o700);
+      const socket = own.sockets.supervisor;
       const limit = Buffer.byteLength(socket);
       setSocketBind(async (candidate) => {
         if (Buffer.byteLength(candidate) >= limit) throw Object.assign(new Error(`bind ${candidate}: EINVAL`), { code: 'EINVAL' });
@@ -145,7 +137,7 @@ describe('ensureMomongaDirs', () => {
       setSocketBind(async () => {
         throw Object.assign(new Error('bind: ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
       });
-      const error = await ensureMomongaDirs(paths).catch((caught: unknown) => caught);
+      const error = await ensureGenerationDirs(paths, FIRST_GENERATION).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(SocketPathUnsupportedError);
       expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
       expect(fs.existsSync(path.join(base, 'home'))).toBe(false);
@@ -156,10 +148,10 @@ describe('ensureMomongaDirs', () => {
   });
 
   it('reports a home too long for a socket path with the measured refusal even when its directories cannot be created', async () => {
-    const paths = momongaPaths(`/${'h'.repeat(200)}`, process.platform, {});
-    const error = await ensureMomongaDirs(paths).catch((caught: unknown) => caught);
+    const home = `/${'h'.repeat(200)}`;
+    const error = await ensureGenerationDirs(momongaPaths(home, process.platform, {}), FIRST_GENERATION).catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(SocketPathUnsupportedError);
-    expect((error as Error).message).toContain(paths.run);
+    expect((error as Error).message).toContain(generationLayout(home, FIRST_GENERATION).dir);
     expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);
   });
 
@@ -214,7 +206,7 @@ describe('rotatedLogPath', () => {
       gateway: '/Users/alice/.momonga/logs/gateway.log',
       runtime: '/Users/alice/.momonga/logs/runtime.log',
     });
-    expect(paths.locks.supervisor).toBe('/Users/alice/.momonga/run/supervisor.lock');
+    expect(generationLayout(HOME, FIRST_GENERATION, 'darwin').locks.supervisor).toBe('/Users/alice/.momonga/run/g1/supervisor.lock');
     expect(paths.markers.daemons).toBe('/Users/alice/.momonga/run/markers/daemons');
   });
 });

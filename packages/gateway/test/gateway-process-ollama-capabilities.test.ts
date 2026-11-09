@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { momongaPaths } from '@momonga/foundation';
+import { momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { endpointKeyOf, probeOllamaTarget } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -34,7 +34,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;
-  const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return { fake, client: clientFor(handle.socketPath) };
 };
 

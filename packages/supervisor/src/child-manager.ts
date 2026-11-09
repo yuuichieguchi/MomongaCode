@@ -14,7 +14,7 @@ import {
   reapMarkerDirectory,
   runtimeStopBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, StopValues } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
 import { captureStream, createOutputLimiter } from './capture.ts';
 import { definedEnv, gatewayEnv, runtimeEnv, COLLIDING_CREDENTIAL_DETAIL } from './child-env.ts';
@@ -87,6 +87,8 @@ export type ChildManagerOptions = {
   version: string;
   home: string;
   paths: MomongaPaths;
+  generation: number;
+  endpoint: RoleEndpoint;
   launcher: Launcher;
   env: Readonly<Record<string, string | undefined>>;
   runtime?: RuntimeTuning;
@@ -109,6 +111,7 @@ export type ChildManagerOptions = {
   onBackgroundError(error: unknown, source: string): void;
   onTransientError(error: unknown, source: string): void;
   onVersionMismatch(mismatch: ChildVersionMismatch): void;
+  onReady(): void;
 };
 
 export type ChildManager = {
@@ -302,8 +305,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const isStale = (): boolean => options.isDraining() || generation !== armedGeneration;
     lockWatch = watchLock({
       role,
-      lockPath: options.paths.locks[role],
-      socketPath: options.paths.sockets[role],
+      lockPath: options.endpoint.lockPath,
+      socketPath: options.endpoint.socketPath,
       lockWaitMs: options.lockWaitMs,
       lockWatchIntervalMs: options.intervals.lockWatchIntervalMs,
       externalPollMs: options.intervals.externalPollMs,
@@ -392,6 +395,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       role,
       launcher: options.launcher,
       home: options.home,
+      generation: options.generation,
       ...omitUndefined({ runtime: options.runtime, gateway: options.gateway }),
       baseEnv: definedEnv(options.env),
       separateEnv: (merged) =>
@@ -427,6 +431,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       if (current === life && state === 'ready') consecutiveFailures = 0;
     });
     log(childReady({ child: role, childPid: fields.pid, version: fields.version, socketPath: fields.socketPath, startedAt: fields.startedAt }));
+    options.onReady();
   };
 
   const consumeStdout = (life: Life, line: string): boolean => {
@@ -583,7 +588,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
     let claim: LockHandoffClaim;
     try {
-      claim = claimLockForChild(options.paths.locks[role], omitUndefined({ mechanism: options.lockMechanism }));
+      claim = claimLockForChild(options.endpoint.lockPath, omitUndefined({ mechanism: options.lockMechanism }));
     } catch (error) {
       launches += 1;
       failWithoutProcess('spawn-failed', error);

@@ -1,6 +1,6 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
-import type { UdsResponse } from '@momonga/foundation';
+import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -200,8 +200,8 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export const createRuntimeClient = (options: { socketPath: string }): RuntimeClient => {
-  const http = createUdsClient(options.socketPath);
+export const createRuntimeClient = (options: { resolveSocket: SocketResolver }): RuntimeClient => {
+  const http = createUdsClient(options.resolveSocket);
 
   const send = async (
     method: string,

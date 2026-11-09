@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions, startService, waitUntil } from './helpers.ts';
 import type { Layout } from './helpers.ts';
@@ -69,7 +69,7 @@ describe('run service socket', () => {
     const linkedHome = path.join(layout.root, 'hl');
     fs.symlinkSync(layout.home, linkedHome, 'dir');
     const service = await attempt(layout, layout.socketPath, linkedHome);
-    const client = createUdsClient(service.socketPath);
+    const client = createUdsClient(fixedSocket(service.socketPath));
     onCleanup(() => client.close());
     expect((await sendJson(client, 'GET', '/v1/health')).status).toBe(200);
   });
@@ -86,7 +86,7 @@ describe('run service socket', () => {
     expect(fs.existsSync(env.layout.socketPath)).toBe(false);
     await waitUntil(() => stream.ended, 5000, 'the open stream to end');
     expect(env.notifier.subscriberCount()).toBe(0);
-    const fresh = createUdsClient(env.layout.socketPath);
+    const fresh = createUdsClient(fixedSocket(env.layout.socketPath));
     onCleanup(() => fresh.close());
     await expect(fresh.request({ method: 'GET', path: '/v1/health' })).rejects.toThrow();
   });

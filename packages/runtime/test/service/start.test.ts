@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, volumeIsCaseInsensitive } from '@momonga/foundation';
+import { createUdsClient, volumeIsCaseInsensitive, fixedSocket } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import { START_MS, createFakePorts, createNotifier, launchService, makeLayout, onCleanup, openStore, sendJson, serviceOptions } from './helpers.ts';
@@ -34,7 +34,7 @@ const launch = async (layout: Layout, attempt: Attempt = {}): Promise<RunService
 };
 
 const healthStatus = async (socketPath: string): Promise<number> => {
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   onCleanup(() => client.close());
   return (await sendJson(client, 'GET', '/v1/health')).status;
 };
@@ -120,7 +120,7 @@ describe('run service start (system timers)', () => {
 
     expect(error).toBe(failure);
     expect(fs.existsSync(layout.socketPath)).toBe(false);
-    const probe = createUdsClient(layout.socketPath);
+    const probe = createUdsClient(fixedSocket(layout.socketPath));
     onCleanup(() => probe.close());
     await expect(probe.request({ method: 'GET', path: '/v1/health' })).rejects.toThrow();
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LOG_KEEP, LOG_MAX_BYTES, createJsonLogger, createRotatingLogFile, momongaPaths, systemClock } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { JsonLine } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import { OVERLONG_STDERR_BYTES, OWN_LOG_MSG, RAW_STDERR_LINES, STRAY_STDOUT_LINE } from './fixtures/p3b-engine-child.ts';
@@ -75,7 +75,7 @@ describe('supervisor.log and role logs with real children', { timeout: DAEMON_PR
       expect(wrapped('child.stdout', role)).toEqual([
         expect.objectContaining({ level: 'info', service: 'supervisor', pid: process.pid, msg: 'child.stdout', child: role, childPid, raw: STRAY_STDOUT_LINE, rawBytes: Buffer.byteLength(STRAY_STDOUT_LINE) }),
       ]);
-      expect(wrapped('child.ready', role)).toEqual([expect.objectContaining({ childPid, version: '0.0.0-e2e', socketPath: paths.sockets[role] })]);
+      expect(wrapped('child.ready', role)).toEqual([expect.objectContaining({ childPid, version: '0.0.0-e2e', socketPath: firstGeneration(paths).sockets[role] })]);
       expect(supervisorLines().filter((line) => line['child'] === role && String(line['raw'] ?? '').includes(OWN_LOG_MSG))).toEqual([]);
       expect(supervisorLines().filter((line) => line['child'] === role && String(line['raw'] ?? '').includes('"event":"ready"'))).toEqual([]);
 

@@ -1,4 +1,4 @@
-import { canonicalJson, createUdsClient } from '@momonga/foundation';
+import { canonicalJson, createUdsClient, fixedSocket } from '@momonga/foundation';
 import { field, firstOf, parseJson } from '../probe/json.ts';
 import { countReplyOf } from '@momonga/protocol';
 import type { AdapterStop, AllowedToolsForm } from '@momonga/protocol';
@@ -191,7 +191,7 @@ type RecordedFm = {
 };
 
 const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   try {
     const response = await client.request({ method: 'GET', path: '/v1/models', signal });
     const text = await response.text();

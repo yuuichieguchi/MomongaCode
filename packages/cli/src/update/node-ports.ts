@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
-import { ProcessLockHeldError, acquireProcessLock, createOutboundDispatcher, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
+import { ProcessLockHeldError, acquireProcessLock, createOutboundDispatcher, currentSocketResolver, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
 import { interceptors, request } from 'undici';
 import type { Dispatcher } from 'undici';
@@ -138,7 +138,7 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
 
 export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
   running: async () => {
-    const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
+    const client = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
     try {
       return (await probeSupervisor(client)) !== undefined;
     } finally {

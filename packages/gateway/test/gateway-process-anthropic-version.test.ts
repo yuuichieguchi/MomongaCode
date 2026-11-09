@@ -3,6 +3,7 @@ import { DAEMON_PROCESS_TEST_TIMEOUT_MS, anthropicCountTokensReply, anthropicTex
 import { postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { FAKE_API_KEY } from './upstream-gateway-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const KEY_ENV = 'MOMONGA_TEST_ANTHROPIC_KEY';
 
@@ -25,7 +26,7 @@ const launchWith = async (apiVersion: string | undefined) => {
       },
     },
   });
-  const handle = await launchGateway({ home, env: baseEnv(home, { [KEY_ENV]: FAKE_API_KEY }), version: PROCESS_VERSION });
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { [KEY_ENV]: FAKE_API_KEY }), version: PROCESS_VERSION });
   const client = clientFor(handle.socketPath);
   const created = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
   const counted = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('hi') }));

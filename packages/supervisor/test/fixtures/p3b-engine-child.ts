@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, announceReady, momongaPaths, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, DEFAULT_STOP_VALUES, announceReady, generationLayout, momongaPaths, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
 import type { FlagSpec } from '@momonga/foundation';
 
 export const OVERLONG_STDERR_BYTES = 10_000;
@@ -14,7 +14,7 @@ export const RAW_STDERR_LINES = [
 export const STRAY_STDOUT_LINE = 'stray stdout line after ready';
 export const OWN_LOG_MSG = 'fixture.own_line';
 
-const FIXTURE_FLAGS = { ...COMMON_ENTRY_FLAGS, role: { kind: 'string' } } as const satisfies FlagSpec;
+const FIXTURE_FLAGS = { ...CHILD_ENTRY_FLAGS, role: { kind: 'string' } } as const satisfies FlagSpec;
 
 const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
@@ -27,14 +27,14 @@ if (isMain) {
     flags: FIXTURE_FLAGS,
     maxCloseMs: () => 1000,
     readStopValues: () => DEFAULT_STOP_VALUES,
-    ownLockPath: (home) => pathsOf(home).locks[role],
+    ownLockPath: (home, flags) => generationLayout(home, flags.generation).locks[role],
     logPath: (home) => pathsOf(home).logFiles[role],
     isConfigError: () => false,
     start: async (context) => {
       context.logger.info(OWN_LOG_MSG, { data: { role } });
       for (const line of RAW_STDERR_LINES) process.stderr.write(`${line}\n`);
       announceReady(
-        { service: role, pid: process.pid, version: context.version, socketPath: pathsOf(context.home).sockets[role], startedAt: new Date().toISOString() },
+        { service: role, pid: process.pid, version: context.version, socketPath: generationLayout(context.home, context.flags.generation).sockets[role], startedAt: new Date().toISOString() },
         context.stdout,
       );
       process.stdout.write(`${STRAY_STDOUT_LINE}\n`);

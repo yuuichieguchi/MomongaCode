@@ -1,5 +1,5 @@
-import { CONTROL_REQUEST_TIMEOUT_MS, LOCAL_REQUEST_HEADERS_TIMEOUT_MS, SUPERVISOR_RESPONSE_BOUND_MS, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { CONTROL_REQUEST_TIMEOUT_MS, LOCAL_REQUEST_HEADERS_TIMEOUT_MS, SUPERVISOR_RESPONSE_BOUND_MS, ensureMomongaDirs, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 import { startFakeSupervisor } from './fake-supervisor.ts';
@@ -14,7 +14,7 @@ describe('supervisor client response bound', () => {
     await ensureMomongaDirs(paths);
     const supervisor = await startFakeSupervisor({ paths, version: '1.2.3', unresponsiveShutdown: { onRequest: () => undefined } });
     registerCleanup(context, () => supervisor.stop());
-    const client = createSupervisorClient({ socketPath: paths.sockets.supervisor, responseBoundMs: 50 });
+    const client = createSupervisorClient({ resolveSocket: fixedSocket(firstGeneration(paths).sockets.supervisor), responseBoundMs: 50 });
     registerCleanup(context, () => client.close());
 
     await expect(client.shutdown()).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });

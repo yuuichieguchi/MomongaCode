@@ -1,12 +1,12 @@
 import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { COMMON_ENTRY_FLAGS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, canonicalPath, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, canonicalPath, generationLayout, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
 import type { EntryIo, FlagSpec } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
 import type { BundledRipgrepSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
 
 export const RUNTIME_ENTRY_FLAGS = {
-  ...COMMON_ENTRY_FLAGS,
+  ...CHILD_ENTRY_FLAGS,
   'lease-ms': { kind: 'int' },
   'drain-timeout-ms': { kind: 'int' },
   'worker-count': { kind: 'int' },
@@ -22,7 +22,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
     flags: RUNTIME_ENTRY_FLAGS,
     maxCloseMs: (flags) => runtimeMaxCloseMs(flags['drain-timeout-ms'] ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
     readStopValues: ({ home, logger }) => createStopValuesReader({ load: () => readUserStopValues(canonicalPath(home)), onNotice: (message) => logger.warn(message) }).read(),
-    ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.runtime,
+    ownLockPath: (home, flags) => generationLayout(canonicalPath(home), flags.generation).locks.runtime,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, signal, logger, stdout, acquireLock }) => {
@@ -35,6 +35,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
       };
       const handle = await startRuntimeProcess({
         home,
+        generation: flags.generation,
         version,
         logger,
         stdout,

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
@@ -12,6 +12,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { baseSettings, shutdownBarrier, startStack, withStructuredRole } from './support/stack.ts';
 import { chatCompletions, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_REFLECTION_SETTLED_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 type Json = Record<string, any>;
 
@@ -21,7 +22,7 @@ const SWEEP_BOUND_MS = E2E_RUN_COMPLETED_BOUND_MS;
 const REFLECTION_ALIAS = 'reflector';
 
 const rawClient = (home: E2eHome) => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   const call = async (method: string, target: string, body?: unknown): Promise<{ status: number; json: Json }> => {
     const response = await client.request({
       method,

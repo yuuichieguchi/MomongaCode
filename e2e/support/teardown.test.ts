@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, isProcessAlive, momongaLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OWNER_FILE, ROOT_PREFIX, ownerRecord } from '../../packages/cli/src/eval/context-host.ts';
@@ -13,7 +13,7 @@ const OTHER_RUN = 'cd34';
 const directoryWithSupervisor = async (context: CleanupContext, parent: string, name: string): Promise<{ root: string; holder: number }> => {
   const root = path.join(parent, name);
   fs.mkdirSync(root, { mode: 0o700 });
-  const { supervisor } = momongaLayout(root).locks;
+  const { supervisor } = generationLayout(root, FIRST_GENERATION).locks;
   fs.mkdirSync(path.dirname(supervisor), { recursive: true, mode: 0o700 });
   const holder = await startLockHolder(context, supervisor);
   return { root, holder: holder.pid };

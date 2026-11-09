@@ -61,7 +61,7 @@ export type DaemonDefinition<F extends FlagSpec> = {
   flags: F;
   maxCloseMs(flags: ParsedFlags<F>, values: StopValues): number;
   readStopValues(context: { home: string; logger: JsonLogger }): StopValues;
-  ownLockPath(home: string): string;
+  ownLockPath(home: string, flags: ParsedFlags<F>): string;
   logPath(home: string): string;
   isConfigError(error: unknown): boolean;
   start(context: DaemonStartContext<F>): Promise<DaemonHandle>;
@@ -129,7 +129,7 @@ const resolveEntry = <F extends FlagSpec>(io: EntryIo, definition: DaemonDefinit
   const common = commonFlagsOf(flags);
   const home = common.home ?? io.home;
   const logTarget = parseLogTarget(common.logTarget);
-  return { flags, home, logPath: definition.logPath(home), ownLockPath: definition.ownLockPath(home), logTarget, lifelineFd: common.lifelineFd };
+  return { flags, home, logPath: definition.logPath(home), ownLockPath: definition.ownLockPath(home, flags), logTarget, lifelineFd: common.lifelineFd };
 };
 
 const reportUsageError = (io: EntryIo, service: string, error: unknown): number => {

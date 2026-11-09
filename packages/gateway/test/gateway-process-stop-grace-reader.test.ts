@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createJsonLogger } from '@momonga/foundation';
+import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
 import type { FmServeOptions } from '../src/managed/fm-serve.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
@@ -40,6 +40,7 @@ describe('the gateway process wires the settings file into its managed server st
     await saveFakeFmRecord(home, 'fm', fm.binaryPath);
     const clock = createFakeClock(START_MS);
     await launchGateway({
+      generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
       version: PROCESS_VERSION,

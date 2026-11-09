@@ -55,12 +55,12 @@ describe('withTempDir', () => {
 
 describe('assertHomeSocketBudget', () => {
   it('accepts a home whose supervisor socket is 103 bytes', () => {
-    expect(() => assertHomeSocketBudget(`/${'h'.repeat(73)}`)).not.toThrow();
+    expect(() => assertHomeSocketBudget(`/${'h'.repeat(70)}`)).not.toThrow();
   });
 
   it('rejects a home whose supervisor socket reaches 104 bytes, naming the socket and the budget', () => {
-    const home = `/${'h'.repeat(74)}`;
-    expect(() => assertHomeSocketBudget(home)).toThrow(`${home}/.momonga/run/supervisor.sock is 104 bytes`);
+    const home = `/${'h'.repeat(71)}`;
+    expect(() => assertHomeSocketBudget(home)).toThrow(`${home}/.momonga/run/g1/supervisor.sock is 104 bytes`);
     expect(() => assertHomeSocketBudget(home)).toThrow(/budget/);
   });
 });

@@ -4,6 +4,7 @@ import { MIN_SUMMARY_TOKENS } from '@momonga/protocol';
 import { protectedRootAreasOf } from '@momonga/runtime';
 import { createBuiltinTools, createGovernanceTools, createHistoryTools, createMemoryTools } from '@momonga/tools';
 import { expectSchema, startService } from './helpers.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const REPORT = { gate: 'PASS' };
 const BIDIRECTIONAL_CONTROLS = ['061C', '200E', '200F', '202A', '202B', '202C', '202D', '202E', '2066', '2067', '2068', '2069'];
@@ -156,6 +157,6 @@ describe('the model has no way to adopt a guideline', () => {
   it('keeps the adoption route behind the runtime socket, which the sandbox protects from the model', () => {
     const paths = momongaPaths('/home/user');
     const areas = protectedRootAreasOf(paths, '/home/user');
-    expect(areas.some((area) => paths.sockets.runtime.startsWith(`${area}/`) || paths.sockets.runtime === area)).toBe(true);
+    expect(areas.some((area) => firstGeneration(paths).sockets.runtime.startsWith(`${area}/`) || firstGeneration(paths).sockets.runtime === area)).toBe(true);
   });
 });

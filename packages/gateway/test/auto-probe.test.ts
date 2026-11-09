@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createJsonLogger } from '@momonga/foundation';
+import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
 import { TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
@@ -56,6 +56,7 @@ const setup = async (options: SetupOptions = {}) => {
   const measures: Measure[] = [];
   const logLines: string[] = [];
   const handle = await launchGateway({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,

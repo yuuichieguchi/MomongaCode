@@ -7,6 +7,7 @@ import { afterEach, expect } from 'vitest';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { GatewayRequestError, createGatewayClient } from '../../src/gateway-client.ts';
+import { fixedSocket } from '@momonga/foundation';
 
 export const START_MS = 1_800_000_000_000;
 export const CLIENT_VERSION = '7.7.7';
@@ -69,7 +70,7 @@ export const spiedTimers = (clock: FakeClock): SpiedTimers => {
 };
 
 export const makeClient = (socketPath: string, clock: FakeClock, overrides: ClientOverrides = {}) => {
-  const client = createGatewayClient({ socketPath, clock, timers: createFakeTimers(clock), version: CLIENT_VERSION, ...overrides });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(socketPath), clock, timers: createFakeTimers(clock), version: CLIENT_VERSION, ...overrides });
   registerCleanup(() => client.destroy());
   return client;
 };

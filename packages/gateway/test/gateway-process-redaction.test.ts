@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -68,6 +68,7 @@ const startKeyedStack = async (
   });
   const log = captureLog();
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
     version: PROCESS_VERSION,
@@ -82,7 +83,7 @@ const startKeyedStack = async (
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   const closeAndScan = async (scan: ScanOptions = {}): Promise<void> => {
     closed = true;
@@ -306,6 +307,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   });
   await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),
     version: PROCESS_VERSION,
@@ -322,7 +324,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return { client };
 };

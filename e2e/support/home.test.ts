@@ -1,17 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SOCKET_PATH_LIMIT, isProcessAlive } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, startLockHolder, withTempDir } from '@momonga/testkit';
+import { registerCleanup, spawnTracked, startLockHolder, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
-import { E2E_RUN_ENV } from './run-env.ts';
+import { E2E_RUN_ENV, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
 
-const realTmp = (): string => fs.realpathSync(os.tmpdir());
+const realTmp = e2eTmpRoot;
 
 const runToken = (): string => {
   const run = process.env[E2E_RUN_ENV];
@@ -36,7 +35,7 @@ const deadPid = (): number => {
 const entriesWithPrefix = (dir: string, prefix: string): string[] => fs.readdirSync(dir).filter((entry) => entry.startsWith(prefix));
 
 describe('createE2eHome', () => {
-  it('names the root mme-<run>-<6> directly in the real temp dir and lays out the home', async (context) => {
+  it('names the root mme-<run>-<6> directly in the private e2e temp dir and lays out the home', async (context) => {
     ownMarkerCleanup(context);
     const created = await createE2eHome();
     const run = runToken();
@@ -59,21 +58,24 @@ describe('createE2eHome', () => {
     expect(fs.existsSync(liveMarker())).toBe(false);
   });
 
-  it('keeps the longest socket within the budget: supervisor.sock is the temp dir plus 45 bytes', async (context) => {
+  it('keeps the longest socket within the budget: supervisor.sock is the shared base, the private mme-<uid> directory and 48 bytes', async (context) => {
     ownMarkerCleanup(context);
     const created = await createE2eHome();
-    const longest = Buffer.byteLength(created.paths.sockets.supervisor);
-    expect(longest).toBe(Buffer.byteLength(realTmp()) + 45);
+    const longest = Buffer.byteLength(firstGeneration(created.paths).sockets.supervisor);
+    const privateRootBytes = Buffer.byteLength(sharedTempBase()) + 1 + Buffer.byteLength(privateRootName(currentIdentity()));
+    expect(Buffer.byteLength(realTmp())).toBe(privateRootBytes);
+    expect(longest).toBe(privateRootBytes + 48);
     expect(longest).toBeLessThanOrEqual(SOCKET_PATH_LIMIT - 1);
-    for (const socket of Object.values(created.paths.sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
+    for (const socket of Object.values(firstGeneration(created.paths).sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
   });
 
   it('rejects a temp dir that would push the longest socket over the budget, naming the budget', async (context) => {
-    const base = withTempDir(context);
+    const base = fs.mkdtempSync(path.join(realTmp(), 'mmx-'));
+    registerCleanup(context, () => fs.rmSync(base, { recursive: true, force: true }));
     const long = path.join(base, 'x'.repeat(80 - Buffer.byteLength(base) - 1));
     fs.mkdirSync(long, { mode: 0o700 });
     expect(Buffer.byteLength(long)).toBe(80);
-    await expect(createE2eHome({ tmpRoot: long })).rejects.toThrow(/longest socket must be at most 103 bytes.*got 125/);
+    await expect(createE2eHome({ tmpRoot: long })).rejects.toThrow(/longest socket must be at most 103 bytes.*got 128/);
     expect(entriesWithPrefix(long, 'mme-')).toEqual([]);
   });
 
@@ -167,7 +169,9 @@ describe('disposing a home whose daemon appeared after the ledger was swept', ()
     const created = await createE2eHome();
     let holderPid: number | undefined;
     registerE2eCleanup(async () => {
-      holderPid = (await startLockHolder(context, created.paths.locks.supervisor)).pid;
+      const generation = firstGeneration(created.paths);
+      fs.mkdirSync(generation.dir, { recursive: true, mode: 0o700 });
+      holderPid = (await startLockHolder(context, generation.locks.supervisor)).pid;
     });
 
     await disposeAll();

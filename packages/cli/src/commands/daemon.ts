@@ -1,4 +1,5 @@
 import type { MomongaPaths } from "@momonga/foundation";
+import { currentSocketResolver } from '@momonga/foundation';
 import { createSupervisorClient } from "../client/supervisor-client.ts";
 import { ensureDaemon, probeSupervisor, stopDaemon } from "../daemon/ensure-daemon.ts";
 import { stderrStopNotice } from "../daemon/stop-notice.ts";
@@ -21,7 +22,7 @@ export const daemonStatus = async (
   paths: MomongaPaths,
 ): Promise<number> => {
   const client = createSupervisorClient({
-    socketPath: paths.sockets.supervisor,
+    resolveSocket: currentSocketResolver(paths, 'supervisor'),
   });
   try {
     const health = await probeSupervisor(client);
