@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, restoreDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
-import type { SelfExecutable } from '../src/ports.ts';
+import type { CliClock, SelfExecutable } from '../src/ports.ts';
 import { recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -35,6 +35,17 @@ const setup = async (context: TestContext) => {
   };
   const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
   return { paths, ports, start, writeUserSettings };
+};
+
+const oversleepingClock = (): CliClock => {
+  let now = 0;
+  return {
+    now: () => now,
+    sleep: async () => {
+      now = Number.MAX_SAFE_INTEGER;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    },
+  };
 };
 
 const timeoutOf = async (pending: Promise<unknown>): Promise<PollTimeout> => {
@@ -87,7 +98,7 @@ describe('daemon stop carries the values it read', () => {
   it('waits the bound at the allowed maxima when the draining supervisor reports none', async (context) => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
-    const timeout = await timeoutOf(stopDaemon(ports, paths));
+    const timeout = await timeoutOf(stopDaemon({ ...ports, clock: oversleepingClock() }, paths));
     expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_100);
     expect(timeout.boundMs).toBe(981_100);
   });

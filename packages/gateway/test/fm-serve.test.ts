@@ -940,6 +940,7 @@ describe('createFmServe stops begun outside a close read the stop grace at their
     let reads = 0;
     const { server } = setup({
       markerDirectory,
+      child: { manualServe: true },
       readStopGraceMs: () => {
         reads += 1;
         return FILE_GRACE_MS;

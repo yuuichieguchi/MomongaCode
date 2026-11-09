@@ -143,6 +143,8 @@ describe('a stop carries the values read at its begin', () => {
   it('a SIGTERM with no stop message reads the file once at the begin, and a later change does not move the deadline', async () => {
     const entry = await launch();
     entry.signal('SIGTERM');
+    await settle();
+    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
     entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999 });
     entry.signal('SIGTERM');
     await settle();
