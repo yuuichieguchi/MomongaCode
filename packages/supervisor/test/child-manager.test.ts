@@ -561,7 +561,7 @@ describe('stop', () => {
     expect(harness.port.last().groupKills).toBe(1);
   });
 
-  it('the gateway budgets are the stop and abort budgets of the stop values', (context) => {
+  it('the gateway budgets are the stop and abort budgets of the stop values, counted from the stop begin, with the signal sent once the stop line is written', async (context) => {
     const harness = createManagerHarness(context, { role: 'gateway' });
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term', DEFAULT_STOP_VALUES);
@@ -572,6 +572,8 @@ describe('stop', () => {
     const aborted = createManagerHarness(context, { role: 'gateway' });
     aborted.spawnInitial();
     void aborted.manager.stop('shutdown', 'int', DEFAULT_STOP_VALUES);
+    expect(aborted.port.last().signals).toEqual([]);
+    await new Promise((resolve) => setImmediate(resolve));
     expect(aborted.port.last().signals).toEqual(['SIGINT']);
     aborted.timers.advance(23_000 - 1);
     expect(aborted.port.last().groupKills).toBe(0);

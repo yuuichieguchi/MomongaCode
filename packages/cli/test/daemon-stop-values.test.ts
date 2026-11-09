@@ -5,7 +5,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
-import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
+import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, restoreDaemon, stopDaemon, stopWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { SelfExecutable } from '../src/ports.ts';
@@ -24,11 +24,13 @@ const setup = async (context: TestContext) => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(value));
   };
-  const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths'>) => {
+  const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths'>, holdsLock = true) => {
     const supervisor = await startFakeSupervisor({ paths, ...options });
     registerCleanup(context, () => supervisor.stop());
-    const lock = await acquireProcessLock(paths.locks.supervisor);
-    registerCleanup(context, () => lock.release());
+    if (holdsLock) {
+      const lock = await acquireProcessLock(paths.locks.supervisor);
+      registerCleanup(context, () => lock.release());
+    }
     return supervisor;
   };
   const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
@@ -57,7 +59,7 @@ describe('daemon stop carries the values it read', () => {
     const timeout = await timeoutOf(stopping);
     await edited;
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500 }]);
-    expect(timeout.boundMs).toBe(30_000 + 2000 + 10 * 500 + 48_000 + 3000);
+    expect(timeout.boundMs).toBe(30_000 + 2000 + 10 * 500 + 4 * 25 + 48_000 + 3000);
   });
 
   it('posts the defaults when the user settings set nothing', async (context) => {
@@ -65,7 +67,7 @@ describe('daemon stop carries the values it read', () => {
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
-    expect(timeout.boundMs).toBe(121_000);
+    expect(timeout.boundMs).toBe(121_100);
   });
 
   it('waits on a stop it did not begin for the bound the draining supervisor reports', async (context) => {
@@ -86,8 +88,8 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
-    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_000);
-    expect(timeout.boundMs).toBe(981_000);
+    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_100);
+    expect(timeout.boundMs).toBe(981_100);
   });
 });
 
@@ -110,6 +112,45 @@ describe('the wait over several generations', () => {
   });
 
   it('counts a generation that reports no bound at the allowed maxima', () => {
-    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(981_000);
+    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(981_100);
+  });
+});
+
+const writeInvalidUserSettings = (home: string): void => {
+  const file = path.join(home, '.momonga', 'settings.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{ "gateway": ');
+};
+
+const failureOf = async (pending: Promise<unknown>): Promise<unknown> =>
+  pending.then(
+    () => undefined,
+    (failure: unknown) => failure,
+  );
+
+describe('a version-mismatch stop inside ensureDaemon with an invalid settings file (design 1.5)', () => {
+  const BOUNDS = { readyMs: 500, stopMs: 500 };
+
+  it('ensureDaemon stops the older daemon with the defaults and reports once through the caller channel, never throwing the notice', async (context) => {
+    const { paths, ports, start } = await setup(context);
+    writeInvalidUserSettings(ports.home);
+    const older = await start({ version: '0.0.1' }, false);
+    const notices: string[] = [];
+    const failure = await failureOf(ensureDaemon(ports, paths, { bounds: BOUNDS, onNotice: (message) => notices.push(message) }));
+    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toContain('the default values were used');
+    expect(failure instanceof PollTimeout ? failure.description : failure).toBe('the daemon to become ready');
+  });
+
+  it('restoreDaemon takes the caller channel and reports through it, never throwing the notice', async (context) => {
+    const { paths, ports, start } = await setup(context);
+    writeInvalidUserSettings(ports.home);
+    const older = await start({ version: '0.0.1' }, false);
+    const notices: string[] = [];
+    const failure = await failureOf(restoreDaemon(ports, paths, (message: string) => notices.push(message))(undefined));
+    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
+    expect(notices).toHaveLength(1);
+    expect(String(failure)).not.toContain('the default values were used');
   });
 });

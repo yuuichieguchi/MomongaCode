@@ -10,10 +10,10 @@ import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
 
 const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200 };
-const FIRST_DAEMON_STOP_BOUND_MS = 30_000 + 1000 + 10 * 200 + 48_000 + 3000;
+const FIRST_DAEMON_STOP_BOUND_MS = 30_000 + 1000 + 10 * 200 + 4 * 25 + 48_000 + 3000;
 const LATER: StopValues = { closeGraceMs: 250_000, managedServerStopGraceMs: 50_000 };
 const POSTED: StopValues = { closeGraceMs: 0, managedServerStopGraceMs: 10 };
-const POSTED_DAEMON_STOP_BOUND_MS = 30_000 + 0 + 10 * 10 + 48_000 + 3000;
+const POSTED_DAEMON_STOP_BOUND_MS = 30_000 + 0 + 10 * 10 + 4 * 25 + 48_000 + 3000;
 
 const gatewayLifeline = (harness: SupervisorHarness): { lines: string[]; boundsAtSignal: unknown[] } => {
   const child = harness.port.children.find((candidate) => candidate.args.some((arg) => arg.includes('gateway')));

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMMON_ENTRY_FLAGS, ENTRY_HARD_EXIT_MARGIN_MS, formatStopMessage, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, formatStopMessage, runDaemonEntry } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, StopValues } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -41,6 +41,7 @@ const launch = async () => {
       return {
         dispose: () => undefined,
         drain: async () => {
+          await new Promise((resolve) => setImmediate(resolve));
           for (const text of unread.splice(0)) handlers.onLine(text);
         },
       };
@@ -50,6 +51,8 @@ const launch = async () => {
     exit: () => undefined,
   };
   let fileValues: StopValues = { closeGraceMs: 7, managedServerStopGraceMs: 3 };
+  let fileInvalid = false;
+  const notices: string[] = [];
   const reads: StopValues[] = [];
   const closes: StopValues[] = [];
   const contexts: Array<DaemonStartContext<Flags>> = [];
@@ -69,6 +72,10 @@ const launch = async () => {
     maxCloseMs: (_flags, values) => boundOf(values),
     readStopValues: () => {
       reads.push(fileValues);
+      if (fileInvalid) {
+        notices.push('the stop values could not be read from the user settings; the default values were used');
+        return DEFAULT_STOP_VALUES;
+      }
       return fileValues;
     },
     ownLockPath: (home) => path.join(home, 'gateway.lock'),
@@ -84,7 +91,11 @@ const launch = async () => {
   return {
     timers,
     reads,
+    notices,
     closes,
+    invalidateFile: () => {
+      fileInvalid = true;
+    },
     contexts,
     stderr: () => stderr.join(''),
     setFile: (values: StopValues) => {
@@ -191,5 +202,27 @@ describe('a stop carries the values read at its begin', () => {
     expect(entry.closes).toEqual([MESSAGE]);
     expect(entry.reads).toEqual([]);
     expect(entry.deadlines()).toEqual([boundOf(MESSAGE) + ENTRY_HARD_EXIT_MARGIN_MS]);
+  });
+
+  it('with an invalid settings file and a valid message waiting in the drain, applies the message and gives no defaults notice', async () => {
+    const entry = await launch();
+    entry.invalidateFile();
+    entry.arriveUnread(formatStopMessage(MESSAGE).trimEnd());
+    entry.signal('SIGTERM');
+    await settle();
+    expect(entry.closes).toEqual([MESSAGE]);
+    expect(entry.reads).toEqual([]);
+    expect(entry.notices).toEqual([]);
+  });
+
+  it('with an invalid settings file and no valid message, applies the defaults and gives the notice once', async () => {
+    const entry = await launch();
+    entry.invalidateFile();
+    entry.line('not a stop message');
+    entry.signal('SIGTERM');
+    entry.signal('SIGTERM');
+    await settle();
+    expect(entry.closes).toEqual([DEFAULT_STOP_VALUES]);
+    expect(entry.notices).toHaveLength(1);
   });
 });

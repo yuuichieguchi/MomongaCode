@@ -8,6 +8,7 @@ import {
   gatewayAbortBudgetMs,
   gatewayAbortCloseMs,
   managedServerReapBoundMs,
+  markerReapClockBoundMs,
   formatStopMessage,
   gatewayMaxCloseMs,
   gatewayStopBudgetMs,
@@ -30,18 +31,21 @@ describe('the stop values and their limits', () => {
 });
 
 describe('one formula over the values of a stop', () => {
-  it('gives 28000, 33000, 88000, 118000 and 121000 at the defaults', () => {
+  it('gives 28000, 33000, 88100, 118100 and 121100 at the defaults', () => {
     expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(28_000);
     expect(gatewayStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(33_000);
-    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_000);
-    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_000);
-    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(121_000);
+    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_100);
+    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_100);
+    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(121_100);
   });
 
-  it('reaps managed servers within 4 grace windows of the stop grace', () => {
-    expect(managedServerReapBoundMs(DEFAULT_STOP_VALUES)).toBe(12_000);
-    expect(managedServerReapBoundMs({ closeGraceMs: 999, managedServerStopGraceMs: 250 })).toBe(1000);
-    expect(managedServerReapBoundMs(ZERO)).toBe(0);
+  it('bounds the managed-server reap by the bound of the marker reaper it calls: 4 windows of grace plus one poll', () => {
+    expect(managedServerReapBoundMs(DEFAULT_STOP_VALUES)).toBe(12_100);
+    expect(managedServerReapBoundMs({ closeGraceMs: 999, managedServerStopGraceMs: 250 })).toBe(1100);
+    expect(managedServerReapBoundMs(ZERO)).toBe(100);
+    for (const grace of [0, 1, 250, 3000, 60_000]) {
+      expect(managedServerReapBoundMs({ closeGraceMs: 0, managedServerStopGraceMs: grace }), String(grace)).toBe(markerReapClockBoundMs(grace));
+    }
   });
 
   it('bounds an aborting gateway by its managed-server stop alone, plus the margin for the supervisor budget', () => {
@@ -51,30 +55,30 @@ describe('one formula over the values of a stop', () => {
     expect(gatewayAbortBudgetMs(ZERO)).toBe(5000);
   });
 
-  it('gives 0, 5000, 48000 and 81000 at zero values', () => {
+  it('gives 0, 5000, 48100 and 81100 at zero values', () => {
     expect(gatewayMaxCloseMs(ZERO)).toBe(0);
     expect(gatewayStopBudgetMs(ZERO)).toBe(5000);
-    expect(supervisorMaxCloseMs(0, ZERO)).toBe(48_000);
-    expect(daemonStopBoundMs(ZERO)).toBe(81_000);
+    expect(supervisorMaxCloseMs(0, ZERO)).toBe(48_100);
+    expect(daemonStopBoundMs(ZERO)).toBe(81_100);
   });
 
-  it('gives 660000 and 981000 at the allowed maxima', () => {
+  it('gives 660000 and 981100 at the allowed maxima', () => {
     expect(gatewayMaxCloseMs(MAXIMA)).toBe(660_000);
-    expect(daemonStopBoundMs(MAXIMA)).toBe(981_000);
+    expect(daemonStopBoundMs(MAXIMA)).toBe(981_100);
   });
 
   it.each([
-    [0, { closeGraceMs: 1, managedServerStopGraceMs: 0 }, 48_001],
-    [0, { closeGraceMs: 0, managedServerStopGraceMs: 1 }, 48_010],
-    [7, { closeGraceMs: 100, managedServerStopGraceMs: 10 }, 48_207],
-    [30_000, { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, 85_000],
-  ])('supervisor close at drain %d with %o is %d (drain + close grace + 10 x stop grace + 48000)', (drain, values, expected) => {
+    [0, { closeGraceMs: 1, managedServerStopGraceMs: 0 }, 48_101],
+    [0, { closeGraceMs: 0, managedServerStopGraceMs: 1 }, 48_110],
+    [7, { closeGraceMs: 100, managedServerStopGraceMs: 10 }, 48_307],
+    [30_000, { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, 85_100],
+  ])('supervisor close at drain %d with %o is %d (drain + close grace + 10 x stop grace + 4 x 25 poll + 48000)', (drain, values, expected) => {
     expect(supervisorMaxCloseMs(drain, values)).toBe(expected);
   });
 
   it('the daemon stop bound is the supervisor close at the default drain plus the hard-exit margin', () => {
     const values = { closeGraceMs: 2000, managedServerStopGraceMs: 500 };
-    expect(daemonStopBoundMs(values)).toBe(85_000 + ENTRY_HARD_EXIT_MARGIN_MS);
+    expect(daemonStopBoundMs(values)).toBe(85_100 + ENTRY_HARD_EXIT_MARGIN_MS);
   });
 });
 

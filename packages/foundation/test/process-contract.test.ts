@@ -262,8 +262,8 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_000);
-    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_000);
+    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_100);
+    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_100);
     for (const drain of [1, 1000, 12_345]) {
       const steps = [
         SHUTDOWN_DRAIN_BOUND_MS,

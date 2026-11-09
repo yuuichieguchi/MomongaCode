@@ -177,6 +177,8 @@ interface SetupConfig {
   maxRestarts?: number;
   preconditionTtlMs?: number;
   socketPath?: string;
+  readStopGraceMs?: () => number;
+  markerDirectory?: string;
 }
 
 const setup = (config: SetupConfig = {}) => {
@@ -208,6 +210,8 @@ const setup = (config: SetupConfig = {}) => {
     restartResetMs: RESET_MS,
     preconditionTtlMs: config.preconditionTtlMs ?? 1000,
     onWarning: (message) => warnings.push(message),
+    ...(config.readStopGraceMs === undefined ? {} : { readStopGraceMs: config.readStopGraceMs }),
+    ...(config.markerDirectory === undefined ? {} : { markerDirectory: config.markerDirectory }),
   });
   cleanups.push(async () => {
     await server.stop();
@@ -903,5 +907,48 @@ describe('createFmServe stops with the stop grace of the stop that asks', () => 
     expect(manual.delays()).not.toContain(GRACE_MS);
     if (manual.delays().includes(0)) manual.fire(0);
     await stopping;
+  });
+});
+
+describe('createFmServe stops begun outside a close read the stop grace at their begin (design 3.2)', () => {
+  const FILE_GRACE_MS = 70;
+
+  it('terminates a child after a failed start with the grace read at that stop begin, not the configured default', async () => {
+    let reads = 0;
+    const { server, manual } = setup({
+      child: (index) => (index === 0 ? { healthy: false, ignoreSigterm: true } : {}),
+      readStopGraceMs: () => {
+        reads += 1;
+        return FILE_GRACE_MS;
+      },
+    });
+    const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
+    await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
+    manual.fire(HEALTH_MS);
+    await vi.waitFor(() => expect(manual.delays()).toContain(FILE_GRACE_MS));
+    expect(manual.delays()).not.toContain(GRACE_MS);
+    expect(reads).toBe(1);
+    manual.fire(FILE_GRACE_MS);
+    await rejected;
+    expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
+  });
+
+  it('reads the grace when the start-up reap of stale groups begins', async () => {
+    const markerDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-markers-'));
+    dirs.push(markerDirectory);
+    let reads = 0;
+    const { server } = setup({
+      markerDirectory,
+      readStopGraceMs: () => {
+        reads += 1;
+        return FILE_GRACE_MS;
+      },
+    });
+    const starting = server.start();
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
+    expect(reads).toBe(1);
+    await children[0]?.serveNow();
+    await starting;
   });
 });
