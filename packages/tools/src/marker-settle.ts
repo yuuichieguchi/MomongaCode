@@ -1,5 +1,8 @@
 import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspector, groupAlive, groupPortOf, nodeFileSystem, findHolders, outlivedNotes, reconcileProcessGroup } from '@momonga/foundation';
-import type { HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
+import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
+
+import { ToolExecutionError } from './types.ts';
+import type { ToolContext } from './types.ts';
 
 export type MarkerListing = { holders: number[]; refused: UninspectableProcess[] };
 
@@ -83,22 +86,29 @@ export const listingOf = async (settle: MarkerSettle, signal: AbortSignal): Prom
   }
 };
 
-export const settleFinishedCommand = async (settle: MarkerSettle, { pgid, exit, signal }: FinishedCommand): Promise<string[]> => {
+export const unnamedLivenessNotes = (exit: FinishedCommand['exit'], liveness: CommandLiveness, refused: readonly UninspectableProcess[]): string[] => {
   const finished = `Note: the command finished (${exitText(exit)}) and its output is above.`;
-  const marker = await settle.state(signal);
-  const listing = marker === 'held' ? await listingOf(settle, signal) : undefined;
-  const named = listing?.kind === 'listed' && listing.holders.length > 0;
-  const runnable = marker === 'held' && listing?.kind === 'listed' && !named ? await settle.groupAlive(pgid, signal) : undefined;
-  const liveness = commandMayStillRun({ marker, ...(listing === undefined ? {} : { listing }), ...(runnable === undefined ? {} : { group: { kind: 'read', runnable } }) });
   if (liveness.answer === 'no') return [];
   if (liveness.answer === 'unknown') {
     if (liveness.basis === 'held') return [];
     return [`${finished} MomongaCode could not check whether a process started by it is still running (${liveness.reason}). Nothing was stopped. It will check again before the next command that runs a process or changes files in this session.`];
   }
-  if (!named) {
-    return [`${finished} At least one process started by it is still running and could not be identified or stopped (${listing?.kind === 'listed' && listing.refused.length > 0 ? refusedReason(listing.refused) : UNNAMED_REASON}). Nothing else was stopped. MomongaCode will try to stop it again, at most once at each of: before the next command that runs a process or changes files, the periodic check, start-up and shutdown.`];
-  }
+  return [`${finished} At least one process started by it is still running and could not be identified or stopped (${refused.length > 0 ? refusedReason(refused) : UNNAMED_REASON}). Nothing else was stopped. MomongaCode will try to stop it again, at most once at each of: before the next command that runs a process or changes files, the periodic check, start-up and shutdown.`];
+};
+
+export const settleFinishedCommand = async (settle: MarkerSettle, { pgid, exit, signal }: FinishedCommand): Promise<string[]> => {
+  const marker = await settle.state(signal);
+  const listing = marker === 'held' ? await listingOf(settle, signal) : undefined;
+  const named = listing?.kind === 'listed' && listing.holders.length > 0;
+  const runnable = marker === 'held' && listing?.kind === 'listed' && !named ? await settle.groupAlive(pgid, signal) : undefined;
+  const liveness = commandMayStillRun({ marker, ...(listing === undefined ? {} : { listing }), ...(runnable === undefined ? {} : { group: { kind: 'read', runnable } }) });
+  if (liveness.answer !== 'yes' || !named) return unnamedLivenessNotes(exit, liveness, listing?.kind === 'listed' ? listing.refused : []);
   const reaped = await settle.reap(pgid, signal);
   await settle.state(signal);
   return outlivedNotes(reaped, 'command');
+};
+
+export const requireProcessMarker = (ctx: ToolContext, toolName: string): { marker: string; settle: MarkerSettle } => {
+  if (ctx.processMarker === undefined || ctx.markerSettle === undefined) throw new ToolExecutionError(`${toolName} needs a process marker from the executor`);
+  return { marker: ctx.processMarker, settle: ctx.markerSettle };
 };

@@ -1,6 +1,7 @@
 import { EMPTY_PROTECTED_SET, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
-import type { SandboxPolicy } from '@momonga/sandbox';
+import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
+import { requireProcessMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { createReadAccessMatcher } from '../read-access.ts';
 import { ripgrepUnavailableMessage } from '../ripgrep-locator.ts';
 import type { ReadAccessMatcher } from '../read-access.ts';
@@ -227,6 +228,20 @@ const RIPGREP_VERSION_LINE = /^ripgrep (\S+)/;
 
 const reportedVersions = new WeakMap<RipgrepLocator, Map<string, Promise<string>>>();
 
+type RipgrepCommand = { argv: string[]; cwd: string; env: Record<string, string> };
+
+type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
+
+const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
+  const { marker, settle } = requireProcessMarker(ctx, 'Grep');
+  const child = ctx.sandbox.spawn({ ...command, markerFile: marker }, policy, ctx.signal, ctx.markerFd === undefined ? {} : { markerFd: ctx.markerFd });
+  ctx.releaseMarker?.();
+  ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
+  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
+  return { stdout, stderr, exit };
+};
+
 const runVersion = async (ripgrep: string, ctx: ToolContext): Promise<string> => {
   const child = ctx.sandbox.spawn({ argv: [ripgrep, '--version'], cwd: ctx.session.cwd, env: ctx.env }, grepPolicyOf(ctx), ctx.signal);
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
@@ -257,6 +272,7 @@ const searchWithRipgrep = async (
   target: string,
   isDirectory: boolean,
   ctx: ToolContext,
+  notes: string[],
 ): Promise<SearchResult> => {
   const { readDenied, readAllowed } = ctx.sandboxPolicy;
   const access = createReadAccessMatcher({ readDenied, readAllowed, fileRules: ctx.sandboxPolicy.fileRules });
@@ -272,7 +288,7 @@ const searchWithRipgrep = async (
   const flags = configTextOf(ripgrepFlags(input, mode, target, access, isDirectory, ruleBlocked));
   try {
     await writeArgumentFile(argumentFile, flags);
-    return await runSearch(ctx, { argv: [ripgrep, ...ripgrepOperands(input, target, allowedRoots)], cwd: spawnCwd, env: { ...ctx.env, RIPGREP_CONFIG_PATH: argumentFile } }, spawnPolicy, mode, input, access, spawnCwd);
+    return await runSearch(ctx, { argv: [ripgrep, ...ripgrepOperands(input, target, allowedRoots)], cwd: spawnCwd, env: { ...ctx.env, RIPGREP_CONFIG_PATH: argumentFile } }, spawnPolicy, mode, input, access, spawnCwd, notes);
   } finally {
     await nodeFileSystem.rm(argumentFile);
   }
@@ -280,14 +296,14 @@ const searchWithRipgrep = async (
 
 const runSearch = async (
   ctx: ToolContext,
-  command: { argv: string[]; cwd: string; env: Record<string, string> },
+  command: RipgrepCommand,
   policy: SandboxPolicy,
   mode: OutputMode,
   input: GrepInput,
   access: ReadAccessMatcher,
   spawnCwd: string,
+  notes: string[],
 ): Promise<SearchResult> => {
-  const child = ctx.sandbox.spawn(command, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();
   const visible = (recordPath: string): boolean => {
     let verdict = visibleCache.get(recordPath);
@@ -306,7 +322,7 @@ const runSearch = async (
     }
     return shown;
   };
-  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  const { stdout, stderr, exit } = await runRipgrep(ctx, command, policy, notes);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
   if (exit.code === 0) return { entries: recordsOf(stdout, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
@@ -341,6 +357,7 @@ export const grepTool = defineTool<GrepInput>({
   },
   kind: 'search',
   sideEffect: 'read_only',
+  startsProcesses: true,
   inputSchema: {
     type: 'object',
     properties: {
@@ -380,9 +397,10 @@ export const grepTool = defineTool<GrepInput>({
     if (!ripgrep.ok) throw new ToolExecutionError(ripgrepUnavailableMessage(ripgrep.cause));
     let found: SearchResult;
     let backend: ToolBackend;
+    const notes: string[] = [];
     try {
       backend = { source: ripgrep.source, version: ripgrep.version ?? (await reportedVersionOf(ripgrep.path, ctx)) };
-      found = await searchWithRipgrep(ripgrep.path, input, mode, target, stat.isDirectory(), ctx);
+      found = await searchWithRipgrep(ripgrep.path, input, mode, target, stat.isDirectory(), ctx, notes);
     } finally {
       await ripgrep.release();
     }
@@ -390,6 +408,6 @@ export const grepTool = defineTool<GrepInput>({
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
-    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n'), backend };
+    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : []), ...notes].join('\n'), backend };
   },
 });

@@ -1,9 +1,9 @@
 import path from 'node:path';
-import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, MarkerMode, MarkerState, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
-import { ToolExecutionError, createMarkerOwners } from '@momonga/tools';
+import { ToolExecutionError, createMarkerOwners, unnamedLivenessNotes } from '@momonga/tools';
 import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -26,6 +26,7 @@ export type BackgroundJobsOptions = {
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
   uninspectable?: UninspectableRegistry;
+  groupPort?: ProcessGroupPort;
   signal?: AbortSignal;
 };
 
@@ -70,6 +71,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     reapMarkedProcesses,
     ...options.probes,
   };
+  const groupPort = groupPortOf(options.groupPort, undefined);
   const live = new Map<string, LiveJob>();
   const owners = options.owners ?? createMarkerOwners();
   const ownedKeys = new Set<string>();
@@ -131,7 +133,14 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       const refused: UninspectableProcess[] = [];
       const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: (process) => void refused.push(process) });
       const markerState = await probes.markerState(marker, { signal: lifecycle, mode: owners.modeOf(job.idemKey) ?? 'listed' });
-      markerSettled = commandMayStillRun({ marker: markerState, listing: { kind: 'listed', holders: remaining, refused } }).answer === 'no';
+      const unnamed = markerState === 'held' && remaining.length === 0;
+      const runnable = unnamed ? await groupAlive(process.pgid, groupPort, lifecycle) : undefined;
+      const liveness = commandMayStillRun({ marker: markerState, listing: { kind: 'listed', holders: remaining, refused }, ...(runnable === undefined ? {} : { group: { kind: 'read', runnable } }) });
+      markerSettled = liveness.answer === 'no';
+      if (remaining.length === 0) {
+        const notes = unnamedLivenessNotes(exit, liveness, refused);
+        if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
+      }
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });

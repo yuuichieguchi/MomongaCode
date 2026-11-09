@@ -64,6 +64,7 @@ export type ToolResume = {
 export type ToolContext = ReconcileContext & {
   markerFd?: number;
   markerSettle?: MarkerSettle;
+  releaseMarker?(): void;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   ripgrep: RipgrepLocator;
@@ -146,6 +147,7 @@ export type ToolBody<Input> = {
   validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
   idleTimeoutMs?: number;
+  startsProcesses?: true;
   stopText?(stop: ToolStop): Promise<string>;
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
@@ -158,6 +160,8 @@ export type ToolBody<Input> = {
 export type AnyTool = ToolDefinition<unknown>;
 
 export const outputOriginOf = (tool: AnyTool): ToolOutputOrigin => (tool.server === undefined ? (tool.output ?? 'external') : 'external');
+
+export const startsProcesses = (tool: AnyTool): boolean => tool.sideEffect === 'exec' || tool.startsProcesses === true;
 
 export const defineTool = <Input>(definition: ToolDefinition<Input>): AnyTool => definition as unknown as AnyTool;
 

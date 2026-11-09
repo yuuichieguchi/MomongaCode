@@ -4,10 +4,9 @@ import { reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@m
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
-import type { MarkerSettle } from '../marker-settle.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
-import { settleFinishedCommand } from '../marker-settle.ts';
+import { requireProcessMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
@@ -36,11 +35,6 @@ const extractCwd = (output: string, nonce: string): { output: string; cwd: strin
 const bashPathFor = (env: Readonly<Record<string, string>>): string => resolveBashPath(process.platform, { ...nodeShellPorts(), env });
 
 const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
-
-const requireMarker = (ctx: ToolContext): { marker: string; settle: MarkerSettle } => {
-  if (ctx.processMarker === undefined || ctx.markerSettle === undefined) throw new ToolExecutionError('Bash needs a process marker from the executor');
-  return { marker: ctx.processMarker, settle: ctx.markerSettle };
-};
 
 const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
   if (ctx.jobs === undefined) throw new ToolExecutionError('Background jobs are not available in this runtime');
@@ -116,7 +110,7 @@ export const bashTool = defineTool<BashInput>({
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
-    const { marker, settle } = requireMarker(ctx);
+    const { marker, settle } = requireProcessMarker(ctx, 'Bash');
     const nonce = randomBytes(16).toString('hex');
     const script = `${trapScript(nonce)}\n${input.command}`;
     const child = ctx.sandbox.spawn(

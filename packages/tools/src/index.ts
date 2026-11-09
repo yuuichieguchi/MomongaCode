@@ -124,5 +124,5 @@ export type { HostRipgrepLocatorOptions, RipgrepLocation, RipgrepLocator, Ripgre
 export { createMarkerOwners, unownedOf, unsettledKeys } from './marker-owners.ts';
 export type { MarkerOwner, MarkerOwners } from './marker-owners.ts';
 export { removeMarkerFile } from './marker-settle.ts';
-export { createMarkerSettle } from './marker-settle.ts';
-export type { MarkerSettle } from './marker-settle.ts';
+export { createMarkerSettle, settleFinishedCommand, unnamedLivenessNotes } from './marker-settle.ts';
+export type { MarkerSettle, MarkerSettleOptions } from './marker-settle.ts';

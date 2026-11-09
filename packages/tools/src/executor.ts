@@ -28,7 +28,7 @@ import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
-import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
@@ -939,7 +939,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       callId,
       idemKey: key,
       outputFit: fit,
-      ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
+      ...(startsProcesses(tool) ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
       env: batch.env,
@@ -1265,7 +1265,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (verdict.kind === 'refuse') return scope.complete({ status: 'failed', output: verdict.text });
           if (verdict.kind === 'note') scope.noteAfterOutput(verdict.text);
         }
-        const marker = tool.sideEffect === 'exec' ? await scope.openMarker() : undefined;
+        const marker = startsProcesses(tool) ? await scope.openMarker() : undefined;
         try {
           return await executeWithMarker(marker, reconciled, resume);
         } finally {
@@ -1279,7 +1279,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...contextForBasis(),
           outputFit: batch.outputFit,
           ...(resume === undefined ? {} : { resume }),
-          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle }),
+          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, releaseMarker: () => marker.handle.close() }),
         };
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
 
