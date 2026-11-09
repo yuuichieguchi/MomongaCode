@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { MarkerState, ProcessGroupPort, ProcessInspector, SignalSender } from '@momonga/foundation';
+import type { MarkerState, ProcessGroupPort, ProcessInspector, SignalSender, UninspectableProcess } from '@momonga/foundation';
 import type { AnyTool, CallOutcome, ResultOutcome, ToolExecutorOptions } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { HarnessOptions } from './harness.ts';
@@ -9,7 +9,7 @@ const unenforced = { of: async () => 'unenforced' as const, contradicted: () => 
 
 export const LEAVER_PGID = 999_999;
 
-export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutorOptions> = {}, runnableGroups: ReadonlySet<number> = new Set([LEAVER_PGID])) => {
+export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutorOptions> = {}, runnableGroups: ReadonlySet<number> = new Set([LEAVER_PGID]), refused: readonly UninspectableProcess[] = []) => {
   const states = new Map<string, MarkerState>();
   const sent: Array<[number, NodeJS.Signals]> = [];
   const listed: AbortSignal[] = [];
@@ -17,8 +17,9 @@ export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutor
     capability: unenforced,
     startTimeOf: async () => ({ kind: 'gone' }),
     groupsOf: async () => ({ kind: 'value', value: new Map() }),
-    holdersOf: async (_marker: string, options: { signal: AbortSignal }) => {
+    holdersOf: async (_marker: string, options: { signal: AbortSignal }, onUninspectable?: (process: UninspectableProcess) => void) => {
       listed.push(options.signal);
+      for (const process of refused) onUninspectable?.(process);
       return { kind: 'value', value: [] };
     },
     markerState: async (marker: string) => states.get(path.basename(marker)) ?? initial,
@@ -35,8 +36,9 @@ export const world = (initial: MarkerState = 'held', extra: Partial<ToolExecutor
       return runnableGroups.has(pgid);
     },
   };
+  let now = 0;
   const completes: Array<{ key: string; meta: unknown }> = [];
-  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: { now: () => 0, sleep: async () => undefined }, killGraceMs: 100 }, ...extra } } as HarnessOptions);
+  const harness = makeHarness({ executor: { reap: { inspector, kill, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, killGraceMs: 100 }, ...extra } } as HarnessOptions);
   const port = harness.idempotency.port;
   const holding = port.holding.bind(port);
   port.holding = (fence) => {

@@ -71,6 +71,12 @@ describe('a finished command whose marker is still held', () => {
     expect(calls).toMatchObject({ reaped: [], removed: 0, discarded: 0 });
   });
 
+  it('says it could not check, naming the process that refused inspection, when nobody is named and no member of its group can still run, and keeps the marker', async () => {
+    const { settle, calls } = heldMarker({ listing: async () => ({ holders: [], refused: [{ pid: 4343, command: 'sleep', startedAt: 0 }] }), groupRuns: false });
+    expect(await finish(settle)).toEqual([COULD_NOT_CHECK('process 4343 (sleep) could not be inspected')]);
+    expect(calls).toMatchObject({ reaped: [], removed: 0, discarded: 0 });
+  });
+
   it('says it could not check when the holder list fails even while a member of its group can still run', async () => {
     const { settle } = heldMarker({
       listing: async () => {

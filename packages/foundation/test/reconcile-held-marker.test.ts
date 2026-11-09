@@ -4,7 +4,9 @@ import type { MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming } from
 import { createFakeClock } from '@momonga/testkit';
 
 const PGID = 1_999_999_031;
-const COULD_NOT_CHECK = 'could not check whether a process started by';
+const COULD_NOT_CHECK = (reason: string) =>
+  `MomongaCode could not check whether a process started by the interrupted command is still running (${reason}). The effect of the interrupted command is unknown; inspect the current state before retrying it.`;
+const REASON: Record<'held' | 'unknown', string> = { held: 'no process could be named', unknown: 'the marker state could not be read' };
 
 const inspectorWith = (state: MarkerState): ProcessInspector =>
   ({
@@ -34,10 +36,9 @@ describe('reconcile says the interrupted command is no longer running only when 
     expect(result.stopped).toBe(false);
   });
 
-  it.each<MarkerState>(['held', 'unknown'])('says it could not check, never no longer running, for a %s marker with nobody named and no member that can still run', async (state) => {
+  it.each<'held' | 'unknown'>(['held', 'unknown'])('says it could not check, never no longer running, for a %s marker with nobody named and no member that can still run', async (state) => {
     const result = await reconcile(state);
-    expect(result.output).not.toContain('no longer running');
-    expect(result.output).toContain(COULD_NOT_CHECK);
+    expect(result.output).toBe(COULD_NOT_CHECK(REASON[state]));
     expect(result.outcome).toBe('unknown');
     expect(result.stopped).toBe(false);
     expect(result.leftAloneGroup).toBeUndefined();
