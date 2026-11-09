@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { request } from 'undici';
 import { FIRST_GENERATION, generationLayout, momongaPaths } from '@momonga/foundation';
 import { runGatewayEntry } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo } from '@momonga/testkit';
 import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const VERSION = '1.10.0-debug-tcp-test';
 const TOKEN = 'momonga-entry-debug-token';

@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
 import { START_MS, writeUserSettings } from './helpers.ts';
 import { entriesNamed, fireTimer, launchRuntime, modelSettings, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const sandboxSweeps = vi.hoisted(() => ({ calls: 0, failure: undefined as Error | undefined }));
 

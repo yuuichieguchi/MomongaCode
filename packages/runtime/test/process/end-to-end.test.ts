@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ serviceNames: [] as string[] }));
 

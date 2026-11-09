@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
 import type { ManagedServerOptions } from '../src/managed/server.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
 import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const servedOptions: ManagedServerOptions[] = [];
 

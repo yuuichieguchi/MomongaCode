@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { startGatewayProcess } from '@momonga/gateway';
 import { PROCESS_VERSION, baseEnv, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('a plan target before the session engine exists', () => {
   it('stops the gateway start naming the target and the profile instead of serving it without a credential', async () => {

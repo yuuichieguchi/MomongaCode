@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { STORE_MAX_TOTAL_ATTEMPTS } from '../../src/process/constants.ts';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { approveOnce, launchRuntime, readDb, runStatus, scriptedToolCall, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 import type { Launched, RunHome, Stack } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 

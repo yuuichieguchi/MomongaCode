@@ -1,17 +1,19 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { ManagedChild } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { saveFakeFmRecord } from './fm-record-support.ts';
 import { advanceToNextWait, openUnreadStream } from './gateway-support.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const HOLDER_PID = 4343;
 const HOLDER_STARTED_AT = 1_700_000_000_000;

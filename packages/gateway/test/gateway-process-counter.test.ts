@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
@@ -10,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePath
 import type { SecretHostProgram } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
 const SECRET_NAME = 'counter-test-secret';

@@ -107,10 +107,24 @@ const SYSTEM_STORE_READER = "const { parentPort } = require('node:worker_threads
 
 const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
 
-export const readSystemCertificatesInWorker = (): Promise<string[]> =>
+const reasonText = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
+
+const abandonedRead = (signal: AbortSignal): Error => new Error(`the system store was not read: ${reasonText(signal.reason)}`);
+
+export const readSystemCertificatesInWorker = (signal?: AbortSignal): Promise<string[]> =>
   new Promise((resolve, reject) => {
+    if (signal?.aborted === true) {
+      reject(abandonedRead(signal));
+      return;
+    }
     const worker = new Worker(SYSTEM_STORE_READER, { eval: true });
     let read: string[] | undefined;
+    const onAbort = (): void => {
+      if (signal === undefined) return;
+      reject(abandonedRead(signal));
+      void worker.terminate();
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
     worker.once('message', (message: unknown) => {
       if (isStringList(message)) {
         read = message;
@@ -120,6 +134,7 @@ export const readSystemCertificatesInWorker = (): Promise<string[]> =>
     });
     worker.once('error', reject);
     worker.once('exit', (code) => {
+      signal?.removeEventListener('abort', onAbort);
       if (read !== undefined) {
         resolve(read);
         return;
@@ -128,17 +143,39 @@ export const readSystemCertificatesInWorker = (): Promise<string[]> =>
     });
   });
 
-export type InstallTrustOptions = { readonly readSystemCertificates?: () => Promise<readonly string[]> };
+export type InstallTrustOptions = {
+  readonly readSystemCertificates?: (signal?: AbortSignal) => Promise<readonly string[]>;
+  readonly signal?: AbortSignal | undefined;
+};
+
+const readUnderSignal = (read: (signal?: AbortSignal) => Promise<readonly string[]>, signal: AbortSignal | undefined): Promise<readonly string[]> => {
+  if (signal === undefined) return read();
+  if (signal.aborted) return Promise.reject(abandonedRead(signal));
+  return new Promise((resolve, reject) => {
+    const onAbort = (): void => reject(abandonedRead(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+    read(signal).then(
+      (certificates) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(certificates);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+};
 
 export const installTrust = async (config: NetworkConfig, files: TrustFiles, options: InstallTrustOptions = {}): Promise<TrustReport> => {
   const readSystemCertificates = options.readSystemCertificates ?? readSystemCertificatesInWorker;
   const bundled = tls.getCACertificates('bundled');
   const extra = tls.getCACertificates('extra');
   const failures: TrustFailure[] = [];
-  const system = await readSystemCertificates().then(
+  const system = await readUnderSignal(readSystemCertificates, options.signal).then(
     (certificates) => [...certificates],
     (error: unknown) => {
-      failures.push({ source: 'system', reason: error instanceof Error ? error.message : String(error) });
+      failures.push({ source: 'system', reason: reasonText(error) });
       return [];
     },
   );
@@ -160,6 +197,8 @@ export const installTrust = async (config: NetworkConfig, files: TrustFiles, opt
   tls.setDefaultCACertificates([...bundled, ...system, ...extra, ...fromFiles]);
   return { sources, failures };
 };
+
+const isFileFailure = (failure: TrustFailure): failure is Extract<TrustFailure, { readonly file: string }> => 'file' in failure;
 
 export const trustFailureText = (failure: TrustFailure): string =>
   'file' in failure ? `the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}` : `the ${failure.source} CA store was not read: ${failure.reason}`;
@@ -318,8 +357,8 @@ export type OutboundPlan =
 
 export const outboundPlan = (destination: URL, network: OutboundNetwork, client: { readonly forwardsPlainHttp: boolean; readonly signal: unknown }): OutboundPlan => {
   const caSources = caSourceNames(network.trust);
-  const trustFailure = network.trust.failures.find((failure) => 'file' in failure);
-  if (trustFailure !== undefined && 'file' in trustFailure && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
+  const trustFailure = network.trust.failures.find(isFileFailure);
+  if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
     return { kind: 'refuse', error: new OutboundConnectionError({ kind: 'ca-file', ...trustFailure }) };
   }
   const route = routeOf(destination, network.config);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { GatewayClient, GatewayClientOptions, Worker, WorkerOptions } from '@momonga/runtime';
-import { BUILT_BINARY_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, BUILT_BINARY_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -26,6 +26,8 @@ import {
   waitForCondition,
   waitForStatus,
 } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   stuckAbort: false,

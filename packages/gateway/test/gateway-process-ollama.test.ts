@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { endpointKeyOf, probeOllamaTarget, targetCounterOf } from '@momonga/gateway';
@@ -17,6 +17,8 @@ import {
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CONTEXT_WINDOW = 12288;
 

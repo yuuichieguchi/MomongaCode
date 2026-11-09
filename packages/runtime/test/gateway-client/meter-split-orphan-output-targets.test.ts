@@ -12,6 +12,8 @@ import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-supp
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const ALIAS = 'default';
 const CONTEXT_WINDOW = 12288;
 

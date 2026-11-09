@@ -6,10 +6,12 @@ import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momong
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ watchedGroups: [] as number[], aliveAtCancel: [] as Array<Promise<boolean>>, poolsCreated: 0 }));
 

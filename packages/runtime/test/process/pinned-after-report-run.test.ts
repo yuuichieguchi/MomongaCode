@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, countFakeRequestTokens } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, countFakeRequestTokens } from '@momonga/testkit';
 import type { FakeFixedUsage } from '@momonga/testkit';
 import { finishApprovingPrompts, launchRuntime, prepareStack, readDb, scriptedToolCall, startGateway } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const WINDOW = 4096;

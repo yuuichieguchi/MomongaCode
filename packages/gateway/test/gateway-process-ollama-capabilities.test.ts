@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { endpointKeyOf, probeOllamaTarget } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -6,6 +6,8 @@ import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts'
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, chunkLine, doneLine, fixtureJson, startFakeOllama } from './ollama-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CONTEXT_WINDOW = 12288;
 const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };

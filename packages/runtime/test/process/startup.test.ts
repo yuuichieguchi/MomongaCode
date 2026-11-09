@@ -6,7 +6,7 @@ import { ConfigError } from '@momonga/config';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -26,6 +26,8 @@ import {
   stepsLogged,
 } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   events: [] as string[],

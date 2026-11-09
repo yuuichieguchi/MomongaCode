@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import { FIRST_GENERATION, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import type { RunServiceOptions } from '@momonga/runtime';
 import { writeUserSettings } from './helpers.ts';
@@ -17,6 +17,8 @@ import {
   startRuntimeProcess,
   startStack,
 } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   failDrain: undefined as Error | undefined,

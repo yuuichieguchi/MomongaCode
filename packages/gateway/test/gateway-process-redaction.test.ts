@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -21,6 +21,8 @@ import {
   expectRedacted,
 } from './credential-support.ts';
 import { placeFakeFm } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const body = { model: 'fast', input: userInput('hi') };

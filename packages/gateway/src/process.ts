@@ -664,7 +664,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     for (const warning of warnings) logger.warn(warning);
     stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
-    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
+    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files, { signal }) };
     for (const failure of network.trust.failures) logger.warn(trustFailureText(failure));
     signal?.throwIfAborted();
     await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });

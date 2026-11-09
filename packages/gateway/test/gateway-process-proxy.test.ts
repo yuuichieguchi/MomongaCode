@@ -1,6 +1,6 @@
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -10,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-pro
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROXY_PASSWORD = 'proxy-password-0123456789';
 const body = { model: 'fast', input: userInput('hi') };

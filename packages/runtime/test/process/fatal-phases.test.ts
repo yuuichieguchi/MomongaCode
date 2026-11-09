@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -15,6 +15,8 @@ import {
   waitForCondition,
   waitForTimer,
 } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   onFatal: [] as ((error: Error) => void)[],

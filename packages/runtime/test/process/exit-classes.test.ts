@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 

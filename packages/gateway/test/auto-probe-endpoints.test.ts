@@ -1,14 +1,16 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TARGET_NOT_READY, TARGET_PROBING } from '@momonga/protocol';
 import { ProbeInProgressError, acquireProbeLock, endpointKeyOf, endpointLockKeyOf, probeEndpointTarget } from '@momonga/gateway';
 import type { EndpointKey } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const launchWith = async (target: Record<string, unknown>) => {
   const home = makeHome();

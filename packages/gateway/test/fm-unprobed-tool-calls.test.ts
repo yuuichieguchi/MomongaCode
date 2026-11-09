@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createChatCompletionsAdapter, createManagedTarget } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
@@ -12,6 +12,8 @@ import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const servingFake = (socketPath: string): ManagedServer => ({
   restarts: 0,

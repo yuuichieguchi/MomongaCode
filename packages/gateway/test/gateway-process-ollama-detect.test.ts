@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -6,6 +6,8 @@ import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSett
 import { RECORDED_SERVER_VERSION, startFakeOllama } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 

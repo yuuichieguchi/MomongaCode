@@ -5,11 +5,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const VERSION = '1.10.0-gateway-entry-test';

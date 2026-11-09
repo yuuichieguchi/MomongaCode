@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { RUNTIME_VERSION, captureStream, hookLogger, isLockFree, startRuntimeProcess, startStack } from './run-helpers.ts';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor, firstGeneration } from '@momonga/testkit';
 import type { RuntimeProcess } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ onFatal: [] as ((error: Error) => void)[], aborts: 0 }));
 

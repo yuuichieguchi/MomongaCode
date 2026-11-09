@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
@@ -19,6 +19,8 @@ import {
   writeSettings,
 } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION, inspectProcessLock } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const API_KEY_VALUE = 'momonga-test-api-key';
 const body = { model: 'fast', input: userInput('hi') };

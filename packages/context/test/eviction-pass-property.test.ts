@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, budgetFor, buildContext, createTokenMeter } from '@momonga/context';
 import type { BuiltContext, HistoryItem, MeterRequest, TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = 600;
 const CAPABILITIES = capabilitiesFor(4096, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
@@ -160,5 +162,5 @@ describe('R1 over seeded reported histories', () => {
       JSON.stringify(violations.slice(0, 3)),
     ).toEqual({});
     for (const [branch, reached] of Object.entries(BRANCHES)) expect(reached, `branch ${branch} was never reached`).toBeGreaterThan(0);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 });

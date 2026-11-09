@@ -2,11 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import tls from 'node:tls';
 import { X509Certificate } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, hookLogger, makeRunHome, startRuntimeProcess } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FIXTURE = path.resolve(import.meta.dirname, '..', '..', '..', 'foundation', 'test', 'fixtures', 'test-ca.pem');
 

@@ -329,7 +329,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem);
+      const trust = await installTrust(networkConfig, nodeFileSystem, { signal });
       for (const failure of trust.failures) logger.warn(trustFailureText(failure));
       const outbound: OutboundNetwork = { config: networkConfig, trust };
       return { cache: created, settings: snapshot.settings, network: outbound };
