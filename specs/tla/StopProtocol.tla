@@ -229,10 +229,11 @@ GwForcedGone(g) ==
 KernelGone(g) ==
     /\ alive[g]
     /\ alive' = [alive EXCEPT ![g] = FALSE]
+    /\ kat' = [kat EXCEPT ![g] = 0]
     /\ gst' = [gst EXCEPT ![g] = IF gst[g] = "killing" THEN "gone" ELSE gst[g]]
     /\ rdl' = [rdl EXCEPT ![g] = IF gst[g] = "killing" THEN clock + REAP ELSE rdl[g]]
     /\ kdl' = [kdl EXCEPT ![g] = IF gst[g] = "killing" THEN 0 ELSE kdl[g]]
-    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, kat, sfail >>
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, sfail >>
 
 Unconfirmed(g) ==
     /\ Variant # "unboundedConfirm"
