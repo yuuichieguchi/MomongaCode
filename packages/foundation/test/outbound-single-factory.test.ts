@@ -27,7 +27,7 @@ const sourceFiles = (dir: string): string[] =>
     return /\.tsx?$/.test(entry.name) ? [full] : [];
   });
 
-type Use = 'call' | 'construct';
+type Position = 'value' | 'typeQuery';
 
 type ClientModule = { module: string; reason: string; calls: readonly string[]; constructs: readonly string[] };
 
@@ -91,12 +91,12 @@ const memberOf = (ref: Ref, name: string): Ref => {
   return NONE;
 };
 
-const isClient = (ref: Ref, use: Use): boolean => {
-  if (ref.kind === 'globalFetch') return use === 'call';
+const isClient = (ref: Ref, position: Position): boolean => {
+  if (ref.kind === 'globalFetch') return position === 'value';
   if (ref.kind !== 'export') return false;
   const entry = clientModule(ref.module);
   if (entry === undefined) return false;
-  return (use === 'call' ? entry.calls : entry.constructs).includes(ref.name);
+  return entry.constructs.includes(ref.name) || (position === 'value' && entry.calls.includes(ref.name));
 };
 
 const lookup = (scope: Scope | undefined, name: string): Binding | undefined => {
@@ -211,13 +211,29 @@ const hoistVars = (node: AstNode, functionScope: Scope): void => {
   }
 };
 
-const USE_SITES: Readonly<Record<string, { key: string; use: Use }>> = {
-  CallExpression: { key: 'callee', use: 'call' },
-  NewExpression: { key: 'callee', use: 'construct' },
-  ClassDeclaration: { key: 'superClass', use: 'construct' },
-  ClassExpression: { key: 'superClass', use: 'construct' },
-  TSTypeQuery: { key: 'exprName', use: 'construct' },
-};
+const TS_VALUE_NODES: ReadonlySet<string> = new Set([
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'TSInstantiationExpression',
+  'TSTypeAssertion',
+  'TSModuleDeclaration',
+  'TSModuleBlock',
+  'TSEnumDeclaration',
+  'TSEnumBody',
+  'TSEnumMember',
+  'TSExportAssignment',
+  'TSParameterProperty',
+]);
+
+const isTypeNode = (node: AstNode): boolean => node.type.startsWith('TS') && !TS_VALUE_NODES.has(node.type);
+
+const NAMING_KEYS: ReadonlySet<string> = new Set(['id', 'label']);
+
+const KEYED_MEMBERS: ReadonlySet<string> = new Set(['Property', 'MethodDefinition', 'PropertyDefinition', 'AccessorProperty', 'TSAbstractMethodDefinition', 'TSAbstractPropertyDefinition', 'TSAbstractAccessorProperty']);
+
+const entriesOf = (node: AstNode): [string, AstNode][] =>
+  Object.entries(node).flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).filter(isNode).map((item): [string, AstNode] => [key, item]));
 
 const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
   const program: unknown = parseAst(source, { lang }, `module.${lang}`);
@@ -235,17 +251,83 @@ const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
     return scope;
   };
 
-  const visit = (node: AstNode, scope: Scope, functionScope: Scope): void => {
-    const site = USE_SITES[node.type];
-    const target = site === undefined ? undefined : child(node, site.key);
-    if (site !== undefined && target !== undefined && isClient(resolveIn(target, scope, new Set()), site.use)) found.add(lineAt(target.start));
+  const record = (node: AstNode, scope: Scope, position: Position): boolean => {
+    const client = isClient(resolveIn(node, scope, new Set()), position);
+    if (client) found.add(lineAt(node.start));
+    return client;
+  };
 
+  const visitType = (node: AstNode, scope: Scope): void => {
+    if (node.type === 'TSTypeQuery') {
+      const name = child(node, 'exprName');
+      if (name !== undefined) record(name, scope, 'typeQuery');
+      const typeArguments = child(node, 'typeArguments');
+      if (typeArguments !== undefined) visitType(typeArguments, scope);
+      return;
+    }
+    for (const [, item] of entriesOf(node)) visitType(item, scope);
+  };
+
+  const visitPattern = (pattern: AstNode, scope: Scope, functionScope: Scope): void => {
+    if (isTypeNode(pattern)) return visitType(pattern, scope);
+    if (pattern.type === 'Identifier') {
+      const annotation = child(pattern, 'typeAnnotation');
+      if (annotation !== undefined) visitType(annotation, scope);
+      return;
+    }
+    if (pattern.type === 'MemberExpression') return visit(pattern, scope, functionScope);
+    if (pattern.type === 'AssignmentPattern') {
+      const left = child(pattern, 'left');
+      const right = child(pattern, 'right');
+      if (left !== undefined) visitPattern(left, scope, functionScope);
+      if (right !== undefined) visit(right, scope, functionScope);
+      return;
+    }
+    if (pattern.type === 'Property') {
+      const key = child(pattern, 'key');
+      const value = child(pattern, 'value');
+      if (pattern.computed === true && key !== undefined) visit(key, scope, functionScope);
+      if (value !== undefined) visitPattern(value, scope, functionScope);
+      return;
+    }
+    for (const [, item] of entriesOf(pattern)) visitPattern(item, scope, functionScope);
+  };
+
+  const visitChildren = (node: AstNode, scope: Scope, functionScope: Scope, skip: ReadonlySet<string>): void => {
+    for (const [key, item] of entriesOf(node)) if (!skip.has(key)) visit(item, scope, functionScope);
+  };
+
+  const NO_KEYS: ReadonlySet<string> = new Set();
+
+  const visit = (node: AstNode, scope: Scope, functionScope: Scope): void => {
+    if (isTypeNode(node)) return visitType(node, scope);
+    if (node.type === 'ImportDeclaration' || node.type === 'ExportSpecifier') return;
+    if (node.type === 'Identifier') {
+      record(node, scope, 'value');
+      return;
+    }
+    if (node.type === 'MemberExpression') {
+      if (record(node, scope, 'value')) return;
+      return visitChildren(node, scope, functionScope, node.computed === true ? NO_KEYS : new Set(['property']));
+    }
+    if (KEYED_MEMBERS.has(node.type)) return visitChildren(node, scope, functionScope, node.computed === true ? NO_KEYS : new Set(['key']));
+    if (node.type === 'VariableDeclarator') {
+      const id = child(node, 'id');
+      if (id !== undefined) visitPattern(id, scope, functionScope);
+      return visitChildren(node, scope, functionScope, new Set(['id']));
+    }
+    if (node.type === 'AssignmentExpression') {
+      const left = child(node, 'left');
+      if (left !== undefined) visitPattern(left, scope, functionScope);
+      return visitChildren(node, scope, functionScope, new Set(['left']));
+    }
     if (FUNCTIONS.has(node.type)) {
       const inner: Scope = { bindings: new Map(), parent: scope };
       const name = nameOf(child(node, 'id'));
       if (name !== undefined && node.type === 'FunctionExpression') inner.bindings.set(name, { kind: 'local' });
       for (const param of children(node, 'params')) bindPattern(param, inner, undefined, []);
-      for (const [key, value] of Object.entries(node)) if (key !== 'body') for (const item of Array.isArray(value) ? value : [value]) if (isNode(item)) visit(item, inner, inner);
+      for (const param of children(node, 'params')) visitPattern(param, inner, inner);
+      for (const [key, item] of entriesOf(node)) if (!['body', 'params', 'id'].includes(key)) visit(item, inner, inner);
       const body = child(node, 'body');
       if (body === undefined) return;
       hoistVars(body, inner);
@@ -263,6 +345,8 @@ const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
     if (node.type === 'CatchClause') {
       const inner: Scope = { bindings: new Map(), parent: scope };
       bindPattern(child(node, 'param'), inner, undefined, []);
+      const param = child(node, 'param');
+      if (param !== undefined) visitPattern(param, inner, functionScope);
       const body = child(node, 'body');
       if (body !== undefined) visit(body, inner, functionScope);
       return;
@@ -270,17 +354,16 @@ const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
     if (node.type === 'ForStatement' || node.type === 'ForInStatement' || node.type === 'ForOfStatement') {
       const head = child(node, node.type === 'ForStatement' ? 'init' : 'left');
       const inner = openScope(scope, head === undefined ? [] : [head], functionScope);
-      for (const value of Object.values(node)) for (const item of Array.isArray(value) ? value : [value]) if (isNode(item)) visit(item, inner, functionScope);
-      return;
+      return visitChildren(node, inner, functionScope, NO_KEYS);
     }
     if (node.type === 'ClassExpression') {
       const inner: Scope = { bindings: new Map(), parent: scope };
       const name = nameOf(child(node, 'id'));
       if (name !== undefined) inner.bindings.set(name, { kind: 'local' });
-      for (const [key, value] of Object.entries(node)) for (const item of Array.isArray(value) ? value : [value]) if (isNode(item)) visit(item, key === 'superClass' ? scope : inner, functionScope);
+      for (const [key, item] of entriesOf(node)) if (!NAMING_KEYS.has(key)) visit(item, key === 'superClass' ? scope : inner, functionScope);
       return;
     }
-    for (const value of Object.values(node)) for (const item of Array.isArray(value) ? value : [value]) if (isNode(item)) visit(item, scope, functionScope);
+    visitChildren(node, scope, functionScope, NAMING_KEYS);
   };
 
   const top = openScope(undefined, children(program, 'body'));
