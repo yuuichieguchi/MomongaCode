@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import type { MarkerMode } from '../marker-state.ts';
@@ -56,7 +55,14 @@ export const closeMarkerDescriptor = (fd: number): void => {
   else handle.close();
 };
 
-const writeEmptyRecord = (file: string): void => fs.writeFileSync(file, EMPTY_RECORD_TEXT, { flag: 'r+' });
+const writeEmptyRecord = (file: string): void => {
+  const writer = nodeFileSystemSync.openDescriptorSync(file, OPEN_FLAGS.readWrite);
+  try {
+    nodeFileSystemSync.writeTextSync(writer, EMPTY_RECORD_TEXT);
+  } finally {
+    nodeFileSystemSync.closeSync(writer);
+  }
+};
 
 const openPlainWithRecord = (ops: FileLockOps, marker: string): number => {
   const creator = ops.open(marker, createPlainFlags(), MARKER_MODE);
