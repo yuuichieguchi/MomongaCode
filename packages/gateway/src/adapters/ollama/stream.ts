@@ -37,10 +37,9 @@ const reportedCount = (container: Record<string, unknown>, key: string): number 
   return value;
 };
 
-const usageOf = (done: Record<string, unknown>): Usage | undefined => {
-  const input = reportedCount(done, 'prompt_eval_count');
-  const output = reportedCount(done, 'eval_count');
-  if (input === undefined || output === undefined) return undefined;
+const usageOf = (done: Record<string, unknown>): Usage => {
+  const input = reportedCount(done, 'prompt_eval_count') ?? 0;
+  const output = reportedCount(done, 'eval_count') ?? 0;
   return {
     input_tokens: input,
     output_tokens: output,
