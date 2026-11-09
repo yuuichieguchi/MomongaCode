@@ -103,7 +103,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     self,
     env: { PATH: '/usr/bin' },
     clock: virtualClock(),
-    http: undiciUpdateHttp(),
+    http: undiciUpdateHttp(Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } })),
     fs: nodeUpdateFs(),
     run: async (file, args, options) => {
       if (file === RELEASE_SIGNATURE_TOOL) {
