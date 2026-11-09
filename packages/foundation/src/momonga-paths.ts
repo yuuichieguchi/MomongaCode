@@ -342,9 +342,17 @@ const releaseSessionScratch = (directory: string): void => {
   held?.release();
 };
 
+const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
+  const stat = await lstatIfPresent(root);
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new SessionTmpDirError(`${root} is missing, a link, or not a directory; refusing to use it`);
+  }
+};
+
 export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
   assertSessionId(sessionId);
   const directory = path.join(paths.tmp.sessions, sessionId);
+  await assertSessionsRootIsDirectory(paths.tmp.sessions);
   const claimedNow = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
   try {
     return await ensureClaimedSessionTmpDir(paths, sessionId, ports);
