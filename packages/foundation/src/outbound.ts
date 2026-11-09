@@ -151,7 +151,8 @@ class ProxyReplyError extends Error {
   }
 }
 
-const isAbort = (error: unknown): boolean => (error instanceof Error && error.name === 'AbortError') || codeOf(error) === 'UND_ERR_ABORTED';
+const isAbort = (error: unknown, signal?: unknown): boolean =>
+  (error instanceof Error && error.name === 'AbortError') || codeOf(error) === 'UND_ERR_ABORTED' || (signal instanceof AbortSignal && signal.aborted && error === signal.reason);
 
 const markedProxyHop = (error: unknown): unknown => {
   if (typeof error === 'object' && error !== null && !isAbort(error)) Object.defineProperty(error, PROXY_HOP, { value: true });
@@ -300,8 +301,7 @@ class OutboundDispatcher extends Dispatcher {
     const signal: unknown = 'signal' in options ? options.signal : undefined;
     const label = (error: Error): Error => {
       if (error instanceof OutboundConnectionError) return error;
-      if (signal instanceof AbortSignal && signal.aborted && error === signal.reason) return error;
-      if (isAbort(error) && !causeChain(error).some((entry) => entry instanceof ProxyReplyError)) return error;
+      if (isAbort(error, signal) && !causeChain(error).some((entry) => entry instanceof ProxyReplyError)) return error;
       const proxyFailure = route.kind === 'proxy' ? proxyFailureOf(route, error, caSources, forwarded) : undefined;
       if (proxyFailure !== undefined) return new OutboundConnectionError(proxyFailure, { cause: error });
       const certificateCode = certificateCodeOf(error);
