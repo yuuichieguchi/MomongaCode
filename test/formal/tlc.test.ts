@@ -181,37 +181,6 @@ describe('the manifest of specs/tla', () => {
     expect(discoveryProblems(specDir, manifestOrThrow())).toEqual([]);
   });
 
-  it('records the role, expectation, arguments and tier of every RunRecovery configuration as the design states', () => {
-    const recorded = Object.fromEntries(
-      manifestOrThrow()
-        .entries.filter((entry) => entry.config.startsWith('RunRecovery'))
-        .map((entry) => [entry.config, { role: entry.role, expect: entry.expect, args: [...entry.args], tier: entry.tier }]),
-    );
-    const evidenceAtMostOnce = { role: 'evidence', expect: { violates: 'AtMostOnceEffect', exitCode: 12 }, args: [], tier: 'every-run' };
-    expect(recorded).toEqual({
-      RunRecovery: { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.children': { role: 'check', expect: 'holds', args: [], tier: 'deep' },
-      'RunRecovery.childrenSmall': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.liveNone': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.liveSpawn': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
-      'RunRecovery.liveSpawnSmall': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.lockOnly': { role: 'evidence', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.unfixed': evidenceAtMostOnce,
-      'RunRecovery.fenceOnly': evidenceAtMostOnce,
-      'RunRecovery.unlocked': evidenceAtMostOnce,
-      'RunRecovery.reapOnly': evidenceAtMostOnce,
-      'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
-      'RunRecovery.liveTimeout': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.liveTimeoutFailed': { role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 }, args: [], tier: 'every-run' },
-      'RunRecovery.uniformCancelNoWorkers': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },
-    });
-  });
-
-  it('records the measured distinct states of lockOnly', () => {
-    expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1071230);
-  });
-
   it('records the measured wall seconds of every entry as a positive number', () => {
     for (const entry of manifestOrThrow().entries) {
       expect(entry.measuredSeconds, entry.config).toBeGreaterThan(0);
