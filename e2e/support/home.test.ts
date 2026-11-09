@@ -8,7 +8,7 @@ import { registerCleanup, spawnTracked, startLockHolder, firstGeneration } from 
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
-import { E2E_RUN_ENV, e2eTmpRoot } from './run-env.ts';
+import { E2E_RUN_ENV, currentIdentity, e2eTmpRoot, privateRootName, sharedTempBase } from './run-env.ts';
 
 const realTmp = e2eTmpRoot;
 
@@ -35,7 +35,7 @@ const deadPid = (): number => {
 const entriesWithPrefix = (dir: string, prefix: string): string[] => fs.readdirSync(dir).filter((entry) => entry.startsWith(prefix));
 
 describe('createE2eHome', () => {
-  it('names the root mme-<run>-<6> directly in the real temp dir and lays out the home', async (context) => {
+  it('names the root mme-<run>-<6> directly in the private e2e temp dir and lays out the home', async (context) => {
     ownMarkerCleanup(context);
     const created = await createE2eHome();
     const run = runToken();
@@ -58,11 +58,13 @@ describe('createE2eHome', () => {
     expect(fs.existsSync(liveMarker())).toBe(false);
   });
 
-  it('keeps the longest socket within the budget: supervisor.sock is the temp dir plus 48 bytes', async (context) => {
+  it('keeps the longest socket within the budget: supervisor.sock is the shared base, the private mme-<uid> directory and 48 bytes', async (context) => {
     ownMarkerCleanup(context);
     const created = await createE2eHome();
     const longest = Buffer.byteLength(firstGeneration(created.paths).sockets.supervisor);
-    expect(longest).toBe(Buffer.byteLength(realTmp()) + 48);
+    const privateRootBytes = Buffer.byteLength(sharedTempBase()) + 1 + Buffer.byteLength(privateRootName(currentIdentity()));
+    expect(Buffer.byteLength(realTmp())).toBe(privateRootBytes);
+    expect(longest).toBe(privateRootBytes + 48);
     expect(longest).toBeLessThanOrEqual(SOCKET_PATH_LIMIT - 1);
     for (const socket of Object.values(firstGeneration(created.paths).sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
   });

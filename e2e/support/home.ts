@@ -9,7 +9,7 @@ import { createProcessLedger } from './ledger.ts';
 import type { ProcessLedger } from './ledger.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath } from './run-env.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, createHarnessFile, e2eEntryPrefix, e2eTmpRoot, harnessFilePath, readHarnessFile } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, withinBound } from './wait.ts';
 
 export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
@@ -38,7 +38,6 @@ export type E2eCleanup = () => void | Promise<void>;
 
 const ROOT_SUFFIX_PLACEHOLDER = 'xxxxxx';
 const PRIVATE_DIRECTORY_MODE = 0o700;
-const MARKER_FILE_MODE = 0o600;
 
 const cleanups: E2eCleanup[] = [];
 const homes: E2eHome[] = [];
@@ -72,11 +71,11 @@ const assertSocketBudget = (tmpRoot: string, run: string): void => {
 };
 
 const writeLiveMarker = (marker: string): void => {
-  fs.writeFileSync(marker, String(process.pid), { flag: 'wx', mode: MARKER_FILE_MODE });
+  createHarnessFile(marker, String(process.pid));
 };
 
 const markerOwnerOf = (marker: string): number | undefined => {
-  const text = fs.readFileSync(marker, 'utf8').trim();
+  const text = readHarnessFile(marker).trim();
   return /^\d+$/.test(text) ? Number(text) : undefined;
 };
 
