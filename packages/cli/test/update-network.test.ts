@@ -22,7 +22,7 @@ import { NEW_BINARY, OLD_BINARY, REPO, setupUpdate } from './update-harness.ts';
 import type { UpdateHarness } from './update-harness.ts';
 
 const RELEASE_HOST = 'release.example.test';
-const UNRESOLVABLE_HOST = 'release.invalid';
+const UNSPECIFIED_ADDRESS = '0.0.0.0';
 const PASSWORD = 'proxy-password-secret';
 const SHORT_BOUND_MS = 300;
 const SHORT: OutboundOptions = { connectReplyTimeoutMs: SHORT_BOUND_MS, headersTimeout: SHORT_BOUND_MS, bodyTimeout: SHORT_BOUND_MS };
@@ -274,25 +274,27 @@ describe('momonga update follows the route of the one outbound factory', { timeo
   it('goes direct, never touching the proxy, when NO_PROXY matches the release host', async (context: TestContext) => {
     const harness = await setupUpdate(context);
     const proxy = await startProxy({ routes: new Map() });
-    const config = proxiedConfig(proxy.port, { noProxy: { value: UNRESOLVABLE_HOST, source: 'NO_PROXY' } });
+    const config = proxiedConfig(proxy.port, { noProxy: { value: UNSPECIFIED_ADDRESS, source: 'NO_PROXY' } });
+    const origin = `https://${UNSPECIFIED_ADDRESS}:${await closedPort()}`;
 
-    const error = await rejection(run(harness, through(harness, networkOf(config), `https://${UNRESOLVABLE_HOST}`), true));
+    const error = await rejection(run(harness, through(harness, networkOf(config), origin), true));
 
     expect(proxy.connections()).toBe(0);
     expect(error.code).toBe('release_lookup_failed');
     const outbound = findOutboundError(error);
     expect(outbound?.hop).toBe('origin');
-    expect(outbound?.failure).toMatchObject({ kind: 'origin-connection', origin: `https://${UNRESOLVABLE_HOST}` });
+    expect(outbound?.failure).toMatchObject({ kind: 'origin-connection', origin });
   });
 
   it('goes direct with the labelled origin error when no proxy is configured', async (context: TestContext) => {
     const harness = await setupUpdate(context);
+    const origin = `https://127.0.0.1:${await closedPort()}`;
 
-    const error = await rejection(run(harness, through(harness, networkOf({ caFiles: [] }), `https://${UNRESOLVABLE_HOST}`), true));
+    const error = await rejection(run(harness, through(harness, networkOf({ caFiles: [] }), origin), true));
 
     expect(error.code).toBe('release_lookup_failed');
-    expect(error.message.startsWith(`looking up the latest release failed: the connection to https://${UNRESOLVABLE_HOST} failed before a response`)).toBe(true);
-    expect(findOutboundError(error)?.failure.kind).toBe('origin-connection');
+    expect(error.message.startsWith(`looking up the latest release failed: the connection to ${origin} failed before a response (ECONNREFUSED)`)).toBe(true);
+    expect(findOutboundError(error)?.failure).toMatchObject({ kind: 'origin-connection', origin, code: 'ECONNREFUSED' });
   });
 });
 
