@@ -6,10 +6,10 @@ import { GATEWAY_MAX_CLOSE_MS, REAP_POLL_INTERVAL_MS, fmServeStopBoundMs, reapMa
 import type { ProcessInspector } from '@momonga/foundation';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, createFmServe } from '@momonga/gateway';
 import type { FmChild, FmServeTimers } from '@momonga/gateway';
-import { drivenReapTiming, startFakeChatCompletions, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, drivenReapTiming, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { makeDir, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
-import { bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
+import { advanceToNextWait, bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
 
 describe('gateway close budget', () => {
   it('GATEWAY_MAX_CLOSE_MS is the close grace plus the fm stop bound at the default stop grace', () => {
@@ -72,7 +72,7 @@ const unkillableFmChild = (socketPath: string, marker: string, clock: FakeClock,
   } as FmChild;
 };
 
-describe('the gateway close bound against a gateway that holds an fm serve at the default grace', () => {
+describe('the gateway close bound against a gateway that holds an fm serve at the default grace', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('covers the close grace, both stopGraceMs waits of the fm stop and the grace windows of its finalize reap', async () => {
     const dir = makeDir();
     const marker = path.join(dir, 'fm-marker');
@@ -106,11 +106,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
       closed = true;
     });
     const waits = new Set([GATEWAY_CONFIG_DEFAULTS.closeGraceMs, FM_SERVE_DEFAULTS.stopGraceMs, REAP_POLL_INTERVAL_MS]);
-    while (!closed) {
-      await waitFor(() => closed || harness.timers.pending().some((timer) => waits.has(timer.delayMs)), { description: 'the next wait of the close' });
-      const next = harness.timers.pending().find((timer) => waits.has(timer.delayMs));
-      if (!closed && next !== undefined) harness.timers.advance(next.dueAt - harness.clock.now());
-    }
+    while (!closed) await advanceToNextWait(harness.timers, waits, () => closed, 'the next wait of the close');
     await closing;
 
     expect(harness.clock.now() - closeBegan).toBeLessThanOrEqual(GATEWAY_MAX_CLOSE_MS);

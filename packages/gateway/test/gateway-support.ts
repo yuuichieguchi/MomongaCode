@@ -1,10 +1,10 @@
 import net from 'node:net';
 import { SAMPLING_FIELDS } from '@momonga/protocol';
 import type { AdapterRequest, ProviderAdapter, StreamEvent } from '@momonga/protocol';
-import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
+import { DEFAULT_SCRIPTED_CAPABILITIES, afterMicrotasks, responseResource, textResponseEvents, usageOf, waitFor } from '@momonga/testkit';
 import { createTelemetry } from '@momonga/observability';
 import type { Telemetry } from '@momonga/observability';
-import type { FakeClock } from '@momonga/testkit';
+import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
 export type HangingAdapter = ProviderAdapter & { readonly pulled: { count: number }; readonly signals: AbortSignal[] };
@@ -165,4 +165,28 @@ export const createLiveSpanTelemetry = (clock: FakeClock): LiveSpanTelemetry => 
     commitCountsPerAttempt: () => attemptSpans().map((span) => span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length),
     commitEvents: () => attemptSpans().reduce((count, span) => count + span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length, 0),
   };
+};
+
+const QUIET_TURNS = 200;
+
+const settled = async (timers: FakeTimers, done: () => boolean): Promise<void> => {
+  let seen = JSON.stringify(timers.pending());
+  for (let quiet = 0; quiet < QUIET_TURNS && !done(); quiet += 1) {
+    await afterMicrotasks();
+    const now = JSON.stringify(timers.pending());
+    if (now !== seen) {
+      seen = now;
+      quiet = 0;
+    }
+  }
+};
+
+export const advanceToNextWait = async (timers: FakeTimers, waits: ReadonlySet<number>, done: () => boolean, description: string): Promise<void> => {
+  await waitFor(() => done() || timers.pending().some((timer) => waits.has(timer.delayMs)), { description });
+  await settled(timers, done);
+  const next = timers
+    .pending()
+    .filter((timer) => waits.has(timer.delayMs))
+    .sort((a, b) => a.dueAt - b.dueAt)[0];
+  if (!done() && next !== undefined) timers.advance(Math.max(0, next.dueAt - timers.now()));
 };

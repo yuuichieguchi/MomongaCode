@@ -6,11 +6,11 @@ import { FM_STOP_GRACE_MS, GATEWAY_CLOSE_GRACE_MS, GATEWAY_MAX_CLOSE_MS, REAP_PO
 import type { ProcessInspector } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { FmChild } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, afterMicrotasks, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { saveFakeFmRecord } from './fm-record-support.ts';
-import { openUnreadStream } from './gateway-support.ts';
+import { advanceToNextWait, openUnreadStream } from './gateway-support.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
 const HOLDER_PID = 4343;
@@ -76,30 +76,6 @@ const POLLS = new Set([REAP_POLL_INTERVAL_MS]);
 
 const WAITS_OF_THE_CLOSE = new Set([GATEWAY_CLOSE_GRACE_MS, FM_STOP_GRACE_MS, REAP_POLL_INTERVAL_MS]);
 
-const QUIET_TURNS = 200;
-
-const settled = async (timers: FakeTimers, done: () => boolean): Promise<void> => {
-  let seen = JSON.stringify(timers.pending());
-  for (let quiet = 0; quiet < QUIET_TURNS && !done(); quiet += 1) {
-    await afterMicrotasks();
-    const now = JSON.stringify(timers.pending());
-    if (now !== seen) {
-      seen = now;
-      quiet = 0;
-    }
-  }
-};
-
-const advanceToNextWait = async (timers: FakeTimers, waits: ReadonlySet<number>, done: () => boolean, description: string): Promise<void> => {
-  await waitFor(() => done() || timers.pending().some((timer) => waits.has(timer.delayMs)), { description });
-  await settled(timers, done);
-  const next = timers
-    .pending()
-    .filter((timer) => waits.has(timer.delayMs))
-    .sort((a, b) => a.dueAt - b.dueAt)[0];
-  if (!done() && next !== undefined) timers.advance(Math.max(0, next.dueAt - timers.now()));
-};
-
 type CloseOutcome = { tookMs: number; probeTerminatedAfterMs: number[] };
 
 const closeWhileProbing = async (probePhase: ProbePhase): Promise<CloseOutcome> => {
@@ -153,6 +129,7 @@ const closeWhileProbing = async (probePhase: ProbePhase): Promise<CloseOutcome> 
   const closing = handle.close().finally(() => {
     closed = true;
   });
+  await waitFor(() => serves.probeTerminatedAt.length > 0, { description: 'the close to stop the probe fm serve before any of its waits' });
   while (!closed) await advanceToNextWait(timers, WAITS_OF_THE_CLOSE, () => closed, 'the next wait of the close');
   await closing;
   return { tookMs: clock.now() - closeBegan, probeTerminatedAfterMs: serves.probeTerminatedAt.map((at) => at - closeBegan) };
