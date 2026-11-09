@@ -3,7 +3,7 @@ import { immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from '@momonga/protocol';
 import type { GoverningFactView } from '@momonga/protocol';
-import { corrupt, expectOneOf, readerFor, storedOneOf } from './rows.ts';
+import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
@@ -21,24 +21,26 @@ const decodeStrings = (identity: string, column: string, value: unknown): string
 const decodeFact = (row: Row, context: DecodeContext): GoverningFactView => {
   const identity = String(row['id']);
   const reader = readerFor('governing_facts', identity, row);
-  const level = expectOneOf('governing_facts', identity, 'scope_level', SCOPE_LEVELS, reader.string('scope_level'));
+  const level = storedOneOf(context, 'governing_facts', identity, 'scope_level', SCOPE_LEVELS, reader.string('scope_level'));
   const behavior = reader.nullableString('enforcement_behavior');
   const rule = reader.nullableString('enforcement_rule');
-  const sourceKind = expectOneOf('governing_facts', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
+  const sourceKind = storedOneOf(context, 'governing_facts', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
   return {
     id: reader.string('id'),
     kind: storedOneOf(context, 'governing_facts', identity, 'kind', GOVERNING_KINDS, reader.string('kind')),
     target: reader.string('target'),
     text: reader.string('text'),
-    scope: level === 'user' ? { level } : { level, project: reader.string('project'), paths: decodeStrings(identity, 'paths_json', reader.json('paths_json')) },
+    scope: level === 'user' || level === UNKNOWN_VALUE ? { level } : { level, project: reader.string('project'), paths: decodeStrings(identity, 'paths_json', reader.json('paths_json')) },
     validFrom: reader.number('valid_from'),
     validUntil: reader.nullableNumber('valid_until'),
     retiredAt: reader.nullableNumber('retired_at'),
     supersedes: decodeStrings(identity, 'supersedes_json', reader.json('supersedes_json')),
     enforcement:
-      behavior === null || rule === null ? null : { behavior: expectOneOf('governing_facts', identity, 'enforcement_behavior', GOVERNING_ENFORCEMENT_BEHAVIORS, behavior), rule },
+      behavior === null || rule === null ? null : { behavior: storedOneOf(context, 'governing_facts', identity, 'enforcement_behavior', GOVERNING_ENFORCEMENT_BEHAVIORS, behavior), rule },
     source:
-      sourceKind === 'command'
+      sourceKind === UNKNOWN_VALUE
+        ? { kind: sourceKind }
+        : sourceKind === 'command'
         ? { kind: sourceKind, at: reader.number('source_at') }
         : {
             kind: sourceKind,

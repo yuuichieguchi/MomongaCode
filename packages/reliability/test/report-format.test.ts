@@ -144,7 +144,7 @@ describe('decision 55: facts_unavailable in the population line', () => {
   it('prints the unavailable roots beside the buckets and counts them as resolved in the coverage', () => {
     const report = buildReliabilityReport({ kind: 'real', aggregate: aggregate(tasks(2, 0, 0), { groupBy: 'model', unavailableRoots: ['ghost'] }) });
     expect(formatReliabilityReport(report)).toContain(
-      'Population: 3 terminal root tasks; counted 2; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 1 (excluded); facts coverage 3/3',
+      'Population: 3 terminal root tasks; counted 2; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 1 (excluded); unknown values 0 (excluded); facts coverage 3/3',
     );
     expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
   });

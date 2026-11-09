@@ -1,4 +1,6 @@
 export { UNKNOWN_VALUE } from './stored-value.ts';
+export { enforcedBehaviorOf } from './governance.ts';
+export type { EnforcedBehavior } from './governance.ts';
 export type { Stored } from './stored-value.ts';
 export type {
   AllowedToolsForm,
@@ -352,6 +354,8 @@ export type {
   AddMemoryRequest,
   MemoriesResponse,
   MemoryEvidence,
+  StoredMemoryEvidence,
+  StoredMemorySource,
   MemoryEvidenceKind,
   MemoryKind,
   MemoryOrigin,

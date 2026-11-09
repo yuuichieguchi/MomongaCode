@@ -18,6 +18,7 @@ type SearchInput = { query: string; include?: 'live' | 'all' };
 
 const describeOrigin = (source: MemoryView['source']): string => {
   if (source.kind === 'command') return 'added by a person';
+  if (source.kind === 'unknown') return 'from a source this version does not know';
   return `in run ${source.runId}${source.kind === 'tool' ? ` step ${source.step}` : ''}`;
 };
 

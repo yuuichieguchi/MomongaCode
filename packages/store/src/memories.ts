@@ -2,8 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx, joinedTx, readTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from '@momonga/protocol';
-import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState, MemoryStatus } from '@momonga/protocol';
-import { corrupt, expectOneOf, readerFor, storedOneOf } from './rows.ts';
+import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState, MemoryStatus, Stored, StoredMemoryEvidence, StoredMemorySource } from '@momonga/protocol';
+import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row, RowReader } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
@@ -19,8 +19,9 @@ const REFLECTION_CALL_ID = /^reflection:(\d+)$/;
 
 const SOURCE_KINDS = ['tool', 'reflection', 'command'] as const;
 
-const decodeSource = (identity: string, reader: RowReader): MemorySource => {
-  const kind = expectOneOf('memories', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
+const decodeSource = (context: DecodeContext, identity: string, reader: RowReader): StoredMemorySource => {
+  const kind = storedOneOf(context, 'memories', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
+  if (kind === UNKNOWN_VALUE) return { kind };
   if (kind === 'command') return { kind, at: reader.number('created_at') };
   const sessionId = reader.string('source_session_id');
   const runId = reader.string('source_run_id');
@@ -37,11 +38,13 @@ const decodeStringList = (identity: string, reader: RowReader, column: string): 
   return value as string[];
 };
 
-const decodeEvidence = (memoryId: string, row: Row): MemoryEvidence => {
+const decodeEvidence = (context: DecodeContext, memoryId: string, row: Row): StoredMemoryEvidence => {
   const identity = `${memoryId}/${String(row['ordinal'])}`;
   const reader = readerFor('memory_evidence', identity, row);
-  const kind = expectOneOf('memory_evidence', identity, 'kind', MEMORY_EVIDENCE_KINDS, reader.string('kind'));
+  const kind = storedOneOf(context, 'memory_evidence', identity, 'kind', MEMORY_EVIDENCE_KINDS, reader.string('kind'));
   switch (kind) {
+    case UNKNOWN_VALUE:
+      return { kind };
     case 'file':
       return { kind, project: reader.string('project'), path: reader.string('path'), sha256: reader.string('sha256') };
     case 'commit':
@@ -51,35 +54,35 @@ const decodeEvidence = (memoryId: string, row: Row): MemoryEvidence => {
   }
 };
 
-const decodeObservedStatus = (identity: string, reader: RowReader): MemoryStatus | null => {
+const decodeObservedStatus = (context: DecodeContext, identity: string, reader: RowReader): Stored<MemoryStatus> | null => {
   const status = reader.nullableString('observed_status');
-  return status === null ? null : expectOneOf('memories', identity, 'observed_status', MEMORY_STATUSES, status);
+  return status === null ? null : storedOneOf(context, 'memories', identity, 'observed_status', MEMORY_STATUSES, status);
 };
 
-const decodeMemory = (context: DecodeContext, row: Row, evidence: MemoryEvidence[], supersededBy: string[]): MemoryRecord => {
+const decodeMemory = (context: DecodeContext, row: Row, evidence: StoredMemoryEvidence[], supersededBy: string[]): MemoryRecord => {
   const identity = String(row['id']);
   const reader = readerFor('memories', identity, row);
-  const scope: MemoryScope = expectOneOf('memories', identity, 'scope', MEMORY_SCOPES, reader.string('scope'));
-  const origin: MemoryOrigin = expectOneOf('memories', identity, 'origin', MEMORY_ORIGINS, reader.string('origin'));
+  const scope = storedOneOf(context, 'memories', identity, 'scope', MEMORY_SCOPES, reader.string('scope'));
+  const origin = storedOneOf(context, 'memories', identity, 'origin', MEMORY_ORIGINS, reader.string('origin'));
   const project = reader.nullableString('project');
-  if ((scope === 'project') !== (project !== null)) throw corrupt('memories', identity, `scope ${scope} does not match project ${String(project)}`);
+  if (scope !== UNKNOWN_VALUE && (scope === 'project') !== (project !== null)) throw corrupt('memories', identity, `scope ${scope} does not match project ${String(project)}`);
   return {
     id: reader.string('id'),
     scope,
     origin,
     project,
     text: reader.string('text'),
-    source: decodeSource(identity, reader),
+    source: decodeSource(context, identity, reader),
     createdAt: reader.number('created_at'),
     keptAt: reader.number('kept_at'),
-    kind: expectOneOf('memories', identity, 'kind', MEMORY_KINDS, reader.string('kind')),
+    kind: storedOneOf(context, 'memories', identity, 'kind', MEMORY_KINDS, reader.string('kind')),
     state: storedOneOf(context, 'memories', identity, 'state', MEMORY_STATES, reader.string('state')),
     duplicateOf: reader.nullableString('duplicate_of'),
     supersedes: decodeStringList(identity, reader, 'supersedes_json'),
     supersededBy,
     retiredAt: reader.nullableNumber('retired_at'),
     contributedAt: reader.nullableNumber('contributed_at'),
-    observedStatus: decodeObservedStatus(identity, reader),
+    observedStatus: decodeObservedStatus(context, identity, reader),
     evidence,
   };
 };
@@ -95,11 +98,11 @@ const RECALLABLE = recallableUntil('');
 
 const SEARCHABLE_WITH_HISTORY = "state <> 'candidate'";
 
-const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR project = :project)";
+const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR (scope = 'project' AND project = :project))";
 
 const VISIBLE_UNTRUSTED = "scope = 'user'";
 
-const LANE = "(CASE WHEN scope = 'user' THEN 'user:' || origin ELSE 'project:' || project END)";
+const LANE = "(CASE WHEN scope = 'user' THEN 'user:' || origin WHEN scope = 'project' THEN 'project:' || project END)";
 
 const TIER = `(CASE observed_status ${MEMORY_STATUSES.map((status, tier) => `WHEN '${status}' THEN ${tier}`).join(' ')} ELSE ${MEMORY_STATUSES.length} END)`;
 
@@ -152,7 +155,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     return decodeMemory(
       context,
       row,
-      evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)),
+      evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(context, id, evidenceRow)),
       replacedBy.all({ id }).map((successor) => readerFor('memories', id, successor).string('id')),
     );
   };
@@ -164,10 +167,10 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
   const decodeMany = (rows: readonly Row[]): MemoryRecord[] => {
     if (rows.length === 0) return [];
     const ids = JSON.stringify(rows.map((row) => String(row['id'])));
-    const evidenceById = new Map<string, MemoryEvidence[]>();
+    const evidenceById = new Map<string, StoredMemoryEvidence[]>();
     for (const evidenceRow of evidenceOfMany.all({ ids })) {
       const memoryId = readerFor('memory_evidence', 'page', evidenceRow).string('memory_id');
-      evidenceById.set(memoryId, [...(evidenceById.get(memoryId) ?? []), decodeEvidence(memoryId, evidenceRow)]);
+      evidenceById.set(memoryId, [...(evidenceById.get(memoryId) ?? []), decodeEvidence(context, memoryId, evidenceRow)]);
     }
     const successorsById = new Map<string, string[]>();
     for (const successorRow of replacedByMany.all({ ids })) {
@@ -413,7 +416,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     activePage: (after, limit) =>
       activePage.all({ createdAt: after?.createdAt ?? -1, id: after?.id ?? '', limit }).map((row) => {
         const id = String(row['id']);
-        return decodeMemory(context, row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
+        return decodeMemory(context, row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(context, id, evidenceRow)), []);
       }),
     candidates: (filter = {}) => (filter.project === undefined ? candidateRows.all() : candidateRowsOfProject.all({ project: filter.project })).map(decode),
     accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { kept: true }),
@@ -515,7 +518,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     observations: (id) =>
       observationsOf.all({ id }).map((row) => {
         const reader = readerFor('memory_observations', id, row);
-        return { status: expectOneOf('memory_observations', id, 'status', MEMORY_STATUSES, reader.string('status')), observedAt: reader.number('observed_at') };
+        return { status: storedOneOf(context, 'memory_observations', id, 'status', MEMORY_STATUSES, reader.string('status')), observedAt: reader.number('observed_at') };
       }),
     stampContributed: (ids, at) => {
       for (const id of ids) stamp.run({ id, at });

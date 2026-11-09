@@ -741,6 +741,8 @@ const costBreakdownView = closed(
 
 const memoryScope = enumOf(MEMORY_SCOPES);
 
+const unknownKind = closed({ kind: constant(UNKNOWN_VALUE) }, ['kind']);
+
 const memorySource: JsonSchema = {
   oneOf: [
     closed(
@@ -749,6 +751,7 @@ const memorySource: JsonSchema = {
     ),
     closed({ kind: constant('reflection'), sessionId: string, runId: string, ordinal: nonNegativeInteger }, ['kind', 'sessionId', 'runId', 'ordinal']),
     closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
+    unknownKind,
   ],
 };
 
@@ -767,17 +770,22 @@ const memoryEvidence: JsonSchema = {
       },
       ['kind', 'runId', 'callId', 'seq', 'command', 'exitCode'],
     ),
+    unknownKind,
   ],
 };
 
 const governingEnforcement = closed({ behavior: enumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: { type: 'string', minLength: 1 } }, ['behavior', 'rule']);
 
-const governingScope: JsonSchema = {
-  oneOf: [
-    closed({ level: constant('user') }, ['level']),
-    closed({ level: constant('project'), project: { type: 'string', minLength: 1 }, paths: { type: 'array', items: { type: 'string', minLength: 1 } } }, ['level', 'project', 'paths']),
-  ],
-};
+const governingScopes = [
+  closed({ level: constant('user') }, ['level']),
+  closed({ level: constant('project'), project: { type: 'string', minLength: 1 }, paths: { type: 'array', items: { type: 'string', minLength: 1 } } }, ['level', 'project', 'paths']),
+];
+
+const governingScope: JsonSchema = { oneOf: governingScopes };
+
+const storedGoverningScope: JsonSchema = { oneOf: [...governingScopes, closed({ level: constant(UNKNOWN_VALUE) }, ['level'])] };
+
+const storedGoverningEnforcement = closed({ behavior: storedEnumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: { type: 'string', minLength: 1 } }, ['behavior', 'rule']);
 
 const governingFactView = closed(
   {
@@ -785,16 +793,17 @@ const governingFactView = closed(
     kind: storedEnumOf(GOVERNING_KINDS),
     target: string,
     text: string,
-    scope: governingScope,
+    scope: storedGoverningScope,
     validFrom: integer,
     validUntil: nullable(integer),
     retiredAt: nullable(integer),
     supersedes: { type: 'array', items: string },
-    enforcement: nullable(governingEnforcement),
+    enforcement: nullable(storedGoverningEnforcement),
     source: {
       oneOf: [
         closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
         closed({ kind: constant('proposal'), sessionId: string, runId: string, seq: nonNegativeInteger, callId: string }, ['kind', 'sessionId', 'runId', 'seq', 'callId']),
+        unknownKind,
       ],
     },
   },
@@ -811,14 +820,14 @@ const memoryValidity = closed(
     intervals: {
       type: 'array',
       items: closed(
-        { status: enumOf(MEMORY_STATUSES), from: integer, to: nullable(integer), closedBy: nullable(enumOf(VALIDITY_CLOSERS)) },
+        { status: storedEnumOf(MEMORY_STATUSES), from: integer, to: nullable(integer), closedBy: nullable(enumOf(VALIDITY_CLOSERS)) },
         ['status', 'from', 'to', 'closedBy'],
       ),
     },
     changes: {
       type: 'array',
       items: closed(
-        { from: enumOf(MEMORY_STATUSES), to: enumOf(MEMORY_STATUSES), changedBetween: { type: 'array', items: integer, minItems: 2, maxItems: 2 } },
+        { from: storedEnumOf(MEMORY_STATUSES), to: storedEnumOf(MEMORY_STATUSES), changedBetween: { type: 'array', items: integer, minItems: 2, maxItems: 2 } },
         ['from', 'to', 'changedBetween'],
       ),
     },
@@ -829,14 +838,14 @@ const memoryValidity = closed(
 const memoryView = closed(
   {
     id: string,
-    scope: memoryScope,
-    origin: enumOf(MEMORY_ORIGINS),
+    scope: storedEnumOf(MEMORY_SCOPES),
+    origin: storedEnumOf(MEMORY_ORIGINS),
     project: nullable(string),
     text: string,
     source: memorySource,
     createdAt: integer,
     keptAt: integer,
-    kind: enumOf(MEMORY_KINDS),
+    kind: storedEnumOf(MEMORY_KINDS),
     state: storedEnumOf(MEMORY_STATES),
     duplicateOf: nullable(string),
     supersedes: { type: 'array', items: string },
@@ -845,7 +854,7 @@ const memoryView = closed(
     evidence: { type: 'array', items: memoryEvidence },
     status: enumOf(MEMORY_STATUSES),
     contributedAt: nullable(integer),
-    observedStatus: nullable(enumOf(MEMORY_STATUSES)),
+    observedStatus: nullable(storedEnumOf(MEMORY_STATUSES)),
     validity: memoryValidity,
   },
   [

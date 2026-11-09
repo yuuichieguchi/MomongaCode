@@ -1,9 +1,10 @@
-import { MEMORY_STATUSES } from '@momonga/protocol';
-import type { MemoryRecord, MemoryStatus } from '@momonga/protocol';
+import { MEMORY_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
+import type { MemoryRecord, MemoryStatus, Stored } from '@momonga/protocol';
 
-type Rankable = Pick<MemoryRecord, 'id' | 'contributedAt' | 'keptAt'> & { observedStatus?: MemoryStatus | null };
+type Rankable = Pick<MemoryRecord, 'id' | 'contributedAt' | 'keptAt'> & { observedStatus?: Stored<MemoryStatus> | null };
 
-const tierOf = (memory: Rankable): number => (memory.observedStatus === undefined || memory.observedStatus === null ? MEMORY_STATUSES.length : MEMORY_STATUSES.indexOf(memory.observedStatus));
+const tierOf = (memory: Rankable): number =>
+  memory.observedStatus === undefined || memory.observedStatus === null || memory.observedStatus === UNKNOWN_VALUE ? MEMORY_STATUSES.length : MEMORY_STATUSES.indexOf(memory.observedStatus);
 
 const newestFirst = (left: number | null, right: number | null): number => (right ?? Number.NEGATIVE_INFINITY) - (left ?? Number.NEGATIVE_INFINITY) || 0;
 

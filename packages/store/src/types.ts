@@ -359,7 +359,7 @@ export type MemoryListFilter = { scope?: MemoryScope; project?: string; state?: 
 
 export type MemoryListCursor = { createdAt: number; id: string };
 
-export type MemoryObservation = { status: MemoryStatus; observedAt: number };
+export type MemoryObservation = { status: Stored<MemoryStatus>; observedAt: number };
 
 export type SessionTouched = { path: string; firstEventId: number };
 

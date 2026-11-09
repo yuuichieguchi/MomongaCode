@@ -45,6 +45,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       cancelled: countAt(buckets, 'cancelled', `${path}.buckets`),
       pendingFacts: countAt(buckets, 'pendingFacts', `${path}.buckets`),
       factsUnavailable: countAt(buckets, 'factsUnavailable', `${path}.buckets`),
+      unknownValues: countAt(buckets, 'unknownValues', `${path}.buckets`),
     },
     completion: {
       k: countAt(completion, 'k', `${path}.completion`),

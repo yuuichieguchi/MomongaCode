@@ -14,7 +14,7 @@ export type GoverningConflict = { target: string; ids: string[] };
 export type GoverningResolution = { active: GoverningFactView[]; conflicts: GoverningConflict[] };
 
 export const scopeKeyOf = (scope: GoverningFactView['scope']): string =>
-  scope.level === 'user' ? 'user' : `project\0${scope.project}\0${[...new Set(scope.paths)].sort().join('\0')}`;
+  scope.level === 'user' || scope.level === 'unknown' ? scope.level : `project\0${scope.project}\0${[...new Set(scope.paths)].sort().join('\0')}`;
 
 export const isLiveFact = (fact: GoverningFactView, now: number): boolean =>
   fact.validFrom <= now && fact.retiredAt === null && (fact.validUntil === null || fact.validUntil > now);
@@ -34,6 +34,7 @@ const touchesAny = (project: string, globs: readonly string[], touchedPaths: rea
 const inScope = (fact: GoverningFactView, options: ResolveGoverningOptions): boolean => {
   const { scope } = fact;
   if (scope.level === 'user') return true;
+  if (scope.level === 'unknown') return false;
   if (scope.project !== options.project) return false;
   if (scope.paths.length === 0 || options.ignorePaths === true) return true;
   return touchesAny(options.project, scope.paths, options.touchedPaths);

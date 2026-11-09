@@ -215,7 +215,7 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
   return { ...payload, ...envelope } as RunEvent;
 };
 
-const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): SessionEvent => {
+const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>, context: DecodeContext): SessionEvent => {
   const reader = readerFor('events', identity, row);
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
   if (type === 'model.changed') {
@@ -227,7 +227,7 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   }
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
-  return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
+  return { type: 'mode.changed', mode: storedOneOf(context, 'events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
 };
 
 export { DATABASE_NOT_NEWER, decodeContextOf } from './decode-context.ts';
@@ -259,7 +259,7 @@ export const decodeStoredEvent = (row: Row, context: DecodeContext): RunEvent | 
     if (context.databaseIsNewer()) return opaqueEventOf(row, identity, type, payload);
     throw corrupt('events', identity, sessionScoped ? `column run_id is NULL but type "${type}" is not a session event type` : `column type has unknown event type "${type}"`);
   }
-  return sessionScoped ? decodeSessionEvent(row, identity, type, payload) : decodeRunEvent(row, identity, type, payload);
+  return sessionScoped ? decodeSessionEvent(row, identity, type, payload, context) : decodeRunEvent(row, identity, type, payload);
 };
 
 export const isOpaqueEvent = (event: RunEvent | SessionEvent | OpaqueEvent): event is OpaqueEvent => 'opaque' in event;

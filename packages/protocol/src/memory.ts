@@ -1,4 +1,4 @@
-import type { Stored } from './stored-value.ts';
+import type { Stored, UNKNOWN_VALUE } from './stored-value.ts';
 export const MEMORY_SCOPES = ['user', 'project'] as const;
 
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
@@ -35,37 +35,41 @@ export type MemoryEvidence =
   | { kind: 'commit'; sha: string }
   | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number };
 
+export type StoredMemorySource = MemorySource | { kind: typeof UNKNOWN_VALUE };
+
+export type StoredMemoryEvidence = MemoryEvidence | { kind: typeof UNKNOWN_VALUE };
+
 export type MemoryRecord = {
   id: string;
-  scope: MemoryScope;
-  origin: MemoryOrigin;
+  scope: Stored<MemoryScope>;
+  origin: Stored<MemoryOrigin>;
   project: string | null;
   text: string;
-  source: MemorySource;
+  source: StoredMemorySource;
   createdAt: number;
   keptAt: number;
-  kind: MemoryKind;
+  kind: Stored<MemoryKind>;
   state: Stored<MemoryState>;
   duplicateOf: string | null;
   supersedes: string[];
   supersededBy: string[];
   retiredAt: number | null;
-  evidence: MemoryEvidence[];
+  evidence: StoredMemoryEvidence[];
   contributedAt: number | null;
-  observedStatus: MemoryStatus | null;
+  observedStatus: Stored<MemoryStatus> | null;
 };
 
 export const VALIDITY_CLOSERS = ['observation', 'successor', 'retirement'] as const;
 
 export type ValidityCloser = (typeof VALIDITY_CLOSERS)[number];
 
-export type ValidityInterval = { status: MemoryStatus; from: number; to: number | null; closedBy: ValidityCloser | null };
+export type ValidityInterval = { status: Stored<MemoryStatus>; from: number; to: number | null; closedBy: ValidityCloser | null };
 
-export type ValidityChange = { from: MemoryStatus; to: MemoryStatus; changedBetween: [number, number] };
+export type ValidityChange = { from: Stored<MemoryStatus>; to: Stored<MemoryStatus>; changedBetween: [number, number] };
 
 export type MemoryValidity = { intervals: ValidityInterval[]; changes: ValidityChange[] };
 
-export type MemoryView = Omit<MemoryRecord, 'observedStatus'> & { status: MemoryStatus; observedStatus?: MemoryStatus | null; validity?: MemoryValidity };
+export type MemoryView = Omit<MemoryRecord, 'observedStatus'> & { status: MemoryStatus; observedStatus?: Stored<MemoryStatus> | null; validity?: MemoryValidity };
 
 export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'retiredAt' | 'supersedes' | 'supersededBy'>): string =>
   [

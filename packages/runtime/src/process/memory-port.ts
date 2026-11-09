@@ -28,7 +28,7 @@ export const recallPrefixTokensOf = (text: string, capacity: RecallCapacity): nu
   Math.floor(tokensForText(text) / (1 + Math.max(sizingRatioFor(capacity.capabilities), ESTIMATED_ERROR_BOUND_RATIO)));
 
 const visibleTo = (memory: MemoryRecord, visibility: MemoryVisibility): boolean =>
-  visibility.trusted ? (memory.scope === 'user' && memory.origin === 'trusted') || memory.project === visibility.project : memory.scope === 'user';
+  visibility.trusted ? (memory.scope === 'user' && memory.origin === 'trusted') || (memory.scope === 'project' && memory.project === visibility.project) : memory.scope === 'user';
 
 export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
   load: async (session, signal) => {

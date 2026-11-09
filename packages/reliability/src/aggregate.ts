@@ -1,10 +1,11 @@
-import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, UNKNOWN_VALUE } from '@momonga/protocol';
 import type { GroupKey, IndicatorGroups, Indicators, RunFacts } from './types.ts';
 
 type TaskPartial = {
   root: RunFacts | undefined;
   earliest: RunFacts;
   stale: boolean;
+  unknownValues: boolean;
   intervened: boolean;
   sideEffectingCalls: number;
   repeatedStarts: number;
@@ -22,6 +23,9 @@ export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPart
 
 export type AggregateOptions = { groupBy: GroupKey; unavailableRoots?: readonly string[] };
 
+const holdsUnknown = (row: RunFacts): boolean =>
+  [row.status, row.stopReason, row.mode, ...row.recoveries.flatMap((episode) => [episode.cause, episode.outcome])].includes(UNKNOWN_VALUE);
+
 const partialOf = (row: RunFacts): TaskPartial => {
   const durations: number[] = [];
   let recovered = 0;
@@ -30,6 +34,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
   let stoppedEpisodes = 0;
   let clockSkew = 0;
   for (const episode of row.recoveries) {
+    if (episode.outcome === UNKNOWN_VALUE) continue;
     if (episode.outcome === 'unknown_effect') unknownEffect += 1;
     else if (episode.outcome === 'failed') failedEpisodes += 1;
     else if (episode.outcome === 'stopped') stoppedEpisodes += 1;
@@ -45,6 +50,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
     root: row.runId === row.rootRunId ? row : undefined,
     earliest: row,
     stale: row.definitionsVersion !== INDICATOR_DEFINITIONS_VERSION,
+    unknownValues: holdsUnknown(row),
     intervened: row.asked + row.elicited + row.authorizationRequired > 0,
     sideEffectingCalls: row.sideEffectingCalls,
     repeatedStarts: row.repeatedStarts,
@@ -67,6 +73,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
     root: left.root ?? right.root,
     earliest: left.earliest.runId <= right.earliest.runId ? left.earliest : right.earliest,
     stale: left.stale || right.stale,
+    unknownValues: left.unknownValues || right.unknownValues,
     intervened: left.intervened || right.intervened,
     sideEffectingCalls: left.sideEffectingCalls + right.sideEffectingCalls,
     repeatedStarts: left.repeatedStarts + right.repeatedStarts,
@@ -135,6 +142,7 @@ type Accumulator = {
   cancelled: number;
   pendingFacts: number;
   factsUnavailable: number;
+  unknownValues: number;
   completionK: number;
   completionN: number;
   undeclared: number;
@@ -162,6 +170,7 @@ const emptyAccumulator = (): Accumulator => ({
   cancelled: 0,
   pendingFacts: 0,
   factsUnavailable: 0,
+  unknownValues: 0,
   completionK: 0,
   completionN: 0,
   undeclared: 0,
@@ -209,6 +218,11 @@ const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks):
   if (root === undefined || task.stale) {
     accumulator.pendingFacts += 1;
     markOf(marks, 'pending facts', (root ?? task.earliest).rootRunId);
+    return;
+  }
+  if (task.unknownValues) {
+    accumulator.unknownValues += 1;
+    markOf(marks, 'unknown values', root.runId);
     return;
   }
   if (root.status === 'CANCELLED') {
@@ -280,7 +294,7 @@ const finish = (accumulator: Accumulator): Indicators => {
   const durationSum = sorted.reduce((sum, value) => sum + value, 0);
   const episodes = accumulator.recovered + accumulator.unknownEffect + accumulator.failedEpisodes;
   return {
-    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable },
+    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable, unknownValues: accumulator.unknownValues },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
     recovery: {
       k: accumulator.recovered,

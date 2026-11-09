@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { Clock } from '@momonga/foundation';
 import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGoverning, ruleSizeReport } from '@momonga/memory';
-import { tokensForText } from '@momonga/protocol';
+import { enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
 import type { AddRuleRequest, Capabilities, GoverningFactView, PolicyGovernanceResponse, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -82,7 +82,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     });
     if (added.kind === 'refused') throw invalidRequest(added.message);
     const { fact } = added;
-    const applicable = existing.filter((other) => other.scope.level === 'user' || (scope.level === 'project' && other.scope.project === scope.project));
+    const applicable = existing.filter((other) => other.scope.level === 'user' || (scope.level === 'project' && other.scope.level === 'project' && other.scope.project === scope.project));
     const warnings = [...overlappingEnforced(fact, applicable).map(overlapWarning), ...sized.warnings];
     return json({ fact, size: sized.size, warnings } satisfies RuleAddResponse, 201);
   };
@@ -102,7 +102,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     const project = requiredProject(context);
     const { active } = resolveGoverning(governing.list({ project }), { now: deps.clock.now(), project, touchedPaths: [], ignorePaths: true });
     const response: PolicyGovernanceResponse = {
-      rules: active.flatMap((fact) => (fact.enforcement === null ? [] : [{ id: fact.id, behavior: fact.enforcement.behavior, rule: fact.enforcement.rule }])),
+      rules: active.flatMap((fact) => (fact.enforcement === null ? [] : [{ id: fact.id, behavior: enforcedBehaviorOf(fact.enforcement.behavior), rule: fact.enforcement.rule }])),
       textOnly: active.filter((fact) => fact.enforcement === null),
     };
     return json(response, 200);
