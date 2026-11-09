@@ -17,7 +17,7 @@ const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unk
   ...overrides,
 });
 
-const DEFAULT_FM_TARGET = { adapter: 'fm', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 };
+const DEFAULT_FM_TARGET = { adapter: 'managed', server: 'fm', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 };
 
 const resolvedCapabilities = (maxConcurrency: number) => ({
   contextWindow: 128000,
@@ -127,29 +127,29 @@ describe('target names', () => {
 
 describe('fm target schema', () => {
   it('fills the fm defaults', async () => {
-    const models = await expectAccepted({ targets: { local: { adapter: 'fm' } }, aliases: { default: 'local' } });
+    const models = await expectAccepted({ targets: { local: { adapter: 'managed', server: 'fm' } }, aliases: { default: 'local' } });
     expect(models.targets['local']).toEqual(DEFAULT_FM_TARGET);
   });
 
   it('keeps explicit fm fields', async () => {
     const models = await expectAccepted({
-      targets: { local: { adapter: 'fm', model: 'm2', toolCalling: 'constrained', maxConcurrency: 2, admissionTimeoutMs: 5000 } },
+      targets: { local: { adapter: 'managed', server: 'fm', model: 'm2', toolCalling: 'constrained', maxConcurrency: 2, admissionTimeoutMs: 5000 } },
       aliases: { default: 'local' },
     });
-    expect(models.targets['local']).toEqual({ adapter: 'fm', model: 'm2', toolCalling: 'constrained', billing: 'local', maxConcurrency: 2, admissionTimeoutMs: 5000 });
+    expect(models.targets['local']).toEqual({ adapter: 'managed', server: 'fm', model: 'm2', toolCalling: 'constrained', billing: 'local', maxConcurrency: 2, admissionTimeoutMs: 5000 });
   });
 
   it.each(['auto', 'native', 'constrained'])('accepts toolCalling %j', async (toolCalling) => {
-    const models = await expectAccepted({ targets: { local: { adapter: 'fm', toolCalling } }, aliases: { default: 'local' } });
+    const models = await expectAccepted({ targets: { local: { adapter: 'managed', server: 'fm', toolCalling } }, aliases: { default: 'local' } });
     expect(models.targets['local']).toMatchObject({ toolCalling });
   });
 
   it.each([
-    ['an unknown property', { adapter: 'fm', model: 'default', baseUrl: 'https://x.example/v1' }],
-    ['an unknown toolCalling', { adapter: 'fm', model: 'default', toolCalling: 'none' }],
-    ['a zero maxConcurrency', { adapter: 'fm', model: 'default', maxConcurrency: 0 }],
-    ['a fractional maxConcurrency', { adapter: 'fm', model: 'default', maxConcurrency: 1.5 }],
-    ['a negative admissionTimeoutMs', { adapter: 'fm', model: 'default', admissionTimeoutMs: -1 }],
+    ['an unknown property', { adapter: 'managed', server: 'fm', model: 'default', baseUrl: 'https://x.example/v1' }],
+    ['an unknown toolCalling', { adapter: 'managed', server: 'fm', model: 'default', toolCalling: 'none' }],
+    ['a zero maxConcurrency', { adapter: 'managed', server: 'fm', model: 'default', maxConcurrency: 0 }],
+    ['a fractional maxConcurrency', { adapter: 'managed', server: 'fm', model: 'default', maxConcurrency: 1.5 }],
+    ['a negative admissionTimeoutMs', { adapter: 'managed', server: 'fm', model: 'default', admissionTimeoutMs: -1 }],
     ['an unknown adapter', { adapter: 'ollama', model: 'x' }],
   ])('rejects %s', async (_label, target) => {
     await expectRejected({ targets: { local: target } });
@@ -365,7 +365,7 @@ describe('credentialEnvNames', () => {
           b: chatTarget({ apiKeyEnv: 'ALPHA_KEY' }),
           c: chatTarget({ apiKeyEnv: 'ZED_KEY' }),
           d: chatTarget(),
-          e: { adapter: 'fm' },
+          e: { adapter: 'managed', server: 'fm' },
         },
         aliases: { default: 'a' },
       },

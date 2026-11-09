@@ -29,7 +29,7 @@ const hostExec = async (file: string, args: readonly string[]) => {
 
 const settingsWith = (managedServerStopGraceMs: number) => ({
   gateway: { managedServerStopGraceMs },
-  models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm' } } },
+  models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm' } } },
 });
 
 describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {

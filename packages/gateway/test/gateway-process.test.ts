@@ -72,7 +72,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
 
   it('raises ConfigError for invalid user settings, releases the lock and creates no database', async () => {
     const home = makeHome();
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
+    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const paths = homePaths(home);
     const failure = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }).then(
       () => undefined,

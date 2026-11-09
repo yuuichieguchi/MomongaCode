@@ -53,11 +53,11 @@ const fakeFmSetup = async () => {
 };
 
 const declareNativeFm = (home: string): void => {
-  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
+  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' } } } });
 };
 
 const declareAutoFm = (home: string): void => {
-  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm' } } } });
+  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm' } } } });
 };
 
 const servePids = (dumpFile: string): number[] =>

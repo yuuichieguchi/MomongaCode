@@ -60,7 +60,7 @@ describe('targetCounterOf', () => {
   });
 
   it('changes for an fm target when the binary sha256 or the OS build changes', async () => {
-    const target = await resolvedTarget({ adapter: 'fm' });
+    const target = await resolvedTarget({ adapter: 'managed', server: 'fm' });
     expect(target.adapter).toBe('fm');
     const base = targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: FM });
     expect(base).toMatch(/^[0-9a-f]{64}$/);

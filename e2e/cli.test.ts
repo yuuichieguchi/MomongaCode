@@ -424,7 +424,7 @@ describe('cli: gateway probe', () => {
   it.runIf(process.platform === 'darwin')(titleOf('cli-probe'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fakeFm = await createFakeFm({ dir: home.root });
-    writeSettingsFile(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm' } } } });
+    writeSettingsFile(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm' } } } });
     const probed = await runCli(home, ['gateway', 'probe', 'fm', '--fm-binary', fakeFm.binaryPath, '--samples', '2']);
 
     expect(probed.stderr).toBe('');

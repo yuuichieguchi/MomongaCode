@@ -206,7 +206,7 @@ describe('the record key', () => {
   });
 
   it.each([
-    { adapter: 'fm', toolCalling: 'native', billing: 'local', maxConcurrency: 1 },
+    { adapter: 'managed', server: 'fm', toolCalling: 'native', billing: 'local', maxConcurrency: 1 },
     { adapter: 'open-responses', model: 'm', baseUrl: 'https://example.invalid/v1' },
     { adapter: 'anthropic', model: 'm', baseUrl: 'https://example.invalid' },
     { adapter: 'ollama', model: 'm', baseUrl: 'http://127.0.0.1:11434' },

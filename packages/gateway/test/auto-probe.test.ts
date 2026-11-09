@@ -34,11 +34,11 @@ const setup = async (options: SetupOptions = {}) => {
       aliases: { default: ['fm'], other: ['spare'] },
       targets: {
         fm: {
-          adapter: 'fm',
+          adapter: 'managed', server: 'fm',
           ...(options.toolCalling === undefined ? {} : { toolCalling: options.toolCalling }),
           ...(options.declared === undefined ? {} : { capabilities: options.declared }),
         },
-        spare: { adapter: 'fm', toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } },
+        spare: { adapter: 'managed', server: 'fm', toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } },
       },
     },
   });

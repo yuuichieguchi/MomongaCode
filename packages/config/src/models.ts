@@ -317,7 +317,7 @@ const declaredCapabilitiesOf = (target: ResolvedModelTarget): { contextWindow?: 
 export const outputBoundFieldOf = (target: ResolvedModelTarget): string | undefined =>
   target.adapter === 'managed' ? target.outputBoundField : 'outputBoundField' in target.capabilities ? target.capabilities.outputBoundField : undefined;
 
-const measuredLater = (target: ResolvedModelTarget): boolean => target.adapter === 'managed';
+const MEASURED_AFTER_LOAD = true;
 
 const loadTimeMemberOf = (name: string, target: ResolvedModelTarget): AliasMember => {
   const capabilities = declaredCapabilitiesOf(target);
@@ -326,7 +326,7 @@ const loadTimeMemberOf = (name: string, target: ResolvedModelTarget): AliasMembe
     outputBounded: outputBoundFieldOf(target) !== 'none',
     contextWindow: capabilities?.contextWindow,
     maxOutputTokens: capabilities?.maxOutputTokens,
-    measuring: measuredLater(target),
+    measuring: MEASURED_AFTER_LOAD,
   };
 };
 

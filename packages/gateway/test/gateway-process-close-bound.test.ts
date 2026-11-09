@@ -85,7 +85,7 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], other: ['spare'] },
-      targets: { fm: { adapter: 'fm' }, spare: { adapter: 'fm' } },
+      targets: { fm: { adapter: 'managed', server: 'fm' }, spare: { adapter: 'managed', server: 'fm' } },
     },
   });
   await saveFakeFmRecord(home, 'fm', fm.binaryPath);

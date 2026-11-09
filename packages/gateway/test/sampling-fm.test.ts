@@ -25,7 +25,7 @@ describe('an fm target renders no sampling field', { timeout: DAEMON_PROCESS_TES
     fm.configure({ envDumpFile: dumpFile });
     registerCleanup(() => killGroupsForCleanup(servePidsIn(dumpFile)));
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { default: ['local-fm'] }, targets: { 'local-fm': { adapter: 'fm', toolCalling: 'native' } } } });
+    writeSettings(home, { models: { aliases: { default: ['local-fm'] }, targets: { 'local-fm': { adapter: 'managed', server: 'fm', toolCalling: 'native' } } } });
     await saveFakeFmRecord(home, 'local-fm', fm.binaryPath);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { PATH: MINIMAL_PATH }), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hello fm'), temperature: 0.2 }));

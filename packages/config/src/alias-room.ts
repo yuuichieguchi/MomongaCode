@@ -25,6 +25,7 @@ export const aliasRoomVerdict = (alias: string, members: readonly AliasMember[])
   const unbounded = members.find((member) => !member.outputBounded);
   if (unbounded === undefined) return SERVE;
   const missing = members.filter((member) => !hasValues(member));
+  if (missing.length > 0 && members.length === 1) return SERVE;
   const unmeasurable = missing.find((member) => !member.measuring);
   if (unmeasurable !== undefined) return { kind: 'refuse', message: unknownRoomText(alias, unbounded.target, unmeasurable.target) };
   if (missing.length > 0) return { kind: 'wait' };

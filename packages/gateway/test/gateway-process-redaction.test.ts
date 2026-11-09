@@ -302,7 +302,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], keyed: ['cc'] },
-      targets: { fm: { adapter: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
+      targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
     },
   });
   await saveFakeFmRecord(home, 'fm', fm.binaryPath);

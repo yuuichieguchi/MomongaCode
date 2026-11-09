@@ -38,7 +38,7 @@ const ollamaOverTcp: Configuration = [
 ];
 
 const configurations: readonly Configuration[] = [
-  ['fm', { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { adapter: 'fm' }, ['target t']],
+  ['fm', { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { adapter: 'managed', server: 'fm' }, ['target t']],
   [
     'chat-completions auto',
     { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'auto' },

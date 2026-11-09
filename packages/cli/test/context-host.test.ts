@@ -399,8 +399,8 @@ describe('the settings, credentials and probe records of a live run', () => {
 
   it('copies the probe record of an fm target into every case home', async () => {
     const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
     const context = harness();
     await runContextLive(context.effects, input({ models }));
     expect(context.probeCopies).toEqual(['t -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
@@ -556,11 +556,11 @@ describe('the models of a live run', () => {
 
   it('names the fm targets whose probe record a case needs', () => {
     const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
+    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
     const settings = liveSettingsFor(models, ['default']);
     expect(settings.fmTargets).toEqual(['t']);
-    expect(settings.models.targets?.['t']).toEqual({ adapter: 'fm' });
+    expect(settings.models.targets?.['t']).toEqual({ adapter: 'managed', server: 'fm' });
   });
 
   it('carries the sandbox the person set, and none when the person set none', () => {

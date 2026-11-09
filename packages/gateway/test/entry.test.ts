@@ -54,7 +54,7 @@ const lastLine = (lines: readonly JsonLine[]): JsonLine | undefined => lines[lin
 describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)', () => {
   it('gateway: invalid settings give 78 and an entry.exit start-failed line', PROCESS_TIMEOUT, async (context) => {
     const home = withTempDir(context, { asHome: true });
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
+    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(78);

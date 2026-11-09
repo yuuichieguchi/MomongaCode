@@ -1,4 +1,4 @@
-import { declaredChildEnv, minimalChildEnv, readProbeKeyComponents } from '@momonga/foundation';
+import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
 import type { BinaryHashCache, ManagedInstancePaths, MomongaPaths } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
@@ -129,7 +129,7 @@ export type ManagedProbeSubjectOptions = {
 
 export class UnreadableProbeKeyError extends Error {
   constructor(target: string, component: string, reason: string) {
-    super(`the target "${target}" is not ready: its probe key needs the ${component}, which cannot be read: ${reason}`);
+    super(`the target "${target}" is not ready: its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}`);
     this.name = 'UnreadableProbeKeyError';
   }
 }

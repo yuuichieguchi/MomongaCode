@@ -30,7 +30,7 @@ const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unkn
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
     fm.configure({ envDumpFile: dumpFile });
     registerCleanup(() => killGroupsForCleanup(servePidsOf(dumpFile)));
-    return { target: { adapter: 'fm' }, fmBinary: fm.binaryPath };
+    return { target: { adapter: 'managed', server: 'fm' }, fmBinary: fm.binaryPath };
   }
   if (kind === 'ollama') {
     const fake = await startFakeOllama({ chat: [] });
