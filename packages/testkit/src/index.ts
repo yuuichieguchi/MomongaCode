@@ -116,7 +116,7 @@ export {
   nestedNotSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
-export { killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
+export { CLEANUP_KILL_DEADLINE_MS, killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export {
