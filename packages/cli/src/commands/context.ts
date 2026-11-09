@@ -29,6 +29,7 @@ import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../ev
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { isProbingCapabilities } from '@momonga/protocol';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -144,7 +145,12 @@ export const contextImprove = async (
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
     const models = loadUserModels({ home: ports.home });
-    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: (alias) => gatewayInfo.capabilitiesOf(alias) });
+    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: async (alias) => {
+        const capabilities = await gatewayInfo.capabilitiesOf(alias);
+        if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+        return capabilities;
+      },
+    });
     const adopted = (await client.guidelines()).current;
     const current = adopted === null ? undefined : { version: adopted.version, text: adopted.text };
     const completer = await completerFor(ports, paths, analysis.alias, analysis.capabilities, options.interrupt);

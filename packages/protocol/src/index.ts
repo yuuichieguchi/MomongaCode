@@ -29,6 +29,8 @@ export type {
   ThinkingOff,
   ReasoningEffort,
   NeedsProbe,
+  Probing,
+  ProbingCapabilities,
   ToolCallingMode,
   ToolCallingState,
   ToolCallingSetting,
@@ -124,6 +126,7 @@ export {
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
+  isProbingCapabilities,
   isToolCallingState,
   readinessRemedyOf,
   readinessText,
@@ -510,7 +513,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,

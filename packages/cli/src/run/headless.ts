@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessText } from '@momonga/protocol';
-import type { AliasCapabilities, PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import type { AliasCapabilities, PermissionMode, ProbingCapabilities, PublicRunEvent } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -33,7 +33,7 @@ export type HeadlessOptions = {
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
   modelAlias?: string;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -262,6 +262,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   if (session === undefined) return EXIT_CANCELLED;
   try {
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.modelAlias));
+    if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
     if (readiness.state === 'needs_probe') {
       const message = readinessText(readiness);
       ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);

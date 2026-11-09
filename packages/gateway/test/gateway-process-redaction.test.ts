@@ -20,6 +20,7 @@ import {
   expectNoCredential,
   expectRedacted,
 } from './credential-support.ts';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const body = { model: 'fast', input: userInput('hi') };
@@ -299,6 +300,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
       targets: { fm: { adapter: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
     },
   });
+  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   const handle = await startGatewayProcess({
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),

@@ -1,5 +1,6 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
+import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { AliasCapabilities, NeedsProbe, ToolCallingState } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
@@ -96,5 +97,15 @@ describe('headless asks capabilitiesOf(alias) at session open and shows the verd
     expect(log).not.toContain('createRun');
     expect(result.stderr).toContain(NEEDS_PROBE.remedy);
     expect(result.stderr).toContain('target_not_ready');
+  });
+
+  it('shows that the model is being measured, once per model and OS build, before the run is created, and the run proceeds', async (context) => {
+    const result = await headless(context, { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+
+    const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes(TARGET_PROBING_MESSAGE));
+    expect(noticeAt).toBeGreaterThan(-1);
+    expect(noticeAt).toBeLessThan(log.indexOf('createRun'));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('A plain answer.');
   });
 });

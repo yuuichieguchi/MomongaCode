@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NeedsProbe, ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
-import { modeIsPrivate } from '@momonga/foundation';
+import { canonicalJson, modeIsPrivate } from '@momonga/foundation';
 import { dialectsDigest } from '../dialect/candidates.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
@@ -9,28 +9,37 @@ import { isRecord } from './json.ts';
 import { preconditionOf } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 
-export interface ProbeRecordKey {
+export const recordForIdentity = <Stored>(stored: Stored, storedIdentity: Readonly<Record<string, unknown>>, currentIdentity: Readonly<Record<string, unknown>>): Stored | null =>
+  canonicalJson(storedIdentity) === canonicalJson(currentIdentity) ? stored : null;
+
+export type ProbeRecordKey = {
   target: string;
   binarySha256: string;
   osBuild: string;
-}
+};
 
 const TARGET_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-const recordPath = (dir: string, target: string): string => {
+export const probeTargetName = (target: string): string => {
   if (!TARGET_PATTERN.test(target) || target === '.' || target === '..') {
     throw new Error(`Invalid probe target name: ${target}`);
   }
-  return path.join(dir, `${target}.json`);
+  return target;
 };
+
+const recordPath = (dir: string, target: string): string => path.join(dir, `${probeTargetName(target)}.json`);
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
+export const ensurePrivateProbeDirectory = async (dir: string): Promise<void> => {
   await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   if (!modeIsPrivate(await fs.promises.stat(dir), 'directory')) {
     await fs.promises.chmod(dir, PRIVATE_DIRECTORY_MODE);
   }
+};
+
+export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
+  await ensurePrivateProbeDirectory(dir);
   const temporary = `${file}.${process.pid}.tmp`;
   try {
     await fs.promises.writeFile(temporary, content, { mode: 0o600 });
@@ -86,8 +95,8 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey, currency
   if (typeof parsed['binarySha256'] !== 'string' || typeof parsed['osBuild'] !== 'string') {
     throw corruptRecord(file, key, 'missing key fields', new TypeError('binarySha256 or osBuild is missing'));
   }
-  if (parsed['binarySha256'] !== key.binarySha256 || parsed['osBuild'] !== key.osBuild) return null;
-  if (!isCurrentRecord(parsed, currency)) return null;
+  const matching = recordForIdentity(parsed, { binarySha256: parsed['binarySha256'], osBuild: parsed['osBuild'] }, { binarySha256: key.binarySha256, osBuild: key.osBuild });
+  if (matching === null || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];
   if (!isProbeReport(report)) {
     throw corruptRecord(file, key, 'invalid report', new TypeError('report does not match the probe report schema'));
@@ -99,9 +108,6 @@ export interface ResolvedToolCalling {
   mode: ToolCallingMode;
   source: 'config' | 'probed';
 }
-
-export const isUnprobedAuto = (setting: ToolCallingSetting, report: ProbeReport | null): boolean =>
-  setting === 'auto' && report === null;
 
 export const resolveToolCalling = (
   setting: ToolCallingSetting,

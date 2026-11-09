@@ -66,7 +66,18 @@ import { PRECONDITION_MESSAGE, createFmServe } from './managed/fm-serve.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
-import { readOsBuild, sha256OfFile } from './managed/fm-record-key.ts';
+import { createFmKeyCache, readOsBuild } from './managed/fm-record-key.ts';
+import { PROBE_RETRY_AFTER_MS, createAutoProbe, targetNotReadyError } from './probe/auto-probe.ts';
+import type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
+import { fmDialectCurrencyOf, fmProbeSubject, measureManagedFm } from './probe/probe-fm.ts';
+import { endpointPrecondition, endpointProbeSubject, measureEndpoint } from './probe/probe-endpoint.ts';
+import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
+import { measureOllama, ollamaPrecondition, ollamaProbeSubject } from './probe/ollama.ts';
+import type { OllamaMeasurement } from './probe/ollama.ts';
+import { endpointKeyOfLock, endpointLockKeyOf } from './probe/endpoint-record.ts';
+import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
+import type { ProbeRecordKey } from './probe/record.ts';
+import type { ProbeReport } from '@momonga/protocol';
 import { createManagedFmTarget } from './managed/fm-target.ts';
 import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
 import { createGateway } from './server/gateway.ts';
@@ -92,6 +103,9 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
+  measureFm?: MeasureProbe<ProbeRecordKey, ProbeReport>;
+  measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
+  measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
 };
 
 export type GatewayCloseResult = {
@@ -141,6 +155,8 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: Proces
       (await files.isUsableBinary(binary)) ? managed.health(target) : { ok: false, reason: 'precondition_failed', detail },
   };
 };
+
+const modelFieldOf = (model: string | undefined): { model?: string } => (model === undefined ? {} : { model });
 
 const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
 
@@ -221,7 +237,24 @@ type FmContext = {
   execWithStdin: ExecWithStdinFn;
   osBuild: string;
   binarySha256: string | { unreadable: string };
+  readRecordKey: (target: string) => Promise<ProbeRecordKey>;
+  autoProbe: AutoProbe;
+  exec: ExecFn;
+  measure: (target: string) => MeasureProbe<ProbeRecordKey, ProbeReport>;
 };
+
+type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: AbortSignal }) => Promise<Measurement>;
+
+type ProbeWiring = {
+  autoProbe: AutoProbe;
+  measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
+  measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
+};
+
+const onRecordKey =
+  <Measurement>(port: MeasureEndpointPort<Measurement>): MeasureProbe<EndpointLockKey, Measurement> =>
+  ({ key, signal }) =>
+    port({ key: endpointKeyOfLock(key), signal });
 
 const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects, liveness: UpstreamLiveness) => {
   const managed = await createManagedFmTarget({
@@ -229,10 +262,22 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     binary: context.binary,
     exec: context.execWithStdin,
     probeRecordDir: context.paths.probe,
-    recordKey:
-      typeof context.binarySha256 === 'string'
-        ? { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild }
-        : { target: name, unmeasured: context.binarySha256.unreadable },
+    target: name,
+    readRecordKey: () => context.readRecordKey(name),
+    startProbe: (key) =>
+      context.autoProbe.ensure(
+        fmProbeSubject({
+          target: name,
+          binary: context.binary,
+          exec: context.exec,
+          probeRecordDir: context.paths.probe,
+          readKey: () => context.readRecordKey(name),
+          measure: context.measure(name),
+          currency: fmDialectCurrencyOf({ userDialects }),
+        }),
+        key,
+      ),
+    ...(target.capabilities === undefined ? {} : { declaredCapabilities: target.capabilities }),
     toolCallingSetting: target.toolCalling,
     userDialects,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
@@ -263,17 +308,40 @@ const createAutoChatCompletionsAdapter = async (
   userDialects: UserDialects,
   liveness: UpstreamLiveness,
   network: OutboundNetwork,
+  probes: ProbeWiring,
 ) => {
   const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
-  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
+  const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
+  const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const loaded = await readRecord();
+  const apiKeyNow = (signal: AbortSignal) => readKey({ name, model: target.model }, signal);
+  const subject = endpointProbeSubject({
+    target: endpointLockKeyOf(key).target,
+    key,
+    probeRecordDir,
+    precondition: endpointPrecondition(name, upstream, target.model, apiKeyNow),
+    measure:
+      (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
+      (async (request) =>
+        measureEndpoint({
+          upstream,
+          model: target.model,
+          apiKey: await apiKeyNow(request.signal),
+          userDialects,
+          ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+        })(request)),
+    currency,
+  });
   const probed = createProbedEndpointTarget({
     targetName: name,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
     record: loaded,
+    readRecord,
+    startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
     readIdentity: async (fields, signal) => {
       const apiKey = await readKey({ name, model: target.model }, signal);
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
@@ -309,17 +377,38 @@ const createProbedOllamaAdapter = async (
   userDialects: UserDialects,
   liveness: UpstreamLiveness,
   network: OutboundNetwork,
+  probes: ProbeWiring,
 ) => {
   const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
-  const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
+  const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
+  const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
+  const loaded = await readRecord();
+  const subject = ollamaProbeSubject({
+    target: endpointLockKeyOf(key).target,
+    key,
+    probeRecordDir,
+    precondition: ollamaPrecondition(upstream, target.model),
+    measure:
+      (probes.measureOllama === undefined ? undefined : onRecordKey(probes.measureOllama)) ??
+      measureOllama({
+        upstream,
+        model: target.model,
+        contextWindow: target.capabilities.contextWindow,
+        userDialects,
+        ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+      }),
+    currency,
+  });
   const probed = createProbedOllamaTarget({
     targetName: name,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
     record: loaded,
+    readRecord,
+    startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
     readDigest: (signal) => readOllamaDigest(upstream, target.model, signal),
   });
   const adapter = createOllamaAdapter({
@@ -530,6 +619,34 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     cleanups.push(closeAdapters);
 
     const fmTargets = targets.filter(([, target]) => target.adapter === 'fm');
+    const fmModels = new Map(fmTargets.map(([name, target]) => [name, target.adapter === 'fm' ? target.model : undefined]));
+    const fmKeys = createFmKeyCache(binary, exec, FM_SERVE_DEFAULTS.healthTimeoutMs);
+    const readRecordKey = async (target: string): Promise<ProbeRecordKey> => {
+      if (!(await files.isUsableBinary(binary))) {
+        throw targetNotReadyError(target, { kind: 'refused', message: 'the fm binary is missing', detail: `fm binary not found at ${binary}`, remedy: undefined });
+      }
+      return fmKeys.read(target);
+    };
+    const autoProbe = createAutoProbe({
+      dir: paths.probe,
+      clock,
+      retryAfterMs: PROBE_RETRY_AFTER_MS,
+      onEvent: (event) => {
+        if (event.kind === 'stopped') logger.info(`the automatic probe of the target ${event.target} was stopped`);
+        else logger.warn(`the automatic probe of the target ${event.target} failed and recorded nothing`, { err: event.error });
+      },
+    });
+    const probeServes = new Set<FmServe>();
+    cleanups.push(async () => {
+      await autoProbe.close();
+      await Promise.all([...probeServes].map((serve) => serve.stop()));
+    });
+    const probes: ProbeWiring = {
+      autoProbe,
+      ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
+      ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
+    };
+    const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
         ? undefined
@@ -548,8 +665,24 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               timers: { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() },
             }),
             execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
-            osBuild: await readOsBuild(exec),
-            binarySha256: (await files.isUsableBinary(binary)) ? await sha256OfFile(binary) : { unreadable: `no usable binary at ${binary}` },
+            osBuild: startKey?.osBuild ?? (await readOsBuild(exec, AbortSignal.timeout(FM_SERVE_DEFAULTS.healthTimeoutMs))),
+            binarySha256: startKey?.binarySha256 ?? { unreadable: `no usable binary at ${binary}` },
+            readRecordKey,
+            autoProbe,
+            exec,
+            measure: (target) =>
+              options.measureFm ??
+              measureManagedFm({
+                binary,
+                socketPath: adapterSocketPath(options.home, `fm-probe-${target}`, process.platform),
+                env: options.env,
+                exec,
+                userDialects: settings.models.dialects,
+                ...modelFieldOf(fmModels.get(target)),
+                markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
+                serves: probeServes,
+                onWarning: (message) => logger.warn(message),
+              }),
           };
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
@@ -572,7 +705,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         continue;
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, network);
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, network, probes);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -580,7 +713,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const readKey = apiKeyReader(options.env, secretResolver, target);
       const identify = identificationOf(name, target, network);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, network);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, network, probes);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;

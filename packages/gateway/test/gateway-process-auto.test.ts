@@ -8,6 +8,7 @@ import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { TARGET_PROBING } from '@momonga/protocol';
 
 const request = { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
 
@@ -43,16 +44,14 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
 };
 
 describe('chat-completions target with toolCalling auto', () => {
-  it('fails a call with a message that names the target and the probe command when no record exists', async () => {
+  it('answers a call 503 target_probing and starts the probe when no record exists', async () => {
     const { home, fake } = await autoSetup();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('local');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(completions(fake)).toEqual([]);
   });
 
@@ -92,29 +91,41 @@ describe('chat-completions target with toolCalling auto', () => {
     expect((completions(fake)[0]?.body as { max_completion_tokens?: number }).max_completion_tokens).toBe(400);
   });
 
-  it('refuses a record whose identity differs from what the server shows now, and says the record is stale', async () => {
+  it('P6 RecordMatchesKey: treats a record whose identity differs from what the server shows now as no record, answers 503 target_probing and measures again', async () => {
     const { home, fake, probeDir, endpoint, identityFields } = await autoSetup();
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, 'identity-of-an-older-pull', identityFields, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureEndpoint: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
+    const client = clientFor(handle.socketPath);
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+    const response = await readJson(await postJson(client, '/v1/responses', request));
+    const listing = await getJson(client, '/v1/momonga/models');
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.message).toContain('stale');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(response.headers['retry-after']).toBe('120');
+    expect(measured).toEqual([{ endpoint, model: 'system' }]);
+    expect(listing.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities.toolCalling.state).toBe('probing');
     expect(completions(fake)).toEqual([]);
   });
 
-  it('fails a call with precondition_failed naming the probe command when the record was saved by an older probe method', async () => {
+  it('treats a record saved by an older probe method as no record: 503 target_probing and a new probe', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), { ...CURRENT_DIALECTS, probeMethod: PROBE_METHOD_VERSION - 1 });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(completions(fake)).toEqual([]);
   });
 
@@ -129,16 +140,26 @@ describe('chat-completions target with toolCalling auto', () => {
     expect(fake.requests.filter((entry) => entry.path === '/v1/models')).toHaveLength(1);
   });
 
-  it('still detects a re-pull when the server keeps the creation time of a model stable', async () => {
+  it('still detects a re-pull when the server keeps the creation time of a model stable, and probes it again', async () => {
     let created = 1_700_000_000;
     const { home, fake } = await probedSetup(() => [{ id: 'qwen-fake', object: 'model', created, owned_by: 'library' }]);
     created = 1_800_000_000;
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureEndpoint: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.message).toContain('stale');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(measured).toHaveLength(1);
     expect(completions(fake)).toEqual([]);
   });
 
