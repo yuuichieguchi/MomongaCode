@@ -258,11 +258,11 @@ describe('MCP trace context', () => {
 });
 
 describe('MCP timeouts and cancellation', () => {
-  it('times out at the run deadline with the executor message and the server records the cancellation', async () => {
+  it('stops at the run deadline with the MCP stop text and the server records the cancellation', async () => {
     const { set, recordFile } = await modernSet();
     const harness = makeExecutor();
     const result = await harness.resultOf(set, 'mcp__modern__slow', {}, { deadlineAt: harness.clock.now() + 500 });
-    expect(result).toEqual({ status: 'failed', output: `mcp__modern__slow timed out after 500 ms. ${UNKNOWN_EFFECTS}` });
+    expect(result).toEqual({ status: 'failed', output: 'The call to slow on MCP server "modern" reached the run deadline after 500 ms and was stopped. The server may have run it; check before repeating it.' });
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });
 
