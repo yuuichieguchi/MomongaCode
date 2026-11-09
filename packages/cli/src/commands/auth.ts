@@ -86,7 +86,10 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
       signal: NEVER_INTERRUPTED,
       authorize: async (url) => {
         print(ports.stdout, [`${profile.loginLabel}: open this URL in your browser if it does not open by itself:`, url.href]);
-        if (options.browser !== false) await ports.openUrl(url);
+        if (options.browser === false) return;
+        await ports.openUrl(url).catch((error: unknown) => {
+          print(ports.stderr, [`Could not open the browser (${error instanceof Error ? error.message : String(error)}). Open the URL above to continue.`]);
+        });
       },
     },
     { profile: profile.id, account, reconsent: options.reconsent === true },

@@ -101,11 +101,25 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       isOptional(entry['targetPlan'], (plans) => isRecordOf(plans, isTargetPlan)),
   );
 
+const HEALTH_REASONS = ['not_running', 'unhealthy', 'precondition_failed', 'health_check_failed', 'sign_in_required', 'store_unreadable', 'store_unwritable', 'capabilities_unknown'] as const satisfies readonly NonNullable<TargetHealth['reason']>[];
+
 const isTargetHealth = (value: unknown): value is TargetHealth =>
-  isRecord(value) && typeof value['ok'] === 'boolean' && oneOf(value['breaker'], ['closed', 'open', 'half-open']) && isOptional(value['reason'], isString);
+  isRecord(value) &&
+  typeof value['ok'] === 'boolean' &&
+  oneOf(value['breaker'], ['closed', 'open', 'half-open']) &&
+  isOptional(value['reason'], (reason) => oneOf(reason, HEALTH_REASONS)) &&
+  isOptional(value['detail'], isString) &&
+  isOptional(value['remediation'], isString);
 
 const isGatewayHealth = (value: unknown): value is GatewayHealth =>
-  isRecord(value) && typeof value['ok'] === 'boolean' && isRecordOf(value['targets'], isTargetHealth) && isString(value['version']) && oneOf(value['state'], ['running', 'draining']);
+  isRecord(value) &&
+  typeof value['ok'] === 'boolean' &&
+  isRecordOf(value['targets'], isTargetHealth) &&
+  isString(value['version']) &&
+  value['apiVersion'] === 1 &&
+  typeof value['pid'] === 'number' &&
+  isString(value['startedAt']) &&
+  oneOf(value['state'], ['running', 'draining']);
 
 const isProfileMessages = (value: unknown): boolean =>
   isRecord(value) &&

@@ -576,7 +576,7 @@ export function App(props: AppProps) {
     rememberProfiles(listed);
     if (entries.length > 0) {
       await openSession(undefined);
-      await offerInvitation(listed);
+      runFlow(() => offerInvitation(listed));
       return;
     }
     if (listed.accounts.length === 0) {
