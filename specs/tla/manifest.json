@@ -3998,7 +3998,7 @@
       "budgetCpuSeconds": 32
     },
     {
-      "config": "ProcessStop.proofWithoutGen",
+      "config": "ProcessStop.crossGenWithoutHold",
       "role": "evidence",
       "expect": {
         "violates": "StopNeverSignalsOtherGen",
@@ -4596,6 +4596,87 @@
       "measuredSeconds": 1.36,
       "measuredCpuSeconds": 1.5,
       "budgetCpuSeconds": 6
+    },
+    {
+      "config": "ProcessStop.escape",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 621952,
+      "measuredSeconds": 23.73,
+      "measuredCpuSeconds": 41.54,
+      "budgetCpuSeconds": 87,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 35.32 at start)"
+    },
+    {
+      "config": "ProcessStop.escapeGenerations",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 429087,
+      "measuredSeconds": 19.64,
+      "measuredCpuSeconds": 32.43,
+      "budgetCpuSeconds": 68,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 37.13 at start)"
+    },
+    {
+      "config": "ProcessStop.groupProofIgnoresGroup",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoSignalToUnprovedGroup",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 333,
+      "measuredSeconds": 4.08,
+      "measuredCpuSeconds": 2.6,
+      "budgetCpuSeconds": 9,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.79 at start)"
+    },
+    {
+      "config": "ProcessStop.noRelist",
+      "role": "evidence",
+      "expect": {
+        "violates": "FinishSeesEveryHolder",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 12764,
+      "measuredSeconds": 4.79,
+      "measuredCpuSeconds": 5.7,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.81 at start)"
+    },
+    {
+      "config": "GroupFollowers",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 664,
+      "measuredSeconds": 2.25,
+      "measuredCpuSeconds": 2.01,
+      "budgetCpuSeconds": 8,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.10 at start)"
+    },
+    {
+      "config": "GroupFollowers.noReproof",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoStrangerSignalled",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 228,
+      "measuredSeconds": 2.18,
+      "measuredCpuSeconds": 1.85,
+      "budgetCpuSeconds": 7,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 37.13 at start)"
     }
   ]
 }

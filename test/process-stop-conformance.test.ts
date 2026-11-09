@@ -103,7 +103,7 @@ describe('the reap signals only a target proved ours by the same start time at t
   it('the same-second reuse of a pid by another generation is modelled, so the darwin one-second start time is the limit the proof must not rely on alone', () => {
     const darwin = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'foundation', 'src', 'platform', 'darwin-inspector.ts'), 'utf8');
     expect(darwin).toContain("'lstart='");
-    expect(definitionOf('ReuseSameSecond')).toContain('CrossGen');
+    expect(definitionOf('ReuseSameSecond')).toContain('SameSecondReuse');
     expect(definitionOf('HolderTargetProved')).toContain('crossGen');
   });
 
@@ -112,7 +112,7 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('SigT')).toContain('TermAllowed(m)');
   });
 
-  it.each(['retireSignalsOther', 'proofWithoutGen'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
+  it.each(['retireSignalsOther', 'crossGenWithoutHold'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
     expect(variants()).toContain(variant);
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
   });
@@ -126,6 +126,33 @@ describe('the reap signals only a target proved ours by the same start time at t
   it('a same-second reuse without the hold is an every-run evidence configuration that violates NoSignalToNonHolder', () => {
     expect(variants()).toContain('sameSecondWithoutHold');
     expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.sameSecondWithoutHold')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToNonHolder', exitCode: 13 } });
+  });
+
+  it('a group is proved only by a listed holder that is now a member of the group and still holds the marker', () => {
+    expect(definitionOf('ListedHolderInGroup')).toContain('inGroup[m]');
+    expect(definitionOf('ListedHolderInGroup')).toContain('held[m]');
+    expect(definitionOf('LeaveGroup')).toContain("inGroup' = [inGroup EXCEPT ![m] = FALSE]");
+    expect(variants()).toContain('groupProofIgnoresGroup');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.groupProofIgnoresGroup')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToUnprovedGroup', exitCode: 12 } });
+  });
+
+  it('every listing is the processes that hold the marker now, and the words gone, terminated and killed need a fresh listing', () => {
+    expect(definitionOf('FreshListing')).toContain('held[m]');
+    for (const step of ['Begin', 'TermWaitEnds', 'KillWaitEnds', 'Sweep']) expect(definitionOf(step)).toContain('ListFresh');
+    expect(definitionOf('Fork')).toContain('IF Escape THEN FALSE');
+    expect(variants()).toContain('noRelist');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.noRelist')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'FinishSeesEveryHolder', exitCode: 13 } });
+  });
+
+  it.each(['ProcessStop.escape', 'ProcessStop.escapeGenerations'])('the configuration %s, with groups left and listings renewed, holds', (config) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'check', expect: 'holds' });
+  });
+
+  it('the sandbox group teardown signals a follower only after it is proved again, and the evidence without that proof violates', () => {
+    const spec = fs.readFileSync(path.join(specDir, 'GroupFollowers.tla'), 'utf8');
+    expect(spec).toContain('Reproved(m)');
+    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers')).toMatchObject({ role: 'check', expect: 'holds' });
+    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers.noReproof')).toMatchObject({ role: 'evidence', expect: { violates: 'NoStrangerSignalled', exitCode: 12 } });
   });
 
   it.each(['ProcessStop.generations', 'ProcessStop.userStop'])('the generation configuration %s holds', (config) => {

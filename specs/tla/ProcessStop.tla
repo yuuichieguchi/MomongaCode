@@ -1,18 +1,21 @@
 --------------------------- MODULE ProcessStop ---------------------------
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS Members, Events, MaxAttempts, Variant, StopScope, Gen2Members, CrossGen
+CONSTANTS Members, Events, MaxAttempts, Variant, StopScope, Gen2Members, SameSecondReuse, Escape
 
-ASSUME Variant \in {"decided", "retireSignalsOther", "proofWithoutGen", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent", "sameSecondWithoutHold"}
+ASSUME Variant \in {"decided", "retireSignalsOther", "crossGenWithoutHold", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent", "sameSecondWithoutHold", "groupProofIgnoresGroup", "noRelist"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME StopScope \in {"userStop", "retire"}
 ASSUME Gen2Members \subseteq Members
-ASSUME CrossGen \in BOOLEAN
+ASSUME SameSecondReuse \in BOOLEAN
+ASSUME Escape \in BOOLEAN
 ASSUME Events # {}
 
 MemberStates == {"live", "stuck", "exiting", "zombie", "gone"}
 
 Settle == Variant \in {"settleCandidate", "settleCurrent", "guardCurrent", "guardUnknownCurrent", "guardHeldCurrent", "jobCurrent", "reconcileCurrent"}
+ASSUME Escape => ~Settle
+
 SettleCurrent == Variant = "settleCurrent"
 GuardCurrent == Variant = "guardCurrent"
 GuardUnknownCurrent == Variant = "guardUnknownCurrent"
@@ -26,6 +29,12 @@ vars == <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state
 
 GenOfMember(m) == IF m \in Gen2Members THEN 2 ELSE 1
 OtherGen(m) == GenOfMember(m) # 1 \/ crossGen[m]
+ListedHolderAny == \E m \in Members : listed[m] /\ state[m] # "gone" /\ held[m]
+
+FreshListing == [m \in Members |-> state[m] # "gone" /\ held[m]]
+
+ListFresh == ~Escape \/ mode = "live" \/ Variant = "noRelist" \/ listed = FreshListing
+
 InScope(m) == StopScope = "userStop" \/ GenOfMember(m) = 1
 
 TypeOK ==
@@ -130,12 +139,14 @@ ReusedHolderInGroup == \E m \in Members : listed[m] /\ inGroup[m] /\ swapped[m]
 
 GateTerm ==
     CASE Variant \in {"noIdentityCheck", "termToReused"} -> TRUE
+      [] Variant = "groupProofIgnoresGroup" -> Proved \/ ListedHolderAny
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
       [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
 
 GateKill ==
     CASE Variant = "noIdentityCheck" -> TRUE
+      [] Variant = "groupProofIgnoresGroup" -> Proved \/ ListedHolderAny
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
       [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
@@ -161,7 +172,7 @@ Fork(m, n) ==
     /\ state[n] = "gone"
     /\ ~swapped[n]
     /\ state' = [state EXCEPT ![n] = "live"]
-    /\ listed' = [listed EXCEPT ![n] = listed[m]]
+    /\ listed' = [listed EXCEPT ![n] = IF Escape THEN FALSE ELSE listed[m]]
     /\ provedOnce' = [provedOnce EXCEPT ![n] = FALSE]
     /\ hstage' = [hstage EXCEPT ![n] = "idle"]
     /\ held' = [held EXCEPT ![n] = held[m]]
@@ -192,7 +203,7 @@ ReusePid(m) ==
     /\ held' = [held EXCEPT ![m] = FALSE]
     /\ UNCHANGED <<crossGen, inGroup, listed, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
-HolderTargetProved(m) == state[m] # "gone" /\ ~swapped[m] /\ (held[m] \/ (Variant = "proofWithoutGen" /\ crossGen[m]) \/ Variant = "sameSecondWithoutHold")
+HolderTargetProved(m) == state[m] # "gone" /\ ~swapped[m] /\ (held[m] \/ (Variant = "crossGenWithoutHold" /\ crossGen[m]) \/ Variant = "sameSecondWithoutHold")
 
 SignalHits(m) == state[m] # "gone" \/ swapped[m]
 
@@ -222,6 +233,7 @@ GroupKillGo == groupKnown /\ GroupSeen /\ GateKill /\ GroupScopeOK
 
 Begin ==
     /\ phase = "idle"
+    /\ ListFresh
     /\ IF ~Seen
        THEN /\ Finish("gone", FALSE)
             /\ UNCHANGED <<crossGen, held, termSent, unprovedSignalled, begunUnproved, state, hstage, provedOnce, listFailed, groupKnown>>
@@ -241,6 +253,7 @@ Begin ==
 
 TermWaitEnds ==
     /\ phase = "termWait"
+    /\ ListFresh
     /\ IF ~Seen
        THEN /\ Finish("terminated", FALSE)
             /\ UNCHANGED <<crossGen, held, killSent, unprovedSignalled, state, hstage, listFailed, groupKnown>>
@@ -257,6 +270,7 @@ TermWaitEnds ==
 
 KillWaitEnds ==
     /\ phase = "killWait"
+    /\ ListFresh
     /\ IF ~Seen
        THEN Finish("killed", FALSE)
        ELSE Finish(IF Variant = "throwOnSurvivor" THEN "throw" ELSE "unconfirmed", KeepOnUnconfirmed)
@@ -265,12 +279,14 @@ KillWaitEnds ==
 CallerAborts ==
     /\ phase \in {"termWait", "killWait"}
     /\ \/ /\ ~Seen
+          /\ ListFresh
           /\ Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
        \/ Finish("unconfirmed", KeepOnUnconfirmed)
     /\ UNCHANGED <<crossGen, held, inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 Sweep ==
     /\ ~Settle
+    /\ ListFresh
     /\ phase = "done"
     /\ outcome = "unconfirmed"
     /\ ~OursVisible
@@ -296,7 +312,7 @@ Retry ==
     /\ UNCHANGED <<crossGen, held, inGroup, listed, swapped, provedOnce, state, other, mode, marker, unprovedSignalled, shown, basis, listFailed, groupKnown>>
 
 ReuseSameSecond(m) ==
-    /\ CrossGen
+    /\ SameSecondReuse
     /\ phase \in {"idle", "termWait", "killWait"}
     /\ state[m] = "gone"
     /\ ~swapped[m]
@@ -315,7 +331,7 @@ Unhold(m) ==
     /\ UNCHANGED <<crossGen, inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 ReuseSameSecondOwn(m) ==
-    /\ CrossGen
+    /\ SameSecondReuse
     /\ phase \in {"idle", "termWait", "killWait"}
     /\ state[m] = "gone"
     /\ ~swapped[m]
@@ -323,6 +339,22 @@ ReuseSameSecondOwn(m) ==
     /\ inGroup' = [inGroup EXCEPT ![m] = FALSE]
     /\ held' = [held EXCEPT ![m] = FALSE]
     /\ UNCHANGED <<crossGen, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+LeaveGroup(m) ==
+    /\ Escape
+    /\ mode = "recorded"
+    /\ state[m] \in {"live", "stuck"}
+    /\ inGroup[m]
+    /\ inGroup' = [inGroup EXCEPT ![m] = FALSE]
+    /\ UNCHANGED <<crossGen, held, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+Relist ==
+    /\ Escape
+    /\ Variant # "noRelist"
+    /\ mode = "recorded"
+    /\ listed # FreshListing
+    /\ listed' = FreshListing
+    /\ UNCHANGED <<crossGen, held, inGroup, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 Settled ==
     /\ phase = "done"
@@ -485,11 +517,13 @@ Next ==
         \/ ReuseSameSecond(m)
         \/ ReuseSameSecondOwn(m)
         \/ Unhold(m)
+        \/ LeaveGroup(m)
     \/ Begin
     \/ TermWaitEnds
     \/ KillWaitEnds
     \/ CallerAborts
     \/ Sweep
+    \/ Relist
     \/ Retry
     \/ Settled
     \/ SettleObserve
@@ -512,12 +546,15 @@ StopNeverSignalsOtherGen == [][~(StopScope = "retire" /\ \E m \in Members : hsta
 
 NoSignalToNonHolder == [][~(\E m \in Members : hstage'[m] # hstage[m] /\ hstage'[m] # "idle" /\ ~held[m])]_vars
 
+FinishSeesEveryHolder == [][((phase = "idle" /\ outcome' = "gone") \/ (phase = "termWait" /\ outcome' = "terminated") \/ (phase = "killWait" /\ outcome' = "killed")) => ~(\E m \in Members : ~inGroup[m] /\ held[m] /\ state[m] # "gone")]_vars
+
 FairSpec ==
     /\ Spec
     /\ WF_vars(SettleObserve)
     /\ WF_vars(SettleListed \/ SettleListFails \/ SettleListRefused)
     /\ WF_vars(SettleGroup)
     /\ WF_vars(Begin)
+    /\ WF_vars(Relist)
     /\ WF_vars(TermWaitEnds)
     /\ WF_vars(KillWaitEnds)
     /\ WF_vars(Recheck)
