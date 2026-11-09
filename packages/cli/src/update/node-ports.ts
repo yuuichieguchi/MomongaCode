@@ -55,17 +55,22 @@ export const undiciUpdateHttp = (network: Promise<OutboundNetwork>, options: Out
 const leasedUpdateHttp = (ports: CliPorts): UpdateHttp => ({
   get: (url, { headers, signal }) =>
     new Promise((resolve, reject) => {
+      let answered = false;
       withOutboundNetwork(ports, signal, async (network) => {
         const dispatcher = createOutboundDispatcher(network, TRANSFER_OPTIONS);
         try {
           const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: dispatcher.compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true })) });
           const bodyClosed = new Promise<void>((closed) => response.body.once('close', () => closed()));
+          answered = true;
           resolve({ status: response.statusCode, body: response.body });
           await bodyClosed;
         } finally {
           await dispatcher.close();
         }
-      }).then(undefined, reject);
+      }).then(undefined, (error: unknown) => {
+        if (!answered) reject(error);
+        else ports.stderr.write(`momonga: the update connection could not be closed: ${error instanceof Error ? error.message : String(error)}\n`);
+      });
     }),
 });
 
