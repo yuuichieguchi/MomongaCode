@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { GATEWAY_MAX_CLOSE_MS, createUdsClient, decodeSse } from '@momonga/foundation';
+import { GATEWAY_MAX_CLOSE_MS, createUdsClient, decodeSse, fmServeStopBoundMs } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
@@ -17,8 +17,6 @@ export const HMAC_KEY = Buffer.from('momonga-test-hmac-key-0001-padded-to-32-byt
 export const validator = createOpenResponsesValidator();
 
 export const REAL_FM_STOP_GRACE_MS = 5000;
-
-const fmServeStopBoundMs = (graceMs: number): number => 2 * graceMs + 4 * graceMs;
 
 const CLEANUP_HOOK_BOUND_MS = fmServeStopBoundMs(REAL_FM_STOP_GRACE_MS) + GATEWAY_MAX_CLOSE_MS + CLEANUP_KILL_DEADLINE_MS;
 

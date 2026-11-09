@@ -1,3 +1,4 @@
+import { FM_STOP_GRACE_MS, GATEWAY_CLOSE_GRACE_MS } from '@momonga/foundation';
 import type { GatewayConfig } from './types.ts';
 
 const MIB = 1024 * 1024;
@@ -10,7 +11,7 @@ export const GATEWAY_CONFIG_DEFAULTS = {
   breaker: { failureThreshold: 2, openMs: 30_000 },
   limits: { maxBodyBytes: 32 * MIB, maxIdempotencyFrameBytes: 64 * MIB, readerStallMs: 30_000 },
   idempotency: { ttlMs: SEVEN_DAYS_MS },
-  closeGraceMs: 10_000,
+  closeGraceMs: GATEWAY_CLOSE_GRACE_MS,
   sseKeepAliveMs: 15_000,
   detachedMaxMs: THIRTY_MINUTES_MS,
   websocketConnectionMs: SIXTY_MINUTES_MS,
@@ -43,7 +44,7 @@ export const OLLAMA_PROVIDER_NAME = 'ollama';
 export const FM_SERVE_DEFAULTS = {
   healthTimeoutMs: 10_000,
   restartBackoffMs: 1000,
-  stopGraceMs: 3000,
+  stopGraceMs: FM_STOP_GRACE_MS,
   maxRestarts: 5,
   restartResetMs: 60_000,
   preconditionTtlMs: 60_000,
