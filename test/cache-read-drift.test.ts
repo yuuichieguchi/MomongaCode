@@ -40,7 +40,7 @@ describe('one reader of whether a call reported its cache reads', () => {
   it('decides the fact with cachedInputTokens === undefined only in billed-calls.ts, cache-reads.ts and token-metrics.ts', () => {
     const deciders = filesMatching(SURFACE_SOURCES, /cachedInputTokens\s*[!=]==\s*undefined/).filter((file) => file !== 'packages/observability/src/spans.ts');
 
-    expect(deciders).toEqual(['packages/eval/src/token-metrics.ts', 'packages/observability/src/billed-calls.ts', 'packages/observability/src/cache-reads.ts']);
+    expect([...deciders].sort()).toEqual(['packages/eval/src/token-metrics.ts', 'packages/observability/src/billed-calls.ts', 'packages/observability/src/cache-reads.ts']);
   });
 
   it('reads the cache-read span attribute only in billed-calls.ts, besides the span writer and the attribute names', () => {
