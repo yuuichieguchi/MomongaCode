@@ -14,7 +14,7 @@ const settle = async (): Promise<void> => {
   for (let turn = 0; turn < 10; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 };
 
-const boundOf = (values: StopValues): number => 1000 * values.closeGraceMs + values.managedServerStopGraceMs;
+const boundOf = (values: StopValues): number => values.closeGraceMs + 2 * values.managedServerStopGraceMs + 3 * values.drainTimeoutMs + 5 * values.mcpCloseGraceMs;
 
 const launch = async () => {
   const clock = createFakeClock(START_MS);
@@ -50,7 +50,7 @@ const launch = async () => {
     logFile: () => ({ write: () => undefined, close: () => undefined, droppedLines: 0 }),
     exit: () => undefined,
   };
-  let fileValues: StopValues = { closeGraceMs: 7, managedServerStopGraceMs: 3 };
+  let fileValues: StopValues = { closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 };
   let fileInvalid = false;
   const notices: string[] = [];
   const reads: StopValues[] = [];
@@ -117,13 +117,32 @@ const launch = async () => {
   };
 };
 
-const MESSAGE: StopValues = { closeGraceMs: 42, managedServerStopGraceMs: 5 };
+const FILE: StopValues = { closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 };
+const MESSAGE: StopValues = { closeGraceMs: 42, managedServerStopGraceMs: 5, drainTimeoutMs: 4321, mcpCloseGraceMs: 17 };
 
-describe('a stop carries the values read at its begin', () => {
+describe('a stop carries the four values read at its begin', () => {
+  it('the two-value line of revision 6 is malformed, so the close reads the file and warns once', async () => {
+    const entry = await launch();
+    entry.line('{"event":"stop","closeGraceMs":42,"managedServerStopGraceMs":5}');
+    entry.signal('SIGTERM');
+    await settle();
+    expect(entry.closes).toEqual([FILE]);
+    expect(entry.stderr().split('the stop message was malformed and was ignored: ').length - 1).toBe(1);
+  });
+
+  it('a stop message carries the runtime drain and the MCP grace to the close and to its deadline', async () => {
+    const entry = await launch();
+    entry.line('{"event":"stop","closeGraceMs":42,"managedServerStopGraceMs":5,"drainTimeoutMs":4321,"mcpCloseGraceMs":17}');
+    entry.signal('SIGTERM');
+    await settle();
+    expect(entry.closes).toEqual([{ closeGraceMs: 42, managedServerStopGraceMs: 5, drainTimeoutMs: 4321, mcpCloseGraceMs: 17 }]);
+    expect(entry.deadlines()).toEqual([42 + 10 + 12_963 + 85 + ENTRY_HARD_EXIT_MARGIN_MS]);
+  });
+
   it('a stop message followed by SIGTERM closes with the message values, never the file, even when the file changed in between', async () => {
     const entry = await launch();
     entry.line(formatStopMessage(MESSAGE).trimEnd());
-    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999 });
+    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999, drainTimeoutMs: 999, mcpCloseGraceMs: 999 });
     entry.signal('SIGTERM');
     await settle();
     expect(entry.closes).toEqual([MESSAGE]);
@@ -144,13 +163,13 @@ describe('a stop carries the values read at its begin', () => {
     const entry = await launch();
     entry.signal('SIGTERM');
     await settle();
-    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
-    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999 });
+    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
+    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999, drainTimeoutMs: 999, mcpCloseGraceMs: 999 });
     entry.signal('SIGTERM');
     await settle();
-    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
-    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
-    expect(entry.deadlines()).toEqual([boundOf({ closeGraceMs: 7, managedServerStopGraceMs: 3 }) + ENTRY_HARD_EXIT_MARGIN_MS]);
+    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
+    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
+    expect(entry.deadlines()).toEqual([boundOf({ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }) + ENTRY_HARD_EXIT_MARGIN_MS]);
   });
 
   it('a requested stop with values uses them and reads nothing', async () => {
@@ -164,30 +183,30 @@ describe('a stop carries the values read at its begin', () => {
 
   it('a close that begins with only malformed lines reads the file at its begin and logs the malformed line once in English', async () => {
     const entry = await launch();
-    entry.line('{"event":"stop","closeGraceMs":-1,"managedServerStopGraceMs":1}');
+    entry.line('{"event":"stop","closeGraceMs":1,"managedServerStopGraceMs":1,"drainTimeoutMs":-1,"mcpCloseGraceMs":1}');
     entry.signal('SIGTERM');
     await settle();
-    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
-    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
+    expect(entry.reads).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
+    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
     expect(entry.stderr().split('the stop message was malformed and was ignored: ').length - 1).toBe(1);
     expect(entry.stderr()).not.toContain('the default values were used');
   });
 
-  it('a line with a field beyond the three is malformed and the close reads the file', async () => {
+  it('a line with a field beyond the five is malformed and the close reads the file', async () => {
     const entry = await launch();
-    entry.line('{"event":"stop","closeGraceMs":42,"managedServerStopGraceMs":5,"extra":1}');
+    entry.line('{"event":"stop","closeGraceMs":42,"managedServerStopGraceMs":5,"drainTimeoutMs":6,"mcpCloseGraceMs":7,"extra":1}');
     entry.signal('SIGTERM');
     await settle();
-    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3 }]);
+    expect(entry.closes).toEqual([{ closeGraceMs: 7, managedServerStopGraceMs: 3, drainTimeoutMs: 11, mcpCloseGraceMs: 13 }]);
     expect(entry.stderr()).toContain('the stop message was malformed and was ignored: ');
   });
 
   it('a second valid message is ignored with the malformed-message warning naming the reason, and nothing after the begin changes the values', async () => {
     const entry = await launch();
     entry.line(formatStopMessage(MESSAGE).trimEnd());
-    entry.line(formatStopMessage({ closeGraceMs: 1, managedServerStopGraceMs: 1 }).trimEnd());
+    entry.line(formatStopMessage({ closeGraceMs: 1, managedServerStopGraceMs: 1, drainTimeoutMs: 1, mcpCloseGraceMs: 1 }).trimEnd());
     entry.signal('SIGTERM');
-    entry.line(formatStopMessage({ closeGraceMs: 2, managedServerStopGraceMs: 2 }).trimEnd());
+    entry.line(formatStopMessage({ closeGraceMs: 2, managedServerStopGraceMs: 2, drainTimeoutMs: 2, mcpCloseGraceMs: 2 }).trimEnd());
     await settle();
     expect(entry.closes).toEqual([MESSAGE]);
     expect(entry.reads).toEqual([]);
@@ -198,7 +217,7 @@ describe('a stop carries the values read at its begin', () => {
   it('drains the lifeline before taking values: a message already delivered but not yet read when SIGTERM arrives sets the values of the close', async () => {
     const entry = await launch();
     entry.arriveUnread(formatStopMessage(MESSAGE).trimEnd());
-    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999 });
+    entry.setFile({ closeGraceMs: 999, managedServerStopGraceMs: 999, drainTimeoutMs: 999, mcpCloseGraceMs: 999 });
     entry.signal('SIGTERM');
     await settle();
     expect(entry.closes).toEqual([MESSAGE]);

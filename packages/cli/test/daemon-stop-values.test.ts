@@ -60,25 +60,25 @@ const timeoutOf = async (pending: Promise<unknown>): Promise<PollTimeout> => {
 describe('daemon stop carries the values it read', () => {
   it('posts the values read when the command runs and waits the daemon stop bound of those values, unchanged by a later edit', async (context) => {
     const { paths, ports, start, writeUserSettings } = await setup(context);
-    writeUserSettings({ gateway: { closeGraceMs: 2000, managedServerStopGraceMs: 500 } });
+    writeUserSettings({ gateway: { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, runtime: { drainTimeoutMs: 7000 }, mcp: { closeGraceMs: 40 } });
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const stopping = stopDaemon(ports, paths);
     const edited = (async () => {
       while (supervisor.shutdownBodies.length === 0) await new Promise((resolve) => setImmediate(resolve));
-      writeUserSettings({ gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 } });
+      writeUserSettings({ gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 }, runtime: { drainTimeoutMs: 0 }, mcp: { closeGraceMs: 0 } });
     })();
     const timeout = await timeoutOf(stopping);
     await edited;
-    expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500 }]);
-    expect(timeout.boundMs).toBe(30_000 + 2000 + 10 * 500 + 4 * 25 + 48_000 + 3000);
+    expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 }]);
+    expect(timeout.boundMs).toBe(7000 + 2000 + 10 * 500 + 8 * 40 + 48_220 + 3000);
   });
 
   it('posts the defaults when the user settings set nothing', async (context) => {
     const { paths, ports, start } = await setup(context);
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
-    expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
-    expect(timeout.boundMs).toBe(121_100);
+    expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 30_000, mcpCloseGraceMs: 1000 }]);
+    expect(timeout.boundMs).toBe(129_220);
   });
 
   it('waits on a stop it did not begin for the bound the draining supervisor reports', async (context) => {
@@ -99,8 +99,8 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
     const timeout = await timeoutOf(stopDaemon({ ...ports, clock: oversleepingClock() }, paths));
-    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_100);
-    expect(timeout.boundMs).toBe(981_100);
+    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(1_491_220);
+    expect(timeout.boundMs).toBe(1_491_220);
   });
 });
 
@@ -123,7 +123,7 @@ describe('the wait over several generations', () => {
   });
 
   it('counts a generation that reports no bound at the allowed maxima', () => {
-    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(981_100);
+    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(1_491_220);
   });
 });
 
@@ -148,7 +148,7 @@ describe('a version-mismatch stop inside ensureDaemon with an invalid settings f
     const older = await start({ version: '0.0.1' }, false);
     const notices: string[] = [];
     const failure = await failureOf(ensureDaemon(ports, paths, { bounds: BOUNDS, onNotice: (message) => notices.push(message) }));
-    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
+    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 30_000, mcpCloseGraceMs: 1000 }]);
     expect(notices).toHaveLength(1);
     expect(notices[0]).toContain('the default values were used');
     expect(failure instanceof PollTimeout ? failure.description : failure).toBe('the daemon to become ready');
@@ -160,7 +160,7 @@ describe('a version-mismatch stop inside ensureDaemon with an invalid settings f
     const older = await start({ version: '0.0.1' }, false);
     const notices: string[] = [];
     const failure = await failureOf(restoreDaemon(ports, paths, (message: string) => notices.push(message))(undefined));
-    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
+    expect(older.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 30_000, mcpCloseGraceMs: 1000 }]);
     expect(notices).toHaveLength(1);
     expect(String(failure)).not.toContain('the default values were used');
   });

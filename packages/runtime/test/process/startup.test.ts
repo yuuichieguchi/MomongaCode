@@ -427,7 +427,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((await launched.http('GET', '/v1/health')).status).toBe(200);
   });
 
-  it('an invalid home, gatewaySocketPath, workerCount, leaseMs or drainTimeoutMs throws before any step', PROCESS_TIMEOUT, async () => {
+  it('an invalid home, gatewaySocketPath, workerCount or leaseMs throws before any step', PROCESS_TIMEOUT, async () => {
     const temp = sandboxNoneHome();
     const cases: [Record<string, unknown>, ErrorConstructor | TypeErrorConstructor | RangeErrorConstructor][] = [
       [{ home: 'relative/home' }, TypeError],
@@ -436,8 +436,6 @@ describe('startRuntimeProcess startup (system timers)', () => {
       [{ workerCount: 1.5 }, RangeError],
       [{ leaseMs: 0 }, RangeError],
       [{ leaseMs: 2.5 }, RangeError],
-      [{ drainTimeoutMs: -1 }, RangeError],
-      [{ drainTimeoutMs: 0.5 }, RangeError],
     ];
     for (const [options, kind] of cases) {
       const { started, logger, stdout } = startBare(temp, options);
@@ -447,12 +445,6 @@ describe('startRuntimeProcess startup (system timers)', () => {
       expect(stdout.chunks).toEqual([]);
     }
     expect(fs.existsSync(temp.paths.run)).toBe(false);
-  });
-
-  it('accepts drainTimeoutMs 0', PROCESS_TIMEOUT, async () => {
-    const stack = await prepareStack();
-    const launched = await launchRuntime(stack.temp, { drainTimeoutMs: 0 });
-    expect(launched.stdout.lines()).toHaveLength(1);
   });
 
   it('uses the canonical home everywhere for a symlinked or case-variant home', PROCESS_TIMEOUT, async () => {

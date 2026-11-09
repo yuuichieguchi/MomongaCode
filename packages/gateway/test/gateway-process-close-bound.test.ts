@@ -140,7 +140,7 @@ describe('the gateway process close bound with an fm probe in flight', { timeout
   it.each<[ProbePhase, StopValues]>([
     ['running', DEFAULT_STOP_VALUES],
     ['waiting on health', DEFAULT_STOP_VALUES],
-    ['running', { closeGraceMs: 2000, managedServerStopGraceMs: 500 }],
+    ['running', { closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 }],
   ])(
     'ends within the close bound of the values of that close and stops the probe server when the close begins, while the probe server is %s and the managed server streams to a client that does not read (values %o)',
     async (phase, values) => {

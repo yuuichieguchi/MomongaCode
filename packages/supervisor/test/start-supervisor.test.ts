@@ -276,19 +276,28 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
 });
 
 describe('resolveStartTiming', () => {
-  it('resolves the start-up timing a supervisor runs with when nothing is injected', () => {
-    expect(resolveStartTiming({})).toEqual({
-      drainTimeoutMs: RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  const PREDECESSOR = { closeGraceMs: 1, managedServerStopGraceMs: 2, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
+
+  it('waits for an unknown predecessor by the bounds of the allowed maxima', () => {
+    expect(resolveStartTiming({ predecessorStopValues: undefined })).toEqual({
       startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: runtimeMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
-      orphanReapGraceMs: ORPHAN_REAP_GRACE_MS,
+      orphanGraceMs: 555_120,
+      orphanReapGraceMs: 255_120,
       orphanPollMs: ORPHAN_POLL_MS,
     });
   });
 
-  it('takes every injected value in place of its default', () => {
-    expect(resolveStartTiming({ runtime: { drainTimeoutMs: 1000 }, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
-      drainTimeoutMs: 1000,
+  it('waits for a predecessor whose stop record it read by the runtime close and the orphan grace of those values', () => {
+    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR })).toEqual({
+      startupTimeoutMs: STARTUP_TIMEOUT_MS,
+      orphanGraceMs: 7000 + 5000 + 10_000 + 8 * 40 + 120,
+      orphanReapGraceMs: 5000 + 10_000 + 8 * 40 + 120,
+      orphanPollMs: ORPHAN_POLL_MS,
+    });
+  });
+
+  it('takes every injected value in place of its derivation', () => {
+    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
       startupTimeoutMs: 7000,
       orphanGraceMs: 3000,
       orphanReapGraceMs: 400,
@@ -297,7 +306,7 @@ describe('resolveStartTiming', () => {
   });
 
   it('bounds the start as the orphan reap followed by the startup timeout of the children', () => {
-    const timing = resolveStartTiming({ orphanGraceMs: 3000 });
+    const timing = resolveStartTiming({ predecessorStopValues: PREDECESSOR, orphanGraceMs: 3000 });
     expect(supervisorStartBoundMs(timing)).toBe(orphanReapBoundMs(timing) + timing.startupTimeoutMs);
   });
 });

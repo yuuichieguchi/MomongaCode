@@ -229,10 +229,10 @@ describe('close budgets', () => {
     expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([5000, 10_000, 30_000]);
   });
 
-  it('runtimeMaxCloseMs equals drain + 15000', () => {
-    expect(runtimeMaxCloseMs(0)).toBe(15_000);
-    expect(runtimeMaxCloseMs(30_000)).toBe(45_000);
-    expect(runtimeMaxCloseMs(1)).toBe(15_001);
+  it('runtimeMaxCloseMs equals drain + 15000 + 8 x MCP grace + 120', () => {
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(15_120);
+    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(53_120);
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(15_121);
   });
 
   it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
@@ -257,17 +257,18 @@ describe('close budgets', () => {
   });
 
   it('the stop budgets are the child close budgets plus the shutdown margin', () => {
-    expect(runtimeStopBudgetMs(30_000)).toBe(runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS);
+    expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(runtimeMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS);
     expect(gatewayStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS);
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_100);
-    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_100);
+    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(126_220);
+    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(88_220);
     for (const drain of [1, 1000, 12_345]) {
+      const values = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: drain };
       const steps = [
         SHUTDOWN_DRAIN_BOUND_MS,
-        runtimeStopBudgetMs(drain),
+        runtimeStopBudgetMs(values),
         KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
         gatewayStopBudgetMs(DEFAULT_STOP_VALUES),
         KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
@@ -275,7 +276,7 @@ describe('close budgets', () => {
         SHUTDOWN_REAP_BOUND_MS,
         SHUTDOWN_RELEASE_BOUND_MS,
       ];
-      expect(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES), String(drain)).toBe(steps.reduce((sum, step) => sum + step, 0));
+      expect(supervisorMaxCloseMs(values), String(drain)).toBe(steps.reduce((sum, step) => sum + step, 0));
     }
   });
 });

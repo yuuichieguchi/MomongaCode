@@ -12,7 +12,7 @@ describe('close() with the values of the stop', () => {
 
     const began = clock.now();
     let closed = false;
-    const closing = gateway.close({ closeGraceMs: 0, managedServerStopGraceMs: 0 }).finally(() => {
+    const closing = gateway.close({ closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 }).finally(() => {
       closed = true;
     });
     await waitFor(

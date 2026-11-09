@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { createUdsClient, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, ReadyFields, StopValues, TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
@@ -56,8 +56,8 @@ export type RuntimeCloseResult = { clean: boolean; fatal?: Error; abandoned: str
 export type RuntimeProcess = {
   ready: ReadyFields;
   sandbox: SandboxKind;
-  close(): Promise<RuntimeCloseResult>;
-  abort(): Promise<RuntimeCloseResult>;
+  close(values?: StopValues): Promise<RuntimeCloseResult>;
+  abort(values?: StopValues): Promise<RuntimeCloseResult>;
   fatal: Promise<Error>;
 };
 
@@ -75,7 +75,6 @@ export type StartRuntimeProcessOptions = {
   platform?: NodeJS.Platform;
   workerCount?: number;
   leaseMs?: number;
-  drainTimeoutMs?: number;
   signal?: AbortSignal;
 };
 
@@ -221,7 +220,20 @@ export type LaunchOptions = Omit<StartRuntimeProcessOptions, 'home' | 'generatio
   logger?: RecordingLogger;
   stdout?: CapturedStdout;
   fakeTimers?: FakeTimers;
+  drainTimeoutMs?: number;
+  mcpCloseGraceMs?: number;
 };
+
+export const DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
+export const DEFAULT_MCP_CLOSE_GRACE_MS = 1000;
+
+export const stopValuesOf = (drainTimeoutMs = DEFAULT_DRAIN_TIMEOUT_MS, mcpCloseGraceMs = DEFAULT_MCP_CLOSE_GRACE_MS): StopValues => ({
+  ...DEFAULT_STOP_VALUES,
+  drainTimeoutMs,
+  mcpCloseGraceMs,
+});
+
+const abortHorizonMs = (values: StopValues): number => ABORT_BUDGET_MS + TEARDOWN_BUDGET_MS + 8 * values.mcpCloseGraceMs + 120;
 
 export const driveUntilSettled = async <T>(promise: Promise<T>, timers: FakeTimers, horizonMs: number, description: string): Promise<T> => {
   let settled = false;
@@ -249,10 +261,11 @@ export const fireDuringTeardownStep = async (logger: RecordingLogger, timers: Fa
 };
 
 export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}): Promise<Launched> => {
-  const { fakeTimers, logger: givenLogger, stdout: givenStdout, ...rest } = options;
+  const { fakeTimers, logger: givenLogger, stdout: givenStdout, drainTimeoutMs, mcpCloseGraceMs, ...rest } = options;
   const logger = givenLogger ?? makeLogger();
   const stdout = givenStdout ?? captureStream();
-  const handle = await startRuntimeProcess({
+  const values = stopValuesOf(drainTimeoutMs, mcpCloseGraceMs);
+  const started = await startRuntimeProcess({
     home: temp.home,
     generation: FIRST_GENERATION,
     version: RUNTIME_VERSION,
@@ -261,11 +274,12 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
     ...(fakeTimers === undefined ? {} : { timers: fakeTimers }),
     ...rest,
   });
+  const handle: RuntimeProcess = { ...started, close: (given = values) => started.close(given), abort: (given = values) => started.abort(given) };
   onCleanup(async () => {
     const closing = handle.abort();
     const clock = rest.clock;
     if (fakeTimers === undefined || clock === undefined) await closing;
-    else await driveUntilSettled(closing, fakeTimers, runtime.runtimeMaxCloseMs(0), 'the runtime abort at cleanup');
+    else await driveUntilSettled(closing, fakeTimers, abortHorizonMs(values), 'the runtime abort at cleanup');
   });
   return { handle, logger, stdout, ...clientOf(temp) };
 };

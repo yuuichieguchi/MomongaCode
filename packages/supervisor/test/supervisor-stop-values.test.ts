@@ -1,7 +1,8 @@
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatStopMessage } from '@momonga/foundation';
+import { FIRST_GENERATION, formatStopMessage, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, withTempDir } from '@momonga/testkit';
 import { startControlServer } from '../src/control-server.ts';
@@ -9,55 +10,86 @@ import { writeSettings } from './support/p2-manager-harness.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
 
-const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200 };
-const FIRST_DAEMON_STOP_BOUND_MS = 30_000 + 1000 + 10 * 200 + 4 * 25 + 48_000 + 3000;
-const LATER: StopValues = { closeGraceMs: 250_000, managedServerStopGraceMs: 50_000 };
-const POSTED: StopValues = { closeGraceMs: 0, managedServerStopGraceMs: 10 };
-const POSTED_DAEMON_STOP_BOUND_MS = 30_000 + 0 + 10 * 10 + 4 * 25 + 48_000 + 3000;
+const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
+const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 10 * 200 + 8 * 40 + 48_220 + 3000;
+const LATER: StopValues = { closeGraceMs: 250_000, managedServerStopGraceMs: 50_000, drainTimeoutMs: 250_000, mcpCloseGraceMs: 25_000 };
+const POSTED: StopValues = { closeGraceMs: 0, managedServerStopGraceMs: 10, drainTimeoutMs: 20, mcpCloseGraceMs: 30 };
+const POSTED_DAEMON_STOP_BOUND_MS = 20 + 0 + 10 * 10 + 8 * 30 + 48_220 + 3000;
 
-const gatewayLifeline = (harness: SupervisorHarness): { lines: string[]; boundsAtSignal: unknown[] } => {
-  const child = harness.port.children.find((candidate) => candidate.args.some((arg) => arg.includes('gateway')));
-  if (child === undefined) throw new Error('no gateway child was spawned');
-  const lines: string[] = [];
-  const boundsAtSignal: unknown[] = [];
+const settingsOf = (values: StopValues): Record<string, unknown> => ({
+  gateway: { closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs },
+  runtime: { drainTimeoutMs: values.drainTimeoutMs },
+  mcp: { closeGraceMs: values.mcpCloseGraceMs },
+});
+
+type Observed = { lines: string[]; boundsAtSignal: unknown[]; recordAtFirstLine: Array<StopValues | undefined> };
+
+const observeChildren = (harness: SupervisorHarness): Record<'gateway' | 'runtime', Observed> => {
+  const recordPath = generationLayout(harness.home, FIRST_GENERATION).stopRecord;
+  const observe = (role: 'gateway' | 'runtime'): Observed => {
+    const child = harness.port.children.find((candidate) => candidate.args.some((arg) => arg.includes(role)));
+    if (child === undefined) throw new Error(`no ${role} child was spawned`);
+    const observed: Observed = { lines: [], boundsAtSignal: [], recordAtFirstLine: [] };
+    child.lifeline.on('data', (chunk: Buffer) => {
+      if (observed.lines.length === 0) observed.recordAtFirstLine.push(fs.existsSync(recordPath) ? (JSON.parse(fs.readFileSync(recordPath, 'utf8')) as StopValues) : undefined);
+      observed.lines.push(chunk.toString('utf8'));
+    });
+    return observed;
+  };
+  const gateway = observe('gateway');
+  const runtime = observe('runtime');
   harness.port.onSignal = (signalled, signal) => {
-    if (signal === 'SIGTERM' && signalled === child) {
-      lines.push('SIGTERM');
-      boundsAtSignal.push(harness.supervisor.health().stopBoundMs);
+    for (const [role, observed] of [['gateway', gateway], ['runtime', runtime]] as const) {
+      const child = harness.port.children.find((candidate) => candidate.args.some((arg) => arg.includes(role)));
+      if (signal === 'SIGTERM' && signalled === child) {
+        observed.lines.push('SIGTERM');
+        observed.boundsAtSignal.push(harness.supervisor.health().stopBoundMs);
+      }
     }
     queueMicrotask(() => signalled.exit(null, signal === 'group' ? 'SIGKILL' : signal));
   };
-  child.lifeline.on('data', (chunk: Buffer) => lines.push(chunk.toString('utf8')));
-  return { lines, boundsAtSignal };
+  return { gateway, runtime };
 };
 
 const spawnedBoth = (harness: SupervisorHarness) => waitFor(() => harness.port.children.length >= 2, { description: 'both children to spawn' });
 
-describe('the supervisor reads the stop values once, when its stop begins', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('a close it begins itself sends the values read at its begin to the gateway, and reports their bound in its health', async (context) => {
-    const harness = await startSupervisorHarness(context, { settings: { gateway: FIRST } });
+describe('the supervisor reads the four stop values once, when its stop begins', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('a close it begins itself sends the values read at its begin to the gateway and to the runtime, and reports their bound in its health', async (context) => {
+    const harness = await startSupervisorHarness(context, { settings: settingsOf(FIRST) });
     await spawnedBoth(harness);
-    const { lines, boundsAtSignal } = gatewayLifeline(harness);
+    const observed = observeChildren(harness);
     void harness.supervisor.close();
-    writeSettings(harness.home, { gateway: LATER });
-    await waitFor(() => lines.includes('SIGTERM'), { description: 'the gateway to be signalled' });
-    expect(lines).toEqual([formatStopMessage(FIRST), 'SIGTERM']);
-    expect(boundsAtSignal).toEqual([FIRST_DAEMON_STOP_BOUND_MS]);
+    writeSettings(harness.home, settingsOf(LATER));
+    await waitFor(() => observed.gateway.lines.includes('SIGTERM') && observed.runtime.lines.includes('SIGTERM'), { description: 'both children to be signalled' });
+    expect(observed.gateway.lines).toEqual([formatStopMessage(FIRST), 'SIGTERM']);
+    expect(observed.runtime.lines).toEqual([formatStopMessage(FIRST), 'SIGTERM']);
+    expect([...observed.gateway.boundsAtSignal, ...observed.runtime.boundsAtSignal]).toEqual([FIRST_DAEMON_STOP_BOUND_MS, FIRST_DAEMON_STOP_BOUND_MS]);
   });
 
-  it('a close requested with values uses them, not the file', async (context) => {
-    const harness = await startSupervisorHarness(context, { settings: { gateway: FIRST } });
+  it('a close requested with values uses them, not the file, for both children', async (context) => {
+    const harness = await startSupervisorHarness(context, { settings: { gateway: { closeGraceMs: FIRST.closeGraceMs, managedServerStopGraceMs: FIRST.managedServerStopGraceMs } } });
     await spawnedBoth(harness);
-    const { lines, boundsAtSignal } = gatewayLifeline(harness);
+    const observed = observeChildren(harness);
     void harness.supervisor.close(POSTED);
-    await waitFor(() => lines.includes('SIGTERM'), { description: 'the gateway to be signalled' });
-    expect(lines).toEqual([formatStopMessage(POSTED), 'SIGTERM']);
-    expect(boundsAtSignal).toEqual([POSTED_DAEMON_STOP_BOUND_MS]);
+    await waitFor(() => observed.gateway.lines.includes('SIGTERM') && observed.runtime.lines.includes('SIGTERM'), { description: 'both children to be signalled' });
+    expect(observed.gateway.lines).toEqual([formatStopMessage(POSTED), 'SIGTERM']);
+    expect(observed.runtime.lines).toEqual([formatStopMessage(POSTED), 'SIGTERM']);
+    expect(observed.gateway.boundsAtSignal).toEqual([POSTED_DAEMON_STOP_BOUND_MS]);
   });
 
+  it('writes the values of its stop to the stop record in run/g<N>/ before the first stop line to any child', async (context) => {
+    const harness = await startSupervisorHarness(context, { settings: { gateway: { closeGraceMs: FIRST.closeGraceMs, managedServerStopGraceMs: FIRST.managedServerStopGraceMs } } });
+    await spawnedBoth(harness);
+    const observed = observeChildren(harness);
+    void harness.supervisor.close(POSTED);
+    await waitFor(() => observed.gateway.lines.includes('SIGTERM') && observed.runtime.lines.includes('SIGTERM'), { description: 'both children to be signalled' });
+    expect(observed.gateway.recordAtFirstLine).toEqual([POSTED]);
+    expect(observed.runtime.recordAtFirstLine).toEqual([POSTED]);
+    expect(await readStopRecord(generationLayout(harness.home, FIRST_GENERATION).stopRecord)).toEqual(POSTED);
+  });
 });
 
-describe('POST /v1/shutdown carries the requester values', () => {
+describe('POST /v1/shutdown carries the four requester values', () => {
   it('hands the posted values to the shutdown callback', async (context) => {
     const dir = withTempDir(context);
     const socketPath = path.join(dir, 's.sock');

@@ -34,13 +34,20 @@ describe('contract flags', () => {
       generation: FIRST_GENERATION,
       role: 'runtime',
       home: '/h/home',
-      runtime: { leaseMs: 100, drainTimeoutMs: 200, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
+      runtime: { leaseMs: 100, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
       gateway: { args: ['--fm-binary=/opt/fm'] },
     });
     expect(tuned.slice(0, 4)).toEqual(['--home=/h/home', '--generation=1', '--lifeline-fd=3', '--log-target=file']);
-    expect([...tuned.slice(4)].sort()).toEqual(['--drain-timeout-ms=200', '--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
+    expect([...tuned.slice(4)].sort()).toEqual(['--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
     const gateway = contractArgs({ generation: FIRST_GENERATION, role: 'gateway', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { args: ['--fm-binary=/opt/fm'] } });
     expect(gateway).toEqual(['--home=/h/home', '--generation=1', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
+  });
+
+  it('never passes the runtime drain at spawn: it travels in the stop message of each stop', () => {
+    const runtime = { leaseMs: 100, drainTimeoutMs: 200 } as unknown as NonNullable<Parameters<typeof contractArgs>[0]['runtime']>;
+    const args = contractArgs({ generation: FIRST_GENERATION, role: 'runtime', home: '/h/home', runtime });
+    expect(args.filter((arg) => arg.startsWith('--drain-timeout-ms'))).toEqual([]);
+    expect(args).toContain('--lease-ms=100');
   });
 
   it('resolveLaunch puts the launcher args before the contract flags', () => {
