@@ -375,6 +375,27 @@ const ALIASED_GLOBAL_FETCH: readonly { source: string; call: string }[] = [
   { source: 'const get = globalThis.fetch;\nconst response = await get(url);', call: 'const response = await get(url);' },
 ];
 
+const VALUE_REFERENCES: readonly { source: string; line: string }[] = [
+  { source: 'connect({ fetch });', line: 'connect({ fetch });' },
+  { source: 'const options = { fetch: globalThis.fetch };', line: 'const options = { fetch: globalThis.fetch };' },
+  { source: 'use(fetch);', line: 'use(fetch);' },
+  { source: 'const senders = [fetch];', line: 'const senders = [fetch];' },
+  { source: "import { fetch } from 'undici';\nuse(fetch);", line: 'use(fetch);' },
+  { source: "import * as undici from 'undici';\nconnect({ fetch: undici.fetch });", line: 'connect({ fetch: undici.fetch });' },
+  { source: "import { Agent } from 'undici';\nmake(Agent);", line: 'make(Agent);' },
+  { source: "import https from 'node:https';\nconst kinds = [https.Agent];", line: 'const kinds = [https.Agent];' },
+];
+
+const TYPE_REFERENCES: readonly string[] = [
+  'let send: typeof fetch;',
+  'type Send = typeof globalThis.fetch;',
+  "import { fetch } from 'undici';\ntype Send = typeof fetch;",
+  'const options: { fetch: OutboundFetch | typeof fetch } = { fetch: outbound };',
+  "import { Agent } from 'undici';\nlet agent: Agent;",
+  "import type { Dispatcher } from 'undici';\nconst use = (dispatcher: Dispatcher): void => {};",
+  "import http from 'node:http';\nconst agents: http.Agent[] = [];",
+];
+
 const LOCAL_NAMES: readonly string[] = [
   'const fillPage = (after: number, fetch: (after: number, limit: number) => Row[]): Row[] => {\n  const rows = fetch(cursor, wanted);\n  return rows;\n};',
   'function page(fetch: (key: string) => Row) {\n  return fetch(key);\n}',
@@ -401,6 +422,14 @@ describe('the scanner recognises every way the code builds an outbound client', 
 
   it.each(ALIASED_GLOBAL_FETCH)('finds the call of the global fetch through an alias in $source', ({ source, call }) => {
     expect(clientsInSource(source)).toContain(call);
+  });
+
+  it.each(VALUE_REFERENCES)('finds the client handed on as a value in $source', ({ source, line }) => {
+    expect(clientsInSource(source)).toEqual([line]);
+  });
+
+  it.each(TYPE_REFERENCES)('does not take a client named only in a type for one, in %s', (source) => {
+    expect(clientsInSource(source)).toEqual([]);
   });
 
   it('finds the OTLP agent, which is the one sanctioned place outside the factory', () => {
