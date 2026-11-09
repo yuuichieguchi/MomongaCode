@@ -3664,10 +3664,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 53652,
-      "measuredSeconds": 2.33,
-      "measuredCpuSeconds": 3.15,
-      "budgetCpuSeconds": 10
+      "distinctStates": 20480,
+      "measuredSeconds": 4.36,
+      "measuredCpuSeconds": 5.99,
+      "budgetCpuSeconds": 15
     },
     {
       "config": "StopProtocol.mixed",
@@ -3679,9 +3679,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 59,
-      "measuredSeconds": 1.25,
-      "measuredCpuSeconds": 1.52,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.44,
+      "budgetCpuSeconds": 6
     },
     {
       "config": "StopProtocol.noMessage",
@@ -3693,9 +3693,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 59,
-      "measuredSeconds": 1.29,
-      "measuredCpuSeconds": 1.54,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.39,
+      "budgetCpuSeconds": 6
     },
     {
       "config": "StopProtocol.lateWaiter",
@@ -3707,8 +3707,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 67,
-      "measuredSeconds": 1.24,
-      "measuredCpuSeconds": 1.45,
+      "measuredSeconds": 1.17,
+      "measuredCpuSeconds": 1.42,
       "budgetCpuSeconds": 6
     },
     {
@@ -3720,10 +3720,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 125104,
-      "measuredSeconds": 2.72,
-      "measuredCpuSeconds": 3.84,
-      "budgetCpuSeconds": 11
+      "distinctStates": 84712,
+      "measuredSeconds": 2.23,
+      "measuredCpuSeconds": 3.42,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "StopProtocol.noDeadline",
@@ -3734,10 +3734,24 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1991,
-      "measuredSeconds": 1.34,
-      "measuredCpuSeconds": 1.8,
+      "distinctStates": 1695,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "StopProtocol.waitsForever",
+      "role": "evidence",
+      "expect": {
+        "violates": "StopEnds",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7932,
+      "measuredSeconds": 2.29,
+      "measuredCpuSeconds": 3.52,
+      "budgetCpuSeconds": 11
     }
   ]
 }

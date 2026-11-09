@@ -3,7 +3,7 @@ EXTENDS Naturals
 
 CONSTANTS Gens, Vals, MaxT, Variant
 
-ASSUME Variant \in {"decided", "mixed", "noMessage", "lateWaiter", "noDeadline"}
+ASSUME Variant \in {"decided", "mixed", "noMessage", "lateWaiter", "noDeadline", "waitsForever"}
 ASSUME MaxT \in Nat
 ASSUME Gens # {}
 ASSUME Vals \subseteq Nat \ {0}
@@ -14,6 +14,8 @@ CG(v) == v
 GW(v) == CG(v) + FmBound
 SUP(v) == GW(v) + 1
 DAEMON(v) == SUP(v) + 1
+
+MaxVal == CHOOSE v \in Vals : \A w \in Vals : w <= v
 
 VARIABLES file, clock, reqVal,
           sst, sv, sBegin, sent, bvSup,
@@ -42,10 +44,10 @@ Init ==
     /\ cwDL = [g \in Gens |-> 0]
     /\ cwVal = [g \in Gens |-> 0]
 
-SupOverdue(g) == sst[g] = "stopping" /\ clock >= sBegin[g] + SUP(bvSup[g])
+SupOverdue(g) == Variant # "waitsForever" /\ sst[g] = "stopping" /\ clock >= sBegin[g] + SUP(bvSup[g])
 SendOverdue(g) == sst[g] = "stopping" /\ ~sent[g] /\ clock >= sBegin[g] + 1
 GraceOverdue(g) == gst[g] = "closing" /\ gphase[g] = "none" /\ clock >= gBegin[g] + CG(gv[g])
-GwOverdue(g) == Variant # "noDeadline" /\ gst[g] = "closing" /\ clock >= gBegin[g] + GW(gv[g])
+GwOverdue(g) == Variant \notin {"noDeadline", "waitsForever"} /\ gst[g] = "closing" /\ clock >= gBegin[g] + GW(gv[g])
 WaiterOverdue(g) == cw[g] = "armed" /\ clock >= cwDL[g]
 
 Overdue == \E g \in Gens : SupOverdue(g) \/ SendOverdue(g) \/ GraceOverdue(g) \/ GwOverdue(g) \/ WaiterOverdue(g)
@@ -62,6 +64,7 @@ ChangeFile ==
 
 CliStop ==
     /\ reqVal = 0
+    /\ clock + DAEMON(MaxVal) <= MaxT
     /\ \A g \in Gens : sst[g] = "up"
     /\ reqVal' = file
     /\ sst' = [g \in Gens |-> "stopping"]
@@ -75,6 +78,7 @@ CliStop ==
 
 SelfBegin(g) ==
     /\ sst[g] = "up"
+    /\ clock + DAEMON(MaxVal) <= MaxT
     /\ sst' = [sst EXCEPT ![g] = "stopping"]
     /\ sv' = [sv EXCEPT ![g] = file]
     /\ sBegin' = [sBegin EXCEPT ![g] = clock]
@@ -119,6 +123,7 @@ GraceEnd(g) ==
     /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gst, gv, gBegin, cw, cwDL, cwVal >>
 
 FmDone(g) ==
+    /\ Variant # "waitsForever"
     /\ gst[g] = "closing"
     /\ gphase[g] = "fm"
     /\ gst' = [gst EXCEPT ![g] = "gone"]
@@ -131,7 +136,7 @@ GwForcedGone(g) ==
 
 SupGone(g) ==
     /\ sst[g] = "stopping"
-    /\ ((sent[g] /\ gst[g] = "gone") \/ clock >= sBegin[g] + SUP(bvSup[g]))
+    /\ ((sent[g] /\ gst[g] = "gone") \/ (Variant # "waitsForever" /\ clock >= sBegin[g] + SUP(bvSup[g])))
     /\ sst' = [sst EXCEPT ![g] = "gone"]
     /\ UNCHANGED << file, clock, reqVal, sv, sBegin, sent, bvSup, gst, gv, gBegin, gcalls, gphase, cw, cwDL, cwVal >>
 
@@ -165,7 +170,10 @@ Next ==
     \/ CliStop
     \/ \E g \in Gens : GenStep(g)
 
-Spec == Init /\ [][Next]_vars
+Fairness == WF_vars(Tick) /\ \A g \in Gens : WF_vars(GenStep(g))
+
+Spec == Init /\ [][Next]_vars /\ Fairness
+
 
 TypeOK ==
     /\ file \in Vals
@@ -182,6 +190,8 @@ SameValues ==
         /\ cw[g] \in {"armed", "gaveUp", "done"} => cwVal[g] = sv[g]
 
 NoOutlast == \A g \in Gens : cw[g] = "gaveUp" => sst[g] = "gone"
+
+StopEnds == \A g \in Gens : (sst[g] = "stopping") ~> (sst[g] = "gone")
 
 WithinBound ==
     /\ \A g \in Gens : gst[g] = "closing" => clock <= gBegin[g] + GW(gv[g])
