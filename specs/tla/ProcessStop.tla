@@ -6,7 +6,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
@@ -108,6 +108,18 @@ MemberExits(m) ==
     /\ state[m] \in {"live", "stuck"}
     /\ state' = [state EXCEPT ![m] = "exiting"]
     /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+
+Fork(m, n) ==
+    /\ inGroup[m]
+    /\ (CanStillRun(m) \/ (Variant = "forkFromExiting" /\ state[m] = "exiting"))
+    /\ inGroup[n]
+    /\ state[n] = "gone"
+    /\ ~swapped[n]
+    /\ state' = [state EXCEPT ![n] = "live"]
+    /\ listed' = [listed EXCEPT ![n] = listed[m]]
+    /\ provedOnce' = [provedOnce EXCEPT ![n] = FALSE]
+    /\ hstage' = [hstage EXCEPT ![n] = "idle"]
+    /\ UNCHANGED <<inGroup, swapped, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 MemberFinishesExit(m) ==
     /\ state[m] = "exiting"
@@ -242,6 +254,7 @@ Next ==
     \/ \E m \in Members :
         \/ MemberExits(m)
         \/ MemberFinishesExit(m)
+        \/ \E n \in Members : Fork(m, n)
         \/ InitReaps(m)
         \/ MemberDies(m)
         \/ ReusePid(m)
