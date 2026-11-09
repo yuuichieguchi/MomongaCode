@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Variant
 
-ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse"}
+ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds"}
 ASSUME MaxV \in Nat \ {0, 1}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxSteps \in Nat \ {0}
@@ -21,7 +21,7 @@ Gens == 1..MaxGen
 G0 == 0..MaxGen
 Vers == 0..MaxV
 GenStates == {"none", "serving", "retiring", "draining", "gone"}
-RunStates == {"none", "queued", "stepping", "done"}
+RunStates == {"none", "queued", "stepping", "done", "failed"}
 JobStates == {"none", "live", "ended", "killed"}
 ClientStates == {"none", "starting", "waiting", "connected", "handing", "refused", "left"}
 RequestStates == {"none", "open", "done", "cut"}
@@ -607,7 +607,7 @@ GwCallEnd(g) ==
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gw, gwProbe, gwUnanswered, xvars>>
 
 GwFlightStart(g) ==
-    /\ g \in Gens /\ gw[g] = "serving" /\ gwProbe[g] = 0
+    /\ g \in Gens /\ gw[g] = "serving" /\ ~dr[g] /\ gwProbe[g] = 0
     /\ gwProbe' = [gwProbe EXCEPT ![g] = 1]
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gw, gwOpen, gwUnanswered, xvars>>
 
@@ -629,11 +629,18 @@ GwExit(g) ==
     /\ gwUnanswered' = IF Variant = "gwGraceAbort" THEN gwUnanswered + gwOpen[g] ELSE gwUnanswered
     /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwProbe, xvars>>
 
+GwClose(g) ==
+    /\ g \in Gens /\ gw[g] = "serving" /\ dr[g] /\ sup[g]
+    /\ Variant # "userStopNeverEnds"
+    /\ gwOpen[g] = 0 /\ gwProbe[g] = 0
+    /\ gw' = [gw EXCEPT ![g] = "gone"]
+    /\ UNCHANGED <<tvars, gvars, cvars, rvars, kvars, jvars, gwOpen, gwProbe, gwUnanswered, xvars>>
+
 GwRefuse(r) ==
     /\ run[r] = "stepping"
     /\ gw[at[r]] = "retiring"
     /\ (Variant # "gwSilentRefuse" \/ gwUnanswered < MaxCalls * MaxGen)
-    /\ run' = [run EXCEPT ![r] = "queued"]
+    /\ run' = [run EXCEPT ![r] = IF Variant = "gwRefuseNoYield" THEN "failed" ELSE "queued"]
     /\ at' = [at EXCEPT ![r] = 0]
     /\ gwUnanswered' = IF Variant = "gwSilentRefuse" THEN gwUnanswered + 1 ELSE gwUnanswered
     /\ UNCHANGED <<tvars, gvars, cvars, stepsLeft, job, jat, kvars, jvars, gw, gwOpen, gwProbe, xvars>>
@@ -697,19 +704,19 @@ Next ==
     \/ \E j \in Jobs : JobEnd(j)
     \/ \E g \in Gens : Expire(g)
     \/ Extended /\ (\E g \in Gens : GwStart(g) \/ GwCallStart(g) \/ GwCallEnd(g) \/ GwFlightStart(g) \/ GwFlightEnd(g)
-                       \/ GwRetire(g) \/ GwExit(g) \/ Sweep(g) \/ Prune(g))
+                       \/ GwRetire(g) \/ GwExit(g) \/ GwClose(g) \/ Sweep(g) \/ Prune(g))
     \/ Extended /\ (\E r \in Runs : GwRefuse(r))
     \/ Extended /\ (\E j \in Jobs : OwnerStop(j) \/ Reconcile(j) \/ OutWrite(j))
     \/ Extended /\ (\E j \in Jobs, g \in Gens : KillReq(j, g) \/ OutputRead(j, g))
 
 Fairness ==
-    /\ \A g \in Gens : WF_vars(GwRetire(g)) /\ WF_vars(GwCallEnd(g)) /\ WF_vars(GwFlightEnd(g)) /\ WF_vars(GwExit(g))
-    /\ \A j \in Jobs : WF_vars(OwnerStop(j))
+    /\ \A g \in Gens : WF_vars(GwRetire(g)) /\ WF_vars(GwCallEnd(g)) /\ WF_vars(GwFlightEnd(g)) /\ WF_vars(GwExit(g)) /\ WF_vars(GwClose(g))
+    /\ (Variant # "killDropped" => \A j \in Jobs : WF_vars(OwnerStop(j)))
     /\ \A c \in Clients : WF_vars(ConnectNow(c)) /\ WF_vars(MoveNow(c)) /\ WF_vars(RefuseOlder(c)) /\ WF_vars(FloorNow(c)) /\ WF_vars(JoinNow(c)) /\ WF_vars(AllocNow(c))
     /\ \A c \in Clients : WF_vars(Retry(c)) /\ WF_vars(GiveUp(c)) /\ WF_vars(ConnectStarter(c)) /\ WF_vars(Exec(c)) /\ WF_vars(Notified(c)) /\ WF_vars(CloseModal(c)) /\ WF_vars(AnswerRead(c))
     /\ \A g \in Gens : WF_vars(SupClaim(g)) /\ WF_vars(Promote(g)) /\ WF_vars(Notify(g)) /\ WF_vars(Exit(g)) /\ WF_vars(Reap(g))
     /\ \A r \in Runs : WF_vars(StepEnd(r)) /\ \A g \in Gens : WF_vars(Claim(r, g))
-    /\ \A j \in Jobs : WF_vars(JobEnd(j))
+    /\ (Variant # "killDropped" => \A j \in Jobs : WF_vars(JobEnd(j)))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -719,7 +726,7 @@ NoRequestCut == (\A c \in Clients : rq[c] # "cut") /\ gwUnanswered = 0 /\ (\A g 
 
 GwNoExitWhileOwned == \A g \in Gens : gw[g] = "gone" => gwOpen[g] = 0 /\ gwProbe[g] = 0
 
-GwExitOnlyRetiring == \A g \in Gens : gw[g] = "gone" => (~sup[g] \/ Retiring(g))
+GwExitOnlyRetiring == \A g \in Gens : gw[g] = "gone" => (~sup[g] \/ Retiring(g) \/ dr[g])
 
 OutputReadableAnyGen == \A j \in Jobs, g \in Gens : Readable(j) => ReadEnabled(j, g)
 
@@ -738,6 +745,10 @@ PruneBelowLive == [][pb' # pb => (\A h \in Gens : sup[h] => ver[h] >= pb')]_vars
 GwNoNewCallWhileRetiring == [][\A g \in Gens : gwOpen'[g] > gwOpen[g] => gw[g] = "serving"]_vars
 
 GwEnds == \A g \in Gens : gw[g] = "retiring" ~> gw[g] = "gone"
+
+StopEnds == \A g \in Gens : (dr[g] /\ sup[g]) ~> ~sup[g]
+
+RefusalYields == \A r \in Runs : run[r] # "failed"
 
 NoKilledJob == \A j \in Jobs : job[j] # "killed"
 
