@@ -23,8 +23,15 @@ const realStartsImported = (source: string): string[] =>
 const callsRealStart = (source: string): boolean =>
   realStartsImported(source).some((name) => new RegExp(`(?<![\\w.$])${name}\\s*\\(`).test(source));
 
+const IN_PROCESS_HARNESS_FILES: readonly string[] = ['packages/gateway/test/close-budget.test.ts'];
+
+const namesRealProcessGuard = (source: string): boolean => /\bREAL_PROCESS_TEST_TIMEOUT_MS\b/.test(source);
+
 const realProcessTests = (): Array<{ file: string; source: string }> =>
-  repositoryTests().filter(({ file, source }) => callsRealStart(source) && !file.startsWith('test/real-process-timeout-single-rule'));
+  repositoryTests().filter(
+    ({ file, source }) =>
+      (callsRealStart(source) || namesRealProcessGuard(source)) && !file.startsWith('test/real-process-timeout-single-rule') && !IN_PROCESS_HARNESS_FILES.includes(file),
+  );
 
 const offendersOf = (file: string, source: string): string[] => {
   const reasons: string[] = [];
@@ -38,6 +45,23 @@ describe('every test file that starts a real gateway or runtime sets REAL_PROCES
   it('testkit exports one real-process hang guard, REAL_PROCESS_TEST_TIMEOUT_MS, and no DAEMON_PROCESS_TEST_TIMEOUT_MS', () => {
     expect(typeof (testkit as Record<string, unknown>)['REAL_PROCESS_TEST_TIMEOUT_MS']).toBe('number');
     expect(testkit).not.toHaveProperty('DAEMON_PROCESS_TEST_TIMEOUT_MS');
+  });
+
+  it('testkit exports no BUILT_BINARY_TEST_TIMEOUT_MS and sets the one guard to 90 000 ms, the largest that existed', () => {
+    expect(testkit).not.toHaveProperty('BUILT_BINARY_TEST_TIMEOUT_MS');
+    expect((testkit as Record<string, unknown>)['REAL_PROCESS_TEST_TIMEOUT_MS']).toBe(90_000);
+  });
+
+  it('no file outside this check names BUILT_BINARY_TEST_TIMEOUT_MS', () => {
+    const naming = repositoryTests()
+      .filter(({ file, source }) => source.includes('BUILT_BINARY_TEST_TIMEOUT_MS') && !file.startsWith('test/real-process-timeout-single-rule'))
+      .map(({ file }) => file);
+
+    expect(naming).toEqual([]);
+  });
+
+  it('covers a file that names REAL_PROCESS_TEST_TIMEOUT_MS without starting a gateway or runtime', () => {
+    expect(realProcessTests().map((entry) => entry.file)).toEqual(expect.arrayContaining(['packages/tools/test/builtins/bash.test.ts']));
   });
 
   it('no file outside this check names DAEMON_PROCESS_TEST_TIMEOUT_MS', () => {
