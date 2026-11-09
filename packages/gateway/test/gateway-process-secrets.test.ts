@@ -130,11 +130,23 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect(fs.readFileSync(homePaths(stack.home).settings, 'utf8')).not.toContain(SECRET);
   });
 
-  it('reads each referenced secret once at startup, not per request', async (context) => {
-    const stack = await startStack(context, store, { secrets: { [SECRET_NAME]: SECRET }, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
-    await post(stack.client, request);
-    await post(stack.client, request);
+  it('reads a referenced secret at its first use, not at start, once while the definition is unchanged, and again after the definition changed', async (context) => {
+    const stack = await startStack(context, store, {
+      secrets: { [SECRET_NAME]: SECRET },
+      anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b']), anthropicTextReply(['c'])],
+    });
+    expect(stack.security.calls).toEqual([]);
+    expect((await post(stack.client, request)).status).toBe(200);
+    expect((await post(stack.client, request)).status).toBe(200);
     expect(stack.security.calls).toHaveLength(1);
+    const file = homePaths(stack.home).settings;
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { models: { targets: Record<string, Record<string, unknown>> } };
+    const claude = settings.models.targets['claude'] as Record<string, unknown>;
+    const staging = `${file}.changed.tmp`;
+    fs.writeFileSync(staging, JSON.stringify({ ...settings, models: { ...settings.models, targets: { ...settings.models.targets, claude: { ...claude, model: 'claude-fake-changed' } } } }), { mode: 0o600 });
+    fs.renameSync(staging, file);
+    expect((await post(stack.client, request)).status).toBe(200);
+    expect(stack.security.calls).toHaveLength(2);
   });
 
   it('redacts the resolved secret from upstream error text', async (context) => {

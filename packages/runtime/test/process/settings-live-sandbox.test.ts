@@ -64,6 +64,14 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect(fs.existsSync(path.join(stack.temp.root, 'outside-job'))).toBe(false);
   });
 
+  it('health.sandbox alone, with no session or tool call before it, shows the kind set by a change', PROCESS_TIMEOUT, async () => {
+    const stack = await startStack();
+    const launched = await launchRuntime(stack.temp);
+    expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
+    stack.settings({ sandbox: HOST_KIND });
+    expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: HOST_KIND });
+  });
+
   it('health.sandbox shows the kind of the object the next batch takes', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);

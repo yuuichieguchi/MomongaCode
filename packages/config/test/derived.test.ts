@@ -244,3 +244,51 @@ describe('S0: the pinned derivation (design-settings-live section 2)', () => {
     expect(h.retired).toEqual([first.value]);
   });
 });
+
+type DerivedId = 'D1' | 'D2' | 'D3' | 'D4';
+
+const derivedDigestsOf = (settings: Record<string, unknown>): Record<DerivedId, string> => {
+  const inputsOf = exported<(id: DerivedId) => (settings: ResolvedSettings) => unknown>('derivedInputsOf');
+  const ids: DerivedId[] = ['D1', 'D2', 'D3', 'D4'];
+  return Object.fromEntries(ids.map((id) => [id, settingsInputsDigest(inputsOf(id)(settings as unknown as ResolvedSettings))])) as Record<DerivedId, string>;
+};
+
+const changedObjects = (before: Record<string, unknown>, after: Record<string, unknown>): DerivedId[] => {
+  const a = derivedDigestsOf(before);
+  const b = derivedDigestsOf(after);
+  return (Object.keys(a) as DerivedId[]).filter((id) => a[id] !== b[id]).sort();
+};
+
+const BASE_SETTINGS: Record<string, unknown> = {
+  models: { aliases: { default: ['remote'] }, targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'gpt-x', baseUrl: 'https://api.example.com/v1' } } },
+  sandbox: 'seatbelt',
+  gateway: { closeGraceMs: 10_000, managedServerStopGraceMs: 3000 },
+};
+
+describe('S0: the digest cases moved from the deleted supervisor plan tests (design-settings-live section 9)', () => {
+  it('a models change rebuilds only the gateway object D1', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, models: { ...(BASE_SETTINGS['models'] as object), aliases: { default: ['remote'], other: ['remote'] } } })).toEqual(['D1']);
+  });
+
+  it('a sandbox change rebuilds only the sandbox object D3', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, sandbox: 'none' })).toEqual(['D3']);
+  });
+
+  it('a telemetry change, present against absent, rebuilds only the telemetry object D2', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, telemetry: { otlp: { endpoint: 'http://127.0.0.1:4318' } } })).toEqual(['D2']);
+  });
+
+  it('a network change, present against absent, rebuilds every object that makes outbound connections (D1, D2, D4) and not the sandbox', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } })).toEqual(['D1', 'D2', 'D4']);
+    expect(changedObjects({ ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } }, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:8080' } })).toEqual(['D1', 'D2', 'D4']);
+  });
+
+  it('a change of the stop values rebuilds nothing (they are read at the stop begin)', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, gateway: { closeGraceMs: 0, managedServerStopGraceMs: 60_000 } })).toEqual([]);
+  });
+
+  it('reformatting, the same sections with keys in another order, rebuilds nothing', () => {
+    const reordered = { gateway: BASE_SETTINGS['gateway'], sandbox: 'seatbelt', models: { targets: (BASE_SETTINGS['models'] as { targets: unknown }).targets, aliases: { default: ['remote'] } } };
+    expect(changedObjects(BASE_SETTINGS, reordered)).toEqual([]);
+  });
+});
