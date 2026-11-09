@@ -1,4 +1,4 @@
-import { keyAuthSource } from '@momonga/gateway';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -88,7 +88,7 @@ const drive = async (adapter: ProviderAdapter, ctx: AdapterContext, request: Ada
 };
 
 const chatAdapter = (socketPath: string, capabilities: Capabilities = CC_CAPABILITIES) => {
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath }),
     capabilities: async () => capabilities,
     schemaDialect: () => capabilities.schemaDialect,
@@ -100,7 +100,7 @@ const chatAdapter = (socketPath: string, capabilities: Capabilities = CC_CAPABIL
 };
 
 const responsesAdapter = (socketPath: string, capabilities: Capabilities = REMOTE_CAPABILITIES) => {
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath }),
     capabilities: async () => capabilities,
     clock: createFakeClock(START_MS),

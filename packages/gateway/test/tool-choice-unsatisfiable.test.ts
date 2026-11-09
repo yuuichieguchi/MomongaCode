@@ -1,4 +1,4 @@
-import { keyAuthSource } from '@momonga/gateway';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
@@ -19,7 +19,7 @@ const REPLIES = 2;
 const openResponses = async (): Promise<Upstream> => {
   const fake = await startFakeOpenResponses({ script: Array.from({ length: REPLIES }, () => openResponsesTextReply(['ok'])) });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

@@ -54,7 +54,7 @@ describe('run status constants', () => {
   });
 
   it('lists the stop reasons', () => {
-    expect(STOP_REASONS).toEqual(['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal']);
+    expect(STOP_REASONS).toEqual(['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit']);
   });
 });
 
@@ -65,7 +65,7 @@ describe('run status types', () => {
     >();
     expectTypeOf<TerminalStatus>().toEqualTypeOf<'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'>();
     expectTypeOf<StopReason>().toEqualTypeOf<
-      'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal'
+      'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal' | 'usage_limit'
     >();
     expectTypeOf<PermissionMode>().toEqualTypeOf<'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
     expectTypeOf<ToolKind>().toEqualTypeOf<

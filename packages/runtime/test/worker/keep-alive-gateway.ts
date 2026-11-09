@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { onTestFinished } from 'vitest';
-import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway, unauthenticatedSource } from '@momonga/gateway';
 import type { FakeClock, FakeScriptedReply } from '@momonga/testkit';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -34,7 +34,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
   fs.chmodSync(dir, 0o700);
   const upstream = await startFakeChatCompletions({ scenario: 'tools-ok', script: options.script });
   const capabilities = capabilitiesFor(100_000);
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => capabilities,
     schemaDialect: () => capabilities.schemaDialect,

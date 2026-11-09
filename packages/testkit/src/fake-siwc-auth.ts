@@ -94,7 +94,7 @@ export type SiwcAuth = {
   close(): Promise<void>;
 };
 
-export type SiwcAuthOptions = { now?: () => number };
+export type SiwcAuthOptions = { now?: () => number; resource?: string };
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
 
@@ -149,6 +149,7 @@ const isLoopbackCallback = (redirectUri: string): boolean => {
 
 export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<SiwcAuth> => {
   const now = options.now ?? Date.now;
+  const resource = options.resource ?? SIWC_RESOURCE;
   const keys = await sharedKeyPair();
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
@@ -420,7 +421,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (query['response_type'] !== 'code') return refuse('response_type must be code');
     if (query['code_challenge_method'] !== 'S256' || (query['code_challenge'] ?? '') === '') return refuse('PKCE S256 is required');
     for (const name of ['state', 'nonce', 'ext_agent_host_id']) if ((query[name] ?? '') === '') return refuse(`${name} is required`);
-    if (query['resource'] !== SIWC_RESOURCE) return refuse('resource must be the Responses API');
+    if (query['resource'] !== resource) return refuse('resource must be the Responses API');
     const hostId = query['ext_agent_host_id'] as string;
     const presented = query['client_id'] ?? '';
     const dynamic = presented === SIWC_DYNAMIC_CLIENT_ID;
@@ -450,7 +451,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     }
     const scope = grantedScope(query['scope'] ?? '');
     const code = remember(createCanary('code'));
-    codes.set(code, { clientId, redirectUri, challenge: query['code_challenge'] as string, resource: SIWC_RESOURCE, scope, nonce: query['nonce'] as string });
+    codes.set(code, { clientId, redirectUri, challenge: query['code_challenge'] as string, resource, scope, nonce: query['nonce'] as string });
     target.searchParams.set('code', code);
     target.searchParams.set('scope', scope);
     if (fixture.authorizeMode === 'foreign_client_id') target.searchParams.set('client_id', `oaiapp_${randomBytes(12).toString('hex')}`);

@@ -6,7 +6,7 @@ import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { CredentialStore, KernelLockMechanism } from '@momonga/foundation';
-import { createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
+import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions } from '../src/plan/session.ts';
@@ -197,17 +197,18 @@ const pkce = (): { verifier: string; challenge: string } => {
 
 export type FakeSignIn = { clientId: string; hostId: string; idToken: string; subject: string; email: string; tokens: PlanTokenResponse };
 
-export const signInAtFake = async (h: Harness, options: { clientId?: string } = {}): Promise<FakeSignIn> => {
+export const signInAtFake = async (h: Harness, options: { clientId?: string; resource?: string } = {}): Promise<FakeSignIn> => {
   const host = await ensureHostIdentity(nodeFileSystem, h.paths.host, { accountsExist: false });
   const { verifier, challenge } = pkce();
   const redirectUri = 'http://127.0.0.1:49152/auth/callback';
+  const resource = options.resource ?? SIWC_RESOURCE;
   const url = new URL(h.auth.authorizeUrl);
   const query: Record<string, string> = {
     client_id: options.clientId ?? 'dynamic_agent_client',
     response_type: 'code',
     redirect_uri: redirectUri,
     scope: 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct',
-    resource: 'https://api.openai.com/v1',
+    resource,
     state: randomBytes(16).toString('hex'),
     nonce: randomBytes(16).toString('hex'),
     code_challenge_method: 'S256',
@@ -229,7 +230,7 @@ export const signInAtFake = async (h: Harness, options: { clientId?: string } = 
       code: callback.searchParams.get('code') ?? '',
       code_verifier: verifier,
       redirect_uri: redirectUri,
-      resource: 'https://api.openai.com/v1',
+      resource,
     }).toString(),
   });
   const tokens = (await response.json()) as PlanTokenResponse & { id_token: string };

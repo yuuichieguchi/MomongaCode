@@ -1,4 +1,4 @@
-import { keyAuthSource } from '@momonga/gateway';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { ProviderAdapter } from '@momonga/gateway';
@@ -178,7 +178,7 @@ const ollama = async (name: string, args: string): Promise<Reader> => {
 const openResponses = async (name: string, args: string): Promise<Reader> => {
   const fake = await startFakeOpenResponses({ script: [openResponsesToolCallReply('call_1', name, [args.slice(0, 6), args.slice(6)])] });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => strict(REMOTE_CAPABILITIES),
     clock: createFakeClock(START_MS),

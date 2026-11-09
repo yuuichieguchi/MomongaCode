@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { keyAuthSource } from '@momonga/gateway';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace';
 import { createJsonLogger } from '@momonga/foundation';
@@ -75,7 +76,7 @@ describe('T6: traces hold redacted upstream text', () => {
   it('records a redacted exception.message on the failed chat span for a 401 echo', async () => {
     const fake = await startFake({ scenario: 'tools-ok', routes: [{ match: () => true, reply: { kind: 'error', status: 401, body: ECHO_401 } }] });
     const { clock, memory, telemetry } = memoryTelemetry();
-    const primary = makeAdapter(fake, { apiKey: () => TEST_API_KEY });
+    const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
     const { client } = await startGateway({ adapters: { primary }, clock, telemetry, credentials: [TEST_API_KEY] });
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
     expect(response.status).toBe(401);
@@ -252,7 +253,7 @@ describe('every failure the gateway forwards carries a code', () => {
 describe('T4: count_tokens on a chat-completions target stays local', () => {
   it('estimates without calling the upstream', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const primary = makeAdapter(fake, { apiKey: () => TEST_API_KEY });
+    const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
     const { client } = await startGateway({ adapters: { primary }, credentials: [TEST_API_KEY] });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'one two three' }));
     expect(response.status).toBe(200);
@@ -262,7 +263,7 @@ describe('T4: count_tokens on a chat-completions target stays local', () => {
 
   it('redacts the 401 echo on /v1/responses/compact', async () => {
     const fake = await startFake({ scenario: 'tools-ok', routes: [{ match: () => true, reply: { kind: 'error', status: 401, body: ECHO_401 } }] });
-    const primary = makeAdapter(fake, { apiKey: () => TEST_API_KEY });
+    const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
     const { client } = await startGateway({ adapters: { primary }, credentials: [TEST_API_KEY] });
     const response = await client.request({
       method: 'POST',

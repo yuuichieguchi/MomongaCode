@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { Capabilities } from '@momonga/protocol';
 import { PLAN_RESPONSES_PATH, UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, createFakeClock, openResponsesTextReply, startFakePlanResponses } from '@momonga/testkit';
 import type { FakePlanResponses } from '@momonga/testkit';
@@ -25,7 +25,7 @@ const conversation = [
 const startPlanRoute = async (capabilities: Capabilities): Promise<{ fake: FakePlanResponses; post: (body: Record<string, unknown>) => Promise<{ status: number; body: any }> }> => {
   const fake = await startFakePlanResponses({ verifyBearer: () => 'valid', script: [openResponsesTextReply(['ok'])] });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
     liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: `${fake.origin}/v1`, network: UNCONFIGURED_NETWORK }),
     capabilities: async () => capabilities,

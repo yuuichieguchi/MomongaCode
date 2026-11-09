@@ -4,7 +4,7 @@ import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { UpstreamEndpoint, UpstreamLiveness } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, driveFakeTime, openResponsesTextReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
@@ -115,7 +115,7 @@ const askThrough = async (transport: Transport, steps: readonly UpstreamStep[], 
   const upstream = await startUpstream(transport, steps);
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => upstream.endpoint,
     capabilities: async () => REMOTE_CAPABILITIES,
     clock,

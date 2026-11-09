@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { ClassifiedError, ErrorType, ProviderAdapter } from '@momonga/protocol';
 import {
   UNDICI_DEFAULT_LIVENESS,
@@ -110,7 +110,7 @@ describe('a response.failed before output is decided by the adapter classifier (
       ],
     });
     registerCleanup(() => fake.close());
-    const real = createOpenResponsesAdapter({
+    const real = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
       liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       capabilities: async () => REMOTE_CAPABILITIES,

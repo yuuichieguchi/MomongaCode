@@ -1,4 +1,4 @@
-import { keyAuthSource } from '@momonga/gateway';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { ProviderAdapter } from '@momonga/gateway';
@@ -69,7 +69,7 @@ describe('every adapter sends tool parameters rendered in the dialect of the tar
   it('open-responses sends the strict-closed rendering as tool parameters', async () => {
     const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['ok'])] });
     registerCleanup(() => fake.close());
-    const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+    const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       capabilities: async () => withDialect(REMOTE_CAPABILITIES, 'strict-closed'),
       clock: createFakeClock(START_MS),

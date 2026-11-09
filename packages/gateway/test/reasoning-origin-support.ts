@@ -1,4 +1,4 @@
-import { keyAuthSource } from '@momonga/gateway';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { ProviderAdapter } from '@momonga/protocol';
@@ -118,7 +118,7 @@ const startUpstream = async (kind: AdapterKind, script: readonly Script[]): Prom
   }
   const fake = await startFakeOpenResponses({ script: script.map(relayReply) });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

@@ -46,8 +46,6 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: R
     const home = makeHome();
     const layout = momongaLayout(home);
     const secretStore = createFakeSecretStore({});
-    const auth = await startFakeSiwcAuth();
-    registerCleanup(() => auth.close());
     const installed = new Set<string>();
     const upstream = await startFakePlanResponses({
       verifyBearer: (bearer) => (bearer === undefined || installed.has(bearer) ? 'expired' : 'valid'),
@@ -55,6 +53,8 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: R
     });
     registerCleanup(() => upstream.close());
     const loopback = `${upstream.origin}/v1`;
+    const auth = await startFakeSiwcAuth({ resource: loopback });
+    registerCleanup(() => auth.close());
     const shipped = profileFor(auth);
     const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
     fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
@@ -76,7 +76,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: R
       onSecret: () => undefined,
       warn: () => undefined,
     });
-    const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness);
+    const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
     installed.add(signIn.tokens.access_token);
     await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
     await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens });
