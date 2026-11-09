@@ -44,7 +44,7 @@ export const managedKeyReader =
       model: options.model,
     });
 
-export const lockKeyOf = (key: Extract<ProbeKey, { kind: 'known' }>): ProbeLockKey => JSON.parse(key.canonical) as ProbeLockKey;
+export const lockKeyOf = (key: Extract<ProbeKey, { kind: 'known' }>): ProbeLockKey => key.fields;
 
 export const managedCurrencyOf = (description: ManagedServerDescription, options: { userDialects?: UserDialects; declaredDialect?: DialectId }): ManagedRecordCurrency => ({
   userDialects: options.userDialects ?? NO_USER_DIALECTS,

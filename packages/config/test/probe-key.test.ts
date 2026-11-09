@@ -6,7 +6,7 @@ import { FAKE_SERVER } from '@momonga/testkit';
 type Reading = { kind: 'read'; value: string } | { kind: 'unreadable'; reason: string };
 type ManagedKeyInput = { subject: string; identity: readonly string[]; readings: Record<string, Reading>; model: string | undefined };
 type EndpointKeyInput = { subject: 'endpoint'; endpoint: string; model: string };
-type KeyOutcome = { kind: 'known'; canonical: string; digest: string } | { kind: 'unknown'; component: string; reason: string };
+type KeyOutcome = { kind: 'known'; fields: Record<string, string | null>; canonical: string; digest: string } | { kind: 'unknown'; component: string; reason: string };
 
 const exportOf = <T>(name: string): T => {
   const value = (config as Record<string, unknown>)[name];
@@ -32,22 +32,22 @@ const sha16 = (text: string): string => createHash('sha256').update(text).digest
 describe('the one probe key rule (design-managed-servers section 6.1, item 10 of section 17)', () => {
   it('is the canonical JSON of the subject, each identity component and the declared model, with null for no model', () => {
     const canonical = `{"binarySha256":"${HASH}","hostOsBuild":"${BUILD}","model":null,"subject":"fm"}`;
-    expect(fmKey()).toEqual({ kind: 'known', canonical, digest: sha16(canonical) });
+    expect(fmKey()).toEqual({ kind: 'known', fields: { binarySha256: HASH, hostOsBuild: BUILD, model: null, subject: 'fm' }, canonical, digest: sha16(canonical) });
   });
 
   it('carries the declared model', () => {
     const canonical = `{"binarySha256":"${HASH}","hostOsBuild":"${BUILD}","model":"system","subject":"fm"}`;
-    expect(fmKey({ model: 'system' })).toEqual({ kind: 'known', canonical, digest: sha16(canonical) });
+    expect(fmKey({ model: 'system' })).toEqual({ kind: 'known', fields: { binarySha256: HASH, hostOsBuild: BUILD, model: 'system', subject: 'fm' }, canonical, digest: sha16(canonical) });
   });
 
   it('takes only the components the description lists, so a server keyed by its binary alone ignores a host reading', () => {
     const canonical = `{"binarySha256":"${HASH}","model":null,"subject":"fake"}`;
-    expect(probeKeyOf({ subject: 'fake', identity: ['binarySha256'], readings: { binarySha256: read(HASH), hostOsBuild: read(BUILD) }, model: undefined })).toEqual({ kind: 'known', canonical, digest: sha16(canonical) });
+    expect(probeKeyOf({ subject: 'fake', identity: ['binarySha256'], readings: { binarySha256: read(HASH), hostOsBuild: read(BUILD) }, model: undefined })).toEqual({ kind: 'known', fields: { binarySha256: HASH, model: null, subject: 'fake' }, canonical, digest: sha16(canonical) });
   });
 
   it('keeps the endpoint key shape: endpoint and model', () => {
     const canonical = '{"endpoint":"http://127.0.0.1:1234/v1","model":"qwen","subject":"endpoint"}';
-    expect(probeKeyOf({ subject: 'endpoint', endpoint: 'http://127.0.0.1:1234/v1', model: 'qwen' })).toEqual({ kind: 'known', canonical, digest: sha16(canonical) });
+    expect(probeKeyOf({ subject: 'endpoint', endpoint: 'http://127.0.0.1:1234/v1', model: 'qwen' })).toEqual({ kind: 'known', fields: { endpoint: 'http://127.0.0.1:1234/v1', model: 'qwen', subject: 'endpoint' }, canonical, digest: sha16(canonical) });
   });
 
   it('changes when a component or the declared model changes, and only then', () => {
