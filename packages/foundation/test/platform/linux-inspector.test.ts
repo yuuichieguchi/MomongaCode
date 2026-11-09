@@ -259,6 +259,21 @@ describe('linux inspector through an injected procfs', () => {
     expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [13] });
   });
 
+  it('treats a process in the dead state x of older kernels whose descriptor directory is denied as exited, not as uninspectable', async () => {
+    const marker = { dev: 1n, ino: 1n };
+    const procfs = fakeProcfs({
+      ...BASE_ENTRIES,
+      '/marker': { identity: marker },
+      '/proc': { children: ['12'] },
+      '/proc/12/fd': { failure: 'EACCES' },
+      '/proc/12/status': statusOwnedBy(UID),
+      '/proc/12/stat': { text: STAT_SLEEP.replace(' S ', ' x ') },
+    });
+    const gaps = gapsOf();
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, gaps.report)).toEqual({ kind: 'value', value: [] });
+    expect(gaps.processes).toEqual([]);
+  });
+
   it('treats a descriptor that is denied because its process became a zombie as not holding the marker', async () => {
     const marker = { dev: 1n, ino: 1n };
     const procfs = fakeProcfs({

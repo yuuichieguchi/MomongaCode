@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createProcessGroupPort, groupTerminationBoundMs, terminateGroup } from '@momonga/foundation';
-import type { CommandOptions, CommandRunner, FileIdentity, GroupTiming, ProcFs } from '@momonga/foundation';
+import { ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
+import type { CommandOptions, CommandRunner, FileIdentity, GroupTiming, ProcessGroupPort, ProcessInspector, ProcFs, ReapTiming } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 
 const PGID = 1_999_999_001;
@@ -119,5 +119,99 @@ describe('a group is alive while a member remains that can still run (EPERM from
     const fake = fakeTiming();
     expect(await terminateGroup(PGID, { graceMs: 0, port, timing: fake.timing, signal: new AbortController().signal })).toBe('killed');
     expect(fake.now()).toBeLessThanOrEqual(groupTerminationBoundMs(0));
+  });
+});
+
+describe('one liveness rule for every reader of a group (process-markers, Linux, older kernels, abort)', () => {
+  const noHolders = {
+    startTimeOf: async () => ({ kind: 'gone' }),
+    holdersOf: async () => ({ kind: 'value', value: [] }),
+    groupsOf: async () => ({ kind: 'value', value: new Map() }),
+    markerState: async () => 'free',
+  } as unknown as ProcessInspector;
+
+  const reapTiming = (): ReapTiming => {
+    const clock = createFakeClock(0);
+    return { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
+  };
+
+  const groupRefusesSignals = (target: number): void => {
+    throw errno(target === -PGID ? 'EPERM' : 'ESRCH');
+  };
+
+  it('reconcile reads the group through the group port: EPERM for a group whose only member is exiting is no longer running', async () => {
+    const members: Member[] = [{ pid: PGID, ours: true, darwinStat: '?E', linuxState: 'S' }];
+    const groupPort = createProcessGroupPort('darwin', { run: psRunner(members, []), env: {}, kill: groupRefusesSignals });
+    const result = await reconcileProcessGroup(
+      { pgid: PGID, marker: '/nonexistent-marker' },
+      { killGraceMs: 100, kill: groupRefusesSignals, timing: reapTiming(), inspector: noHolders, groupPort, signal: new AbortController().signal },
+    );
+    expect(result.leftAloneGroup).toBeUndefined();
+    expect(result.output).toContain('no longer running');
+  });
+
+  it('reconcile keeps a group with a running member of another user as still running', async () => {
+    const members: Member[] = [{ pid: PGID + 5, ours: false, darwinStat: 'Ss', linuxState: 'S' }];
+    const groupPort = createProcessGroupPort('darwin', { run: psRunner(members, []), env: {}, kill: groupRefusesSignals });
+    const result = await reconcileProcessGroup(
+      { pgid: PGID, marker: '/nonexistent-marker' },
+      { killGraceMs: 100, kill: groupRefusesSignals, timing: reapTiming(), inspector: noHolders, groupPort, signal: new AbortController().signal },
+    );
+    expect(result.leftAloneGroup).toBe(PGID);
+  });
+
+  it('linux: kill(-pgid, 0) succeeds for a group of only zombies, so success is not an answer there and the states decide', async () => {
+    const zombies: Member[] = [{ pid: PGID, ours: true, darwinStat: 'Z', linuxState: 'Z' }];
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const stop = new AbortController().signal;
+    expect(await createProcessGroupPort('linux', { run: psRunner([], []), env: {}, procfs: fakeProcfs(zombies) }).alive(PGID, { signal: stop })).toBe(false);
+    const running: Member[] = [{ pid: PGID, ours: true, darwinStat: 'S', linuxState: 'S' }];
+    expect(await createProcessGroupPort('linux', { run: psRunner([], []), env: {}, procfs: fakeProcfs(running) }).alive(PGID, { signal: stop })).toBe(true);
+  });
+
+  it('darwin: success from kill(-pgid, 0) is an answer, because XNU counts only members it could signal', async () => {
+    const calls: PsCall[] = [];
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+    expect(await createProcessGroupPort('darwin', { run: psRunner([], calls), env: {} }).alive(PGID, { signal: new AbortController().signal })).toBe(true);
+    expect(calls).toEqual([]);
+  });
+
+  it('the dead state x of older Linux kernels cannot run, like X and Z', async () => {
+    expect(['x', 'X', 'Z', 'RE', '?E'].map(canStillRun)).toEqual([false, false, false, false, false]);
+    expect(['R', 'S', 'Ss', 'D', 'T', 'I', 'U'].map(canStillRun)).toEqual([true, true, true, true, true, true, true]);
+    const dead: Member[] = [{ pid: PGID, ours: false, darwinStat: 'Z', linuxState: 'x' }];
+    fakeGroup(dead, () => undefined);
+    expect(await createProcessGroupPort('linux', { run: psRunner([], []), env: {}, procfs: fakeProcfs(dead) }).alive(PGID, { signal: new AbortController().signal })).toBe(false);
+  });
+
+  it('an abort ends the stop at the next poll as unconfirmed, without waiting out the grace', async () => {
+    const fake = fakeTiming();
+    const controller = new AbortController();
+    let probes = 0;
+    const port: ProcessGroupPort = {
+      signal: async () => undefined,
+      alive: async () => {
+        probes += 1;
+        if (probes === 3) controller.abort();
+        return true;
+      },
+    };
+    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal })).toBe('unconfirmed');
+    expect(fake.now()).toBeLessThan(100);
+  });
+
+  it('a state read that the abort ends is unconfirmed, not a thrown failure', async () => {
+    const fake = fakeTiming();
+    const controller = new AbortController();
+    const port: ProcessGroupPort = {
+      signal: async () => undefined,
+      alive: async (_pgid, { signal }) => {
+        if (fake.now() >= 30) controller.abort();
+        if (signal?.aborted === true) throw new ProbeFailedError('reading the run states', { kind: 'failed', cause: 'transient', evidence: { kind: 'opaque', detail: 'aborted' } });
+        return true;
+      },
+    };
+    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal })).toBe('unconfirmed');
+    expect(fake.now()).toBeLessThan(100);
   });
 });
