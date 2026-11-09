@@ -175,6 +175,7 @@ describe('authorization URLs', () => {
       resourceUrl: 'https://mcp.example.com/mcp',
       scope,
       store: createMemoryCredentialStore(),
+      signal: new AbortController().signal,
       redirectUrl: 'http://127.0.0.1:1/callback',
       randomToken: () => 'state',
       onAuthorizationUrl: () => undefined,
@@ -222,6 +223,7 @@ describe('authorization URLs', () => {
       resourceUrl: 'https://mcp.example.com/mcp',
       scope: 'project',
       store: createMemoryCredentialStore(),
+      signal: new AbortController().signal,
       redirectUrl: 'http://127.0.0.1:1/callback',
       randomToken: () => 'state',
       onAuthorizationUrl: (url) => {
