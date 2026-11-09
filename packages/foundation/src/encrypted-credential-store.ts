@@ -1,0 +1,209 @@
+import { randomBytes } from 'node:crypto';
+import type { webcrypto } from 'node:crypto';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { writeFileAtomically } from './atomic-file.ts';
+import { createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
+import type { CredentialEntry, CredentialStore } from './credential-store.ts';
+import { systemFileLockPorts, withFileLock } from './file-lock.ts';
+import type { FileLockPorts } from './file-lock.ts';
+import { nodeFileSystem } from './node-file-system.ts';
+import type { SecretStore } from './secret-store.ts';
+import { systemRandom } from './system-random.ts';
+
+export const CREDENTIAL_KEY_PREFIX = 'credential-key-';
+export const CREDENTIAL_KEY_MARKER_FILE = 'credential-key.json';
+export const CREDENTIAL_KEY_LOCK_NAME = 'credential-key.lock';
+export const CREDENTIAL_KEY_CREATION_STEPS = ['read_marker_again', 'write_os_item', 'write_marker'] as const;
+
+export const CREDENTIAL_ENVELOPE_FORMAT = 'momonga-credential/1';
+
+export const CREDENTIAL_STORE_ERROR_CODES = ['store_unreadable', 'store_unwritable'] as const;
+
+export type CredentialStoreErrorCode = (typeof CREDENTIAL_STORE_ERROR_CODES)[number];
+
+export class CredentialStoreError extends Error {
+  readonly code: CredentialStoreErrorCode;
+
+  constructor(code: CredentialStoreErrorCode, message: string, options?: { cause: unknown }) {
+    super(message, options);
+    this.name = 'CredentialStoreError';
+    this.code = code;
+  }
+}
+
+export type CredentialSecretStore = { kind: 'available'; store: SecretStore } | { kind: 'none'; reason: string };
+
+export type EncryptedCredentialStoreOptions = {
+  directory: string;
+  stateDirectory: string;
+  secretStore: CredentialSecretStore;
+  plaintextTokenFiles: () => boolean;
+  ports?: FileLockPorts;
+};
+
+const KEY_BYTES = 32;
+const KEY_NAME_BYTES = 8;
+const NONCE_BYTES = 12;
+const TAG_BYTES = 16;
+const FILE_MODE = 0o600;
+
+type Envelope = { format: string; key: string; nonce: string; ciphertext: string; tag: string };
+
+const ENVELOPE_FIELDS: readonly (keyof Envelope)[] = ['format', 'key', 'nonce', 'ciphertext', 'tag'];
+
+const NEVER_ABORTED = new AbortController().signal;
+
+const randomBytesAsync = promisify(randomBytes);
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const envelopeOf = (text: string): Envelope | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || parsed['format'] !== CREDENTIAL_ENVELOPE_FORMAT) return undefined;
+  if (Object.keys(parsed).length !== ENVELOPE_FIELDS.length || !ENVELOPE_FIELDS.every((field) => typeof parsed[field] === 'string')) return undefined;
+  return parsed as Envelope;
+};
+
+const additionalDataOf = (storeKey: string): Uint8Array =>
+  Buffer.concat([Buffer.from(CREDENTIAL_ENVELOPE_FORMAT, 'utf8'), Buffer.from([0]), Buffer.from(storeKey, 'utf8')]);
+
+const cipherKeyOf = (keyHex: string): Promise<webcrypto.CryptoKey> => {
+  const bytes = Buffer.from(keyHex, 'hex');
+  if (bytes.length !== KEY_BYTES || bytes.toString('hex') !== keyHex.toLowerCase()) {
+    return Promise.reject(new Error(`the credential key is not ${KEY_BYTES} bytes of hex`));
+  }
+  return globalThis.crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+};
+
+const seal = async (keyHex: string, storeKey: string, value: string): Promise<Envelope> => {
+  const nonce = await randomBytesAsync(NONCE_BYTES);
+  const sealed = Buffer.from(
+    await globalThis.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: nonce, additionalData: additionalDataOf(storeKey), tagLength: TAG_BYTES * 8 },
+      await cipherKeyOf(keyHex),
+      Buffer.from(value, 'utf8'),
+    ),
+  );
+  return {
+    format: CREDENTIAL_ENVELOPE_FORMAT,
+    key: storeKey,
+    nonce: nonce.toString('hex'),
+    ciphertext: sealed.subarray(0, sealed.length - TAG_BYTES).toString('hex'),
+    tag: sealed.subarray(sealed.length - TAG_BYTES).toString('hex'),
+  };
+};
+
+const open = async (keyHex: string, envelope: Envelope): Promise<string> => {
+  const opened = await globalThis.crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: Buffer.from(envelope.nonce, 'hex'), additionalData: additionalDataOf(envelope.key), tagLength: TAG_BYTES * 8 },
+    await cipherKeyOf(keyHex),
+    Buffer.concat([Buffer.from(envelope.ciphertext, 'hex'), Buffer.from(envelope.tag, 'hex')]),
+  );
+  return Buffer.from(opened).toString('utf8');
+};
+
+const noStoreRefusal = (reason: string): string =>
+  `No secret store was found on this host (${reason}). MomongaCode does not keep sign-in tokens in a plain file unless you ask: set credentials.plaintextTokenFiles to true in your user settings to keep them in a file only you can read.`;
+
+const notEncrypted = (file: string): string =>
+  `The credential file ${file} is not encrypted. Delete it and sign in again, or set credentials.plaintextTokenFiles to true to keep using it.`;
+
+const KEY_NAME_SHAPE = new RegExp(`^${CREDENTIAL_KEY_PREFIX}[0-9a-f]{${KEY_NAME_BYTES * 2}}$`);
+
+const keyNameOfMarker = (text: string, markerFile: string): string => {
+  const parsed: unknown = JSON.parse(text);
+  const name = isRecord(parsed) ? parsed['name'] : undefined;
+  if (typeof name !== 'string' || !KEY_NAME_SHAPE.test(name)) throw new Error(`the marker ${markerFile} does not name a credential key`);
+  return name;
+};
+
+export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): CredentialStore => {
+  const ports = options.ports ?? systemFileLockPorts;
+  const records = createFileCredentialStore(options.directory, { ports });
+  const markerFile = path.join(options.stateDirectory, CREDENTIAL_KEY_MARKER_FILE);
+  const lockFile = path.join(options.stateDirectory, CREDENTIAL_KEY_LOCK_NAME);
+
+  const readMarker = async (): Promise<string | undefined> => {
+    const text = await nodeFileSystem.readOwnerOnlyTextFile(markerFile, `credential key marker ${markerFile}`);
+    return text === undefined ? undefined : keyNameOfMarker(text, markerFile);
+  };
+
+  const readNamedKey = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string | undefined> => {
+    const name = await readMarker();
+    return name === undefined ? undefined : store.read(name, signal ?? NEVER_ABORTED);
+  };
+
+  const createKey = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
+    const keyHex = (await randomBytesAsync(KEY_BYTES)).toString('hex');
+    const name = `${CREDENTIAL_KEY_PREFIX}${(await randomBytesAsync(KEY_NAME_BYTES)).toString('hex')}`;
+    await store.write(name, keyHex, signal ?? NEVER_ABORTED);
+    await nodeFileSystem.mkdirPrivate(options.stateDirectory);
+    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
+    return keyHex;
+  };
+
+  const keyForWriting = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
+    const named = await readNamedKey(store, signal);
+    if (named !== undefined) return named;
+    await nodeFileSystem.mkdirPrivate(options.stateDirectory);
+    return withFileLock(lockFile, async () => (await readNamedKey(store, signal)) ?? createKey(store, signal), { ports, ...(signal === undefined ? {} : { signal }) });
+  };
+
+  const keyForReading = async (signal: AbortSignal | undefined, file: string): Promise<string> => {
+    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unreadable', noStoreRefusal(options.secretStore.reason));
+    const named = await readNamedKey(options.secretStore.store, signal).catch((error: unknown) => {
+      throw new CredentialStoreError('store_unreadable', `the key of the credential file ${file} could not be read: ${messageOf(error)}`, { cause: error });
+    });
+    if (named === undefined) throw new CredentialStoreError('store_unreadable', `the credential file ${file} is encrypted, but the marker ${markerFile} naming its key is missing`, { cause: new Error(`${markerFile} does not exist`) });
+    return named;
+  };
+
+  const decode = async (key: string, text: string | undefined, plaintext: boolean, signal: AbortSignal | undefined): Promise<string | undefined> => {
+    if (text === undefined) return undefined;
+    const file = credentialFileFor(options.directory, key);
+    const envelope = envelopeOf(text);
+    if (envelope === undefined) {
+      if (plaintext) return text;
+      throw new CredentialStoreError('store_unreadable', notEncrypted(file));
+    }
+    if (envelope.key !== key) {
+      throw new CredentialStoreError('store_unreadable', `the credential file ${file} holds the record of another key`, { cause: new Error(`the envelope key is ${JSON.stringify(envelope.key)}`) });
+    }
+    const keyHex = await keyForReading(signal, file);
+    return open(keyHex, envelope).catch((error: unknown) => {
+      throw new CredentialStoreError('store_unreadable', `the credential file ${file} could not be decrypted: ${messageOf(error)}`, { cause: error });
+    });
+  };
+
+  const encode = async (key: string, value: string, signal: AbortSignal | undefined): Promise<string> => {
+    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unwritable', noStoreRefusal(options.secretStore.reason), { cause: new Error(options.secretStore.reason) });
+    const store = options.secretStore.store;
+    const keyHex = await keyForWriting(store, signal).catch((error: unknown) => {
+      if (signal?.aborted === true && error === signal.reason) throw error;
+      throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${messageOf(error)}`, { cause: error });
+    });
+    return JSON.stringify(await seal(keyHex, key, value));
+  };
+
+  const entryOf = (key: string, inner: CredentialEntry, signal: AbortSignal | undefined): CredentialEntry => {
+    const plaintext = options.plaintextTokenFiles();
+    return {
+      read: async () => decode(key, await inner.read(), plaintext, signal),
+      write: async (value) => inner.write(plaintext ? value : await encode(key, value, signal)),
+      remove: () => inner.remove(),
+    };
+  };
+
+  return storeThroughScope({
+    read: async (key, signal) => decode(key, await records.read(key, signal), options.plaintextTokenFiles(), signal),
+    withKey: (key, action, signal) => records.withKey(key, (inner) => action(entryOf(key, inner, signal)), signal),
+  });
+};

@@ -8,18 +8,6 @@ import type { CliPorts } from '../ports.ts';
 import { openSession } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
-export class McpLoginFailed extends Error {
-  readonly server: string;
-  readonly code: string;
-
-  constructor(server: string, code: string, message: string) {
-    super(`authorization of MCP server ${server} failed (${code}): ${message}`);
-    this.name = 'McpLoginFailed';
-    this.server = server;
-    this.code = code;
-  }
-}
-
 const EXIT_INTERRUPTED = 130;
 
 const column = (values: readonly string[]): number => Math.max(...values.map((value) => value.length));
@@ -55,7 +43,7 @@ export const mcpList = async (ports: CliPorts, paths: MomongaPaths, json: boolea
 export type McpLoginOptions = { openBrowser: boolean; interrupt: AbortSignal };
 
 const settled = (view: McpAuthorizationView): McpAuthorizationView => {
-  if (view.status === 'failed') throw new McpLoginFailed(view.server, view.failure?.code ?? 'unknown', view.failure?.message ?? 'the runtime gave no reason');
+  if (view.status === 'failed') throw new Error(view.failure?.message ?? `the runtime gave no reason for the failed authorization of MCP server ${view.server}`);
   return view;
 };
 
@@ -70,9 +58,10 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
     }
     if (started.url === undefined) throw new Error(`the runtime started the authorization of MCP server ${server} without an authorization URL`);
     ports.stdout.write(`${mcpAuthorizationInvitation(server, started.url)}\n`);
+    let finished: McpAuthorizationView;
     try {
       if (options.openBrowser) await ports.openUrl(new URL(started.url), options.interrupt);
-      const finished = await pollUntil(
+      finished = await pollUntil(
         ports.clock,
         async () => {
           const view = await session.client.mcpAuthorization(sessionId, server);
@@ -85,9 +74,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
           signal: options.interrupt,
         },
       );
-      settled(finished);
     } catch (error) {
-      if (error instanceof McpLoginFailed) throw error;
       await session.client.cancelMcpAuthorization(sessionId, server);
       if (options.interrupt.aborted) {
         ports.stderr.write(`${escapedLines([`momonga: authorization of MCP server ${server} cancelled`])}\n`);
@@ -95,6 +82,7 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
       }
       throw error;
     }
+    settled(finished);
     ports.stdout.write(`${escapedLines([`MCP server ${server} is authorized`])}\n`);
     return 0;
   } finally {

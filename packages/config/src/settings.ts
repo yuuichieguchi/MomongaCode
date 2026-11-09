@@ -321,7 +321,7 @@ export type RipgrepSetting = 'bundled' | 'system' | (string & {});
 
 export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting };
 
-export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[] };
+export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[]; plaintextTokenFiles?: boolean };
 
 export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
 

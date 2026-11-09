@@ -23,8 +23,13 @@ export type FileLockOptions = { ports: FileLockPorts; mechanism?: KernelLockMech
 
 const NEVER_ABORTED = new AbortController().signal;
 
+const waitBoundOf = (options: FileLockOptions): number => {
+  if (options.timeoutMs !== undefined) return options.timeoutMs;
+  return options.signal === undefined ? DEFAULT_LOCK_TIMEOUT_MS : Number.POSITIVE_INFINITY;
+};
+
 const acquireWithinTimeout = async (lockPath: string, options: FileLockOptions): Promise<HeldKernelLock> => {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
+  const timeoutMs = waitBoundOf(options);
   const signal = options.signal ?? NEVER_ABORTED;
   const outcome = await claimWithin({
     mechanism: options.mechanism ?? hostKernelLock(),

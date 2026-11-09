@@ -1,8 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { credentialEnvNames } from '@momonga/config';
-import { canonicalJson, createFileCredentialStore, createLockCapability, hostProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
+import {
+  canonicalJson,
+  createEncryptedCredentialStore,
+  createExecWithStdin,
+  createLockCapability,
+  givenCredentialSecretStore,
+  givenSecretStoreChildEnv,
+  minimalChildEnv,
+  hostProcessInspector,
+  ensureSessionTmpDir as defaultEnsureSessionTmpDir,
+  hostInspectorPorts,
+  ruleEnforcementOf,
+  sha256Hex,
+} from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
@@ -46,6 +59,7 @@ export type ToolRuntimeOptions = {
   createPool?: (options: McpPoolOptions) => McpPool;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   mcpRemote?: McpRemotePorts;
+  credentialSecretStore?: CredentialSecretStore;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
   policyFilesystem?: PolicyHostFilesystem;
   bundledRipgrep?: BundledRipgrepResolver;
@@ -69,7 +83,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
-    credentials: createFileCredentialStore(mcpCredentialDirectory(paths)),
+    credentials: createEncryptedCredentialStore({
+      directory: mcpCredentialDirectory(paths),
+      stateDirectory: paths.state,
+      secretStore: options.credentialSecretStore ?? givenCredentialSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env),
+      plaintextTokenFiles: () => settings.takeUserSnapshot().settings.credentials.plaintextTokenFiles,
+    }),
     randomToken: () => randomBytes(32).toString('base64url'),
     openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
   };
