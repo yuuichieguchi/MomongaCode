@@ -143,6 +143,18 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(content).output).toBe(`${inProject(tools, visible)}:1:secret`);
   });
 
+  it.runIf(HAS_RG)('keeps a file that a ! exception carves out of a deny rule in a directory Grep, and agrees with Read on both, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const carved = tools.write(path.join('config', 'sample.env'), 'secret');
+    const denied = tools.write(path.join('config', 'prod.env'), 'secret');
+    const rules = [{ ...ruleOf(tools, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule];
+    const options = withRules(tools, rules, { env: { PATH: RG_PATH, LANG: 'C' } });
+    expect(resultOf(await tools.run('Read', { file_path: carved }, options)).status).toBe('completed');
+    expect(resultOf(await tools.run('Read', { file_path: denied }, options)).status).toBe('failed');
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, carved));
+  });
+
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
     const { tools, project } = await grepFixture();
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => recorded(RECORDINGS.files_with_matches, project));
