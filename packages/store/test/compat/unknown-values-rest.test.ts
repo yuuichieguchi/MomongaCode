@@ -22,10 +22,10 @@ const markNewer = (dbPath: string): void => {
   db.close();
 };
 
-const savedMemory = () => {
+const savedMemory = async () => {
   const env = harness();
   const { runId } = awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
-  const memory = env.store.memories.save({
+  const memory = (await env.store.memories.save({
     origin: 'trusted',
     scope: 'project',
     project: '/work/a',
@@ -34,7 +34,7 @@ const savedMemory = () => {
     step: 1,
     callId: 'c1',
     evidence: [{ kind: 'commit', sha: 'a'.repeat(40) }],
-  }).memory;
+  })).memory;
   env.store.memories.observe(memory.id, 'verified');
   return { ...env, memory };
 };
@@ -61,8 +61,8 @@ describe('memory columns this build does not know (11.4)', () => {
     ['kind', (memory: Record<string, unknown>) => memory['kind']],
     ['source_kind', (memory: Record<string, unknown>) => (memory['source'] as { kind: string }).kind],
     ['observed_status', (memory: Record<string, unknown>) => memory['observedStatus']],
-  ] as const)('memories.%s decodes as unknown on a newer database', (column, read) => {
-    const { store, dbPath, memory } = savedMemory();
+  ] as const)('memories.%s decodes as unknown on a newer database', async (column, read) => {
+    const { store, dbPath, memory } = await savedMemory();
     markNewer(dbPath);
     writeUnknown(dbPath, 'memories', column, 'id', memory.id);
     const stored = store.memories.get(memory.id);
@@ -70,8 +70,8 @@ describe('memory columns this build does not know (11.4)', () => {
     expect(read(stored)).toBe('unknown');
   });
 
-  it('memory_evidence.kind and memory_observations.status decode as unknown on a newer database', () => {
-    const { store, dbPath, memory } = savedMemory();
+  it('memory_evidence.kind and memory_observations.status decode as unknown on a newer database', async () => {
+    const { store, dbPath, memory } = await savedMemory();
     markNewer(dbPath);
     writeUnknown(dbPath, 'memory_evidence', 'kind', 'memory_id', memory.id);
     writeUnknown(dbPath, 'memory_observations', 'status', 'memory_id', memory.id);
@@ -79,8 +79,8 @@ describe('memory columns this build does not know (11.4)', () => {
     expect(store.memories.observations(memory.id).map((entry) => entry.status)).toEqual(['unknown']);
   });
 
-  it('a memory of an unknown scope is not recalled in any scope', () => {
-    const { store, dbPath, memory } = savedMemory();
+  it('a memory of an unknown scope is not recalled in any scope', async () => {
+    const { store, dbPath, memory } = await savedMemory();
     markNewer(dbPath);
     writeUnknown(dbPath, 'memories', 'scope', 'id', memory.id);
     const page = store.memories.recallPage({ trusted: true, project: '/work/a' }, { terms: [], after: null, limit: 100 });
@@ -93,7 +93,7 @@ describe('governing fact columns this build does not know (11.4)', () => {
     ['scope_level', false, (fact: Record<string, unknown>) => (fact['scope'] as { level: string }).level],
     ['source_kind', false, (fact: Record<string, unknown>) => (fact['source'] as { kind: string }).kind],
     ['enforcement_behavior', true, (fact: Record<string, unknown>) => (fact['enforcement'] as { behavior: string }).behavior],
-  ] as const)('governing_facts.%s decodes as unknown on a newer database', (column, enforced, read) => {
+  ] as const)('governing_facts.%s decodes as unknown on a newer database', async (column, enforced, read) => {
     const { store, dbPath, fact } = governingFact(enforced);
     markNewer(dbPath);
     writeUnknown(dbPath, 'governing_facts', column, 'id', fact.id);
@@ -104,7 +104,7 @@ describe('governing fact columns this build does not know (11.4)', () => {
 });
 
 describe('a mode.changed event of a mode this build does not know (11.4)', () => {
-  it('decodes with the mode unknown on a newer database, and throws as corruption otherwise', () => {
+  it('decodes with the mode unknown on a newer database, and throws as corruption otherwise', async () => {
     for (const newer of [true, false]) {
       const { store, dbPath } = harness();
       const session = newSession(store);
@@ -155,7 +155,7 @@ describe('run facts this build does not know (11.4)', () => {
     ['run_facts', 'mode', 'run_id', (facts: RunFactsView) => facts.mode],
     ['run_recoveries', 'cause', 'run_id', (facts: RunFactsView) => facts.recoveries[0]?.cause],
     ['run_recoveries', 'outcome', 'run_id', (facts: RunFactsView) => facts.recoveries[0]?.outcome],
-  ] as const)('%s.%s decodes as unknown on a newer database', (table, column, where, read) => {
+  ] as const)('%s.%s decodes as unknown on a newer database', async (table, column, where, read) => {
     const { store, dbPath } = harness();
     const session = newSession(store);
     const run = enqueue(store, session.id);
@@ -180,7 +180,7 @@ describe('a search document of an origin this build does not know (11.4)', () =>
     const own = anchorsOf(store.search.query({ trusted: true, project: `${dir}/a` }, { query: 'zebra', scope: 'project' }));
     expect(own.map((anchor) => [anchor.runId, anchor.origin])).toEqual([[run.id, 'unknown']]);
     expect(anchorsOf(store.search.query({ trusted: true, project: `${dir}/b` }, { query: 'zebra', scope: 'all' }))).toEqual([]);
-    const read = store.search.readRange({ trusted: true, project: `${dir}/a` }, { runId: run.id, limit: 100, redactor });
+    const read = await store.search.readRange({ trusted: true, project: `${dir}/a` }, { runId: run.id, limit: 100, redactor });
     expect(read.kind === 'ok' ? read.origin : read.kind).toBe('unknown');
   });
 });

@@ -18,14 +18,14 @@ const readCall = (index: number): RunEventPayload => ({
 });
 
 describe('the recall query', () => {
-  it('the query holds the newest paths when the bound is full', () => {
+  it('the query holds the newest paths when the bound is full', async () => {
     const { store } = harness();
     const session = newSession(store, CWD);
     enqueue(store, session.id);
     const claim = mustClaim(store, 'w1');
     const count = 1000;
     expect(store.append(claim, Array.from({ length: count }, (_unused, index) => readCall(index))).kind).toBe('ok');
-    const newest = store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS).map((entry) => entry.path);
+    const newest = (await store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS)).map((entry) => entry.path);
     const query = recallQueryOf('fix the build', newest, CWD);
     expect(query).toContain('src/module-0999.ts');
     expect(query).not.toContain('src/module-0000.ts');

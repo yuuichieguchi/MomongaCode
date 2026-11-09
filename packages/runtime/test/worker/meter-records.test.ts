@@ -83,12 +83,12 @@ describe('the meter of a session is a record written when meter.observed is appe
     ['the smaller window', SMALL],
   ])('restores the same memory as the fold of every meter.observed of the session for %s, over more events than the miss window holds', async (_name, capabilities) => {
     const { env } = await sessionWithRuns(WINDOW_RUNS, 5);
-    expect(foldMeterFor(env.store, env.session.id, capabilities, COUNTER)).toEqual(todaysFold(env, capabilities));
+    expect(await foldMeterFor(env.store, env.session.id, capabilities, COUNTER)).toEqual(todaysFold(env, capabilities));
   });
 
   it('restores an empty memory for a key that was never observed', async () => {
     const { env } = await sessionWithRuns(2, 2);
-    expect(foldMeterFor(env.store, env.session.id, capabilitiesFor(12_345), COUNTER)).toEqual({ misses: [] });
+    expect(await foldMeterFor(env.store, env.session.id, capabilitiesFor(12_345), COUNTER)).toEqual({ misses: [] });
   });
 
   it('decodes the same rows and bytes on the main thread whether the session holds 2 or 40 runs of events', async () => {
@@ -96,8 +96,8 @@ describe('the meter of a session is a record written when meter.observed is appe
     const many = await sessionWithRuns(40, 3);
     few.decoded.counting = true;
     many.decoded.counting = true;
-    expect(foldMeterFor(many.env.store, many.env.session.id, SMALL, COUNTER).misses).toHaveLength(20);
-    expect(foldMeterFor(few.env.store, few.env.session.id, SMALL, COUNTER).latest).toBeDefined();
+    expect((await foldMeterFor(many.env.store, many.env.session.id, SMALL, COUNTER)).misses).toHaveLength(20);
+    expect((await foldMeterFor(few.env.store, few.env.session.id, SMALL, COUNTER)).latest).toBeDefined();
     const fewOnce = await decodedBy(few, () => foldMeterFor(few.env.store, few.env.session.id, SMALL, COUNTER));
     const manyOnce = await decodedBy(many, () => foldMeterFor(many.env.store, many.env.session.id, SMALL, COUNTER));
     expect(manyOnce).toEqual(fewOnce);
@@ -120,11 +120,11 @@ describe('the meter of a session is a record written when meter.observed is appe
   });
 });
 
-const decodedBy = async (session: { decoded: { rows: number; bytes: number; counting: boolean } }, read: () => unknown): Promise<{ rows: number; bytes: number }> => {
+const decodedBy = async (session: { decoded: { rows: number; bytes: number; counting: boolean } }, read: () => Promise<unknown>): Promise<{ rows: number; bytes: number }> => {
   session.decoded.rows = 0;
   session.decoded.bytes = 0;
   session.decoded.counting = true;
-  read();
+  await read();
   session.decoded.counting = false;
   return { rows: session.decoded.rows, bytes: session.decoded.bytes };
 };

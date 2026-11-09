@@ -41,10 +41,10 @@ const tailTypes = (store: RuntimeStore, runId: string, count: number): string[] 
 
 const countOf = (store: RuntimeStore, runId: string): number => store.readRunEvents(runId, 0, 1000).filter((event) => event.type === 'context.contribution').length;
 
-const savedMemory = (h: Harness, runId: string, callId: string, text: string): string => {
+const savedMemory = async (h: Harness, runId: string, callId: string, text: string): Promise<string> => {
   const claim = mustClaim(h.store, 'saver');
   expect(h.store.append(claim, [callEvent(callId)]).kind).toBe('ok');
-  const { memory } = h.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text, runId, step: 1, callId });
+  const { memory } = await h.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text, runId, step: 1, callId });
   expect(h.store.release(claim, 'QUEUED').kind).toBe('ok');
   return memory.id;
 };
@@ -231,8 +231,8 @@ describe('the contributed_at stamp', () => {
     });
     bound = h.store;
     const run = enqueue(h.store, newSession(h.store).id);
-    const used = savedMemory(h, run.id, 'call_1', 'used note');
-    const unused = savedMemory(h, run.id, 'call_2', 'unused note');
+    const used = await savedMemory(h, run.id, 'call_1', 'used note');
+    const unused = await savedMemory(h, run.id, 'call_2', 'unused note');
     const claim = mustClaim(h.store, 'w2');
     items = [
       { kind: 'memory', id: used, contributed: true },
@@ -251,7 +251,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
     named = id;
     const claim = mustClaim(h.store, 'w2');
 
@@ -265,7 +265,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const run = enqueue(h.store, newSession(h.store).id);
-    named = savedMemory(h, run.id, 'call_1', 'used note');
+    named = await savedMemory(h, run.id, 'call_1', 'used note');
     const claim = mustClaim(h.store, 'w2');
     h.clock.advance(7);
 
@@ -278,7 +278,7 @@ describe('the contributed_at stamp', () => {
   it('moves contributed_at to the terminal time of a later run that contributed again', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
 
     h.store.memories.stampContributed([id], START_MS + 3);
     h.store.memories.stampContributed([id, 'unknown-id'], START_MS + 10);
@@ -289,7 +289,7 @@ describe('the contributed_at stamp', () => {
   it('keeps the later time when an earlier run is stamped again, and when the same run is stamped twice', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
     h.store.memories.stampContributed([id], START_MS + 10);
 
     h.store.memories.stampContributed([id], START_MS + 3);
@@ -302,7 +302,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const first = enqueue(h.store, newSession(h.store).id);
-    named = savedMemory(h, first.id, 'call_1', 'used note');
+    named = await savedMemory(h, first.id, 'call_1', 'used note');
     h.clock.advance(5);
     expect((await h.store.transition(mustClaim(h.store, 'w2'), ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 5);

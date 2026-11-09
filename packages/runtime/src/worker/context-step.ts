@@ -88,7 +88,7 @@ const advanceTouched = async (ctx: ClaimContext): Promise<void> => {
 const prepareRecall = async (ctx: ClaimContext): Promise<void> => {
   const session = sessionOf(ctx);
   const task = taskOf(ctx);
-  const newest = ctx.options.store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS).map((entry) => entry.path);
+  const newest = (await ctx.options.store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS)).map((entry) => entry.path);
   await ctx.recalled.prepare({
     query: recallQueryOf(task.text, newest, session.cwd),
     capacity: { capabilities: withCalibration(ctx.capabilities, ctx.calibration), memoryShare: ctx.memoryShare },

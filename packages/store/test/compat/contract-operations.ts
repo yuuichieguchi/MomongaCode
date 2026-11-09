@@ -10,13 +10,13 @@ export type ContractOperation = { name: string; run(contract: ContractStore): Pr
 export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   {
     name: 'lists the sessions and reads the runs and events the newer build wrote',
-    run: ({ store }) => {
+    run: async ({ store }) => {
       for (const session of store.listSessions()) {
         for (const run of store.listRuns(session.id)) {
           store.load(run.id);
           store.readRunEvents(run.id, 0, 10_000);
-          store.finalTextOf(run.id);
-          store.startedCallsOf(run.id);
+          await store.finalTextOf(run.id);
+          await store.startedCallsOf(run.id);
         }
         store.readSessionEvents(session.id, 0, 10_000);
       }
@@ -71,12 +71,12 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   },
   {
     name: 'saves and lists a memory, searches the history and records fidelity verdicts',
-    run: ({ store }) => {
+    run: async ({ store }) => {
       const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
       const run = enqueue(store, session.id, 'contractneedle');
       const claim = claimOf(store, run.id, 'memory-worker');
       ok(store.append(claim, [call('mem-1')]), 'append');
-      store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/contract', text: 'contract memory', runId: run.id, step: 1, callId: 'mem-1' });
+      await store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/contract', text: 'contract memory', runId: run.id, step: 1, callId: 'mem-1' });
       expect(store.memories.list().length).toBeGreaterThan(0);
       store.search.query({ trusted: true, project: '/work/contract' }, { query: 'contractneedle', scope: 'project' });
       store.recordFidelityVerdicts(run.id, '/work/contract', { checkedThrough: 1, verdicts: [{ token: 'make', inh: 'none', inhDeps: [], taskStated: false, statedAt: null, executedAt: null, ownDeps: [] }] });

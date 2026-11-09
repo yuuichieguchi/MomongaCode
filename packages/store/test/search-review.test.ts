@@ -101,7 +101,7 @@ describe('reading a range', () => {
     const { run, claim, finish } = openRun(store, '/work/a', 'task');
     store.append(claim, [credentialCall('c1')]);
     await finish();
-    const page = store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });
+    const page = await store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });
     if (page.kind !== 'ok') throw new Error(page.kind);
     expect(JSON.stringify(page.events)).not.toContain('abcd1234efgh5678ijkl');
     expect(JSON.stringify(page.events)).toContain('[REDACTED]');
@@ -113,7 +113,7 @@ describe('reading a range', () => {
     const { run, claim, finish } = openRun(store, '/work/a', 'task');
     store.append(claim, [credentialCall(callId), { type: 'tool.completed', callId, status: 'completed', output: 'done' }]);
     await finish();
-    const page = store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });
+    const page = await store.search.readRange(OWN, { runId: run.id, limit: 100, redactor });
     if (page.kind !== 'ok') throw new Error(page.kind);
     const shown = page.events.flatMap((event) => ('callId' in event && typeof event.callId === 'string' ? [event.callId] : []));
     expect(shown.length).toBe(2);

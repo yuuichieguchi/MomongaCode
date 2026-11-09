@@ -100,7 +100,7 @@ describe('every model call records what its request was made of and what it cost
 
     const [responded] = env.ofType(run.id, 'model.responded');
     expect(responded?.response.id).toEqual(expect.stringMatching(/\S/));
-    expect(env.store.readModelCallEvents(run.id).filter((record) => record.kind === 'responded')).toEqual([
+    expect((await env.store.readModelCallEvents(run.id)).filter((record) => record.kind === 'responded')).toEqual([
       expect.objectContaining({ responseId: responded?.response.id }),
     ]);
   });

@@ -38,7 +38,7 @@ export type HistoryReadPage = {
 
 export type HistoryStorePort = {
   search(request: HistorySearchRequest): Promise<HistorySearchResult>;
-  read(request: HistoryReadRequest): HistoryReadPage | null;
+  read(request: HistoryReadRequest): Promise<HistoryReadPage | null>;
   projectOf(runId: string): string | undefined;
   readDenial(project: string): Promise<ReadDenial>;
   redact(text: string): string;

@@ -10,7 +10,7 @@ import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
-import { createDerivedRepair } from './derived-repair.ts';
+import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
@@ -285,19 +285,11 @@ const prepareStatements = (db: DatabaseSync) => ({
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
-  modelCallEvents: db.prepare(
-    `SELECT seq, step, type, model_call_json
-     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
-  ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
      WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
        AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
      ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
-  ),
-  toolCallNames: db.prepare(
-    `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-     SELECT DISTINCT e.tool_name AS name FROM tree t CROSS JOIN events e ON e.run_id = t.id WHERE e.tool_name IS NOT NULL ORDER BY name`,
   ),
   toolOfferedNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
@@ -455,18 +447,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
   const verdicts = createVerdictWriter(db);
   const derived = createDerivedRepair(db, records, decodeContext);
-  const selectLastSeq = db.prepare('SELECT last_seq FROM runs WHERE id = :runId');
-  const repairDerived = (runId: string): void => {
-    for (;;) {
-      const caughtUp = transaction(() => {
-        const row = selectLastSeq.get({ runId });
-        if (row === undefined) throw new Error(`unknown run ${runId}`);
-        return derived.repairPage(runId, readerFor('runs', runId, row).number('last_seq'));
-      });
-      if (caughtUp) return;
-    }
-  };
-
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
     touched.set(`${sessionId}\n${runId ?? ''}`, runId === null ? { sessionId } : { runId, sessionId });
@@ -490,6 +470,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       throw error;
     }
   };
+  const derivedReads = createDerivedReads(db, derived, transaction);
+
 
   const observeDecode = (rows: readonly Row[]): void => {
     if (onDecode === undefined) return;
@@ -1298,9 +1280,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const run = takenFrom === null ? claimed : appendPayloads(claimed, [{ type: 'attempt.lost', lastLiveAt: takenFrom - leaseMs }]);
         if (takenFrom !== null) writeRun(run);
         const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
+        derived.repairPage(run.id, run.lastSeq);
         return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
       });
-      if (claim !== null) repairDerived(claim.runId);
       return claim;
     },
 
@@ -1329,9 +1311,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (events.length === 0) return { kind: 'ok', lastSeq: run.lastSeq } as const;
         const next = appendPayloads(run, events);
         writeRun(next);
+        derived.repairPage(next.id, next.lastSeq);
         return { kind: 'ok', lastSeq: next.lastSeq } as const;
       });
-      if (result.kind === 'ok') repairDerived(claim.runId);
       return result;
     },
 
@@ -1430,27 +1412,27 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return event as Extract<RunEvent, { type: T }> | undefined;
     },
 
-    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).sort((a, b) => Number(a.seq) - Number(b.seq)).map(decodeModelCallRecord),
+    readModelCallEvents: (runId) => derivedReads.read({ runId }, () => records.modelCallRowsOf(runId).map(decodeModelCallRecord)),
 
-    toolCallSeq: records.toolCallSeq,
+    toolCallSeq: (runId, callId) => derivedReads.read({ runId }, () => records.toolCallSeq(runId, callId)),
 
-    finalTextOf: records.finalTextOf,
+    finalTextOf: (runId) => derivedReads.read({ runId }, () => records.finalTextOf(runId)),
 
-    inFlightModelRequestOf: records.inFlightModelRequestOf,
+    inFlightModelRequestOf: (runId) => derivedReads.read({ runId }, () => records.inFlightModelRequestOf(runId)),
 
-    startedCallsOf: records.startedCallsOf,
+    startedCallsOf: (runId) => derivedReads.read({ runId }, () => records.startedCallsOf(runId)),
 
-    hasNoticeCode: records.hasNoticeCode,
+    hasNoticeCode: (runId, code) => derivedReads.read({ runId }, () => records.hasNoticeCode(runId, code)),
 
-    meterRecordOf: records.meterRecordOf,
+    meterRecordOf: (sessionId, key) => derivedReads.read({ sessionId }, () => records.meterRecordOf(sessionId, key)),
 
-    answeringTargetsOf: records.answeringTargetsOf,
+    answeringTargetsOf: (runId) => derivedReads.read({ runId }, () => records.answeringTargetsOf(runId)),
 
     recordFidelityVerdicts: (runId, cwd, reply) => transaction(() => verdicts.record(runId, cwd, reply)),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map((row) => decodeRun(row, decodeContext)),
 
-    toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
+    toolCallNames: (runId) => derivedReads.read({ runTree: runId }, () => records.toolCallNamesOf(runId)),
 
     toolOfferedNames: (runId) => {
       if (sql.hasToolOffered.get({ runId }) === undefined) throw new Error(`run ${runId} has no tool.offered record`);
@@ -1655,13 +1637,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
-    memories,
-    sessionTouched: { after: records.touchedAfter, newest: records.touchedNewest },
+    memories: { ...memories, save: (input) => derivedReads.read({ runId: input.runId }, () => memories.save(input)) },
+    sessionTouched: {
+      after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, () => records.touchedAfter(sessionId, afterEventId, limit, afterPath)),
+      newest: (sessionId, limit) => derivedReads.read({ sessionId }, () => records.touchedNewest(sessionId, limit)),
+    },
     reflection,
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,
-    search: createSearchStore(db, decodeContext),
+    search: createSearchStore(db, decodeContext, derivedReads),
     runFacts: createRunFactsStore(db, decodeContext),
 
     journalFacts: {

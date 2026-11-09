@@ -56,7 +56,7 @@ const journalWithCalls = (calls: number) => {
 };
 
 describe('the id a payload carries is a column written at append (row 16), so a lookup by id reads no payload', () => {
-  it('copies callId into call_id for tool.call, approvalId into approval_id for a permission request and inputId into approval_id for an elicitation request', () => {
+  it('copies callId into call_id for tool.call, approvalId into approval_id for a permission request and inputId into approval_id for an elicitation request', async () => {
     const { dbPath, store, claim, run } = journalWithCalls(2);
     expect(store.append(claim, [permissionRequested('a1', 'c1'), elicitationRequested('i1', 'c2')]).kind).toBe('ok');
     const rows = rawDb(dbPath)
@@ -70,7 +70,7 @@ describe('the id a payload carries is a column written at append (row 16), so a 
     ]);
   });
 
-  it('indexes call_id and approval_id by run, so the lookup does not scan the run', () => {
+  it('indexes call_id and approval_id by run, so the lookup does not scan the run', async () => {
     const { dbPath } = journalWithCalls(1);
     const db = rawDb(dbPath);
     const indexed = (db.prepare('PRAGMA index_list(events)').all() as { name: string }[]).map((index) =>
@@ -80,7 +80,7 @@ describe('the id a payload carries is a column written at append (row 16), so a 
     expect(indexed).toContainEqual(expect.arrayContaining(['run_id', 'approval_id']));
   });
 
-  it('agrees with the payload for every row it was written for (the column is a fold of the journal)', () => {
+  it('agrees with the payload for every row it was written for (the column is a fold of the journal)', async () => {
     const { dbPath, store, claim, run } = journalWithCalls(3);
     expect(store.append(claim, [permissionRequested('a1', 'c3')]).kind).toBe('ok');
     const mismatched = rawDb(dbPath)
@@ -96,19 +96,19 @@ describe('the id a payload carries is a column written at append (row 16), so a 
 });
 
 describe('the seq of a tool call is read from its column (row 7): toolCallSeq', () => {
-  it('returns the seq of the tool.call event, and undefined for an unknown call', () => {
+  it('returns the seq of the tool.call event, and undefined for an unknown call', async () => {
     const { store, run } = journalWithCalls(3);
     const seqs = store.readRunEvents(run.id, 0, 100).filter((event) => event.type === 'tool.call').map((event) => event.seq);
-    expect(store.toolCallSeq(run.id, 'c2')).toBe(seqs[1]);
-    expect(store.toolCallSeq(run.id, 'missing')).toBeUndefined();
+    expect(await store.toolCallSeq(run.id, 'c2')).toBe(seqs[1]);
+    expect(await store.toolCallSeq(run.id, 'missing')).toBeUndefined();
   });
 
-  it('decodes no journal payload on the main thread, at 5 calls and at 200 calls alike', () => {
+  it('decodes no journal payload on the main thread, at 5 calls and at 200 calls alike', async () => {
     for (const calls of [5, 200]) {
       const { store, run, decoded } = journalWithCalls(calls);
       decoded.rows = 0;
       decoded.bytes = 0;
-      expect(store.toolCallSeq(run.id, `c${calls}`)).toBeGreaterThan(0);
+      expect(await store.toolCallSeq(run.id, `c${calls}`)).toBeGreaterThan(0);
       expect(decoded).toEqual({ rows: 0, bytes: 0 });
     }
   });
@@ -152,11 +152,11 @@ const modelCallRecords = (requestedSeq: number) => [
 ];
 
 describe('the anatomy, prefix and timing of a model call are read as before, from columns written at append (row 10)', () => {
-  it('returns the same records for a run appended today', () => {
+  it('returns the same records for a run appended today', async () => {
     const { store, claim, run } = journalWithCalls(1);
     const appended = store.append(claim, [requestedWithAnatomy, respondedWithTiming]);
     if (appended.kind !== 'ok') throw new Error('append refused');
-    expect(store.readModelCallEvents(run.id)).toEqual(modelCallRecords(appended.lastSeq - 1));
+    expect(await store.readModelCallEvents(run.id)).toEqual(modelCallRecords(appended.lastSeq - 1));
   });
 });
 
@@ -190,7 +190,7 @@ const versionNineteen = (): string => {
 };
 
 describe('an upgrade from version 19 over journals written before the columns', () => {
-  it('fills call_id and approval_id of every old row once, so old runs are looked up by column too', () => {
+  it('fills call_id and approval_id of every old row once, so old runs are looked up by column too', async () => {
     const dbPath = versionNineteen();
     openStoreAt(dbPath, createFakeClock(START_MS + 10)).close();
     const db = rawDb(dbPath);
@@ -206,15 +206,15 @@ describe('an upgrade from version 19 over journals written before the columns', 
     expect((db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as { version: number }).version).toBeGreaterThan(19);
   });
 
-  it('answers toolCallSeq for an old run from the filled column', () => {
+  it('answers toolCallSeq for an old run from the filled column', async () => {
     const dbPath = versionNineteen();
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 10)) as CallSeqStore;
-    expect(store.toolCallSeq('r1', 'c2')).toBe(4);
+    expect(await store.toolCallSeq('r1', 'c2')).toBe(4);
   });
 
-  it('still reads the anatomy, prefix and timing of an old run (row 10) and its called names (row 8b)', () => {
+  it('still reads the anatomy, prefix and timing of an old run (row 10) and its called names (row 8b)', async () => {
     const store = openStoreAt(versionNineteen(), createFakeClock(START_MS + 10));
-    expect(store.readModelCallEvents('r1')).toEqual(modelCallRecords(6));
-    expect(store.toolCallNames('r1')).toEqual(['Write']);
+    expect(await store.readModelCallEvents('r1')).toEqual(modelCallRecords(6));
+    expect(await store.toolCallNames('r1')).toEqual(['Write']);
   });
 });

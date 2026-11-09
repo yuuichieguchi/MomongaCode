@@ -1,10 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { RunEvent } from '@momonga/protocol';
-import { APPEND_TIME_RECORDS_DERIVATION, RECORD_DERIVATIONS, columnsOf } from './append-records.ts';
+import { setImmediate as eventLoopTurn } from 'node:timers/promises';
+import { readTx } from '@momonga/foundation/sqlite';
+import type { RunEvent, RunEventPayload, SessionEventPayload } from '@momonga/protocol';
+import { APPEND_TIME_RECORDS_DERIVATION, RECORD_DERIVATIONS, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, columnsOf } from './append-records.ts';
 import type { AppendRecords, RecordDerivation, RecordedEvent } from './append-records.ts';
 import { decodeRunEvents } from './codec.ts';
 import type { DecodeContext } from './codec.ts';
+import { decodeContextOf } from './decode-context.ts';
 import { readerFor } from './rows.ts';
+import type { Row } from './rows.ts';
 
 export const PINNED_DIGEST_DERIVATION = 14;
 
@@ -13,6 +17,24 @@ export const DERIVATIONS = [PINNED_DIGEST_DERIVATION, ...RECORD_DERIVATIONS] as 
 type Derivation = (typeof DERIVATIONS)[number];
 
 export const REPAIR_PAGE_EVENTS = 500;
+
+export const DERIVED_VALUES = [
+  { derivation: PINNED_DIGEST_DERIVATION, holds: 'events.pinned_digest', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.call_id', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.approval_id', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.tool_name', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.notice_code', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'events.model_call_json', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'run_records', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'started_calls', scope: 'run' },
+  { derivation: APPEND_TIME_RECORDS_DERIVATION, holds: 'meter_records', scope: 'session' },
+  { derivation: SESSION_TOUCHED_DERIVATION, holds: 'session_touched', scope: 'session' },
+  { derivation: RUN_ANSWERERS_DERIVATION, holds: 'run_answerers', scope: 'run' },
+] as const;
+
+export type DerivedScope = { readonly runId: string } | { readonly sessionId: string } | { readonly runTree: string };
+
+export const pinnedDigestOf = (payload: RunEventPayload | SessionEventPayload): string | null => (payload.type === 'model.requested' ? (payload.pinnedDigest ?? null) : null);
 
 export type DerivedRepair = {
   recordAppended(event: RecordedEvent): void;
@@ -52,7 +74,7 @@ export const createDerivedRepair = (db: DatabaseSync, records: AppendRecords, de
 
   const apply = (derivation: Derivation, event: RunEvent): void => {
     if (derivation === PINNED_DIGEST_DERIVATION) {
-      sql.fillPinned.run({ id: event.id, pinnedDigest: event.type === 'model.requested' ? (event.pinnedDigest ?? null) : null });
+      sql.fillPinned.run({ id: event.id, pinnedDigest: pinnedDigestOf(event) });
       return;
     }
     if (derivation === APPEND_TIME_RECORDS_DERIVATION) sql.fillColumns.run({ id: event.id, ...columnsOf(event) });
@@ -83,4 +105,101 @@ export const createDerivedRepair = (db: DatabaseSync, records: AppendRecords, de
   };
 
   return { recordAppended, repairPage };
+};
+
+const TREE_OF = 'WITH RECURSIVE tree(id) AS (SELECT :runTree UNION ALL SELECT c.id FROM runs c JOIN tree t ON c.parent_run_id = t.id) SELECT id FROM tree';
+
+const LAGGING = `r.last_seq > 0 AND (SELECT COUNT(*) FROM derived_through d WHERE d.run_id = r.id AND d.through_seq >= r.last_seq) < ${DERIVATIONS.length}`;
+
+export type DerivedReads = {
+  read<T>(scope: DerivedScope, readCurrent: () => T): Promise<T>;
+};
+
+export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, transaction: <T>(fn: () => T) => T): DerivedReads => {
+  const lagging = {
+    run: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.id = :runId AND ${LAGGING}`),
+    session: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.session_id = :sessionId AND ${LAGGING} ORDER BY r.rowid LIMIT 1`),
+    tree: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.id IN (${TREE_OF}) AND ${LAGGING} ORDER BY r.rowid LIMIT 1`),
+  };
+
+  const laggingRunOf = (scope: DerivedScope): { runId: string; lastSeq: number } | undefined => {
+    const row = 'runId' in scope ? lagging.run.get({ runId: scope.runId }) : 'sessionId' in scope ? lagging.session.get({ sessionId: scope.sessionId }) : lagging.tree.get({ runTree: scope.runTree });
+    if (row === undefined) return undefined;
+    const reader = readerFor('runs', String(row['id']), row);
+    return { runId: reader.string('id'), lastSeq: reader.number('last_seq') };
+  };
+
+  const read = async <T>(scope: DerivedScope, readCurrent: () => T): Promise<T> => {
+    for (;;) {
+      const outcome = transaction((): { value: T } | undefined => {
+        const behind = laggingRunOf(scope);
+        if (behind !== undefined) {
+          repair.repairPage(behind.runId, behind.lastSeq);
+          if (laggingRunOf(scope) !== undefined) return undefined;
+        }
+        return { value: readCurrent() };
+      });
+      if (outcome !== undefined) return outcome.value;
+      await eventLoopTurn();
+    }
+  };
+
+  return { read };
+};
+
+export type DerivedSnapshotView = {
+  pinnedDigestsOf(runId: string): { seq: number; pinnedDigest: string | null }[];
+  callOwnersOf(sessionId: string, callId: string): string[];
+  toolCallOf(runId: string, callId: string): RunEvent | undefined;
+};
+
+export type DerivedSnapshot = {
+  read<T>(readCurrent: (view: DerivedSnapshotView) => T): T;
+};
+
+const pastMark = (derivation: Derivation): string =>
+  `e.seq > COALESCE((SELECT d.through_seq FROM derived_through d WHERE d.run_id = e.run_id AND d.derivation = ${derivation}), 0)`;
+
+export const createDerivedSnapshot = (db: DatabaseSync, decodeContext: DecodeContext = decodeContextOf(db)): DerivedSnapshot => {
+  const sql = {
+    pinned: db.prepare(`SELECT e.*, ${pastMark(PINNED_DIGEST_DERIVATION)} AS past FROM events e WHERE e.run_id = :runId AND e.type = 'model.requested' ORDER BY e.seq`),
+    callOwners: db.prepare(
+      `SELECT e.*, ${pastMark(APPEND_TIME_RECORDS_DERIVATION)} AS past FROM events e
+       WHERE e.type = 'tool.call' AND e.run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)
+         AND (e.call_id = :callId OR (e.call_id IS NULL AND ${pastMark(APPEND_TIME_RECORDS_DERIVATION)}))
+       ORDER BY e.id`,
+    ),
+    toolCall: db.prepare(
+      `SELECT e.*, ${pastMark(APPEND_TIME_RECORDS_DERIVATION)} AS past FROM events e
+       WHERE e.run_id = :runId AND e.type = 'tool.call' AND (e.call_id = :callId OR (e.call_id IS NULL AND ${pastMark(APPEND_TIME_RECORDS_DERIVATION)}))
+       ORDER BY e.seq`,
+    ),
+  };
+
+  const isCall = (identity: string, callId: string, row: Row): boolean => readerFor('events', identity, row).number('past') === 0 || columnsOf(derivedEventOf(row)).callId === callId;
+
+  const derivedEventOf = (row: Row): RunEvent => {
+    const [event] = decodeRunEvents([row], decodeContext);
+    if (event === undefined) throw new Error(`event ${String(row['id'])} decodes to no run event`);
+    return event;
+  };
+
+  const view: DerivedSnapshotView = {
+    pinnedDigestsOf: (runId) =>
+      sql.pinned.all({ runId }).map((row) => {
+        const reader = readerFor('events', runId, row);
+        return { seq: reader.number('seq'), pinnedDigest: reader.number('past') === 1 ? pinnedDigestOf(derivedEventOf(row)) : reader.nullableString('pinned_digest') };
+      }),
+    callOwnersOf: (sessionId, callId) =>
+      sql.callOwners
+        .all({ sessionId, callId })
+        .filter((row) => isCall(sessionId, callId, row))
+        .map((row) => readerFor('events', sessionId, row).string('run_id')),
+    toolCallOf: (runId, callId) => {
+      const row = sql.toolCall.all({ runId, callId }).find((candidate) => isCall(runId, callId, candidate));
+      return row === undefined ? undefined : derivedEventOf(row);
+    },
+  };
+
+  return { read: (readCurrent) => (db.isTransaction ? readCurrent(view) : readTx(db, () => readCurrent(view))) };
 };

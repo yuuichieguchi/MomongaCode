@@ -76,7 +76,7 @@ describe('reading a range', () => {
     const run = await finishedRun(store, '/work/a', 'task', stepsOf);
     const events = store.readRunEvents(run.id, 0, 100);
     const completedSeq = events.find((event) => event.type === 'tool.completed')?.seq ?? 0;
-    const page = store.search.readRange(OWN, { runId: run.id, seqFrom: completedSeq, seqTo: completedSeq, limit: 10, redactor });
+    const page = await store.search.readRange(OWN, { runId: run.id, seqFrom: completedSeq, seqTo: completedSeq, limit: 10, redactor });
     if (page.kind !== 'ok') throw new Error(page.kind);
     expect(page.events.map((event) => event.type)).toEqual(['tool.completed']);
     expect(page.callPaths).toEqual({ 'call-1': [SECRET] });
@@ -85,14 +85,14 @@ describe('reading a range', () => {
   it('cuts a page at the character budget of its payloads, and always returns at least one event', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'z'.repeat(200_000) } }, { tool: { name: 'Read', path: '/work/a/big2', output: 'y'.repeat(200_000) } }]);
-    const first = store.search.readRange(OWN, { runId: run.id, limit: HISTORY_READ_PAGE_EVENTS, redactor });
+    const first = await store.search.readRange(OWN, { runId: run.id, limit: HISTORY_READ_PAGE_EVENTS, redactor });
     if (first.kind !== 'ok') throw new Error(first.kind);
     expect(first.nextSeq).not.toBeNull();
     expect(first.events.length).toBeGreaterThan(0);
     const seen = new Set(first.events.map((event) => event.seq));
     let next = first.nextSeq;
     while (next !== null) {
-      const page = store.search.readRange(OWN, { runId: run.id, seqFrom: next, limit: HISTORY_READ_PAGE_EVENTS, redactor });
+      const page = await store.search.readRange(OWN, { runId: run.id, seqFrom: next, limit: HISTORY_READ_PAGE_EVENTS, redactor });
       if (page.kind !== 'ok') throw new Error(page.kind);
       for (const event of page.events) seen.add(event.seq);
       next = page.nextSeq;

@@ -569,7 +569,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
-            : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
+            : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
         runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
         runCostBreakdown: (runs, signal, includeRunless) =>

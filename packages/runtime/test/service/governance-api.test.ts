@@ -180,8 +180,8 @@ describe('memory history route', () => {
   it('shows a superseded memory and its successor with status', async () => {
     const { env, session, run } = await seed();
     const base = { origin: 'trusted', scope: 'project', project: session.cwd, runId: run.id, step: 1 } as const;
-    const older = env.store.memories.save({ ...base, text: 'older', callId: 'c1' }).memory;
-    const newer = env.store.memories.save({ ...base, text: 'newer', callId: 'c2', supersedes: [older.id] }).memory;
+    const older = (await env.store.memories.save({ ...base, text: 'older', callId: 'c1' })).memory;
+    const newer = (await env.store.memories.save({ ...base, text: 'newer', callId: 'c2', supersedes: [older.id] })).memory;
     const history = await env.http('GET', `/v1/memories/${older.id}/history`);
     expect(history.status).toBe(200);
     expect(history.json.memories.map((memory: { id: string }) => memory.id)).toEqual([older.id, newer.id]);
@@ -191,7 +191,7 @@ describe('memory history route', () => {
 
   it('computes status on every read', async () => {
     const { env, session, run } = await seed();
-    const memory = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'note', runId: run.id, step: 1, callId: 'c1' }).memory;
+    const memory = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'note', runId: run.id, step: 1, callId: 'c1' })).memory;
     expect((await env.http('GET', `/v1/memories/${memory.id}`)).json.memory.status).toBe('unbound');
   });
 });

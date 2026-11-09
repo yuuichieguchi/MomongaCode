@@ -117,9 +117,10 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
     Array.from({ length: MEMORIES }, (_unused, index): RunEventPayload => ({ type: 'tool.call', callId: `save_${index}`, providerCallId: `save_${index}`, name: 'MemorySave', kind: 'other', title: 'save', rawInput: {} })),
     'hold',
   );
-  const memoryIds = Array.from({ length: MEMORIES }, (_unused, index) =>
-    env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note ${index} zorpWord${index} 設定ファイル${index}`, runId: saver.id, step: 1, callId: `save_${index}` }).memory.id,
-  );
+  const memoryIds: string[] = [];
+  for (let index = 0; index < MEMORIES; index += 1) {
+    memoryIds.push((await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note ${index} zorpWord${index} 設定ファイル${index}`, runId: saver.id, step: 1, callId: `save_${index}` })).memory.id);
+  }
   expect((await env.store.transition(saverClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   env.clock.advance(1);
   const run = env.enqueue('Work through the logs', { history: 'fresh' });

@@ -20,23 +20,23 @@ const lagOf = (dbPath: string, runId: string, count: number): number => {
 };
 
 describe('the repair of a lag longer than one page (H7, 11.5; a bound per transaction)', () => {
-  it('repairs every page at claim and leaves each watermark at the last seq', () => {
+  it('claim repairs one page in its transaction, and a read repairs the rest and leaves each watermark at the last seq', async () => {
     const { store, dbPath, clock } = harness();
     const run = enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
-    const before = watermarks(dbPath, run.id)[0] ?? 0;
+    const start = watermarks(dbPath, run.id)[0] ?? 0;
     const lastSeq = lagOf(dbPath, run.id, 2 * REPAIR_PAGE_EVENTS + 200);
     clock.advance(LEASE_MS + 1);
     mustClaim(store, 'w-new');
+    expect(watermarks(dbPath, run.id)).toEqual(DERIVATIONS.map(() => start + REPAIR_PAGE_EVENTS));
+    expect(await store.hasNoticeCode(run.id, 'old.0')).toBe(true);
     const after = store.getRun(run.id)?.lastSeq;
     expect(watermarks(dbPath, run.id)).toEqual(DERIVATIONS.map(() => after));
     expect(after).toBeGreaterThan(lastSeq - 1);
-    expect(store.hasNoticeCode(run.id, 'old.0')).toBe(true);
-    expect(store.hasNoticeCode(run.id, `old.${2 * REPAIR_PAGE_EVENTS + 199}`)).toBe(true);
-    expect(before).toBeLessThan(lastSeq);
+    expect(await store.hasNoticeCode(run.id, `old.${2 * REPAIR_PAGE_EVENTS + 199}`)).toBe(true);
   });
 
-  it('commits each page in its own transaction, so a stop between pages keeps the pages before it', () => {
+  it('commits each page in its own transaction, so a stop between pages keeps the pages before it', async () => {
     const { store, dbPath, clock } = harness();
     const run = enqueue(store, newSession(store).id, 'task');
     mustClaim(store, 'w-old');
@@ -46,10 +46,10 @@ describe('the repair of a lag longer than one page (H7, 11.5; a bound per transa
     db.exec('DROP TRIGGER events_reject_update');
     db.prepare("UPDATE events SET payload_json = '{\"type\":\"mismatch\"}' WHERE run_id = ? AND seq = ?").run(run.id, start + REPAIR_PAGE_EVENTS + 10);
     clock.advance(LEASE_MS + 1);
-    expect(() => store.claim('w-new')).toThrow(/payload_json type does not match/);
+    mustClaim(store, 'w-new');
+    await expect(store.hasNoticeCode(run.id, 'old.0')).rejects.toThrow(/payload_json type does not match/);
     expect(watermarks(dbPath, run.id)).toEqual(DERIVATIONS.map(() => start + REPAIR_PAGE_EVENTS));
-    expect(store.hasNoticeCode(run.id, 'old.0')).toBe(true);
-    expect(store.hasNoticeCode(run.id, `old.${REPAIR_PAGE_EVENTS - 1}`)).toBe(true);
-    expect(store.hasNoticeCode(run.id, `old.${REPAIR_PAGE_EVENTS}`)).toBe(false);
+    const noticeCodes = rawDb(dbPath).prepare('SELECT notice_code FROM events WHERE run_id = ? AND seq IN (?, ?, ?) ORDER BY seq').all(run.id, start + 1, start + REPAIR_PAGE_EVENTS, start + REPAIR_PAGE_EVENTS + 1);
+    expect(noticeCodes).toEqual([{ notice_code: 'old.0' }, { notice_code: `old.${REPAIR_PAGE_EVENTS - 1}` }, { notice_code: null }]);
   });
 });

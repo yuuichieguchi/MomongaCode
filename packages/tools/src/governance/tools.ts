@@ -77,7 +77,7 @@ export const createGovernanceTools = ({ port, trusted }: GovernanceToolsOptions)
       return found === undefined ? { outcome: 'not_applied', output: '' } : { outcome: 'already_applied', output: `Rule ${found.factId} was already added.` };
     },
     execute: async (input, ctx) => {
-      const { factId, created } = port.propose({ ...input, runId: ctx.runId, callId: ctx.callId });
+      const { factId, created } = await port.propose({ ...input, runId: ctx.runId, callId: ctx.callId });
       return { status: 'completed', output: created ? `Added rule ${factId}.` : `Rule ${factId} was already added.` };
     },
   });

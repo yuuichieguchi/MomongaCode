@@ -4,6 +4,8 @@ import type { Redactor } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { MemoryOrigin, RunEvent } from '@momonga/protocol';
 import { decodeRunEvents } from './codec.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
+import type { DerivedReads } from './derived-repair.ts';
 import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row, Stored } from './rows.ts';
@@ -81,7 +83,7 @@ const sessionsOf = (anchors: readonly HistoryAnchor[]): HistorySession[] => {
   return [...sessions.values()];
 };
 
-export const createSearchStore = (db: DatabaseSync, context: DecodeContext): SearchStore => {
+export const createSearchStore = (db: DatabaseSync, context: DecodeContext, reads: DerivedReads): SearchStore => {
   const readCursor = db.prepare('SELECT last_event_id FROM search_cursor WHERE id = 1');
   const writeCursor = db.prepare('UPDATE search_cursor SET last_event_id = :eventId WHERE id = 1');
   const nextTerminal = db.prepare(
@@ -100,9 +102,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext): Sea
   const documentById = db.prepare('SELECT * FROM search_docs WHERE id = :id');
   const runDocument = db.prepare("SELECT * FROM search_docs WHERE run_id = :runId AND level = 'run'");
   const runRow = db.prepare('SELECT r.id, r.origin, s.cwd AS project FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = :runId');
-  const toolCallEvent = db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
-  );
+  const derived = createDerivedSnapshot(db, context);
   const rangeEvents = db.prepare(
     `SELECT *, length(payload_json) AS payload_chars FROM events WHERE run_id = :runId AND seq >= :seqFrom AND seq <= :seqTo AND (:step IS NULL OR step = :step) ORDER BY seq LIMIT :limit`,
   );
@@ -288,17 +288,16 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext): Sea
     const callIds = new Set(events.flatMap((event) => ('callId' in event && typeof event.callId === 'string' ? [event.callId] : [])));
     const found: Record<string, string[]> = {};
     for (const callId of callIds) {
-      const row = toolCallEvent.get({ runId, callId });
-      if (row === undefined) continue;
-      const payload = readerFor('events', `${runId}/${callId}`, row).json('payload_json');
-      const paths = isRecord(payload) ? locationPathsOf(payload) : [];
+      const call = derived.read((view) => view.toolCallOf(runId, callId));
+      if (call === undefined) continue;
+      const paths = locationPathsOf(call);
       if (paths.length > 0) found[redactor.whole(callId)] = paths;
     }
     return found;
   };
 
-  const readRange = (visibility: HistoryVisibility, request: HistoryReadRequest): HistoryReadResult =>
-    readTx(db, () => {
+  const readRange = (visibility: HistoryVisibility, request: HistoryReadRequest): Promise<HistoryReadResult> =>
+    reads.read({ runId: request.runId }, (): HistoryReadResult => {
       const run = lookupRun(visibility, request.runId);
       if (run === undefined) return { kind: 'not_visible' };
       const rows = rangeEvents.all({

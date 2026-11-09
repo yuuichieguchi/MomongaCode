@@ -14,12 +14,12 @@ const setColumn = (dbPath: string, table: string, column: string, value: string,
   db.prepare(`UPDATE ${table} SET ${column} = ? WHERE id = ?`).run(value, id);
 };
 
-const withUnknownValues = (newer: boolean) => {
+const withUnknownValues = async (newer: boolean) => {
   const env = harness();
   const { runId, approvals } = awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
   const approval = approvals[0];
   if (approval === undefined) throw new Error('no approval');
-  const memory = env.store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId, step: 1, callId: 'c1' }).memory;
+  const memory = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId, step: 1, callId: 'c1' })).memory;
   const queued = enqueue(env.store, newSession(env.store).id, 'later');
   const db = rawDb(env.dbPath);
   if (newer) recordNewerMigration(db);
@@ -31,22 +31,22 @@ const withUnknownValues = (newer: boolean) => {
 };
 
 describe('a value of a closed set this build does not know (H7, 11.4 rule 3)', () => {
-  it('decodes as unknown when the database is newer than the build', () => {
-    const { store, runId, approvalId, memoryId } = withUnknownValues(true);
+  it('decodes as unknown when the database is newer than the build', async () => {
+    const { store, runId, approvalId, memoryId } = await withUnknownValues(true);
     expect(store.getRun(runId)?.status).toBe('unknown');
     expect(store.approvals.get(approvalId)?.status).toBe('unknown');
     expect(store.memories.get(memoryId)?.state).toBe('unknown');
   });
 
-  it('still throws when the database is not newer, as corruption', () => {
-    const { store, runId, approvalId, memoryId } = withUnknownValues(false);
+  it('still throws when the database is not newer, as corruption', async () => {
+    const { store, runId, approvalId, memoryId } = await withUnknownValues(false);
     expect(() => store.getRun(runId)).toThrow(/column status has unexpected value "PAUSED"/);
     expect(() => store.approvals.get(approvalId)).toThrow(/column status has unexpected value "deferred"/);
     expect(() => store.memories.get(memoryId)).toThrow(/column state has unexpected value "frozen"/);
   });
 
   it('is never acted on by claim, the sweepers, dead-lettering or approval resolution', async () => {
-    const { store, clock, runId, queuedId, approvalId } = withUnknownValues(true);
+    const { store, clock, runId, queuedId, approvalId } = await withUnknownValues(true);
     clock.set(DEADLINE_MS + LEASE_MS + 1);
     expect(store.claim('w-new')).toBeNull();
     expect(await store.expireApprovals(START_MS + 10 * DEADLINE_MS, rethrow)).toEqual([]);

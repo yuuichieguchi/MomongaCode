@@ -364,8 +364,12 @@ export type MemoryObservation = { status: Stored<MemoryStatus>; observedAt: numb
 export type SessionTouched = { path: string; firstEventId: number };
 
 export type SessionTouchedStore = {
-  after(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
-  newest(sessionId: string, limit: number): SessionTouched[];
+  after(sessionId: string, afterEventId: number, limit: number, afterPath?: string): Promise<SessionTouched[]>;
+  newest(sessionId: string, limit: number): Promise<SessionTouched[]>;
+};
+
+export type RuntimeMemoryStore = Omit<MemoryStore, 'save'> & {
+  save(input: SaveMemoryInput): Promise<{ memory: MemoryRecord; created: boolean }>;
 };
 
 export type MemoryStore = {
@@ -484,7 +488,7 @@ export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
   query(visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult;
-  readRange(visibility: HistoryVisibility, request: HistoryReadRequest): HistoryReadResult;
+  readRange(visibility: HistoryVisibility, request: HistoryReadRequest): Promise<HistoryReadResult>;
   projectOf(visibility: HistoryVisibility, runId: string): string | undefined;
 };
 
@@ -586,17 +590,17 @@ export type RuntimeStore = {
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
-  readModelCallEvents(runId: string): ModelCallRecord[];
-  toolCallSeq(runId: string, callId: string): number | undefined;
-  finalTextOf(runId: string): string;
-  inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
-  startedCallsOf(runId: string): StartedCall[];
-  hasNoticeCode(runId: string, code: string): boolean;
-  meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
-  answeringTargetsOf(runId: string): string[];
+  readModelCallEvents(runId: string): Promise<ModelCallRecord[]>;
+  toolCallSeq(runId: string, callId: string): Promise<number | undefined>;
+  finalTextOf(runId: string): Promise<string>;
+  inFlightModelRequestOf(runId: string): Promise<{ step: number; attempt: number } | undefined>;
+  startedCallsOf(runId: string): Promise<StartedCall[]>;
+  hasNoticeCode(runId: string, code: string): Promise<boolean>;
+  meterRecordOf(sessionId: string, key: MeterKey): Promise<MeterRecord | undefined>;
+  answeringTargetsOf(runId: string): Promise<string[]>;
   recordFidelityVerdicts(runId: string, cwd: string, reply: Pick<FidelityReply, 'checkedThrough' | 'verdicts'>): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
-  toolCallNames(rootRunId: string): string[];
+  toolCallNames(rootRunId: string): Promise<string[]>;
   toolOfferedNames(rootRunId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   readRunEventStream(runId: string, afterSeq: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
@@ -639,7 +643,7 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
-  memories: MemoryStore;
+  memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;
   contextCharges: ContextChargeStore;

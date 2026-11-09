@@ -39,8 +39,8 @@ export const createHistoryPort = ({ store, settings, clock, home, redactor, enfo
           },
         });
       },
-      read: (request) => {
-        const result = store.search.readRange(visibility, { ...request, limit: HISTORY_READ_PAGE_EVENTS, redactor });
+      read: async (request) => {
+        const result = await store.search.readRange(visibility, { ...request, limit: HISTORY_READ_PAGE_EVENTS, redactor });
         if (result.kind === 'not_visible') return null;
         return { runId: result.runId, project: result.project, origin: result.origin, events: result.events, callPaths: result.callPaths, nextSeq: result.nextSeq };
       },

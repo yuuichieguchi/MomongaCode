@@ -4,6 +4,7 @@ import type { Clock } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { copyDigestOf, isReferenceInherited } from './inherit.ts';
 import type { InheritedPayload } from './inherit.ts';
@@ -76,7 +77,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, decodeContext) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
-  const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
+  const derived = createDerivedSnapshot(db, decodeContext);
 
   const decodeEach = (rows: Iterable<Row>): RunEvent[] => {
     const events: RunEvent[] = [];
@@ -91,12 +92,10 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const seqsOfNewPinnedLayers = (runId: string): number[] => {
     const known = new Set<string>();
     const wanted: number[] = [];
-    for (const row of pinnedDigests.iterate({ runId })) {
-      const reader = readerFor('events', runId, row);
-      const digest = reader.nullableString('pinned_digest');
-      if (digest !== null && known.has(digest)) continue;
-      if (digest !== null) known.add(digest);
-      wanted.push(reader.number('seq'));
+    for (const { seq, pinnedDigest } of derived.read((view) => view.pinnedDigestsOf(runId))) {
+      if (pinnedDigest !== null && known.has(pinnedDigest)) continue;
+      if (pinnedDigest !== null) known.add(pinnedDigest);
+      wanted.push(seq);
       unit();
     }
     return wanted;

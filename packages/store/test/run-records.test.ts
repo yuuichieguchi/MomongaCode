@@ -89,10 +89,10 @@ const todaysFacts = (payloads: readonly RunEventPayload[]): Facts => {
   };
 };
 
-const recordedFacts = (store: RuntimeStore, runId: string): Facts => ({
-  finalText: store.finalTextOf(runId),
-  inFlight: store.inFlightModelRequestOf(runId),
-  started: store.startedCallsOf(runId),
+const recordedFacts = async (store: RuntimeStore, runId: string): Promise<Facts> => ({
+  finalText: await store.finalTextOf(runId),
+  inFlight: await store.inFlightModelRequestOf(runId),
+  started: await store.startedCallsOf(runId),
 });
 
 const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore => {
@@ -112,15 +112,15 @@ const countingStore = (dbPath: string, decoded: { rows: number }): RuntimeStore 
 };
 
 describe('the final text, the in-flight request and the started calls of a run are records written at append, and answer as the fold of the journal does (row 3)', () => {
-  it.each(Object.entries(SCENARIOS))('%s', (_name, payloads) => {
+  it.each(Object.entries(SCENARIOS))('%s', async (_name, payloads) => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads).kind).toBe('ok');
-    expect(recordedFacts(store, run.id)).toEqual(todaysFacts(payloads));
+    expect(await recordedFacts(store, run.id)).toEqual(todaysFacts(payloads));
   });
 
-  it('keeps the text of the latest response that has text after a compaction replaced it, where the fold of the history answers an empty text', () => {
+  it('keeps the text of the latest response that has text after a compaction replaced it, where the fold of the history answers an empty text', async () => {
     const payloads = [
       requested(1),
       respondedWith(1, 1, [message('m1', 'before')]),
@@ -133,16 +133,16 @@ describe('the final text, the in-flight request and the started calls of a run a
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, payloads).kind).toBe('ok');
     expect(todaysFacts(payloads).finalText).toBe('');
-    expect(store.finalTextOf(run.id)).toBe('before');
+    expect(await store.finalTextOf(run.id)).toBe('before');
   });
 
-  it('answers an empty text and no request or call for a run that recorded nothing', () => {
+  it('answers an empty text and no request or call for a run that recorded nothing', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id, 'do the task');
-    expect(recordedFacts(store, run.id)).toEqual({ finalText: '', inFlight: undefined, started: [] });
+    expect(await recordedFacts(store, run.id)).toEqual({ finalText: '', inFlight: undefined, started: [] });
   });
 
-  it('reads no journal payload on the main thread', () => {
+  it('reads no journal payload on the main thread', async () => {
     const decoded = { rows: 0 };
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const store = countingStore(dbPath, decoded);
@@ -152,7 +152,7 @@ describe('the final text, the in-flight request and the started calls of a run a
     if (payloads === undefined) throw new Error('missing scenario');
     expect(store.append(claim, [...payloads, requested(1), respondedWith(1, 1, [message('m1', 'text')]), requested(2)]).kind).toBe('ok');
     decoded.rows = 0;
-    recordedFacts(store, run.id);
+    await recordedFacts(store, run.id);
     expect(decoded.rows).toBe(0);
   });
 });
@@ -188,13 +188,13 @@ const versionNineteen = (journals: Record<string, readonly RunEventPayload[]>): 
 };
 
 describe('an upgrade from version 19 derives the same records from the journals written before them', () => {
-  it('gives each old run the facts the fold of its journal gives', () => {
+  it('gives each old run the facts the fold of its journal gives', async () => {
     const { dbPath, runIds } = versionNineteen(SCENARIOS);
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 10));
     for (const [name, payloads] of Object.entries(SCENARIOS)) {
       const runId = runIds[name];
       if (runId === undefined) throw new Error(`no run for ${name}`);
-      expect(recordedFacts(store, runId), name).toEqual(todaysFacts(payloads));
+      expect(await recordedFacts(store, runId), name).toEqual(todaysFacts(payloads));
     }
   });
 });
@@ -240,16 +240,18 @@ const meterOracle = (runs: readonly { runId: string; payloads: readonly MeterPay
   return records;
 };
 
-const meterRecordsOf = (store: RuntimeStore, sessionId: string) =>
+const meterRecordsOf = async (store: RuntimeStore, sessionId: string) =>
   new Map(
-    METER_KEYS.map((key) => {
-      const record = store.meterRecordOf(sessionId, { counter: 'counter-a', ...key });
-      return [canonicalJson([key.contextWindow, key.tokenErrorRatio ?? null, key.tokenCounting]), record] as const;
-    }),
+    await Promise.all(
+      METER_KEYS.map(async (key) => {
+        const record = await store.meterRecordOf(sessionId, { counter: 'counter-a', ...key });
+        return [canonicalJson([key.contextWindow, key.tokenErrorRatio ?? null, key.tokenCounting]), record] as const;
+      }),
+    ),
   );
 
 describe('the meter record of a session keeps the latest observation and the last misses of each key', () => {
-  it('is updated at append', () => {
+  it('is updated at append', async () => {
     const { store } = harness();
     const session = newSession(store);
     const run = enqueue(store, session.id, 'do the task');
@@ -257,15 +259,15 @@ describe('the meter record of a session keeps the latest observation and the las
     const payloads = meterJournal(0, 27);
     expect(store.append(claim, payloads.slice(0, 10)).kind).toBe('ok');
     expect(store.append(claim, payloads.slice(10)).kind).toBe('ok');
-    expect(meterRecordsOf(store, session.id)).toEqual(meterOracle([{ runId: run.id, payloads }]));
+    expect(await meterRecordsOf(store, session.id)).toEqual(meterOracle([{ runId: run.id, payloads }]));
   });
 
-  it('is derived once, at an upgrade from version 19, from the observations of every run of the session', () => {
+  it('is derived once, at an upgrade from version 19, from the observations of every run of the session', async () => {
     const first = meterJournal(0, 15);
     const second = meterJournal(15, 12);
     const { dbPath } = versionNineteen({ first, second });
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 10));
-    expect(meterRecordsOf(store, 's1')).toEqual(
+    expect(await meterRecordsOf(store, 's1')).toEqual(
       meterOracle([
         { runId: 'r1', payloads: first },
         { runId: 'r2', payloads: second },
@@ -273,11 +275,11 @@ describe('the meter record of a session keeps the latest observation and the las
     );
   });
 
-  it('has no record for a key that was never observed', () => {
+  it('has no record for a key that was never observed', async () => {
     const { store } = harness();
     const session = newSession(store);
     enqueue(store, session.id, 'do the task');
-    expect(store.meterRecordOf(session.id, { counter: 'counter-a', contextWindow: 1000, tokenCounting: 'exact' })).toBeUndefined();
+    expect(await store.meterRecordOf(session.id, { counter: 'counter-a', contextWindow: 1000, tokenCounting: 'exact' })).toBeUndefined();
   });
 });
 
@@ -286,18 +288,18 @@ const notice = (code: string | undefined): RunEventPayload => ({ type: 'notice',
 describe('the codes of the notices of a run are a column, so asking for one reads no payload', () => {
   const journals = { dropped: [notice(undefined), notice('memories_dropped'), notice('other')], other: [notice('other'), notice(undefined)], none: [] as RunEventPayload[] };
 
-  it('answers for a run appended today', () => {
+  it('answers for a run appended today', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id, 'do the task');
     const claim = mustClaim(store, 'w1');
     expect(store.append(claim, journals.dropped).kind).toBe('ok');
-    expect([store.hasNoticeCode(run.id, 'memories_dropped'), store.hasNoticeCode(run.id, 'other'), store.hasNoticeCode(run.id, 'absent')]).toEqual([true, true, false]);
+    expect([await store.hasNoticeCode(run.id, 'memories_dropped'), await store.hasNoticeCode(run.id, 'other'), await store.hasNoticeCode(run.id, 'absent')]).toEqual([true, true, false]);
   });
 
-  it('answers for runs written before the column', () => {
+  it('answers for runs written before the column', async () => {
     const { dbPath } = versionNineteen(journals);
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 10));
-    expect(['r1', 'r2', 'r3'].map((runId) => store.hasNoticeCode(runId, 'memories_dropped'))).toEqual([true, false, false]);
-    expect(['r1', 'r2', 'r3'].map((runId) => store.hasNoticeCode(runId, 'other'))).toEqual([true, true, false]);
+    expect(await Promise.all(['r1', 'r2', 'r3'].map((runId) => store.hasNoticeCode(runId, 'memories_dropped')))).toEqual([true, false, false]);
+    expect(await Promise.all(['r1', 'r2', 'r3'].map((runId) => store.hasNoticeCode(runId, 'other')))).toEqual([true, true, false]);
   });
 });

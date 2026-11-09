@@ -51,7 +51,7 @@ const fakeStore = (runs: Record<string, LoadedRun>) => {
   return {
     loads,
     getRun: (id: string) => (id in runs ? ({ id, sessionId: SESSION_ID } as Run) : undefined),
-    inFlightModelRequestOf: (id: string): { step: number; attempt: number } | undefined => {
+    inFlightModelRequestOf: async (id: string): Promise<{ step: number; attempt: number } | undefined> => {
       loads.push(id);
       const loaded = runs[id];
       if (loaded === undefined) throw new Error(`no run ${id}`);

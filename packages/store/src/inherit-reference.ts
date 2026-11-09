@@ -3,6 +3,7 @@ import { readTx } from '@momonga/foundation/sqlite';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, userMessageContent } from '@momonga/protocol';
 import type { ContentPart, InheritedReferencePayload, InheritedViaLink, InputItem, PermissionMode, RunEvent, RunState, RunStatus, TerminalStatus } from '@momonga/protocol';
 import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
@@ -162,9 +163,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   );
   const firstTask = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'user.message' AND seq <= :bound ORDER BY seq LIMIT 1");
   const latestCompacted = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.compacted' AND seq <= :bound ORDER BY seq DESC LIMIT 1");
-  const callOwners = db.prepare(
-    "SELECT e.run_id AS run_id FROM events e WHERE e.type = 'tool.call' AND e.call_id = :callId AND e.run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)",
-  );
+  const derived = createDerivedSnapshot(db);
   const recordedTokens = db.prepare(
     `SELECT json_extract(payload_json, '$.tokens') AS tokens FROM events
      WHERE run_id = :runId AND type = 'context.truncated' AND json_extract(payload_json, '$.callId') = :callId
@@ -325,8 +324,8 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   });
 
   const tokensBeforeTheCopy = (sessionId: string, callId: string): number | undefined => {
-    for (const owner of callOwners.all({ callId, sessionId })) {
-      const row = recordedTokens.get({ runId: String(owner['run_id']), callId });
+    for (const owner of derived.read((view) => view.callOwnersOf(sessionId, callId))) {
+      const row = recordedTokens.get({ runId: owner, callId });
       unit();
       if (row !== undefined && typeof row['tokens'] === 'number') return row['tokens'];
     }

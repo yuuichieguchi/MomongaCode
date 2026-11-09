@@ -729,8 +729,8 @@ ranked AS (
   SELECT *, ROW_NUMBER() OVER (PARTITION BY session_id, counter, context_window, COALESCE(token_error_ratio, -1), token_counting ORDER BY id DESC) AS recency FROM observed
 )
 SELECT l.session_id, l.counter, l.context_window, l.token_error_ratio, l.token_counting, l.run_id, l.seq, l.payload_json,
-  (SELECT json_group_array(json_object('miss', m.miss, 'uncounted', m.uncounted)) FROM (
-    SELECT r.miss AS miss, r.uncounted AS uncounted FROM ranked r
+  (SELECT json_group_array(json_object('eventId', m.id, 'miss', m.miss, 'uncounted', m.uncounted)) FROM (
+    SELECT r.id AS id, r.miss AS miss, r.uncounted AS uncounted FROM ranked r
     WHERE r.session_id = l.session_id AND r.counter = l.counter AND r.context_window = l.context_window
       AND COALESCE(r.token_error_ratio, -1) = COALESCE(l.token_error_ratio, -1) AND r.token_counting = l.token_counting AND r.recency <= 20
     ORDER BY r.id

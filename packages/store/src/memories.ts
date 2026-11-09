@@ -6,6 +6,7 @@ import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemorySta
 import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
 import type { Row, RowReader } from './rows.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
 import { revisionChain } from './revision-chain.ts';
 import { asciiLower, instrFilters, partitionTerms, quoted } from './search-terms.ts';
 import { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
@@ -124,9 +125,7 @@ const cursorOf = (part: RecallCursor['part'], row: Row): RecallCursor => {
 };
 
 export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): MemoryStore => {
-  const toolCallEvent = db.prepare(
-    "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
-  );
+  const derived = createDerivedSnapshot(db, context);
   const insert = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, kept_at, kind, supersedes_json)
      VALUES (:id, :scope, :origin, :project, :text, :sessionId, :runId, :step, :callId, :seq, :now, :now, :kind, :supersedesJson)`,
@@ -238,10 +237,9 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     });
 
   const requireSource = (input: SaveMemoryInput): { seq: number; sessionId: string } => {
-    const row = toolCallEvent.get({ runId: input.runId, callId: input.callId });
-    if (row === undefined) throw new Error(`memory source ${input.runId}/${input.callId} has no recorded tool.call event`);
-    const reader = readerFor('events', `${input.runId}/${input.callId}`, row);
-    return { seq: reader.number('seq'), sessionId: reader.string('session_id') };
+    const call = derived.read((view) => view.toolCallOf(input.runId, input.callId));
+    if (call === undefined) throw new Error(`memory source ${input.runId}/${input.callId} has no recorded tool.call event`);
+    return { seq: call.seq, sessionId: call.sessionId };
   };
 
   const visibilityOf = (visibility: MemoryVisibility): { sql: string; params: Record<string, string> } =>
@@ -333,7 +331,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
 
   return {
     save: (input) =>
-      immediateTx(db, () => {
+      joinedTx(db, () => {
         if ((input.scope === 'project') !== (input.project !== null)) {
           throw new RangeError(`a ${input.scope} memory ${input.scope === 'project' ? 'requires' : 'cannot carry'} a project`);
         }

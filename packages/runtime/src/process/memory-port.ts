@@ -84,7 +84,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
           facts: async (resolved) => runFactsOf(runId, await store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound)),
           head: () => readGitHead(evidenceOptionsFor(bound)),
         });
-        const saved = store.memories.save({
+        const saved = await store.memories.save({
           scope,
           origin: trusted ? 'trusted' : 'untrusted',
           project: scope === 'project' ? session.cwd : null,

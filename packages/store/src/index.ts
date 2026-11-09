@@ -99,6 +99,7 @@ export type {
   MemoryObservation,
   MemoryRecord,
   MemoryStore,
+  RuntimeMemoryStore,
   RecallCursor,
   SessionTouched,
   SessionTouchedStore,

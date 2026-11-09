@@ -425,7 +425,7 @@ const drive = async (
     capabilities: aliasMeterCapabilities,
     observedCapacity: token.observedCapacity,
   });
-  aliasMeter.restore(foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
+  aliasMeter.restore(await foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
   const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
     const known = targetFacts.get(target);
     if (known !== undefined) return known;
@@ -437,7 +437,7 @@ const drive = async (
       observedCapacity: token.observedCapacity,
     });
     const counter = counterOf(target);
-    meter.restore(foldMeterFor(options.store, session.id, capabilities, counter));
+    meter.restore(await foldMeterFor(options.store, session.id, capabilities, counter));
     const created = { capabilities, meter, counter };
     targetFacts.set(target, created);
     return created;

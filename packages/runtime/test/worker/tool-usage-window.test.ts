@@ -35,7 +35,7 @@ describe('toolUsageWindowOf', () => {
     const middle = await pastRun(env, [offered(['Read']), called('call_a', 'Read'), offered(['Glob', 'Read']), called('call_b', 'Glob')], 'FAILED');
     const newest = await pastRun(env, [offered(['Grep', 'Read'])]);
 
-    const window = toolUsageWindowOf(env.store, env.session.cwd);
+    const window = await toolUsageWindowOf(env.store, env.session.cwd);
 
     expect(window).toEqual([
       { offered: ['Grep', 'Read'], called: [] },
@@ -49,7 +49,7 @@ describe('toolUsageWindowOf', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS + 2; index += 1) await pastRun(env, usual(index));
 
-    expect(toolUsageWindowOf(env.store, env.session.cwd)).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
+    expect(await toolUsageWindowOf(env.store, env.session.cwd)).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
   });
 
   it('leaves out a run that has not ended', async () => {
@@ -57,21 +57,21 @@ describe('toolUsageWindowOf', () => {
     await pastRun(env, [offered(['Read'])]);
     await pastRun(env, [offered(['Bash'])], 'hold');
 
-    expect(toolUsageWindowOf(env.store, env.session.cwd)).toEqual([{ offered: ['Read'], called: [] }]);
+    expect(await toolUsageWindowOf(env.store, env.session.cwd)).toEqual([{ offered: ['Read'], called: [] }]);
   });
 
   it('is empty for a project with no runs', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     await pastRun(env, [offered(['Read'])]);
 
-    expect(toolUsageWindowOf(env.store, '/some/other/project')).toEqual([]);
+    expect(await toolUsageWindowOf(env.store, '/some/other/project')).toEqual([]);
   });
 
   it('feeds deferredSetOf: twenty runs that offered Glob and Grep and called only Read defer Glob and Grep', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) await pastRun(env, usual(index));
 
-    expect(deferredSetOf({ runs: toolUsageWindowOf(env.store, env.session.cwd) })).toEqual(['Glob', 'Grep']);
+    expect(deferredSetOf({ runs: await toolUsageWindowOf(env.store, env.session.cwd) })).toEqual(['Glob', 'Grep']);
   });
 
   it('counts a tool called only by a child or grandchild run as called by its root run (open item 8)', async () => {
@@ -90,7 +90,7 @@ describe('toolUsageWindowOf', () => {
     expect((await env.store.transition(childClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     expect((await env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
-    const window = toolUsageWindowOf(env.store, env.session.cwd);
+    const window = await toolUsageWindowOf(env.store, env.session.cwd);
 
     expect(window).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
     expect(window[0]).toEqual({ offered: ['Glob', 'Grep', 'Read'], called: ['Glob', 'Grep'] });
@@ -101,6 +101,6 @@ describe('toolUsageWindowOf', () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS - 1; index += 1) await pastRun(env, usual(index));
 
-    expect(deferredSetOf({ runs: toolUsageWindowOf(env.store, env.session.cwd) })).toEqual([]);
+    expect(deferredSetOf({ runs: await toolUsageWindowOf(env.store, env.session.cwd) })).toEqual([]);
   });
 });

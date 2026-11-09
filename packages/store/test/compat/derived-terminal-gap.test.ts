@@ -49,59 +49,60 @@ const terminalRunWrittenByOlderBuild = () => {
 };
 
 describe('derived records of a run an older build finished, never claimed again (H7, 11.5 gap; the rule is being decided)', () => {
-  it('run_records: finalTextOf (append-records.ts:257) returns the last answer text', () => {
+  it('run_records: finalTextOf (append-records.ts:257) returns the last answer text', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.finalTextOf(run.id)).toBe('the old build answered');
+    expect(await store.finalTextOf(run.id)).toBe('the old build answered');
   });
 
-  it('started_calls: startedCallsOf (append-records.ts:264) lists the call started and not finished', () => {
+  it('started_calls: startedCallsOf (append-records.ts:264) lists the call started and not finished', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.startedCallsOf(run.id)).toEqual([{ callId: 'c1', name: 'Write', idemKey: 'k1' }]);
+    expect(await store.startedCallsOf(run.id)).toEqual([{ callId: 'c1', name: 'Write', idemKey: 'k1' }]);
   });
 
-  it('events.call_id: toolCallSeq (append-records.ts:253) finds the call', () => {
+  it('events.call_id: toolCallSeq (append-records.ts:253) finds the call', async () => {
     const { store, run, seqs } = terminalRunWrittenByOlderBuild();
-    expect(store.toolCallSeq(run.id, 'c1')).toBe(seqs[1]);
+    expect(await store.toolCallSeq(run.id, 'c1')).toBe(seqs[1]);
   });
 
-  it('events.tool_name: toolCallNames (runtime-store.ts:1406, statement :271) names the tool', () => {
+  it('events.tool_name: toolCallNames (runtime-store.ts:1406, statement :271) names the tool', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.toolCallNames(run.id)).toEqual(['Write']);
+    expect(await store.toolCallNames(run.id)).toEqual(['Write']);
   });
 
-  it('events.notice_code: hasNoticeCode (append-records.ts:269) sees the code', () => {
+  it('events.notice_code: hasNoticeCode (append-records.ts:269) sees the code', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.hasNoticeCode(run.id, 'old.code')).toBe(true);
+    expect(await store.hasNoticeCode(run.id, 'old.code')).toBe(true);
   });
 
-  it('events.model_call_json: readModelCallEvents (runtime-store.ts:1386, statement :261) lists the request and the response', () => {
+  it('events.model_call_json: readModelCallEvents (runtime-store.ts:1386, statement :261) lists the request and the response', async () => {
     const { store, run, seqs } = terminalRunWrittenByOlderBuild();
-    expect(store.readModelCallEvents(run.id).map((record) => [record.kind, record.seq])).toEqual([['requested', seqs[0]], ['responded', seqs[4]]]);
+    expect((await store.readModelCallEvents(run.id)).map((record) => [record.kind, record.seq])).toEqual([['requested', seqs[0]], ['responded', seqs[4]]]);
   });
 
-  it('meter_records: meterRecordOf (append-records.ts:274) holds the observation', () => {
+  it('meter_records: meterRecordOf (append-records.ts:274) holds the observation', async () => {
     const { store, run, session, seqs } = terminalRunWrittenByOlderBuild();
-    expect(store.meterRecordOf(session.id, { counter: COUNTER, contextWindow: 8192, tokenCounting: 'estimated' })).toMatchObject({ runId: run.id, seq: seqs[3] });
+    expect(await store.meterRecordOf(session.id, { counter: COUNTER, contextWindow: 8192, tokenCounting: 'estimated' })).toMatchObject({ runId: run.id, seq: seqs[3] });
   });
 
-  it('run_answerers: answeringTargetsOf (append-records.ts:270) names the target', () => {
+  it('run_answerers: answeringTargetsOf (append-records.ts:270) names the target', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.answeringTargetsOf(run.id)).toEqual(['primary']);
+    expect(await store.answeringTargetsOf(run.id)).toEqual(['primary']);
   });
 
-  it('session_touched: sessionTouched.after and newest (append-records.ts:271-273, runtime-store.ts:1620) list the path', () => {
+  it('session_touched: sessionTouched.after and newest (append-records.ts:271-273, runtime-store.ts:1620) list the path', async () => {
     const { store, session } = terminalRunWrittenByOlderBuild();
-    expect(store.sessionTouched.after(session.id, 0, 100).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
-    expect(store.sessionTouched.newest(session.id, 10).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
+    expect((await store.sessionTouched.after(session.id, 0, 100)).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
+    expect((await store.sessionTouched.newest(session.id, 10)).map((entry) => entry.path)).toEqual(['/work/a/old.txt']);
   });
 
-  it('events.call_id: memories.save (memories.ts:124) finds the tool call of the finished run', () => {
+  it('events.call_id: memories.save (memories.ts:124) finds the tool call of the finished run', async () => {
     const { store, run } = terminalRunWrittenByOlderBuild();
-    expect(store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'from the old run', runId: run.id, step: 1, callId: 'c1' }).created).toBe(true);
+    expect((await store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'from the old run', runId: run.id, step: 1, callId: 'c1' })).created).toBe(true);
   });
 
-  it('events.pinned_digest: the pinned digest column (journal-reader.ts:79) holds the digest of the request', () => {
-    const { dbPath, run, seqs } = terminalRunWrittenByOlderBuild();
+  it('events.pinned_digest: the pinned digest column (journal-reader.ts:79) holds the digest of the request', async () => {
+    const { store, dbPath, run, seqs } = terminalRunWrittenByOlderBuild();
+    await store.finalTextOf(run.id);
     const [requestedSeq] = seqs;
     if (requestedSeq === undefined) throw new Error('the model.requested event was not appended');
     expect(rawDb(dbPath).prepare('SELECT pinned_digest FROM events WHERE run_id = ? AND seq = ?').get(run.id, requestedSeq)).toEqual({ pinned_digest: PINNED });
