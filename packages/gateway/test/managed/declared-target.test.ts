@@ -7,8 +7,8 @@ import { probeKeyOf } from '@momonga/config';
 import type { KnownProbeKey } from '@momonga/config';
 import { createManagedTarget, decideToolCalling, loadProbeRecord, managedCurrencyOf, managedKeyReader, measureManagedServer, saveProbeRecord } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
-import { TARGET_PROBING } from '@momonga/protocol';
-import type { ProbeReport } from '@momonga/protocol';
+import { FM_SERVER, TARGET_PROBING } from '@momonga/protocol';
+import type { ManagedServerDescription, ProbeReport } from '@momonga/protocol';
 import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
@@ -128,14 +128,13 @@ describe('a running instance keeps the key it started with (19.11-a; R-S19-21)',
   });
 });
 
-describe('a declared server is measured, never given the union fallback (19.11-b; R-S19-22)', () => {
-  it('answers 503 target_probing with no probe record even when bounds and a tool form are declared, and never reaches the envelope fallback', async () => {
-    const description = declaredForm('mine', DECLARATION);
+describe('a declared server follows the one generic declared-only rule (19.11-b, 19.14 item 8; R-S19-22)', () => {
+  const targetOf = async (description: ManagedServerDescription, toolCallingSetting: 'auto' | 'constrained', declaredCapabilities?: { contextWindow: number; maxOutputTokens: number }) => {
     const started: KnownProbeKey[] = [];
     const managed = await createManagedTarget({
       description,
       server: idleServer,
-      binary: COMMAND,
+      binary: description.binary.defaultPath,
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
       probeRecordDir: path.join(makeDir(), 'probe'),
       target: 'workbench',
@@ -151,12 +150,31 @@ describe('a declared server is measured, never given the union fallback (19.11-b
         throw new Error('every key component is read in this test');
       },
       currency: managedCurrencyOf(description, { userDialects: {} }),
-      declaredCapabilities: { contextWindow: 4096, maxOutputTokens: 512 },
-      toolCallingSetting: 'constrained',
+      ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
+      toolCallingSetting,
     });
+    return { managed, started };
+  };
 
+  it('answers 503 target_probing with toolCalling auto, no record and nothing declared, and starts the probe of its key', async () => {
+    const { managed, started } = await targetOf(await loadedDeclaration('mine', DECLARATION), 'auto');
     await expect(managed.capabilities({ name: 'workbench', model: 'fake-1' })).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
     expect(started).toEqual([KEY_A]);
+  });
+
+  it('serves the declared bounds and the explicit mode exactly as fm does under the same declaration', async () => {
+    const bounds = { contextWindow: 4096, maxOutputTokens: 512 };
+    const answerOf = async (description: ManagedServerDescription) => {
+      const { managed, started } = await targetOf(description, 'constrained', bounds);
+      const target = { name: 'workbench', model: 'fake-1' };
+      const capabilities = await managed.capabilities(target);
+      return { capabilities: { ...capabilities, allowedTools: undefined }, envelope: managed.envelopeShape(target), dialect: managed.schemaDialect(target), started };
+    };
+    const declared = await answerOf(await loadedDeclaration('mine', DECLARATION));
+    const fm = await answerOf(FM_SERVER);
+    expect(declared.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 512, toolCalling: 'constrained', source: 'declared' });
+    expect(declared).toEqual(fm);
+    expect(declared.started).toEqual([]);
   });
 
   const measuredMode = async (scenario: 'tools-ok' | 'tools-400') => {

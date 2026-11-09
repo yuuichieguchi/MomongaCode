@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadSettings, loadUserSettings } from '@momonga/config';
+import { loadSettings, loadUserSettings, managedServerDigest } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import { digestsOf, planRoles } from '@momonga/supervisor';
@@ -171,14 +171,18 @@ describe('a change of a declared server replans the gateway through the models d
   });
 });
 
-describe('a declared server on a host that offers none of its endpoint forms is refused at load (18.2.6; R-S19-15)', () => {
-  it('refuses the target on an injected win32 host with the 18.2.6 text', async () => {
-    const tree = makeTree();
-    userFile(tree, declaring({ mine: DECLARATION }));
-    const outcome = await loadUserSettings({ home: tree.home, platform: 'win32' } as Parameters<typeof loadUserSettings>[0]).then(
-      () => undefined,
-      (error: unknown) => (error as Error).message,
-    );
-    expect(outcome).toContain('models.targets.workbench: server "mine" accepts only the endpoint forms [unix], and this host offers [pipe]; the target cannot be used on this platform');
+
+describe('the behaviour stamp of a description ignores what does not change the probe behaviour (19.4, 19.14 item 2; R-S19-12)', () => {
+  it('keeps the stamp when only provider changes', () => {
+    expect(managedServerDigest({ ...FM_SERVER, provider: 'someone-else' })).toBe(managedServerDigest(FM_SERVER));
+  });
+
+  it('keeps the stamp when only an errors[].message changes', () => {
+    const errors = FM_SERVER.errors.map((entry, index) => (index === 0 ? { ...entry, message: 'A reworded guardrail message.' } : entry));
+    expect(managedServerDigest({ ...FM_SERVER, errors })).toBe(managedServerDigest(FM_SERVER));
+  });
+
+  it('changes the stamp when the launch argv changes', () => {
+    expect(managedServerDigest({ ...FM_SERVER, launch: { argv: ['serve', '--verbose', '--socket', '{socket}'] } })).not.toBe(managedServerDigest(FM_SERVER));
   });
 });
