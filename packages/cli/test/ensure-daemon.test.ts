@@ -70,10 +70,10 @@ describe('ensureDaemon', () => {
       return undefined;
     });
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS });
+    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
-    expect(health.phase).toBe('running');
-    expect(spawned).toEqual([{ command: '/opt/node', args: ['/opt/momonga/main.js', '__supervise', `--home=${home}`, '--log-target=file'] }]);
+    expect(spawned).toEqual([{ command: '/opt/node', args: ['/opt/momonga/main.js', '__supervise', `--home=${home}`, '--generation=1', '--log-target=file'] }]);
+    expect(health).toMatchObject({ phase: 'running' });
   });
 
   it('refuses a daemon it started whose binary reports another version than this client, naming both', async (context) => {
