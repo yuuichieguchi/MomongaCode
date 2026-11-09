@@ -42,10 +42,10 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     return path.join(paths.executables, directory as string, 'rg');
   };
 
-  const searchRound = async (): Promise<string> => {
+  const searchRound = async (stderr = ''): Promise<string> => {
     const before = chatCompletions(upstream).length;
     const result = await run('-p', 'Find the needle', '--permission-mode', 'acceptEdits');
-    expect(result).toEqual({ status: 0, stdout: `${DONE}\n`, stderr: '' });
+    expect(result).toEqual({ status: 0, stdout: `${DONE}\n`, stderr });
     const requests = chatCompletions(upstream);
     expect(requests.length - before).toBe(2);
     return JSON.stringify(requests[requests.length - 1]);
@@ -120,7 +120,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     const original = fs.readFileSync(paths.settingsFile, 'utf8');
     fs.writeFileSync(paths.settingsFile, JSON.stringify({ ...(JSON.parse(original) as Record<string, unknown>), tools: { ripgrep: path.join(root, 'no-such-rg') } }));
     try {
-      const lastRequest = await searchRound();
+      const lastRequest = await searchRound(`momonga: tool Grep ${NEEDLE} failed\n`);
       expect(lastRequest).toContain('ripgrep is not available');
       expect(lastRequest).toContain('no-such-rg');
       expect(lastRequest).not.toContain('needle.txt:');
