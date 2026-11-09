@@ -553,6 +553,7 @@ export type {
   ClassifiedError,
   DecodedCompactionItem,
   LenientItems,
+  AdapterStop,
   ProviderAdapter,
   ClientOperation,
   ReasoningOrigin,

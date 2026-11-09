@@ -59,7 +59,7 @@ export interface FmServe {
   readonly restarts: number;
   start(signal?: AbortSignal): Promise<FmServeEndpoint>;
   ensureRunning(): Promise<FmServeEndpoint>;
-  stop(): Promise<void>;
+  stop(stop?: { stopGraceMs: number }): Promise<void>;
   health(): Promise<HealthResult>;
 }
 
@@ -316,7 +316,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       }, timeoutMs);
     });
 
-  const terminate = (managed: ManagedChild): Promise<void> => {
+  const terminate = (managed: ManagedChild, graceMs: number = options.stopGraceMs): Promise<void> => {
     managed.terminating ??= (async () => {
       if (!managed.exited) {
         const exitedStop = new AbortController();
@@ -329,14 +329,14 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
           }
         };
         await sendKill('SIGTERM');
-        if (!(await waitForExit(managed, options.stopGraceMs))) {
+        if (!(await waitForExit(managed, graceMs))) {
           await sendKill('SIGKILL');
-          if (!(await waitForExit(managed, options.stopGraceMs))) {
-            options.onWarning(`fm serve was not confirmed stopped: it did not exit within ${options.stopGraceMs} ms after SIGKILL`);
+          if (!(await waitForExit(managed, graceMs))) {
+            options.onWarning(`fm serve was not confirmed stopped: it did not exit within ${graceMs} ms after SIGKILL`);
           }
         }
       }
-      await managed.process.finalize?.(options.stopGraceMs);
+      await managed.process.finalize?.(graceMs);
     })();
     return managed.terminating;
   };
@@ -542,7 +542,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       return start();
     },
 
-    async stop(): Promise<void> {
+    async stop(stop): Promise<void> {
       state = 'stopped';
       generation += 1;
       endStart?.abort(stoppedDuringStart());
@@ -553,7 +553,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       }
       const stopping = current;
       const closing = client;
-      if (stopping !== undefined) await terminate(stopping);
+      if (stopping !== undefined) await terminate(stopping, stop?.stopGraceMs);
       const pendingStart = startPromise;
       if (pendingStart !== undefined) await pendingStart.then(undefined, () => undefined);
       const pendingRestart = restartRun;

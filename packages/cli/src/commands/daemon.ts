@@ -54,7 +54,7 @@ export const daemonStop = async (
   ports: CliPorts & DaemonPorts,
   paths: MomongaPaths,
 ): Promise<number> => {
-  const { stopped } = await stopDaemon(ports, paths);
+  const { stopped } = await stopDaemon(ports, paths, undefined, (message) => void ports.stderr.write(`${message}\n`));
   ports.stdout.write(
     stopped ? "momonga daemon stopped\n" : "momonga daemon is not running\n",
   );

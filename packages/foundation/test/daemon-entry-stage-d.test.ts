@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { COMMON_ENTRY_FLAGS, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
 import type { DaemonCloseResult, DaemonDefinition, DaemonHandle, EntryIo, EntrySignal, RotatingLogFile } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -74,9 +74,9 @@ const fakeIo = (argv: readonly string[]) => {
         if (index !== -1) uncaughtHandlers.splice(index, 1);
       };
     },
-    watchLifeline: (_fd, onEnd) => {
-      lifelines.push({ onEnd });
-      return () => lifecycle.push('dispose:lifeline');
+    watchLifeline: (_fd, handlers) => {
+      lifelines.push({ onEnd: handlers.onEnd });
+      return { dispose: () => void lifecycle.push('dispose:lifeline'), drain: async () => undefined };
     },
     logFile: () => {
       const sink: RotatingLogFile = {
@@ -127,6 +127,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
     version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => MAX_CLOSE_MS,
+    readStopValues: () => DEFAULT_STOP_VALUES,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
     logPath: () => LOG_PATH,
     isConfigError: () => false,

@@ -492,6 +492,18 @@ export class MarkerReapError extends AggregateError {
   }
 }
 
+const markerFilesUnder = async (dir: string): Promise<string[]> => {
+  let entries: fs.Dirent[];
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const nested = await Promise.all(entries.map((entry) => (entry.isDirectory() ? markerFilesUnder(path.join(dir, entry.name)) : Promise.resolve([path.join(dir, entry.name)]))));
+  return nested.flat();
+};
+
 export const reapMarkerDirectory = async ({
   dir,
   killGraceMs,
@@ -502,14 +514,7 @@ export const reapMarkerDirectory = async ({
   signal,
   inspector,
 }: ReapMarkerDirectoryOptions): Promise<{ reaped: number; kept: number }> => {
-  let names: string[];
-  try {
-    names = await fs.promises.readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { reaped: 0, kept: 0 };
-    throw error;
-  }
-  const markers = names.map((name) => path.join(dir, name));
+  const markers = await markerFilesUnder(dir);
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {

@@ -1,4 +1,4 @@
-import { ConfigError } from '@momonga/config';
+import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
 import { COMMON_ENTRY_FLAGS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, canonicalPath, momongaPaths, runDaemonEntry, runtimeMaxCloseMs } from '@momonga/foundation';
 import type { EntryIo, FlagSpec } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
@@ -21,6 +21,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
     version: deps.version,
     flags: RUNTIME_ENTRY_FLAGS,
     maxCloseMs: (flags) => runtimeMaxCloseMs(flags['drain-timeout-ms'] ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
+    readStopValues: ({ home, logger }) => createStopValuesReader({ load: () => readUserStopValues(canonicalPath(home)), onNotice: (message) => logger.warn(message) }).read(),
     ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.runtime,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.runtime,
     isConfigError: (error) => error instanceof ConfigError,

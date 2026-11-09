@@ -49,6 +49,7 @@ export type SupervisorHealth = {
   env: 'frozen at supervisor start';
   children: SupervisorChildHealth[];
   logs: { droppedLines: number };
+  stopBoundMs?: number;
 };
 
 export type SupervisorShutdownResponse = { phase: 'draining' };

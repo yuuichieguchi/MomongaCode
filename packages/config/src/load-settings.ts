@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { canonicalDirectory, comparableContains } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import {
   defaultContextSettings,
@@ -45,6 +46,7 @@ export type ResolvedSettings = {
   mcp: McpCallSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
+  gateway: StopValues;
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -143,6 +145,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     mcp: {},
     models,
     autoUpdates: true,
+    gateway: DEFAULT_STOP_VALUES,
     sandbox: defaultSandboxSetting(),
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
@@ -162,6 +165,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       mcpServers,
       mcp,
       autoUpdates,
+      gateway,
       sandbox,
       telemetry,
       network,
@@ -204,6 +208,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     Object.assign(merged.mcpServers, mcpServers);
     Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (network !== undefined) merged.network = network;

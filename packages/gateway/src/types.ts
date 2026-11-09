@@ -1,4 +1,4 @@
-import type { Clock } from '@momonga/foundation';
+import type { Clock, StopValues } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
 
@@ -62,6 +62,6 @@ export type Gateway = {
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
   addCredential(credential: string): void;
-  close(): Promise<void>;
-  abort(): Promise<void>;
+  close(values?: StopValues): Promise<void>;
+  abort(values?: StopValues): Promise<void>;
 };

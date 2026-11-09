@@ -241,11 +241,11 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
           countTokens: (request: Parameters<typeof countTokens>[1], ctx: AdapterContext) =>
             countTokens(ctx.target, request, ctx.signal),
         }),
-    close: () => {
+    close: (stop) => {
       closed = true;
       closing ??= (async () => {
         await pool.close();
-        await options.close?.();
+        await options.close?.(stop);
       })();
       return closing;
     },

@@ -27,7 +27,7 @@ export class NotAProbeableTarget extends Error {
 export type ProbeOptions = { fmBinary: string; samples?: number; interrupt: AbortSignal };
 
 const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
-  const { stopped } = await stopDaemon(ports, paths);
+  const { stopped } = await stopDaemon(ports, paths, undefined, (message) => void ports.stderr.write(`${message}\n`));
   if (stopped) {
     await ensureDaemon(ports, paths);
     ports.stdout.write('restarted the daemon so that the gateway reads the record\n');

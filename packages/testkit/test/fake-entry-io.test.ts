@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMMON_ENTRY_FLAGS, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, runDaemonEntry } from '@momonga/foundation';
 import type { DaemonDefinition, DaemonHandle, DaemonStartContext, RotatingLogFile } from '@momonga/foundation';
 import { createFakeEntryIo, parseJsonLines, waitFor } from '@momonga/testkit';
 
@@ -22,6 +22,7 @@ const closingDaemon = () => {
     version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => 1000,
+    readStopValues: () => DEFAULT_STOP_VALUES,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
     logPath: (home) => path.join(home, '.momonga', 'logs', 'runtime.log'),
     isConfigError: () => false,

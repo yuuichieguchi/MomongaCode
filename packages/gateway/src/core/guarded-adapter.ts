@@ -141,7 +141,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
       : { renderCompactWire: (request, target, cap, origin, capabilities) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin, capabilities)) }),
     toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
-    ...(close === undefined ? {} : { close: () => close.call(inner) }),
+    ...(close === undefined ? {} : { close: (stop) => close.call(inner, stop) }),
     [guardBrand]: true,
   };
 };

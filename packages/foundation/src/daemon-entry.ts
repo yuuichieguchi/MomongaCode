@@ -4,8 +4,9 @@ import type { Clock } from './clock.ts';
 import { EntryUsageError, parseFlags } from './entry-flags.ts';
 import type { FlagSpec, ParsedFlags } from './entry-flags.ts';
 import { watchLifeline } from './lifeline.ts';
-import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, createJsonLogger } from './process-contract.ts';
-import type { JsonLogger, TextStream } from './process-contract.ts';
+import type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
+import { ENTRY_HARD_EXIT_MARGIN_MS, EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, EXIT_OK, STDIO_EXIT_FLUSH_MS, STOP_MESSAGE_OVERLONG_REASON, createJsonLogger, parseStopMessage } from './process-contract.ts';
+import type { JsonLogger, StopValues, TextStream } from './process-contract.ts';
 import { ProcessLockHeldError, UnadoptedEnv, acquireProcessLock } from './process-lock.ts';
 import type { DescribeHolder, ProcessLock } from './process-lock.ts';
 import type { KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -26,7 +27,7 @@ export type EntryIo = {
   timers: { setTimeout(callback: () => void, ms: number): unknown; clearTimeout(handle: unknown): void };
   onSignal(signal: EntrySignal, handler: () => void): () => void;
   onUncaught(handler: (error: Error) => void): () => void;
-  watchLifeline(fd: number, onEnd: () => void): () => void;
+  watchLifeline(fd: number, handlers: LifelineHandlers): LifelineWatch;
   logFile(path: string): RotatingLogFile;
   holdOpen(): () => void;
   lockMechanism?: KernelLockMechanism;
@@ -36,8 +37,8 @@ export type EntryIo = {
 export type DaemonCloseResult = { clean: boolean; exitCode?: number };
 
 export type DaemonHandle = {
-  close(): Promise<DaemonCloseResult>;
-  abort(): Promise<DaemonCloseResult>;
+  close(values: StopValues): Promise<DaemonCloseResult>;
+  abort(values: StopValues): Promise<DaemonCloseResult>;
   fatal: Promise<Error>;
 };
 
@@ -50,7 +51,7 @@ export type DaemonStartContext<F extends FlagSpec> = {
   logger: JsonLogger;
   stdout: TextStream;
   droppedLogLines(): number;
-  requestShutdown(): void;
+  requestShutdown(values?: StopValues): void;
   acquireLock(lockPath: string, describeHolder?: DescribeHolder): Promise<ProcessLock>;
 };
 
@@ -58,7 +59,8 @@ export type DaemonDefinition<F extends FlagSpec> = {
   service: 'runtime' | 'gateway' | 'supervisor';
   version: string;
   flags: F;
-  maxCloseMs(flags: ParsedFlags<F>): number;
+  maxCloseMs(flags: ParsedFlags<F>, values: StopValues): number;
+  readStopValues(context: { home: string; logger: JsonLogger }): StopValues;
   ownLockPath(home: string): string;
   logPath(home: string): string;
   isConfigError(error: unknown): boolean;
@@ -81,6 +83,10 @@ type Phase = 'starting' | 'running' | 'closing' | 'aborting' | 'closed';
 const LOG_TARGETS: readonly LogTarget[] = ['file', 'stderr', 'both'];
 const WRITE_FAILURE_INTERVAL_MS = 60_000;
 const HOLD_OPEN_INTERVAL_MS = 3_600_000;
+
+const MALFORMED_STOP_MESSAGE = 'the stop message was malformed and was ignored';
+const STOP_MESSAGE_ALREADY_RECEIVED = 'a stop message was already received';
+const STOP_VALUES_ALREADY_TAKEN = 'the stop had already taken its values';
 
 const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -184,6 +190,10 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   let deadlineTimer: unknown;
   let suppressedUncaught = 0;
   let uncaughtLogged = false;
+  let lifeline: LifelineWatch | undefined;
+  let receivedValues: StopValues | undefined;
+  let valuesTaken = false;
+  let stopValues: Promise<StopValues> | undefined;
   const disposers: Array<() => void> = [releaseHold];
 
   const isClosed = (): boolean => phase === 'closed';
@@ -201,10 +211,41 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     outcome.resolve(code);
   };
 
-  const beginShutdown = (trigger: ShutdownTrigger): void => {
-    if (shutdownTrigger !== undefined) return;
-    shutdownTrigger = trigger;
-    deadlineTimer = io.timers.setTimeout(() => finish(EXIT_FAILURE, 'deadline'), definition.maxCloseMs(flags) + ENTRY_HARD_EXIT_MARGIN_MS);
+  const ignoreStopLine = (reason: string): void => {
+    logger.warn(`${MALFORMED_STOP_MESSAGE}: ${reason}`);
+  };
+
+  const onLifelineLine = (line: string): void => {
+    if (phase === 'closed') return;
+    if (valuesTaken) {
+      ignoreStopLine(STOP_VALUES_ALREADY_TAKEN);
+      return;
+    }
+    const message = parseStopMessage(line);
+    if (message.kind === 'malformed') {
+      ignoreStopLine(message.reason);
+      return;
+    }
+    if (receivedValues !== undefined) {
+      ignoreStopLine(STOP_MESSAGE_ALREADY_RECEIVED);
+      return;
+    }
+    receivedValues = message.values;
+  };
+
+  const onOverlongLifelineLine = (): void => {
+    if (phase === 'closed') return;
+    ignoreStopLine(valuesTaken ? STOP_VALUES_ALREADY_TAKEN : STOP_MESSAGE_OVERLONG_REASON);
+  };
+
+  const takeStopValues = async (): Promise<StopValues> => {
+    const drained = lifeline === undefined ? Promise.resolve() : lifeline.drain();
+    const readAtBegin = receivedValues === undefined ? definition.readStopValues({ home, logger }) : undefined;
+    await drained;
+    valuesTaken = true;
+    const taken = receivedValues ?? readAtBegin;
+    if (taken === undefined) throw new Error('the stop took no values: no stop message and no read at its begin');
+    return taken;
   };
 
   const settleShutdown = (result: DaemonCloseResult | Error, method: 'close' | 'abort'): void => {
@@ -216,6 +257,18 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     finish(result.exitCode ?? EXIT_OK, method);
   };
 
+  const beginShutdown = (trigger: ShutdownTrigger, given?: StopValues): void => {
+    if (shutdownTrigger !== undefined) return;
+    shutdownTrigger = trigger;
+    if (given !== undefined) valuesTaken = true;
+    const taking = given === undefined ? takeStopValues() : Promise.resolve(given);
+    stopValues = taking.then((values) => {
+      if (!isClosed()) deadlineTimer = io.timers.setTimeout(() => finish(EXIT_FAILURE, 'deadline'), definition.maxCloseMs(flags, values) + ENTRY_HARD_EXIT_MARGIN_MS);
+      return values;
+    });
+    stopValues.catch((error: unknown) => settleShutdown(toError(error), 'close'));
+  };
+
   const invocations: Array<{ method: 'close' | 'abort'; pending: Promise<DaemonCloseResult> }> = [];
 
   const methodProducing = (pending: Promise<DaemonCloseResult>): 'close' | 'abort' => {
@@ -224,10 +277,11 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     return invocation.method;
   };
 
-  const invoke = (target: DaemonHandle, method: 'close' | 'abort'): void => {
+  const invoke = (target: DaemonHandle, method: 'close' | 'abort', values: StopValues): void => {
+    if (isClosed()) return;
     let pending: Promise<DaemonCloseResult>;
     try {
-      pending = target[method]();
+      pending = target[method](values);
     } catch (error) {
       pending = Promise.reject(error);
     }
@@ -238,19 +292,27 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     );
   };
 
+  const invokeWithStopValues = (target: DaemonHandle, method: 'close' | 'abort'): void => {
+    if (stopValues === undefined) throw new Error(`the daemon ${method} began before its stop values were taken`);
+    void stopValues.then(
+      (values) => invoke(target, method, values),
+      () => undefined,
+    );
+  };
+
   const close = (target: DaemonHandle): void => {
     phase = 'closing';
-    invoke(target, 'close');
+    invokeWithStopValues(target, 'close');
   };
 
   const abort = (target: DaemonHandle): void => {
     phase = 'aborting';
-    invoke(target, 'abort');
+    invokeWithStopValues(target, 'abort');
   };
 
-  const latchCancel = (trigger: ShutdownTrigger): void => {
+  const latchCancel = (trigger: ShutdownTrigger, given?: StopValues): void => {
     const first = shutdownTrigger === undefined;
-    beginShutdown(trigger);
+    beginShutdown(trigger, given);
     if (first) controller.abort(new StartupCancelled());
   };
 
@@ -303,12 +365,12 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
     }
   };
 
-  const requestShutdown = (): void => {
+  const requestShutdown = (values?: StopValues): void => {
     if (phase === 'closed') return;
     logger.info('entry.shutdown_requested', { data: { state: phase } });
-    if (phase === 'starting') latchCancel('request');
+    if (phase === 'starting') latchCancel('request', values);
     else if (phase === 'running' && handle !== undefined) {
-      beginShutdown('request');
+      beginShutdown('request', values);
       close(handle);
     }
   };
@@ -319,7 +381,11 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   logger.info('entry.start', { data: { logTarget: sink.effectiveTarget, lifeline: lifelineFd !== undefined } });
 
   try {
-    if (lifelineFd !== undefined) disposers.push(io.watchLifeline(lifelineFd, onLifelineEnd));
+    if (lifelineFd !== undefined) {
+      const watch = io.watchLifeline(lifelineFd, { onEnd: onLifelineEnd, onLine: onLifelineLine, onOverlongLine: onOverlongLifelineLine });
+      lifeline = watch;
+      disposers.push(watch.dispose);
+    }
   } catch (error) {
     logger.error('entry.start_failed', { err: toError(error) });
     finish(exitCodeForStartError({ error, ownLockPath, isConfigError: definition.isConfigError }), 'start-failed');

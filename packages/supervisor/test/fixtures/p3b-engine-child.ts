@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMMON_ENTRY_FLAGS, announceReady, momongaPaths, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, announceReady, momongaPaths, nodeEntryIo, runDaemonEntry } from '@momonga/foundation';
 import type { FlagSpec } from '@momonga/foundation';
 
 export const OVERLONG_STDERR_BYTES = 10_000;
@@ -26,6 +26,7 @@ if (isMain) {
     version: '0.0.0-e2e',
     flags: FIXTURE_FLAGS,
     maxCloseMs: () => 1000,
+    readStopValues: () => DEFAULT_STOP_VALUES,
     ownLockPath: (home) => pathsOf(home).locks[role],
     logPath: (home) => pathsOf(home).logFiles[role],
     isConfigError: () => false,
