@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { groupTerminationBoundMs } from '@momonga/foundation';
+import { groupAlive, groupTerminationBoundMs } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
 import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
@@ -39,14 +39,7 @@ export const pidAlive = (pid: number): boolean => {
   }
 };
 
-export const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const makeDir = (prefix = 'mm-mcp-mk-'): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));

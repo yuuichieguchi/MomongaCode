@@ -19,6 +19,7 @@ import type { Claim, ContributionPreparer, Run, RuntimeStore, Session } from '@m
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
 import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
@@ -308,7 +309,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
     executor,
     sandbox: fakeSandbox,
-    ripgrepLocator: (env) => createHostRipgrepLocator({ setting: 'bundled', env }),
+    ripgrepLocator: (env) => createHostRipgrepLocator({ setting: pinnedRipgrepPath(), env }),
     shellHost: nodeShellHost(),
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: ToolEnv; rules: readonly PermissionRule[] }) => {

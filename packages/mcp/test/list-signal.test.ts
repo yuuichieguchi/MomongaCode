@@ -80,7 +80,7 @@ describe('MCP listTools signal', () => {
 
     await expect(pending).rejects.toThrow();
     const pgid = connection.diagnostics().pgid;
-    if (pgid !== undefined) expect(groupExists(pgid)).toBe(false);
+    if (pgid !== undefined) expect(await groupExists(pgid)).toBe(false);
   });
 
   it('closeGraceMs threads from pool to transport', PROCESS_TIMEOUT, async () => {

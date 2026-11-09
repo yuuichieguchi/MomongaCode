@@ -19,7 +19,7 @@ afterEach(() => {
   for (const leader of leaders.splice(0)) leader.kill('SIGKILL');
 });
 
-const store = { idempotency: { get: () => undefined }, getRun: () => undefined } as never;
+const store = { idempotency: { get: () => undefined, processGroupOf: () => undefined }, getRun: () => undefined } as never;
 
 const refusingKill = (leader: () => number): SignalSender =>
   ((target: number, signal: NodeJS.Signals | 0) => {

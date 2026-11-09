@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, defaultProtectedPaths } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, defaultProtectedPaths, groupAlive } from '@momonga/foundation';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -79,7 +79,7 @@ describe.runIf(process.platform === 'darwin')('seatbelt sandbox hardening (real 
     const backgrounded = Number(fs.readFileSync(path.join(root, 'pids'), 'utf8').trim());
     expect(Number.isInteger(backgrounded) && backgrounded > 1).toBe(true);
     expect(isAlive(backgrounded)).toBe(false);
-    expect(() => process.kill(-proc.pgid, 0)).toThrow(/ESRCH/);
+    expect(await groupAlive(proc.pgid)).toBe(false);
   });
 
   it('removes the private TMPDIR only after leftover background processes are gone', async () => {

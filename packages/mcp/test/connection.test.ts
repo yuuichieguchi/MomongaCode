@@ -67,14 +67,14 @@ describe('connectMcpServer negotiation', () => {
     const diagnostics = connection.diagnostics();
     expect(diagnostics).toMatchObject({ server: 'modern', state: 'connected', protocolVersion: '2026-07-28', lastError: null });
     expect(typeof diagnostics.pgid).toBe('number');
-    expect(groupExists(diagnostics.pgid as number)).toBe(true);
+    expect(await groupExists(diagnostics.pgid as number)).toBe(true);
   });
 
   it('closes and reaps the server process group', async () => {
     const connection = await connect('modern', modernConfig(makeRecordFile()));
     const pgid = connection.diagnostics().pgid as number;
     await connection.close();
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(connection.diagnostics().state).toBe('closed');
   });
 });

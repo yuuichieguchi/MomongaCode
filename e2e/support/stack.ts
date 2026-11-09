@@ -23,6 +23,7 @@ import type { SupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV } from './supervisor-main.ts';
 import type { E2eDeps } from './supervisor-main.ts';
 import { E2E_DRAIN_TIMEOUT_MS, E2E_LEASE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eStartBoundMs, until, withinBound } from './wait.ts';
+import { pinnedRipgrepPath } from '../../test/support/pinned-ripgrep.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
 export { SUPERVISOR_APP_VERSION };
@@ -114,6 +115,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
     },
   },
   sandbox,
+  tools: { ripgrep: pinnedRipgrepPath() },
 });
 
 export const withStructuredAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => {
@@ -300,7 +302,8 @@ export const sandboxChoiceOf = (options: StartStackOptions): SandboxChoice => {
 export const settingsOf = (home: E2eHome, kind: StackSandbox, options: StartStackOptions): Readonly<Record<string, unknown>> | string => {
   if (options.settingsText !== undefined) return options.settingsText;
   const base = options.target === undefined ? baseSettings(home, kind) : settingsWithTarget(baseSettings(home, kind), options.target);
-  return { ...base, ...options.settings };
+  const callerTools = options.settings?.['tools'] as Readonly<Record<string, unknown>> | undefined;
+  return { ...base, ...options.settings, tools: { ...(base['tools'] as Readonly<Record<string, unknown>>), ...callerTools } };
 };
 
 const satisfied = (health: SupervisorHealth, wanted: StackReadiness): boolean =>
