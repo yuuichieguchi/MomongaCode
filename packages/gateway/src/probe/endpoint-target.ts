@@ -158,6 +158,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
     const found = await options.readRecord();
+    currentIdentity = undefined;
     if (found !== null) currentIdentity = await options.readIdentity(found.identityFields, signal);
     record = usable(found);
     if (record === null) throw targetProbingError(await options.startProbe());

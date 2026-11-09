@@ -36,6 +36,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
     const found = await options.readRecord();
+    currentDigest = { known: false };
     if (found !== null) currentDigest = { known: true, digest: await options.readDigest(signal) };
     record = usable(found);
     if (record === null) throw targetProbingError(await options.startProbe());

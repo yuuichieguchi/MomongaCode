@@ -112,6 +112,15 @@
 (* stands for an identity change of every adapter). A record of another    *)
 (* key is no record: the request takes the probe path, never a 412 for the *)
 (* mismatch (gateway/src/probe/record.ts recordForIdentity).               *)
+(*                                                                         *)
+(* An identity read that failed (a labelled outbound error) is not an      *)
+(* action of the model. The request fails with that transient error; the  *)
+(* code sets the current identity to unknown before each read, so the      *)
+(* failure writes no record, starts no probe and leaves no key behind      *)
+(* (packages/gateway/test/identity-read-failure.test.ts). The step changes *)
+(* only an answer that is neither 200 nor 412, which RecordMatchesKey does *)
+(* not constrain. A key kept from an earlier read is KeyView "atStart",    *)
+(* whose evidence AutoProbe.keyAtStart already violates RecordMatchesKey.  *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
