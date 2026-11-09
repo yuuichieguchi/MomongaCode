@@ -1,5 +1,5 @@
-import { anatomyLayerEntries } from '@momonga/protocol';
-import type { PublicRunEvent } from '@momonga/protocol';
+import { anatomyLayerEntries, reportedCachedTokensOf } from '@momonga/protocol';
+import type { ModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome } from '@momonga/protocol';
 import { ratioBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { eventsOfType } from './observe.ts';
@@ -10,8 +10,14 @@ export type CallFacts = {
   cachedInputTokens: number | undefined;
   cacheWriteInputTokens: number;
   cost: number | undefined;
+  unpriced: UnpricedCode | undefined;
   durationMs: number | undefined;
 };
+
+const priceFactsOf = (record: { cost?: ModelCost; unpriced?: UnpricedOutcome } | undefined): Pick<CallFacts, 'cost' | 'unpriced'> => ({
+  cost: record?.cost?.amount,
+  unpriced: record?.unpriced?.code,
+});
 
 export type TokenFacts = {
   calls: CallFacts[];
@@ -23,10 +29,14 @@ export type TokenFacts = {
 export type CaseTokenTotals = {
   calls: number;
   unsettledReflections: number;
+  cacheReadNotReportedCalls: number;
   inputTokens?: number;
+  cacheReportedInputTokens?: number;
   cachedInputTokens?: number;
   uncachedInputTokens?: number;
   cost?: number;
+  unpriced?: Partial<Record<UnpricedCode, number>>;
+  unrecordedPrice?: number;
   latencyMs?: number;
 };
 
@@ -54,7 +64,7 @@ const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { call
         inputTokens: charge.inputTokens,
         cachedInputTokens: charge.detail?.cachedInputTokens,
         cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
-        cost: charge.detail?.cost?.amount,
+        ...priceFactsOf(charge.detail),
         durationMs: charge.detail?.timing?.durationMs,
       }),
     ),
@@ -72,9 +82,9 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
     }
     const responded = eventsOfType(events, 'model.responded').map(({ response }): CallFacts => ({
       inputTokens: response.usage.input_tokens,
-      cachedInputTokens: response.usage.input_tokens_details?.cached_tokens,
+      cachedInputTokens: reportedCachedTokensOf(response.usage, response.momonga),
       cacheWriteInputTokens: response.momonga?.cacheWriteInputTokens ?? 0,
-      cost: response.momonga?.cost?.amount,
+      ...priceFactsOf(response.momonga),
       durationMs: response.timing?.durationMs,
     }));
     const charged = eventsOfType(events, 'usage.charged').map(
@@ -82,7 +92,7 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
         inputTokens: event.inputTokens,
         cachedInputTokens: event.cachedInputTokens,
         cacheWriteInputTokens: event.cacheWriteInputTokens ?? 0,
-        cost: event.cost?.amount,
+        ...priceFactsOf(event),
         durationMs: event.timing?.durationMs,
       }),
     );
@@ -102,26 +112,58 @@ const sumOver = <T>(items: readonly T[], pick: (item: T) => number | undefined):
   return sum;
 };
 
+type ReportedCall = CallFacts & { cachedInputTokens: number };
+
+const isCacheReadReported = (call: CallFacts): call is ReportedCall => call.cachedInputTokens !== undefined;
+
+const isConsistent = (call: ReportedCall): boolean => call.cachedInputTokens + call.cacheWriteInputTokens <= call.inputTokens;
+
+const cacheFiguresOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'cacheReportedInputTokens' | 'cachedInputTokens' | 'uncachedInputTokens'> => {
+  const reported = calls.filter(isCacheReadReported);
+  if (!reported.every(isConsistent) || (calls.length > 0 && reported.length === 0)) return {};
+  const sum = (pick: (call: ReportedCall) => number): number => reported.reduce((total, call) => total + pick(call), 0);
+  return {
+    cacheReportedInputTokens: sum((call) => call.inputTokens),
+    cachedInputTokens: sum((call) => call.cachedInputTokens),
+    uncachedInputTokens: sum((call) => call.inputTokens - call.cachedInputTokens - call.cacheWriteInputTokens),
+  };
+};
+
+const priceOutcomeTotalsOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'unpriced' | 'unrecordedPrice'> => {
+  const unpriced: Partial<Record<UnpricedCode, number>> = {};
+  let unrecordedPrice = 0;
+  for (const call of calls) {
+    if (call.unpriced !== undefined) unpriced[call.unpriced] = (unpriced[call.unpriced] ?? 0) + 1;
+    else if (call.cost === undefined) unrecordedPrice += 1;
+  }
+  return { ...(Object.keys(unpriced).length === 0 ? {} : { unpriced }), ...(unrecordedPrice === 0 ? {} : { unrecordedPrice }) };
+};
+
 export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
   const calls = facts.flatMap((entry) => entry.calls);
   const unsettledReflections = facts.reduce((sum, entry) => sum + entry.unsettledReflections, 0);
-  if (unsettledReflections > 0) return { calls: calls.length, unsettledReflections };
-  const consistent = (call: CallFacts): boolean => call.cachedInputTokens === undefined || call.cachedInputTokens + call.cacheWriteInputTokens <= call.inputTokens;
+  const cacheReadNotReportedCalls = calls.length - calls.filter(isCacheReadReported).length;
+  if (unsettledReflections > 0) return { calls: calls.length, unsettledReflections, cacheReadNotReportedCalls };
   const inputTokens = sumOver(calls, (call) => call.inputTokens);
-  const cachedInputTokens = sumOver(calls, (call) => (consistent(call) ? call.cachedInputTokens : undefined));
-  const uncachedInputTokens = sumOver(calls, (call) => (call.cachedInputTokens === undefined || !consistent(call) ? undefined : call.inputTokens - call.cachedInputTokens - call.cacheWriteInputTokens));
   const cost = sumOver(calls, (call) => call.cost);
   const latencyMs = sumOver(calls, (call) => call.durationMs);
   return {
     calls: calls.length,
     unsettledReflections,
+    cacheReadNotReportedCalls,
     ...(inputTokens === undefined ? {} : { inputTokens }),
-    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
-    ...(uncachedInputTokens === undefined ? {} : { uncachedInputTokens }),
+    ...cacheFiguresOf(calls),
     ...(cost === undefined ? {} : { cost }),
+    ...priceOutcomeTotalsOf(calls),
     ...(latencyMs === undefined ? {} : { latencyMs }),
   };
 };
+
+export const hasInconsistentCacheRead = (totals: CaseTokenTotals): boolean =>
+  totals.unsettledReflections === 0 && totals.calls > totals.cacheReadNotReportedCalls && totals.cachedInputTokens === undefined;
+
+export const uncachedInputOf = (totals: CaseTokenTotals): number | undefined =>
+  totals.cacheReadNotReportedCalls === 0 ? totals.uncachedInputTokens : undefined;
 
 export type CaseForMetrics = { totals: CaseTokenTotals; passedRuns: number; facts: readonly TokenFacts[] };
 
@@ -153,9 +195,11 @@ const perSuccess = (cases: readonly CaseForMetrics[], numeratorOf: (totals: Case
 const cacheHitRatioOf = (cases: readonly CaseForMetrics[], seed: number): RatioMetric | undefined => {
   const clusters: Cluster[] = [];
   for (const entry of cases) {
-    const { inputTokens, cachedInputTokens } = entry.totals;
-    if (inputTokens === undefined || cachedInputTokens === undefined) return undefined;
-    clusters.push({ numerator: cachedInputTokens, denominator: inputTokens });
+    const { unsettledReflections, cacheReportedInputTokens, cachedInputTokens } = entry.totals;
+    if (unsettledReflections > 0) return undefined;
+    if (hasInconsistentCacheRead(entry.totals)) return undefined;
+    if (cacheReportedInputTokens === undefined || cachedInputTokens === undefined) continue;
+    if (cacheReportedInputTokens > 0) clusters.push({ numerator: cachedInputTokens, denominator: cacheReportedInputTokens });
   }
   return clusters.length === 0 ? undefined : ratioOf(clusters, seed);
 };
@@ -175,7 +219,7 @@ const layerSharesOf = (cases: readonly CaseForMetrics[], seed: number): Record<s
 
 export const tokenMetricsOf = (cases: readonly CaseForMetrics[], seed: number): TokenMetrics => ({
   costPerSuccess: perSuccess(cases, (totals) => totals.cost, seed),
-  uncachedInputPerSuccess: perSuccess(cases, (totals) => totals.uncachedInputTokens, seed),
+  uncachedInputPerSuccess: perSuccess(cases, uncachedInputOf, seed),
   callsPerSuccess: perSuccess(cases, (totals) => totals.calls, seed),
   latencyPerSuccess: perSuccess(cases, (totals) => totals.latencyMs, seed),
   cacheHitRatio: cacheHitRatioOf(cases, seed),

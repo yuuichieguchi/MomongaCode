@@ -15,6 +15,7 @@ import {
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  markerReapClockBoundMs,
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
@@ -175,6 +176,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const startedAtMs = clock.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const canonicalHome = canonicalPath(home);
+  const platform = options.platform ?? process.platform;
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
 
@@ -304,7 +306,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
   try {
     const paths = await step('dirs', async () => {
-      const resolved = momongaPaths(canonicalHome, process.platform, {});
+      const resolved = momongaPaths(canonicalHome, platform, {});
       await ensureGenerationDirs(resolved, options.generation, { signal });
       return resolved;
     });
@@ -335,7 +337,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const kind: SandboxKind = settings.sandbox;
     const sandbox: Sandbox = await step('sandbox', () => {
-      const platform = options.platform ?? process.platform;
       const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
       if (platform === 'linux') {
         for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
@@ -379,7 +380,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('mcp-markers', async () => {
-      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
+      const reapStop = new AbortController();
+      const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
+      const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
+      try {
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal });
+      } finally {
+        timers.clearTimeout(bound);
+      }
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
@@ -468,7 +476,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
     const ports = await step('ports', async () => {
-      const composition = createSettingsComposition({ home: canonicalHome, cache, store });
+      const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store });
       const lockCapability = createLockCapability({ proofDir: paths.lockProof });
       const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
@@ -620,7 +628,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           workerId: id,
           leaseMs,
           random: Math.random,
-          platform: process.platform,
+          platform,
           timers,
           defaults: RUNTIME_DEFAULTS.limits,
           home: canonicalHome,

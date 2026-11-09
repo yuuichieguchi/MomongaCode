@@ -1,4 +1,6 @@
 import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
+import { billedUsageOf, isBilledChat } from './billed-calls.ts';
+import { isCacheReadReported, noCallReported } from './cache-reads.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
 const A = GENAI_SEMCONV.attributes;
@@ -11,7 +13,8 @@ export type RunSummary = {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens: number | null;
+  cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
   chatResults: ChatResult[];
@@ -50,6 +53,9 @@ export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
     }),
   );
   const sum = (key: string): number => chats.reduce((total, span) => total + numberAttribute(span, key), 0);
+  const billedUsages = chats.filter(isBilledChat).map(billedUsageOf);
+  const reportedUsages = billedUsages.filter(isCacheReadReported);
+  const cacheRead = { calls: billedUsages.length, notReported: billedUsages.length - reportedUsages.length };
   const first = spans.reduce((earliest, span) => Math.min(earliest, span.startMs), Number.POSITIVE_INFINITY);
   const last = spans.reduce((latest, span) => Math.max(latest, span.endMs), Number.NEGATIVE_INFINITY);
   return {
@@ -58,7 +64,8 @@ export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
     toolCalls: tools.length,
     inputTokens: sum(A.ATTR_GEN_AI_USAGE_INPUT_TOKENS),
     outputTokens: sum(A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS),
-    cachedInputTokens: sum(A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS),
+    cachedInputTokens: noCallReported(cacheRead) ? null : reportedUsages.reduce((total, usage) => total + usage.cachedInputTokens, 0),
+    cacheReadNotReportedCalls: cacheRead.notReported,
     errorCount: spans.filter((span) => span.status === 'ERROR').length,
     durationMs: spans.length === 0 ? 0 : last - first,
     chatResults: chats.map((span) => ({

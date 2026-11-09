@@ -521,7 +521,7 @@ describe('reapMarkerDirectory', () => {
       process.kill(pid, signal);
     };
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing });
+    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing });
     expect(released).toBe(true);
     expect(result).toEqual({ reaped: 3, kept: 0 });
     const firstKill = events.findIndex((event) => event.endsWith('SIGKILL'));
@@ -535,7 +535,7 @@ describe('reapMarkerDirectory', () => {
   it('reapMarkerDirectory on a missing directory reaps nothing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: path.join(dir, 'missing'), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
+    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: path.join(dir, 'missing'), killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), timing: fakeTiming().timing });
     expect(result).toEqual({ reaped: 0, kept: 0 });
     expect(warnings).toEqual([]);
   });
@@ -551,7 +551,7 @@ describe('reapMarkerDirectory', () => {
     const fake = fakeTiming();
     const { kill } = recordingKill(fake.now, (pid, signal) => pid === stubborn && signal !== 0);
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
+    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
     expect(result).toEqual({ reaped: 1, kept: 1 });
     expect(fs.readdirSync(markerDir)).toEqual(['kept']);
     expect(warnings).toEqual([`tool marker ${kept} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]);
@@ -572,7 +572,7 @@ describe('reapMarkerDirectory', () => {
       if (pid === broken && signal !== 0) throw errnoError('EINVAL', pid);
       return false;
     });
-    const outcome = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: () => undefined, kill, timing: fake.timing }).then(
+    const outcome = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: () => undefined, kill, timing: fake.timing }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -588,7 +588,7 @@ describe('reapMarkerDirectory', () => {
   it('propagates a readdir error other than ENOENT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const notADirectory = makeMarker(dir, 'file');
-    await expect(reapMarkerDirectory({ dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
+    await expect(reapMarkerDirectory({ signal: new AbortController().signal, dir: notADirectory, killGraceMs: 200, label: 'tool', onWarning: () => undefined, timing: fakeTiming().timing })).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 });
 
@@ -849,7 +849,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
         onWarning: () => undefined,
         kill,
         timing: fake.timing,
-        ...(withSignal ? { signal: controller.signal } : {}),
+        signal: controller.signal,
       });
       const signalsOf = (holder: Held) => signals.filter((entry) => entry.pid === holder.child.pid).map(({ signal }) => signal);
       const perHolder = holders.map(signalsOf);
@@ -887,7 +887,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     const inspector = createProcessInspector('darwin', { ...hostInspectorPorts(), run: slowListing });
     const { signals, kill } = signalRecorder(fake.now);
     const warnings: string[] = [];
-    const result = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, inspector });
+    const result = await reapMarkerDirectory({ signal: new AbortController().signal, dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, inspector });
     expect(result).toEqual({ reaped: 2, kept: 0 });
     expect(fs.readdirSync(markerDir)).toEqual([]);
     expect(signals).toEqual([]);

@@ -34,6 +34,6 @@ export const estimatedUsage = (inputTokens: number, outputTokens: number): Usage
   input_tokens: inputTokens,
   output_tokens: outputTokens,
   total_tokens: inputTokens + outputTokens,
-  input_tokens_details: { cached_tokens: 0 },
+  input_tokens_details: {},
   output_tokens_details: { reasoning_tokens: 0 },
 });

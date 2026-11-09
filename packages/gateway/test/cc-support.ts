@@ -1,6 +1,7 @@
 import { contextOf } from './own-reasoning.ts';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
+import { wireUsageOf } from '@momonga/protocol';
 import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCallingMode } from '@momonga/protocol';
 import { createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
@@ -75,9 +76,15 @@ export const lastCompletionBody = (fake: FakeChatCompletionsServer): any => {
 
 const schemaNames = validator.streamEventSchemaNames();
 
+const onTheWire = (event: StreamEvent): StreamEvent => {
+  const response = (event as { response?: { usage?: Parameters<typeof wireUsageOf>[0] | null } }).response;
+  if (response?.usage === undefined || response.usage === null) return event;
+  return { ...event, response: { ...response, usage: wireUsageOf(response.usage).usage } } as StreamEvent;
+};
+
 export const expectSpecValid = (events: readonly StreamEvent[]): string[] => {
   const problems: string[] = [];
-  for (const event of events) {
+  for (const event of events.map(onTheWire)) {
     const name = schemaNames.get(event.type);
     if (name === undefined) {
       problems.push(`${event.type}: not an Open Responses stream event`);

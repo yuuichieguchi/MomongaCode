@@ -35,6 +35,7 @@ const BURN_DOWN: readonly BurnDown[] = [
   { file: 'tools/src/policy-filesystem.ts', rows: 'B6', owner: 'HB10e' },
   { file: 'config/src/settings.ts', rows: 'B8', owner: 'HB10c' },
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', owner: 'HB10c' },
+  { file: 'gateway/src/managed/server.ts', rows: 'B12', owner: 'HB10a, measuring the socket path by bind as uds.ts does' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', owner: 'not classified by the HB10 table' },
 ];
 

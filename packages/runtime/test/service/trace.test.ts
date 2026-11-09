@@ -4,7 +4,7 @@ import { expectError, expectSchema, startService } from './helpers.ts';
 
 const TRACE: RunTraceView = {
   runId: 'placeholder',
-  summary: { steps: 1, chatCalls: 0, toolCalls: 1, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, errorCount: 0, durationMs: 12, chatResults: [] },
+  summary: { steps: 1, chatCalls: 0, toolCalls: 1, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 12, chatResults: [] },
   spans: [
     { traceId: 't', spanId: 's1', parentSpanId: null, name: 'invoke_agent momonga', kind: 'INTERNAL', startMs: 1, endMs: 13, status: 'UNSET', attributes: { 'gen_ai.operation.name': 'invoke_agent' } },
     { traceId: 't', spanId: 's2', parentSpanId: 's1', name: 'execute_tool Read', kind: 'INTERNAL', startMs: 2, endMs: 4, status: 'OK', attributes: { 'momonga.step': 1 } },

@@ -65,7 +65,7 @@ describe('cost reporting with user-configured prices', () => {
   it('keeps a call visible as unpriced when no price is declared', async (context) => {
     const client = await startPricedGateway(context, undefined);
     const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, priceVersions: [] });
+    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, priceVersions: [] });
   });
 
   it('reports a call to a target the user declared local as local, at no cost and not as unpriced', async (context) => {
@@ -77,6 +77,6 @@ describe('cost reporting with user-configured prices', () => {
   it('keeps a call unpriced when the declared price is for another model', async (context) => {
     const client = await startPricedGateway(context, [{ ...PRICE, model: 'another-model' }]);
     const { report } = await costOfRun(client);
-    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0 });
+    expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null });
   });
 });

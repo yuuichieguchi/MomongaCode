@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
+import { secretStoreEnvFor } from '@momonga/foundation';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -49,7 +50,7 @@ describe('credential environment separation for the provider adapters', () => {
     expect(gateway).not.toHaveProperty('UNRELATED');
 
     const runtime = runtimeEnv(SOURCE, settings);
-    expect(runtime.env).toEqual({ PATH: '/usr/bin', HOME: '/Users/u', UNRELATED: 'kept-for-runtime' });
+    expect(runtime.env).toEqual({ PATH: '/usr/bin', HOME: '/Users/u', UNRELATED: 'kept-for-runtime', ...secretStoreEnvFor(SOURCE) });
     expect(runtime.removed).toEqual(['PROVIDER_ENV_ANTHROPIC', 'PROVIDER_ENV_ROUTER']);
   });
 

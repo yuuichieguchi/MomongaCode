@@ -3,11 +3,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createFileCredentialStore, ensureMomongaDirs, momongaLayout } from '@momonga/foundation';
 import { mcpCredentialDirectory } from '@momonga/mcp';
-import { makeDir } from './mcp-harness.ts';
+import { withTempDir } from '@momonga/testkit';
 
 describe('file credential store under the real path layout', () => {
-  it('keeps owner-only files in the per-user state directory of a temporary home and survives a new instance', async () => {
-    const home = makeDir();
+  it('keeps owner-only files in the per-user state directory of a temporary home and survives a new instance', async (context) => {
+    const home = withTempDir(context, { asHome: true });
     const paths = momongaLayout(home);
     await ensureMomongaDirs(paths);
     const directory = mcpCredentialDirectory(paths);

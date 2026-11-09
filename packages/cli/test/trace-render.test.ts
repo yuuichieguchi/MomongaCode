@@ -16,7 +16,7 @@ const span = (overrides: Partial<RunTraceSpan> & Pick<RunTraceSpan, 'spanId' | '
 
 const view = (spans: RunTraceSpan[]): RunTraceView => ({
   runId: 'run-1',
-  summary: { steps: 1, chatCalls: spans.length - 1, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, errorCount: 0, durationMs: 30, chatResults: [] },
+  summary: { steps: 1, chatCalls: spans.length - 1, toolCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, errorCount: 0, durationMs: 30, chatResults: [] },
   spans: [span({ spanId: 'root', name: 'invoke_agent momonga', parentSpanId: null, kind: 'INTERNAL', endMs: 30 }), ...spans],
 });
 

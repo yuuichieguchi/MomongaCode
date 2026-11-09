@@ -9,10 +9,22 @@ import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon, restoreDaemon, stopDaemon, sto
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { PollTimeout } from '../src/poll.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
+
+const oversleepingClock = (after: Promise<unknown> = Promise.resolve()): CliClock => {
+  let now = 0;
+  return {
+    now: () => now,
+    sleep: async () => {
+      await after;
+      now = Number.MAX_SAFE_INTEGER;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    },
+  };
+};
 
 const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
@@ -33,19 +45,8 @@ const setup = async (context: TestContext) => {
     }
     return supervisor;
   };
-  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
+  const ports: DaemonPorts = { version: VERSION, env: { PATH: '/usr/bin' }, home, clock: oversleepingClock(), self: SELF, spawnDetached: recordingSpawn(() => undefined).spawn };
   return { paths, ports, start, writeUserSettings };
-};
-
-const oversleepingClock = (): CliClock => {
-  let now = 0;
-  return {
-    now: () => now,
-    sleep: async () => {
-      now = Number.MAX_SAFE_INTEGER;
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    },
-  };
 };
 
 const timeoutOf = async (pending: Promise<unknown>): Promise<PollTimeout> => {
@@ -62,11 +63,11 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start, writeUserSettings } = await setup(context);
     writeUserSettings({ gateway: { closeGraceMs: 2000, managedServerStopGraceMs: 500 } });
     const supervisor = await start({ version: VERSION, keepsLock: true });
-    const stopping = stopDaemon(ports, paths);
     const edited = (async () => {
       while (supervisor.shutdownBodies.length === 0) await new Promise((resolve) => setImmediate(resolve));
       writeUserSettings({ gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 } });
     })();
+    const stopping = stopDaemon({ ...ports, clock: oversleepingClock(edited) }, paths);
     const timeout = await timeoutOf(stopping);
     await edited;
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500 }]);
@@ -98,7 +99,7 @@ describe('daemon stop carries the values it read', () => {
   it('waits the bound at the allowed maxima when the draining supervisor reports none', async (context) => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
-    const timeout = await timeoutOf(stopDaemon({ ...ports, clock: oversleepingClock() }, paths));
+    const timeout = await timeoutOf(stopDaemon(ports, paths));
     expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_100);
     expect(timeout.boundMs).toBe(981_100);
   });

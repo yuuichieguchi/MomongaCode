@@ -41,7 +41,7 @@ const createGatedCompactAdapter = (summaries: Array<string | Error>, gated = tru
         if (planned === undefined) throw new Error(`no compact plan for call #${index + 1}`);
         if (planned instanceof Error) throw planned;
         settled.push('completed');
-        return { summary: planned, usage: usageOf(40, 8) };
+        return { summary: planned, usage: usageOf(40, 8), usageSource: 'reported' };
       } catch (error) {
         settled.push(ctx.signal.aborted ? 'aborted' : 'failed');
         throw error;
@@ -247,7 +247,7 @@ const createUpstreamCompactAdapter = (socketPath: string): ProviderAdapter & { r
         request.on('error', reject);
         request.end(payload);
       });
-      return { summary: JSON.parse(text).choices[0].message.content, usage: usageOf(40, 8) };
+      return { summary: JSON.parse(text).choices[0].message.content, usage: usageOf(40, 8), usageSource: 'reported' };
     },
   };
 };
@@ -293,7 +293,7 @@ const createAbortIgnoringCompactAdapter = (): ProviderAdapter & { readonly signa
     compact: async (_request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
       signals.push(ctx.signal);
       if (!open) await new Promise<void>((resolve) => waiters.push(resolve));
-      return { summary: 'late summary', usage: usageOf(40, 8) };
+      return { summary: 'late summary', usage: usageOf(40, 8), usageSource: 'reported' };
     },
   };
 };

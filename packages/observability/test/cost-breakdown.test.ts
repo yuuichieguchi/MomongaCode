@@ -32,15 +32,11 @@ const callOf = (overrides: Partial<BreakdownCall> & Pick<BreakdownCall, 'usage'>
   const identity = { runId: 'run-a', provider: 'acme', model: 'm1', billing: 'metered' as const, at: AT, ...overrides };
   return {
     price: priceCall({
+      usageSource: 'reported',
       provider: identity.provider,
       model: identity.model,
       billing: identity.billing,
-      usage: {
-        inputTokens: identity.usage.inputTokens,
-        outputTokens: identity.usage.outputTokens,
-        cachedInputTokens: identity.usage.cachedInputTokens,
-        cacheWriteInputTokens: identity.usage.cacheWriteInputTokens,
-      },
+      usage: identity.usage,
       at: identity.at,
       table: TABLE,
     }),
@@ -84,7 +80,7 @@ describe('buildCostBreakdown', () => {
   it('splits the billed tokens by kind, uncached input being what is neither read from nor written to the cache', () => {
     const breakdown = buildCostBreakdown(THREE_CALLS, {});
 
-    expect(breakdown.billed).toEqual({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200, outputTokens: 100, reasoningTokens: 15 });
+    expect(breakdown.billed).toEqual({ inputTokens: 3000, reportedInputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200, outputTokens: 100, reasoningTokens: 15 });
     expect(breakdown.cacheHitRatio).toBeCloseTo(7 / 15, 10);
   });
 
@@ -96,23 +92,24 @@ describe('buildCostBreakdown', () => {
   });
 
   it('prices every call with its own cache rates and sums the cost exactly', () => {
-    expect(buildCostBreakdown(THREE_CALLS, {}).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0 });
+    expect(buildCostBreakdown(THREE_CALLS, {}).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(formatCostBreakdown(buildCostBreakdown(THREE_CALLS, {}))).toContain('cost: 0.0048 USD at price version 2026-01-01');
   });
 
-  it('says the cost is unknown when a call has no price, and still reports its tokens', () => {
+  it('says the cost is not complete when a call has no price, gives the priced part, and still reports its tokens', () => {
     const calls = [...THREE_CALLS, callOf({ model: 'unlisted', usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 } })];
     const breakdown = buildCostBreakdown(calls, {});
 
-    expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 1 });
+    expect(breakdown.cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 1, unpriced: { no_price_entry: 1 }, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.billed.inputTokens).toBe(3010);
-    expect(formatCostBreakdown(breakdown)).toMatch(/cost: unknown \(1 of 4 call\(s\) have no price\)/);
+    expect(formatCostBreakdown(breakdown)).toContain('cost: not complete: no price entry in 1 call(s); priced part: 0.0048 USD over 3 of 4 call(s)');
   });
 
   it('leaves a call with more cached and written than input out of the by-kind sums, lists it with the reason and never clamps it', () => {
     const inconsistent = callOf({ step: 4, usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 50, outputTokens: 7, reasoningTokens: 0 } });
     const breakdown = buildCostBreakdown([...THREE_CALLS, inconsistent], {});
 
-    expect(breakdown.billed).toMatchObject({ inputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200 });
+    expect(breakdown.billed).toMatchObject({ inputTokens: 3100, reportedInputTokens: 3000, uncachedInputTokens: 1400, cacheReadTokens: 1400, cacheWriteTokens: 200 });
     expect(breakdown.billed.outputTokens).toBe(107);
     expect(breakdown.calls).toBe(4);
     expect(breakdown.cacheHitRatio).toBeNull();
@@ -180,7 +177,8 @@ describe('formatCostBreakdown', () => {
     expect(text).toContain('history.user 33.3%');
     expect(text).toContain('history.toolOutputs 13.3%');
     expect(text).toContain('(estimated)');
-    expect(text).toContain('billed tokens: input 3000 = uncached 1400 + cache read 1400 + cache write 200; output 100 (reasoning 15)');
+    expect(text).toContain('billed tokens: input 3000; output 100 (reasoning 15)');
+    expect(text).toContain('cache split of 3000 input token(s) in 3 of 3 call(s): uncached 1400 + cache read 1400 + cache write 200');
     expect(text).toContain('cache hit ratio: 46.7%');
     expect(text).toContain('time to first token: median 200 ms, p95 300 ms (n=3)');
     expect(text).toContain('duration: median 2000 ms, p95 3000 ms (n=3)');
