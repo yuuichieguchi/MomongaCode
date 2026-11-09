@@ -1,5 +1,5 @@
 import { loadUserSettings, resolveNetwork } from '@momonga/config';
-import { HOST_READ_BOUND_MS, createOutboundDispatcher, installTrust, trustFailureText, outboundFetch } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, createOutboundDispatcher, systemTiming, installTrust, trustFailureText, outboundFetch } from '@momonga/foundation';
 import type { OutboundFetch, OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from './ports.ts';
 import { escapedLines } from './terminal-writer.ts';
@@ -12,7 +12,7 @@ const resolveAndInstall = async (ports: NetworkPorts): Promise<OutboundNetwork> 
   const { settings } = await loadUserSettings({ home: ports.home });
   const config = resolveNetwork(settings.network, ports.env);
   const bound = new AbortController();
-  setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS).unref();
+  systemTiming.setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS);
   const trust = await installTrust(config, ports.files, { signal: bound.signal });
   for (const failure of trust.failures) ports.stderr.write(`${escapedLines([`momonga: ${trustFailureText(failure)}`])}\n`);
   return { config, trust };
