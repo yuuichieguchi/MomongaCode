@@ -40,6 +40,7 @@ export type ManagedServerOptions = {
   timers?: ManagedServerTimers;
   readStopGraceMs: () => number;
   onWarning: (message: string) => void;
+  onChildStart?: (signal: AbortSignal) => Promise<void>;
   onChildExit?: () => void;
 };
 
@@ -377,6 +378,8 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     try {
       if (!isCurrent()) return undefined;
       signal.throwIfAborted();
+      await options.onChildStart?.(signal);
+      if (!isCurrent()) return undefined;
       launched = launch();
       await waitUntilReady(launched, startClient, signal);
       return launched;

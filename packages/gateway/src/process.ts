@@ -295,6 +295,10 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     timers: wiring.timers,
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
+    onChildStart: async (signal) => {
+      if (managed === undefined) throw new Error(`the server of the target ${name} started a child before its target was wired`);
+      await managed.childStarting(signal);
+    },
     onChildExit: () => managed?.childExited(),
     ...spawnPort,
   });
@@ -354,7 +358,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
   const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
-  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await managed.instanceKey(wiring.startSignal) : undefined;
+  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
   if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
   return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
 };

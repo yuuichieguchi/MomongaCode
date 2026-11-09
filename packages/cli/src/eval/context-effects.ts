@@ -3,7 +3,8 @@ import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, currentGenerationLock, ensureMomongaDirs, hostKernelLock, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
+import { loadUserModels, registeredServer } from '@momonga/config';
+import type { ServerRegistry } from '@momonga/config';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -38,10 +39,10 @@ const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, signal: AbortSignal): Promise<boolean> => {
+export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, signal: AbortSignal): Promise<boolean> => {
   const { managedKeyReader, managedRecordPath } = await import('@momonga/gateway');
-  const description = managedServerOf(MANAGED_SERVERS, source.server);
-  if (description === undefined) throw new Error(`the target ${source.target} names the server ${source.server}, which this build does not support`);
+  const description = registeredServer(servers, source.server);
+  if (description === undefined) throw new Error(`the target ${source.target} names the server ${source.server}, which the loaded settings do not declare`);
   const exec = createHostExec();
   const key = await managedKeyReader({ description, binary: source.binary, model: source.model, exec, platform: process.platform, hashes: createBinaryHashCache() })(signal);
   if (key.kind === 'unknown') return false;
@@ -128,7 +129,7 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     copyEndpointProbeRecord: async (probe, paths) => {
       await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
     },
-    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
+    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
     listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),

@@ -43,7 +43,7 @@ export type ResolvedModels = {
   billingChanges: BillingChange[];
   headersTimeoutMs: number;
   idleTimeoutMs: number;
-  servers?: ServerRegistry | undefined;
+  servers: ServerRegistry;
 };
 
 const FIVE_MINUTES_MS = 300_000;
