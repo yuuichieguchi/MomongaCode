@@ -39,7 +39,7 @@ const recordRun = (h: ReturnType<typeof harness>) => {
     { providerName: 'openai', billing: 'metered', requestModel: 'model-x', maxTokens: 512, stream: true, runId: RUN_ID, step: 1, attempt: 1 },
     agentContext,
   );
-  recordChatResponse(chat, { responseModel: 'model-x', responseId: 'resp_1', finishReasons: ['tool_calls'], usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40 } });
+  recordChatResponse(chat, { responseModel: 'model-x', responseId: 'resp_1', finishReasons: ['tool_calls'], usageSource: 'reported', usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40 } });
   chat.end(h.clock.now());
   const tool = startToolSpan(h.telemetry.tracer, { toolName: 'Read', toolCallId: 'call_1', toolType: 'function', runId: RUN_ID, step: 1 }, agentContext);
   tool.end(h.clock.now());

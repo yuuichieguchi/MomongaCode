@@ -70,7 +70,7 @@ export type ChatResponse = {
   responseId?: string;
   finishReasons: readonly string[];
   usage: ChatUsage;
-  usageSource?: UsageSource;
+  usageSource: UsageSource;
   timeToFirstChunkMs?: number;
 };
 
@@ -130,7 +130,7 @@ export const recordChatResponse = (span: Span, response: ChatResponse): void => 
     [A.ATTR_GEN_AI_RESPONSE_FINISH_REASONS]: [...response.finishReasons],
     [A.ATTR_GEN_AI_USAGE_INPUT_TOKENS]: response.usage.inputTokens,
     [A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS]: response.usage.outputTokens,
-    ...(response.usageSource === undefined ? {} : { [MOMONGA_ATTRIBUTES.usageSource]: response.usageSource }),
+    [MOMONGA_ATTRIBUTES.usageSource]: response.usageSource,
     ...(response.usage.cachedInputTokens === undefined
       ? {}
       : { [A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS]: response.usage.cachedInputTokens }),

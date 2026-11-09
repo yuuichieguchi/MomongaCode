@@ -20,7 +20,7 @@ describe('summarizeRun', () => {
       h.clock.advance(10);
       const span = startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: true, runId: RUN_ID, step, attempt }, parent);
       h.clock.advance(100);
-      recordChatResponse(span, { finishReasons, usage });
+      recordChatResponse(span, { finishReasons, usageSource: 'reported', usage });
       span.end(h.clock.now());
       return span;
     };
@@ -83,7 +83,7 @@ describe('summarizeRun', () => {
     const tracer = h.telemetry.tracer;
     for (const attempt of [1, 2]) {
       const span = startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt });
-      recordChatResponse(span, { finishReasons: ['stop'], usage: { inputTokens: 1, outputTokens: 1 } });
+      recordChatResponse(span, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 1, outputTokens: 1 } });
       h.clock.advance(1);
       span.end(h.clock.now());
       h.clock.advance(1);

@@ -78,7 +78,7 @@ describe('stored spans', () => {
       parent,
     );
     h.clock.advance(5);
-    recordChatResponse(chat, { finishReasons: ['tool_calls'], usage: { inputTokens: 3, outputTokens: 4 } });
+    recordChatResponse(chat, { finishReasons: ['tool_calls'], usageSource: 'reported', usage: { inputTokens: 3, outputTokens: 4 } });
     chat.end(h.clock.now());
     h.clock.advance(1);
     const tool = startToolSpan(

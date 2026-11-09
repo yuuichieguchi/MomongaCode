@@ -60,6 +60,7 @@ describe('startChatSpan and recordChatResponse', () => {
       responseModel: 'gpt-x-2026',
       responseId: 'resp_1',
       finishReasons: ['stop'],
+      usageSource: 'reported',
       usage: { inputTokens: 100, outputTokens: 20, cachedInputTokens: 40, reasoningTokens: 7 },
       timeToFirstChunkMs: 250,
     });
@@ -101,7 +102,7 @@ describe('startChatSpan and recordChatResponse', () => {
       step: 1,
       attempt: 2,
     });
-    recordChatResponse(chat, { finishReasons: ['length'], usage: { inputTokens: 5, outputTokens: 6 } });
+    recordChatResponse(chat, { finishReasons: ['length'], usageSource: 'reported', usage: { inputTokens: 5, outputTokens: 6 } });
     chat.end(h.clock.now());
     const [span] = await finished(h);
     expect(span?.attributes).toEqual({
