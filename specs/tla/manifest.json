@@ -3970,6 +3970,129 @@
       "measuredSeconds": 1.16,
       "measuredCpuSeconds": 1.51,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "LeftoverCleanup",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10080,
+      "measuredSeconds": 2.06,
+      "measuredCpuSeconds": 6.18,
+      "budgetCpuSeconds": 16
+    },
+    {
+      "config": "LeftoverCleanup.ageRemoval",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveStepFailed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 169,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.84,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "LeftoverCleanup.pidOnly",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveStepFailed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 74,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.64,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "LeftoverCleanup.noTempLock",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveStepFailed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 53,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "LeftoverCleanup.splitCreate",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveStepFailed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 161,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.96,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "LeftoverCleanup.reapFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRemoveLive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 286,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 2.23,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "LeftoverCleanup.listingNumbers",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoNumberReuse",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1291,
+      "measuredSeconds": 1.41,
+      "measuredCpuSeconds": 3.03,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "LeftoverCleanup.unlockedStart",
+      "role": "evidence",
+      "expect": {
+        "violates": "LiveStartStepOK",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 284,
+      "measuredSeconds": 1.35,
+      "measuredCpuSeconds": 2.27,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "LeftoverCleanup.noClaimDirs",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRemoveLive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 663,
+      "measuredSeconds": 1.33,
+      "measuredCpuSeconds": 2.55,
+      "budgetCpuSeconds": 9
     }
   ]
 }
