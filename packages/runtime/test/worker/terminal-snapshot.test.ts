@@ -7,7 +7,7 @@ import { textStep } from './scripts.ts';
 const SNAPSHOTS_AT_PLAIN_TERMINAL = 1;
 const SNAPSHOTS_AT_FINISH_THEN_CANCEL = 2;
 
-const recording = (env: Env, beforeTransition: (to: string) => void): { store: RuntimeStore; order: string[] } => {
+const recording = (env: Env, beforeTransition: (to: string) => void | Promise<void>): { store: RuntimeStore; order: string[] } => {
   const order: string[] = [];
   const store: RuntimeStore = {
     ...env.store,
@@ -15,9 +15,9 @@ const recording = (env: Env, beforeTransition: (to: string) => void): { store: R
       order.push('snapshot');
       return env.store.writeSnapshot(claim, seq, state);
     },
-    transition: (claim, from, to, patch, preceding) => {
+    transition: async (claim, from, to, patch, preceding) => {
       order.push(`transition:${to}`);
-      beforeTransition(to);
+      await beforeTransition(to);
       return env.store.transition(claim, from, to, patch, preceding);
     },
   };
@@ -43,8 +43,8 @@ describe('the snapshots a worker terminal encodes on the loop', () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('done'));
     const run = env.enqueue('Work');
-    const { store, order } = recording(env, (to) => {
-      if (to === 'COMPLETED') env.store.requestCancel(run.id);
+    const { store, order } = recording(env, async (to) => {
+      if (to === 'COMPLETED') await env.store.requestCancel(run.id);
     });
 
     await env.runOnce(env.worker('worker-1', { store }));

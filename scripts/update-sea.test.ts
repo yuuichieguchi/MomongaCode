@@ -8,6 +8,7 @@ import type { FakeReleaseServer } from '../packages/cli/test/fake-release-server
 import { repoRoot } from './bundle.ts';
 import { bundle } from './bundle.ts';
 import { buildSea } from './sea.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
@@ -94,11 +95,11 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     v2 = path.join(root, 'v2');
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/update-v1.ts`, output: v1, workDir: path.join(root, 'work1') });
     server = await startFakeReleaseServer(FIXTURE_REPO);
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   beforeAll(async () => {
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/update-v2.ts`, output: v2, workDir: path.join(root, 'work2') });
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterEach(() => {
     for (const base of installationRoots.splice(0)) fs.rmSync(base, { recursive: true, force: true });
@@ -262,7 +263,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
   });
 });
 
-describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', () => {
+describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeout: UNBOUNDED_BUILD_WAIT_MS }, () => {
   let root = '';
 
   beforeAll(() => {

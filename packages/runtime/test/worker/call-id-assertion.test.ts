@@ -99,7 +99,7 @@ describe('call-id uniqueness assertion', () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
     const run = env.enqueue('Echo');
-    env.seed(run.id, [toolCallPayload('call_p'), { type: 'tool.started', callId: 'call_p', idemKey: 'k-p' }, { type: 'tool.completed', callId: 'call_p', status: 'completed', output: 'seed' }], 'release');
+    await env.seed(run.id, [toolCallPayload('call_p'), { type: 'tool.started', callId: 'call_p', idemKey: 'k-p' }, { type: 'tool.completed', callId: 'call_p', status: 'completed', output: 'seed' }], 'release');
     const state = env.fold(run.id);
     expect(state.history.some((entry) => entry.item.type === 'function_call')).toBe(false);
     expect(Object.keys(state.pendingCalls)).toEqual(['call_p']);
@@ -115,7 +115,7 @@ describe('call-id uniqueness assertion', () => {
     const env = await makeEnv();
     env.gateway.rewriteCallIds = false;
     const run = env.enqueue('Echo');
-    env.seed(run.id, [...completedCall('call_e', 1), { type: 'context.truncated', callId: 'call_e', handle: 'blob-e', kind: 'omitted' }], 'release');
+    await env.seed(run.id, [...completedCall('call_e', 1), { type: 'context.truncated', callId: 'call_e', handle: 'blob-e', kind: 'omitted' }], 'release');
     expect(env.fold(run.id).evicted).toEqual(['call_e']);
     expect(Object.keys(env.fold(run.id).pendingCalls)).toContain('call_e');
     env.gateway.script.push(textThenCallsStep('Again.', [echo('call_e', 'again')]), textStep('never sent'));
@@ -131,7 +131,7 @@ describe('call-id uniqueness assertion', () => {
     env.gateway.rewriteCallIds = false;
     const run = env.enqueue('Echo');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Echo' }], store: false, stream: true };
-    env.seed(
+    await env.seed(
       run.id,
       [
         ...completedCall('call_r', 1),

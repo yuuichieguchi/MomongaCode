@@ -379,14 +379,14 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       }),
     );
 
-  const cancel = (runId: string): Run => {
-    const result = store.requestCancel(runId);
+  const cancel = async (runId: string): Promise<Run> => {
+    const result = await store.requestCancel(runId);
     if (result.kind !== 'ok') throw new Error(`run ${runId} could not be cancelled: ${result.kind}`);
     return result.run;
   };
 
   const cancelToEnd = async (runId: string): Promise<Run> => {
-    const requested = cancel(runId);
+    const requested = await cancel(runId);
     if (requested.status !== 'CANCELLING') throw new Error(`run ${runId} should become CANCELLING, got ${requested.status}`);
     const failures: unknown[] = [];
     const finished = await store.finishCancelled((error) => void failures.push(error));
@@ -423,13 +423,13 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     return found;
   };
 
-  const seed = (runId: string, payloads: readonly RunEventPayload[], end: 'release' | 'crash' | 'hold'): Claim => {
+  const seed = async (runId: string, payloads: readonly RunEventPayload[], end: 'release' | 'crash' | 'hold'): Promise<Claim> => {
     const claim = store.claim('seeder');
     if (claim === null || claim.runId !== runId) throw new Error(`seeder could not claim run ${runId}`);
     const appended = store.append(claim, payloads);
     if (appended.kind !== 'ok') throw new Error('seeder lost its lease');
     if (end === 'release') {
-      const released = store.release(claim, 'QUEUED');
+      const released = await store.release(claim, 'QUEUED');
       if (released.kind !== 'ok') throw new Error(`seeder could not release run ${runId}`);
     } else if (end === 'crash') {
       clock.advance(LEASE_MS + 1);

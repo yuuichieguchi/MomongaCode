@@ -1,4 +1,5 @@
 import type { RunEventPayload } from '@momonga/protocol';
+import { knownValue } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
 import { chainBuilder, oracleProjection } from '../../../store/test/support/reference.ts';
 import type { InheritPlanReply, InheritedWindowReply, PlanRequest, ReferenceFacts, ReferenceHarness, WindowRequest } from '../../../store/test/support/reference.ts';
@@ -53,10 +54,10 @@ export const harnessOf = (env: Env): ReferenceHarness => ({
 
 export const builderOf = (env: Env) => chainBuilder(harnessOf(env));
 
-export const plantOldShapeChild = (env: Env, input: string): Run => {
+export const plantOldShapeChild = async (env: Env, input: string): Promise<Run> => {
   const b = builderOf(env);
   const child = b.createRun(input);
-  const payload = oracleProjection(env.store, child, env.store.getSession(env.session.id)?.permissionMode ?? 'default');
-  env.seed(child.id, [payload as unknown as RunEventPayload], 'release');
+  const payload = oracleProjection(env.store, child, knownValue(env.store.getSession(env.session.id)?.permissionMode ?? 'default', `the permission mode of session ${env.session.id}`));
+  await env.seed(child.id, [payload as unknown as RunEventPayload], 'release');
   return env.run(child.id);
 };

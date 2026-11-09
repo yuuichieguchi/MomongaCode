@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { RunStatus } from '@momonga/protocol';
+import type { RunStatus, Stored } from '@momonga/protocol';
 import { makeEnv, typesOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { inertTimers, preparerFake } from './preparer-fake.ts';
 import { callsStep, textStep } from './scripts.ts';
 
-type Step = { step: 'cancelUpstream' | 'releaseStopped'; runId: string; statusAtCall: RunStatus | undefined };
+type Step = { step: 'cancelUpstream' | 'releaseStopped'; runId: string; statusAtCall: Stored<RunStatus> | undefined };
 
 const recordingSweeper = async (env: Env) => {
   const steps: Step[] = [];
@@ -37,7 +37,7 @@ describe('the sweeper finish of a cancelled run that never ran, with no worker i
     const run = env.enqueue('Work');
     const { sweeper, steps } = await recordingSweeper(env);
 
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     expect(steps).toEqual([]);
 
     await sweeper.sweep();
@@ -62,7 +62,7 @@ describe('the sweeper finish of a cancelled run that never ran, with no worker i
     const streamsBefore = env.gateway.streams.length;
     const { sweeper, steps } = await recordingSweeper(env);
 
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     await sweeper.sweep();
 
     expect(env.run(run.id)).toMatchObject({ status: 'CANCELLED', leaseOwner: null });

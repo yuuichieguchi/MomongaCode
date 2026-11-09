@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { MemoryEvidence, MemoryScope } from '@momonga/protocol';
+import type { MemoryEvidence, MemoryScope, StoredMemoryEvidence } from '@momonga/protocol';
 import { MEMORY_SAVE_TOOL_NAME } from '@momonga/tools';
 import type { EvidenceReply, RuntimeStore } from '@momonga/store';
 import { callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
@@ -52,10 +52,10 @@ const commandContext = (store: RuntimeStore) => ({
   signal: SIGNAL,
 });
 
-const repositoryEvidenceOf = (evidence: readonly MemoryEvidence[]): MemoryEvidence[] =>
-  evidence.filter((item) => item.kind === 'commit' || item.kind === 'file');
+const repositoryEvidenceOf = (evidence: readonly StoredMemoryEvidence[]): MemoryEvidence[] =>
+  evidence.filter((item): item is MemoryEvidence => item.kind === 'commit' || item.kind === 'file');
 
-const savedEvidence = (store: RuntimeStore, scope: MemoryScope): MemoryEvidence[] =>
+const savedEvidence = (store: RuntimeStore, scope: MemoryScope): StoredMemoryEvidence[] =>
   store.memories
     .list()
     .filter((memory) => memory.scope === scope)

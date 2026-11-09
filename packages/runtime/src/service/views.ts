@@ -1,7 +1,7 @@
 import { readAgentPin } from '@momonga/agents';
 import type { AgentDefinition } from '@momonga/agents';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { AgentView, JobView, RunStatus, SkillView } from '@momonga/protocol';
+import type { AgentView, JobView, RunStatus, SkillView, Stored } from '@momonga/protocol';
 import type { Skill } from '@momonga/skills';
 import type { Job, Run, RuntimeStore, Session } from '@momonga/store';
 
@@ -10,7 +10,7 @@ const agentNameOf = (run: Run): { agent?: string } => {
   return pin === undefined ? {} : { agent: pin.name };
 };
 
-export const isTerminalStatus = (status: RunStatus): boolean => (TERMINAL_STATUSES as readonly RunStatus[]).includes(status);
+export const isTerminalStatus = (status: Stored<RunStatus>): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
 export const toJobView = (job: Job): JobView => ({
   id: job.id,

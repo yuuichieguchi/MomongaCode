@@ -28,15 +28,15 @@ const json = (body: unknown, status = 200): Response =>
 export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps): void => {
   const { store, mcp } = deps;
 
-  const runElicitations: Handler = (context) => {
+  const runElicitations: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     if (store.getRun(id) === undefined) throw notFound(`run ${id} does not exist`);
-    return json({ elicitations: store.pendingElicitationViews(id) });
+    return json({ elicitations: await store.pendingElicitationViews(id) });
   };
 
-  const getElicitation: Handler = (context) => {
+  const getElicitation: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
-    const elicitation = store.elicitationView(id);
+    const elicitation = await store.elicitationView(id);
     if (elicitation === undefined) throw notFound(`elicitation ${id} does not exist`);
     return json({ elicitation });
   };
@@ -44,7 +44,7 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
   const resolveElicitation: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     const body = validateBody<ResolveElicitationBody>('ResolveElicitationRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const view = store.elicitationView(id);
+    const view = await store.elicitationView(id);
     if (view === undefined) throw notFound(`elicitation ${id} does not exist`);
     let responses;
     const notices: string[] = [];
@@ -71,7 +71,7 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
       case 'run_cancelled':
         throw conflict('run_cancelled', `the run of elicitation ${id} was cancelled`);
       case 'ok': {
-        const resolved = store.elicitationView(id);
+        const resolved = await store.elicitationView(id);
         if (resolved === undefined) throw new Error(`elicitation ${id} vanished after it was answered`);
         return json({ elicitation: resolved, run: toRunView(result.run) });
       }

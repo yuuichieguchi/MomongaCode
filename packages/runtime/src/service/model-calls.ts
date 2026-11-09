@@ -140,7 +140,7 @@ const advances = (from: BilledCallsCursorView, to: BilledCallsCursorView): boole
 
 export type CostBreakdownSources = {
   runIds: readonly string[];
-  recordsOf: (runId: string) => readonly ModelCallRecord[];
+  recordsOf: (runId: string) => Promise<readonly ModelCallRecord[]>;
   fetchPage: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number) => Promise<BilledCallsPageView>;
   sideTimingsOf?: (runId: string) => readonly SideTiming[];
   runlessTimingsOf?: () => readonly SideTiming[];
@@ -166,14 +166,10 @@ export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ 
     }
     cursor = next;
   }
-  const joined = runIds.map((runId) =>
-    joinRunCalls(
-      runId,
-      billed.filter((call) => call.runId === runId),
-      sources.recordsOf(runId),
-      sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId),
-    ),
-  );
+  const joined: ReturnType<typeof joinRunCalls>[] = [];
+  for (const runId of runIds) {
+    joined.push(joinRunCalls(runId, billed.filter((call) => call.runId === runId), await sources.recordsOf(runId), sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId)));
+  }
   const runlessTimings = new Map((sources.runlessTimingsOf === undefined ? [] : sources.runlessTimingsOf()).map((entry) => [entry.responseId, entry.timing]));
   const runless = billed
     .filter((call) => call.runId === RUNLESS)

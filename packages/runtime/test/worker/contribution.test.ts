@@ -105,7 +105,7 @@ describe('context.contribution at terminal', () => {
 
     const running = env.runOnce(memoryWorker(env, 'worker-2'));
     await within(blocked.gate.reached.promise, 5_000, 'the second stream to start');
-    env.cancel(run.id);
+    await env.cancel(run.id);
     blocked.gate.release.resolve();
     await within(running, 5_000, 'the worker to settle');
     if (env.run(run.id).status !== 'CANCELLED') await env.runOnce(memoryWorker(env, 'worker-3'));

@@ -39,7 +39,7 @@ export const createCancelUpstream = ({ store, gatewayClient, timers }: CancelUps
   const cancelInFlight = async (runId: string, caller: AbortSignal | undefined): Promise<void> => {
     const run = store.getRun(runId);
     if (run === undefined) return;
-    const inFlight = store.inFlightModelRequestOf(runId);
+    const inFlight = await store.inFlightModelRequestOf(runId);
     if (inFlight === undefined) return;
     await gatewayClient.cancel(modelKey(runId, inFlight.step, inFlight.attempt), { signal: caller === undefined ? controller.signal : AbortSignal.any([controller.signal, caller]) });
   };

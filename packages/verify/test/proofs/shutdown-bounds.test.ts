@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHILD_STDIO_FLUSH_MS,
+  FM_STOP_GRACE_MS,
+  GATEWAY_CLOSE_GRACE_MS,
   GATEWAY_MAX_CLOSE_MS,
   KILL_CONFIRM_MS,
   RUNTIME_ABORT_BUDGET_MS,
@@ -9,6 +11,7 @@ import {
   SHUTDOWN_MARGIN_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
+  fmServeStopBoundMs,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
@@ -35,7 +38,7 @@ const stageTermsOf = (arith: ProofArith, drainTimeout: ProofInt): ReadonlyArray<
     ['drain', constant(arith, SHUTDOWN_DRAIN_BOUND_MS)],
     ['runtimeStop', runtimeCloseOf(arith, drainTimeout).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['runtimeKilledChildSettle', killedChildSettle],
-    ['gatewayStop', constant(arith, GATEWAY_MAX_CLOSE_MS).add(constant(arith, SHUTDOWN_MARGIN_MS))],
+    ['gatewayStop', constant(arith, GATEWAY_CLOSE_GRACE_MS).add(constant(arith, fmServeStopBoundMs(FM_STOP_GRACE_MS))).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['gatewayKilledChildSettle', killedChildSettle],
     ['reap', constant(arith, SHUTDOWN_REAP_BOUND_MS)],
     ['release', constant(arith, SHUTDOWN_RELEASE_BOUND_MS)],
@@ -46,6 +49,18 @@ const sumOf = (arith: ProofArith, terms: readonly ProofInt[]): ProofInt => terms
 
 const SAMPLED_DRAIN_TIMEOUTS_MS = [0, 1, 30_000, 123_456] as const;
 
+const SUPERVISOR_FIXED_CLOSE_MS =
+  SHUTDOWN_DRAIN_BOUND_MS +
+  RUNTIME_ABORT_BUDGET_MS +
+  RUNTIME_TEARDOWN_BUDGET_MS +
+  SHUTDOWN_MARGIN_MS +
+  2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) +
+  GATEWAY_CLOSE_GRACE_MS +
+  fmServeStopBoundMs(FM_STOP_GRACE_MS) +
+  SHUTDOWN_MARGIN_MS +
+  SHUTDOWN_REAP_BOUND_MS +
+  SHUTDOWN_RELEASE_BOUND_MS;
+
 describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => {
   const z3 = useZ3();
 
@@ -55,10 +70,12 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
       expect(runtimeMaxCloseMs(drainTimeout)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS);
       expect(supervisorMaxCloseMs(drainTimeout)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + fixedTerms);
     }
-    expect(supervisorMaxCloseMs(0)).toBe(63_000);
+    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CLOSE_GRACE_MS + fmServeStopBoundMs(FM_STOP_GRACE_MS));
+    expect(supervisorMaxCloseMs(0)).toBe(SUPERVISOR_FIXED_CLOSE_MS);
+    expect(SUPERVISOR_FIXED_CLOSE_MS).toBe(76_000);
   });
 
-  it('S1 proves supervisorMaxCloseMs(d) is the sum of its seven stage terms, each non-negative, and equals d + 63000 for every d >= 0', async () => {
+  it('S1 proves supervisorMaxCloseMs(d) is the sum of its seven stage terms, each non-negative, and equals d + the fixed close terms, the gateway close grace and the fm stop bound included, for every d >= 0', async () => {
     const arith = proofArith(z3.engine().api, 'S1');
     const drainTimeout = drainTimeoutOf(arith);
     const terms = stageTermsOf(arith, drainTimeout);
@@ -66,15 +83,15 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
     const total = sumOf(arith, terms.map(([, term]) => term));
     const { ctx } = arith;
     expect(await prove(arith, ctx.And(...terms.map(([, term]) => term.ge(0))))).toEqual({ status: 'proved' });
-    expect(await prove(arith, total.eq(drainTimeout.add(63_000)))).toEqual({ status: 'proved' });
-    for (const sample of SAMPLED_DRAIN_TIMEOUTS_MS) expect(supervisorMaxCloseMs(sample)).toBe(sample + 63_000);
+    expect(await prove(arith, total.eq(drainTimeout.add(SUPERVISOR_FIXED_CLOSE_MS)))).toEqual({ status: 'proved' });
+    for (const sample of SAMPLED_DRAIN_TIMEOUTS_MS) expect(supervisorMaxCloseMs(sample)).toBe(sample + SUPERVISOR_FIXED_CLOSE_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('S1w refutes that the total is d + 61000, so the closed form of S1 is not satisfied by a wrong constant', async () => {
+  it('S1w refutes a total one fm stop grace short, so the closed form of S1 is not satisfied by a wrong constant', async () => {
     const arith = proofArith(z3.engine().api, 'S1w');
     const drainTimeout = drainTimeoutOf(arith);
     const total = sumOf(arith, stageTermsOf(arith, drainTimeout).map(([, term]) => term));
-    await expectRefuted(arith, total.eq(drainTimeout.add(61_000)));
+    await expectRefuted(arith, total.eq(drainTimeout.add(SUPERVISOR_FIXED_CLOSE_MS - FM_STOP_GRACE_MS)));
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('S2 proves phaseOne(d) = runtimeMaxCloseMs(d) = d + abort budget + teardown budget, and that the margin-free reap grace equals abort + teardown, for every d >= 0', async () => {

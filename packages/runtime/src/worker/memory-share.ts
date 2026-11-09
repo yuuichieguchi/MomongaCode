@@ -15,24 +15,25 @@ const recordedShareOf = (runId: string, events: readonly RunEvent[]): number | u
   return share;
 };
 
-const windowRunOf = (store: RuntimeStore, runId: string, events: readonly RunEvent[]): ContributionWindowRun => {
+const windowRunOf = async (store: RuntimeStore, runId: string, events: readonly RunEvent[]): Promise<ContributionWindowRun> => {
   const injectedIds = new Set(events.flatMap((event) => (event.type === 'context.memories_loaded' ? event.memories.map((memory) => memory.id) : [])));
   const items = events.flatMap((event) => (event.type === 'context.contribution' ? event.items : [])).filter((item) => item.kind === 'memory' && injectedIds.has(item.id));
   return {
     injected: items.length,
     used: items.filter((item) => item.contributed).length,
-    memoriesDropped: store.hasNoticeCode(runId, MEMORIES_DROPPED_CODE),
+    memoriesDropped: await store.hasNoticeCode(runId, MEMORIES_DROPPED_CODE),
   };
 };
 
 const shareOfParent = (store: RuntimeStore, parentRunId: string): number | undefined =>
   recordedShareOf(parentRunId, store.readRunEventsOfTypes(parentRunId, ['run.started']));
 
-const shareFromWindow = (store: RuntimeStore, project: string): number => {
-  const recent = store.lastTerminalRootRuns(project, CONTRIBUTION_WINDOW_RUNS).map((run) => {
+const shareFromWindow = async (store: RuntimeStore, project: string): Promise<number> => {
+  const recent: { share: number; window: ContributionWindowRun }[] = [];
+  for (const run of store.lastTerminalRootRuns(project, CONTRIBUTION_WINDOW_RUNS)) {
     const events = store.readRunEventsOfTypes(run.id, ['run.started', 'context.contribution', 'context.memories_loaded']);
-    return { share: recordedShareOf(run.id, events) ?? DEFAULT_MEMORY_SHARE, window: windowRunOf(store, run.id, events) };
-  });
+    recent.push({ share: recordedShareOf(run.id, events) ?? DEFAULT_MEMORY_SHARE, window: await windowRunOf(store, run.id, events) });
+  }
   const previous = recent[0]?.share;
   return nextMemoryShare({ previous, runs: recent.filter((entry) => entry.share === previous).map((entry) => entry.window) });
 };

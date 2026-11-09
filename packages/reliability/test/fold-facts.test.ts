@@ -405,7 +405,7 @@ describe('population buckets', () => {
     const stale: RunFacts = { ...fold('stale', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]), definitionsVersion: INDICATOR_DEFINITIONS_VERSION - 1 };
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = totalOf([cancelled, stale, counted]);
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0, unknownValues: 0 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 
@@ -413,7 +413,7 @@ describe('population buckets', () => {
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const hasUnavailableChild = fold('parent', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = indicatorsOf(aggregate([counted, hasUnavailableChild], { groupBy: 'model', unavailableRoots: ['parent', 'ghost'] })).total;
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 2 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 2, unknownValues: 0 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 });

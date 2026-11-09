@@ -132,7 +132,7 @@ describe('the model has no way to adopt a guideline', () => {
       ...createBuiltinTools(),
       ...createMemoryTools({ port: { save: unused, search: async () => [] }, trusted: true }),
       ...createHistoryTools({
-        port: { search: unused, read: () => null, projectOf: () => undefined, readDenial: unused, redact: (text) => text },
+        port: { search: unused, read: async () => null, projectOf: () => undefined, readDenial: unused, redact: (text) => text },
         trusted: true,
         project: '/p',
       }),

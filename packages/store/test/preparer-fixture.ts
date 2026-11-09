@@ -11,7 +11,7 @@ export type FakePreparer = {
   preparer: ContributionPreparer;
   requests: SeenRequest[];
   bind(store: RuntimeStore): void;
-  during(action: (request: SeenRequest, call: number) => void): void;
+  during(action: (request: SeenRequest, call: number) => void | Promise<void>): void;
 };
 
 export const contributionOf = (id: string): ContributionPayload => ({ type: 'context.contribution', items: [{ kind: 'memory', id, contributed: true }] });
@@ -19,7 +19,7 @@ export const contributionOf = (id: string): ContributionPayload => ({ type: 'con
 export const fakePreparer = (replies: Reply[] = [], fallback: Reply = { kind: 'fresh', id: 'm1' }): FakePreparer => {
   const requests: SeenRequest[] = [];
   let bound: RuntimeStore | undefined;
-  let action: ((request: SeenRequest, call: number) => void) | undefined;
+  let action: ((request: SeenRequest, call: number) => void | Promise<void>) | undefined;
   const preparer: ContributionPreparer = {
     ...noJournalFacts,
     measure: async (request: ContributionRequest): Promise<ContributionMeasured> => {
@@ -31,7 +31,7 @@ export const fakePreparer = (replies: Reply[] = [], fallback: Reply = { kind: 'f
       const run = bound.getRun(request.runId);
       if (run === undefined) throw new Error(`the fake preparer measured an unknown run ${request.runId}`);
       const lastSeq = reply.kind === 'stale' ? run.lastSeq - 1 : run.lastSeq;
-      action?.(seen, requests.length);
+      await action?.(seen, requests.length);
       return reply.kind === 'nothing' ? { lastSeq } : { lastSeq, contribution: contributionOf(reply.id) };
     },
   };

@@ -1,7 +1,7 @@
-import type { MemoryStatus, MemoryValidity, ValidityChange, ValidityCloser, ValidityInterval } from '@momonga/protocol';
+import type { MemoryStatus, MemoryValidity, Stored, ValidityChange, ValidityCloser, ValidityInterval } from '@momonga/protocol';
 
 export type ValidityInput = {
-  observations: readonly { status: MemoryStatus; observedAt: number }[];
+  observations: readonly { status: Stored<MemoryStatus>; observedAt: number }[];
   createdAt: number;
   successorCreatedAt: number | null;
   retiredAt: number | null;

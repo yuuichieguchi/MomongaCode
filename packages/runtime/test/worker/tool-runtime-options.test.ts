@@ -54,7 +54,7 @@ describe('worker tool runtime options', () => {
     expect(env.batches[0]?.signal).toBe(claimSignal);
 
     const cancelled = await makeEnv();
-    seedStartedCalls(cancelled, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
+    await seedStartedCalls(cancelled, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
 
     expect(await cancelled.runOnce(cancelled.worker())).toBe('yielded');
 
@@ -85,7 +85,7 @@ describe('worker tool runtime options', () => {
     expect(env.batches[0]?.env).not.toEqual(env.session.env);
 
     const cancelled = await makeEnv();
-    seedStartedCalls(cancelled, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
+    await seedStartedCalls(cancelled, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
     const recoveryPolicyEnv: ToolEnv = { PATH: '/usr/bin:/bin', FROM_RECOVERY_POLICY: '1' };
     const recoverySeen: Array<{ env: ToolEnv } | undefined> = [];
     const recoveryStripped: ToolEnv = { PATH: '/usr/bin:/bin', FROM_RECOVERY_ENV_FOR: '1' };

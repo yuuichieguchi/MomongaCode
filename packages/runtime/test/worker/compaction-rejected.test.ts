@@ -63,7 +63,7 @@ describe('compaction item rejected at the context build (site 1, count_tokens)',
   const prepare = async (summary = SUMMARY_TEXT, extra: RunEventPayload[] = []) => {
     const env = await makeEnv();
     const run = env.enqueue('question one');
-    env.seed(run.id, [responded(1, 'answer one'), { type: 'user.message', text: 'question two' }, compacted(summary, 2), ...extra], 'release');
+    await env.seed(run.id, [responded(1, 'answer one'), { type: 'user.message', text: 'question two' }, compacted(summary, 2), ...extra], 'release');
     const stepBefore = env.fold(run.id).step;
     env.gateway.countHook = async (request) => {
       if (hasCompaction(request.input)) throw invalidCompaction();
@@ -147,7 +147,7 @@ describe('compaction item rejected by compact (site 2)', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(contextWindow) });
     const run = env.enqueue('question one');
     const payloads = conversation(sizes);
-    env.seed(run.id, [payloads[0]!, payloads[1]!, compacted(SUMMARY_TEXT, 2), ...payloads.slice(2)], 'release');
+    await env.seed(run.id, [payloads[0]!, payloads[1]!, compacted(SUMMARY_TEXT, 2), ...payloads.slice(2)], 'release');
     let rejectedOnce = false;
     let countsBeforeFirstCompact: CountTokensResult[] | undefined;
     env.gateway.compactHook = async (request) => {
@@ -214,7 +214,7 @@ describe('compaction item rejected by the model stream after recovery (site 3)',
   const prepare = async (limits: Record<string, unknown> = {}) => {
     const env = await makeEnv();
     const run = env.enqueue('question one', { limits });
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, 'answer one'),

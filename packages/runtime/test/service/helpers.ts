@@ -668,13 +668,13 @@ export const toolCallPayload = (callId: string, target: string): RunEventPayload
   locations: [{ path: target }],
 });
 
-export const requestManualApproval = (
+export const requestManualApproval = async (
   env: ServiceEnv,
   claim: Claim,
   callId: string,
   extra: { suggestedRule?: string } = {},
-): string => {
-  const result = env.store.requestApproval(claim, {
+): Promise<string> => {
+  const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
     event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },

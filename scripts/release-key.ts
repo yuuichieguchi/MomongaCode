@@ -7,15 +7,16 @@ import type { PlaceFile } from '@momonga/foundation';
 const SHELL_INSTALLER = 'scripts/install.sh';
 const POWERSHELL_INSTALLER = 'scripts/install.ps1';
 
-const SHELL_PIN = /^readonly EMBEDDED_RELEASE_PUBLIC_KEY="([^"\n]*)"$/m;
-const POWERSHELL_PIN = /^\$embeddedReleasePublicKey = '([^'\n]*)'$/m;
-const SHELL_REPO = /^readonly EMBEDDED_RELEASE_REPO="([^"\n]*)"$/m;
-const POWERSHELL_REPO = /^\$embeddedReleaseRepo = '([^'\n]*)'$/m;
+const SHELL_PIN = /^[ \t]*readonly EMBEDDED_RELEASE_PUBLIC_KEY="([^"\n]*)"[ \t]*$/gm;
+const POWERSHELL_PIN = /^[ \t]*\$embeddedReleasePublicKey = '([^'\n]*)'[ \t]*$/gm;
+const SHELL_REPO = /^[ \t]*readonly EMBEDDED_RELEASE_REPO="([^"\n]*)"[ \t]*$/gm;
+const POWERSHELL_REPO = /^[ \t]*\$embeddedReleaseRepo = '([^'\n]*)'[ \t]*$/gm;
 
 const pinIn = (root: string, installer: string, pattern: RegExp): string => {
-  const match = pattern.exec(fs.readFileSync(path.join(root, installer), 'utf8'));
-  if (match === null) throw new Error(`${installer} has no embedded release declaration matching ${pattern.source}`);
-  return match[1] as string;
+  const matches = [...fs.readFileSync(path.join(root, installer), 'utf8').matchAll(pattern)];
+  if (matches.length === 0) throw new Error(`${installer} has no embedded release declaration matching ${pattern.source}`);
+  if (matches.length > 1) throw new Error(`${installer} has ${matches.length} embedded release declarations matching ${pattern.source}; it must hold exactly one`);
+  return (matches[0] as RegExpExecArray)[1] as string;
 };
 
 export const readPinnedReleaseKey = (root: string): string => {

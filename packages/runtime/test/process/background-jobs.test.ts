@@ -133,7 +133,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
 };
 
 describe('the job output window', () => {
-  it('keeps everything under the cap and reports absolute offsets', () => {
+  it('keeps everything under the cap and reports absolute offsets', async () => {
     const output = createJobOutput(100);
     output.push(Buffer.from('hello '));
     output.push(Buffer.from('world'));
@@ -143,7 +143,7 @@ describe('the job output window', () => {
     expect(window.bytes.toString()).toBe('hello world');
   });
 
-  it('drops the oldest bytes beyond the cap without splitting a character', () => {
+  it('drops the oldest bytes beyond the cap without splitting a character', async () => {
     const output = createJobOutput(5);
     output.push(Buffer.from('aaaa'));
     output.push(Buffer.from('é€'));
@@ -371,7 +371,7 @@ describe('background jobs', () => {
     const claim = t.store.claim('w1');
     if (claim === null) throw new Error('expected a claim');
     const { jobId } = await t.start('call-1');
-    t.store.release(claim, 'WAITING_TOOL', START_MS + 100_000, { awaits: { runIds: [], jobIds: [jobId] } });
+    await t.store.release(claim, 'WAITING_TOOL', START_MS + 100_000, { awaits: { runIds: [], jobIds: [jobId] } });
     expect(t.store.getRun(t.run.id)?.status).toBe('WAITING_TOOL');
     t.spawned[0]?.exit({ code: 0, signal: null });
     await t.settled(jobId);

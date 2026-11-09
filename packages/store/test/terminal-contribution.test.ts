@@ -41,11 +41,11 @@ const tailTypes = (store: RuntimeStore, runId: string, count: number): string[] 
 
 const countOf = (store: RuntimeStore, runId: string): number => store.readRunEvents(runId, 0, 1000).filter((event) => event.type === 'context.contribution').length;
 
-const savedMemory = (h: Harness, runId: string, callId: string, text: string): string => {
+const savedMemory = async (h: Harness, runId: string, callId: string, text: string): Promise<string> => {
   const claim = mustClaim(h.store, 'saver');
   expect(h.store.append(claim, [callEvent(callId)]).kind).toBe('ok');
-  const { memory } = h.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text, runId, step: 1, callId });
-  expect(h.store.release(claim, 'QUEUED').kind).toBe('ok');
+  const { memory } = await h.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text, runId, step: 1, callId });
+  expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
   return memory.id;
 };
 
@@ -67,7 +67,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const h = harness({ contribution: hook });
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
-    expect(cancel(h.store, run.id).status).toBe('CANCELLING');
+    expect((await cancel(h.store, run.id)).status).toBe('CANCELLING');
     expect(countOf(h.store, run.id)).toBe(0);
 
     expect((await h.store.transition(claim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
@@ -78,9 +78,9 @@ describe('context.contribution at every terminal transition of the store', () =>
 
   it('a cancel of a run that waits for a person withdraws first and reaches CANCELLING; the sweeper finish then writes the contribution before CANCELLED', async () => {
     const h = preparedHarness();
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
-    expect(cancel(h.store, runId).status).toBe('CANCELLING');
+    expect((await cancel(h.store, runId)).status).toBe('CANCELLING');
     expect(tailTypes(h.store, runId, 2)).toEqual(['tool.permission.cancelled', 'run.status:CANCELLING']);
 
     expect(await h.store.finishCancelled(ignoreSweepErrors)).toEqual([runId]);
@@ -101,7 +101,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('precedes the status when the deadline stops a run that waits for a person', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
     expect((await h.store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
@@ -112,7 +112,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('precedes the status when an expired request for input stops the run', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const { runId } = awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
 
     expect((await h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
@@ -140,7 +140,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
-    cancel(h.store, parent.id);
+    await cancel(h.store, parent.id);
 
     expect(mustRun(h.store, created.run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
     expect(tailTypes(h.store, created.run.id, 1)).toEqual(['run.status:CANCELLING']);
@@ -154,7 +154,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
-    expect(h.store.release(claim, 'QUEUED').kind).toBe('ok');
+    expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
 
     expect(seen).toEqual([]);
     expect(countOf(h.store, run.id)).toBe(0);
@@ -231,8 +231,8 @@ describe('the contributed_at stamp', () => {
     });
     bound = h.store;
     const run = enqueue(h.store, newSession(h.store).id);
-    const used = savedMemory(h, run.id, 'call_1', 'used note');
-    const unused = savedMemory(h, run.id, 'call_2', 'unused note');
+    const used = await savedMemory(h, run.id, 'call_1', 'used note');
+    const unused = await savedMemory(h, run.id, 'call_2', 'unused note');
     const claim = mustClaim(h.store, 'w2');
     items = [
       { kind: 'memory', id: used, contributed: true },
@@ -251,7 +251,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
     named = id;
     const claim = mustClaim(h.store, 'w2');
 
@@ -265,7 +265,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const run = enqueue(h.store, newSession(h.store).id);
-    named = savedMemory(h, run.id, 'call_1', 'used note');
+    named = await savedMemory(h, run.id, 'call_1', 'used note');
     const claim = mustClaim(h.store, 'w2');
     h.clock.advance(7);
 
@@ -278,7 +278,7 @@ describe('the contributed_at stamp', () => {
   it('moves contributed_at to the terminal time of a later run that contributed again', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
 
     h.store.memories.stampContributed([id], START_MS + 3);
     h.store.memories.stampContributed([id, 'unknown-id'], START_MS + 10);
@@ -289,7 +289,7 @@ describe('the contributed_at stamp', () => {
   it('keeps the later time when an earlier run is stamped again, and when the same run is stamped twice', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'used note');
+    const id = await savedMemory(h, run.id, 'call_1', 'used note');
     h.store.memories.stampContributed([id], START_MS + 10);
 
     h.store.memories.stampContributed([id], START_MS + 3);
@@ -302,7 +302,7 @@ describe('the contributed_at stamp', () => {
     let named = '';
     const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const first = enqueue(h.store, newSession(h.store).id);
-    named = savedMemory(h, first.id, 'call_1', 'used note');
+    named = await savedMemory(h, first.id, 'call_1', 'used note');
     h.clock.advance(5);
     expect((await h.store.transition(mustClaim(h.store, 'w2'), ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     expect(h.store.memories.get(named)?.contributedAt).toBe(START_MS + 5);

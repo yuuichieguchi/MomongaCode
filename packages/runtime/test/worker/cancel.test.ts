@@ -15,7 +15,7 @@ describe('worker cancel', () => {
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
 
     const requestedAt = Date.now();
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, CANCEL_BUDGET_MS + 2_000, 'the worker to finish after cancel');
     const elapsed = Date.now() - requestedAt;
 
@@ -37,7 +37,7 @@ describe('worker cancel', () => {
     await within(env.toolbox.waitStarted.promise, 5_000, 'the long tool to start');
 
     const requestedAt = Date.now();
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, CANCEL_BUDGET_MS + 2_000, 'the worker to finish after cancel');
     const elapsed = Date.now() - requestedAt;
 
@@ -52,8 +52,8 @@ describe('worker cancel', () => {
   it('takes the cancel path without a model call when a crashed run was left CANCELLING', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    env.seed(run.id, [], 'crash');
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await env.seed(run.id, [], 'crash');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

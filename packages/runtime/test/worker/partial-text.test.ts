@@ -69,7 +69,7 @@ describe('partial assistant text on an interrupted stream', () => {
     const env = await makeEnv();
     const run = env.enqueue('Talk');
     const gateway = partialGateway(env, ['Partial ', 'answer'], async (signal) => {
-      env.store.requestCancel(run.id);
+      await env.store.requestCancel(run.id);
       await untilAborted(signal);
       throw new Error('The operation was aborted');
     });
@@ -182,7 +182,7 @@ describe('partial assistant text on an interrupted stream', () => {
       { type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body },
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: ITEM_ID, text: 'stale partial' },
     ];
-    env.seed(run.id, seeded, 'crash');
+    await env.seed(run.id, seeded, 'crash');
     env.gateway.script.push(textStep('Full answer.'));
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
@@ -203,7 +203,7 @@ describe('partial assistant text on an interrupted stream', () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body },

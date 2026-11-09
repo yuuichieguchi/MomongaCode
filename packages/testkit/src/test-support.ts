@@ -32,9 +32,9 @@ function assertTestContext(context: CleanupContext | undefined, helper: string):
   }
 }
 
-export const registerCleanup = (context: CleanupContext | undefined, cleanup: Cleanup): void => {
+export const registerCleanup = (context: CleanupContext | undefined, cleanup: Cleanup, boundMs?: number): void => {
   assertTestContext(context, 'registerCleanup');
-  context.onTestFinished(cleanup);
+  context.onTestFinished(cleanup, boundMs);
 };
 
 const longestSocketOf = (home: string): string => {

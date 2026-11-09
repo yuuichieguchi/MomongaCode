@@ -10,6 +10,7 @@ import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
 import { defaultEntry } from './bundle.ts';
 import { buildSea } from './sea.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
@@ -94,7 +95,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
       }),
     );
     await buildSea({ entry: defaultEntry, output: binary, workDir: path.join(root, 'work') });
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(async () => {
     if (binary !== '') await run('daemon', 'stop');

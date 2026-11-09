@@ -297,7 +297,7 @@ describe('inheritContext: runs that were never processed', () => {
     const third = enqueue(store, session.id, 'Now this');
     const requeuedClaim = mustClaim(store, 'w2');
     expect(requeuedClaim.runId).toBe(requeued.id);
-    expect(store.release(requeuedClaim, 'QUEUED').kind).toBe('ok');
+    expect((await store.release(requeuedClaim, 'QUEUED')).kind).toBe('ok');
     clock.advance(2000);
     expect((await store.expireApprovals(clock.now(), (error: unknown) => { throw error; }))).toEqual([requeued.id]);
     expect(mustRun(store, requeued.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout', attempts: 1 });
@@ -350,7 +350,7 @@ describe('inheritContext: runs that were never processed', () => {
     const second = enqueue(store, session.id, 'Cancelled early');
     const secondClaim = mustClaim(store, 'w1');
     expect(await store.inheritContext(secondClaim, { mode: 'default' })).toEqual({ kind: 'inherited' });
-    expect(store.requestCancel(second.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
+    expect(await store.requestCancel(second.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     expect((await store.transition(secondClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
     const third = enqueue(store, session.id, 'Third');
     const claim = mustClaim(store, 'w1');

@@ -20,7 +20,7 @@ const recover = async (env: Env, brokenSettings: boolean) => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, '{ "permissions": ');
   }
-  const { run } = seedStartedCalls(env, CALLS);
+  const { run } = await seedStartedCalls(env, CALLS);
   const policyBuilds: Array<readonly PermissionRule[] | undefined> = [];
   const contexts: string[] = [];
   const worker = env.worker('worker-1', {
