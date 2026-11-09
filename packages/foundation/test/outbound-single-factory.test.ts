@@ -22,7 +22,6 @@ const EXCLUDED_PACKAGES: readonly Kept[] = [{ file: 'testkit', reason: 'test sup
 const BURN_DOWN: readonly BurnDown[] = [
   { file: 'mcp/src/remote-policy.ts', owner: 'N3' },
   { file: 'mcp/src/authorize.ts', owner: 'N3' },
-  { file: 'cli/src/update/node-ports.ts', owner: 'N4' },
 ];
 
 const sourceFiles = (dir: string): string[] =>

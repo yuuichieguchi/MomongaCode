@@ -135,6 +135,8 @@ describe('daemon probe', () => {
   });
 });
 
+const DIRECT_NETWORK = Promise.resolve({ config: { caFiles: [] }, trust: { sources: [], failures: [] } });
+
 describe('undici update http', () => {
   const serve = async (context: Parameters<typeof withTempDir>[0], handler: http.RequestListener): Promise<string> => {
     const server = http.createServer(handler);
@@ -159,8 +161,8 @@ describe('undici update http', () => {
     });
     const signal = new AbortController().signal;
 
-    await expect(undiciUpdateHttp().get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
-    const response = await undiciUpdateHttp().get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
+    await expect(undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/0`, { headers: {}, signal })).rejects.toThrow();
+    const response = await undiciUpdateHttp(DIRECT_NETWORK).get(`${origin}/${MAX_REDIRECTS + 2}`, { headers: {}, signal });
     expect(response.status).toBe(200);
   });
 
@@ -171,7 +173,7 @@ describe('undici update http', () => {
       response.end('ok');
     });
 
-    await undiciUpdateHttp().get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
+    await undiciUpdateHttp(DIRECT_NETWORK).get(origin, { headers: { 'user-agent': 'momonga/1.0.0', accept: 'x/y' }, signal: new AbortController().signal });
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');
