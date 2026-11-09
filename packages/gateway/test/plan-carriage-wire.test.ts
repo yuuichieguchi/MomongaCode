@@ -12,7 +12,7 @@ const PLAN_ROUTE_CAPABILITIES: Capabilities = {
   outputBoundField: 'none',
   systemRole: 'developer',
   toolPlacement: 'additional_tools',
-  inputKinds: { content: ['text', 'image'], tools: ['function', 'custom'] },
+  inputKinds: { content: ['file'], tools: ['function', 'custom'] },
 };
 
 const SYSTEM_TEXT = 'You are a careful coding agent.';

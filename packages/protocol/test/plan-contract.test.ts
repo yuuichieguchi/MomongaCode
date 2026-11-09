@@ -85,9 +85,9 @@ describe('route carriage vocabularies', () => {
       outputBoundField: 'none',
       systemRole: 'developer',
       toolPlacement: 'additional_tools',
-      inputKinds: { content: ['text'], tools: ['function'] },
+      inputKinds: { content: ['file'], tools: ['function'] },
     });
-    expect(merged).toMatchObject({ outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['text'], tools: ['function'] } });
+    expect(merged).toMatchObject({ outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['file'], tools: ['function'] } });
   });
 });
 
