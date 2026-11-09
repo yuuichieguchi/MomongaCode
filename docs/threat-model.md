@@ -16,7 +16,7 @@ Write an allow rule only for a program whose every option you accept. What still
 
 - The operating-system sandbox (Seatbelt on macOS, bubblewrap on Linux) runs the command, including any program it starts.
 - Network access is denied inside the sandbox.
-- File deny rules (`Read(...)` and `Edit(...)`) are enforced by the operating system, so a program started through an option cannot read or write a denied path either.
+- File deny rules, such as `Read(...)` and `Edit(...)`, are enforced by the operating system, so a program started through an option cannot read or write a denied path either.
 - The command can write only where the sandbox allows writes, such as the workspace.
 
 A `Bash(...)` deny rule matches only the command text, in the same literal way. It does not stop a program that an allowed command starts through an option.
