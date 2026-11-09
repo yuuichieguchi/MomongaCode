@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Ops, AdmitOps, Jobs, MaxV, MaxEdits, MaxCrashes, Underivable, Observer, Variant
 
-ASSUME Variant \in {"decided", "restartOnChange", "retireEager", "staleRead", "strictInRun", "sweepWithJob", "splitGate", "lockWait", "lateWake", "parallelDerive", "awaitOlder", "lazyLastGood"}
+ASSUME Variant \in {"decided", "restartOnChange", "retireEager", "staleRead", "strictInRun", "sweepWithJob", "splitGate", "lockWait", "lateWake", "parallelDerive", "awaitOlder", "lazyLastGood", "recordFirst"}
 ASSUME AdmitOps \subseteq Ops
 ASSUME Ops \cap Jobs = {}
 ASSUME MaxV \in Nat \ {0}
@@ -33,22 +33,22 @@ ObjIds == 1..ObjBound
 SrvBound == 2 * ObjBound
 SrvIds == 1..SrvBound
 
-VARIABLES diskV, diskBroken, edits, rec, caught, lastGood, cacheBroken, up, crashes,
+VARIABLES diskV, diskBroken, edits, rec, caught, recSeq, lastGood, noted, cacheBroken, up, crashes,
           nObj, cur, oSt, oVer, oGate, oSrv, nGate, nSrv, sSt, sTgt, retiredN,
-          deriving, opSt, opObj, opWait, opPin, opNeed, opUsed, opLast, jobSt, jobObj,
+          deriving, opSt, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobSt, jobObj,
           cut, gwRefused, badAdmits
 
-fileVars == <<diskV, diskBroken, edits, rec, caught>>
-cacheVars == <<lastGood, cacheBroken>>
+fileVars == <<diskV, diskBroken, edits, rec, caught, recSeq>>
+cacheVars == <<lastGood, noted, cacheBroken>>
 objVars == <<nObj, cur, oSt, oVer, oGate, oSrv, nGate, nSrv, sTgt, retiredN>>
-opVars == <<opSt, opObj, opWait, opPin, opNeed, opUsed, opLast>>
+opVars == <<opSt, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor>>
 jobVars == <<jobSt, jobObj>>
 latchVars == <<cut, gwRefused, badAdmits>>
 lifeVars == <<up, crashes>>
 
-vars == <<diskV, diskBroken, edits, rec, caught, lastGood, cacheBroken, up, crashes,
+vars == <<diskV, diskBroken, edits, rec, caught, recSeq, lastGood, noted, cacheBroken, up, crashes,
           nObj, cur, oSt, oVer, oGate, oSrv, nGate, nSrv, sSt, sTgt, retiredN,
-          deriving, opSt, opObj, opWait, opPin, opNeed, opUsed, opLast, jobSt, jobObj,
+          deriving, opSt, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobSt, jobObj,
           cut, gwRefused, badAdmits>>
 
 OpStates == {"idle", "waiting", "woken", "running", "waitLock", "done", "refused"}
@@ -58,6 +58,9 @@ TypeOK ==
     /\ diskBroken \in BOOLEAN
     /\ edits \in 0..MaxEdits
     /\ rec \in 1..MaxV
+    /\ recSeq \in 1..(MaxEdits + 1)
+    /\ noted \in 1..(MaxEdits + 1)
+    /\ opFloor \in [Ops -> 0..MaxV]
     /\ caught \in BOOLEAN
     /\ lastGood \in 1..MaxV
     /\ cacheBroken \in BOOLEAN
@@ -113,7 +116,7 @@ StopUnref(oStN, oSrvN, sStM, o) ==
 
 Init ==
     /\ diskV = 1 /\ diskBroken = FALSE /\ edits = 0
-    /\ rec = 1 /\ caught = Observer
+    /\ rec = 1 /\ caught = Observer /\ recSeq = 1 /\ noted = 1
     /\ lastGood = 1 /\ cacheBroken = FALSE
     /\ up = TRUE /\ crashes = 0
     /\ nObj = 1 /\ cur = 1
@@ -133,6 +136,7 @@ Init ==
     /\ opNeed = [p \in Ops |-> 0]
     /\ opUsed = [p \in Ops |-> {}]
     /\ opLast = [p \in Ops |-> 0]
+    /\ opFloor = [p \in Ops |-> 0]
     /\ jobSt = [j \in Jobs |-> "none"]
     /\ jobObj = [j \in Jobs |-> 0]
     /\ cut = {} /\ gwRefused = {} /\ badAdmits = {}
@@ -140,24 +144,28 @@ Init ==
 WriteValid ==
     /\ edits < MaxEdits /\ diskV < MaxV
     /\ diskV' = diskV + 1 /\ diskBroken' = FALSE /\ edits' = edits + 1
-    /\ caught' = FALSE /\ rec' = rec
+    /\ caught' = FALSE /\ rec' = rec /\ recSeq' = recSeq
     /\ UNCHANGED <<cacheVars, lifeVars, objVars, sSt, deriving, opVars, jobVars, latchVars>>
 
 WriteBroken ==
     /\ edits < MaxEdits /\ ~diskBroken
     /\ diskBroken' = TRUE /\ edits' = edits + 1
-    /\ UNCHANGED <<diskV, rec, caught, cacheVars, lifeVars, objVars, sSt, deriving, opVars, jobVars, latchVars>>
+    /\ UNCHANGED <<diskV, rec, caught, recSeq, cacheVars, lifeVars, objVars, sSt, deriving, opVars, jobVars, latchVars>>
 
 Observe ==
     /\ Observer /\ ~diskBroken /\ (rec # diskV \/ ~caught)
     /\ rec' = diskV /\ caught' = TRUE
+    /\ recSeq' = IF rec # diskV THEN recSeq + 1 ELSE recSeq
     /\ UNCHANGED <<diskV, diskBroken, edits, cacheVars, lifeVars, objVars, sSt, deriving, opVars, jobVars, latchVars>>
 
+TakesRecord == Observer /\ Variant # "lazyLastGood" /\ (Variant = "recordFirst" \/ recSeq > noted)
 RefreshedGood ==
     IF Variant = "staleRead" THEN lastGood
     ELSE IF ~diskBroken THEN diskV
-    ELSE IF Observer /\ Variant # "lazyLastGood" THEN rec
+    ELSE IF TakesRecord THEN rec
     ELSE lastGood
+NotedNew == IF Variant = "staleRead" THEN noted ELSE IF ~diskBroken \/ TakesRecord THEN recSeq ELSE noted
+MaxPin == LET ps == {opPin[q] : q \in {x \in Ops : opSt[x] \in {"running", "woken", "waitLock", "done"}}} IN IF ps = {} THEN 0 ELSE CHOOSE m \in ps : \A x \in ps : x <= m
 Last == IF diskBroken /\ caught /\ diskV \notin Underivable THEN diskV ELSE 0
 RefreshedBroken == IF Variant = "staleRead" THEN cacheBroken ELSE diskBroken
 NeedWaiter == IF RefreshedGood \in Underivable THEN 0 ELSE RefreshedGood
@@ -166,20 +174,20 @@ Refuses(p) == RefreshedBroken /\ (p \in AdmitOps \/ Variant = "strictInRun")
 
 StartRefuse(p) ==
     /\ up /\ opSt[p] = "idle" /\ Refuses(p)
-    /\ lastGood' = RefreshedGood /\ cacheBroken' = RefreshedBroken
+    /\ lastGood' = RefreshedGood /\ noted' = NotedNew /\ cacheBroken' = RefreshedBroken
     /\ opSt' = [opSt EXCEPT ![p] = "refused"]
     /\ gwRefused' = IF p \in AdmitOps THEN gwRefused ELSE gwRefused \cup {p}
-    /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, jobVars, cut, badAdmits>>
+    /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobVars, cut, badAdmits>>
 
 StartDirect(p) ==
     /\ up /\ opSt[p] = "idle" /\ ~Refuses(p)
     /\ RefreshedGood = oVer[cur]
-    /\ lastGood' = RefreshedGood /\ cacheBroken' = RefreshedBroken
+    /\ lastGood' = RefreshedGood /\ noted' = NotedNew /\ cacheBroken' = RefreshedBroken
     /\ opSt' = [opSt EXCEPT ![p] = "running"]
     /\ opObj' = [opObj EXCEPT ![p] = cur]
     /\ opPin' = [opPin EXCEPT ![p] = oVer[cur]]
     /\ opNeed' = [opNeed EXCEPT ![p] = NeedNow]
-    /\ opLast' = [opLast EXCEPT ![p] = Last]
+    /\ opLast' = [opLast EXCEPT ![p] = Last] /\ opFloor' = [opFloor EXCEPT ![p] = MaxPin]
     /\ badAdmits' = IF p \in AdmitOps /\ (diskBroken \/ RefreshedGood \in Underivable) THEN badAdmits \cup {p} ELSE badAdmits
     /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, deriving, opWait, opUsed, jobVars, cut, gwRefused>>
 
@@ -188,11 +196,11 @@ StartJoin(p, s) ==
     /\ RefreshedGood # oVer[cur]
     /\ s \in deriving
     /\ (s = RefreshedGood \/ Variant = "awaitOlder")
-    /\ lastGood' = RefreshedGood /\ cacheBroken' = RefreshedBroken
+    /\ lastGood' = RefreshedGood /\ noted' = NotedNew /\ cacheBroken' = RefreshedBroken
     /\ opSt' = [opSt EXCEPT ![p] = "waiting"]
     /\ opWait' = [opWait EXCEPT ![p] = s]
     /\ opNeed' = [opNeed EXCEPT ![p] = NeedWaiter]
-    /\ opLast' = [opLast EXCEPT ![p] = Last]
+    /\ opLast' = [opLast EXCEPT ![p] = Last] /\ opFloor' = [opFloor EXCEPT ![p] = MaxPin]
     /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, deriving, opObj, opPin, opUsed, jobVars, latchVars>>
 
 StartQueue(p) ==
@@ -200,11 +208,11 @@ StartQueue(p) ==
     /\ up /\ opSt[p] = "idle" /\ ~Refuses(p)
     /\ RefreshedGood # oVer[cur]
     /\ deriving # {} /\ RefreshedGood \notin deriving
-    /\ lastGood' = RefreshedGood /\ cacheBroken' = RefreshedBroken
+    /\ lastGood' = RefreshedGood /\ noted' = NotedNew /\ cacheBroken' = RefreshedBroken
     /\ opSt' = [opSt EXCEPT ![p] = "waiting"]
     /\ opWait' = [opWait EXCEPT ![p] = RefreshedGood]
     /\ opNeed' = [opNeed EXCEPT ![p] = NeedWaiter]
-    /\ opLast' = [opLast EXCEPT ![p] = Last]
+    /\ opLast' = [opLast EXCEPT ![p] = Last] /\ opFloor' = [opFloor EXCEPT ![p] = MaxPin]
     /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, deriving, opObj, opPin, opUsed, jobVars, latchVars>>
 
 StartDerive(p) ==
@@ -212,12 +220,12 @@ StartDerive(p) ==
     /\ RefreshedGood # oVer[cur]
     /\ RefreshedGood \notin deriving
     /\ (deriving = {} \/ Variant = "parallelDerive")
-    /\ lastGood' = RefreshedGood /\ cacheBroken' = RefreshedBroken
+    /\ lastGood' = RefreshedGood /\ noted' = NotedNew /\ cacheBroken' = RefreshedBroken
     /\ deriving' = deriving \cup {RefreshedGood}
     /\ opSt' = [opSt EXCEPT ![p] = "waiting"]
     /\ opWait' = [opWait EXCEPT ![p] = RefreshedGood]
     /\ opNeed' = [opNeed EXCEPT ![p] = NeedWaiter]
-    /\ opLast' = [opLast EXCEPT ![p] = Last]
+    /\ opLast' = [opLast EXCEPT ![p] = Last] /\ opFloor' = [opFloor EXCEPT ![p] = MaxPin]
     /\ UNCHANGED <<fileVars, lifeVars, objVars, sSt, opObj, opPin, opUsed, jobVars, latchVars>>
 
 BeginDerive(s) ==
@@ -264,12 +272,12 @@ FinishDerive(s) ==
     /\ deriving' = deriving \ {s}
     /\ \/ DeriveOk(s)
        \/ DeriveFails(s)
-    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, opWait, opNeed, opUsed, opLast, jobVars, gwRefused, badAdmits>>
+    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, opWait, opNeed, opUsed, opLast, opFloor, jobVars, gwRefused, badAdmits>>
 
 Wake(q) ==
     /\ opSt[q] = "woken"
     /\ opSt' = [opSt EXCEPT ![q] = "running"]
-    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, jobVars, latchVars>>
+    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobVars, latchVars>>
 
 Reap(o) ==
     /\ oSt[o] = "old"
@@ -302,7 +310,7 @@ Use(p, t) ==
              \/ /\ s # 0 /\ sSt[s] = "stopped"
                 /\ cut' = cut \cup {p}
                 /\ UNCHANGED <<sSt, opSt, opWait>>
-    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, deriving, opObj, opPin, opNeed, opLast, jobVars, gwRefused, badAdmits>>
+    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, deriving, opObj, opPin, opNeed, opLast, opFloor, jobVars, gwRefused, badAdmits>>
 
 LockStart(p) ==
     /\ opSt[p] = "waitLock"
@@ -311,12 +319,12 @@ LockStart(p) ==
           /\ sSt[s] = "idle"
           /\ sSt' = [sSt EXCEPT ![s] = "running"]
     /\ opSt' = [opSt EXCEPT ![p] = "running"]
-    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, jobVars, latchVars>>
+    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobVars, latchVars>>
 
 Finish(p) ==
     /\ opSt[p] = "running"
     /\ opSt' = [opSt EXCEPT ![p] = "done"]
-    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, jobVars, latchVars>>
+    /\ UNCHANGED <<fileVars, cacheVars, lifeVars, objVars, sSt, deriving, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobVars, latchVars>>
 
 Spawn(p, j) ==
     /\ opSt[p] = "running" /\ jobSt[j] = "none"
@@ -342,14 +350,14 @@ Crash ==
     /\ up /\ crashes < MaxCrashes
     /\ crashes' = crashes + 1
     /\ ProcessDown
-    /\ UNCHANGED <<fileVars, cacheVars, nObj, oVer, oGate, oSrv, nGate, nSrv, sTgt, retiredN, opObj, opWait, opPin, opNeed, opUsed, opLast, jobObj, latchVars>>
+    /\ UNCHANGED <<fileVars, cacheVars, nObj, oVer, oGate, oSrv, nGate, nSrv, sTgt, retiredN, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobObj, latchVars>>
 
 SupervisorRestart ==
     /\ Variant = "restartOnChange"
     /\ up /\ ~diskBroken /\ diskV # oVer[cur]
     /\ cut' = cut \cup {q \in Ops : opSt[q] \in {"running", "waitLock"}} \cup {j \in Jobs : jobSt[j] = "live"}
     /\ ProcessDown
-    /\ UNCHANGED <<fileVars, cacheVars, crashes, nObj, oVer, oGate, oSrv, nGate, nSrv, sTgt, retiredN, opObj, opWait, opPin, opNeed, opUsed, opLast, jobObj, gwRefused, badAdmits>>
+    /\ UNCHANGED <<fileVars, cacheVars, crashes, nObj, oVer, oGate, oSrv, nGate, nSrv, sTgt, retiredN, opObj, opWait, opPin, opNeed, opUsed, opLast, opFloor, jobObj, gwRefused, badAdmits>>
 
 Restart ==
     /\ ~up /\ ~diskBroken /\ diskV \notin Underivable
@@ -366,7 +374,7 @@ Restart ==
        /\ nSrv' = nSrv + FreshSrvs(0, diskV)
        /\ sSt' = NewSrvState(0, diskV)
        /\ sTgt' = NewSrvTgt(0, diskV)
-       /\ lastGood' = diskV /\ cacheBroken' = FALSE
+       /\ lastGood' = diskV /\ noted' = recSeq /\ cacheBroken' = FALSE
     /\ UNCHANGED <<fileVars, crashes, retiredN, deriving, opVars, jobVars, latchVars>>
 
 Next ==
@@ -400,6 +408,8 @@ NoCut ==
     /\ \A j \in Jobs : jobSt[j] = "live" => \A t \in Tg : oSrv[jobObj[j]][t] # 0 => sSt[oSrv[jobObj[j]][t]] # "stopped"
 
 LastValidWins == \A p \in Ops : opSt[p] \in {"running", "waitLock", "woken"} => opLast[p] <= opPin[p]
+
+NoRollbackAfterApply == \A p \in Ops : opSt[p] \in {"running", "woken", "waitLock", "done"} /\ opPin[p] # 0 => opFloor[p] <= opPin[p]
 
 InvalidKeepsRunning == gwRefused = {} /\ badAdmits = {}
 

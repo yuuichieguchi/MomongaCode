@@ -69,6 +69,7 @@ export type RouterOptions = {
   redactor: Redactor;
   reasoningOrigin: ReasoningOriginCodec;
   previous?: Router;
+  live?: readonly Router[];
 };
 
 const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string): T => {
@@ -149,8 +150,9 @@ export const createRouter = (options: RouterOptions): Router => {
   const { config, adapters, clock, timers } = options;
   const targets = new Map<string, TargetRuntime>();
   for (const [name, target] of Object.entries(config.models.targets)) {
-    const carried = options.previous?.target(name);
-    const sameTarget = carried !== undefined && carried.counter === target.counter ? carried : undefined;
+    const sameTarget = [options.previous, ...(options.live ?? [])]
+      .map((router) => router?.target(name))
+      .find((carried) => carried !== undefined && carried.counter === target.counter);
     targets.set(name, {
       name,
       provider: target.provider,

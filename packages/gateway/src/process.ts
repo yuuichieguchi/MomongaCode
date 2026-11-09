@@ -29,6 +29,10 @@ import {
   givenSecretStoreChildEnv,
   EntryUsageError,
   minimalChildEnv,
+  CREDENTIAL_CAPABILITY_ENV,
+  CREDENTIAL_CAPABILITY_HEADER,
+  createUdsClient,
+  fixedSocket,
   SETTINGS_APPLIED_ENV,
   nodeFileSystemSync,
   startDeadlineSignal,
@@ -103,6 +107,7 @@ import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
 import { createManagedTarget } from './managed/target.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
+import { createUnservedAdapter } from './adapters/unserved-adapter.ts';
 import { createRouter } from './core/router.ts';
 import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
 import { createRedactor } from './core/redaction.ts';
@@ -194,10 +199,38 @@ const warmSecrets = async (resolver: SecretResolver, names: readonly string[], s
   return failures;
 };
 
+type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | undefined>;
+
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
+
+const credentialFromSupervisor =
+  (socketPath: string, capability: string | undefined, redact: (value: string) => void): HandedCredential =>
+  async (name, signal) => {
+    if (capability === undefined || capability === '') return undefined;
+    const client = createUdsClient(fixedSocket(socketPath));
+    try {
+      const response = await client.request({ method: 'GET', path: `/v1/credentials/${encodeURIComponent(name)}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability }, signal });
+      const text = await response.text();
+      if (response.status !== 200) return undefined;
+      const answer: unknown = JSON.parse(text);
+      if (typeof answer !== 'object' || answer === null) return undefined;
+      const value = (answer as Record<string, unknown>)['value'];
+      if (typeof value !== 'string' || value === '') return undefined;
+      redact(value);
+      return value;
+    } catch (error) {
+      if (UNREACHABLE_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return undefined;
+      throw error;
+    } finally {
+      client.destroy();
+    }
+  };
+
 const apiKeyReader = (
   env: StartGatewayProcessOptions['env'],
   resolver: SecretResolver,
   target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>,
+  handed: HandedCredential,
 ): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
   return async (_target, signal) => {
@@ -211,8 +244,10 @@ const apiKeyReader = (
       }
     }
     if (apiKeyEnv === undefined) return undefined;
-    const value = env[apiKeyEnv];
-    if (value === undefined || value === '') throw missingApiKeyError(apiKeyEnv);
+    const own = env[apiKeyEnv];
+    if (own !== undefined && own !== '') return own;
+    const value = await handed(apiKeyEnv, signal);
+    if (value === undefined) throw missingApiKeyError(apiKeyEnv);
     return value;
   };
 };
@@ -807,6 +842,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
 
+    let handedCredential: HandedCredential = async () => undefined;
     const holds = new Map<Closable, number>();
     const hold = (closable: Closable): void => {
       holds.set(closable, (holds.get(closable) ?? 0) + 1);
@@ -821,6 +857,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       await closable.close(closeValues);
     };
     const closablesOf = (epoch: ProcessEpoch): Closable[] => [...epoch.parts.values()].flatMap((part) => part.closables);
+    const liveEpochs = new Set<ProcessEpoch>();
     const incarnations = new Map<string, number>();
     const nextIncarnation = (name: string): number => {
       const incarnation = (incarnations.get(name) ?? 0) + 1;
@@ -883,7 +920,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      const readKey = apiKeyReader(options.env, secretResolver, target);
+      const readKey = apiKeyReader(options.env, secretResolver, target, handedCredential);
       const identify = identificationOf(name, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
         const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
@@ -923,18 +960,28 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const built: Closable[] = [];
       try {
         for (const [name, target] of Object.entries(current.models.targets) as Array<[string, ResolvedTarget]>) {
-          if ('plan' in target) throw new Error(`target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`);
+          if ('plan' in target) {
+            const reason = `target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`;
+            logger.warn(reason);
+            parts.set(name, unmanagedPart(settingsInputsDigest({ target }), createUnservedAdapter(reason), targetCounterOf({ target, codeDigest })));
+            continue;
+          }
           const keys = {
             part: settingsInputsDigest({ target, ...shape, network: target.adapter === 'managed' ? null : (current.network ?? null) }),
             core: settingsInputsDigest({ target, userDialects: shape.userDialects, requestLimitMs: shape.headersTimeoutMs }),
           };
-          const kept = previous?.parts.get(name);
-          if (kept !== undefined && kept.key === keys.part) {
+          const livePartsOf = [previous, ...liveEpochs].flatMap((epoch) => {
+            const part = epoch?.parts.get(name);
+            return part === undefined ? [] : [part];
+          });
+          const kept = livePartsOf.find((part) => part.key === keys.part);
+          if (kept !== undefined) {
             parts.set(name, kept);
             continue;
           }
-          const part = await buildPart(name, target, current, outbound, keySignal, kept, keys);
-          built.push(...part.closables.filter((closable) => kept === undefined || !kept.closables.includes(closable)));
+          const carriedCore = livePartsOf.find((part) => part.managed?.key === keys.core);
+          const part = await buildPart(name, target, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys);
+          built.push(...part.closables.filter((closable) => !holds.has(closable)));
           parts.set(name, part);
         }
       } catch (error) {
@@ -956,6 +1003,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         redactor: shared.redactor,
         reasoningOrigin: shared.reasoningOrigin,
         ...(previous === undefined ? {} : { previous: previous.gateway.router }),
+        live: [...liveEpochs].map((epoch) => epoch.gateway.router),
       });
       for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), secretResolver.resolved(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
@@ -967,15 +1015,18 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         networkDigest,
       };
       for (const closable of closablesOf(epoch)) hold(closable);
+      liveEpochs.add(epoch);
       return epoch;
     };
 
     const shared: GatewayEpochsShared = { redactor: createRedactor({ credentials: [] }), reasoningOrigin: createReasoningOriginCodec(hmacKey) };
+    handedCredential = credentialFromSupervisor(own.sockets.supervisor, options.env[CREDENTIAL_CAPABILITY_ENV], (value) => shared.redactor.add(value));
     const derivation = createPinnedDerivation<ProcessEpoch>({
       cache,
       inputsOf: derivedInputsOf('D1'),
       derive: (current, previous, deriveSignal) => deriveEpoch(shared, current, previous, deriveSignal),
       retire: async (epoch) => {
+        liveEpochs.delete(epoch);
         await Promise.all(closablesOf(epoch).map(letGo));
       },
       onWarning: (message) => logger.warn(message),
