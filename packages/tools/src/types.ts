@@ -1,4 +1,5 @@
 import type { Clock } from '@momonga/foundation';
+import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -60,6 +61,8 @@ export type ToolResume = {
 };
 
 export type ToolContext = ReconcileContext & {
+  markerFd?: number;
+  markerSettle?: MarkerSettle;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   ripgrep: RipgrepLocator;
@@ -82,7 +85,7 @@ export type ReconcileContext = SubjectContext & {
   outputFit: OutputFit;
   tmpDir?: string;
   processMarker?: string;
-  earlierAttempt?: { stopped: boolean; uninspectable?: ReadonlyArray<{ pid: number; command: string }> };
+  earlierAttempt?: { stopped: boolean };
   traceparent?: string;
   tracestate?: string;
   env: Readonly<Record<string, string>>;

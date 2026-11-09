@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { HOLDER_READ_MAX_BYTES, readHolderFile, readHolderFileSync, readHolderFromDescriptor, removeFilesThenRelease, rewriteHolderThroughDescriptor } from './holder-file.ts';
 import { fstatIdentity, lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
-import { UnsupportedPlatformError } from './process-inspector.ts';
+import type { LockCapabilityProbe } from './lock-capability.ts';
 import { sqliteFileLock } from './sqlite-lock.ts';
 
 export { HOLDER_READ_MAX_BYTES };
@@ -150,18 +150,7 @@ export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
   adoptInherited: adoptFile(ops),
 });
 
-export const darwinFileLock: KernelLockMechanism = createFileLock(nodeFileLockOps);
+export const bsdFileLock: KernelLockMechanism = createFileLock(nodeFileLockOps);
 
-export const createKernelLockMechanism = (platform: NodeJS.Platform): KernelLockMechanism => {
-  switch (platform) {
-    case 'darwin':
-      return darwinFileLock;
-    case 'linux':
-    case 'win32':
-      return sqliteFileLock;
-    default:
-      throw new UnsupportedPlatformError(platform, 'process locks');
-  }
-};
-
-export const hostKernelLock = (): KernelLockMechanism => createKernelLockMechanism(process.platform);
+export const resolveKernelLock = async (dir: string, { capability }: { capability: LockCapabilityProbe }): Promise<KernelLockMechanism> =>
+  (await capability.of(dir)) === 'proved' ? bsdFileLock : sqliteFileLock;

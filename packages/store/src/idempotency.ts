@@ -52,6 +52,9 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const complete = db.prepare(
     "UPDATE idempotency SET state = 'COMPLETED', result_json = :result WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')",
   );
+  const completeWithMeta = db.prepare(
+    "UPDATE idempotency SET state = 'COMPLETED', result_json = :result, meta_json = json_patch(meta_json, :meta) WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')",
+  );
   const markUnknown = db.prepare("UPDATE idempotency SET state = 'UNKNOWN' WHERE key = :key AND state = 'PENDING'");
   const purge = db.prepare('DELETE FROM idempotency WHERE expires_at <= :nowMs');
 
@@ -86,8 +89,12 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
     requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
   };
 
-  const completeRecord = (key: string, result: unknown): void => {
-    requireChange(complete.run({ key, result: canonicalJson(result) }).changes, key, 'complete', 'PENDING or UNKNOWN');
+  const completeRecord = (key: string, result: unknown, meta?: Record<string, unknown>): void => {
+    const changes =
+      meta === undefined
+        ? complete.run({ key, result: canonicalJson(result) }).changes
+        : completeWithMeta.run({ key, result: canonicalJson(result), meta: canonicalJson(meta) }).changes;
+    requireChange(changes, key, 'complete', 'PENDING or UNKNOWN');
   };
 
   const leasedBy = (fence: LeaseFence): LeasedIdempotency => {
@@ -112,7 +119,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
           const changes = state === undefined ? clearCheckpoint.run({ key }).changes : setCheckpoint.run({ key, state: canonicalJson(state) }).changes;
           requireChange(changes, key, 'checkpoint', 'PENDING');
         }),
-      complete: (key, result) => whileHolding(() => completeRecord(key, result)),
+      complete: (key, result, meta) => whileHolding(() => completeRecord(key, result, meta)),
     };
   };
 

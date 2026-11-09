@@ -305,7 +305,7 @@ export const grepTool = defineTool<GrepInput>({
     const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     const mode = input.output_mode ?? 'files_with_matches';
-    const ripgrep = await ctx.ripgrep.locate();
+    const ripgrep = await ctx.ripgrep.locate(ctx.signal);
     if (!ripgrep.ok) throw new ToolExecutionError(ripgrepUnavailableMessage(ripgrep.cause));
     let found: SearchResult;
     let backend: ToolBackend;

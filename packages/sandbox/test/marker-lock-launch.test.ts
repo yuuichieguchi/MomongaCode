@@ -1,0 +1,85 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createLockCapability, createMarker, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+import { launch } from '../src/process.ts';
+import type { LaunchOptions } from '../src/process.ts';
+import { makeTempDir } from './helpers.ts';
+
+const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
+
+const forbiddenRunner = async (file: string): Promise<never> => {
+  throw new Error(`the lock path must not start ${file}`);
+};
+
+const live = () => ({ signal: new AbortController().signal });
+
+const setup = async () => {
+  const root = fs.realpathSync(makeTempDir());
+  const proofDir = path.join(root, 'lock-proof');
+  const markerDir = path.join(root, 'markers');
+  fs.mkdirSync(proofDir);
+  fs.mkdirSync(markerDir);
+  const capability = createLockCapability({ proofDir });
+  const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), run: forbiddenRunner, capability });
+  return { root, markerDir, capability, inspector };
+};
+
+const launchWith = (root: string, markerFd: number, script: string, extra: Partial<LaunchOptions> = {}) =>
+  launch({
+    file: '/bin/bash',
+    args: ['-c', script],
+    cwd: root,
+    env: BASE_ENV,
+    signal: new AbortController().signal,
+    killGraceMs: 300,
+    afterExit: () => undefined,
+    markerFd,
+    ...extra,
+  } as LaunchOptions);
+
+const waitForState = async (read: () => Promise<string>, wanted: string, attempts: number): Promise<string> => {
+  let last = await read();
+  for (let attempt = 0; attempt < attempts && last !== wanted; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    last = await read();
+  }
+  return last;
+};
+
+describe.runIf(process.platform === 'darwin')('T3 (a) a real launch with a created-and-locked marker', () => {
+  it('reads held after the leader exits while an escaped grandchild keeps fd 3, and free once it exits, without any subprocess probe', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const { root, markerDir, capability, inspector } = await setup();
+    expect(await capability.of(markerDir)).toBe('proved');
+    const marker = path.join(markerDir, 'call');
+    const handle = await createMarker(marker, { capability });
+    expect(handle.mode).toBe('locked');
+    const ready = path.join(root, 'ready');
+    const child = launchWith(root, handle.fd, `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 1' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.02; done; exit 0`);
+    try {
+      expect(() => fs.fstatSync(handle.fd)).toThrow(expect.objectContaining({ code: 'EBADF' }));
+      expect(await child.exited).toMatchObject({ code: 0 });
+      expect(await inspector.markerState(marker, live())).toBe('held');
+      expect(await waitForState(() => inspector.markerState(marker, live()), 'free', 200)).toBe('free');
+    } finally {
+      handle.close();
+      await killGroupsForCleanup([child.pgid]);
+    }
+  });
+});
+
+describe.runIf(process.platform === 'darwin')('T13 launch closes the parent copy of the marker descriptor on every path', () => {
+  it('a spawn that throws leaves the marker free: the parent copy is closed in the finally around spawn', async () => {
+    const { root, markerDir, capability, inspector } = await setup();
+    const marker = path.join(markerDir, 'refused');
+    const handle = await createMarker(marker, { capability });
+    const failingSpawn = (() => {
+      throw new Error('spawn failed: injected');
+    }) as unknown as NonNullable<LaunchOptions['spawnProcess']>;
+    expect(() => launchWith(root, handle.fd, 'exit 0', { spawnProcess: failingSpawn })).toThrow('spawn failed: injected');
+    expect(() => fs.fstatSync(handle.fd)).toThrow(expect.objectContaining({ code: 'EBADF' }));
+    expect(await inspector.markerState(marker, live())).toBe('free');
+    handle.close();
+  });
+});

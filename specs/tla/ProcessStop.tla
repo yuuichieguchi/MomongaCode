@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
@@ -34,7 +34,9 @@ TypeOK ==
 
 GroupOurs == {m \in Members : inGroup[m] /\ state[m] # "gone"}
 
-Outside == {m \in Members : listed[m] /\ ~inGroup[m]}
+Rowless(m) == state[m] = "gone" /\ ~swapped[m]
+
+Outside == {m \in Members : listed[m] /\ (~inGroup[m] \/ (Variant = "rowlessIsOutside" /\ Rowless(m)))}
 
 HolderVisible(m) == m \in Outside /\ state[m] # "gone"
 
@@ -120,6 +122,7 @@ SignalHits(m) == state[m] # "gone" \/ swapped[m]
 TermAllowed(m) ==
     CASE Variant = "signalUnprovedHolder" -> listed[m] /\ SignalHits(m)
       [] Variant = "retryReusesProof" -> listed[m] /\ SignalHits(m) /\ (HolderTargetProved(m) \/ (provedOnce[m] /\ attempts > 0))
+      [] Variant = "rowlessIsOutside" -> listed[m] /\ (HolderTargetProved(m) \/ Rowless(m))
       [] OTHER -> listed[m] /\ HolderTargetProved(m)
 
 KillAllowed(m) ==

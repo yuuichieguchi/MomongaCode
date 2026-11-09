@@ -37,6 +37,8 @@ export type RipgrepDistributionPorts = {
 
 export type BundledRipgrep = { path: string; version: string; release(): Promise<void> };
 
+export type BundledRipgrepResolver = (signal: AbortSignal) => Promise<BundledRipgrep>;
+
 export class RipgrepDistributionError extends Error {
   constructor(message: string) {
     super(message);

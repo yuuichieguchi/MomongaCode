@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { BundledRipgrep } from './ripgrep-distribution.ts';
+import type { BundledRipgrep, BundledRipgrepResolver } from './ripgrep-distribution.ts';
 
 export type RipgrepSource = 'bundled' | 'system' | 'path';
 
@@ -8,11 +8,11 @@ export type RipgrepLocation =
   | { ok: true; path: string; source: RipgrepSource; version?: string; release(): Promise<void> }
   | { ok: false; cause: string };
 
-export type RipgrepLocator = { locate(): Promise<RipgrepLocation> };
+export type RipgrepLocator = { locate(signal: AbortSignal): Promise<RipgrepLocation> };
 
 export type RipgrepLocatorPorts = {
   setting: string;
-  bundled?: (() => Promise<BundledRipgrep>) | undefined;
+  bundled?: BundledRipgrepResolver | undefined;
   onPath(): Promise<string | undefined>;
   isRegularFile(file: string): Promise<boolean>;
 };
@@ -32,10 +32,10 @@ const fromPath = async (ports: RipgrepLocatorPorts, why: string): Promise<Ripgre
   return { ok: true, path: found, source: 'system', release: NO_RELEASE };
 };
 
-const fromBundled = async (bundled: () => Promise<BundledRipgrep>): Promise<RipgrepLocation> => {
+const fromBundled = async (bundled: BundledRipgrepResolver, signal: AbortSignal): Promise<RipgrepLocation> => {
   let extracted: BundledRipgrep;
   try {
-    extracted = await bundled();
+    extracted = await bundled(signal);
   } catch (error) {
     return { ok: false, cause: causeOf(error) };
   }
@@ -48,11 +48,11 @@ const fromAbsolute = async (ports: RipgrepLocatorPorts, file: string): Promise<R
 };
 
 export const createRipgrepLocator = (ports: RipgrepLocatorPorts): RipgrepLocator => ({
-  locate: async () => {
+  locate: async (signal) => {
     if (ports.setting === 'system') return fromPath(ports, '"tools.ripgrep" is "system"');
     if (ports.setting !== 'bundled') return fromAbsolute(ports, ports.setting);
     if (ports.bundled === undefined) return fromPath(ports, 'this executable embeds no ripgrep');
-    return fromBundled(ports.bundled);
+    return fromBundled(ports.bundled, signal);
   },
 });
 
@@ -97,7 +97,7 @@ export const isRegularFileOnHost = async (file: string): Promise<boolean> => {
   }
 };
 
-export type HostRipgrepLocatorOptions = { setting: string; env: Readonly<Record<string, string>>; bundled?: () => Promise<BundledRipgrep> };
+export type HostRipgrepLocatorOptions = { setting: string; env: Readonly<Record<string, string>>; bundled?: BundledRipgrepResolver };
 
 export const createHostRipgrepLocator = ({ setting, env, bundled }: HostRipgrepLocatorOptions): RipgrepLocator =>
   createRipgrepLocator({

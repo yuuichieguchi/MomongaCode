@@ -3,6 +3,7 @@ import { createRipgrepLocator, ripgrepUnavailableMessage } from '../src/ripgrep-
 import type { RipgrepLocatorPorts } from '../src/ripgrep-locator.ts';
 
 const ABSOLUTE = '/opt/tools/rg';
+const SIGNAL = new AbortController().signal;
 
 type Calls = { bundled: number; onPath: number; regular: string[]; released: number };
 
@@ -36,9 +37,22 @@ describe('ripgrepUnavailableMessage', () => {
 });
 
 describe('createRipgrepLocator', () => {
+  it('hands the signal of the call that locates to the embedded copy, so its probes end with that call', async () => {
+    const received: AbortSignal[] = [];
+    const { ports } = makePorts({
+      bundled: async (signal) => {
+        received.push(signal);
+        return { path: '/cache/ripgrep-15.2.0-abc/rg', version: '15.2.0', release: async () => undefined };
+      },
+    });
+    const call = new AbortController();
+    await createRipgrepLocator(ports).locate(call.signal);
+    expect(received).toEqual([call.signal]);
+  });
+
   it('uses the embedded copy when the setting is "bundled" and the executable embeds one, and never consults PATH', async () => {
     const { ports, calls } = makePorts();
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: true, path: '/cache/ripgrep-15.2.0-abc/rg', source: 'bundled', version: '15.2.0' });
     expect(calls.onPath).toBe(0);
   });
@@ -49,42 +63,42 @@ describe('createRipgrepLocator', () => {
         throw new Error('the embedded ripgrep does not match the checksum in its manifest');
       },
     });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toEqual({ ok: false, cause: 'the embedded ripgrep does not match the checksum in its manifest' });
     expect(calls.onPath).toBe(0);
   });
 
   it('uses PATH when the setting is "bundled" and this executable embeds no ripgrep', async () => {
     const { ports, calls } = makePorts({ bundled: undefined });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: true, path: '/usr/local/bin/rg', source: 'system' });
     expect(calls.onPath).toBe(1);
   });
 
   it('fails with a cause when nothing embedded and PATH has no rg', async () => {
     const { ports } = makePorts({ bundled: undefined, onPath: async () => undefined });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: false });
     expect(found.ok ? '' : found.cause).toMatch(/PATH/);
   });
 
   it('uses PATH for "system" even when the executable embeds a ripgrep', async () => {
     const { ports, calls } = makePorts({ setting: 'system' });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: true, path: '/usr/local/bin/rg', source: 'system' });
     expect(calls.bundled).toBe(0);
   });
 
   it('fails for "system" when PATH has no rg, and does not use the embedded copy', async () => {
     const { ports, calls } = makePorts({ setting: 'system', onPath: async () => undefined });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: false });
     expect(calls.bundled).toBe(0);
   });
 
   it('uses an absolute path that is a regular file, with neither the embedded copy nor PATH', async () => {
     const { ports, calls } = makePorts({ setting: ABSOLUTE });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: true, path: ABSOLUTE, source: 'path' });
     expect(calls.bundled).toBe(0);
     expect(calls.onPath).toBe(0);
@@ -92,7 +106,7 @@ describe('createRipgrepLocator', () => {
 
   it('fails with the path in the cause when the absolute path is not a regular file', async () => {
     const { ports } = makePorts({ setting: '/opt/tools/missing-rg' });
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     expect(found).toMatchObject({ ok: false });
     expect(found.ok ? '' : found.cause).toContain('/opt/tools/missing-rg');
   });
@@ -107,21 +121,21 @@ describe('createRipgrepLocator', () => {
       },
     });
     const locator = createRipgrepLocator(ports);
-    expect(await locator.locate()).toMatchObject({ ok: false });
-    expect(await locator.locate()).toMatchObject({ ok: true, path: '/cache/rg' });
+    expect(await locator.locate(SIGNAL)).toMatchObject({ ok: false });
+    expect(await locator.locate(SIGNAL)).toMatchObject({ ok: true, path: '/cache/rg' });
   });
 
   it('asks the embedded copy on every locate, so that every spawn is preceded by its own check', async () => {
     const { ports, calls } = makePorts();
     const locator = createRipgrepLocator(ports);
-    await locator.locate();
-    await locator.locate();
+    await locator.locate(SIGNAL);
+    await locator.locate(SIGNAL);
     expect(calls.bundled).toBe(2);
   });
 
   it('passes the release of the embedded copy through', async () => {
     const { ports, calls } = makePorts();
-    const found = await createRipgrepLocator(ports).locate();
+    const found = await createRipgrepLocator(ports).locate(SIGNAL);
     if (!found.ok) throw new Error('expected a ripgrep');
     await found.release();
     expect(calls.released).toBe(1);

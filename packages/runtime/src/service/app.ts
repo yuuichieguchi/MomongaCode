@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
@@ -41,6 +42,7 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
 import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
+import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -91,6 +93,7 @@ export type RunAppDeps = {
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
+  markerOwners: MarkerOwners;
   onError: (error: unknown) => void;
 };
 
@@ -566,6 +569,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
   });
+  registerMarkerRoutes(route, { home: deps.home, owners: deps.markerOwners, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
 
   app.notFound(() => errorResponse(notFound('no such route')));

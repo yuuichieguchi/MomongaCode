@@ -139,6 +139,7 @@ export type RuntimeClient = {
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
   ruleHistory(id: string): Promise<GoverningFactView[]>;
+  ignoreMarker(name: string): Promise<void>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
   guidelines(): Promise<GuidelinesResponse>;
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
@@ -487,6 +488,10 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkRule(body, `POST ${path}`).fact;
   };
 
+  const ignoreMarker = async (name: string): Promise<void> => {
+    await send('POST', `/v1/markers/${encodeURIComponent(name)}/ignore`, [204]);
+  };
+
   const ruleHistory = async (id: string): Promise<GoverningFactView[]> => {
     const path = `/v1/rules/${encodeURIComponent(id)}/history`;
     const { body } = await send('GET', path, [200]);
@@ -630,6 +635,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     addRule,
     retireRule,
     ruleHistory,
+    ignoreMarker,
     policyGovernance,
     guidelines,
     adoptGuideline,

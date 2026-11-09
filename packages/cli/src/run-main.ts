@@ -17,7 +17,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
   process.once('SIGINT', () => interrupt.abort());
 
   try {
-    const ports: CliPorts = { ...nodePorts(version), ...overrides };
+    const ports: CliPorts = { ...nodePorts(version), interrupt: interrupt.signal, ...overrides };
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,
