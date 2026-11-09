@@ -1,6 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
+import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow, profileFor, CONDITION_WAIT, REVOCATION_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -155,6 +156,25 @@ describe('sign-out (F11, I-C10)', () => {
     expect(report.revocation).toBe('unconfirmed');
     expect(h.auth.calls.revoke).toBe(0);
     expect(await rawRecord(h, 'work')).not.toContain(signIn.tokens.refresh_token);
+  });
+
+  it('a discovery document nested past MAX_JSON_DEPTH is a discovery failure: no revocation is sent', async () => {
+    let issuer = '';
+    let revokeUrl = '';
+    let nested: unknown = [];
+    for (let level = 0; level < MAX_JSON_DEPTH; level += 1) nested = [nested];
+    const discoveryUrl = await discoveryServer(() => ({ issuer, revocation_endpoint: revokeUrl, nested }));
+    const h = await harness({
+      profile: (auth) => {
+        issuer = auth.issuer;
+        revokeUrl = auth.revokeUrl;
+        return { ...profileFor(auth), oauth: { ...profileFor(auth).oauth, discoveryUrl } };
+      },
+    });
+    await signedIn(h, 'work');
+    const report = await signOut(h);
+    expect(report.revocation).toBe('unconfirmed');
+    expect(h.auth.calls.revoke).toBe(0);
   });
 
   it('a revocation endpoint off the issuer origin is a discovery failure: no revocation is sent', async () => {

@@ -1,8 +1,7 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord, isTransientErrno } from '@momonga/foundation';
-import type { Clock, CredentialEntry, CredentialStore } from '@momonga/foundation';
+import type { Clock, CredentialEntry, CredentialStore, FileSystem } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import type { PlanAccountState } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
@@ -67,6 +66,7 @@ export type OpenPlanSessionsOptions = {
   profiles: Readonly<Record<string, PlanProfile>>;
   paths: PlanPaths;
   store: CredentialStore;
+  fileSystem: FileSystem;
   accounts: readonly PlanAccountRef[];
   clock: Clock;
   fetch: PlanFetch;
@@ -226,15 +226,15 @@ const describeError = (error: unknown): string => (error instanceof Error ? erro
 
 const isStaleTemporary = (name: string): boolean => name.endsWith('.tmp');
 
-const sweepTemporaries = async (directory: string): Promise<void> => {
+const sweepTemporaries = async (fileSystem: FileSystem, directory: string): Promise<void> => {
   let names: string[];
   try {
-    names = await fs.readdir(directory);
+    names = await fileSystem.readdir(directory);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
     throw error;
   }
-  await Promise.all(names.filter(isStaleTemporary).map((name) => fs.rm(path.join(directory, name), { force: true })));
+  await Promise.all(names.filter(isStaleTemporary).map((name) => fileSystem.rm(path.join(directory, name))));
 };
 
 const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -256,7 +256,7 @@ const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
 };
 
 export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promise<PlanSessions> => {
-  const { store, clock, paths } = options;
+  const { store, fileSystem, clock, paths } = options;
   const defaults = PLAN_SESSION_DEFAULTS;
   const retry = GATEWAY_CONFIG_DEFAULTS.retry;
   const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: Math.random };
@@ -347,7 +347,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const ensureHost = async (): Promise<void> => {
     if (hostKnown) return;
     try {
-      await ensureHostIdentity(paths.host, { accountsExist: true });
+      await ensureHostIdentity(fileSystem, paths.host, { accountsExist: true });
     } catch (error) {
       throw hostIdentityFailure(error);
     }
@@ -624,7 +624,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       feedSecrets(tokens.access_token, tokens.refresh_token, input.idToken);
       return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const) };
     });
-    if (outcome.outcome !== 'rejected') await writeActiveAccount(paths.active, input.profile, input.account);
+    if (outcome.outcome !== 'rejected') await writeActiveAccount(fileSystem, paths.active, input.profile, input.account);
     return outcome;
   };
 
@@ -632,14 +632,14 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const account = accountOf(ref.profile, ref.account);
     await load(account);
     if (recordOf(account)?.subject === undefined) throw new Error(`the ${ref.profile} account ${JSON.stringify(ref.account)} has no validated sign-in to select`);
-    await writeActiveAccount(paths.active, ref.profile, ref.account);
+    await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
   };
 
   const authSource = (target: { profile: string; account?: string }): AuthSource => {
     const profile = profileOf(target.profile);
     let servedLabel = target.account;
     const resolve = async (): Promise<Account> => {
-      const label = target.account ?? (await readActiveAccount(paths.active, profile.id));
+      const label = target.account ?? (await readActiveAccount(fileSystem, paths.active, profile.id));
       if (label === undefined) throw conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, undefined) });
       servedLabel = label;
       const account = accountOf(profile.id, label);
@@ -658,7 +658,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     };
   };
 
-  await sweepTemporaries(paths.sessions);
+  await sweepTemporaries(fileSystem, paths.sessions);
   const startup = options.accounts.map((ref) => accountOf(ref.profile, ref.account));
   await Promise.all(startup.map(load));
   for (const account of startup) {

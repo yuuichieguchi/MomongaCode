@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -272,6 +273,21 @@ describe('the wait between refresh attempts is nextWait of the gateway retry pol
     expect(h.auth.calls.tokenRefreshToken).toBe(1);
     expect(read.bearer).toBe(signIn.tokens.access_token);
     expect((await readRecord(h, 'work'))?.['refresh_token']).toBe(signIn.tokens.refresh_token);
+  });
+});
+
+describe('a token answer is outside JSON, bounded by the one depth rule', () => {
+  it('a 200 nested past MAX_JSON_DEPTH is an unparseable body: transient, not adopted and not resent', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    let nested: unknown = [];
+    for (let level = 0; level < MAX_JSON_DEPTH; level += 1) nested = [nested];
+    h.rewriteRefresh((body) => ({ ...body, nested }));
+    toRefreshWindow(h, START_MS);
+    const read = await readWork(h);
+    expect(read.bearer).toBe(signIn.tokens.access_token);
+    expect(h.auth.calls.tokenRefreshToken).toBe(1);
+    expect((await readRecord(h, 'work'))?.['access_token']).toBe(signIn.tokens.access_token);
   });
 });
 
