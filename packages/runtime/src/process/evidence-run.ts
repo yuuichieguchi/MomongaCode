@@ -1,6 +1,5 @@
-import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, protectedSetFor } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, protectedSetFor, uuidv7 } from '@momonga/foundation';
 import type { MarkerHandle, MomongaPaths, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
@@ -41,7 +40,7 @@ export const createEvidenceRunner =
     if (!root.ok) return { exitCode: null, notStarted: `${project} is not a folder` };
     const roots = [root.path];
     const inspector = reap.inspector ?? defaultProcessInspector();
-    const marker = path.join(paths.markers.tools, `evidence-${randomBytes(16).toString('hex')}`);
+    const marker = path.join(paths.markers.tools, `evidence-${uuidv7()}`);
     const name = path.basename(marker);
     let running = true;
     owners?.register(name, { alive: () => running });
