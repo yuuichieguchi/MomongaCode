@@ -95,13 +95,12 @@ describe('a declared command that is a symlink is keyed by the file it resolves 
   });
 });
 
-describe('a running instance keeps the key it started with (19.11-a; R-S19-21)', () => {
-  it('answers from the start key record after the binary is replaced, and measures the new key only after the instance next starts', async () => {
+describe('a running instance keeps the key it started with (19.11-a, 19.14 item 16b; R-S19-21)', () => {
+  const targetWith = async (readKey: () => KnownProbeKey) => {
     const description = declaredForm('mine', DECLARATION);
     const currency = managedCurrencyOf(description, { userDialects: {} });
     const dir = path.join(makeDir(), 'probe');
     await saveProbeRecord(dir, KEY_A, makeReport(1, 1), currency);
-    let current: KnownProbeKey = KEY_A;
     const started: KnownProbeKey[] = [];
     const managed = await createManagedTarget({
       description,
@@ -112,7 +111,7 @@ describe('a running instance keeps the key it started with (19.11-a; R-S19-21)',
       target: 'workbench',
       requestLimitMs: 300_000,
       isUsableBinary: async () => true,
-      readKey: async () => current,
+      readKey: async () => readKey(),
       onInstanceEnd: () => undefined,
       startProbe: async (key) => {
         started.push(key);
@@ -124,14 +123,33 @@ describe('a running instance keeps the key it started with (19.11-a; R-S19-21)',
       currency,
       toolCallingSetting: 'auto',
     });
-    const target = { name: 'workbench', model: 'fake-1' };
+    return { managed, started };
+  };
+  const target = { name: 'workbench', model: 'fake-1' };
+  const signal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
 
+  it('answers from the start key record after the binary is replaced, and measures the new key only after the instance next starts', async () => {
+    let current: KnownProbeKey = KEY_A;
+    const { managed, started } = await targetWith(() => current);
+
+    await managed.childStarting(signal());
     expect((await managed.capabilities(target)).toolCalling).toBe('native');
     current = KEY_B;
     expect((await managed.capabilities(target)).toolCalling).toBe('native');
     expect(started).toEqual([]);
 
     managed.childExited();
+    await managed.childStarting(signal());
+    await expect(managed.capabilities(target)).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
+    expect(started).toEqual([KEY_B]);
+  });
+
+  it('runs the first child under the key read when that child starts, not the key the binary had when the gateway started', async () => {
+    let current: KnownProbeKey = KEY_A;
+    const { managed, started } = await targetWith(() => current);
+
+    current = KEY_B;
+    await managed.childStarting(signal());
     await expect(managed.capabilities(target)).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
     expect(started).toEqual([KEY_B]);
   });
