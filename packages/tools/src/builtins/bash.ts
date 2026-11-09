@@ -125,14 +125,14 @@ export const bashTool = defineTool<BashInput>({
       ctx.signal,
       { markerFd },
     );
-    ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
+    const attached = ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
 
     const capture = createCapture();
     const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk));
     let exit: SandboxExit;
     const notes: string[] = [];
     try {
-      exit = await child.exited;
+      [exit] = await Promise.all([child.exited, attached]);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
       await pump.settle();
     } finally {

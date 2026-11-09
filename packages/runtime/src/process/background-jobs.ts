@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, groupAlive, groupPortOf, outlivedNotes, reapMarkedProcesses, recordMarkerGroup, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
 import type { Clock, MarkerMode, MarkerState, ProcessGroupPort, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
@@ -114,7 +114,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       settleRecord(job, { job: job.id, status: 'unknown' });
     };
     try {
-      const exit = await process.exited;
+      const [exit] = await Promise.all([process.exited, recordMarkerGroup(marker, process.pgid)]);
       timers.clearTimeout(timer);
       const uninspectable: UninspectableProcess[] = [];
       const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);

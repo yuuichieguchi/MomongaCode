@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { claimRetry, operationSignal, reapMarkedProcesses } from '@momonga/foundation';
+import { claimRetry, operationSignal, readMarkerGroup, reapMarkedProcesses } from '@momonga/foundation';
 import type { MarkerMode, MarkerState, ProcessInspector, ReapTiming, RetryKind, UninspectableRegistry } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
@@ -78,7 +78,7 @@ export const reapToolMarkers = async ({
       if (state !== 'held') return undefined;
       const keyed = IDEMPOTENCY_KEY.test(name);
       const lookup = keyed ? store.idempotency.get(name) : undefined;
-      const pgid = keyed ? store.idempotency.processGroupOf(name) : undefined;
+      const pgid = await readMarkerGroup(marker);
       const runId = lookup?.s === 'PENDING' ? lookup.rec.meta['runId'] : undefined;
       const run = typeof runId === 'string' ? store.getRun(runId) : undefined;
       return { marker, mode, pgid, terminalRunId: run !== undefined && isTerminal(run.status) ? run.id : undefined };

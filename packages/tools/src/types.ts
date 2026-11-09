@@ -101,7 +101,7 @@ export type ReconcileContext = SubjectContext & {
   clock: Clock;
   jobs?: BackgroundJobs;
   session: ToolSessionState;
-  attachProcess(process: { pgid: number; startedAt: number }): void;
+  attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;
   update(content: ToolContent[]): void;
 };
 

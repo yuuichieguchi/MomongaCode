@@ -8,7 +8,10 @@ export type AttemptRecord = { spent: Record<RetryKind, boolean>; ignored: boolea
 
 export const EMPTY_RECORD_TEXT = 'r00000\n';
 
-const RECORD_FORM = /^r[01]{5}\n$/;
+const GROUP_DIGITS = 10;
+const GROUP_POSITION = EMPTY_RECORD_TEXT.length;
+const RECORD_FORM = new RegExp(`^r[01]{5}\\n(g\\d{${GROUP_DIGITS}}\\n)?$`);
+const GROUP_FORM = new RegExp(`^r[01]{5}\\ng(\\d{${GROUP_DIGITS}})\\n$`);
 const IGNORED_POSITION = RETRY_KINDS.length + 1;
 
 const allSpent = (): AttemptRecord => ({ spent: { guard: true, sweep: true, startup: true, shutdown: true }, ignored: false });
@@ -73,6 +76,25 @@ export const claimRetry = (marker: string, kind: RetryKind, { signal, files = no
       return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'failed';
     }
   });
+
+const groupText = (pgid: number): string => `g${String(pgid).padStart(GROUP_DIGITS, '0')}\n`;
+
+export const recordMarkerGroup = (marker: string, pgid: number, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<void> =>
+  singleFlight(marker, async () => {
+    if (!Number.isInteger(pgid) || pgid <= 0 || String(pgid).length > GROUP_DIGITS) throw new RangeError(`process group ${pgid} cannot be recorded in a marker`);
+    const text = await files.read(marker);
+    if (text === '') {
+      await files.writeByte(marker, 0, `${EMPTY_RECORD_TEXT}${groupText(pgid)}`);
+      return;
+    }
+    if (!RECORD_FORM.test(text)) throw new Error(`the marker ${marker} holds no attempt record the group can follow`);
+    await files.writeByte(marker, GROUP_POSITION, groupText(pgid));
+  });
+
+export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => {
+  const found = GROUP_FORM.exec(await files.read(marker));
+  return found === null ? undefined : Number(found[1]);
+};
 
 export const markIgnored = (marker: string, { files = nodeRecordFiles }: RecordOptions): Promise<void> =>
   singleFlight(marker, async () => {

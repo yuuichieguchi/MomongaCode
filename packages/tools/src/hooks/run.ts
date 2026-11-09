@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
-import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, sha256Hex } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from '../capture.ts';
@@ -116,7 +116,7 @@ const executeHook = async (
     const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk));
     let exit: SandboxExit;
     try {
-      exit = await child.exited;
+      [exit] = await Promise.all([child.exited, recordMarkerGroup(marker, child.pgid)]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: controller.signal });
       await pump.settle();
     } finally {

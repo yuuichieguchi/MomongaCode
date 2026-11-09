@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, recordMarkerGroup, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -500,7 +500,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const guard = createMarkerGuard({
     markerDir: options.processMarkerDir,
     owners,
-    ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED', pgid: idempotency.processGroupOf(name) }),
+    ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED' }),
     onWarning: options.onWarning,
     killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
@@ -897,6 +897,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let callMarker: { handle: MarkerHandle; settle: MarkerSettle } | undefined;
     let callMarkerSpawned = false;
     const spawnMarkers: Array<{ handle: MarkerHandle; settle: MarkerSettle }> = [];
+    const groupRecords: Promise<void>[] = [];
     let markerOwned = false;
     let processAttached = false;
     let noteAfterOutput: string | undefined;
@@ -948,6 +949,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return { handle, settle };
     };
     const processMarker = path.join(options.processMarkerDir, key);
+    let attachingMarker = processMarker;
     const onBatchAbort = (): void => abortWith('cancelled');
     batch.signal.addEventListener('abort', onBatchAbort, { once: true });
     activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
@@ -973,6 +975,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       attachProcess: (processInfo) => {
         processAttached = true;
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
+        if (callMarker === undefined) return Promise.resolve();
+        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
+        groupRecords.push(recorded);
+        return recorded;
       },
       update: (content) => {
         if (!contextClosed) batch.onUpdate?.(callId, content);
@@ -1015,16 +1021,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       spawnMarker: async () => {
         if (callMarker !== undefined && !callMarkerSpawned) {
           callMarkerSpawned = true;
+          attachingMarker = processMarker;
           return { file: processMarker, fd: callMarker.handle.fd, settle: callMarker.settle };
         }
         const name = `${key}-${spawnMarkers.length + 1}`;
         const file = path.join(options.processMarkerDir, name);
         const opened = await openMarkerAt(file, name);
         spawnMarkers.push(opened);
+        attachingMarker = file;
         return { file, fd: opened.handle.fd, settle: opened.settle };
       },
       settleMarker: async () => {
         try {
+          await Promise.all(groupRecords.splice(0));
           for (const { handle, settle } of spawnMarkers.splice(0)) {
             handle.close();
             await settle.state(controller.signal);

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, protectedSetFor, uuidv7 } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
 import type { MarkerHandle, MomongaPaths, RuleEnforcement } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
@@ -69,7 +69,7 @@ export const createEvidenceRunner =
         return { exitCode: null, notStarted: error instanceof Error ? error.message : String(error) };
       }
       spawned = true;
-      const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited]);
+      const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited, recordMarkerGroup(marker, child.pgid)]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal });
       return { exitCode: exit.code, stdout };
     } finally {

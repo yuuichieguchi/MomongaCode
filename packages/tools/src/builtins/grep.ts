@@ -235,8 +235,8 @@ type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
   const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
   const child = ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
-  ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
-  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  const attached = ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
+  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
   notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
   return { stdout, stderr, exit };
 };
