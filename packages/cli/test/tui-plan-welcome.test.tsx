@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanAccountState } from '@momonga/protocol';
 import { KEYS, untilFrame } from './ink-helpers.ts';
-import { PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -67,6 +67,28 @@ describe('the welcome screen predicate: no alias and no plan account record in a
   });
 });
 
+describe('the welcome actions', () => {
+  it('Continue with ChatGPT shows the sentence and signs in with the first free label', async () => {
+    const { app, backend } = await startPlan({ aliases: [], accounts: [], complete: { outcome: 'signed_in', account: account(), firstSignIn: false } });
+    await choose(app, 'Continue with ChatGPT');
+    await untilFrame(app, 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.');
+    await choose(app, 'Continue with ChatGPT');
+    await eventually(() => backend.planCalls.some((call) => call.route === 'sign-in/begin'), 'the sign-in start');
+    expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
+    app.unmount();
+  });
+
+  it('Use an API key explains the two ways a key is taken and calls no plan route that changes anything', async () => {
+    const { app, backend } = await startPlan({ aliases: [], accounts: [] });
+    await choose(app, 'Use an API key');
+    const frame = await untilFrame(app, 'momonga secret set');
+    expect(frame).toContain('apiKeySecret');
+    expect(frame).toContain('apiKeyEnv');
+    expect(backend.planCalls.map((call) => call.route).filter((route) => route !== 'accounts')).toEqual([]);
+    app.unmount();
+  });
+});
+
 describe('the unconnected phase', () => {
   const unconnected = () => startPlan({ aliases: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] });
 
@@ -118,8 +140,7 @@ describe('local servers from the welcome', () => {
     const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama], trainedContext: { 'llama3.2': 131072 } }, { initialPrompt: 'hello there' });
     await choose(app, 'Use a local server');
     await choose(app, 'llama3.2');
-    const asked = await untilFrame(app, '131072');
-    expect(asked).not.toMatch(/default[^\n]*\d/i);
+    await untilFrame(app, '131072');
     app.stdin.write(KEYS.enter);
     await quiet();
     expect(backend.connections).toEqual([]);

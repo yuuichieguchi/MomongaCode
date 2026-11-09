@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
+import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
 import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
 import { dismissNotice, readDismissedNotices } from '../src/tui/dismissed-notices.ts';
-import { account, fakePlanBackend } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, LISTENER_PORT, account, fakePlanBackend } from './fake-plan-gateway.tsx';
 import { freshHome } from './fresh-home.ts';
 
 const writer = () => {
@@ -114,16 +114,66 @@ describe('momonga auth status', () => {
     const code = await authStatus({ stdout: out, plan: backend.plan }, { json: false });
     expect(code).toBe(0);
     const lines = out.written.join('').split('\n');
-    const lineOf = (label: string): string => lines.find((line) => line.includes(`${label} `) || line.endsWith(label)) ?? '';
-    expect(lineOf('home')).toContain('home@example.com');
-    expect(lineOf('home')).toMatch(/^\s*\*/);
-    expect(lineOf('home')).toContain('active');
-    expect(lineOf('paused')).toContain('paused by limit');
-    expect(lineOf('paused')).not.toMatch(/^\s*\*/);
-    expect(lineOf('expired')).toContain('sign-in required');
-    expect(lineOf('off')).toContain('plan use not enabled');
-    expect(lineOf('gone')).toContain('signed out');
+    const lineOf = (email: string): string => lines.find((line) => line.includes(email)) ?? '';
+    expect(lineOf('home@example.com')).toContain('home');
+    expect(lineOf('home@example.com')).toMatch(/^\s*\*/);
+    expect(lineOf('home@example.com')).toContain('active');
+    expect(lineOf('p@example.com')).toContain('paused by limit');
+    expect(lineOf('p@example.com')).not.toMatch(/^\s*\*/);
+    expect(lineOf('e@example.com')).toContain('sign-in required');
+    expect(lineOf('o@example.com')).toContain('plan use not enabled');
+    expect(lineOf('g@example.com')).toContain('signed out');
     expect(out.written.join('')).toContain('https://chatgpt.com/settings/usage');
+  });
+});
+
+describe('momonga auth login', () => {
+  const loginPorts = (backend: ReturnType<typeof fakePlanBackend>, out: ReturnType<typeof writer>, err: ReturnType<typeof writer>) => {
+    const opened: string[] = [];
+    return {
+      opened,
+      ports: {
+        stdout: out,
+        stderr: err,
+        plan: backend.plan,
+        startListener: backend.startSignInListener,
+        openUrl: async (url: URL) => void opened.push(url.href),
+        sandbox: async () => 'seatbelt' as const,
+      },
+    };
+  };
+
+  it('signs in with the first free label by default and passes the full callback URL to complete', async () => {
+    const out = writer();
+    const err = writer();
+    const backend = fakePlanBackend({ accounts: [] });
+    const { ports, opened } = loginPorts(backend, out, err);
+    expect(await authLogin(ports, { provider: 'chatgpt' })).toBe(0);
+    expect(backend.listenerPaths).toEqual(['/auth/callback']);
+    expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
+    expect(opened).toEqual([AUTHORIZATION_URL]);
+    expect(backend.planCalls.find((call) => call.route === 'sign-in/complete')?.body).toEqual({ attemptId: 'attempt-1', callbackUrl: `http://127.0.0.1:${LISTENER_PORT}/auth/callback?code=code-1&state=st-1` });
+  });
+
+  it('uses --account as the label', async () => {
+    const out = writer();
+    const err = writer();
+    const backend = fakePlanBackend({ accounts: [] });
+    const { ports } = loginPorts(backend, out, err);
+    expect(await authLogin(ports, { provider: 'chatgpt', account: 'work' })).toBe(0);
+    expect(backend.planCalls.find((call) => call.route === 'sign-in/begin')?.body).toEqual({ profile: 'chatgpt', account: 'work', port: LISTENER_PORT });
+  });
+
+  it('prints the first-sign-in text and the usage URL once when complete answers firstSignIn', async () => {
+    const out = writer();
+    const err = writer();
+    const backend = fakePlanBackend({ accounts: [], complete: { outcome: 'signed_in', account: account(), firstSignIn: true } });
+    const { ports } = loginPorts(backend, out, err);
+    expect(await authLogin(ports, { provider: 'chatgpt' })).toBe(0);
+    const printed = out.written.join('');
+    expect(printed.split("You're using your ChatGPT plan")).toHaveLength(2);
+    expect(printed).toContain('Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings.');
+    expect(printed.split('https://chatgpt.com/settings/usage')).toHaveLength(2);
   });
 });
 
