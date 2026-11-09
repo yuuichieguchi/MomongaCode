@@ -1,0 +1,246 @@
+import crypto from 'node:crypto';
+import { describe, expect, it } from 'vitest';
+import * as config from '@momonga/config';
+import type { ResolvedSettings, UserSettingsCache, UserSettingsLoaded } from '@momonga/config';
+import { canonicalJson } from '@momonga/foundation';
+
+type Lease<T> = { readonly value: T; release(): void };
+
+type PinnedDerivation<T> = {
+  acquire(signal: AbortSignal): Promise<Lease<T>>;
+  admit(signal: AbortSignal): Promise<Lease<T>>;
+};
+
+type PinnedDerivationOptions<T> = {
+  cache: UserSettingsCache;
+  inputsOf(settings: ResolvedSettings): unknown;
+  derive(settings: ResolvedSettings, previous: T | undefined): T | Promise<T>;
+  retire(object: T): void | Promise<void>;
+  onWarning(message: string): void;
+};
+
+const exported = <F>(name: string): F => {
+  const value = (config as Record<string, unknown>)[name];
+  if (typeof value !== 'function') throw new Error(`@momonga/config does not export ${name} (increment S0, packages/config/src/derived.ts)`);
+  return value as F;
+};
+
+const createPinnedDerivation = <T>(options: PinnedDerivationOptions<T>): PinnedDerivation<T> =>
+  exported<(options: PinnedDerivationOptions<T>) => PinnedDerivation<T>>('createPinnedDerivation')(options);
+
+const settingsInputsDigest = (inputs: unknown): string => exported<(inputs: unknown) => string>('settingsInputsDigest')(inputs);
+
+type FakeCache = UserSettingsCache & { reads: number; set(settings: Record<string, unknown>): void };
+
+const fakeCache = (initial: Record<string, unknown>): FakeCache => {
+  let current = initial;
+  const loaded = (): UserSettingsLoaded => ({ settings: current as unknown as ResolvedSettings, user: { warnings: [] } as unknown as UserSettingsLoaded['user'] });
+  const cache = {
+    reads: 0,
+    set: (settings: Record<string, unknown>) => {
+      current = settings;
+    },
+    get: () => {
+      cache.reads += 1;
+      return loaded().settings;
+    },
+    read: () => {
+      cache.reads += 1;
+      return loaded();
+    },
+    snapshot: () => {
+      cache.reads += 1;
+      return loaded();
+    },
+    kept: {} as UserSettingsCache['kept'],
+  };
+  return cache;
+};
+
+type Built = { readonly network: unknown; readonly serial: number };
+
+type Deferred<T> = { promise: Promise<T>; resolve(value: T): void; reject(error: unknown): void };
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (error: unknown) => void = () => undefined;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
+const harness = (initial: Record<string, unknown>) => {
+  const cache = fakeCache(initial);
+  const derivations: Array<{ network: unknown; previous: Built | undefined }> = [];
+  const retired: Built[] = [];
+  const warnings: string[] = [];
+  let failWith: Error | undefined;
+  let hold: Deferred<void> | undefined;
+  const derivation = createPinnedDerivation<Built>({
+    cache,
+    inputsOf: (settings) => (settings as unknown as Record<string, unknown>)['network'] ?? null,
+    derive: async (settings, previous) => {
+      const network = (settings as unknown as Record<string, unknown>)['network'];
+      derivations.push({ network, previous });
+      if (hold !== undefined) await hold.promise;
+      if (failWith !== undefined) throw failWith;
+      return { network, serial: derivations.length };
+    },
+    retire: (object) => {
+      retired.push(object);
+    },
+    onWarning: (message) => warnings.push(message),
+  });
+  return {
+    cache,
+    derivation,
+    derivations,
+    retired,
+    warnings,
+    failNext: (error: Error | undefined) => {
+      failWith = error;
+    },
+    holdDerivations: () => {
+      hold = deferred<void>();
+      return hold;
+    },
+    releaseHold: () => {
+      hold?.resolve();
+      hold = undefined;
+    },
+  };
+};
+
+const signal = (): AbortSignal => new AbortController().signal;
+
+const flush = async (): Promise<void> => {
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+};
+
+describe('S0: the pinned derivation (design-settings-live section 2)', () => {
+  it('the inputs digest is SHA-256 of the canonical JSON of the inputs', () => {
+    const inputs = { httpsProxy: 'http://proxy.corp:3128', caFiles: ['/etc/ca.pem'] };
+    const expected = crypto.createHash('sha256').update(canonicalJson(inputs)).digest('hex');
+    expect(settingsInputsDigest(inputs)).toBe(expected);
+    expect(settingsInputsDigest({ caFiles: ['/etc/ca.pem'], httpsProxy: 'http://proxy.corp:3128' })).toBe(expected);
+  });
+
+  it('acquire takes exactly one snapshot from the cache', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const first = await h.derivation.acquire(signal());
+    expect(h.cache.reads).toBe(1);
+    const second = await h.derivation.acquire(signal());
+    expect(h.cache.reads).toBe(2);
+    first.release();
+    second.release();
+  });
+
+  it('a change to another section does not rebuild the object', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' }, sandbox: 'seatbelt' });
+    const first = await h.derivation.acquire(signal());
+    h.cache.set({ network: { httpsProxy: 'http://a:1' }, sandbox: 'none' });
+    const second = await h.derivation.acquire(signal());
+    expect(h.derivations).toHaveLength(1);
+    expect(second.value).toBe(first.value);
+  });
+
+  it('a change of the inputs derives a new object with the previous one available, and the old lease keeps its object', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const before = await h.derivation.acquire(signal());
+    h.cache.set({ network: { httpsProxy: 'http://b:2' } });
+    const after = await h.derivation.acquire(signal());
+    expect(after.value).toEqual({ network: { httpsProxy: 'http://b:2' }, serial: 2 });
+    expect(h.derivations[1]?.previous).toBe(before.value);
+    expect(before.value).toEqual({ network: { httpsProxy: 'http://a:1' }, serial: 1 });
+  });
+
+  it('two concurrent callers share one derivation', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    h.holdDerivations();
+    const one = h.derivation.acquire(signal());
+    const two = h.derivation.acquire(signal());
+    await flush();
+    h.releaseHold();
+    const [a, b] = await Promise.all([one, two]);
+    expect(h.derivations).toHaveLength(1);
+    expect(a.value).toBe(b.value);
+  });
+
+  it('a caller that arrives after a newer edit waits out the older derivation and gets its own target, never the older object', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    (await h.derivation.acquire(signal())).release();
+    h.cache.set({ network: { httpsProxy: 'http://b:2' } });
+    h.holdDerivations();
+    const olderCaller = h.derivation.acquire(signal());
+    await flush();
+    h.cache.set({ network: { httpsProxy: 'http://c:3' } });
+    const newerCaller = h.derivation.acquire(signal());
+    await flush();
+    expect(h.derivations).toHaveLength(2);
+    h.releaseHold();
+    const older = await olderCaller;
+    const newer = await newerCaller;
+    expect(older.value.network).toEqual({ httpsProxy: 'http://b:2' });
+    expect(newer.value.network).toEqual({ httpsProxy: 'http://c:3' });
+    expect(h.derivations.map((entry) => entry.network)).toEqual([{ httpsProxy: 'http://a:1' }, { httpsProxy: 'http://b:2' }, { httpsProxy: 'http://c:3' }]);
+  });
+
+  it('a failed derivation keeps the previous object current, warns once with the design text, and the next acquire retries once', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const good = await h.derivation.acquire(signal());
+    h.cache.set({ network: { httpsProxy: 'http://broken:9' } });
+    h.failNext(new Error('proxy refused'));
+    const fallback = await h.derivation.acquire(signal());
+    expect(fallback.value).toBe(good.value);
+    expect(h.derivations).toHaveLength(2);
+    const again = await h.derivation.acquire(signal());
+    expect(again.value).toBe(good.value);
+    expect(h.derivations).toHaveLength(3);
+    expect(h.warnings).toEqual(['the settings could not be applied: proxy refused; the last applied settings stay in use']);
+    h.failNext(undefined);
+    const fixed = await h.derivation.acquire(signal());
+    expect(fixed.value).toEqual({ network: { httpsProxy: 'http://broken:9' }, serial: 4 });
+  });
+
+  it('admit throws the derivation failure where acquire returns the previous object', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const good = await h.derivation.acquire(signal());
+    h.cache.set({ network: { httpsProxy: 'http://broken:9' } });
+    h.failNext(new Error('proxy refused'));
+    await expect(h.derivation.admit(signal())).rejects.toThrow('proxy refused');
+    expect((await h.derivation.acquire(signal())).value).toBe(good.value);
+  });
+
+  it('an object that is replaced is retired once, on the release of its last lease, never while a lease holds it', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const first = await h.derivation.acquire(signal());
+    const second = await h.derivation.acquire(signal());
+    h.cache.set({ network: { httpsProxy: 'http://b:2' } });
+    const replacement = await h.derivation.acquire(signal());
+    await flush();
+    expect(h.retired).toEqual([]);
+    first.release();
+    await flush();
+    expect(h.retired).toEqual([]);
+    second.release();
+    await flush();
+    expect(h.retired).toEqual([first.value]);
+    replacement.release();
+    await flush();
+    expect(h.retired).toEqual([first.value]);
+  });
+
+  it('an object with no lease is retired in the call that replaces it', async () => {
+    const h = harness({ network: { httpsProxy: 'http://a:1' } });
+    const first = await h.derivation.acquire(signal());
+    first.release();
+    await flush();
+    expect(h.retired).toEqual([]);
+    h.cache.set({ network: { httpsProxy: 'http://b:2' } });
+    (await h.derivation.acquire(signal())).release();
+    await flush();
+    expect(h.retired).toEqual([first.value]);
+  });
+});
