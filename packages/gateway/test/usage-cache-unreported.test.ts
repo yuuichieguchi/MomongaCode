@@ -47,11 +47,12 @@ describe('a cache read the upstream never reported stays absent in the gateway',
     expect(usage?.input_tokens_details?.cached_tokens).toBe(0);
   });
 
-  it('anthropic: a message without cache_read_input_tokens answers with no cached token count and no cost', async () => {
+  it('anthropic: a message without cache_read_input_tokens answers with the spec-required zero on the wire, marks the count not reported in the extension and has no cost', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTurn({ input_tokens: 10, output_tokens: 1 })], priceTable: definePriceTable([ENTRY]) });
     const terminal = terminalOf(await streamResponse(gateway));
     expect(terminal.response.usage.input_tokens).toBe(10);
-    expect(terminal.response.usage.input_tokens_details?.cached_tokens).toBeUndefined();
+    expect(terminal.response.usage.input_tokens_details.cached_tokens).toBe(0);
+    expect(terminal.response.momonga.cacheReadNotReported).toBe(true);
     expect('cost' in terminal.response.momonga).toBe(false);
   });
 
@@ -59,6 +60,7 @@ describe('a cache read the upstream never reported stays absent in the gateway',
     const gateway = await startAnthropicGateway({ script: [anthropicTurn({ input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 1 })], priceTable: definePriceTable([ENTRY]) });
     const terminal = terminalOf(await streamResponse(gateway));
     expect(terminal.response.usage.input_tokens_details.cached_tokens).toBe(0);
+    expect('cacheReadNotReported' in terminal.response.momonga).toBe(false);
     expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' });
   });
 

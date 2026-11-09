@@ -160,13 +160,10 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   const causes = fallbackCausesOf(span);
   if (causes !== undefined) addFallback(accumulator, stringAttribute(span, MOMONGA_ATTRIBUTES.target), causes, 1);
   const cached = call.usage.cachedInputTokens;
+  accumulator.inputTokens += call.usage.inputTokens;
   accumulator.outputTokens += call.usage.outputTokens;
-  if (cached === undefined) {
-    accumulator.cacheReadNotReportedCalls += 1;
-  } else {
-    accumulator.inputTokens += call.usage.inputTokens;
-    accumulator.cachedInputTokens += cached;
-  }
+  if (cached === undefined) accumulator.cacheReadNotReportedCalls += 1;
+  else accumulator.cachedInputTokens += cached;
   if (call.billing === 'local') accumulator.localCalls += 1;
   if (call.billing === 'plan') {
     accumulator.planCalls += 1;
@@ -230,7 +227,7 @@ const describeTotals = (totals: RoleCost): string => {
   const notReported =
     totals.cacheReadNotReportedCalls === 0
       ? ''
-      : `, ${totals.cacheReadNotReportedCalls} of ${totals.calls} call(s) did not report cache reads and are not counted in the input or the amount`;
+      : `, ${totals.cacheReadNotReportedCalls} of ${totals.calls} call(s) did not report cache reads and are not counted in the cached tokens or the amount`;
   const fallback = (totals.fallbacks ?? []).map(
     (entry) =>
       `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,

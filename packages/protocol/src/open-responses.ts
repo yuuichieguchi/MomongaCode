@@ -202,6 +202,16 @@ export type Usage = {
 export const cachedDetailOf = (cachedTokens: number | undefined): Usage['input_tokens_details'] =>
   cachedTokens === undefined ? {} : { cached_tokens: cachedTokens };
 
+export type WireUsage = Omit<Usage, 'input_tokens_details'> & { input_tokens_details: { cached_tokens: number } };
+
+export const wireUsageOf = (usage: Usage): { usage: WireUsage; cacheReadNotReported?: true } =>
+  usage.input_tokens_details.cached_tokens === undefined
+    ? { usage: { ...usage, input_tokens_details: { cached_tokens: 0 } }, cacheReadNotReported: true }
+    : { usage: { ...usage, input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens } } };
+
+export const reportedCachedTokensOf = (usage: Usage, extension: { cacheReadNotReported?: true } | undefined): number | undefined =>
+  extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details.cached_tokens;
+
 export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
@@ -222,6 +232,7 @@ export type MomongaResponseExtension = {
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
+  cacheReadNotReported?: true;
   cost?: ModelCost;
   retryable?: boolean;
 };
@@ -402,5 +413,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
-  momonga?: { target: string; cacheWriteInputTokens?: number; cost?: ModelCost };
+  momonga?: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost };
 };

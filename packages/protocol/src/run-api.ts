@@ -303,12 +303,12 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
               input_tokens: nonNegativeInteger,
               output_tokens: nonNegativeInteger,
               total_tokens: nonNegativeInteger,
-              input_tokens_details: closed({ cached_tokens: nonNegativeInteger }, []),
+              input_tokens_details: closed({ cached_tokens: nonNegativeInteger }, ['cached_tokens']),
               output_tokens_details: closed({ reasoning_tokens: nonNegativeInteger }, ['reasoning_tokens']),
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
-          momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cost: modelCost }, []),
+          momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: modelCost }, []),
           timing: callTiming,
         },
         ['status', 'output', 'usage'],
@@ -930,6 +930,7 @@ export type RunTraceSummary = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
   chatResults: { step: number; attempt: number; finishReasons: string[] }[];
@@ -1283,6 +1284,7 @@ export const RUN_API_SCHEMAS = {
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
             cachedInputTokens: nonNegativeInteger,
+            cacheReadNotReportedCalls: nonNegativeInteger,
             errorCount: nonNegativeInteger,
             durationMs: nonNegativeInteger,
             chatResults: {
@@ -1290,7 +1292,7 @@ export const RUN_API_SCHEMAS = {
               items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
             },
           },
-          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'errorCount', 'durationMs', 'chatResults'],
+          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
         ),
         spans: {
           type: 'array',

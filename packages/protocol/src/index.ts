@@ -468,7 +468,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { cachedDetailOf, CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -543,7 +543,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { JsonReplyPath, MomongaResponseExtension } from './open-responses.ts';
+export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,

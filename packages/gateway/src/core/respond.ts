@@ -18,7 +18,7 @@ import type {
   UsageSource,
 } from '@momonga/protocol';
 import { modelCostOf } from './model-cost.ts';
-import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
+import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { breakerVerdictOf, retryableFailureOf } from './breaker-verdict.ts';
@@ -416,6 +416,7 @@ async function* relaySteps(
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
     jsonReply?: JsonReplyPath,
+    cacheReadNotReported?: true,
   ): MomongaResponseExtension => {
     const cost =
       billed === undefined || services.priceTable === undefined
@@ -440,6 +441,7 @@ async function* relaySteps(
       usageSource,
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
+      ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
       ...(cost === null ? {} : { cost }),
       ...(retryable === undefined ? {} : { retryable }),
     };
@@ -493,6 +495,7 @@ async function* relaySteps(
       estimateOutputTokens(upstreamOutput),
     );
   const usageSource: UsageSource = reported === null ? 'estimated' : 'reported';
+  const wire = wireUsageOf(usage);
   const status = terminalEvent.type === 'response.completed' ? 'completed' : 'incomplete';
   const resource: ResponseResource = {
     ...base,
@@ -500,7 +503,7 @@ async function* relaySteps(
     completed_at: completedAt,
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
-    usage,
+    usage: wire.usage,
     momonga: momongaFor(
       usageSource,
       upstream.contextInputTokens,
@@ -508,6 +511,7 @@ async function* relaySteps(
       undefined,
       upstream.schemaNarrowings,
       upstream.jsonReply,
+      wire.cacheReadNotReported,
     ),
   };
   const terminal: StreamEvent = {

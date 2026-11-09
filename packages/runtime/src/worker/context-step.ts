@@ -24,6 +24,7 @@ import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
 import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { cachedInputOf } from './model-stream.ts';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -426,7 +427,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
     responseId: resource.id,
-    ...(resource.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: resource.usage.input_tokens_details.cached_tokens }),
+    ...cachedInputOf(resource.usage, resource.momonga),
     ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
     ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
     timing: { durationMs: options.clock.now() - startedAt },

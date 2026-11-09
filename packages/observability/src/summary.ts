@@ -12,6 +12,7 @@ export type RunSummary = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
   chatResults: ChatResult[];
@@ -59,6 +60,9 @@ export const summarizeRun = (store: TraceStore, runId: string): RunSummary => {
     inputTokens: sum(A.ATTR_GEN_AI_USAGE_INPUT_TOKENS),
     outputTokens: sum(A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS),
     cachedInputTokens: sum(A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS),
+    cacheReadNotReportedCalls: chats.filter(
+      (span) => span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined && span.attributes[A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS] === undefined,
+    ).length,
     errorCount: spans.filter((span) => span.status === 'ERROR').length,
     durationMs: spans.length === 0 ? 0 : last - first,
     chatResults: chats.map((span) => ({
