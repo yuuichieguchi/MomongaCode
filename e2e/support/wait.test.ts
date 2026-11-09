@@ -14,20 +14,22 @@ import {
   E2E_SETTINGS_SEEN_BOUND_MS,
   E2E_SUPERVISOR_CLOSE_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
+  E2E_TEST_WAIT_BOUNDS_MS,
   abortableWait,
   until,
   withinBound,
 } from './wait.ts';
-import { ORPHAN_REAP_GRACE_MS } from '@momonga/supervisor';
+import { ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS, childRestartBoundMs, resolveRestartPolicy } from '@momonga/supervisor';
+import { DEFAULT_E2E_DEPS } from './stack.ts';
 
 const UNTIL_TEST_DEADLINE_MS = 200;
 
 describe('wait constants', () => {
   it('derive the bounds of §9.1 from the product constants', () => {
-    expect(E2E_RESTART_BOUND_MS).toBe(5200);
-    expect(E2E_RECOVERY_BOUND_MS).toBe(12_200);
+    expect(E2E_RESTART_BOUND_MS).toBe(69_300);
+    expect(E2E_RECOVERY_BOUND_MS).toBe(76_300);
     expect(E2E_SETTINGS_SEEN_BOUND_MS).toBe(6200);
-    expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(12_600);
+    expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(140_800);
     expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(20_000);
     expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(71_000);
     expect(E2E_REAP_CLOSE_BOUND_MS).toBe(9000);
@@ -35,7 +37,16 @@ describe('wait constants', () => {
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(5000);
     expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(6000);
     expect(E2E_RESTART_POLICY).toEqual({ baseMs: 200, maxMs: 200, minMs: 200 });
-    expect(E2E_TEST_TIMEOUT_MS).toBe(90_000);
+    expect(E2E_TEST_TIMEOUT_MS).toBe(174_800);
+  });
+
+  it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {
+    expect(DEFAULT_E2E_DEPS.startupTimeoutMs).toBeUndefined();
+    expect(E2E_RESTART_BOUND_MS).toBe(childRestartBoundMs({ policy: resolveRestartPolicy(E2E_RESTART_POLICY), startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
+  });
+
+  it('keep every wait a test makes below the test timeout, so a broken promise fails with its own description', () => {
+    for (const [name, boundMs] of Object.entries(E2E_TEST_WAIT_BOUNDS_MS)) expect(boundMs, name).toBeLessThan(E2E_TEST_TIMEOUT_MS);
   });
 
   it('keep the dispose budget below the hook timeout and the reap bound below the reap grace', () => {

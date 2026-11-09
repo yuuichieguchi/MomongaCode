@@ -41,7 +41,7 @@ export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher
 export type { ChildRole, GatewayTuning, LaunchSpec, Launcher, ResolvedLaunch, RuntimeTuning } from './launcher.ts';
 export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
 export type { CredentialSettings, SourceEnv } from './child-env.ts';
-export { DEFAULT_RESTART_POLICY, backoffDelay, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
+export { DEFAULT_RESTART_POLICY, backoffDelay, childRestartBoundMs, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
 export type { ExitClass, ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 export { createChildManager } from './child-manager.ts';
 export type {
