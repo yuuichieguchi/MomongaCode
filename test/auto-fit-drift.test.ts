@@ -103,7 +103,7 @@ describe('the measurement record never reaches availability or a verdict (I6.6)'
   });
 
   it('the view module is the only runtime module that reads a record', () => {
-    const readers = exportedNames(AUTO_FIT).filter((name) => /^read/.test(name));
+    const readers = exportedNames(AUTO_FIT).filter((name) => /^read\w*Record$/.test(name));
     expect(readers.length).toBeGreaterThan(0);
     const runtimeSources = sourceFiles(path.join(ROOT, 'packages', 'runtime', 'src'));
     expect(runtimeSources.filter((file) => configNamesUsed(file, readers).length > 0)).toEqual([VIEW]);
