@@ -130,13 +130,14 @@ const SCRIPT_FAILURE_CODES: readonly number[] = [2, 3, 4, 5];
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => {
+const exitOf = (run: TlcRun): string => String(run.exitCode ?? run.signal);
+
+const findingsOf = (entry: ManifestEntry, run: TlcRun): string[] => {
   const label = entry.config;
   if (run.killedAtCpuBudget) return [`${label} was killed at its CPU budget of ${entry.budgetCpuSeconds} CPU s`];
-  const scriptFailure = run.exitCode !== null && SCRIPT_FAILURE_CODES.includes(run.exitCode) ? [`${label}: tlc.sh exited ${run.exitCode}:\n${run.stderr.trim()}`] : [];
+  if (run.exitCode !== null && SCRIPT_FAILURE_CODES.includes(run.exitCode)) return [`${label}: tlc.sh exited ${run.exitCode}`];
   if (entry.expect === 'holds') {
-    if (scriptFailure.length > 0) return scriptFailure;
-    if (run.exitCode !== 0) return [`${label} was expected to hold but TLC exited ${run.exitCode ?? run.signal}\n${run.stderr.trim()}`];
+    if (run.exitCode !== 0) return [`${label} was expected to hold but TLC exited ${exitOf(run)}`];
     const problems: string[] = [];
     if (!run.stdout.includes(COMPLETION_LINE)) problems.push(`${label} exited 0 without the line "${COMPLETION_LINE}"`);
     const distinct = [...run.stdout.matchAll(DISTINCT_STATES)].at(-1);
@@ -144,9 +145,8 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
     if (found !== entry.distinctStates) problems.push(`${label} found ${found ?? 'no count of'} distinct states, the manifest records ${entry.distinctStates}`);
     return problems;
   }
-  if (scriptFailure.length > 0) return scriptFailure;
   const { violates, exitCode } = entry.expect;
-  if (run.exitCode !== exitCode) return [`${label} was expected to violate ${violates} with exit ${exitCode} but TLC exited ${run.exitCode ?? run.signal}`];
+  if (run.exitCode !== exitCode) return [`${label} was expected to violate ${violates} with exit ${exitCode} but TLC exited ${exitOf(run)}`];
   if (exitCode === 13) {
     if (run.stdout.includes(TEMPORAL_LINE)) return [];
     return new RegExp(`Action property ${escapeRegExp(violates)} is violated`).test(run.stdout)
@@ -154,6 +154,14 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
       : [`${label} exited 13 without the line "${TEMPORAL_LINE}" or "Action property ${violates} is violated"`];
   }
   return new RegExp(`Invariant ${escapeRegExp(violates)} is violated`).test(run.stdout) ? [] : [`${label} exited ${exitCode} without the line "Invariant ${violates} is violated"`];
+};
+
+const outputOf = (entry: ManifestEntry, run: TlcRun): string =>
+  [`${entry.config}: tlc.sh exited ${exitOf(run)}`, '--- stdout ---', run.stdout.trimEnd(), '--- stderr ---', run.stderr.trimEnd(), '--- end of output ---'].join('\n');
+
+export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => {
+  const findings = findingsOf(entry, run);
+  return findings.length === 0 ? [] : [...findings, outputOf(entry, run)];
 };
 
 export const everyRunBudgetSeconds = (manifest: Manifest): number =>
