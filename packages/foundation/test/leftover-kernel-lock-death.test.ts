@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism, createOwnedDirectory, lockFormOf, sweepLeftovers } from '@momonga/foundation';
 import type { LeftoverFiles, LockForm } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startClaimHolder } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 
@@ -16,7 +16,7 @@ const PRIMITIVES: ReadonlyArray<{ test: string; platform: NodeJS.Platform; form:
 
 const nodeLeftoverFiles: LeftoverFiles = {
   readdir: (directory) => fs.promises.readdir(directory),
-  rm: (file) => fs.promises.rm(file, { force: true }),
+  rm: (file) => fs.promises.rm(file, { recursive: true, force: true }),
 };
 
 describe('the kernel lock is released when its holder is killed with SIGKILL', () => {
@@ -77,7 +77,7 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
         expect(lockFormOf(mechanism, 'directory')).toBe('sidecar');
         const parent = makeTemporaryDirectory();
         const scratch = path.join(parent, 'scratch-0a1b2c');
-        const holder = await startHolder(context, claimPathOf(scratch), platform);
+        const holder = await startClaimHolder(context, claimPathOf(scratch), platform);
         fs.mkdirSync(scratch);
         fs.writeFileSync(path.join(scratch, 'work.txt'), 'in use');
         const registered = [{ directory: parent, isLeftover: (name: string) => name.startsWith('scratch-') }];
@@ -98,7 +98,7 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
         const mechanism = createKernelLockMechanism(platform);
         const parent = makeTemporaryDirectory();
         const gone = path.join(parent, 'scratch-gone');
-        const holder = await startHolder(context, claimPathOf(gone), platform);
+        const holder = await startClaimHolder(context, claimPathOf(gone), platform);
         const registered = [{ directory: parent, isLeftover: (name: string) => name.startsWith('scratch-') }];
         await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
         expect(fs.existsSync(sidecarOf(gone))).toBe(true);

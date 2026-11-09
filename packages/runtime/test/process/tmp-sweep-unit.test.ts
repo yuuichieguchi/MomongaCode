@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { claimPathOf, hostKernelLock } from '@momonga/foundation';
+import { claimPathOf, createKernelLockMechanism, hostKernelLock } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
 import { makeDir, makeTempHome, START_MS } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
@@ -61,9 +62,9 @@ const exists = (target: string): boolean => {
   }
 };
 
-const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false) => {
+const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false, lock: KernelLockMechanism = hostKernelLock()) => {
   const warned = warnings();
-  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning }) };
+  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning, lock }) };
 };
 
 describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
@@ -157,16 +158,22 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     expect(exists(dir)).toBe(true);
   });
 
-  it('unlinks file entries of removable names', async () => {
-    const temp = await makeTempHome();
-    const file = path.join(temp.paths.tmp.sessions, sessionId(1));
-    fs.writeFileSync(file, 'stray');
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform} mechanism: unlinks file entries of removable names, made in the form the product writes them`, async () => {
+      const lock = createKernelLockMechanism(platform);
+      const temp = await makeTempHome();
+      const file = path.join(temp.paths.tmp.sessions, sessionId(1));
+      const claimed = await lock.claim(file);
+      if (claimed.kind !== 'claimed') throw new Error(`${file} could not be claimed by the test`);
+      fs.writeFileSync(file, 'stray');
+      claimed.lock.release();
 
-    const { result } = sweep(temp, activityStore({}));
+      const { result } = sweep(temp, activityStore({}), () => false, lock);
 
-    expect(await result).toEqual({ removed: 1, kept: 0 });
-    expect(exists(file)).toBe(false);
-  });
+      expect(await result).toEqual({ removed: 1, kept: 0 });
+      expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
+    });
+  }
 
   it('a symlink entry of a live session is kept untouched (in-memory state)', async () => {
     const temp = await makeTempHome();

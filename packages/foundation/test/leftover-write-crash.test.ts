@@ -50,9 +50,10 @@ describe('C1: the atomic write creates its temporary locked, under a unique name
     for (const publish of MODES) {
       it(`${form} form, ${publish}: the temporary is named .<file>.<random>.tmp in the final file's directory`, async () => {
         const steps = await stepsOfCompleteWrite(form, publish);
-        const opened = steps.find((step) => step.startsWith('open w'));
-        expect(opened).toBeDefined();
-        const temporary = (opened as string).split(' ').at(-1) as string;
+        const claimed = steps.find((step) => step.startsWith('claim '));
+        expect(claimed).toBeDefined();
+        const lockName = (claimed as string).slice('claim '.length);
+        const temporary = lockName.endsWith(SIDECAR_SUFFIX) ? lockName.slice(0, -SIDECAR_SUFFIX.length) : lockName;
         expect(temporary).toMatch(/^\.final\.json\.[0-9a-f]+\.tmp$/);
         expect(isAtomicWriteTemporary(temporary)).toBe(true);
         expect(isAtomicWriteTemporary(FINAL_NAME)).toBe(false);

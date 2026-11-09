@@ -41,6 +41,13 @@ const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, st
   const ops: string[] = [];
   let failure: { index: number; error: Error } | undefined;
   let fsOps = 0;
+  let nextDescriptor = 300;
+  const descriptorFiles = new Map<number, string>();
+  const fileOf = (descriptor: number): string => {
+    const file = descriptorFiles.get(descriptor);
+    if (file === undefined) throw errnoError('EBADF', `descriptor ${descriptor}`);
+    return file;
+  };
   const step = (op: string): void => {
     const index = fsOps;
     fsOps += 1;
@@ -87,7 +94,10 @@ const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, st
     step(`claim ${lockFile}`);
     if (held.has(lockFile)) return { kind: 'held' };
     held.add(lockFile);
+    ops.push(`claimed ${lockFile}`);
     if (!files.has(lockFile)) files.set(lockFile, new Uint8Array());
+    const descriptor = form === 'entry' ? nextDescriptor++ : undefined;
+    if (descriptor !== undefined) descriptorFiles.set(descriptor, lockFile);
     const release = (): void => {
       if (!held.delete(lockFile)) return;
       ops.push(`release ${lockFile}`);
@@ -95,7 +105,7 @@ const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, st
     return {
       kind: 'claimed',
       lock: {
-        descriptor: undefined,
+        descriptor,
         writeHolder: () => undefined,
         release,
         dispose: () => {
@@ -155,6 +165,25 @@ const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, st
     rm: async (file) => {
       await tick();
       removeFile(file);
+    },
+    descriptors: {
+      write: async (descriptor, content) => {
+        await tick();
+        writeTo(fileOf(descriptor), content);
+      },
+      sync: async (descriptor) => {
+        await tick();
+        step(`fsync ${fileOf(descriptor)}`);
+      },
+      chmod: async (descriptor, mode) => {
+        await tick();
+        step(`fchmod ${fileOf(descriptor)} ${mode.toString(8)}`);
+      },
+    },
+    descriptorsSync: {
+      write: (descriptor, content) => writeTo(fileOf(descriptor), content),
+      sync: (descriptor) => step(`fsync ${fileOf(descriptor)}`),
+      chmod: (descriptor, mode) => step(`fchmod ${fileOf(descriptor)} ${mode.toString(8)}`),
     },
     openSync: (file, flags, mode) => openFile(file, flags, mode),
     writeFileSync: (handle, content) => writeTo(handle, content),
@@ -284,7 +313,7 @@ for (const form of FORMS) {
       it(`${combination.label}: a failure injected at each recorded step`, async () => {
         const probe = recordingFileSystem(form, combination.publish === 'replace' ? { [TARGET]: 'old' } : {});
         await writeFileAtomically(probe, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(probe, combination));
-        const failable = probe.ops.filter((op) => op !== 'beforePublish' && op !== 'afterPublish' && !op.startsWith('rm ') && !op.startsWith('release '));
+        const failable = probe.ops.filter((op) => op !== 'beforePublish' && op !== 'afterPublish' && !op.startsWith('rm ') && !op.startsWith('release ') && !op.startsWith('claimed '));
         const publishIndex = failable.findIndex((op) => op.startsWith('rename ') || op.startsWith('link '));
         expect(publishIndex).toBeGreaterThan(0);
         for (let index = 0; index < failable.length; index += 1) {
@@ -293,7 +322,7 @@ for (const form of FORMS) {
           fs.failAt(index, failure);
           await expect(writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(fs, combination))).rejects.toBe(failure);
           expect(leftovers(fs.files), `failure at ${failable[index]}`).toEqual([]);
-          expect(fs.ops.filter((op) => op.startsWith('claim ')).length, `failure at ${failable[index]}`).toBe(fs.ops.filter((op) => op.startsWith('release ')).length);
+          expect(fs.ops.filter((op) => op.startsWith('claimed ')).length, `failure at ${failable[index]}`).toBe(fs.ops.filter((op) => op.startsWith('release ')).length);
           if (index <= publishIndex && combination.publish === 'create') expect(fs.files.has(TARGET)).toBe(false);
         }
       });
@@ -360,7 +389,7 @@ for (const form of FORMS) {
       const failure = errnoError('EIO', 'rename failed');
       const probe = recordingFileSystem(form, { [TARGET]: 'old' });
       writeFileAtomicallySync(probe, fixedRandom([HEX]), TARGET, 'new', { mode: MODE, lock: probe.lock });
-      const failable = probe.ops.filter((op) => !op.startsWith('rm ') && !op.startsWith('release '));
+      const failable = probe.ops.filter((op) => !op.startsWith('rm ') && !op.startsWith('release ') && !op.startsWith('claimed '));
       fs.failAt(failable.findIndex((op) => op.startsWith('rename ')), failure);
       expect(() => writeFileAtomicallySync(fs, fixedRandom([HEX]), TARGET, 'new', { mode: MODE, lock: fs.lock })).toThrow(failure);
       expect(leftovers(fs.files)).toEqual([]);

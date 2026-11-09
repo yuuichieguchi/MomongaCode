@@ -5,9 +5,11 @@ import type { CleanupContext, TrackedChild } from './test-support.ts';
 
 export const LOCK_HOLDER_MAIN = path.join(import.meta.dirname, 'lock-holder-main.ts');
 
-export const startLockHolder = (context: CleanupContext, lockPath: string, mechanismPlatform?: NodeJS.Platform): Promise<TrackedChild> =>
+export const CLAIM_HOLDER_MAIN = path.join(import.meta.dirname, 'claim-holder-main.ts');
+
+const startHolderOf = (main: string) => (context: CleanupContext, lockPath: string, mechanismPlatform?: NodeJS.Platform): Promise<TrackedChild> =>
   new Promise((resolve, reject) => {
-    const child = spawnTracked(context, process.execPath, [LOCK_HOLDER_MAIN, lockPath, ...(mechanismPlatform === undefined ? [] : [mechanismPlatform])], {
+    const child = spawnTracked(context, process.execPath, [main, lockPath, ...(mechanismPlatform === undefined ? [] : [mechanismPlatform])], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -28,3 +30,7 @@ export const startLockHolder = (context: CleanupContext, lockPath: string, mecha
     (child.stdout as Readable).on('data', onData);
     child.once('exit', onExit);
   });
+
+export const startLockHolder = startHolderOf(LOCK_HOLDER_MAIN);
+
+export const startClaimHolder = startHolderOf(CLAIM_HOLDER_MAIN);

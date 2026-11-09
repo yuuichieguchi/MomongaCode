@@ -159,7 +159,6 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
     copyEndpointProbeRecord: async () => undefined,
     listRoots: async () => [],
     readOwner: async () => undefined,
-    isAlive: () => false,
   };
   return state;
 };

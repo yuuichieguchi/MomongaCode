@@ -5,7 +5,7 @@ import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { CredentialStore } from '@momonga/foundation';
+import type { CredentialStore, KernelLockMechanism } from '@momonga/foundation';
 import { createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
@@ -46,7 +46,7 @@ export type Harness = {
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
-  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: CredentialStore }): Promise<PlanSessions>;
+  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: CredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
   close(): Promise<void>;
 };
 
@@ -109,8 +109,9 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     });
     return { held, release };
   };
-  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: CredentialStore = store): Promise<PlanSessions> =>
+  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: CredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
     openPlanSessions({
+      ...(lock === undefined ? {} : { lock }),
       profiles: { [PROFILE_ID]: profile },
       paths,
       store: chosenStore,
@@ -177,7 +178,7 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     },
     reopen: async (reopenOptions = {}) => {
       await harness.sessions.close();
-      harness.sessions = await open(reopenOptions.accounts ?? [], reopenOptions.store ?? store);
+      harness.sessions = await open(reopenOptions.accounts ?? [], reopenOptions.store ?? store, reopenOptions.lock);
       return harness.sessions;
     },
     close: async () => {

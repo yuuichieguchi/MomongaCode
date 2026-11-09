@@ -44,6 +44,7 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
   const dirs = new Set(directories);
   const holders = new Map<string, string>();
   const dead = new Set<string>();
+  let nextDescriptor = 100;
 
   const lockPathOf = (lockPath: string): string => (form === 'entry' ? lockPath : `${lockPath}${SIDECAR_SUFFIX}`);
 
@@ -65,6 +66,7 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
 
     const stepSync = (label: string): void => {
       if (dead.has(name)) throw new ProcessCrashed(name);
+      if (control.pauseAt === taken.length + 1) signalReached();
       taken.push(label);
       if (control.crashAt === taken.length) {
         crash();
@@ -99,7 +101,21 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
       },
     });
 
+    const descriptorPaths = new Map<number, string>();
     const files: WorldActor['files'] = {
+      descriptors: {
+        write: async (descriptor, content) => {
+          await step(`write fd ${descriptor}`);
+          const file = descriptorPaths.get(descriptor);
+          if (file !== undefined && contents.has(file)) contents.set(file, textOf(content));
+        },
+        sync: async (descriptor) => {
+          await step(`sync fd ${descriptor}`);
+        },
+        chmod: async (descriptor) => {
+          await step(`chmod fd ${descriptor}`);
+        },
+      },
       open: async (file, flags) => {
         await step(`open ${flags} ${path.basename(file)}`);
         if (dirs.has(file)) return handleOf(file);
@@ -134,7 +150,7 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
       },
     };
 
-    const heldLock = (held: string): HeldKernelLock => {
+    const heldLock = (held: string, descriptor: number | undefined): HeldKernelLock => {
       let open = true;
       const release = (): void => {
         stepSync(`release ${path.basename(held)}`);
@@ -143,7 +159,7 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
         if (holders.get(held) === name) holders.delete(held);
       };
       return {
-        descriptor: undefined,
+        descriptor,
         writeHolder: (text) => {
           stepSync(`writeHolder ${path.basename(held)}`);
           contents.set(held, text);
@@ -165,7 +181,10 @@ export const createWorld = (form: WorldLockForm, directories: readonly string[])
       if (holder !== undefined) return { kind: 'held' };
       if (!contents.has(held)) contents.set(held, '');
       holders.set(held, name);
-      return { kind: 'claimed', lock: heldLock(held) };
+      if (form === 'sidecar') return { kind: 'claimed', lock: heldLock(held, undefined) };
+      nextDescriptor += 1;
+      descriptorPaths.set(nextDescriptor, held);
+      return { kind: 'claimed', lock: heldLock(held, nextDescriptor) };
     };
 
     const lock: KernelLockMechanism = {

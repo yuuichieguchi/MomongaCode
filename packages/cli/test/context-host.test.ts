@@ -170,7 +170,6 @@ const harness = (behaviour: Behaviour = {}) => {
     },
     ownerPid: OWNER,
     ownerHome: OWNER_HOME,
-    isAlive: (pid) => pid === OWNER || alive.has(pid),
     readSecret: async (name) => {
       secretReads.push(name);
       const value = behaviour.secrets?.[name];

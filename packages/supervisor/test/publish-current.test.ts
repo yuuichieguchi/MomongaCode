@@ -21,6 +21,7 @@ const leftoverTemporaries = (h: Harness): string[] => fs.readdirSync(h.paths.run
 
 const recordingFileSystem = (renames: Rename[], failRename?: Error): AtomicWriteFileSystem => ({
   open: (file, flags, mode) => nodeFileSystem.open(file, flags, mode),
+  ...(nodeFileSystem.descriptors === undefined ? {} : { descriptors: nodeFileSystem.descriptors }),
   rename: async (from, to) => {
     renames.push({ from, to });
     if (failRename !== undefined) throw failRename;
@@ -41,6 +42,7 @@ const heldRenameFileSystem = (): HeldRename => {
   return {
     port: {
       open: (file, flags, mode) => nodeFileSystem.open(file, flags, mode),
+      ...(nodeFileSystem.descriptors === undefined ? {} : { descriptors: nodeFileSystem.descriptors }),
       rename: async (from, to) => {
         started = true;
         await gate;

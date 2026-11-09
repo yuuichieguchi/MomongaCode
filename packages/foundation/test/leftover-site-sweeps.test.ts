@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
+import { createKernelLockMechanism, hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
 import type { FileLockOps, HeldKernelLock } from '@momonga/foundation';
 import { createLockedFile } from '../src/platform/lock-capability.ts';
 import { OPEN_FLAGS } from '../src/node-file-system.ts';
@@ -17,24 +17,32 @@ const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
 };
 
 describe('secret-key-file.ts:41-49 replaced (S1): the gateway start sweeps dirname(gatewayKey) through the registered list, by lock alone', () => {
-  it('keeps a held temporary whose name carries a pid the probe reports dead, and removes an unheld one named with this live pid', async () => {
-    const paths = momongaPaths(makeTemporaryDirectory());
-    const directory = path.dirname(paths.gatewayKey);
-    fs.mkdirSync(directory, { recursive: true });
-    const held = path.join(directory, `.gateway.key.${PID_NO_PROCESS_HAS}aabbcc.tmp`);
-    const unheld = path.join(directory, `.gateway.key.${process.pid}ddeeff.tmp`);
-    const lock = await holdEntry(held);
-    fs.writeFileSync(unheld, 'left by a crash', { mode: 0o600 });
-    try {
-      const registered = leftoverDirectories(paths).filter((entry) => entry.directory === directory);
-      expect(registered).toHaveLength(1);
-      await sweepLeftovers({ directories: registered, lock: hostKernelLock(), files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { force: true }) } });
-      expect(fs.existsSync(held)).toBe(true);
-      expect(fs.existsSync(unheld)).toBe(false);
-    } finally {
-      lock.release();
-    }
-  });
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform} mechanism: keeps a held temporary whose name carries a pid the probe reports dead, and removes an unheld one, with its sidecar, named with this live pid`, async () => {
+      const lock = createKernelLockMechanism(platform);
+      const paths = momongaPaths(makeTemporaryDirectory());
+      const directory = path.dirname(paths.gatewayKey);
+      fs.mkdirSync(directory, { recursive: true });
+      const held = path.join(directory, `.gateway.key.${PID_NO_PROCESS_HAS}aabbcc.tmp`);
+      const unheld = path.join(directory, `.gateway.key.${process.pid}ddeeff.tmp`);
+      const holding = await lock.claim(held);
+      if (holding.kind !== 'claimed') throw new Error(`${held} could not be claimed by the test`);
+      fs.writeFileSync(held, 'in flight', { mode: 0o600 });
+      const abandoned = await lock.claim(unheld);
+      if (abandoned.kind !== 'claimed') throw new Error(`${unheld} could not be claimed by the test`);
+      fs.writeFileSync(unheld, 'left by a crash', { mode: 0o600 });
+      abandoned.lock.release();
+      try {
+        const registered = leftoverDirectories(paths).filter((entry) => entry.directory === directory);
+        expect(registered).toHaveLength(1);
+        await sweepLeftovers({ directories: registered, lock, files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { recursive: true, force: true }) } });
+        expect(fs.existsSync(held)).toBe(true);
+        expect(fs.readdirSync(directory).filter((name) => name.startsWith(path.basename(unheld)))).toEqual([]);
+      } finally {
+        holding.lock.release();
+      }
+    });
+  }
 });
 
 describe('lock-capability.ts:43,79: two creators of one locked file never remove each other\'s staged file', () => {
@@ -93,4 +101,42 @@ describe('C3: the registered list of leftover directories is data in momonga-pat
     expect(stateDirectory?.isLeftover(`.${path.basename(paths.gatewayKey)}.0a1b2c.tmp`)).toBe(true);
     expect(stateDirectory?.isLeftover(path.basename(paths.gatewayKey))).toBe(false);
   });
+});
+
+describe('S8: every directory the product writes entries in is swept, including the store blobs and the probe records', () => {
+  const blobsOf = (paths: ReturnType<typeof momongaPaths>): string => path.join(path.dirname(paths.databases.runtime), 'blobs');
+
+  it('registers the store blobs directory and the probe record directory', () => {
+    const paths = momongaPaths(makeTemporaryDirectory());
+    const registered = leftoverDirectories(paths).map((entry) => entry.directory);
+    expect(registered).toEqual(expect.arrayContaining([blobsOf(paths), paths.probe]));
+  });
+
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform} mechanism: one sweep removes a crashed blob temporary with its sidecar and keeps a held one`, async () => {
+      const lock = createKernelLockMechanism(platform);
+      const paths = momongaPaths(makeTemporaryDirectory());
+      const blobs = blobsOf(paths);
+      fs.mkdirSync(blobs, { recursive: true, mode: 0o700 });
+      const sha = 'ab'.repeat(32);
+      const crashed = path.join(blobs, `.${sha}.0a1b2c3d4e5f.tmp`);
+      const inFlight = path.join(blobs, `.${sha}.f5e4d3c2b1a0.tmp`);
+      const abandoned = await lock.claim(crashed);
+      if (abandoned.kind !== 'claimed') throw new Error(`${crashed} could not be claimed by the test`);
+      fs.writeFileSync(crashed, 'partial blob', { mode: 0o600 });
+      abandoned.lock.release();
+      const holding = await lock.claim(inFlight);
+      if (holding.kind !== 'claimed') throw new Error(`${inFlight} could not be claimed by the test`);
+      fs.writeFileSync(inFlight, 'blob being written', { mode: 0o600 });
+      try {
+        const registered = leftoverDirectories(paths).filter((entry) => entry.directory === blobs);
+        expect(registered).toHaveLength(1);
+        await sweepLeftovers({ directories: registered, lock, files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { recursive: true, force: true }) } });
+        expect(fs.readdirSync(blobs).filter((name) => name.startsWith(path.basename(crashed)))).toEqual([]);
+        expect(fs.existsSync(inFlight)).toBe(true);
+      } finally {
+        holding.lock.release();
+      }
+    });
+  }
 });

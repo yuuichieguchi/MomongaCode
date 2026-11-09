@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { hostKernelLock } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
-import type { TrackedChild } from '@momonga/testkit';
+import type { Readable } from 'node:stream';
+import { createKernelLockMechanism, hostKernelLock, momongaPaths } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder } from '@momonga/testkit';
+import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import type { HeldKernelLock } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../src/process/tmp-sweep.ts';
 
@@ -32,6 +34,17 @@ const holdEntry = async (entry: string): Promise<void> => {
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, 'in flight', { mode: 0o600 });
 };
 
+const MECHANISMS: readonly NodeJS.Platform[] = ['darwin', 'linux'];
+
+const sidecarNamesOf = (lock: KernelLockMechanism, name: string): string[] => (lock.name === 'sqlite-lock' ? [name, `${name}.sqlite`] : [name]);
+
+const makeLeftover = async (lock: KernelLockMechanism, entry: string, content: string): Promise<void> => {
+  const outcome = await lock.claim(entry);
+  if (outcome.kind !== 'claimed') throw new Error(`${entry} could not be claimed by the test`);
+  fs.writeFileSync(entry, content);
+  outcome.lock.release();
+};
+
 const noWarning = (message: string): void => {
   throw new Error(`unexpected warning: ${message}`);
 };
@@ -45,13 +58,16 @@ describe('tmp-sweep.ts:28-44: the spawn scratch sweep never removes an entry who
     expect(fs.existsSync(inUse)).toBe(true);
   });
 
-  it('removes a spawn entry whose lock no one holds', async () => {
-    const dir = temporaryDirectory();
-    const abandoned = path.join(dir, 'spawn-0a1b2c');
-    fs.writeFileSync(abandoned, 'left by a crash');
-    await sweepSpawnTmp({ dir, onWarning: noWarning });
-    expect(fs.readdirSync(dir)).toEqual([]);
-  });
+  for (const platform of MECHANISMS) {
+    it(`${platform} mechanism: removes a spawn entry whose lock no one holds, with its sidecar`, async () => {
+      const lock = createKernelLockMechanism(platform);
+      const dir = temporaryDirectory();
+      await makeLeftover(lock, path.join(dir, 'spawn-0a1b2c'), 'left by a crash');
+      expect(fs.readdirSync(dir).sort()).toEqual(sidecarNamesOf(lock, 'spawn-0a1b2c'));
+      await sweepSpawnTmp({ dir, onWarning: noWarning, lock });
+      expect(fs.readdirSync(dir)).toEqual([]);
+    });
+  }
 });
 
 describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose owner holds its lock is kept at any age', () => {
@@ -66,18 +82,21 @@ describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose ow
     expect(result.removed).toBe(0);
   });
 
-  it('keeps an unheld session entry younger than the retention, and removes one older than it', async () => {
+  for (const platform of MECHANISMS) {
+  it(`${platform} mechanism: keeps an unheld session entry younger than the retention, and removes one older than it`, async () => {
+    const lock = createKernelLockMechanism(platform);
     const root = temporaryDirectory();
-    fs.writeFileSync(path.join(root, 'young'), 'kept by retention');
-    fs.writeFileSync(path.join(root, 'old'), 'past retention');
+    await makeLeftover(lock, path.join(root, 'young'), 'kept by retention');
+    await makeLeftover(lock, path.join(root, 'old'), 'past retention');
     const activity: Record<string, { hasActiveRun: boolean; lastActivityAt: number }> = {
       young: { hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS + 1 },
       old: { hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS },
     };
     const store = { sessionActivity: (id: string) => activity[id] };
-    await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
-    expect(fs.readdirSync(root).sort()).toEqual(['young']);
+    await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+    expect(fs.readdirSync(root).sort()).toEqual(sidecarNamesOf(lock, 'young'));
   });
+  }
 });
 
 const directoryClaimPath = (directory: string): string => (hostKernelLock().name === 'file-lock' ? `${directory}.lock` : directory);
@@ -98,7 +117,7 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
     async (context) => {
       const dir = temporaryDirectory();
       const scratch = path.join(dir, 'spawn-0a1b2c');
-      const owner = await startLockHolder(context, directoryClaimPath(scratch));
+      const owner = await startClaimHolder(context, directoryClaimPath(scratch));
       fs.mkdirSync(scratch);
       fs.writeFileSync(path.join(scratch, 'out.txt'), 'in use');
       await sweepSpawnTmp({ dir, onWarning: noWarning });
@@ -116,7 +135,7 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       const root = temporaryDirectory();
       const sessionId = 'session-live';
       const scratch = path.join(root, sessionId);
-      const owner = await startLockHolder(context, directoryClaimPath(scratch));
+      const owner = await startClaimHolder(context, directoryClaimPath(scratch));
       fs.mkdirSync(scratch);
       const store = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS - 1 }) };
       await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
@@ -127,4 +146,46 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
     },
     REAL_PROCESS_TEST_TIMEOUT_MS,
   );
+});
+
+const SESSION_OWNER = path.join(import.meta.dirname, 'fixtures', 'session-tmp-owner.ts');
+
+const startSessionOwner = (context: CleanupContext, home: string, sessionId: string, platform: NodeJS.Platform): Promise<TrackedChild> =>
+  new Promise((resolve, reject) => {
+    const child = spawnTracked(context, process.execPath, [SESSION_OWNER, home, sessionId, platform], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    (child.stderr as Readable).on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+    (child.stdout as Readable).on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf8');
+      if (stdout.includes('ready\n')) resolve(child);
+    });
+    child.once('exit', (code, signal) => reject(new Error(`the session owner exited (code ${code}, signal ${signal}) before it was ready: ${stderr}`)));
+  });
+
+describe('S9: session scratch made by ensureSessionTmpDir is kept while its owner lives, and goes after SIGKILL and the R4 retention', () => {
+  for (const platform of MECHANISMS) {
+    it(
+      `${platform} mechanism: kept while held past the retention; after SIGKILL kept within the retention and removed past it`,
+      async (context) => {
+        const lock = createKernelLockMechanism(platform);
+        const home = temporaryDirectory();
+        const paths = momongaPaths(home);
+        fs.mkdirSync(paths.tmp.sessions, { recursive: true, mode: 0o700 });
+        const sessionId = 'session-owned';
+        const scratch = path.join(paths.tmp.sessions, sessionId);
+        const owner = await startSessionOwner(context, home, sessionId, platform);
+        const old = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS }) };
+        const young = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS + 1 }) };
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        expect(fs.statSync(scratch).isDirectory()).toBe(true);
+        await killed(owner);
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: young, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        expect(fs.statSync(scratch).isDirectory()).toBe(true);
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        expect(fs.readdirSync(paths.tmp.sessions)).toEqual([]);
+      },
+      REAL_PROCESS_TEST_TIMEOUT_MS,
+    );
+  }
 });
