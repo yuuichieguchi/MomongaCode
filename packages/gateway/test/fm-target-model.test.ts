@@ -5,6 +5,8 @@ import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momon
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, recordKeyOptions } from './fm-record-support.ts';
+import { TARGET_PROBING } from '@momonga/protocol';
 
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
 const LISTED = 'listed-by-fm';
@@ -32,19 +34,20 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
   return { fake, fmServe, starts: () => starts };
 };
 
-const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport> } = {}) => {
+const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport>; unprobed?: true } = {}) => {
   const probeRecordDir = makeDir();
-  if (extra.report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report, CURRENT_DIALECTS);
-  return createManagedFmTarget({
+  if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), CURRENT_DIALECTS);
+  const managed = createManagedFmTarget({
     fmServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     probeRecordDir,
-    recordKey: RECORD_KEY,
+    ...recordKeyOptions(RECORD_KEY, extra.unprobed === true ? IDLE_AUTO_PROBE : NO_AUTO_PROBE),
     toolCallingSetting: 'auto',
     ...(extra.declaredModel === undefined ? {} : { declaredModel: extra.declaredModel }),
     ...(extra.declaredOutputBoundField === undefined ? {} : { declaredOutputBoundField: extra.declaredOutputBoundField }),
   });
+  return extra.unprobed === true ? managed : primed(managed, TARGET.name);
 };
 
 const listings = (fake: FakeChatCompletionsServer): number => fake.requests.filter((request) => request.path === '/v1/models').length;
@@ -74,43 +77,21 @@ describe('the model id the managed fm target sends to fm serve', () => {
     expect(await target.upstreamModel(TARGET, new AbortController().signal)).toBe('declared');
   });
 
-  it('is the id fm serve lists, read once, for an unprobed target without a declared model', async () => {
+  it('asks fm serve for no model listing: a target with no record answers target_probing before any model id is needed', async () => {
     const { fake, fmServe, starts } = await startListing();
-    const target = await targetOf(fmServe);
+    const target = await targetOf(fmServe, { unprobed: true });
 
-    const first = await target.upstreamModel(TARGET, new AbortController().signal);
-    const second = await target.upstreamModel(TARGET, new AbortController().signal);
-
-    expect([first, second]).toEqual([LISTED, LISTED]);
-    expect(listings(fake)).toBe(1);
-    expect(starts()).toBe(2);
-  });
-
-  it('fails, and reads the listing again next time, when fm serve answers the listing with an error', async () => {
-    const fake = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', modelsReply: { kind: 'error', status: 500, body: { error: 'down' } } });
-    servers.push(fake);
-    const fmServe: FmServe = {
-      restarts: 0,
-      start: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-      ensureRunning: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-      stop: async () => undefined,
-      health: async () => ({ ok: true }),
-    };
-    const target = await targetOf(fmServe);
-
-    await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toThrow('HTTP 500');
-    await expect(target.upstreamModel(TARGET, new AbortController().signal)).rejects.toThrow('HTTP 500');
-    expect(listings(fake)).toBe(2);
+    await expect(target.capabilities(TARGET)).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
+    expect(listings(fake)).toBe(0);
+    expect(starts()).toBe(0);
   });
 });
 
 describe('the output bound field of the managed fm target', () => {
-  it('is the declared field for an unprobed target and over the recorded one', async () => {
+  it('is the declared field over the recorded one', async () => {
     const { fmServe } = await startListing();
-    const unprobed = await targetOf(fmServe, { declaredOutputBoundField: 'max_tokens' });
     const probed = await targetOf(fmServe, { declaredOutputBoundField: 'max_tokens', report: { ...makeReport(1, 1), outputBoundField: 'max_completion_tokens' } });
 
-    expect((await unprobed.capabilities(TARGET)).outputBoundField).toBe('max_tokens');
     expect((await probed.capabilities(TARGET)).outputBoundField).toBe('max_tokens');
   });
 

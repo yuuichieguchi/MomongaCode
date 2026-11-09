@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 
 const servePidsOf = (dumpFile: string): number[] =>
   fs.existsSync(dumpFile)
@@ -23,6 +24,7 @@ const runThroughFakeFm = async (settings: unknown, alias: string) => {
   registerCleanup(() => killGroupsForCleanup(servePidsOf(dumpFile)));
   const home = makeHome();
   writeSettings(home, settings);
+  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
   return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: alias, input: userInput('hello fm') }));
 };

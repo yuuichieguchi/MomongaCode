@@ -48,12 +48,15 @@ export type TargetCapabilities = TargetCapabilitiesCore & DeclaredImage;
 export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
   Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
 
+export type FmDeclaredCapabilities = { contextWindow: number; maxOutputTokens: number };
+
 export type FmTarget = {
   adapter: 'fm';
   answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling?: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -148,6 +151,7 @@ export type ResolvedFmTarget = {
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   billing: 'local';
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -260,6 +264,8 @@ export type ModelsSettings = {
   idleTimeoutMs?: number;
 };
 
+export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number };
+
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
@@ -321,6 +327,7 @@ export type Settings = {
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
+  mcp?: McpCallSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;

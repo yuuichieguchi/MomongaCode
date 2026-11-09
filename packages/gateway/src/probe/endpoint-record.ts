@@ -23,6 +23,16 @@ const FILE_NAME_HASH_CHARS = 32;
 export const endpointRecordFileName = (key: EndpointKey): string =>
   `endpoint-${sha256Hex(canonicalJson([key.endpoint, key.model])).slice(0, FILE_NAME_HASH_CHARS)}.json`;
 
+export type EndpointLockKey = { target: string; endpoint: string; model: string };
+
+export const endpointLockKeyOf = (key: EndpointKey): EndpointLockKey => ({
+  target: endpointRecordFileName(key).replace(/\.json$/, ''),
+  endpoint: key.endpoint,
+  model: key.model,
+});
+
+export const endpointKeyOfLock = (key: EndpointLockKey): EndpointKey => ({ endpoint: key.endpoint, model: key.model });
+
 const fileOf = (dir: string, key: EndpointKey): string => path.join(dir, endpointRecordFileName(key));
 
 export const requireListedEntry = (modelsBody: unknown, model: string): Record<string, unknown> => {

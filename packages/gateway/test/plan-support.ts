@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { createFileCredentialStore, momongaLayout } from '@momonga/foundation';
+import { createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { CredentialStore } from '@momonga/foundation';
 import { createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
@@ -114,6 +114,7 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       profiles: { [PROFILE_ID]: profile },
       paths,
       store: chosenStore,
+      fileSystem: nodeFileSystem,
       accounts,
       clock,
       fetch: fetchPort,
@@ -196,7 +197,7 @@ const pkce = (): { verifier: string; challenge: string } => {
 export type FakeSignIn = { clientId: string; hostId: string; idToken: string; subject: string; email: string; tokens: PlanTokenResponse };
 
 export const signInAtFake = async (h: Harness, options: { clientId?: string } = {}): Promise<FakeSignIn> => {
-  const host = await ensureHostIdentity(h.paths.host, { accountsExist: false });
+  const host = await ensureHostIdentity(nodeFileSystem, h.paths.host, { accountsExist: false });
   const { verifier, challenge } = pkce();
   const redirectUri = 'http://127.0.0.1:49152/auth/callback';
   const url = new URL(h.auth.authorizeUrl);

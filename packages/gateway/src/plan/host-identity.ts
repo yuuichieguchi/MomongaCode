@@ -1,15 +1,14 @@
 import { createHash, generateKeyPair } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { assertPrivateRegularFile, isRecord, noFollowFlag, nodeFileSystem, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 
 export type HostIdentity = { hostId: string };
 
 const HOST_ID_PREFIX = 'urn:ietf:params:oauth:jwk-thumbprint:sha-256:';
 const FILE_MODE = 0o600;
-const DIRECTORY_MODE = 0o700;
 
 const REQUIRED_MEMBERS: Readonly<Record<string, readonly string[]>> = {
   EC: ['crv', 'kty', 'x', 'y'],
@@ -41,32 +40,13 @@ const newHostFile = async (): Promise<{ hostId: string; text: string }> => {
   return { hostId, text: JSON.stringify({ hostId, privateKey: jwk }) };
 };
 
-const ensureDirectory = async (file: string): Promise<void> => {
-  const directory = path.dirname(file);
-  await fs.mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
-  await fs.chmod(directory, DIRECTORY_MODE);
-};
-
 const hostFileError = (file: string, problem: string): Error => new Error(`the plan host identity file ${file} ${problem}; run \`momonga auth reset-host\` to create a new host identity`);
 
-const readHostFile = async (file: string): Promise<string | undefined> => {
-  let handle: fs.FileHandle;
+const readHostFile = async (fileSystem: FileSystem, file: string): Promise<string | undefined> => {
   try {
-    handle = await fs.open(file, fs.constants.O_RDONLY | noFollowFlag());
+    return await fileSystem.readOwnerOnlyTextFile(file, 'it');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw hostFileError(file, `cannot be read (${(error as Error).message})`);
-  }
-  try {
-    const stat = await handle.stat();
-    try {
-      assertPrivateRegularFile(stat, 'it');
-    } catch (error) {
-      throw hostFileError(file, `is not private: ${(error as Error).message}`);
-    }
-    return await handle.readFile('utf8');
-  } finally {
-    await handle.close();
   }
 };
 
@@ -84,22 +64,22 @@ const parseHostFile = (file: string, text: string): HostIdentity => {
   return { hostId: parsed['hostId'] };
 };
 
-export const ensureHostIdentity = async (file: string, { accountsExist }: { accountsExist: boolean }): Promise<HostIdentity> => {
-  const existing = await readHostFile(file);
+export const ensureHostIdentity = async (fileSystem: FileSystem, file: string, { accountsExist }: { accountsExist: boolean }): Promise<HostIdentity> => {
+  const existing = await readHostFile(fileSystem, file);
   if (existing !== undefined) return parseHostFile(file, existing);
   if (accountsExist) throw hostFileError(file, 'is missing while plan accounts exist');
-  await ensureDirectory(file);
+  await fileSystem.mkdirPrivate(path.dirname(file));
   const created = await newHostFile();
-  const outcome = await writeFileAtomically(nodeFileSystem, systemRandom, file, created.text, { mode: FILE_MODE, publish: 'create' });
+  const outcome = await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE, publish: 'create' });
   if (outcome.created) return { hostId: created.hostId };
-  const raced = await readHostFile(file);
+  const raced = await readHostFile(fileSystem, file);
   if (raced === undefined) throw hostFileError(file, 'disappeared while it was being created');
   return parseHostFile(file, raced);
 };
 
-export const resetHostIdentity = async (file: string): Promise<HostIdentity> => {
-  await ensureDirectory(file);
+export const resetHostIdentity = async (fileSystem: FileSystem, file: string): Promise<HostIdentity> => {
+  await fileSystem.mkdirPrivate(path.dirname(file));
   const created = await newHostFile();
-  await writeFileAtomically(nodeFileSystem, systemRandom, file, created.text, { mode: FILE_MODE });
+  await writeFileAtomically(fileSystem, systemRandom, file, created.text, { mode: FILE_MODE });
   return { hostId: created.hostId };
 };

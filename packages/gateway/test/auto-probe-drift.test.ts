@@ -1,0 +1,132 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { probeLockPath } from '@momonga/gateway';
+
+const specDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
+const spec = fs.readFileSync(path.join(specDir, 'AutoProbe.tla'), 'utf8');
+const config = fs.readFileSync(path.join(specDir, 'AutoProbe.cfg'), 'utf8');
+const invariantTests = ['auto-probe.test.ts', 'auto-probe-endpoints.test.ts'].map((file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')).join('\n');
+const cliProbe = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'cli', 'src', 'commands', 'gateway.ts'), 'utf8');
+
+const constantOf = (name: string): string => {
+  const match = new RegExp(`^\\s*${name}\\s*=\\s*(.+)$`, 'm').exec(config);
+  if (match === null) throw new Error(`AutoProbe.cfg sets no ${name}`);
+  return (match[1] as string).trim();
+};
+
+const invariantsOf = (): string[] => {
+  const block = /INVARIANTS\n([\s\S]*?)\n\n/.exec(config);
+  if (block === null) throw new Error('AutoProbe.cfg lists no invariants');
+  return (block[1] as string).split('\n').map((line) => line.trim()).filter((line) => line !== '' && line !== 'TypeOK');
+};
+
+const PROPERTY_OF_INVARIANT: Record<string, string> = {
+  SingleProbePerKey: 'P1',
+  NoGuessedAnswer: 'P2',
+  NoRecordGets503: 'P3',
+  RetryAfterIsHonest: 'P3',
+  RecordSeenAtOnce: 'P4',
+  FailedWritesNothing: 'P5',
+  RecordMatchesKey: 'P6',
+  RecordIsClean: 'P7',
+  RefusalGetsRemedy: 'P8',
+  NoProbeInBackoff: 'P9',
+  RecordUnderLock: 'P10',
+};
+
+describe('the code conforms to specs/tla/AutoProbe.tla', () => {
+  it('checks the design the code builds: a shared single-flight guard, the key per request, a fresh record, no guess, no 412, no record from a failure, the taint check, and the CLI writer as an actor', () => {
+    expect({
+      SingleFlight: constantOf('SingleFlight'),
+      KeyView: constantOf('KeyView'),
+      ReadRecord: constantOf('ReadRecord'),
+      Guess: constantOf('Guess'),
+      Reject412: constantOf('Reject412'),
+      FailWrites: constantOf('FailWrites'),
+      TaintCheck: constantOf('TaintCheck'),
+      Manual: constantOf('Manual'),
+      Adapter: constantOf('Adapter'),
+      EndpointLocked: constantOf('EndpointLocked'),
+      PreconditionCheck: constantOf('PreconditionCheck'),
+      RejectStale: constantOf('RejectStale'),
+      Backoff: constantOf('Backoff'),
+    }).toEqual({
+      SingleFlight: '"shared"',
+      KeyView: '"perRequest"',
+      ReadRecord: '"fresh"',
+      Guess: 'FALSE',
+      Reject412: 'FALSE',
+      FailWrites: 'FALSE',
+      TaintCheck: 'TRUE',
+      Manual: 'TRUE',
+      Adapter: '"fm"',
+      EndpointLocked: 'TRUE',
+      PreconditionCheck: 'TRUE',
+      RejectStale: 'FALSE',
+      Backoff: 'TRUE',
+    });
+  });
+
+  it('defines every invariant the check configuration lists, and each has a test named after it', () => {
+    const invariants = invariantsOf();
+
+    expect(invariants.sort()).toEqual(Object.keys(PROPERTY_OF_INVARIANT).sort());
+    for (const name of invariants) {
+      expect(spec).toMatch(new RegExp(`^${name} ==`, 'm'));
+      expect(invariantTests).toContain(name);
+      expect(invariantTests).toContain(`${PROPERTY_OF_INVARIANT[name]} `);
+    }
+  });
+
+  it('keeps the shared guard in the file system beside the records, one lock per record key', () => {
+    const dir = '/probe-records';
+    const first = probeLockPath(dir, { target: 'fm', binarySha256: 'a'.repeat(64), osBuild: '25A1' });
+    const otherBuild = probeLockPath(dir, { target: 'fm', binarySha256: 'a'.repeat(64), osBuild: '25A2' });
+    const otherBinary = probeLockPath(dir, { target: 'fm', binarySha256: 'b'.repeat(64), osBuild: '25A1' });
+
+    expect(path.dirname(first)).toBe(dir);
+    expect(new Set([first, otherBuild, otherBinary]).size).toBe(3);
+    expect(probeLockPath(dir, { target: 'fm', binarySha256: 'a'.repeat(64), osBuild: '25A1' })).toBe(first);
+  });
+
+  it('has the CLI writer, the actor Manual, go through the same guarded probe and restart no daemon to refresh a cached record', () => {
+    const probeFm = /export const probeFm = [\s\S]*?\n};\n/.exec(cliProbe)?.[0];
+
+    expect(probeFm).toBeDefined();
+    expect(probeFm).toContain('probeManagedFm');
+    expect(probeFm).not.toContain('restartDaemon');
+  });
+
+  it('names the code sources of the built design in the model header, not the cached record, the key at start or a lockless CLI', () => {
+    const header = spec.slice(0, spec.indexOf('EXTENDS'));
+
+    expect(header).toContain('gateway/src/probe/auto-probe.ts');
+    expect(header).not.toMatch(/a cache that only|computed once at gateway start|It takes no lock/);
+  });
+
+  it('checks the endpoint adapter under the same properties, and names its key source and the backoff in the model', () => {
+    const endpoint = fs.readFileSync(path.join(specDir, 'AutoProbe.endpoint.cfg'), 'utf8');
+
+    expect(endpoint).toMatch(/Adapter = "endpoint"/);
+    expect(endpoint).toMatch(/EndpointLocked = TRUE/);
+    expect(spec).toContain('file identity');
+    expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
+    expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
+  });
+
+  it('decides a record of another key by one comparison for every adapter, and keeps the evidence that a 412 for the mismatch breaks P6', () => {
+    const rejectStale = fs.readFileSync(path.join(specDir, 'AutoProbe.rejectStale.cfg'), 'utf8');
+    const sourceOf = (file: string): string => fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+
+    expect(rejectStale).toMatch(/RejectStale = TRUE/);
+    expect(rejectStale).toMatch(/RecordMatchesKey/);
+    expect(spec).toContain('record.ts recordForIdentity');
+    for (const file of ['probe/record.ts', 'probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
+      expect(sourceOf(file)).toContain('recordForIdentity(');
+    }
+    for (const file of ['probe/endpoint-target.ts', 'probe/ollama-target.ts']) {
+      expect(sourceOf(file)).not.toContain('is stale');
+    }
+  });
+});

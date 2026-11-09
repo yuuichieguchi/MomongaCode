@@ -95,7 +95,7 @@ describe('T11 Linux: the inspector waits for nothing', () => {
     const inspector = createLinuxInspector({ procfs: procfsWith(marker, identity, { readableAfterLists: Infinity, holdsMarker: true, alive: true }), layout: LAYOUT, uid: UID, timing } as never);
     const result = await inspector.holdersOf(marker, { signal: new AbortController().signal } as never, (process: UninspectableProcess) => void reported.push(process));
     expect(result).toEqual({ kind: 'value', value: [] });
-    expect(reported).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
+    expect(reported).toEqual([{ pid: 12, command: 'sleep', startedAt: 1_700_009_876_540 }]);
     expect(timing.elapsed()).toBe(0);
   });
 
@@ -123,7 +123,7 @@ describe('T11 Linux: the inspector waits for nothing', () => {
     const { kill, sent } = fakeKill(state);
     const inspector = createLinuxInspector({ procfs: procfsWith(marker, identity, state), layout: LAYOUT, uid: UID, timing } as never);
     const report = await reapMarkedProcessesWithReport({ marker, killGraceMs: 300, label: 'tool', onWarning: () => undefined, kill: kill as never, timing, inspector, uninspectable: createUninspectableRegistry(), signal: new AbortController().signal });
-    expect(report.uninspectable).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
+    expect(report.uninspectable).toEqual([{ pid: 12, command: 'sleep', startedAt: 1_700_009_876_540 }]);
     expect(sent).toEqual([]);
     expect(report.removed).toBe(false);
     expect(fs.existsSync(marker)).toBe(true);

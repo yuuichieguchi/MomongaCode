@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { credentialEnvNames } from '@momonga/config';
 import { canonicalJson, createFileCredentialStore, createLockCapability, hostProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
@@ -136,7 +137,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env) }));
+        const callBounds = loaded.settings.mcp;
+        const { credentials } = loaded.settings;
+        const credentialNames = credentialEnvNames(loaded.settings);
+        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
         const acquired = mcpPools.acquire(runId, {
           key,
           create: () =>
@@ -145,10 +149,14 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              credentials,
+              credentialNames,
               timers,
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
               closeGraceMs: MCP_CLOSE_GRACE_MS,
+              ...(callBounds.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: callBounds.toolIdleTimeoutMs }),
+              ...(callBounds.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: callBounds.toolTotalTimeoutMs }),
             }),
         });
         acquiredHere = acquired.changed;

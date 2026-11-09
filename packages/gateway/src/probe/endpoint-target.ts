@@ -1,5 +1,6 @@
 import { endpointKeyOf } from '@momonga/config';
-import type { Capabilities, ConstructSupport, DialectId } from '@momonga/protocol';
+import type { Capabilities, ConstructSupport, DialectId, Probing } from '@momonga/protocol';
+import { targetProbingError } from './auto-probe.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
@@ -10,10 +11,11 @@ import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
+import { recordForIdentity } from './record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import type { EnvelopeShape } from './envelope.ts';
 import { parseJson } from './json.ts';
-import { declaredDialectRefusal, needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
+import { declaredDialectRefusal, needsProbeOf, preconditionOf } from './remedy.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
 
@@ -117,6 +119,8 @@ export type ProbedEndpointTargetOptions = {
   model: string;
   declared: DeclaredCapabilities;
   record: EndpointRecord | null;
+  readRecord: () => Promise<EndpointRecord | null>;
+  startProbe: () => Promise<Probing>;
   readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
   saveRecord: (record: EndpointRecord) => Promise<void>;
 };
@@ -147,16 +151,17 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     return record;
   };
 
+  let currentIdentity: string | undefined;
+
+  const usable = (found: EndpointRecord | null): EndpointRecord | null =>
+    found === null || currentIdentity === undefined ? found : recordForIdentity(found, { identity: found.identity }, { identity: currentIdentity });
+
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
-    const found = requireRecord();
-    const identity = await options.readIdentity(found.identityFields, signal);
-    if (identity !== found.identity) {
-      throw new PreconditionFailedError(
-        `the probe record of the target "${targetName}" is stale`,
-        `the server at ${endpoint} now reports a different identity for model ${model} than when it was probed`,
-        remedyOf(targetName),
-      );
-    }
+    const found = await options.readRecord();
+    currentIdentity = undefined;
+    if (found !== null) currentIdentity = await options.readIdentity(found.identityFields, signal);
+    record = usable(found);
+    if (record === null) throw targetProbingError(await options.startProbe());
   };
 
   const verify = memoizedVerification(verifyOnce);
@@ -184,7 +189,8 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     verify,
     raiseHeadroom,
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
+      record = usable(await options.readRecord());
+      if (record === null) throw targetProbingError(await options.startProbe());
       const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(

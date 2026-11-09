@@ -6,6 +6,7 @@ import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
@@ -62,6 +63,8 @@ describe('the probed Ollama cache becomes the capability unless declared', () =>
       model: OLLAMA_MODEL,
       declared,
       record: record as never,
+      readRecord: async () => record as never,
+      startProbe: NO_PROBE_START,
       readDigest: async () => result.identity,
     });
   };
