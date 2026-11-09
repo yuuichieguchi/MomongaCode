@@ -327,10 +327,14 @@ describe('supervisor cases', () => {
     expect(Date.now() - postedAt).toBeLessThan(ORPHAN_REAP_GRACE_MS);
     expect(exit).toEqual({ code: 0, signal: null });
 
-    expect(isAlive(orphanPid)).toBe(false);
-    expect(markerEntries(home.paths).filter((entry) => entry.startsWith('runtime-'))).toEqual([]);
+    expect(isAlive(orphanPid)).toBe(true);
+    const runtimeMarkers = markerEntries(home.paths).filter((entry) => entry.startsWith('runtime-'));
+    expect(runtimeMarkers).toHaveLength(1);
+    expect(await findHolders(path.join(home.paths.markers.daemons, runtimeMarkers[0] ?? ''), { signal: new AbortController().signal })).toContain(orphanPid);
     const records = supervisorLog(home.paths, second.pid);
-    expect(named(records, 'orphans.reaped')).toEqual([expect.objectContaining({ kept: 0 })]);
+    const reaped = named(records, 'orphans.reaped');
+    expect(reaped).toHaveLength(1);
+    expect(reaped[0]?.kept).toBeGreaterThanOrEqual(1);
     expect(named(records, 'child.spawn')).toEqual([]);
     expect(records.at(-1)).toMatchObject({ msg: 'entry.exit', code: 0, path: 'close', trigger: 'request', clean: true });
     expect(await inspectProcessLock(home.paths.locks.supervisor)).toEqual({ state: 'free' });

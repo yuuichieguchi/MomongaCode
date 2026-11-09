@@ -106,7 +106,9 @@ type OrphanReapTiming = Pick<OrphanReapOptions, 'orphanGraceMs' | 'orphanReapGra
 const phaseOneGraceMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'drainTimeoutMs'>): number =>
   Math.min(timing.orphanGraceMs, runtimeMaxCloseMs(timing.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
 
-export const orphanReapBoundMs = (timing: OrphanReapTiming): number => phaseOneGraceMs(timing) + timing.orphanPollMs + markerReapClockBoundMs(timing.orphanReapGraceMs);
+export const orphanPhaseOneBoundMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>): number => phaseOneGraceMs(timing) + timing.orphanPollMs;
+
+export const orphanReapBoundMs = (timing: OrphanReapTiming): number => orphanPhaseOneBoundMs(timing) + markerReapClockBoundMs(timing.orphanReapGraceMs);
 
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 

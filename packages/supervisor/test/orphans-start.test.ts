@@ -6,7 +6,7 @@ import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
-import { orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
+import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -140,7 +140,7 @@ describe('reapOrphans', () => {
     const result = reap();
     await until(() => result.settled(), 5000);
     expect(reapAt ?? 0).toBeGreaterThanOrEqual(1000);
-    expect(reapAt ?? 0).toBeLessThan(1000 + 250 + 100);
+    expect(reapAt ?? 0).toBeLessThanOrEqual(orphanPhaseOneBoundMs(setup.options));
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 1 })]);
     expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
@@ -310,6 +310,7 @@ describe('reapOrphans', () => {
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(abortedAt).toBe(options.orphanGraceMs);
     expect(reapAt).toBe(options.orphanGraceMs);
+    expect(reapAt).toBeLessThanOrEqual(orphanPhaseOneBoundMs(options));
     expect(calls.reap).toHaveLength(1);
     expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
   });

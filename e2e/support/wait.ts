@@ -7,6 +7,7 @@ import {
   STARTUP_TIMEOUT_MS,
   STDIO_FLUSH_MS,
   childRestartBoundMs,
+  orphanPhaseOneBoundMs,
   resolveRestartPolicy,
   resolveStartTiming,
   supervisorStartBoundMs,
@@ -44,7 +45,7 @@ export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
 export const E2E_ORPHAN_GRACE_MS = 3000;
 export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS }, orphanGraceMs: E2E_ORPHAN_GRACE_MS });
-export const E2E_PHASE2_REACHED_BOUND_MS = E2E_ORPHAN_GRACE_MS + E2E_MARGIN_MS;
+export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs(resolveStartTiming({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS }, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {

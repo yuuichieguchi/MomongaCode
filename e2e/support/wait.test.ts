@@ -5,7 +5,10 @@ import {
   E2E_CANCEL_TERM_BOUND_MS,
   E2E_DISPOSE_BOUND_MS,
   E2E_HOOK_TIMEOUT_MS,
+  E2E_MARGIN_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
+  E2E_ORPHAN_GRACE_MS,
+  E2E_PHASE2_REACHED_BOUND_MS,
   E2E_READY_DEADLINE_MS,
   E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
@@ -22,7 +25,7 @@ import {
   until,
   withinBound,
 } from './wait.ts';
-import { ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS, childRestartBoundMs, resolveRestartPolicy } from '@momonga/supervisor';
+import { ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS, childRestartBoundMs, orphanPhaseOneBoundMs, resolveRestartPolicy, resolveStartTiming } from '@momonga/supervisor';
 import { DEFAULT_E2E_DEPS } from './stack.ts';
 
 const UNTIL_TEST_DEADLINE_MS = 200;
@@ -40,9 +43,10 @@ describe('wait constants', () => {
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(5000);
     expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(6000);
     expect(E2E_RESTART_POLICY).toEqual({ baseMs: 200, maxMs: 200, minMs: 200 });
-    expect(E2E_READY_DEADLINE_MS).toBe(146_350);
-    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(131_350);
-    expect(E2E_TEST_TIMEOUT_MS).toBe(291_150);
+    expect(E2E_READY_DEADLINE_MS).toBe(136_350);
+    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(123_350);
+    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(7250);
+    expect(E2E_TEST_TIMEOUT_MS).toBe(281_150);
   });
 
   it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {
@@ -52,6 +56,10 @@ describe('wait constants', () => {
 
   it('wait for a stack to start exactly as long as the supervisor of the default e2e stack promises', () => {
     expect(E2E_READY_DEADLINE_MS).toBe(e2eStartBoundMs(DEFAULT_E2E_DEPS));
+  });
+
+  it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
+    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs(resolveStartTiming({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS);
   });
 
   it('keep every wait a test makes below the test timeout, so a broken promise fails with its own description', () => {
