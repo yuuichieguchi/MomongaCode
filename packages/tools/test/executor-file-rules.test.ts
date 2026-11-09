@@ -60,7 +60,7 @@ const stream = (text: string): AsyncIterable<Uint8Array> => ({
   },
 });
 
-type Spawned = { command: SandboxCommand; policy: SandboxPolicy };
+type Spawned = { command: SandboxCommand; policy: SandboxPolicy; config: string[] };
 
 const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxCommand) => string): { sandbox: Sandbox; spawned: Spawned[] } => {
   const spawned: Spawned[] = [];
@@ -68,7 +68,8 @@ const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxComman
     kind,
     spawn: (command, policy): SandboxedProcess => {
       if (command.argv[1] === '--version') return { pid: 0, pgid: 0, stdout: stream('ripgrep 15.2.0\n'), stderr: stream(''), exited: Promise.resolve({ code: 0, signal: null }) };
-      spawned.push({ command, policy });
+      const configFile = command.env?.['RIPGREP_CONFIG_PATH'];
+      spawned.push({ command, policy, config: configFile === undefined ? [] : fs.readFileSync(configFile, 'utf8').split('\n') });
       const text = stdout(command);
       return { pid: 0, pgid: 0, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
     },
@@ -196,7 +197,8 @@ describe('executor guards read the user file rules', () => {
     const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } });
     const outcome = await tools.run('Grep', { pattern: 'secret', path: project }, options);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]?.command.argv).toContain('--null');
+    expect(spawned[0]?.config).toContain('--null');
+    expect(spawned[0]?.command.argv).not.toContain('--null');
     expect((spawned[0]?.policy as SandboxPolicy & { fileRules?: unknown }).fileRules).toBe((options.sandboxPolicy as SandboxPolicy & { fileRules: unknown }).fileRules);
     expect(resultOf(outcome).output).toBe(inProject(tools, path.join(project, 'notes.txt')));
   });

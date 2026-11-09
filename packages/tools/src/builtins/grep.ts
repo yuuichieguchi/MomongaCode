@@ -1,4 +1,4 @@
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { createReadAccessMatcher } from '../read-access.ts';
@@ -47,7 +47,7 @@ const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\
 
 const exclusionOf = (target: string, excluded: string, withContents: boolean): string[] => {
   const relative = `/${escapeGlob(path.relative(target, excluded).split(path.sep).join('/'))}`;
-  return withContents ? ['--glob', `!${relative}`, '--glob', `!${relative}/**`] : ['--glob', `!${relative}`];
+  return withContents ? ['--glob', exclusionLine(`!${relative}`), '--glob', `${exclusionLine(`!${relative}`)}/**`] : ['--glob', exclusionLine(`!${relative}`)];
 };
 
 const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
@@ -73,10 +73,32 @@ const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDir
   return blocked.flatMap((entry) => exclusionOf(target, entry.absolute, entry.isDirectory));
 };
 
-const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, allowedRoots: readonly string[], ruleBlocked: readonly string[]): string[] => {
+const LINE_BREAK = /[\n\r]/;
+const EDGE_WHITESPACE = /^\s|\s$/;
+const LEADING_LINE_COMMENT = '#';
+const NEWLINE_ONLY_CLASS = '[!\u0001-\u0009\u000b-\u{10ffff}]';
+
+const literalClassOf = (character: string): string => `[${character}]`;
+
+const exclusionLine = (glob: string): string => {
+  const lineFree = glob.replace(/\n/g, NEWLINE_ONLY_CLASS);
+  const last = [...lineFree].at(-1) as string;
+  return /\s/.test(last) ? `${lineFree.slice(0, lineFree.length - last.length)}${literalClassOf(last)}` : lineFree;
+};
+
+const modelGlobLine = (glob: string): string => {
+  if (glob === '' || LINE_BREAK.test(glob) || /\s$/.test(glob)) {
+    throw new ToolExecutionError('glob must not be empty, contain a line break, or end with whitespace');
+  }
+  const [first] = glob;
+  return first === LEADING_LINE_COMMENT || /\s/.test(first as string) ? `${literalClassOf(first as string)}${glob.slice(1)}` : glob;
+};
+
+const isConfigLine = (line: string): boolean => line !== '' && !LINE_BREAK.test(line) && !EDGE_WHITESPACE.test(line) && !line.startsWith(LEADING_LINE_COMMENT);
+
+const ripgrepFlags = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, ruleBlocked: readonly string[]): string[] => {
   const { before, after } = contextOf(input);
   return [
-    '--no-config',
     '--color',
     'never',
     '--no-heading',
@@ -99,16 +121,34 @@ const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, ac
     ...(input['-i'] === true ? ['-i'] : []),
     ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
-    ...(input.glob === undefined ? [] : ['--glob', input.glob]),
+    ...(input.glob === undefined ? [] : ['--glob', modelGlobLine(input.glob)]),
     ...deniedGlobs(access, target, isDirectory),
     ...ruleBlocked,
-    '-e',
-    input.pattern,
-    '--',
-    target,
-    ...allowedRoots,
   ];
 };
+
+const ripgrepOperands = (input: GrepInput, target: string, allowedRoots: readonly string[]): string[] => ['-e', input.pattern, '--', target, ...allowedRoots];
+
+const configTextOf = (flags: readonly string[]): string => {
+  const unfit = flags.find((line) => !isConfigLine(line));
+  if (unfit !== undefined) throw new Error(`the ripgrep argument ${JSON.stringify(unfit)} cannot be one line of a ripgrep configuration file`);
+  return `${flags.join('\n')}\n`;
+};
+
+const writeArgumentFile = async (file: string, text: string): Promise<void> => {
+  await nodeFileSystem.mkdirPrivate(path.dirname(file));
+  await nodeFileSystem.rm(file);
+  const handle = await nodeFileSystem.open(file, 'wx', ARGUMENT_FILE_MODE);
+  try {
+    await handle.writeFile(text);
+  } finally {
+    await handle.close();
+  }
+};
+
+const ARGUMENT_FILE_MODE = 0o600;
+
+const argumentFileOf = (ctx: ToolContext): string => path.join(momongaLayout(ctx.home).grepArguments, `${sha256Hex(ctx.idemKey)}.rgrc`);
 
 const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -214,9 +254,29 @@ const searchWithRipgrep = async (
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
   const ruleBlocked = await ruleBlockedGlobs(access, target, isDirectory, ctx);
+  const argumentFile = argumentFileOf(ctx);
   const policy = grepPolicyOf(ctx);
+  const spawnPolicy: SandboxPolicy = { ...policy, readAllowed: [...(policy.readAllowed ?? []), argumentFile] };
   const spawnCwd = isDirectory ? target : path.dirname(target);
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots, ruleBlocked)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
+  const flags = configTextOf(ripgrepFlags(input, mode, target, access, isDirectory, ruleBlocked));
+  try {
+    await writeArgumentFile(argumentFile, flags);
+    return await runSearch(ctx, { argv: [ripgrep, ...ripgrepOperands(input, target, allowedRoots)], cwd: spawnCwd, env: { ...ctx.env, RIPGREP_CONFIG_PATH: argumentFile } }, spawnPolicy, mode, input, access, spawnCwd);
+  } finally {
+    await nodeFileSystem.rm(argumentFile);
+  }
+};
+
+const runSearch = async (
+  ctx: ToolContext,
+  command: { argv: string[]; cwd: string; env: Record<string, string> },
+  policy: SandboxPolicy,
+  mode: OutputMode,
+  input: GrepInput,
+  access: ReadAccessMatcher,
+  spawnCwd: string,
+): Promise<SearchResult> => {
+  const child = ctx.sandbox.spawn(command, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();
   const visible = (recordPath: string): boolean => {
     let verdict = visibleCache.get(recordPath);

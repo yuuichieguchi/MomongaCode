@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { momongaLayout } from '@momonga/foundation';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 
 const sourceOf = (relative: string): string => fs.readFileSync(path.resolve(import.meta.dirname, relative), 'utf8');
@@ -115,5 +116,55 @@ describe('Grep reports the ripgrep it ran as its backend (design 6.4)', () => {
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
     expect(result.status).toBe('failed');
     expect(result.output).toContain('/opt/rg --version did not report a ripgrep version');
+  });
+});
+
+describe('Grep hands ripgrep its flags through an owner-only file that lives only for the call', () => {
+  const seenAtSpawn = (seen: Array<{ file: string; mode: number; text: string }>, after: (argv: string[]) => string | Error) => ({
+    kind: 'none' as const,
+    spawn: (command: { argv: string[]; env: Record<string, string> }, policy: { readAllowed?: readonly string[] }) => {
+      const file = command.env['RIPGREP_CONFIG_PATH'] as string;
+      seen.push({ file, mode: fs.statSync(file).mode & 0o777, text: fs.readFileSync(file, 'utf8') });
+      expect(policy.readAllowed).toContain(file);
+      const answer = after(command.argv);
+      if (answer instanceof Error) throw answer;
+      return { pid: 0, pgid: 0, stdout: textStream(answer), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+    },
+  });
+
+  const bundled = { locate: async () => ({ ok: true as const, path: '/bundled/rg', source: 'bundled' as const, version: '15.2.0', release: async () => undefined }) };
+
+  it('writes it owner-only under the read-denied product root, passes no flag on argv, and removes it when the call ends', async () => {
+    const seen: Array<{ file: string; mode: number; text: string }> = [];
+    let target = '';
+    const tools = await makeBuiltins({ sandbox: seenAtSpawn(seen, () => `${target}\0`) as never });
+    target = tools.write('a.ts', 'alpha\n');
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: bundled } as never));
+    expect(result.status).toBe('completed');
+    const [only] = seen;
+    expect(path.dirname(only?.file as string)).toBe(momongaLayout(tools.layout.home).grepArguments);
+    expect(only?.mode).toBe(0o600);
+    expect(only?.text.split('\n')).toContain('--null');
+    expect(only?.text.split('\n')).not.toContain('--no-config');
+    expect(fs.existsSync(only?.file as string)).toBe(false);
+  });
+
+  it('removes it when the spawn fails', async () => {
+    const seen: Array<{ file: string; mode: number; text: string }> = [];
+    const tools = await makeBuiltins({ sandbox: seenAtSpawn(seen, () => new Error('spawn stopped by the test')) as never });
+    tools.write('a.ts', 'alpha\n');
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: bundled } as never));
+    expect(result.status).toBe('failed');
+    expect(seen).toHaveLength(1);
+    expect(fs.existsSync(seen[0]?.file as string)).toBe(false);
+  });
+
+  it('refuses a model glob that one line of the file cannot carry, and says why', async () => {
+    const seen: Array<{ file: string; mode: number; text: string }> = [];
+    const tools = await makeBuiltins({ sandbox: seenAtSpawn(seen, () => '') as never });
+    tools.write('a.ts', 'alpha\n');
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha', glob: '*.ts\n--pre=sh' }, { ripgrep: bundled } as never));
+    expect(result.output).toContain('glob must not be empty, contain a line break, or end with whitespace');
+    expect(seen).toEqual([]);
   });
 });

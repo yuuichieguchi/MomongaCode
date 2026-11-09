@@ -14,6 +14,7 @@ export interface MomongaPaths {
   sockets: { gateway: string; runtime: string; supervisor: string };
   locks: { gateway: string; runtime: string; supervisor: string };
   callLocks: string;
+  grepArguments: string;
   lockProof: string;
   markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
@@ -80,6 +81,7 @@ export const momongaLayout = (
     sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
     locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
     callLocks: join(run, 'call-locks'),
+    grepArguments: join(run, 'grep-arguments'),
     lockProof: join(run, 'lock-proof'),
     markers: {
       root: markers,
