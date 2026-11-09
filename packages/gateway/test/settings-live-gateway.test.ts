@@ -1,10 +1,11 @@
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, systemClock } from '@momonga/foundation';
+import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, generationLayout, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -108,7 +109,20 @@ describe('S1 gateway: each request pins the router it started with (design-setti
     expect(a.requests).toHaveLength(1);
   });
 
-  it('an invalid file after a valid change: the gateway serves on its last good epoch and refuses nothing', async (context) => {
+  it('a gateway started alone: a change read by a request, then a broken file, keeps serving the read content and refuses nothing', async (context) => {
+    const a = await fakeUpstream(context);
+    const b = await fakeUpstream(context);
+    const stack = await startStack(context, twoTargets(a, b, 'a'));
+    replaceSettings(stack.home, twoTargets(a, b, 'b'));
+    expect((await post(stack.client, ask())).status).toBe(200);
+    replaceSettingsText(stack.home, '{ "models": ');
+    const answered = await post(stack.client, ask());
+    expect(answered.status).toBe(200);
+    expect(b.requests).toHaveLength(2);
+    expect(a.requests).toEqual([]);
+  });
+
+  it('a gateway started alone: a change broken before any request read it serves the last content this process read', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
     const stack = await startStack(context, twoTargets(a, b, 'a'));
@@ -116,8 +130,8 @@ describe('S1 gateway: each request pins the router it started with (design-setti
     replaceSettingsText(stack.home, '{ "models": ');
     const answered = await post(stack.client, ask());
     expect(answered.status).toBe(200);
-    expect(b.requests).toHaveLength(1);
-    expect(a.requests).toEqual([]);
+    expect(a.requests).toHaveLength(1);
+    expect(b.requests).toEqual([]);
   });
 
   it('an open WebSocket connection is not closed by a change, and its next frame sees the change', async (context) => {
@@ -322,5 +336,116 @@ describe('S2 gateway telemetry: a span ends on the provider it started on (desig
     expect(spanTraces(first).size).toBe(1);
     expect(spanTraces(second).size).toBe(1);
     expect([...spanTraces(first)].some((trace) => spanTraces(second).has(trace))).toBe(false);
+  });
+});
+
+describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('an edit a to b to a with a call in flight on the first epoch shares one gate for the counter of a', async (context) => {
+    const a = await fakeUpstream(context);
+    const definitionA = { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath, { maxConcurrency: 1 }) } } };
+    const definitionB = { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath, { maxConcurrency: 1, model: 'system-b' }) } } };
+    const stack = await startStack(context, definitionA);
+    const first = await heldRequest(stack.client, a);
+    replaceSettings(stack.home, definitionB);
+    const second = await heldRequest(stack.client, a);
+    replaceSettings(stack.home, definitionA);
+    let thirdSettled = false;
+    const third = post(stack.client, ask()).finally(() => {
+      thirdSettled = true;
+    });
+    for (let turn = 0; turn < 200; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(thirdSettled, 'the third epoch must wait at the gate the first epoch still holds').toBe(false);
+    expect(a.requests).toHaveLength(2);
+    first.hold.release();
+    second.hold.release();
+    expect((await third).status).toBe(200);
+  });
+});
+
+describe('S1 gateway: a plan target added by a change is applied and served as unserved (design-settings-live 15.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('a change that adds a plan target is applied: its alias fails each call with the unserved text, other targets serve', async (context) => {
+    const a = await fakeUpstream(context);
+    const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } });
+    replaceSettings(stack.home, {
+      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', plan: { profile: 'chatgpt' } } } },
+    });
+    const refused = await post(stack.client, ask('plan'));
+    expect(refused.text).toContain('target gpt uses plan profile chatgpt, which this gateway does not serve yet');
+    expect((await post(stack.client, ask())).status).toBe(200);
+  });
+});
+
+const CREDENTIAL_ENV = 'MOMONGA_TEST_HANDED_KEY';
+const HANDED_VALUE = 'handed-by-supervisor-0123456789';
+const CAPABILITY = 'c'.repeat(64);
+const UNSET_TEXT = `the environment variable ${CREDENTIAL_ENV} is unset or empty in the gateway process`;
+
+const fakeSupervisor = async (context: CleanupContext, home: string): Promise<{ asked: Array<{ path: string; capability: string | undefined }> }> => {
+  const asked: Array<{ path: string; capability: string | undefined }> = [];
+  const socketPath = generationLayout(home, FIRST_GENERATION).sockets.supervisor;
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
+  const server = http.createServer((request, response) => {
+    const capability = request.headers[CREDENTIAL_CAPABILITY_HEADER];
+    asked.push({ path: request.url ?? '', capability: typeof capability === 'string' ? capability : undefined });
+    if (request.url === `/v1/credentials/${CREDENTIAL_ENV}` && capability === CAPABILITY) {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ name: CREDENTIAL_ENV, value: HANDED_VALUE }));
+      return;
+    }
+    response.writeHead(403, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ error: { message: 'refused' } }));
+  });
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  registerCleanup(context, () => new Promise<void>((resolve) => server.close(() => resolve())));
+  return { asked };
+};
+
+const keyedTarget = (fake: FakeChatCompletionsServer) => ({ models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(fake.socketPath, { apiKeyEnv: CREDENTIAL_ENV }) } } });
+
+const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletionsServer, env: Record<string, string>, beforeStart: (home: string) => Promise<unknown>) => {
+  const home = withTempDir(context, { asHome: true });
+  await beforeStart(home);
+  replaceSettings(home, keyedTarget(fake));
+  const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } });
+  registerCleanup(context, async () => {
+    await handle.close(NO_GRACE);
+  });
+  const client = createUdsClient(fixedSocket(handle.socketPath));
+  registerCleanup(context, () => client.destroy());
+  return client;
+};
+
+describe('S8 gateway side of the credential hand-over (design-settings-live 15.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('with the capability and the variable unset in its own environment, the gateway asks its supervisor and uses the value', async (context) => {
+    const a = await fakeUpstream(context);
+    let supervisor: { asked: Array<{ path: string; capability: string | undefined }> } | undefined;
+    const client = await startKeyedStack(context, a, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }, async (home) => {
+      supervisor = await fakeSupervisor(context, home);
+    });
+    const answered = await post(client, ask());
+    expect(supervisor?.asked).toEqual([{ path: `/v1/credentials/${CREDENTIAL_ENV}`, capability: CAPABILITY }]);
+    expect(answered.status).toBe(200);
+    expect(a.requests[0]?.headers['authorization']).toBe(`Bearer ${HANDED_VALUE}`);
+    expect(answered.text).not.toContain(HANDED_VALUE);
+  });
+
+  it('without the capability the variable is unset with the existing text, and nobody is asked', async (context) => {
+    const a = await fakeUpstream(context);
+    let supervisor: { asked: Array<{ path: string; capability: string | undefined }> } | undefined;
+    const client = await startKeyedStack(context, a, {}, async (home) => {
+      supervisor = await fakeSupervisor(context, home);
+    });
+    const answered = await post(client, ask());
+    expect(answered.text).toContain(UNSET_TEXT);
+    expect(supervisor?.asked).toEqual([]);
+    expect(a.requests).toEqual([]);
+  });
+
+  it('with the capability and no supervisor listening, the call ends with the unset text', async (context) => {
+    const a = await fakeUpstream(context);
+    const client = await startKeyedStack(context, a, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }, async () => undefined);
+    const answered = await post(client, ask());
+    expect(answered.text).toContain(UNSET_TEXT);
+    expect(a.requests).toEqual([]);
   });
 });

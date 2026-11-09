@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
+import * as foundationModule from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
@@ -30,7 +31,7 @@ const invariantsOf = (cfg: string): string[] => {
   return block === null ? [] : (block[1] as string).split(/\s+/).filter((word) => word.length > 0);
 };
 
-const DESIGN_PROPERTIES = ['PinStable', 'FreshStart', 'NoCut', 'InvalidKeepsRunning', 'NoRetireInUse', 'NoSweepWhileHeld', 'RetireOnce', 'CarryOverByIdentity', 'SingleDerivation'];
+const DESIGN_PROPERTIES = ['PinStable', 'FreshStart', 'LastValidWins', 'NoCut', 'InvalidKeepsRunning', 'NoRetireInUse', 'NoSweepWhileHeld', 'RetireOnce', 'CarryOverByIdentity', 'SingleDerivation'];
 
 type DerivedObjectDeclaration = { readonly id: string; readonly inputs: readonly string[] };
 
@@ -71,5 +72,16 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
     const entries = readManifest(path.join(specDir, 'manifest.json')).entries.filter((entry) => entry.config.startsWith('SettingsSwap'));
     expect(entries.map((entry) => entry.config).sort()).toEqual(configs);
     expect(entries.find((entry) => entry.config === 'SettingsSwap')).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
+  });
+
+  it('the applied record of the code is the observer of the model: holding with an observer, and alone without one', () => {
+    const foundation = foundationModule as Record<string, unknown>;
+    expect(foundation['SETTINGS_APPLIED_ENV'], 'foundation exports SETTINGS_APPLIED_ENV (increment S7)').toBe('MOMONGA_SETTINGS_APPLIED');
+    expect(foundation['SETTINGS_APPLIED_FILE'], 'foundation exports SETTINGS_APPLIED_FILE (increment S7)').toBe('settings-applied.json');
+    const layout = foundationModule.generationLayout('/home/u', 3, 'darwin') as unknown as Record<string, unknown>;
+    expect(layout['settingsApplied']).toBe('/home/u/.momonga/run/g3/settings-applied.json');
+    expect(constantOf(configOf('SettingsSwap'), 'Observer')).toBe('TRUE');
+    expect(constantOf(configOf('SettingsSwap.alone'), 'Observer')).toBe('FALSE');
+    expect(invariantsOf(configOf('SettingsSwap.alone'))).toContain('LastValidWins');
   });
 });
