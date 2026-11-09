@@ -154,6 +154,15 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
   let kind = billing.initial;
   let leftCause: number | undefined;
   const billingRefusals: FallbackCause[] = [];
+  const sentTo = (target: TargetRuntime): void => {
+    if (target.billing === kind) return;
+    const left = leftCause === undefined ? undefined : { at: leftCause, cause: fallbackCauses[leftCause] };
+    if (left?.cause !== undefined) {
+      const { target: leftTarget, code, message } = left.cause;
+      fallbackCauses[left.at] = { target: leftTarget, code, message, fromBilling: kind, toBilling: target.billing, reason: BILLING_CHANGE_ALLOWED };
+    }
+    kind = target.billing;
+  };
   const eligible = (target: TargetRuntime): boolean => target.billing === kind || billing.allows(kind, target.billing);
   const exhausted = (from: number): never => {
     const notTried = [...billingRefusals, ...candidates.slice(from).filter((target) => !eligible(target)).map((target) => billingRefusalOf(target, kind))];
@@ -170,15 +179,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
       billingRefusals.push(refusal);
       continue;
     }
-    if (target.billing !== kind) {
-      const left = leftCause === undefined ? undefined : { at: leftCause, cause: fallbackCauses[leftCause] };
-      if (left?.cause !== undefined) {
-        const { target: leftTarget, code, message } = left.cause;
-        fallbackCauses[left.at] = { target: leftTarget, code, message, fromBilling: kind, toBilling: target.billing, reason: BILLING_CHANGE_ALLOWED };
-      }
-      kind = target.billing;
-    }
-    const next = candidates.slice(index + 1).find(eligible);
+    const nextEligible = (): TargetRuntime | undefined => candidates.slice(index + 1).find(eligible);
     let sends = 0;
     let verdict: BreakerVerdict = 'neutral';
     let causeHere: FallbackCause | undefined;
@@ -188,6 +189,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     try {
       for (;;) {
         if (signal.aborted) throw signal.reason;
+        const next = nextEligible();
         if (next !== undefined && !target.breaker.canPass(holder) && next.breaker.canPass(holder)) break;
         target.breaker.admit(holder);
         firstSendAt ??= policy.clock.now();
@@ -195,6 +197,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
         sends += 1;
         try {
           const value = await request.attempt(target, sends);
+          sentTo(target);
           committed = true;
           let settled = false;
           return {
@@ -218,6 +221,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             lastFailure = lastBefore;
             break;
           }
+          sentTo(target);
           if (error instanceof GatewayError && isSkipCode(error.body.code)) {
             verdict = 'neutral';
             target.lastFailure = { code: error.body.code, message: error.message };
@@ -237,7 +241,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           verdict = classified.verdict ?? breakerVerdictOf(classified.error.type, classified.error.code);
           if (!classified.retryable || classified.stalled === true) throw plainError(classified);
           lastFailure = { kind: 'upstream', classified };
-          const movesOn = next !== undefined && classified.fallback !== 'stop';
+          const movesOn = nextEligible() !== undefined && classified.fallback !== 'stop';
           const decision = nextWait({
             attempt: sends - 1,
             ...(classified.retryAfterMs === undefined ? {} : { retryAfterMs: classified.retryAfterMs }),
