@@ -1,0 +1,15 @@
+[
+  { "actor": "writes the prompt event at run creation", "file": "packages/store/src/runtime-store.ts", "symbol": "{ type: 'user.message', text: input.input" },
+  { "actor": "writes injected user.message (hook context)", "file": "packages/runtime/src/worker/hook-step.ts", "symbol": "type: 'user.message', text: `[${event}" },
+  { "actor": "daemon session event stream (replay source)", "file": "packages/runtime/src/service/app.ts", "symbol": "'/v1/sessions/:id/events'" },
+  { "actor": "ACP session/load replays each run", "file": "packages/cli/src/acp/agent.ts", "symbol": "replayRun" },
+  { "actor": "ACP maps user.message in history", "file": "packages/cli/src/acp/events.ts", "symbol": "case 'user.message':" },
+  { "actor": "TUI live echo of the prompt (removed by I7)", "file": "packages/cli/src/tui/app.tsx", "symbol": "dispatch({ kind: 'append', entry: { kind: 'user', text } })" },
+  { "actor": "TUI fold of approval requests", "file": "packages/cli/src/tui/transcript.ts", "symbol": "case 'tool.permission.requested'" },
+  { "actor": "TUI /clear screen reset", "file": "packages/cli/src/tui/app.tsx", "symbol": "CLEAR_SCREEN" },
+  { "actor": "TUI fresh history flag after /clear", "file": "packages/cli/src/tui/app.tsx", "symbol": "nextHistory.current = 'fresh'" },
+  { "actor": "TUI local task runner (blocks a move)", "file": "packages/cli/src/tui/app.tsx", "symbol": "return tasks.run(work);" },
+  { "actor": "TUI elicitation answer submission (blocks a move)", "file": "packages/cli/src/tui/app.tsx", "symbol": "const proceedFlow" },
+  { "actor": "newer generation surfaces (the hook of I6 and I7)", "file": "packages/cli/src/daemon/ensure-daemon.ts", "symbol": "was updated to" },
+  { "actor": "headless run waits for an approval", "file": "packages/cli/src/run/headless.ts", "symbol": "waiting for approval" }
+]
