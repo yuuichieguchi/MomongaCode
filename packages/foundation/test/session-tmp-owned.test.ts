@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism, createOwnedDirectory, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+import { makeShortHomeDirectory, makeTemporaryDirectory } from './support/temporary-directory.ts';
 
 const MECHANISMS: readonly NodeJS.Platform[] = ['darwin', 'linux'];
 
@@ -44,7 +44,7 @@ describe('S9: the session scratch owner takes its claim in L1, through the fixed
 
     it(`${platform} mechanism: ensureSessionTmpDir claims the sidecar before mkdir, holds it, and a second call in the same process reuses the claim`, async () => {
       const mechanism = createKernelLockMechanism(platform);
-      const paths = momongaPaths(makeTemporaryDirectory());
+      const paths = momongaPaths(makeShortHomeDirectory());
       await ensureMomongaDirs(paths);
       const watched = observing(mechanism);
       const first = await ensureSessionTmpDir(paths, 'session-1', { lock: watched.lock });
