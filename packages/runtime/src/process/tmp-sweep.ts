@@ -21,7 +21,7 @@ const readNames = async (files: RuntimeFiles, dir: string, onWarning: (message: 
 };
 
 const removeEntry = async (files: RuntimeFiles, entry: string, stat: fs.Stats): Promise<void> => {
-  if (stat.isDirectory()) await files.removeTree(entry);
+  if (stat.isDirectory()) await files.rm(entry, { recursive: true });
   else await files.unlink(entry);
 };
 

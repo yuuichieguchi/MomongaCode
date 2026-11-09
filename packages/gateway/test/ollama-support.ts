@@ -8,6 +8,8 @@ import type { OllamaAdapterOptions } from '@momonga/gateway';
 import type { AdapterRequest, AdapterTarget, Capabilities, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { createFakeClock, readBody, sendJson, startLoopbackServer } from '@momonga/testkit';
 import { START_MS, registerCleanup } from './gateway-helpers.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'ollama');
 
@@ -51,6 +53,7 @@ export type FakeOllamaOptions = {
   tags?: () => unknown;
   completions?: readonly string[];
   cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
+  jsonModeProbe?: 'accepts' | 'rejects' | 'ignores' | 'fails';
 };
 
 export type FakeOllama = {
@@ -131,6 +134,13 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       res.end('data: [DONE]\n\n');
       return;
     }
+    if (url.pathname === '/api/chat' && req.method === 'POST' && (body as { format?: unknown } | undefined)?.format === 'json' && options.jsonModeProbe !== undefined) {
+      const behaviour = options.jsonModeProbe;
+      if (behaviour === 'rejects') return sendJson(res, 400, { error: 'invalid format: json is not supported' });
+      if (behaviour === 'fails') return sendJson(res, 500, { error: 'internal error' });
+      const content = behaviour === 'accepts' ? '{"ok":true}' : 'Sure, here is the answer.';
+      return sendJson(res, 200, JSON.parse(chunkLine({ content }, true, { done_reason: 'stop', prompt_eval_count: 40, prompt_eval_cached_count: 0, eval_count: 9 })));
+    }
     if (url.pathname === '/api/chat' && req.method === 'POST' && isImageProbeChat(body)) {
       const { prompt_eval_cached_count: _omitted, ...withoutCached } = JSON.parse(doneLine());
       sendJson(res, 200, { ...withoutCached, prompt_eval_count: imageProbeTokens(body) });
@@ -201,8 +211,8 @@ export const OLLAMA_CAPABILITIES: Capabilities = {
 };
 
 export const makeOllamaAdapter = (fake: FakeOllama, overrides: Partial<OllamaAdapterOptions> = {}): ProviderAdapter => {
-  const adapter = createOllamaAdapter({
-    resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin }),
+  const adapter = createOllamaAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+    resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }),
     capabilities: async () => OLLAMA_CAPABILITIES,
     clock: createFakeClock(START_MS),
     ...overrides,

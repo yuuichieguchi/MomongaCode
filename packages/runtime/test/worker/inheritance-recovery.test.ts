@@ -8,6 +8,7 @@ import { LEASE_MS, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { gated, textStep } from './scripts.ts';
 import { envNeutralJson, firstConversation, inheritedEventOf, settle } from './inheritance-support.ts';
+import { newFactsTrace, referenceFactsOf, tracedStore } from './inherit-reference-support.ts';
 
 type Reads = { inheritContext: number; loadPrevious: number; readPrevious: number };
 
@@ -35,7 +36,7 @@ const answered = async (env: Env, task: string, answer: string): Promise<string>
 };
 
 describe('recovery of an inheriting run killed during its first model call', () => {
-  it('re-sends the journaled body without reading run 1 or inheriting again', async () => {
+  it('re-sends the journaled body byte-equal, without a second context.inherited, after installing the window by one read off the loop (D4)', async () => {
     const env = await makeEnv();
     const first = await answered(env, 'Say hello', 'Hello there.');
     const blocked = gated(textStep('Recovered answer.'), 4);
@@ -47,8 +48,9 @@ describe('recovery of an inheriting run killed during its first model call', () 
     if (requested === undefined) throw new Error('expected model.requested');
 
     const reads: Reads = { inheritContext: 0, loadPrevious: 0, readPrevious: 0 };
+    const trace = newFactsTrace();
     env.clock.advance(LEASE_MS + 1);
-    const recovering = env.runOnce(env.worker('worker-b', { store: watchedStore(env, first, reads) }));
+    const recovering = env.runOnce(env.worker('worker-b', { store: tracedStore(watchedStore(env, first, reads), trace) }));
     await within(env.gateway.nthStream(1), 5_000, 'the recovery re-send');
     blocked.gate.release.resolve();
     await within(recovering, 5_000, 'the recovering worker');
@@ -56,6 +58,11 @@ describe('recovery of an inheriting run killed during its first model call', () 
 
     expect(env.run(second.id).status).toBe('COMPLETED');
     expect(reads).toEqual({ inheritContext: 0, loadPrevious: 0, readPrevious: 0 });
+    expect(trace.plans).toEqual([]);
+    expect(trace.windows).toHaveLength(1);
+    expect(trace.windows[0]?.runId).toBe(second.id);
+    expect(inheritedEventOf(env, second.id)).toMatchObject({ form: 'reference', fromRunId: first });
+    expect(inheritedEventOf(env, second.id)).not.toHaveProperty('history');
     const [original, resent] = env.gateway.streams.slice(-2);
     expect(resent?.idempotencyKey).toBe(original?.idempotencyKey);
     expect(resent?.idempotencyKey).toBe(modelKey(second.id, 1, 1));
@@ -114,13 +121,18 @@ describe('recovery of an inheriting run killed during its first model call', () 
     const withSnapshot = env.store.load(second);
     const initial = initialRunState({ runId: second, sessionId: env.session.id });
     const before = withSnapshot.tail.reduce(foldRunState, withSnapshot.snapshot?.state ?? initial);
-    expect(before.inherited).toBeDefined();
+    expect(before.inherited).toMatchObject({ form: 'reference', fromNextItemSeq: 3, itemCount: 2 });
     expect(before.taskSeq).toBe(3);
+    expect(before.history.map((entry) => entry.seq)).toEqual([3, 4]);
+    const request = { runId: second, windowTokens: 100_000, floorTokens: 1 };
+    const window = await referenceFactsOf(env.store).inheritedWindow(request);
 
     env.raw().prepare('DELETE FROM snapshots WHERE run_id = ?').run(second);
     const replayed = env.store.load(second);
 
     expect(replayed.snapshot).toBeUndefined();
     expect(replayed.tail.reduce(foldRunState, initial)).toEqual(before);
+    expect(await referenceFactsOf(env.store).inheritedWindow(request)).toEqual(window);
+    expect(window.entries.map((entry) => entry.seq)).toEqual([1, 2]);
   });
 });

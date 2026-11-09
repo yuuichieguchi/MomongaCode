@@ -36,7 +36,8 @@ export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
-export type { CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
 export { createOAuthProvider } from './oauth-provider.ts';
@@ -62,7 +63,7 @@ export type { Random } from './random.ts';
 export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
 export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { FileSystemSync } from './node-file-system.ts';
+export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -88,7 +89,17 @@ export type {
   ProcessLockInspection,
   ProcessLockOptions,
 } from './process-lock.ts';
-export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps, writeHolderOrRelease } from './platform/kernel-lock.ts';
+export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
+export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
+export { StagingLinkError, createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
+export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, StagingFiles } from './platform/lock-capability.ts';
+export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
+export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
+export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
+export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, readAttemptRecord } from './platform/marker-record.ts';
+export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
+export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
+export type { CreateMarkerOptions, MarkerHandle } from './platform/marker-file.ts';
 export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
 export type { OpenLockDatabase, SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
@@ -98,7 +109,7 @@ export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-wi
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
-export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
+export { MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
 export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
@@ -128,6 +139,10 @@ export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secr
 export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
+export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, proxyPasswordsOf } from './outbound.ts';
+export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
+export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
   EXIT_VERSION_MISMATCH,
@@ -171,14 +186,14 @@ export {
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
 export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
-export type { MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
+export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export type { LiveIdentities, LiveIdentitiesPorts } from './platform/live-identities.ts';
 export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
 export type { SocketBind } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
@@ -210,15 +225,16 @@ export type { PathFlavour } from './path-flavour.ts';
 export type { RuleEnforcement } from './file-rules.ts';
 export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
-export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
-export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';
+export { nodeCommandRunner } from './platform/command-runner.ts';
+export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
-export type { ProbeCause, ProbeEvidence, ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
-export { PS_PROBE_TIMEOUT_MS, UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts } from './platform/process-inspector.ts';
+export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
+export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
-export { createProcessGroupPort, createSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
-export type { ProcessGroupPort } from './platform/group-port.ts';
-export { WINDOWS_PROBE_TIMEOUT_MS } from './platform/windows-inspector.ts';
+export { createAsyncSignalSender, createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
+export type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
+export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
+export type { ProbeTiming } from './platform/probe-timing.ts';
 export { nodeProcFs } from './platform/procfs.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';
 export type { PlatformDirectoryPorts } from './momonga-paths.ts';

@@ -44,6 +44,7 @@ export type TuiBackend = {
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
   ruleHistory(id: string): Promise<GoverningFactView[]>;
+  ignoreMarker(name: string): Promise<void>;
   model(): Promise<MomongaModelEntry>;
   startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
@@ -145,6 +146,7 @@ export const createTuiBackend = (
     addRule: (request) => runtime().addRule(request),
     retireRule: (id) => runtime().retireRule(id),
     ruleHistory: (id) => runtime().ruleHistory(id),
+    ignoreMarker: (name) => runtime().ignoreMarker(name),
     model: async () => {
       const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
       try {

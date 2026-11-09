@@ -202,7 +202,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     const result = await launched.handle.close();
     expect(result).toEqual(CLEAN);
     expect(result.fatal).toBeUndefined();
-    expect(stepsLogged(launched.logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(launched.logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(launched.timers.pending()).toEqual([]);
   });
 
@@ -289,7 +289,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     await fireDuringTeardownStep(second.logger, second.timers, 'cancel-upstream', CANCEL_SETTLE_MS);
     const result = await closing;
     expect(result).toEqual(CLEAN);
-    expect(stepsLogged(second.logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(second.logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(second.timers.pending()).toEqual([]);
   });
 });

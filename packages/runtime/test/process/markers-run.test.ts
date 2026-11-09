@@ -4,10 +4,10 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, spawnTracked, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
-import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, waitForCondition } from './run-helpers.ts';
+import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ lookupError: undefined as Error | undefined }));
@@ -89,7 +89,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('tool markers are reaped at start by record state: COMPLETED, missing and UNKNOWN holders are reaped, PENDING is kept, holder-less markers are deleted', PROCESS_TIMEOUT, async () => {
+  it('tool markers are reaped at start by record state: every held marker is reaped whatever its row says, holder-less markers are deleted', PROCESS_TIMEOUT, async () => {
     const stack = await prepareStack();
     await ensureMomongaDirs(stack.temp.paths);
     const markers = stack.temp.paths.markers.tools;
@@ -120,8 +120,8 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(groupExists(holders['completed'] as number)).toBe(false);
     expect(groupExists(holders['missing'] as number)).toBe(false);
     expect(groupExists(holders['unknown'] as number)).toBe(false);
-    expect(groupExists(holders['pending'] as number)).toBe(true);
-    expect(fs.readdirSync(markers).sort()).toEqual([keyOf('d')]);
+    expect(groupExists(holders['pending'] as number)).toBe(false);
+    expect(fs.readdirSync(markers)).toEqual([]);
   });
 
   it('marks a job a dead runtime left running unknown, and reaps its process group, before the service and the workers start', PROCESS_TIMEOUT, async () => {
@@ -168,7 +168,6 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
 
 const LEASE_MS = 30_000;
 const MAX_ATTEMPTS = 5;
-const SWEEP_MS = 30_000;
 const DEAD_LETTER_KEY = 'd'.repeat(64);
 
 const trackedRunHome = (context: CleanupContext): RunHome => {
@@ -229,27 +228,16 @@ const deadLetterOf = (temp: RunHome, runId: string): { status: string; dead_lett
   readDb<{ status: string; dead_letter: number }>(temp.paths.databases.runtime, 'SELECT status, dead_letter FROM runs WHERE id = ?', runId)[0];
 
 describe('dead-lettered runs: real holders (§8)', () => {
-  it('a real holder of a dead-lettered run is killed by the periodic sweep while the runtime is live', PROCESS_TIMEOUT, async (context) => {
+  it('a real holder of a run that is not dead-lettered is killed at start too, because no owner lives after a restart', PROCESS_TIMEOUT, async (context) => {
     const temp = trackedRunHome(context);
-    const { runId, pgid, lastClaimAt } = await seedTakenOverRun(context, temp, false);
+    const { pgid } = await seedTakenOverRun(context, temp, false);
     const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
-    const clock = createFakeClock(lastClaimAt + 1000);
-    const timers = createFakeTimers(clock);
 
-    const launched = await launchRuntime(temp, { clock, fakeTimers: timers });
+    const launched = await launchRuntime(temp);
+
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(pgid)).toBe(true);
-    expect(fs.existsSync(marker)).toBe(true);
-
-    for (let elapsed = 0; elapsed < 4 * SWEEP_MS && (groupExists(pgid) || fs.existsSync(marker)); elapsed += 1000) {
-      timers.advance(1000);
-      await afterMicrotasks();
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
-
-    expect(deadLetterOf(temp, runId)).toEqual({ status: 'FAILED', dead_letter: 1 });
     expect(groupExists(pgid)).toBe(false);
-    await waitForCondition(() => !fs.existsSync(marker), 'the marker to be removed');
+    expect(fs.existsSync(marker)).toBe(false);
     expect(idempotencyState(temp)).toBe('PENDING');
   });
 

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import util from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
+import { MomongaDirectoryError, SocketPathUnsupportedError, ensureMomongaDirs, listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
 
 const HOME = '/Users/alice';
 
@@ -26,6 +27,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
       supervisor: path.join(run, 'supervisor.lock'),
     },
     callLocks: path.join(run, 'call-locks'),
+    lockProof: path.join(run, 'lock-proof'),
     markers: {
       root: path.join(run, 'markers'),
       tools: path.join(run, 'markers', 'tools'),
@@ -45,6 +47,9 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     },
     gatewayKey: path.join(state, 'gateway.key'),
     probe: path.join(state, 'probe'),
+    planSessions: path.join(state, 'plan-sessions'),
+    planHost: path.join(state, 'plan-host.json'),
+    planActive: path.join(state, 'plan-active.json'),
     logs: path.join(root, 'logs'),
     logFiles: {
       supervisor: path.join(root, 'logs', 'supervisor.log'),
@@ -125,6 +130,62 @@ describe('momongaPaths', () => {
   it('places the launcher link outside the momonga root on every platform', () => {
     expect(momongaPaths(HOME, 'darwin', {}).launcher).toBe('/Users/alice/.local/bin/momonga');
     expect(momongaPaths('/home/bob', 'linux', { XDG_CACHE_HOME: '/xdg' }).launcher).toBe('/home/bob/.local/bin/momonga');
+  });
+});
+
+describe('ensureMomongaDirs', () => {
+  const temporaryBase = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-dirs-')));
+
+  it('reports a socket path the host refuses to bind before it creates any directory', async () => {
+    const base = temporaryBase();
+    try {
+      const paths = momongaPaths(path.join(base, 'home'), process.platform, {});
+      setSocketBind(async () => {
+        throw Object.assign(new Error('bind: ENAMETOOLONG'), { code: 'ENAMETOOLONG' });
+      });
+      const error = await ensureMomongaDirs(paths).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(SocketPathUnsupportedError);
+      expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
+      expect(fs.existsSync(path.join(base, 'home'))).toBe(false);
+    } finally {
+      setSocketBind(undefined);
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a home too long for a socket path with the measured refusal even when its directories cannot be created', async () => {
+    const paths = momongaPaths(`/${'h'.repeat(200)}`, process.platform, {});
+    const error = await ensureMomongaDirs(paths).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SocketPathUnsupportedError);
+    expect((error as Error).message).toContain(paths.run);
+    expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);
+  });
+
+  it('reports a directory that cannot be created as a typed error naming the path and the reason', async () => {
+    const base = fs.realpathSync.native(fs.mkdtempSync('/tmp/mm-dirs-'));
+    try {
+      const blocker = path.join(base, 'file');
+      fs.writeFileSync(blocker, '');
+      const paths = momongaPaths(path.join(blocker, 'home'), process.platform, {});
+      const error = await ensureMomongaDirs(paths).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MomongaDirectoryError);
+      expect((error as MomongaDirectoryError).directory).toBe(path.join(blocker, 'home'));
+      expect((error as Error).message).toBe(`The directory ${path.join(blocker, 'home')} could not be created: ${util.getSystemErrorMessage(os.constants.errno.ENOTDIR * -1)} (ENOTDIR)`);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+  it('reports a home that exists and is not a directory as a typed error naming the path and the reason', async () => {
+    const base = fs.realpathSync.native(fs.mkdtempSync('/tmp/mm-dirs-'));
+    try {
+      const home = path.join(base, 'file');
+      fs.writeFileSync(home, '');
+      const error = await ensureMomongaDirs(momongaPaths(home, process.platform, {})).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MomongaDirectoryError);
+      expect((error as Error).message).toBe(`The directory ${home} could not be created: ${util.getSystemErrorMessage(os.constants.errno.EEXIST * -1)} (EEXIST)`);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   });
 });
 

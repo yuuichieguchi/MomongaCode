@@ -15,6 +15,7 @@ const EXPECTED_TABLES = [
   'context_charges',
   'events',
   'facts_cursor',
+  'fidelity_verdicts',
   'governing_facts',
   'idempotency',
   'jobs',

@@ -37,7 +37,7 @@ const SAMPLES: { [K in keyof Events]: PayloadOf<K> } = {
   'child.stdout': { child: 'gateway', childPid: 4251, raw: 'stray', rawBytes: 5, truncated: true },
   'supervisor.background_transient': { source: 'lock-poll' },
   'supervisor.background_failed': { source: 'exit-handler' },
-  'settings.changed': { models: true, sandbox: false },
+  'settings.changed': { models: true, sandbox: false, telemetry: false, network: false },
   'settings.evaluated': { modelsChanged: false, sandboxChanged: true, roles: '' },
   'settings.invalid': { detail: 'settings file is invalid: bad', action: 'keep-running-children-hold-spawns' },
   'settings.read_failed': { detail: 'EMFILE' },

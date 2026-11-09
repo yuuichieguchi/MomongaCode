@@ -76,7 +76,7 @@ describe('settings composition hooks and auto mode', () => {
 });
 
 describe('settings composition (fake timers, not used by the code under test)', () => {
-  it('takeUserSnapshot returns the latest result and throws the ConfigError of a failed one', async () => {
+  it('takeUserSnapshot returns the latest result and keeps the last good copy once the file is broken', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { permissions: { defaultMode: 'acceptEdits' } });
 
@@ -88,7 +88,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(f.composition.takeUserSnapshot().settings.permissions.defaultMode).toBe('plan');
 
     writeInvalidUserSettings(f.temp.home);
-    expect(thrownBy(() => f.composition.takeUserSnapshot())).toBeInstanceOf(ConfigError);
+    expect(f.composition.takeUserSnapshot().settings.permissions.defaultMode).toBe('plan');
   });
 
   it('sessionCreateSettings takes one snapshot and returns the mode, origin, directories and credential names', async () => {
@@ -131,7 +131,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(result.defaultModeOrigin).toBe('project');
   });
 
-  it('after the user settings file becomes invalid, sessionCreateSettings, settings.rules, envFor and toolSet throw ConfigError', async () => {
+  it('when the user settings file is invalid before any valid copy was read, sessionCreateSettings, settings.rules, envFor and toolSet throw ConfigError', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
@@ -145,7 +145,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(await rejectionOf(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBeInstanceOf(ConfigError);
   });
 
-  it('after the file becomes invalid, no credential names are guessed: sessionCreateSettings fails and nothing is derived from an older snapshot', async () => {
+  it('after the file becomes invalid, no credential names are guessed: sessionCreateSettings fails and a running session keeps the last good credential names', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, chatTargetSettings(DECLARED_CREDENTIAL));
     const session = createSession(f.store, f.temp.project, { env: { [DECLARED_CREDENTIAL]: 'v', PLAIN: '1' } });
@@ -155,7 +155,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeInvalidUserSettings(f.temp.home);
 
     expect(await rejectionOf(f.composition.sessionCreateSettings(f.temp.project))).toBeInstanceOf(ConfigError);
-    expect(thrownBy(() => f.composition.envFor(session))).toBeInstanceOf(ConfigError);
+    expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
   });
 
   it('fixing the file restores service without a restart', async () => {

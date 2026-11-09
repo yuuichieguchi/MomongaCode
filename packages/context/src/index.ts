@@ -1,4 +1,4 @@
-export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, proactiveGainFor, withCalibration } from './budget.ts';
+export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inheritanceWindowFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, proactiveGainFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
 export { nestedInstructionCandidates } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';

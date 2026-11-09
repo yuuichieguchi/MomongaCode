@@ -1,12 +1,10 @@
 import { credentialEnvNames, secretNames, stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules } from '@momonga/config';
-import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
+import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
 
 export type CredentialSettings = Parameters<typeof credentialEnvNames>[0] & { credentials?: CredentialRules };
 
 export type SourceEnv = Readonly<Record<string, string | undefined>>;
-
-export const GATEWAY_TRUST_ENV_NAMES: readonly string[] = ['NODE_EXTRA_CA_CERTS'];
 
 export const COLLIDING_CREDENTIAL_PREFIXES: readonly string[] = [MINIMAL_CHILD_ENV_LC_PREFIX, 'NODE_', 'LD_', 'DYLD_'];
 
@@ -33,7 +31,7 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
   Object.assign(result, minimalChildEnv(source));
   if (secretNames(settings).length > 0) Object.assign(result, secretStoreEnvFor(source));
   if (source['HOME'] === undefined) result['HOME'] = home;
-  for (const name of GATEWAY_TRUST_ENV_NAMES) {
+  for (const name of NETWORK_ENV_NAMES) {
     const value = source[name];
     if (value !== undefined) result[name] = value;
   }

@@ -1,5 +1,5 @@
 import { decodeSse, defineProductSchema } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   DEFAULT_DIALECT_ID,
@@ -38,11 +38,14 @@ import { chatTransport, probeConstructs, probeKeywords, selectDialect } from './
 import { assistantMessage, errorKindOf, expectStatus, failProbeStep, isAcceptedOrRejected, isFirstSampleAccepted, outcomeOf, promptTokensOf, sampleRequest } from './probe-chat.ts';
 import type { Chat, ChatResult, ProbeOutcome } from './probe-chat.ts';
 import { fillerText } from './filler.ts';
+import { JSON_MODE_PROBE_PROMPT, measureJsonMode } from './json-mode.ts';
+import type { JsonModeAnswer } from './json-mode.ts';
 import { field, firstOf, isRecord, listedEntryOf, parseJson } from './json.ts';
 
 export interface ProbeOptions {
   socketPath?: string;
   baseUrl?: string;
+  network?: OutboundNetwork;
   headers?: Record<string, string>;
   managedHealthRoute?: boolean;
   vocabulary?: ErrorVocabulary;
@@ -58,7 +61,7 @@ export interface ProbeOptions {
   sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
 }
 
-export const PROBE_METHOD_VERSION = 2;
+export const PROBE_METHOD_VERSION = 3;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 export const DEFAULT_SAMPLES = 10;
@@ -135,7 +138,8 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
   const { socketPath, baseUrl } = options;
   if ((socketPath === undefined) === (baseUrl === undefined)) throw new Error('A probe needs exactly one of socketPath and baseUrl');
   if (socketPath !== undefined) return { kind: 'unix', socketPath };
-  return { kind: 'tcp', baseUrl: baseUrl as string, ...(options.headers === undefined ? {} : { headers: options.headers }) };
+  if (options.network === undefined) throw new Error('A probe of a baseUrl needs the network configuration');
+  return { kind: 'tcp', baseUrl: baseUrl as string, network: options.network, ...(options.headers === undefined ? {} : { headers: options.headers }) };
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {
@@ -241,6 +245,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
   const promptCache = await measurePromptCache(chat);
 
+  const jsonMode = await measureJsonMode(() => askJsonOnly(chat), options.signal);
+
   const maxConcurrency = await measureConcurrency(post);
 
   return {
@@ -265,7 +271,18 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     guardrail,
     ...(tokenCalibration === undefined ? {} : { tokenCalibration }),
     ...(promptCache === undefined ? {} : { promptCache }),
+    jsonMode,
   };
+};
+
+const askJsonOnly = async (chat: Chat): Promise<JsonModeAnswer> => {
+  const result = await chat({ messages: [{ role: 'user', content: JSON_MODE_PROBE_PROMPT }], response_format: { type: 'json_object' } });
+  if (result.outcome === 'unsupported') return { kind: 'unsupported' };
+  if (result.outcome !== 'accepted' || result.reply.kind === 'error') return { kind: 'failure' };
+  const choice = firstOf(field(result.reply.body, 'choices'));
+  if (field(choice, 'finish_reason') !== 'stop') return { kind: 'failure' };
+  const content = field(assistantMessage(result.reply.body), 'content');
+  return { kind: 'complete', text: typeof content === 'string' ? content : '' };
 };
 
 const outputTokensOf = (result: ChatResult): number => {

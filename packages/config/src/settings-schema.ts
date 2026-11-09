@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -167,6 +167,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
     contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
     maxOutputTokens: POSITIVE_INTEGER,
     structuredOutput: { enum: ['json_schema', 'none'] },
+    jsonMode: { enum: [...JSON_MODES] },
     streaming: { type: 'boolean' },
     stopSequences: { type: 'boolean' },
     imageInput: { type: 'boolean' },
@@ -479,6 +480,17 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    network: {
+      type: 'object',
+      properties: {
+        httpProxy: { type: 'string', minLength: 1 },
+        httpsProxy: { type: 'string', minLength: 1 },
+        noProxy: { type: 'string', minLength: 1 },
+        extraCaFiles: { type: 'array', items: { type: 'string', minLength: 1 } },
+        environment: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
     pricing: {
       type: 'array',
       items: {

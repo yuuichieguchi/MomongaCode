@@ -76,7 +76,7 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', { timeout
       fs.writeFileSync(marker, '');
       const holder = await startHolder(marker);
       const started = Date.now();
-      expect(await inspector().holdersOf(marker)).toEqual({ kind: 'value', value: [holder.pid] });
+      expect(await inspector().holdersOf(marker, { signal: new AbortController().signal })).toEqual({ kind: 'value', value: [holder.pid] });
       expect(Date.now() - started).toBeLessThan(1000);
     });
 
@@ -86,7 +86,7 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', { timeout
       const agent = await startAgent();
       const holder = await startHolder(marker);
       const found: UninspectableProcess[] = [];
-      expect(await inspector().holdersOf(marker, (process) => void found.push(process))).toEqual({ kind: 'value', value: [holder.pid] });
+      expect(await inspector().holdersOf(marker, { signal: new AbortController().signal }, (process) => void found.push(process))).toEqual({ kind: 'value', value: [holder.pid] });
       expect(found).toEqual([{ pid: agent.pid, command: 'ssh-agent', startTicks: expect.stringMatching(/^\d+$/) }]);
     });
   });
@@ -100,7 +100,7 @@ describe.runIf(ON_LINUX)('the Linux inspector against real processes', { timeout
       children.push(leader);
       await until(() => fs.existsSync(ready), 'the leader to start its thread');
       await until(() => fs.readFileSync(`/proc/${leader.pid}/stat`, 'utf8').split(') ')[1]?.startsWith('Z') === true, 'the leader to become a zombie');
-      expect(await inspector().holdersOf(marker)).toEqual({ kind: 'value', value: [leader.pid] });
+      expect(await inspector().holdersOf(marker, { signal: new AbortController().signal })).toEqual({ kind: 'value', value: [leader.pid] });
     });
   });
 });

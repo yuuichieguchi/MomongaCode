@@ -5,6 +5,8 @@ import { createFakeClock } from '@momonga/testkit';
 import { START_MS, expectErrorBody, getJson, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { driveTimers } from './retry-support.ts';
 import { CC_CAPABILITIES, startFake } from './cc-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const request = { model: 'fast', input: userInput('hi'), stream: false };
 
@@ -29,10 +31,10 @@ describe('a target that refuses connections', () => {
   it('spends the whole budget on every request, before and after its breaker opens, and fails each with provider_unavailable', async () => {
     const baseUrl = await refusedBaseUrl();
     let connectAttempts = 0;
-    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+    const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint: async () => {
         connectAttempts += 1;
-        return { kind: 'tcp', baseUrl };
+        return { kind: 'tcp', baseUrl, network: UNCONFIGURED_NETWORK };
       },
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
@@ -56,8 +58,8 @@ describe('a target that refuses connections', () => {
     const baseUrl = await refusedBaseUrl();
     const fake = await startFake({ scenario: 'tools-ok' });
     let alive = false;
-    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
-      resolveEndpoint: async () => (alive ? { kind: 'unix', socketPath: fake.socketPath } : { kind: 'tcp', baseUrl }),
+    const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
+      resolveEndpoint: async () => (alive ? { kind: 'unix', socketPath: fake.socketPath } : { kind: 'tcp', baseUrl, network: UNCONFIGURED_NETWORK }),
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });

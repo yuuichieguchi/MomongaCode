@@ -120,7 +120,7 @@ describe('draining (fake timers)', () => {
     const cancelRun = await env.createRun(session.id, { input: 'to cancel' });
     const claim = env.claimRun(approvalRun.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 10 * 60_000);
+    const approvalId = requestManualApproval(env, claim, 'call_1');
     expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
 
     env.service.beginDraining();

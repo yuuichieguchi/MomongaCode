@@ -1,10 +1,11 @@
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
-import { assertSocketPathLength, pipePathFor } from './socket-path.ts';
+import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
   root: string;
@@ -13,12 +14,16 @@ export interface MomongaPaths {
   sockets: { gateway: string; runtime: string; supervisor: string };
   locks: { gateway: string; runtime: string; supervisor: string };
   callLocks: string;
+  lockProof: string;
   markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
   traces: { dir: string; gateway: string; runtime: string };
   gatewayKey: string;
   probe: string;
+  planSessions: string;
+  planHost: string;
+  planActive: string;
   logs: string;
   logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
@@ -74,6 +79,7 @@ export const momongaLayout = (
     sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
     locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
     callLocks: join(run, 'call-locks'),
+    lockProof: join(run, 'lock-proof'),
     markers: {
       root: markers,
       tools: join(markers, 'tools'),
@@ -86,6 +92,9 @@ export const momongaLayout = (
     traces: { dir: traces, gateway: join(traces, 'gateway.db'), runtime: join(traces, 'runtime.db') },
     gatewayKey: join(state, 'gateway.key'),
     probe: join(state, 'probe'),
+    planSessions: join(state, 'plan-sessions'),
+    planHost: join(state, 'plan-host.json'),
+    planActive: join(state, 'plan-active.json'),
     logs: join(root, 'logs'),
     logFiles: {
       supervisor: join(root, 'logs', 'supervisor.log'),
@@ -118,18 +127,40 @@ export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
+  signal?: AbortSignal | undefined;
+};
+
+export class MomongaDirectoryError extends Error {
+  readonly directory: string;
+
+  constructor(directory: string, cause: NodeJS.ErrnoException) {
+    super(`The directory ${directory} could not be created: ${reasonOf(cause)}`, { cause });
+    this.directory = directory;
+  }
+}
+
+const reasonOf = (error: NodeJS.ErrnoException): string =>
+  error.errno === undefined || error.code === undefined ? error.message : `${util.getSystemErrorMessage(error.errno)} (${error.code})`;
+
+const createDirectory = async (directory: string, options: { mode: number } | { recursive: true }): Promise<void> => {
+  try {
+    await fs.mkdir(directory, options);
+  } catch (error) {
+    const failure = error as NodeJS.ErrnoException;
+    if (failure.code === 'EEXIST' && !('recursive' in options)) return;
+    throw new MomongaDirectoryError(failure.path ?? directory, failure);
+  }
 };
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const platform = ports.platform ?? process.platform;
+  for (const socket of Object.values(paths.sockets)) {
+    if (!isPipePath(socket)) await refuseUnbindableUnixSocketPath(socket);
+  }
   const ensureDirectory = async (directory: string): Promise<void> => {
     let stat = await lstatIfPresent(directory);
     if (stat === undefined) {
-      try {
-        await fs.mkdir(directory, { mode: 0o700 });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      }
+      await createDirectory(directory, { mode: 0o700 });
       stat = await fs.lstat(directory);
     }
     if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
@@ -140,11 +171,12 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     }
     if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
   };
-  await fs.mkdir(path.dirname(paths.root), { recursive: true });
+  await createDirectory(path.dirname(paths.root), { recursive: true });
   for (const directory of [
     paths.root,
     paths.run,
     paths.callLocks,
+    paths.lockProof,
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
@@ -159,12 +191,12 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
   ]) {
     await ensureDirectory(directory);
   }
-  await fs.mkdir(path.dirname(paths.cacheBase), { recursive: true });
+  await createDirectory(path.dirname(paths.cacheBase), { recursive: true });
   for (const directory of [paths.cacheBase, paths.tmp.root, paths.tmp.spawn, paths.tmp.sessions]) {
     await ensureDirectory(directory);
   }
   if (platform === 'win32') {
-    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env };
+    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env, signal: ports.signal };
     await ensureWindowsPrivateTree(paths.root, windows);
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }

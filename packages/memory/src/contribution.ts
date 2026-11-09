@@ -263,6 +263,7 @@ export const measureContribution = ({
         pinLayers(event.body);
         break;
       case 'context.inherited':
+        if (event.form === 'reference') throw new Error(`run ${event.runId}: the contribution hook reads the copy of an inherited reference, and event ${event.seq} is still a reference`);
         segments = [
           ...event.history.map((entry) => ({ itemSeq: entry.seq, text: stringsOf(entry.item).join('\n') })),
           ...segments.map((segment) => ({ ...segment, itemSeq: event.nextItemSeq })),

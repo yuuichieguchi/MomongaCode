@@ -8,30 +8,51 @@ import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file
 import type { FileLockPorts } from './file-lock.ts';
 import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
+export interface CredentialEntry {
+  read(): Promise<string | undefined>;
+  write(value: string): Promise<void>;
+  remove(): Promise<void>;
+}
+
 export interface CredentialStore {
   read(key: string): Promise<string | undefined>;
   write(key: string, value: string): Promise<void>;
   update(key: string, change: (current: string | undefined) => string): Promise<void>;
   remove(key: string): Promise<void>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T>;
 }
+
+type ScopedOperations = {
+  read(key: string): Promise<string | undefined>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T>;
+};
+
+const storeThroughScope = ({ read, withKey }: ScopedOperations): CredentialStore => ({
+  read,
+  withKey,
+  write: (key, value) => withKey(key, (entry) => entry.write(value)),
+  update: (key, change) => withKey(key, async (entry) => entry.write(change(await entry.read()))),
+  remove: (key) => withKey(key, (entry) => entry.remove()),
+});
 
 export const createMemoryCredentialStore = (): CredentialStore => {
   const entries = new Map<string, string>();
-  return {
-    update: (key, change) => {
-      entries.set(key, change(entries.get(key)));
-      return Promise.resolve();
-    },
-    read: (key) => Promise.resolve(entries.get(key)),
-    write: (key, value) => {
+  const serialized = createKeyedSerializer();
+  const entryOf = (key: string): CredentialEntry => ({
+    read: () => Promise.resolve(entries.get(key)),
+    write: (value) => {
       entries.set(key, value);
       return Promise.resolve();
     },
-    remove: (key) => {
+    remove: () => {
       entries.delete(key);
       return Promise.resolve();
     },
-  };
+  });
+  return storeThroughScope({
+    read: (key) => Promise.resolve(entries.get(key)),
+    withKey: (key, action) => serialized(key, () => action(entryOf(key))),
+  });
 };
 
 const FILE_MODE = 0o600;
@@ -80,10 +101,14 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
       return withFileLock(lockPath, action, { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
     });
 
-  return {
+  const entryOf = (key: string): CredentialEntry => ({
+    read: () => readOwnerOnly(fileFor(directory, key)),
+    write: (value) => writeAtomically(key, value),
+    remove: () => fs.promises.rm(fileFor(directory, key), { force: true }),
+  });
+
+  return storeThroughScope({
     read: (key) => readOwnerOnly(fileFor(directory, key)),
-    write: (key, value) => locked(key, () => writeAtomically(key, value)),
-    update: (key, change) => locked(key, async () => writeAtomically(key, change(await readOwnerOnly(fileFor(directory, key))))),
-    remove: (key) => locked(key, () => fs.promises.rm(fileFor(directory, key), { force: true })),
-  };
+    withKey: (key, action) => locked(key, () => action(entryOf(key))),
+  });
 };

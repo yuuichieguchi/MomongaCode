@@ -4,7 +4,7 @@ import type { TokenCounter, TokenMeter } from '@momonga/context';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, envelopeOf } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterTarget, Capabilities, InputItem, ToolCallingMode } from '@momonga/protocol';
-import { createFakeClock } from '@momonga/testkit';
+import { UNDICI_DEFAULT_LIVENESS, createFakeClock } from '@momonga/testkit';
 import { meteredOutputFit } from '../../src/worker/output-fit.ts';
 
 const TARGET: AdapterTarget = { name: 'fm', model: 'system' };
@@ -32,6 +32,7 @@ const capabilitiesOf = (toolCalling: ToolCallingMode): Capabilities => ({
 const renderingMeter = (toolCalling: ToolCallingMode): TokenMeter => {
   const capabilities = capabilitiesOf(toolCalling);
   const adapter = createChatCompletionsAdapter({
+    liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => {
       throw new Error('a count renders the wire and never contacts the upstream');
     },

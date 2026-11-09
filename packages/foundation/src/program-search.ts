@@ -1,12 +1,12 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { nodeFileSystemSync } from './node-file-system.ts';
 
 export type SearchEnv = Readonly<Record<string, string | undefined>>;
 
 const isExecutableFile = (candidate: string): boolean => {
   try {
-    if (!fs.statSync(candidate).isFile()) return false;
-    fs.accessSync(candidate, fs.constants.X_OK);
+    if (!nodeFileSystemSync.statSync(candidate).isFile()) return false;
+    nodeFileSystemSync.accessSync(candidate, 'execute');
     return true;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

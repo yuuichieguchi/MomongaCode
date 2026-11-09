@@ -50,8 +50,8 @@ const rewrite = (file: string, change: (stored: Record<string, unknown>) => Reco
 };
 
 describe('record invalidation of the fm record (rule 7)', () => {
-  it('is at probe method 2, the compaction step sending the D2 handoff prompt', () => {
-    expect(PROBE_METHOD_VERSION).toBe(2);
+  it('is at probe method 3, the JSON-only mode step added after the compaction step of method 2', () => {
+    expect(PROBE_METHOD_VERSION).toBe(3);
   });
 
   it('reads a record stored under probe method 1 as no record', async () => {

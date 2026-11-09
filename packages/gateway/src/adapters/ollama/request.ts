@@ -6,7 +6,7 @@ import { RenderLedger } from '../../dialect/ledger.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { forbidsTools } from '../../core/tool-choice.ts';
-import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
@@ -47,6 +47,7 @@ const requireToolChoice = (request: AdapterRequest): void => {
 export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };
 
 const formatOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { format?: unknown } => {
+  if (isJsonOnlyEnforced(plan)) return { format: 'json' };
   const format = jsonReplyFormatOf(plan, dialect);
   return format === undefined ? {} : { format: format.schema };
 };
