@@ -140,6 +140,9 @@ export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
   };
 };
 
+export const hasInconsistentCacheRead = (totals: CaseTokenTotals): boolean =>
+  totals.unsettledReflections === 0 && totals.calls > totals.cacheReadNotReportedCalls && totals.cachedInputTokens === undefined;
+
 export const uncachedInputOf = (totals: CaseTokenTotals): number | undefined =>
   totals.cacheReadNotReportedCalls === 0 ? totals.uncachedInputTokens : undefined;
 
@@ -173,12 +176,10 @@ const perSuccess = (cases: readonly CaseForMetrics[], numeratorOf: (totals: Case
 const cacheHitRatioOf = (cases: readonly CaseForMetrics[], seed: number): RatioMetric | undefined => {
   const clusters: Cluster[] = [];
   for (const entry of cases) {
-    const { calls, unsettledReflections, cacheReadNotReportedCalls, cacheReportedInputTokens, cachedInputTokens } = entry.totals;
+    const { unsettledReflections, cacheReportedInputTokens, cachedInputTokens } = entry.totals;
     if (unsettledReflections > 0) return undefined;
-    if (cacheReportedInputTokens === undefined || cachedInputTokens === undefined) {
-      if (calls > cacheReadNotReportedCalls) return undefined;
-      continue;
-    }
+    if (hasInconsistentCacheRead(entry.totals)) return undefined;
+    if (cacheReportedInputTokens === undefined || cachedInputTokens === undefined) continue;
     if (cacheReportedInputTokens > 0) clusters.push({ numerator: cachedInputTokens, denominator: cacheReportedInputTokens });
   }
   return clusters.length === 0 ? undefined : ratioOf(clusters, seed);

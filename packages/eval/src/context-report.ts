@@ -17,7 +17,7 @@ import { grade } from './graders.ts';
 import { describeProportion, percent, proportionOrUndefined } from './report.ts';
 import { EvalError, transcriptsByCase } from './runner.ts';
 import type { Proportion } from './stats.ts';
-import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
+import { caseTotalsOf, hasInconsistentCacheRead, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Answerer, Transcript } from './transcript.ts';
 
@@ -405,7 +405,7 @@ export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly Conte
   if (counts.calls === 0) return CACHE_READ_CAUSES.noInput;
   if (counts.notReported === counts.calls) return CACHE_READ_CAUSES.notReportedInAll(counts);
   if (metric === 'uncachedInputPerSuccess' && counts.notReported > 0) return CACHE_READ_CAUSES.notReportedInSome(counts);
-  if (totals.some((entry) => entry.calls > entry.cacheReadNotReportedCalls && entry.cachedInputTokens === undefined)) return CACHE_READ_CAUSES.inconsistent;
+  if (totals.some(hasInconsistentCacheRead)) return CACHE_READ_CAUSES.inconsistent;
   return metric === 'uncachedInputPerSuccess' ? CACHE_READ_CAUSES.noSuccess : CACHE_READ_CAUSES.noInput;
 };
 
