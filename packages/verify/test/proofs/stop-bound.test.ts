@@ -10,6 +10,7 @@ import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 const RETIRED_KILL_WAIT_FLOOR_MS = 1000;
 const TODAYS_POLL_INTERVAL_MS = 10;
 const DESIGNED_POLL_INTERVAL_MS = 25;
+const KILL_CONFIRM_PENDING_MS = 5_000;
 const ABORT_SETTLE_LIMIT_MS = heldCallWaitMs(0) - SANDBOX_STOP_BOUND_MS;
 
 const satisfiable = async (arith: ProofArith): Promise<boolean> => {
@@ -33,7 +34,7 @@ describe('HB2: the bound of stopping a process group', () => {
     expect(ABORT_SETTLE_LIMIT_MS).toBe(2000);
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(5000);
     expect(groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS)).toBe(SANDBOX_STOP_BOUND_MS);
-    expect(groupTerminationBoundMs(0)).toBe(2 * TODAYS_POLL_INTERVAL_MS);
+    expect(groupTerminationBoundMs(0)).toBe(KILL_CONFIRM_PENDING_MS);
   });
 
   it(
@@ -99,6 +100,37 @@ describe('HB2: the bound of stopping a process group', () => {
       expect(await satisfiable(arith)).toBe(true);
       const model = await expectRefuted(arith, total.le(grace.mul(2).add(poll.mul(2))));
       expect(BigInt(model.probeTerm as string) + BigInt(model.probeKill as string)).toBeGreaterThan(2n * BigInt(model.p as string));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'K1n proves the group termination takes at most g + K + 2 p for every g >= 0 and p > 0, because the SIGKILL confirmation is K after the SIGKILL and not a function of g',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'K1n');
+      const grace = arith.int('g');
+      const poll = arith.int('p');
+      arith.given(grace.ge(0), poll.gt(0));
+      const afterTerm = waitOf(arith, 'afterTerm', grace, poll);
+      const afterKill = waitOf(arith, 'afterKill', arith.ctx.Int.val(BigInt(KILL_CONFIRM_PENDING_MS)), poll);
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, afterTerm.add(afterKill).le(grace.add(arith.ctx.Int.val(BigInt(KILL_CONFIRM_PENDING_MS))).add(poll.mul(2))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'K3n proves the abort budget holds the held-call settle and the sandbox group stop only when the SIGKILL confirmation K is at most 1 950 ms, and refutes it at K = 5 000 ms',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'K3n');
+      const kill = arith.int('k');
+      const { ctx } = arith;
+      arith.given(kill.ge(0));
+      const stop = ctx.Int.val(BigInt(SANDBOX_KILL_GRACE_MS + 2 * DESIGNED_POLL_INTERVAL_MS)).add(kill);
+      const fits = ctx.Int.val(BigInt(ABORT_SETTLE_LIMIT_MS)).add(stop).le(ctx.Int.val(BigInt(RUNTIME_ABORT_BUDGET_MS)));
+      expect(await prove(arith, ctx.Implies(fits, kill.le(1_950)))).toEqual({ status: 'proved' });
+      expect(await satisfiable(arith)).toBe(true);
+      await expectRefuted(arith, ctx.Implies(kill.eq(ctx.Int.val(BigInt(KILL_CONFIRM_PENDING_MS))), fits));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
