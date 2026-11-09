@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
+import { createUserSettingsCache, noKeptRecords, stripCredentialEnv } from '@momonga/config';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -102,9 +102,9 @@ const referencingSecret = (): CredentialSettings =>
     models: { targets: { claude: { adapter: 'anthropic', model: 'm', apiKeySecret: 'anthropic-main' } } },
   }) as unknown as CredentialSettings;
 
-const binWith = (program: string): string => {
+const binWith = (...programs: string[]): string => {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sup-bin-')));
-  fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
+  for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   return dir;
 };
 
@@ -136,14 +136,55 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('chooses no store when no target references a secret', () => {
+  it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', () => {
     const bin = binWith('security');
     try {
       const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
-      expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
+      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
+  });
+
+  it('passes the reason when the host has no store, with no target referencing a secret (N81)', () => {
+    const bin = binWith();
+    try {
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
+      expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('runtimeEnv secret store choice (N81)', () => {
+  it('passes the store choice to the runtime at every start, after the credential names are removed', () => {
+    const bin = binWith('security');
+    try {
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the reason to the runtime when the host has no store', () => {
+    const bin = binWith();
+    try {
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('never hands the store choice to a tool child: the session env strip removes all three names', () => {
+    const { env, removed } = stripCredentialEnv({ [SECRET_BACKEND_ENV]: 'keychain', [SECRET_PROGRAM_ENV]: '/usr/bin/security', [SECRET_REFUSAL_ENV]: 'none', FOO: 'foo' }, []);
+    expect(env).toEqual({ FOO: 'foo' });
+    expect(removed.sort()).toEqual([SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV].sort());
   });
 });
 
