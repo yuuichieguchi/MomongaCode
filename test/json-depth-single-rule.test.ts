@@ -66,6 +66,9 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },
   'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
   'packages/foundation/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
+  'packages/gateway/src/plan/session.ts': { calls: 1, reason: 'the plan session records the product writes through the credential store' },
+  'packages/gateway/src/plan/host-identity.ts': { calls: 1, reason: 'the plan host identity file the product writes' },
+  'packages/gateway/src/plan/active-account.ts': { calls: 1, reason: 'the active plan account file the product writes' },
   'packages/config/src/auto-fit.ts': {
     calls: 2,
     reason: 'the auto mode dataset the product ships, and the measurement record the product wrote to its own state directory',

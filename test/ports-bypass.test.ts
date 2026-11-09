@@ -93,7 +93,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/eval/src/files.ts': { 'node:fs/promises': 1 },
   'packages/foundation/src/clock.ts': { 'Date.now': 1 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 1 },
-  'packages/foundation/src/credential-store.ts': { 'node:fs': 1 },
   'packages/foundation/src/file-lock.ts': { 'setTimeout': 1, 'randomBytes': 1 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1 },
   'packages/foundation/src/momonga-paths.ts': { 'node:fs': 1, 'node:fs/promises': 1 },
