@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
 import { expectSchema, startService } from './helpers.ts';
 
-const TOTALS = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'], roles: {} };
+const TOTALS = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'], roles: {} };
 
 const runCost = async () => ({ report: { runs: [], sessions: [], total: TOTALS }, text: 'the text report' });
 

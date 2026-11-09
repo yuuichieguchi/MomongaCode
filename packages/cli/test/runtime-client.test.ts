@@ -227,7 +227,7 @@ describe('the token anatomy endpoints', () => {
   const breakdown = {
     calls: 1,
     layers: { estimated: true, shares: {}, tokens: {}, callsWithoutAnatomy: 1 },
-    billed: { inputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3, reasoningTokens: 0 },
+    billed: { inputTokens: 0, reportedInputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 3, reasoningTokens: 0 },
     cacheHitRatio: null,
     cacheBreaks: {},
     cacheMissCauses: {},

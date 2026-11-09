@@ -73,7 +73,7 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
     expect(call?.usage.cachedInputTokens).toBeUndefined();
   });
 
-  it('computes the cache hit ratio over the calls that reported their cache reads only', async () => {
+  it('computes the cache hit ratio over the calls that reported their cache reads, and keeps the input of every call', async () => {
     const h = harness();
     await recordMainCalls([50, undefined], h);
 
@@ -81,24 +81,27 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
 
     expect(breakdown.cacheHitRatio).toBe(0.5);
     expect(breakdown.billed.cacheReadTokens).toBe(50);
-    expect(breakdown.billed.inputTokens).toBe(100);
+    expect(breakdown.billed.reportedInputTokens).toBe(100);
+    expect(breakdown.billed.inputTokens).toBe(200);
   });
 
-  it('leaves a call with unreported cache reads out of the cost', async () => {
+  it('leaves the amount unknown when a metered call did not report its cache reads, and lists the call as unpriced', async () => {
     const h = harness();
     await recordMainCalls([50, undefined], h);
 
     const breakdown = breakdownOf(h);
 
-    expect(breakdown.cost.amount).toBeCloseTo(0.000141, 12);
+    expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 1 });
+    expect(breakdown.unpriced).toEqual([{ runId: 'run-a', provider: 'acme', model: 'm1', step: 2, reason: 'the upstream did not report the cache reads of the call' }]);
   });
 
-  it('shows how many calls were excluded because their cache reads were not reported', async () => {
+  it('shows how many calls were left out of the cache figures because their cache reads were not reported', async () => {
     const h = harness();
     await recordMainCalls([50, undefined], h);
 
     const lines = formatCostBreakdown(breakdownOf(h)).split('\n');
 
-    expect(lines.filter((line) => line.includes('1 of 2 call(s)') && line.includes('not reported'))).toHaveLength(1);
+    expect(lines).toContain('cache reads not reported: 1 of 2 call(s) are left out of the cache split, the cache hit ratio and the cache-miss causes');
+    expect(lines).toContain('cost: unknown (1 of 2 call(s) have no price)');
   });
 });
