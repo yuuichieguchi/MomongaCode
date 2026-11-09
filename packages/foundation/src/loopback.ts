@@ -1,9 +1,19 @@
-const IPV4_LOOPBACK = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+import { BlockList, isIP } from 'node:net';
+
+const LOOPBACK_ADDRESSES = new BlockList();
+LOOPBACK_ADDRESSES.addSubnet('127.0.0.0', 8, 'ipv4');
+LOOPBACK_ADDRESSES.addAddress('::1', 'ipv6');
+
+export const normalizedHost = (host: string): string => {
+  const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  return unbracketed.toLowerCase().replace(/\.$/, '');
+};
 
 export const isLoopbackHost = (host: string): boolean => {
-  if (host === 'localhost' || host === '::1' || host === '[::1]') return true;
-  const match = IPV4_LOOPBACK.exec(host);
-  return match !== null && match.slice(1).every((octet) => Number(octet) <= 255);
+  const name = normalizedHost(host);
+  if (name === 'localhost' || name.endsWith('.localhost')) return true;
+  const family = isIP(name);
+  return family !== 0 && LOOPBACK_ADDRESSES.check(name, family === 4 ? 'ipv4' : 'ipv6');
 };
 
 export type TransportUrlProblem = 'unparseable' | 'userinfo' | 'cleartext';

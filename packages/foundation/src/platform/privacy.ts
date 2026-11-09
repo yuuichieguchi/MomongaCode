@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import { parseOutsideJson } from '../json-depth.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { powershellArgs, powershellLiteral, powershellPath } from './windows-scripts.ts';
-import { WINDOWS_PROBE_TIMEOUT_MS } from './windows-inspector.ts';
 
 export type PrivacyKind = 'directory' | 'file';
 
@@ -98,12 +97,12 @@ export class PrivateTreeError extends Error {
   }
 }
 
-export type WindowsPrivacyPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; timeoutMs?: number };
+export type WindowsPrivacyPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; signal?: AbortSignal | undefined };
 
-export const ensureWindowsPrivateTree = async (directory: string, { run, env, timeoutMs = WINDOWS_PROBE_TIMEOUT_MS }: WindowsPrivacyPorts): Promise<void> => {
+export const ensureWindowsPrivateTree = async (directory: string, { run, env, signal }: WindowsPrivacyPorts): Promise<void> => {
   const environment = Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   const execute = async (script: string): Promise<AclReport> => {
-    const result = await run(powershellPath(env), powershellArgs(script), { env: environment, timeoutMs });
+    const result = await run(powershellPath(env), powershellArgs(script), { env: environment, signal });
     if (result.exitCode !== 0) throw new Error(`powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
     return parseAclReport(result.stdout);
   };

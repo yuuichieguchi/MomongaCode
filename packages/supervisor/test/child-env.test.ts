@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -21,7 +21,7 @@ const declaring = (...names: string[]): CredentialSettings =>
 const TOKEN_LIKE = 'sk-' + 'placeholder-value';
 
 const configErrorMessage = (home: string): string => {
-  const snapshot = createUserSettingsCache({ home, onWarning: () => undefined }).snapshot();
+  const snapshot = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }).snapshot();
   if (!('error' in snapshot)) throw new Error('expected the settings file to be invalid');
   return snapshot.error.message;
 };
@@ -54,16 +54,22 @@ describe('gatewayEnv', () => {
     expect(env).not.toHaveProperty('ABSENT_KEY');
   });
 
-  it('gatewayEnv carries NODE_EXTRA_CA_CERTS and still drops HTTPS_PROXY', () => {
+  it('gatewayEnv carries NODE_EXTRA_CA_CERTS together with the proxy and SSL_CERT_FILE variables', () => {
     const env = gatewayEnv(
       { PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' },
       declaring(),
       '/h',
     );
     expect(env['NODE_EXTRA_CA_CERTS']).toBe('/etc/corp-ca.pem');
-    expect(env).not.toHaveProperty('HTTPS_PROXY');
-    expect(env).not.toHaveProperty('HTTP_PROXY');
-    expect(env).not.toHaveProperty('SSL_CERT_FILE');
+    expect(env['HTTPS_PROXY']).toBe('http://proxy:3128');
+    expect(env['HTTP_PROXY']).toBe('http://proxy:3128');
+    expect(env['SSL_CERT_FILE']).toBe('/etc/ssl.pem');
+  });
+
+  it('gatewayEnv hands the gateway every network variable the resolver reads', () => {
+    const source = Object.fromEntries(NETWORK_ENV_NAMES.map((name) => [name, `value-of-${name}`]));
+    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h');
+    for (const name of NETWORK_ENV_NAMES) expect(env[name]).toBe(`value-of-${name}`);
   });
 
   it('gateway env skips colliding declared names', () => {

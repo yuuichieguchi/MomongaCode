@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { appendPermissionRule, systemFileLockPorts, createUserSettingsCache, loadMcpServers, loadSettings, loadUserSettings } from '@momonga/config';
+import { appendPermissionRule, createUserSettingsCache, loadMcpServers, loadSettings, loadUserSettings, noKeptRecords, systemFileLockPorts } from '@momonga/config';
 import { makeTree, trusting } from './helpers.ts';
 
 const layoutCalls = vi.hoisted(() => [] as unknown[][]);
@@ -37,7 +37,7 @@ describe('config passes an explicit env to momongaLayout', () => {
     layoutCalls.length = 0;
     const tree = makeTree();
     await loadUserSettings({ home: tree.home });
-    createUserSettingsCache({ home: tree.home, onWarning: () => {} }).get();
+    createUserSettingsCache({ home: tree.home, onWarning: () => {}, keptRecords: noKeptRecords }).get();
     expectExplicitEnv();
   });
 

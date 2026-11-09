@@ -31,7 +31,7 @@ export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserModels, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
-export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsSnapshot } from './user-settings.ts';
+export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
@@ -39,6 +39,8 @@ export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, 
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
+export { resolveNetwork } from './network.ts';
+export type { NetworkEnvironment } from './network.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_VERIFICATION_COMMANDS,
@@ -48,7 +50,10 @@ export {
   defaultToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-export type { TrustOracle, UserLayer } from './layers.ts';
+export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
+export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
+export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
+export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,
   McpRemoteServerConfig,
@@ -89,4 +94,5 @@ export type {
   PriceEntrySettings,
   ResolvedTelemetrySettings,
   TelemetrySettings,
+  NetworkSettings,
 } from './settings.ts';

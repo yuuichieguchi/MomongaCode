@@ -201,7 +201,7 @@ export type LeasedIdempotency = {
   authorise(key: string): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
-  complete(key: string, result: unknown): LeasedOutcome;
+  complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
 
 export type IdempotencyStore = {
@@ -216,22 +216,22 @@ export type IdempotencyStore = {
   purgeExpired(nowMs: number): number;
 };
 
-export type Approval = {
+type ApprovalRecord = {
   id: string;
   runId: string;
   callId: string;
-  kind: 'permission' | 'elicitation';
   status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   options: PermissionOption[];
   server?: string;
   requests?: ElicitationRequestView[];
   responses?: Record<string, ElicitationAnswerRecord>;
-  expiresAt: number;
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
   subjectDigest?: string;
 };
+
+export type Approval = (ApprovalRecord & { kind: 'permission' }) | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number });
 
 export type ApprovalView = {
   id: string;
@@ -239,7 +239,6 @@ export type ApprovalView = {
   callId: string;
   status: Approval['status'];
   options: PermissionOption[];
-  expiresAt: number;
   createdAt: number;
   suggestedRule?: string;
   reason: string;
@@ -601,7 +600,6 @@ export type RuntimeStore = {
     input: {
       callId: string;
       options: PermissionOption[];
-      expiresAt: number;
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
   ): RequestApprovalResult;

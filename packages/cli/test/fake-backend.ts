@@ -233,6 +233,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       rules = rules.map((fact) => (fact.id === id ? retired : fact));
       return retired;
     },
+    ignoreMarker: async (name) => {
+      record(`marker-ignore:${name}`);
+    },
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;

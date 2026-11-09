@@ -1,5 +1,6 @@
 import type { CommandResult, CommandRunner } from './command-runner.ts';
 import { failureOfError, probeFailed } from './inspector-types.ts';
+import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProcessInspector } from './inspector-types.ts';
 
 export const PS_BINARY = '/bin/ps';
@@ -32,7 +33,7 @@ export const parsePidGroupRows = (text: string): Map<number, number> | undefined
   return new Map(rows);
 };
 
-export type DarwinInspectorPorts = { run: CommandRunner; startTimeoutMs: number; listTimeoutMs?: number };
+export type DarwinInspectorPorts = { run: CommandRunner };
 
 const firstLine = (text: string): string => text.trim().split('\n', 1)[0] ?? '';
 
@@ -53,19 +54,19 @@ const attempt = async (operation: () => Promise<CommandResult>): Promise<Command
 
 const isFailure = (outcome: CommandResult | ProbeFailure): outcome is ProbeFailure => 'kind' in outcome;
 
-export const createDarwinInspector = ({ run, startTimeoutMs, listTimeoutMs = startTimeoutMs }: DarwinInspectorPorts): ProcessInspector => {
+export const createDarwinInspector = ({ run }: DarwinInspectorPorts): ProcessInspector => {
   const env = { LC_ALL: 'C' };
-  return {
-    startTimeOf: async (pid) => {
-      const result = await attempt(() => run(PS_BINARY, ['-o', 'lstart=', '-p', String(pid)], { env: { LC_ALL: 'C', TZ: 'UTC' }, timeoutMs: startTimeoutMs }));
+  return withListedState({
+    startTimeOf: async (pid, { signal }) => {
+      const result = await attempt(() => run(PS_BINARY, ['-o', 'lstart=', '-p', String(pid)], { env: { LC_ALL: 'C', TZ: 'UTC' }, signal }));
       if (isFailure(result)) return result;
       if (result.exitCode === NO_MATCH_EXIT_CODE && result.stdout.trim() === '' && result.stderr.trim() === '') return { kind: 'gone' };
       if (result.exitCode !== 0) return exitFailure('ps', result.exitCode, result.stderr);
       const startedAt = parseLstart(result.stdout);
       return startedAt === undefined ? unparseable('ps', result.stdout) : { kind: 'value', value: startedAt };
     },
-    holdersOf: async (marker) => {
-      const result = await attempt(() => run(LSOF_BINARY, ['-w', '-t', '--', marker], { env, timeoutMs: listTimeoutMs }));
+    holdersOf: async (marker, { signal }) => {
+      const result = await attempt(() => run(LSOF_BINARY, ['-w', '-t', '--', marker], { env, signal }));
       if (isFailure(result)) return result;
       if (result.exitCode === NO_MATCH_EXIT_CODE) {
         if (result.stdout.trim() === '' && result.stderr.trim() === '') return { kind: 'value', value: [] };
@@ -76,14 +77,14 @@ export const createDarwinInspector = ({ run, startTimeoutMs, listTimeoutMs = sta
       const holders = parsePidList(result.stdout);
       return holders === undefined || holders.length === 0 ? unparseable('lsof', result.stdout) : { kind: 'value', value: holders };
     },
-    groupsOf: async (pids) => {
+    groupsOf: async (pids, _candidateGroups, { signal }) => {
       if (pids.length === 0) return { kind: 'value', value: new Map() };
-      const result = await attempt(() => run(PS_BINARY, ['-o', 'pid=,pgid=', '-p', pids.join(',')], { env, timeoutMs: listTimeoutMs }));
+      const result = await attempt(() => run(PS_BINARY, ['-o', 'pid=,pgid=', '-p', pids.join(',')], { env, signal }));
       if (isFailure(result)) return result;
       if (result.exitCode === NO_MATCH_EXIT_CODE && result.stdout.trim() === '' && result.stderr.trim() === '') return { kind: 'value', value: new Map() };
       if (result.exitCode !== 0) return exitFailure('ps', result.exitCode, result.stderr);
       const rows = parsePidGroupRows(result.stdout);
       return rows === undefined ? unparseable('ps', result.stdout) : { kind: 'value', value: rows };
     },
-  };
+  });
 };

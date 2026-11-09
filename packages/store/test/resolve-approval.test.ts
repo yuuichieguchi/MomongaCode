@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { START_MS, cancel, harness, mustRun, payloadOf, rawDb } from './helpers.ts';
-import { EXPIRES_MS, OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
+import { DEADLINE_MS, START_MS, cancel, harness, mustRun, payloadOf, rawDb } from './helpers.ts';
+import { OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
 
 describe('store.resolveApproval', () => {
   it('1. returns not_found for an unknown approval', async () => {
@@ -21,7 +21,7 @@ describe('store.resolveApproval', () => {
   it('2. returns approval_not_pending naming superseded for a superseded approval', async () => {
     const { store } = harness();
     const { claim, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'running');
-    requestFor(store, claim, 'call_1', EXPIRES_MS, 'b'.repeat(64));
+    requestFor(store, claim, 'call_1', 'b'.repeat(64));
     expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
   });
 
@@ -32,14 +32,14 @@ describe('store.resolveApproval', () => {
     expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'withdrawn' });
   });
 
-  it('2. returns approval_not_pending naming expired for an approval the sweeper expired', async () => {
+  it('2. never expires a pending approval: a sweep at any time before the run ends leaves it answerable', async () => {
     const { store } = harness();
-    const { approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
-    await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; });
-    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'expired' });
+    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    expect(await store.expireApprovals(DEADLINE_MS - 1, (error: unknown) => { throw error; })).toEqual([]);
+    expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'ok', run: { id: runId, status: 'QUEUED' } });
   });
 
-  it('3. returns request_missing for a pending approval without its tool.permission.requested event, before checking expiry', async () => {
+  it('3. returns request_missing for a pending approval without its tool.permission.requested event', async () => {
     const { clock, dbPath, store } = harness();
     const { runId } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     rawDb(dbPath)
@@ -47,7 +47,7 @@ describe('store.resolveApproval', () => {
         `INSERT INTO approvals (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest)
          VALUES ('appr-orphan', ?, 'call_2', 'pending', ?, NULL, ?, ?, NULL, NULL)`,
       )
-      .run(runId, JSON.stringify(OPTIONS), START_MS + 10, START_MS);
+      .run(runId, JSON.stringify(OPTIONS), null, START_MS);
     clock.advance(20);
     const lastSeq = mustRun(store, runId).lastSeq;
 
@@ -57,26 +57,16 @@ describe('store.resolveApproval', () => {
     expect(mustRun(store, runId)).toMatchObject({ status: 'WAITING_HUMAN', lastSeq });
   });
 
-  it('4. expires an approval whose expiry passed without a sweep, stopping the run with approval_timeout', async () => {
+  it('4. accepts an answer given at any time before the run ends, without a sweep', async () => {
     const { clock, store } = harness();
     const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const id = approvals[0]?.id ?? '';
-    clock.set(EXPIRES_MS);
-    const before = mustRun(store, runId).lastSeq;
+    clock.set(DEADLINE_MS - 1);
 
-    expect(await store.resolveApproval(id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'expired' });
+    expect(await store.resolveApproval(id, 'allow_once')).toMatchObject({ kind: 'ok', run: { id: runId, status: 'QUEUED' } });
 
-    expect(store.approvals.get(id)?.status).toBe('expired');
-    expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
-    const added = store.readRunEvents(runId, before, 100).map(payloadOf);
-    expect(added.slice(0, 2)).toEqual(
-      expect.arrayContaining([
-        { type: 'tool.permission.cancelled', approvalId: id, reason: 'expired' },
-        expect.objectContaining({ type: 'notice', message: 'The approval for call_1 expired.' }),
-      ]),
-    );
-    expect(added).toHaveLength(3);
-    expect(added[2]).toEqual({ type: 'run.status', from: 'WAITING_HUMAN', to: 'STOPPED', reason: 'approval_timeout' });
+    expect(store.approvals.get(id)?.status).toBe('resolved');
+    expect(store.readRunEvents(runId, 0, 100).map(payloadOf).filter((event) => event['type'] === 'tool.permission.cancelled')).toEqual([]);
   });
 
   it('5. returns run_cancelled when the run has cancel requested, before checking the option', async () => {
@@ -145,24 +135,17 @@ describe('store.resolveApproval', () => {
   });
 });
 
-describe('store.resolveApproval on an expired approval of a RUNNING run', () => {
-  it('reports expired without changing anything, and the later release and sweep stop the run with approval_timeout', async () => {
+describe('store.resolveApproval on a RUNNING run long after the request', () => {
+  it('records the answer without changing the status, and the later release requeues the run', async () => {
     const { clock, store } = harness();
     const { runId, claim, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'running');
     const id = approvals[0]?.id ?? '';
-    clock.set(EXPIRES_MS);
-    const before = mustRun(store, runId);
+    clock.set(DEADLINE_MS - 1);
 
-    expect(await store.resolveApproval(id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'expired' });
-
-    expect(store.approvals.get(id)?.status).toBe('pending');
-    expect(mustRun(store, runId)).toMatchObject({ status: 'RUNNING', version: before.version, lastSeq: before.lastSeq });
+    expect(await store.resolveApproval(id, 'allow_once')).toMatchObject({ kind: 'ok', run: { status: 'RUNNING' } });
+    expect(store.approvals.get(id)?.status).toBe('resolved');
 
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
-    expect(mustRun(store, runId).status).toBe('WAITING_HUMAN');
-
-    expect(await store.expireApprovals(clock.now(), (error: unknown) => { throw error; })).toEqual([runId]);
-    expect(store.approvals.get(id)?.status).toBe('expired');
-    expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+    expect(mustRun(store, runId).status).toBe('QUEUED');
   });
 });

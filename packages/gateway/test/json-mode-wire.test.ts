@@ -10,6 +10,7 @@ import { startJsonObjectAcceptingProxy } from './json-object-proxy.ts';
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { contextOf } from './own-reasoning.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const JSON_TEXT = '{"verdict":"safe"}';
 
@@ -87,7 +88,7 @@ const openResponses: NativeSurface = {
   send: async (capabilities, request, replyText) => {
     const fake = await startFakeOpenResponses({ script: [openResponsesTextReply([replyText])] });
     registerCleanup(() => fake.close());
-    const adapter = createOpenResponsesAdapter({
+    const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       capabilities: async () => capabilities,
       clock: createFakeClock(START_MS),
@@ -106,7 +107,7 @@ const anthropic: Surface = {
   send: async (capabilities, request, replyText) => {
     const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [anthropicTextReply([replyText])] });
     registerCleanup(() => fake.close());
-    const adapter = createAnthropicAdapter({
+    const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => capabilities,

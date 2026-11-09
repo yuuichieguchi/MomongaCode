@@ -9,6 +9,7 @@ import { textReply } from './cc-compact-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, OLLAMA_CAPABILITIES, startFakeOllama } from './ollama-support.ts';
 import { contextOf } from './own-reasoning.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const EDIT_PARAMETERS = { type: 'object', properties: { path: { type: 'string' }, note: { type: 'string' } }, required: ['path'] };
 
@@ -45,7 +46,7 @@ describe('every adapter sends tool parameters rendered in the dialect of the tar
   it('anthropic sends the strict-closed rendering as input_schema', async () => {
     const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [anthropicTextReply(['ok'])] });
     registerCleanup(() => fake.close());
-    const adapter = createAnthropicAdapter({
+    const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => withDialect(REMOTE_CAPABILITIES, 'strict-closed'),
@@ -67,7 +68,7 @@ describe('every adapter sends tool parameters rendered in the dialect of the tar
   it('open-responses sends the strict-closed rendering as tool parameters', async () => {
     const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['ok'])] });
     registerCleanup(() => fake.close());
-    const adapter = createOpenResponsesAdapter({
+    const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       capabilities: async () => withDialect(REMOTE_CAPABILITIES, 'strict-closed'),
       clock: createFakeClock(START_MS),

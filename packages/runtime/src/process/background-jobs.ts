@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { canonicalJson, findHolders, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, claimRetry, findHolders, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
 import type { Clock, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
-import { ToolExecutionError } from '@momonga/tools';
-import type { BackgroundJobs } from '@momonga/tools';
+import { ToolExecutionError, createMarkerOwners } from '@momonga/tools';
+import type { BackgroundJobs, MarkerOwners } from '@momonga/tools';
 import { toJobView as viewOf } from '../service/views.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
@@ -19,12 +19,14 @@ export type BackgroundJobsOptions = {
   timers: ServiceTimers;
   markerDir: string;
   markerFiles: JobMarkerFiles;
+  owners?: MarkerOwners;
   killGraceMs: number;
   reapTiming: ReapTiming;
   onWarning(message: string): void;
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
   uninspectable?: UninspectableRegistry;
+  signal?: AbortSignal;
 };
 
 export type ProcessProbes = {
@@ -62,6 +64,11 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
   const probes: ProcessProbes = { findHolders, reconcileProcessGroup, reapMarkedProcesses, ...options.probes };
   const live = new Map<string, LiveJob>();
+  const owners = options.owners ?? createMarkerOwners();
+  const ownedKeys = new Set<string>();
+  const lifecycleStop = new AbortController();
+  options.signal?.addEventListener('abort', () => lifecycleStop.abort(), { once: true });
+  const lifecycle = lifecycleStop.signal;
 
   const authorize = (runId: string, jobId: string): Job => {
     const run = store.getRun(runId);
@@ -91,6 +98,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const finalize = async (entry: LiveJob, process: SandboxedProcess, pumps: Promise<void>, timer: unknown): Promise<void> => {
     const { job } = entry;
     const marker = path.join(markerDir, job.idemKey);
+    let markerSettled = false;
     const recordUnknown = (): void => {
       if (store.jobs.get(job.id)?.status !== 'running') return;
       store.jobs.finish(job.id, { status: 'unknown' });
@@ -101,14 +109,23 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       timers.clearTimeout(timer);
       const uninspectable: UninspectableProcess[] = [];
       const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
-      const holders = await probes.findHolders(marker, undefined, (unreadable) => {
-        uninspectable.push(unreadable);
-        reportOnce(unreadable);
+      const holders = await probes.findHolders(marker, {
+        signal: lifecycle,
+        onUninspectable: (unreadable) => {
+          uninspectable.push(unreadable);
+          reportOnce(unreadable);
+        },
       });
       if (holders.length > 0) {
-        await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming });
+        await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal: lifecycle });
         entry.output.push(Buffer.from(`\nTerminated ${holders.length} process(es) that outlived the job.\n`));
       }
+      let refused = false;
+      const remaining =
+        holders.length === 0 && uninspectable.length === 0
+          ? []
+          : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: () => void (refused = true) });
+      markerSettled = remaining.length === 0 && !refused;
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
@@ -125,7 +142,8 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       throw error;
     } finally {
       timers.clearTimeout(timer);
-      markerFiles.remove(marker);
+      if (markerSettled) await markerFiles.remove(marker, onWarning);
+      ownedKeys.delete(job.idemKey);
       live.delete(job.id);
     }
   };
@@ -162,13 +180,20 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       command: request.command,
     });
     const marker = path.join(markerDir, idemKey);
-    markerFiles.create(marker);
     const controller = new AbortController();
     let process: SandboxedProcess;
+    let created = false;
+    ownedKeys.add(idemKey);
+    owners.register(idemKey, { alive: () => ownedKeys.has(idemKey) });
     try {
-      process = request.spawn(marker, controller.signal);
+      process = await markerFiles.create(marker, (markerFd, mode) => {
+        created = true;
+        owners.remember(idemKey, mode);
+        return request.spawn(marker, controller.signal, markerFd);
+      });
     } catch (error) {
-      markerFiles.remove(marker);
+      if (created) await markerFiles.remove(marker, onWarning);
+      ownedKeys.delete(idemKey);
       store.jobs.finish(job.id, { status: 'unknown' });
       settleRecord(job, { job: job.id, status: 'unknown' });
       throw error;
@@ -232,15 +257,20 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
     reconcileOrphans: async () => {
       for (const job of store.jobs.listRunning()) {
         if (live.has(job.id)) continue;
+        const orphanMarker = path.join(markerDir, job.idemKey);
         try {
-          await probes.reapMarkedProcesses({
-            marker: path.join(markerDir, job.idemKey),
-            ...(job.pgid === undefined ? {} : { pgid: job.pgid }),
-            killGraceMs,
-            label: 'job',
-            onWarning,
-            timing: reapTiming,
-          });
+          const claim = await claimRetry(orphanMarker, 'startup', { signal: lifecycle });
+          if (claim === 'absent' || claim === 'claimed') {
+            await probes.reapMarkedProcesses({
+              marker: orphanMarker,
+              ...(job.pgid === undefined ? {} : { pgid: job.pgid }),
+              killGraceMs,
+              label: 'job',
+              onWarning,
+              timing: reapTiming,
+              signal: lifecycle,
+            });
+          }
         } catch (error) {
           onWarning(`background job ${job.id} could not be reaped: ${asError(error).message}`);
         }

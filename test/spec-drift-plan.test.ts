@@ -11,7 +11,7 @@ type PlanConstants = {
   credentialStates: string[];
   terminalCodes: string[];
   configurationCodes: string[];
-  causes: string[];
+  flags: string[];
 };
 
 const readConstants = (): PlanConstants => JSON.parse(fs.readFileSync(constantsPath, 'utf8')) as PlanConstants;
@@ -68,11 +68,13 @@ describe('PlanCredential.tla against plan-constants.json', () => {
     expect(without(constants.terminalCodes, modelled)).toEqual(['invalid_refresh_token', 'refresh_token_expired', 'token_expired']);
   });
 
-  it('names every cause of the constants, and the one cause the model has beyond them is the evidence-only transient', () => {
+  it('states the product flags as the model flag set, and every other cause of the model is named evidence-only', () => {
+    expect(setDefinitionOf(credentialSpec, 'Flags').sort()).toEqual([...constants.flags].sort());
     const modelledCauses = setDefinitionOf(credentialSpec, 'Causes');
-    const known = [...constants.terminalCodes, ...constants.causes];
-    expect(constants.causes.filter((cause) => !modelledCauses.includes(cause))).toEqual([]);
-    expect(without(modelledCauses, [...known, 'none'])).toEqual(['transient']);
+    const evidenceOnly = setDefinitionOf(credentialSpec, 'EvidenceOnlyCauses');
+    expect(evidenceOnly.sort()).toEqual(['refresh_interrupted', 'transient']);
+    expect(without(modelledCauses, [...constants.terminalCodes, ...evidenceOnly, 'none'])).toEqual([]);
+    expect(evidenceOnly.filter((cause) => constants.terminalCodes.includes(cause) || constants.flags.includes(cause))).toEqual([]);
   });
 
   it('leaves invalid_client out of the model, as the model states', () => {

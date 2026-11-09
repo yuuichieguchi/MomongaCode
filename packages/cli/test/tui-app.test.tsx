@@ -435,7 +435,7 @@ describe('App slash commands', () => {
     const seen: string[] = [];
     const registry = createSlashRegistry([
       ...BUILTIN_SLASH_COMMANDS,
-      { name: 'review', description: 'review the diff', run: (args) => void seen.push(args) },
+      { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
     const app = renderObservable(<App backend={backend} initialMode={undefined} slash={registry} onExit={() => undefined} />);

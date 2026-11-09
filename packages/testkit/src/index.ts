@@ -30,6 +30,7 @@ export type {
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
+export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';

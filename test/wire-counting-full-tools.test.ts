@@ -5,6 +5,7 @@ import type { AdapterRequest, Capabilities, FunctionTool, ToolCallingMode } from
 import { buildSystemPrompt } from '@momonga/runtime';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import { createFakeClock } from '@momonga/testkit';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const CAPABILITIES: Capabilities = {
   contextWindow: 4096,
@@ -46,7 +47,7 @@ afterEach(async () => {
 });
 
 const adapterIn = (mode: ToolCallingMode) => {
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: '/nonexistent/never-used.sock' }),
     capabilities: async () => ({ ...CAPABILITIES, toolCalling: mode }),

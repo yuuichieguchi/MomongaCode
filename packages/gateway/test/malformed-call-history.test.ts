@@ -8,6 +8,7 @@ import { buildOllamaChatBody } from '../src/adapters/ollama/request.ts';
 import { buildResponsesBody } from '../src/adapters/open-responses/request.ts';
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { START_MS } from './gateway-helpers.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const MALFORMED_ARGUMENTS: ReadonlyArray<[string, string]> = [
   ['a raw newline inside a JSON string (lms-1)', '{"file_path":"src/calc.js","content":"// src/calc.js\n\nimport { add } from \'./math\';"}'],
@@ -34,7 +35,7 @@ const historyWith = (args: string): AdapterInputItem[] => [
 const requestWith = (args: string, tools: FunctionTool[]): AdapterRequest => ({ model: 'm', input: historyWith(args), ...(tools.length === 0 ? {} : { tools }) });
 
 const chatAdapter = (mode: ToolCallingMode) =>
-  createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+  createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => {
       throw new Error('rendering a wire never reaches the upstream');
     },

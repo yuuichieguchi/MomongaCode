@@ -28,13 +28,12 @@ describe('store.requestApproval', () => {
     const result = store.requestApproval(claim, {
       callId: 'call_1',
       options: OPTIONS,
-      expiresAt: START_MS + 60_000,
       event: { subjectDigest: DIGEST, reason: 'edits require approval', suggestedRule: 'Write(/x)' },
     });
 
     if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
     expect(store.approvals.listPending(runId)).toEqual([
-      expect.objectContaining({ id: result.approval.id, callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, status: 'pending' }),
+      expect.objectContaining({ id: result.approval.id, callId: 'call_1', options: OPTIONS, status: 'pending' }),
     ]);
     const last = store.readRunEvents(runId, 0, 100).at(-1);
     expect(last).toMatchObject({
@@ -56,7 +55,6 @@ describe('store.requestApproval', () => {
     const result = store.requestApproval(claim, {
       callId: 'call_1',
       options: OPTIONS,
-      expiresAt: START_MS + 60_000,
       event: { subjectDigest: DIGEST, reason },
     });
 
@@ -74,7 +72,7 @@ describe('store.requestApproval', () => {
     mustClaim(store, 'worker-2');
     const lastSeq = mustRun(store, runId).lastSeq;
 
-    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
 
     expect(result).toEqual({ kind: 'lease_lost' });
     expect(store.approvals.listPending(runId)).toEqual([]);
@@ -85,11 +83,11 @@ describe('store.requestApproval', () => {
   it('renews the approval once the previous one for the call is resolved', async () => {
     const { store } = harness();
     const { runId, claim } = claimWithCall(store);
-    const first = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const first = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
     if (first.kind !== 'ok') throw new Error('expected the first approval');
     expect((await store.resolveApproval(first.approval.id, 'allow_once')).kind).toBe('ok');
 
-    const second = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
+    const second = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
 
     if (second.kind !== 'ok') throw new Error('expected the renewed approval');
     expect(second.approval.id).not.toBe(first.approval.id);
