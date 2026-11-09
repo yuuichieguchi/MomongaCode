@@ -188,8 +188,11 @@ describe('stale fm marker reaping', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     return Number(fs.readFileSync(file, 'utf8').trim());
   };
 
+  const unprovedGroupWarning = (marker: string, group: number): string =>
+    `fm marker ${marker}: group ${group} is still alive but could not be verified as belonging to this call, so it was left alone`;
+
   it.each([
-    ['a recorded pgid of an unrelated group', true],
+    ['a recorded pgid of an unrelated group, and reports that group as left alone', true],
     ['unreadable content', false],
   ])('signals only the holder when the marker has %s', async (_label, recordsVictim) => {
     const context = await setup();
@@ -199,12 +202,14 @@ describe('stale fm marker reaping', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     const holder = await holderPid(planted.holderPidFile);
     expect(pgidOf(holder)).toBe(planted.groupLeader);
 
-    const serve = makeServe(context);
+    const warnings: string[] = [];
+    const serve = makeServe(context, { onWarning: (message) => warnings.push(message) });
     await serve.start();
     await until(() => !isAlive(holder), 'the holder to be signalled');
     expect(isAlive(planted.groupLeader)).toBe(true);
     expect(isAlive(victim)).toBe(true);
     expect(fs.existsSync(planted.marker)).toBe(false);
+    expect(warnings).toEqual(recordsVictim ? [unprovedGroupWarning(planted.marker, victim)] : []);
   });
 });
 
