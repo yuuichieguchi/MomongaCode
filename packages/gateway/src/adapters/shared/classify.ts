@@ -1,6 +1,6 @@
 import { TRANSIENT_REQUEST_STATUSES, findOutboundError, isRetryableHttp } from '@momonga/foundation';
 import type { OutboundConnectionError } from '@momonga/foundation';
-import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
+import { PRECONDITION_FAILED_CODE, TARGET_NOT_READY } from '@momonga/protocol';
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
 import {
@@ -8,6 +8,7 @@ import {
   CompactionReplyError,
   GUARDRAIL_VIOLATION,
   PreconditionFailedError,
+  TargetNotReadyError,
   StreamFailure,
   UNSUPPORTED_REQUEST,
   UnsupportedInputError,
@@ -112,6 +113,9 @@ export const createUpstreamClassifier =
     }
     if (error instanceof StreamFailure) {
       return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
+    }
+    if (error instanceof TargetNotReadyError) {
+      return { retryable: false, error: body('invalid_request', TARGET_NOT_READY, error.message) };
     }
     if (error instanceof PreconditionFailedError) {
       return { retryable: false, error: body('invalid_request', PRECONDITION_FAILED_CODE, preconditionText(error.message, error.detail, error.remediation)) };

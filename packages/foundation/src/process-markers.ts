@@ -14,7 +14,7 @@ import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
 import { markerReapClockBoundMs } from './process-contract.ts';
-import { RETRY_KINDS, claimRetry, readAttemptRecord } from './platform/marker-record.ts';
+import { RETRY_KINDS, claimRetry, parseRecordedGroup, readAttemptRecord } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
 export type ReapTiming = ProbeTiming;
@@ -316,7 +316,7 @@ const readRecordedGroup = async (marker: string): Promise<number | undefined> =>
   } finally {
     await handle.close();
   }
-  return MARKER_CONTENT.test(content) ? Number(content.trim()) : undefined;
+  return MARKER_CONTENT.test(content) ? Number(content.trim()) : parseRecordedGroup(content);
 };
 
 const lstatIfPresent = async (target: string): Promise<fs.Stats | undefined> => {

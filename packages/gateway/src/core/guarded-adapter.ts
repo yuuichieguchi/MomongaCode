@@ -107,7 +107,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     };
   };
 
-  const { countTokens, countWire, compact, renderWire, renderCompactWire, health, close } = inner;
+  const { countTokens, countWire, compact, renderWire, renderCompactWire, health, roomFacts, close } = inner;
 
   const guardedHealth = (check: NonNullable<ProviderAdapter['health']>) => async (target: AdapterTarget): Promise<HealthResult> => {
     try {
@@ -141,6 +141,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
       : { renderCompactWire: (request, target, cap, origin, capabilities) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin, capabilities)) }),
     toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
+    ...(roomFacts === undefined ? {} : { roomFacts: (target) => converting(() => roomFacts.call(inner, target)) }),
     ...(close === undefined ? {} : { close: (stop) => close.call(inner, stop) }),
     [guardBrand]: true,
   };

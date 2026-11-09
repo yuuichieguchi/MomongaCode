@@ -86,6 +86,13 @@ export class CompactionReplyError extends Error {
   }
 }
 
+export class TargetNotReadyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TargetNotReadyError';
+  }
+}
+
 export class PreconditionFailedError extends Error {
   readonly detail: string | undefined;
   readonly remediation: string | undefined;

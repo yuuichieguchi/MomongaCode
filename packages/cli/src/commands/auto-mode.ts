@@ -1,8 +1,9 @@
-import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, loadUserModels, readAutoFitRecord, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
-import type { UserModels } from '@momonga/config';
+import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, loadUserModels, readAutoFitRecord, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
+import type { AutoFitKey, UserModels } from '@momonga/config';
+import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { autoModeNotice } from '@momonga/protocol';
+import { MANAGED_SERVERS, autoModeNotice } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { createHomes, liveSettingsFor, readCredentials, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -52,6 +53,15 @@ const requireDefinedClassifier = (models: UserModels, classifier: string): void 
   }
 };
 
+const classifierKeyOf = async (models: UserModels, classifier: string, given: AbortSignal | undefined): Promise<AutoFitKey> => {
+  const bound = AbortSignal.timeout(STARTUP_TIMEOUT_MS);
+  const signal = given === undefined ? bound : AbortSignal.any([given, bound]);
+  const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), platform: process.platform, signal });
+  const result = autoFitKeyOf(models.resolved, classifier, await classifierCodeOf(), probeKeys);
+  if (result.kind === 'unknown') throw new AutoModeCheckError(`the classifier target ${result.target} has no probe key: its ${probeKeyComponentLabel(result.component)} could not be read (${result.reason})`);
+  return result.key;
+};
+
 const classifierCodeOf = async () => (await import('@momonga/runtime')).AUTO_CLASSIFIER_CODE;
 
 const progressOf = (dataset: GoldenDataset, write: (text: string) => void): ((caseId: string, runIndex: number) => void) => {
@@ -70,7 +80,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
   requireDefinedClassifier(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
-  const key = autoFitKeyOf(ports.models.resolved, classifier, await classifierCodeOf());
+  const key = await classifierKeyOf(ports.models, classifier, signal);
   const settings = liveSettingsFor(ports.models, [options.agent, classifier]);
   const credentialValues = await readCredentials(ports.effects, settings.credentials, signal ?? new AbortController().signal);
   const swept = await sweepStaleHomes(ports.effects);
@@ -121,7 +131,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
-  const key = autoFitKeyOf(ports.models.resolved, classifier, await classifierCodeOf());
+  const key = await classifierKeyOf(ports.models, classifier, undefined);
   const view = autoFitViewOf(classifier, key, await readAutoFitRecord(autoFitDirectoryOf(ports.home), key));
   ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);
   return { measurement: view.measurement };

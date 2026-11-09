@@ -2,6 +2,7 @@ import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel } f
 import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterStop,
+  AliasRoomFacts,
   AdapterTarget,
   AllowedToolsForm,
   Capabilities,
@@ -76,6 +77,7 @@ export type ManagedTarget = {
   envelopeShape: (target: AdapterTarget) => EnvelopeShape;
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
+  roomFacts: (target: AdapterTarget) => Promise<AliasRoomFacts>;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
   isGuardrail: (target: AdapterTarget, status: number, body: unknown) => boolean;
@@ -288,6 +290,14 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     envelopeShape: () => lastRecorded().report?.schemaDialect.shape ?? 'union',
     upstreamModel,
     capabilities: async () => ({ ...(await readRecorded()).capabilities, allowedTools }),
+    roomFacts: async () => {
+      const { report } = await readRecorded();
+      return {
+        outputBounded: (options.declaredOutputBoundField ?? report?.outputBoundField) !== 'none',
+        contextWindow: declaredBounds?.contextWindow ?? report?.contextWindow.value,
+        maxOutputTokens: declaredBounds?.maxOutputTokens,
+      };
+    },
     ...(tokenCount === 'estimated'
       ? {}
       : {

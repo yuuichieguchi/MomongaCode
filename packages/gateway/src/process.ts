@@ -12,7 +12,7 @@ import {
   givenSecretStoreChildEnv,
   EntryUsageError,
   minimalChildEnv,
-  STARTUP_TIMEOUT_MS,
+  startDeadlineSignal,
   codeDigestOfRunningProcess,
   createBinaryHashCache,
   createHeldHostReadings,
@@ -70,6 +70,8 @@ import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { PROBE_RETRY_AFTER_MS, createAutoProbe } from './probe/auto-probe.ts';
 import type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
 import { createInstanceProbe } from './probe/instance-probe.ts';
+import { loadProbeRecord } from './probe/record.ts';
+import type { ManagedRecordCurrency, ManagedRecordKey } from './probe/record.ts';
 import { lockKeyOf, managedCurrencyOf, managedKeyReader, managedPrecondition, managedProbeSubject, measureManagedServer } from './probe/probe-fm.ts';
 import { endpointPrecondition, endpointProbeSubject, measureEndpoint } from './probe/probe-endpoint.ts';
 import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
@@ -244,6 +246,7 @@ type ManagedAdapterWiring = {
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
+  generation: number;
   childEnv: Readonly<Record<string, string>>;
   exec: ExecFn;
   execWithStdin: ExecWithStdinFn;
@@ -262,10 +265,16 @@ type ManagedAdapterWiring = {
   onWarning: (message: string) => void;
 };
 
-const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ adapter: ProviderAdapter; probeKey: string | undefined }> => {
+const listedModelOf = async (wiring: ManagedAdapterWiring, key: ManagedRecordKey, currency: ManagedRecordCurrency): Promise<string | undefined> => {
+  if (wiring.target.model !== undefined) return undefined;
+  const report = await loadProbeRecord(wiring.paths.probe, key, currency, wiring.name);
+  return report?.modelId;
+};
+
+const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ adapter: ProviderAdapter; probeKey: string | undefined; listedModel: string | undefined }> => {
   const { name, target, description, paths } = wiring;
-  const serving = managedInstancePaths(paths, { owner: 'gateway', purpose: 'serve', target: name });
-  const probing = managedInstancePaths(paths, { owner: 'gateway', purpose: 'probe', target: name });
+  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', target: name });
+  const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', target: name });
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
   const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
@@ -345,7 +354,8 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
   });
   const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
   const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
-  return { adapter, probeKey: startKey?.kind === 'known' ? startKey.canonical : undefined };
+  if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
+  return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
 };
 
 const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
@@ -542,7 +552,12 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
   },
 });
 
-export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>, servers: readonly ManagedServerDescription[] = MANAGED_SERVERS): UncountedGatewayConfig => ({
+export const gatewayConfigOf = (
+  targets: ResolvedTargets,
+  aliases: Record<string, string | string[]>,
+  servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
+  listedModels: ReadonlyMap<string, string> = new Map(),
+): UncountedGatewayConfig => ({
   models: {
     aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
     targets: Object.fromEntries(
@@ -551,7 +566,7 @@ export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string
         {
           kind: target.adapter,
           provider: providerNameOf(target, servers),
-          model: target.model ?? NOT_LISTED_YET,
+          model: target.model ?? listedModels.get(name) ?? NOT_LISTED_YET,
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
@@ -570,6 +585,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const managedServers = options.managedServers ?? MANAGED_SERVERS;
   const { signal } = options;
+  const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, process.platform, {});
   signal?.throwIfAborted();
@@ -682,6 +698,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return [name, target];
     });
     const adapters: Record<string, ProviderAdapter> = {};
+    const listedModels = new Map<string, string>();
     const closeAdapters = async (): Promise<void> => {
       await Promise.all(Object.values(adapters).map((adapter) => adapter.close?.()));
     };
@@ -740,7 +757,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           timers: managedTimers,
           readStopGraceMs,
           requestLimitMs: settings.models.headersTimeoutMs,
-          startSignal: signal ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS),
+          startSignal,
+          generation: options.generation,
           userDialects,
           clock,
           liveness,
@@ -748,6 +766,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
         });
         adapters[name] = wired.adapter;
+        if (wired.listedModel !== undefined) listedModels.set(name, wired.listedModel);
         counters[name] = targetCounterOf({ target, codeDigest, ...(wired.probeKey === undefined ? {} : { probeKey: wired.probeKey }) });
         continue;
       }
@@ -792,7 +811,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
     signal?.throwIfAborted();
     const gateway = await createGateway({
-      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers), counters),
+      startSignal,
+      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels), counters),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
       credentialFeed: (add) =>

@@ -17,9 +17,10 @@ export {
   failedBoundOf,
   measurement,
   readAutoFitRecord,
+  readClassifierProbeKeys,
   writeAutoFitRecord,
 } from './auto-fit.ts';
-export type { AutoFitFailedBound, AutoFitKey, AutoFitMeasurement, AutoFitProportion, AutoFitRecord, ClassifierCode } from './auto-fit.ts';
+export type { AutoFitFailedBound, AutoFitKey, AutoFitKeyResult, AutoFitMeasurement, AutoFitProportion, AutoFitRecord, ClassifierCode, ClassifierIdentity, ClassifierKeyPorts, ClassifierProbeKeys } from './auto-fit.ts';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';

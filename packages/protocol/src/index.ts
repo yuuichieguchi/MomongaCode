@@ -556,6 +556,7 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   AdapterStop,
+  AliasRoomFacts,
   ProviderAdapter,
   ClientOperation,
   ReasoningOrigin,

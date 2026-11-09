@@ -147,30 +147,46 @@ export const momongaLayout = (
   };
 };
 
-export type ManagedInstance = { owner: 'gateway' | 'cli'; purpose: 'serve' | 'probe'; target: string };
+export type ManagedInstancePurpose = 'serve' | 'probe';
+
+export type ManagedInstance =
+  | { owner: 'gateway'; generation: number; purpose: ManagedInstancePurpose; target: string }
+  | { owner: 'cli'; purpose: ManagedInstancePurpose; target: string };
 
 export type ManagedInstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
 
-const MANAGED_INSTANCE_STEMS: Record<ManagedInstance['owner'], Record<ManagedInstance['purpose'], (target: string) => string>> = {
-  gateway: { serve: (target) => target, probe: (target) => `_probe-${target}` },
-  cli: { serve: (target) => `_cli-serve-${target}`, probe: (target) => `_cli-probe-${target}` },
+const GATEWAY_INSTANCE_STEMS: Record<ManagedInstancePurpose, (target: string) => string> = {
+  serve: (target) => target,
+  probe: (target) => `_probe-${target}`,
 };
+
+const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, target: string): string => `_cli-${purpose}-${target}`;
+
+const GENERATION_TARGETS_DIRECTORY = 'targets';
 
 const CLI_MARKER_DIRECTORY = 'cli';
 
-const MANAGED_MARKER_PARENTS: Record<ManagedInstance['owner'], (paths: MomongaPaths) => string> = {
-  gateway: (paths) => paths.markers.targets,
-  cli: (paths) => path.join(paths.markers.root, CLI_MARKER_DIRECTORY),
+const generationDirectoryName = (generation: number): string => {
+  if (!Number.isSafeInteger(generation) || generation < 1) throw new RangeError(`a generation number must be a positive integer, got ${generation}`);
+  return `g${generation}`;
 };
 
-const MANAGED_LOCK_DIRECTORY = 'managed-locks';
-
 export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInstance): ManagedInstancePaths => {
-  const stem = MANAGED_INSTANCE_STEMS[instance.owner][instance.purpose](instance.target);
+  if (instance.owner === 'gateway') {
+    const generation = generationDirectoryName(instance.generation);
+    const stem = GATEWAY_INSTANCE_STEMS[instance.purpose](instance.target);
+    const targets = path.join(paths.run, generation, GENERATION_TARGETS_DIRECTORY);
+    return {
+      socketPath: path.join(targets, `${stem}.sock`),
+      lockPath: path.join(targets, `${stem}.lock`),
+      markerDirectory: path.join(paths.markers.root, generation, GENERATION_TARGETS_DIRECTORY, stem),
+    };
+  }
+  const stem = CLI_INSTANCE_STEM(instance.purpose, instance.target);
   return {
     socketPath: path.join(paths.run, `${stem}.sock`),
-    markerDirectory: path.join(MANAGED_MARKER_PARENTS[instance.owner](paths), instance.owner === 'gateway' ? stem : `${instance.purpose}-${instance.target}`),
-    lockPath: path.join(paths.run, MANAGED_LOCK_DIRECTORY, `${stem}.lock`),
+    lockPath: path.join(paths.run, `${stem}.lock`),
+    markerDirectory: path.join(paths.markers.root, CLI_MARKER_DIRECTORY, `${instance.purpose}-${instance.target}`),
   };
 };
 
@@ -247,7 +263,6 @@ const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPo
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
-    paths.markers.targets,
     paths.markers.daemons,
     paths.state,
     paths.traces.dir,

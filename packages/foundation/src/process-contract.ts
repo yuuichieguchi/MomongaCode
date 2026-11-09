@@ -15,6 +15,8 @@ export const RUNTIME_ABORT_BUDGET_MS = 5000;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 export const STARTUP_TIMEOUT_MS = 60_000;
+
+export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);
 export const ORPHAN_REAP_GRACE_MS = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
 export const MANAGED_SERVER_TERMINATE_GRACE_WAITS = 2;
 export const MARKER_REAP_GRACE_WINDOWS = 4;

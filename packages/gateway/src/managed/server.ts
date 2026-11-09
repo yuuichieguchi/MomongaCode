@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isUnixSocketLive, systemClock } from '@momonga/foundation';
+import { ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isUnixSocketLive, socketPathLimit, systemClock } from '@momonga/foundation';
 import type { ProcessLock, UdsClient } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER } from '@momonga/protocol';
 import type { HealthResult, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
-import { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
 import { createExecFn, createGroupSpawn, reapStaleGroups } from './fm-processes.ts';
 import type { ChildEnv } from './fm-processes.ts';
 import { notReadyText, runPreconditions } from './preconditions.ts';
@@ -189,6 +189,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     if (verdict.kind === 'refused') return verdict;
     metVerdict = true;
     return undefined;
+  };
+
+  const unfitSocketError = (): TargetNotReadyError | undefined => {
+    const byteLength = Buffer.byteLength(options.socketPath);
+    const limit = socketPathLimit(process.platform);
+    if (byteLength <= limit) return undefined;
+    return new TargetNotReadyError(said(`its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`));
   };
 
   const occupied = (detail: string): ManagedServerError => new ManagedServerError('unhealthy', said('the server socket path is occupied'), detail);
@@ -432,6 +439,12 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     client = startClient;
     const isCurrent = (): boolean => generation === startGeneration;
     try {
+      const unfit = unfitSocketError();
+      if (unfit !== undefined) {
+        state = 'precondition_failed';
+        failure = { ok: false, reason: 'precondition_failed', detail: unfit.message };
+        throw unfit;
+      }
       const refusal = await checkPreconditions(startSignal);
       if (!isCurrent()) throw stoppedDuringStart();
       if (refusal !== undefined) {
@@ -450,7 +463,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       await closeClient(startClient);
       if (!isCurrent()) throw stoppedDuringStart();
       if (error instanceof ManagedServerError) enterFailed(error.reason, error.detail ?? error.message);
-      else if (!(error instanceof PreconditionFailedError)) state = 'idle';
+      else if (!(error instanceof PreconditionFailedError) && !(error instanceof TargetNotReadyError)) state = 'idle';
       throw error;
     }
     state = 'running';
