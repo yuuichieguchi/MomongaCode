@@ -5,6 +5,7 @@ import path from 'node:path';
 import util from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, MomongaDirectoryError, SocketPathUnsupportedError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
+import { realProcessTestSignal } from '@momonga/testkit';
 
 const HOME = '/Users/alice';
 
@@ -109,7 +110,7 @@ describe('momongaPaths', () => {
         if (Buffer.byteLength(candidate) >= limit) throw Object.assign(new Error(`bind ${candidate}: EINVAL`), { code: 'EINVAL' });
       });
       const server = net.createServer();
-      const error = await listenUnix(server, socket).catch((caught: unknown) => caught);
+      const error = await listenUnix(server, socket, undefined, realProcessTestSignal()).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain(socket);
       expect((error as Error).message).toContain('EINVAL');

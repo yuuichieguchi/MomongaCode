@@ -16,6 +16,8 @@ export const BUILT_BINARY_TEST_TIMEOUT_MS = 3 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const PROCESS_KILL_DEADLINE_MS = 5000;
 
+export const realProcessTestSignal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
+
 export const testRunToken = (): string => process.env[TEST_RUN_ENV] ?? 'x';
 
 export const tempDirPrefixFor = (token: string): string => `${TEMP_DIR_PREFIX}${token}-`;

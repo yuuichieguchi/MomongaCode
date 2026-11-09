@@ -126,6 +126,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     declareNativeFm(home, fm.binaryPath);
     const paths = homePaths(home);
     fs.mkdirSync(paths.fmMarkers, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(paths.fmSocket), { recursive: true, mode: 0o700 });
     for (const dir of [paths.root, path.dirname(paths.fmSocket), path.dirname(paths.fmMarkers), paths.fmMarkers]) fs.chmodSync(dir, 0o700);
     const marker = path.join(paths.fmMarkers, randomUUID());
     const markerFd = fs.openSync(marker, 'w', 0o600);

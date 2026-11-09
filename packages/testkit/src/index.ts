@@ -134,6 +134,7 @@ export {
   tempDirPrefixFor,
   testRunToken,
   withTempDir,
+  realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';

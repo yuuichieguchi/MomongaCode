@@ -1,37 +1,56 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, SocketPathUnsupportedError, momongaPaths, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/foundation';
+import { TARGET_NOT_READY } from '@momonga/protocol';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
-import { makeDir } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
-import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
+import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
 
 const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } };
+const FITTING_TARGET = 'fm';
 
 const instanceSockets = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
+
+const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
 
 const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
   const prefix = Buffer.byteLength(path.join(instanceSockets(home), 'x.sock')) - 1;
   return `t${'n'.repeat(byteLength - prefix - 1)}`;
 };
 
-describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform is refused at load with the socket-fit rule of I2 (design-managed-servers section 18, item 4)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('refuses the configuration with SocketPathUnsupportedError naming the instance socket, launches no server and creates no marker directory for it', async () => {
+const unfitText = (target: string, byteLength: number, limit: number): string =>
+  `the target "${target}": its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`;
+
+describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of 18.2.5 (design-managed-servers section 18, item 4)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('starts the gateway, answers the long-path target 412 target_not_ready with the 18.2.5 text, creates no socket or marker for it, and still serves the other target', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();
     const limit = socketPathLimit(process.platform);
-    const target = targetNameWhoseSocketIs(home, limit + 1);
-    const socket = path.join(instanceSockets(home), `${target}.sock`);
-    expect(Buffer.byteLength(socket)).toBe(limit + 1);
-    writeSettings(home, { models: { targets: { [target]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED } }, aliases: { default: [target] } } });
+    const longTarget = targetNameWhoseSocketIs(home, limit + 1);
+    const longSocket = path.join(instanceSockets(home), `${longTarget}.sock`);
+    expect(Buffer.byteLength(longSocket)).toBe(limit + 1);
+    writeSettings(home, {
+      models: {
+        targets: {
+          [longTarget]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
+          [FITTING_TARGET]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
+        },
+        aliases: { default: [FITTING_TARGET], long: [longTarget] },
+      },
+    });
 
-    const error = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions).catch((caught: unknown) => caught);
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
+    const client = clientFor(handle.socketPath);
 
-    expect(error).toBeInstanceOf(SocketPathUnsupportedError);
-    expect((error as Error).message).toMatch(/^Unix socket path .* must be shorter than \d+ bytes/);
-    expect((error as Error).message).toContain(socket);
-    expect(fs.existsSync(socket)).toBe(false);
-    expect(fs.existsSync(path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target))).toBe(false);
+    const refused = await readJson(await postJson(client, '/v1/responses', { model: 'long', input: userInput('hello') }));
+    expect(refused.status).toBe(412);
+    expect(refused.body.error.code).toBe(TARGET_NOT_READY);
+    expect(refused.body.error.message).toBe(unfitText(longTarget, limit + 1, limit));
+    expect(fs.existsSync(longSocket)).toBe(false);
+    expect(fs.existsSync(instanceMarkers(home, longTarget))).toBe(false);
+
+    const served = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));
+    expect(served.status).toBe(200);
   });
 });
