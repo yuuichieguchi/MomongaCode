@@ -17,7 +17,7 @@ const dataset = parseContextDataset(
   'unpriced.json',
 );
 
-type Outcome = { cost: number } | { unpriced: 'plan' | 'unknown_billing' | 'no_price_entry' | 'unpriceable_usage' } | 'unrecorded';
+type Outcome = { cost: number } | { unpriced: 'plan' | 'unknown_billing' | 'usage_not_reported' | 'cache_read_not_reported' | 'no_price_entry' | 'unpriceable_usage' } | 'unrecorded';
 
 const responded = (outcome: Outcome, step: number): RunEventPayload =>
   ({
@@ -75,6 +75,16 @@ describe('eval records why a cost is unmeasured (R-D)', () => {
 
     expect(line).toContain('plan usage, no per-token price in 1 call(s) of 1 case(s)');
     expect(line).toContain('no price entry in 1 call(s) of 1 case(s)');
+  });
+
+  it('counts a call whose usage was estimated by its code, never as unrecorded, and keeps it through a stored report', () => {
+    const report = reportOf((caseId) => (caseId === 'a-off' ? { unpriced: 'usage_not_reported' } : PRICED));
+    const tokens = report.cases.find((entry) => entry.id === 'a-off')?.tokens;
+
+    expect(tokens).toMatchObject({ unpriced: { usage_not_reported: 1 } });
+    expect(tokens?.unrecordedPrice ?? 0).toBe(0);
+    expect(costLine(report)).toBe('costPerSuccess n/a (usage not reported in 1 call(s) of 1 case(s))');
+    expect(parseContextReport(encodeContextReport(report), 'stored.json').cases.find((entry) => entry.id === 'a-off')?.tokens).toMatchObject({ unpriced: { usage_not_reported: 1 } });
   });
 
   it('says "price not recorded" for a record with neither cost nor unpriced, and counts it apart', () => {
