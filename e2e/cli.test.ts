@@ -413,7 +413,7 @@ describe('cli: gateway probe of a chat-completions target', () => {
       expect(probed.stdout).toContain('tool calling: native');
       expect(probed.stdout).toContain('parallel tool calls: true');
       expect(probed.stdout).toContain('reasoning: cannot be controlled, leaves room for 90 tokens');
-      expect(fs.readdirSync(home.paths.probe).filter((name) => name.startsWith('endpoint-'))).toHaveLength(1);
+      expect(fs.readdirSync(home.paths.probe).filter((name) => /^endpoint-[0-9a-f]+\.json$/.test(name))).toHaveLength(1);
     } finally {
       await fake.close();
     }
