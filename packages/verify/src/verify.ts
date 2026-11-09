@@ -33,6 +33,7 @@ export type VerifyRequest = {
 
 const STATIC_OUTSIDE_PROOF: readonly string[] = [
   'What an arbitrary shell command does when it runs. Only the rules are checked; a Bash rule is checked against plain commands, that is one program followed by unquoted literal words.',
+  'A Bash(...) allow rule matches the command text literally, so it allows every option of its program, including options that make the program run another program, such as git -c core.pager=<program> log under Bash(git:*), find . -exec <program> {} \\; under Bash(find:*), or npm test --script-shell=<program> under Bash(npm test:*). What those options do is not checked.',
   'Commands with quoting, expansion, redirects, pipes, && or ;, wrapper programs (env, sudo, timeout, xargs and the like), shell payloads (bash -c) and script interpreters, and the file paths the product derives from the arguments of a command.',
   'Path normalisation: the model takes absolute, normalised paths whose symlinks are those the rules were compiled against. Relative paths, .. segments, other symlinks and non-NFC names are normalised by product code that is not proved.',
   'Path characters: printable ASCII plus the non-ASCII characters that occur in the rules, the home folder and the roots. Case folding covers upper and lower case pairs only.',
