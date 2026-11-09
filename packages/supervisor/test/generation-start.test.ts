@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { canonicalPath, generationLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { TEST_VERSION, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
+import { TEST_VERSION, pump, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
 import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
 const FOLD_VERSION = 1;
@@ -112,5 +112,24 @@ describe('promotion only above run/current (15.3 S4, 15.5, 15.6)', { timeout: RE
       description: 'run/current names generation 3',
     });
     expect(currentOf(h.paths)).toEqual({ generation: 3, version: TEST_VERSION, sockets: generationLayout(canonicalPath(h.home), 3).sockets });
+  });
+});
+
+describe('a child of another version starts a generation and stops nothing (A7, 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('keeps serving, sends no stop, leaves run/current, and allocates the next generation', async (context) => {
+    const h = await startHarness(context, { prepare: prepareStart(1, TEST_VERSION), overrides: asGeneration(1) });
+    await published(h);
+    const current = fs.readFileSync(h.paths.current, 'utf8');
+    const stopsBefore = h.order.filter((entry) => entry.startsWith('SIG')).length;
+    h.fake.setBehaviour('runtime', { autoReady: false });
+    h.fake.latest('runtime').exit(1);
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 120_000, description: 'runtime restarted' });
+    h.fake.latest('runtime').ready({ version: '0.0.0-replaced' });
+    await pump(h.timers, h.realWork, 5000);
+    expect(h.health().phase).toBe('running');
+    expect(h.order.filter((entry) => entry.startsWith('SIG')).length).toBe(stopsBefore);
+    expect(fs.readFileSync(h.paths.current, 'utf8')).toBe(current);
+    expect(fs.readFileSync(`${h.paths.run}/generation.counter`, 'utf8').trim()).toBe('2');
+    expect(fs.existsSync(startRecordOf(h.home, 2))).toBe(true);
   });
 });

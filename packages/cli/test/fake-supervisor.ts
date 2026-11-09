@@ -113,7 +113,7 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
   });
   fs.mkdirSync(layout.dir, { recursive: true, mode: 0o700 });
   let kernelLock: ProcessLock | undefined;
-  if (options.holdsKernelLock === true) kernelLock = await acquireProcessLock(layout.locks.supervisor);
+  if (options.holdsKernelLock !== false) kernelLock = await acquireProcessLock(layout.locks.supervisor);
   else fs.writeFileSync(layout.locks.supervisor, String(process.pid));
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

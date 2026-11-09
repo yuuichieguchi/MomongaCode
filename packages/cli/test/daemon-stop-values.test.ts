@@ -25,7 +25,7 @@ const setup = async (context: TestContext) => {
     fs.writeFileSync(file, JSON.stringify(value));
   };
   const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths'>, holdsLock = true) => {
-    const supervisor = await startFakeSupervisor({ paths, ...options });
+    const supervisor = await startFakeSupervisor({ paths, holdsKernelLock: false, ...options });
     registerCleanup(context, () => supervisor.stop());
     if (holdsLock) {
       const lock = await acquireProcessLock(firstGeneration(paths).locks.supervisor);
