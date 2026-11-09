@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
+import { createStopValuesReader, createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
+import type { StopValuesReader } from '@momonga/config';
 import {
   EXIT_VERSION_MISMATCH,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -8,12 +9,13 @@ import {
   announceReady,
   canonicalPath,
   createJsonLogger,
+  daemonStopBoundMs,
   ensureMomongaDirs,
   momongaPaths,
   runtimeMaxCloseMs,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { createChildManager } from './child-manager.ts';
@@ -64,7 +66,8 @@ export type SupervisorOptions = {
   stdout?: TextStream;
   spawn: SpawnPort;
   signal?: AbortSignal;
-  onShutdownRequested?: () => void;
+  stopValues?: StopValuesReader;
+  onShutdownRequested?: (values?: StopValues) => void;
 };
 
 export type SupervisorStartTiming = { drainTimeoutMs: number; startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
@@ -87,8 +90,8 @@ export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leake
 export type SupervisorProcess = {
   ready: ReadyFields;
   health(): SupervisorHealth;
-  close(): Promise<SupervisorCloseResult>;
-  abort(): Promise<SupervisorCloseResult>;
+  close(values?: StopValues): Promise<SupervisorCloseResult>;
+  abort(values?: StopValues): Promise<SupervisorCloseResult>;
   closed: Promise<SupervisorCloseResult>;
   fatal: Promise<Error>;
 };
@@ -131,7 +134,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let planPromise: Promise<void> = Promise.resolve();
     let settingsWatcher: SettingsWatch | undefined;
     let versionMismatch = false;
-    let requestShutdown: () => void = () => undefined;
+    let requestShutdown: (values?: StopValues) => void = () => undefined;
+    let stopBoundMs: number | undefined;
     const launchController = new AbortController();
     const planController = new AbortController();
     const reportedSources = new Set<string>();
@@ -173,6 +177,16 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     };
 
     const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
+    const stopValues =
+      options.stopValues ??
+      createStopValuesReader({
+        load: () => {
+          const snapshot = settings.snapshot();
+          if ('error' in snapshot) throw snapshot.error;
+          return snapshot.settings.gateway;
+        },
+        onNotice: (detail) => log(settingsWarning({ detail })),
+      });
 
     const createManager = (role: ChildRole): ChildManager =>
       createChildManager({
@@ -198,6 +212,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
           versionMismatch = true;
           requestShutdown();
         },
+        stopValues,
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
@@ -218,6 +233,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       env: 'frozen at supervisor start',
       children: [gateway.health(), runtime.health()],
       logs: { droppedLines: options.droppedLogLines?.() ?? 0 },
+      ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
     });
 
     const planPort: RestartPlanPort = {
@@ -350,18 +366,24 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       return versionMismatch ? { ...result, exitCode: EXIT_VERSION_MISMATCH } : result;
     };
     const closedWithExitCode = withExitCode(shutdown.closed);
-    const closeWithExitCode = (): Promise<SupervisorCloseResult> => {
-      void shutdown.close();
+    const valuesOfStop = (given: StopValues | undefined): StopValues | undefined => {
+      if (shutdown.mode() !== 'idle') return given;
+      const values = given ?? stopValues.read();
+      stopBoundMs = daemonStopBoundMs(values);
+      return values;
+    };
+    const closeWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+      void shutdown.close(valuesOfStop(values));
       return closedWithExitCode;
     };
-    const abortWithExitCode = (): Promise<SupervisorCloseResult> => {
-      void shutdown.abort();
+    const abortWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+      void shutdown.abort(valuesOfStop(values));
       return closedWithExitCode;
     };
 
-    requestShutdown = (): void => {
-      if (options.onShutdownRequested === undefined) void closeWithExitCode();
-      else options.onShutdownRequested();
+    requestShutdown = (values?: StopValues): void => {
+      if (options.onShutdownRequested === undefined) void closeWithExitCode(values);
+      else options.onShutdownRequested(values);
     };
 
     options.signal?.throwIfAborted();
@@ -369,7 +391,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: paths.sockets.supervisor,
       timers,
       health,
-      onShutdownRequested: () => requestShutdown(),
+      onShutdownRequested: (values) => requestShutdown(values),
+      onIgnoredStopValues: (reason) => log(settingsWarning({ detail: `the stop values of the shutdown request were malformed and were ignored: ${reason}` })),
       onError: (error) => reportBackground(error, 'control-server'),
       ...lockOptions,
     });

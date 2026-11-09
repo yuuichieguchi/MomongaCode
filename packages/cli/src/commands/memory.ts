@@ -4,6 +4,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { formatMemory, formatMemoryHistory, formatMemoryList, formatReflection } from '../memory/format.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -12,7 +13,7 @@ export type MemoryAddOptions = { kind?: MemoryKind; user: boolean; paths: readon
 
 export const memoryAdd = async (ports: CliPorts, paths: MomongaPaths, text: string, options: MemoryAddOptions): Promise<number> => {
   if (options.user && options.paths.length > 0) throw new InvalidArgumentError('--path binds a memory to files of this folder, so it cannot be combined with --user');
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const memory = await client.addMemory({
@@ -32,7 +33,7 @@ export const memoryAdd = async (ports: CliPorts, paths: MomongaPaths, text: stri
 export type MemoryListOptions = { scope?: MemoryScope; project?: string; json: boolean };
 
 export const memoryList = async (ports: CliPorts, paths: MomongaPaths, options: MemoryListOptions): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const memories = await client.memories({
@@ -47,7 +48,7 @@ export const memoryList = async (ports: CliPorts, paths: MomongaPaths, options: 
 };
 
 export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: string, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const memory = await client.memory(id);
@@ -59,7 +60,7 @@ export const memoryShow = async (ports: CliPorts, paths: MomongaPaths, id: strin
 };
 
 export const memoryHistory = async (ports: CliPorts, paths: MomongaPaths, id: string, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const memories = await client.memoryHistory(id);
@@ -71,7 +72,7 @@ export const memoryHistory = async (ports: CliPorts, paths: MomongaPaths, id: st
 };
 
 export const memoryReview = async (ports: CliPorts, paths: MomongaPaths, options: { json: boolean }): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const waiting = await client.memories({ state: 'candidate', project: ports.cwd });
@@ -87,7 +88,7 @@ export const memoryReview = async (ports: CliPorts, paths: MomongaPaths, options
 const changeMemory =
   (change: (client: RuntimeClient, id: string) => Promise<MemoryView>, past: string) =>
   async (ports: CliPorts, paths: MomongaPaths, id: string): Promise<number> => {
-    await ensureDaemon(ports, paths);
+    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
     const client = connectRuntime(paths);
     try {
       const memory = await change(client, id);
@@ -105,7 +106,7 @@ export const memoryReject = changeMemory((client, id) => client.rejectMemory(id)
 export const memoryRestore = changeMemory((client, id) => client.restoreMemory(id), 'restored');
 
 export const memoryPromote = async (ports: CliPorts, paths: MomongaPaths, id: string, skill: string): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const file = await client.promoteMemory(id, skill);
@@ -117,7 +118,7 @@ export const memoryPromote = async (ports: CliPorts, paths: MomongaPaths, id: st
 };
 
 export const memoryDelete = async (ports: CliPorts, paths: MomongaPaths, id: string): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     await client.deleteMemory(id);

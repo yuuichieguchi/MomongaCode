@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 import {
@@ -43,8 +43,10 @@ describe('wait constants', () => {
     expect(E2E_RECOVERY_BOUND_MS).toBe(E2E_RESTART_BOUND_MS + E2E_LEASE_MS + E2E_MARGIN_MS);
     expect(E2E_SETTINGS_SEEN_BOUND_MS).toBe(SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + E2E_MARGIN_MS);
     expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + 2 * E2E_RESTART_BOUND_MS);
-    expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(Math.max(runtimeMaxCloseMs(E2E_DRAIN_TIMEOUT_MS), GATEWAY_MAX_CLOSE_MS) + E2E_MARGIN_MS);
-    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(supervisorMaxCloseMs(E2E_DRAIN_TIMEOUT_MS) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS);
+    expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(Math.max(runtimeMaxCloseMs(E2E_DRAIN_TIMEOUT_MS), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)) + E2E_MARGIN_MS);
+    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(supervisorMaxCloseMs(E2E_DRAIN_TIMEOUT_MS, DEFAULT_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS);
+    expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(32_000);
+    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(96_100);
     expect(E2E_REAP_CLOSE_BOUND_MS).toBe(SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS);
     expect(E2E_CANCEL_TERM_BOUND_MS).toBe(E2E_MARGIN_MS);
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS);

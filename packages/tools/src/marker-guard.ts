@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { RETRY_KINDS, claimRetry, commandMayStillRun, readAttemptRecord, reapMarkedProcessesWithReport } from '@momonga/foundation';
+import { RETRY_KINDS, claimRetry, commandMayStillRun, readAttemptRecord, readMarkerGroup, reapMarkedProcessesWithReport } from '@momonga/foundation';
 import type { AttemptRecord, CommandLiveness, GroupLiveness, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, RetryKind, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { createMarkerSettle, listingOf } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
@@ -35,7 +35,7 @@ const finalNoticeText = (name: string): string =>
 const uncheckedText = (name: string, reason: string): string =>
   `Note: MomongaCode could not check whether a process started by an earlier command (marker ${name}) is still running (${reason}). The command ran. It will check again before the next command that runs a process or changes files in this session.`;
 
-export type MarkerLedgerRow = { settled: boolean; pgid: number | undefined };
+export type MarkerLedgerRow = { settled: boolean };
 
 export type MarkerGuardOptions = {
   markerDir: string;
@@ -76,7 +76,7 @@ export const createMarkerGuard = (guardOptions: MarkerGuardOptions): MarkerGuard
   const variantOf = (name: string): MarkerGuardRefusal => (guardOptions.ledgerRow(name).settled || owners.modeOf(name) !== undefined ? 'settled' : 'interrupted');
 
   const groupOf = async (name: string, settle: MarkerSettle, signal: AbortSignal): Promise<GroupLiveness> => {
-    const { pgid } = guardOptions.ledgerRow(name);
+    const pgid = await readMarkerGroup(path.join(markerDir, name));
     return pgid === undefined ? { kind: 'unrecorded' } : { kind: 'read', runnable: await settle.groupAlive(pgid, signal) };
   };
 

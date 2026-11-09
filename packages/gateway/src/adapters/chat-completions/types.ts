@@ -8,6 +8,7 @@ import type {
   CountTokensRequest,
   CountTokensResult,
   HealthResult,
+  AdapterStop,
   ProviderAdapter,
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
@@ -34,9 +35,9 @@ export type ChatCompletionsAdapterOptions = {
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   vocabulary?: ErrorVocabulary;
   isGuardrail?: (target: AdapterTarget, status: number, body: unknown) => boolean;
-  close?: () => Promise<void>;
+  close?: (stop?: AdapterStop) => Promise<void>;
   clock: Clock;
   liveness: UpstreamLiveness;
 };
 
-export type ChatCompletionsAdapter = ProviderAdapter & { close(): Promise<void> };
+export type ChatCompletionsAdapter = ProviderAdapter & { close(stop?: AdapterStop): Promise<void> };

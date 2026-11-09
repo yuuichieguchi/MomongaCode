@@ -1,5 +1,5 @@
-import type { JsonLogger } from '@momonga/foundation';
-import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
+import type { JsonLogger, StopValues } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
 import type { SupervisorTimers } from './constants.ts';
 import { stopBudgetMs } from './child-manager.ts';
 import type { ChildManager, ChildStopResult } from './child-manager.ts';
@@ -29,12 +29,12 @@ export type ShutdownControllerOptions = {
 
 export type ShutdownController = {
   mode(): ShutdownMode;
-  close(): Promise<SupervisorCloseResult>;
-  abort(): Promise<SupervisorCloseResult>;
+  close(values?: StopValues): Promise<SupervisorCloseResult>;
+  abort(values?: StopValues): Promise<SupervisorCloseResult>;
   readonly closed: Promise<SupervisorCloseResult>;
 };
 
-export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number): number => stopBudgetMs(role, mode, drainTimeoutMs);
+export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number, values: StopValues): number => stopBudgetMs(role, mode, drainTimeoutMs, values);
 
 const MAX_REAP_ATTEMPTS = 2;
 
@@ -44,6 +44,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const { runtime, gateway, timers, logger } = options;
   const managers = [runtime, gateway] as const;
   let mode: ShutdownMode = 'idle';
+  let stopValues: StopValues = DEFAULT_STOP_VALUES;
   let resolveClosed: (result: SupervisorCloseResult) => void = () => undefined;
   const closed = new Promise<SupervisorCloseResult>((resolve) => {
     resolveClosed = resolve;
@@ -52,7 +53,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
 
   const stopMode = (): StopMode => (mode === 'aborting' ? 'int' : 'term');
 
-  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop('shutdown', stopMode());
+  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop('shutdown', stopMode(), stopValues);
 
   const reapStep = async (triedBefore: ReadonlyMap<ChildRole, ReadonlySet<string>>): Promise<void> => {
     let expired = false;
@@ -178,8 +179,9 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     return { clean, killed, leaked, ...(fatal === undefined ? {} : { fatal }) };
   };
 
-  const begin = (next: 'closing' | 'aborting'): void => {
+  const begin = (next: 'closing' | 'aborting', values: StopValues | undefined): void => {
     mode = next;
+    if (values !== undefined) stopValues = values;
     run().then(resolveClosed, (error: unknown) => {
       const failure = failureOf(error);
       options.onFatal(failure);
@@ -188,17 +190,17 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   };
 
   const escalate = (): void => {
-    for (const manager of managers) void manager.stop('shutdown', 'int');
+    for (const manager of managers) void manager.stop('shutdown', 'int', stopValues);
   };
 
   return {
     mode: () => mode,
-    close: () => {
-      if (mode === 'idle') begin('closing');
+    close: (values) => {
+      if (mode === 'idle') begin('closing', values);
       return closed;
     },
-    abort: () => {
-      if (mode === 'idle') begin('aborting');
+    abort: (values) => {
+      if (mode === 'idle') begin('aborting', values);
       else if (mode === 'closing') {
         mode = 'aborting';
         escalate();

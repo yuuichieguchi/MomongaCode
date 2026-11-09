@@ -24,7 +24,7 @@ export const noisyDaemonMain = async (argv: readonly string[] = process.argv.sli
   if (lifelineFd === undefined) throw new Error('the noisy daemon requires --lifeline-fd');
   const stop = (): never => process.exit(0);
   process.on('SIGTERM', stop);
-  watchLifeline(lifelineFd, stop);
+  watchLifeline(lifelineFd, { onEnd: stop, onLine: () => undefined, onOverlongLine: () => undefined });
   for (const line of NOISY_STDERR_LINES) await writeLine(process.stderr, line);
   await writeLine(process.stdout, NOISY_STDOUT_LINE);
   announceReady({ service: role, pid: process.pid, version: SUPERVISOR_APP_VERSION, socketPath: momongaPaths(home).sockets[role], startedAt: new Date().toISOString() });

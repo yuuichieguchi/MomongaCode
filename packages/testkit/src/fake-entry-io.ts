@@ -105,10 +105,10 @@ export const createFakeEntryIo = (options: FakeEntryIoOptions): FakeEntryIo => {
         uncaughtHandlers.delete(handler);
       };
     },
-    watchLifeline: (fd, onEnd) => {
+    watchLifeline: (fd, handlers) => {
       lifelineFds.push(fd);
-      lifelineEnds.push(onEnd);
-      return () => void lifecycle.push('dispose:lifeline');
+      lifelineEnds.push(handlers.onEnd);
+      return { dispose: () => void lifecycle.push('dispose:lifeline'), drain: async () => undefined };
     },
     logFile,
     holdOpen: () => {

@@ -8,7 +8,7 @@ import { interceptors, request } from 'undici';
 import type { Dispatcher } from 'undici';
 import { processOutboundNetwork } from '../network.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
-import { defaultDaemonBounds, probeSupervisor } from '../daemon/ensure-daemon.ts';
+import { STOP_WAIT_WHEN_UNKNOWN_MS, daemonReadyBoundMs, probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
@@ -146,8 +146,7 @@ export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
     }
   },
   restartBoundMs: async () => {
-    const { readyMs, stopMs } = await defaultDaemonBounds();
-    return readyMs + stopMs;
+    return (await daemonReadyBoundMs()) + STOP_WAIT_WHEN_UNKNOWN_MS;
   },
 });
 

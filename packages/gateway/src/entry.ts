@@ -1,6 +1,7 @@
-import { ConfigError } from '@momonga/config';
-import { COMMON_ENTRY_FLAGS, EntryUsageError, GATEWAY_MAX_CLOSE_MS, canonicalPath, momongaPaths, runDaemonEntry } from '@momonga/foundation';
-import type { EntryIo, FlagSpec, SecretStore } from '@momonga/foundation';
+import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
+import type { StopValuesReader } from '@momonga/config';
+import { COMMON_ENTRY_FLAGS, EntryUsageError, canonicalPath, gatewayMaxCloseMs, momongaPaths, runDaemonEntry } from '@momonga/foundation';
+import type { EntryIo, FlagSpec, JsonLogger, SecretStore } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startGatewayProcess } from './process.ts';
 
@@ -13,12 +14,18 @@ export const GATEWAY_ENTRY_FLAGS = {
 
 export type GatewayEntryDeps = { version: string; secretStore?: SecretStore };
 
-export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<number> =>
-  runDaemonEntry(io, {
+export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<number> => {
+  let stopValues: StopValuesReader | undefined;
+  const stopValuesOf = (home: string, logger: JsonLogger): StopValuesReader => {
+    stopValues ??= createStopValuesReader({ load: () => readUserStopValues(canonicalPath(home)), onNotice: (message) => logger.warn(message) });
+    return stopValues;
+  };
+  return runDaemonEntry(io, {
     service: 'gateway',
     version: deps.version,
     flags: GATEWAY_ENTRY_FLAGS,
-    maxCloseMs: () => GATEWAY_MAX_CLOSE_MS,
+    maxCloseMs: (_flags, values) => gatewayMaxCloseMs(values),
+    readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
     ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.gateway,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
@@ -38,6 +45,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         stdout,
         signal,
         acquireLock,
+        stopValues: stopValuesOf(home, logger),
         ...(fmBinary === undefined ? {} : { fmBinary }),
         ...(debugPort === undefined || debugTokenFile === undefined ? {} : { debugTcp: { port: debugPort, tokenFile: debugTokenFile } }),
         ...(deps.secretStore === undefined ? {} : { secretStore: deps.secretStore }),
@@ -45,3 +53,4 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },
   });
+};

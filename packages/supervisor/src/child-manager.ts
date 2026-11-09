@@ -1,20 +1,24 @@
 import type { Duplex, Readable } from 'node:stream';
-import type { ResolvedSettings, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
+import { createStopValuesReader } from '@momonga/config';
+import type { ResolvedSettings, StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
   claimLockForChild,
+  formatStopMessage,
+  gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
   parseReadyLine,
+  reapMarkerDirectory,
   runtimeStopBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
 import { captureStream, createOutputLimiter } from './capture.ts';
 import { definedEnv, gatewayEnv, runtimeEnv, COLLIDING_CREDENTIAL_DETAIL } from './child-env.ts';
-import { GATEWAY_ABORT_BUDGET_MS, HELD_REASON_MAX_CHARS, SUPERVISOR_SERVICE } from './constants.ts';
+import { HELD_REASON_MAX_CHARS, SUPERVISOR_SERVICE } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { childStdio, resolveLaunch } from './launcher.ts';
 import type { GatewayTuning, ChildRole, Launcher, RuntimeTuning } from './launcher.ts';
@@ -100,6 +104,7 @@ export type ChildManagerOptions = {
   lockWaitMs: number;
   lockMechanism?: KernelLockMechanism;
   markerPorts?: MarkerPorts;
+  stopValues?: StopValuesReader;
   isDraining(): boolean;
   onBackgroundError(error: unknown, source: string): void;
   onTransientError(error: unknown, source: string): void;
@@ -117,19 +122,21 @@ export type ChildManager = {
   failWithoutProcess(reason: 'settings-read-failed'): void;
   planStart(): void;
   retryHeld(): void;
-  stop(reason: StopReason, mode: StopMode): Promise<ChildStopResult>;
+  stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult>;
   enterDraining(): void;
   unreapedMarkers(): readonly string[];
   inFlightReaps(): ReadonlyMap<string, Promise<{ removed: boolean }>>;
   awaitLeave(from: ChildState, options: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState>;
 };
 
-export const stopBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number): number => {
+export const stopBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number, values: StopValues): number => {
   if (role === 'runtime') {
     return mode === 'term' ? runtimeStopBudgetMs(drainTimeoutMs) : RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
   }
-  return mode === 'term' ? gatewayStopBudgetMs() : GATEWAY_ABORT_BUDGET_MS;
+  return mode === 'term' ? gatewayStopBudgetMs(values) : gatewayAbortBudgetMs(values);
 };
+
+const carriesStopValues = (role: ChildRole): boolean => role === 'gateway';
 
 type LifeTimerName = 'startup' | 'stable' | 'budget' | 'confirm';
 
@@ -142,6 +149,8 @@ type Life = {
   lastStderrLine: string | undefined;
   stopReason: StopReason | undefined;
   stopMode: StopMode | undefined;
+  stopValues: StopValues | undefined;
+  signalled: boolean;
   budgetEndsAt: number | undefined;
   stopPromise: Promise<ChildStopResult> | undefined;
   resolveStop: ((result: ChildStopResult) => void) | undefined;
@@ -162,6 +171,16 @@ const isStartupReason = (reason: StopReason): boolean => stopReasonRank(reason) 
 export const createChildManager = (options: ChildManagerOptions): ChildManager => {
   const { role, timers, clock, logger } = options;
   const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
+  const stopValuesReader =
+    options.stopValues ??
+    createStopValuesReader({
+      load: () => {
+        const snapshot = options.settings.snapshot();
+        if ('error' in snapshot) throw snapshot.error;
+        return snapshot.settings.gateway;
+      },
+      onNotice: (detail) => writeEvent(logger, settingsWarning({ detail })),
+    });
 
   let state: ChildState = 'pending';
   let generation = 0;
@@ -497,16 +516,29 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
   };
 
+  const reapManagedServers = async (life: Life): Promise<void> => {
+    if (!carriesStopValues(role)) return;
+    const values = life.stopValues ?? stopValuesReader.read();
+    await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
+      dir: options.paths.markers.targets,
+      killGraceMs: values.managedServerStopGraceMs,
+      label: 'managed server',
+      onWarning: (detail) => log(settingsWarning({ detail })),
+    });
+  };
+
   const handleExit = async (life: Life, exit: ChildExit): Promise<void> => {
     life.exited = true;
     life.killStop.abort();
     clearLifeTimers(life);
     if (life.abandoned) {
       await flushStdio(life);
+      if (liveLife() === undefined) await reapManagedServers(life);
       return;
     }
     const arrivalGeneration = generation;
     await flushStdio(life);
+    await reapManagedServers(life);
     if (options.isDraining()) unreaped.add(life.marker.path);
     else await reapMarker(life.marker.path);
     const draining = options.isDraining();
@@ -586,6 +618,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       lastStderrLine: undefined,
       stopReason: undefined,
       stopMode: undefined,
+      stopValues: undefined,
+      signalled: false,
       budgetEndsAt: undefined,
       stopPromise: undefined,
       resolveStop: undefined,
@@ -634,23 +668,52 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     settleStop(life, { killed: true, leaked: true });
   };
 
+  const forceKill = (life: Life): void => {
+    if (life.exited || life.groupKilled) return;
+    clearLifeTimer(life, 'budget');
+    life.groupKilled = true;
+    life.timers.confirm = schedule('kill-confirm-timer', options.intervals.killConfirmMs, () => {
+      life.timers.confirm = undefined;
+      declareUnkillable(life);
+    });
+    life.handle.killGroup(life.killStop.signal).catch(() => declareUnkillable(life));
+  };
+
   const armBudget = (life: Life, ms: number): void => {
     clearLifeTimer(life, 'budget');
     life.budgetEndsAt = clock.now() + ms;
     life.timers.budget = schedule('stop-budget-timer', ms, () => {
       life.timers.budget = undefined;
-      if (life.exited) return;
-      life.groupKilled = true;
-      life.timers.confirm = schedule('kill-confirm-timer', options.intervals.killConfirmMs, () => {
-        life.timers.confirm = undefined;
-        declareUnkillable(life);
-      });
-      life.handle.killGroup(life.killStop.signal).catch(() => declareUnkillable(life));
+      forceKill(life);
     });
   };
 
-  const budgetFor = (reason: StopReason, mode: StopMode): number =>
-    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, drainTimeoutMs);
+  const budgetFor = (reason: StopReason, mode: StopMode, values: StopValues): number =>
+    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, drainTimeoutMs, values);
+
+  const signalOf = (mode: StopMode): NodeJS.Signals => (mode === 'int' ? 'SIGINT' : 'SIGTERM');
+
+  const signalStop = (life: Life): void => {
+    if (life.exited || life.groupKilled || life.stopMode === undefined) return;
+    life.signalled = true;
+    life.handle.kill(signalOf(life.stopMode));
+  };
+
+  const sendStop = (life: Life, values: StopValues): void => {
+    if (!carriesStopValues(role)) {
+      signalStop(life);
+      return;
+    }
+    const lifeline = life.handle.lifeline;
+    if (lifeline === null) {
+      forceKill(life);
+      return;
+    }
+    lifeline.write(formatStopMessage(values), (error) => {
+      if (error === null || error === undefined) signalStop(life);
+      else forceKill(life);
+    });
+  };
 
   const stopWithoutProcess = (reason: StopReason): ChildStopResult => {
     if (reason !== 'plan-restart') {
@@ -664,7 +727,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     return { killed: false, leaked };
   };
 
-  function stop(reason: StopReason, mode: StopMode): Promise<ChildStopResult> {
+  function stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult> {
     const life = liveLife();
     if (life === undefined) return Promise.resolve(stopWithoutProcess(reason));
     if (life.exited) return Promise.resolve({ killed: life.groupKilled, leaked: false });
@@ -676,8 +739,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       }
       if (mode === 'int' && life.stopMode === 'term' && life.pid !== undefined) {
         life.stopMode = 'int';
-        life.handle.kill('SIGINT');
-        if (!life.groupKilled && life.budgetEndsAt !== undefined) armBudget(life, Math.min(budgetFor(life.stopReason, 'int'), Math.max(0, life.budgetEndsAt - clock.now())));
+        if (life.signalled) life.handle.kill('SIGINT');
+        if (!life.groupKilled && life.budgetEndsAt !== undefined && life.stopValues !== undefined) {
+          armBudget(life, Math.min(budgetFor(life.stopReason, 'int', life.stopValues), Math.max(0, life.budgetEndsAt - clock.now())));
+        }
       }
       return life.stopPromise as Promise<ChildStopResult>;
     }
@@ -692,8 +757,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     log(childStop({ child: role, childPid: life.pid ?? null, stop: reason, mode }));
     generation += 1;
     if (life.pid !== undefined) {
-      life.handle.kill(mode === 'int' ? 'SIGINT' : 'SIGTERM');
-      armBudget(life, budgetFor(reason, mode));
+      const stopValues = values ?? stopValuesReader.read();
+      life.stopValues = stopValues;
+      armBudget(life, budgetFor(reason, mode, stopValues));
+      sendStop(life, stopValues);
     }
     return life.stopPromise;
   }

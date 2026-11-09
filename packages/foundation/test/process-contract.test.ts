@@ -6,9 +6,7 @@ import {
   EXIT_OK,
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
-  FM_STOP_GRACE_MS,
-  GATEWAY_CLOSE_GRACE_MS,
-  GATEWAY_MAX_CLOSE_MS,
+  DEFAULT_STOP_VALUES,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
@@ -24,7 +22,9 @@ import {
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
   fmServeStopBoundMs,
+  gatewayMaxCloseMs,
   gatewayStopBudgetMs,
+  managedServerReapBoundMs,
   killedChildSettleMs,
   runtimeStopBudgetMs,
   announceReady,
@@ -235,9 +235,9 @@ describe('close budgets', () => {
     expect(runtimeMaxCloseMs(1)).toBe(15_001);
   });
 
-  it('pins GATEWAY_MAX_CLOSE_MS, the margins and the stdio flushes', () => {
-    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CLOSE_GRACE_MS + fmServeStopBoundMs(FM_STOP_GRACE_MS));
-    expect([GATEWAY_CLOSE_GRACE_MS, FM_STOP_GRACE_MS, fmServeStopBoundMs(FM_STOP_GRACE_MS), GATEWAY_MAX_CLOSE_MS]).toEqual([10_000, 3000, 18_000, 28_000]);
+  it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
+    expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 18_000, 28_000]);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
@@ -258,23 +258,24 @@ describe('close budgets', () => {
 
   it('the stop budgets are the child close budgets plus the shutdown margin', () => {
     expect(runtimeStopBudgetMs(30_000)).toBe(runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS);
-    expect(gatewayStopBudgetMs()).toBe(GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS);
+    expect(gatewayStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS);
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(30_000)).toBe(106_000);
-    expect(supervisorMaxCloseMs(0)).toBe(76_000);
+    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_100);
+    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_100);
     for (const drain of [1, 1000, 12_345]) {
       const steps = [
         SHUTDOWN_DRAIN_BOUND_MS,
         runtimeStopBudgetMs(drain),
         KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
-        gatewayStopBudgetMs(),
+        gatewayStopBudgetMs(DEFAULT_STOP_VALUES),
         KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS,
+        managedServerReapBoundMs(DEFAULT_STOP_VALUES),
         SHUTDOWN_REAP_BOUND_MS,
         SHUTDOWN_RELEASE_BOUND_MS,
       ];
-      expect(supervisorMaxCloseMs(drain), String(drain)).toBe(steps.reduce((sum, step) => sum + step, 0));
+      expect(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES), String(drain)).toBe(steps.reduce((sum, step) => sum + step, 0));
     }
   });
 });

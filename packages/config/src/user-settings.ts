@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import { isTransientErrno } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, isTransientErrno } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { JsonFile } from './json-file.ts';
 import { createKeptSettings } from './kept-settings.ts';
@@ -155,6 +156,34 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
     read,
     snapshot: refresh,
     kept,
+  };
+};
+
+
+export const readUserStopValues = (home: string): StopValues => loadUserSettingsSync(home).settings.gateway;
+
+export type StopValuesReaderOptions = { load(): StopValues; onNotice(message: string): void };
+
+export type StopValuesReader = { read(): StopValues; remember(values: StopValues): void };
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const createStopValuesReader = ({ load, onNotice }: StopValuesReaderOptions): StopValuesReader => {
+  let lastValid: StopValues | undefined;
+  return {
+    read: () => {
+      try {
+        lastValid = load();
+        return lastValid;
+      } catch (error) {
+        const kept = lastValid;
+        onNotice(`the stop values could not be read from the user settings (${messageOf(error)}); ${kept === undefined ? 'the default values were used' : 'the values last read were used'}`);
+        return kept ?? DEFAULT_STOP_VALUES;
+      }
+    },
+    remember: (values) => {
+      lastValid = values;
+    },
   };
 };
 

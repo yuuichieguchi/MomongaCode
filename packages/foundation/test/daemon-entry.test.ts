@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   COMMON_ENTRY_FLAGS,
+  DEFAULT_STOP_VALUES,
   ENTRY_HARD_EXIT_MARGIN_MS,
   EntryUsageError,
   ProcessLockHeldError,
@@ -91,11 +92,11 @@ const fakeIo = (argv: readonly string[]) => {
         if (index !== -1) uncaughtHandlers.splice(index, 1);
       };
     },
-    watchLifeline: (fd, onEnd) => {
+    watchLifeline: (fd, handlers) => {
       events.push('watchLifeline');
       if (lifelineFailure !== undefined) throw lifelineFailure;
-      lifelines.push({ fd, onEnd });
-      return () => events.push('disposeLifeline');
+      lifelines.push({ fd, onEnd: handlers.onEnd });
+      return { dispose: () => void events.push('disposeLifeline'), drain: async () => undefined };
     },
     holdOpen: () => {
       events.push('hold');
@@ -155,6 +156,7 @@ const scriptedDaemon = (overrides: Partial<DaemonDefinition<Flags>> = {}) => {
     version: '1.0.0',
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: () => MAX_CLOSE_MS,
+    readStopValues: () => DEFAULT_STOP_VALUES,
     ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
     logPath: (home) => path.join(home, '.momonga', 'logs', 'runtime.log'),
     isConfigError: (error) => error instanceof Error && error.name === 'ConfigError',
@@ -408,9 +410,9 @@ describe('runDaemonEntry: starting state', () => {
     const order: string[] = [];
     const fake = fakeIo(ARGV_LIFELINE);
     const watch = fake.io.watchLifeline;
-    fake.io.watchLifeline = (fd, onEnd) => {
+    fake.io.watchLifeline = (fd, handlers) => {
       order.push('watchLifeline');
-      return watch(fd, onEnd);
+      return watch(fd, handlers);
     };
     const daemon = scriptedDaemon({
       start: () => {

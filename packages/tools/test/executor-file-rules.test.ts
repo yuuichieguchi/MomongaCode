@@ -67,11 +67,11 @@ const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxComman
   const sandbox: Sandbox = {
     kind,
     spawn: (command, policy): SandboxedProcess => {
-      if (command.argv[1] === '--version') return { pid: 0, pgid: 0, stdout: stream('ripgrep 15.2.0\n'), stderr: stream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+      if (command.argv[1] === '--version') return { pid: 999_990, pgid: 999_990, stdout: stream('ripgrep 15.2.0\n'), stderr: stream(''), exited: Promise.resolve({ code: 0, signal: null }) };
       const configFile = command.env?.['RIPGREP_CONFIG_PATH'];
       spawned.push({ command, policy, config: configFile === undefined ? [] : fs.readFileSync(configFile, 'utf8').split('\n') });
       const text = stdout(command);
-      return { pid: 0, pgid: 0, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
+      return { pid: 999_990, pgid: 999_990, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
     },
   };
   return { sandbox, spawned };

@@ -1,10 +1,7 @@
 import type { MomongaPaths } from "@momonga/foundation";
 import { createSupervisorClient } from "../client/supervisor-client.ts";
-import {
-  ensureDaemon,
-  probeSupervisor,
-  stopDaemon,
-} from "../daemon/ensure-daemon.ts";
+import { ensureDaemon, probeSupervisor, stopDaemon } from "../daemon/ensure-daemon.ts";
+import { stderrStopNotice } from "../daemon/stop-notice.ts";
 import type { DaemonPorts } from "../daemon/ensure-daemon.ts";
 import type { SupervisorHealth } from "@momonga/protocol";
 import type { CliPorts } from "../ports.ts";
@@ -43,7 +40,7 @@ export const daemonStart = async (
   ports: CliPorts & DaemonPorts,
   paths: MomongaPaths,
 ): Promise<number> => {
-  const health = await ensureDaemon(ports, paths);
+  const health = await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   ports.stdout.write(
     `momonga daemon running: pid ${health.pid}, version ${health.version}\n`,
   );
@@ -54,7 +51,7 @@ export const daemonStop = async (
   ports: CliPorts & DaemonPorts,
   paths: MomongaPaths,
 ): Promise<number> => {
-  const { stopped } = await stopDaemon(ports, paths);
+  const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
   ports.stdout.write(
     stopped ? "momonga daemon stopped\n" : "momonga daemon is not running\n",
   );

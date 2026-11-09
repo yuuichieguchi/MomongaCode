@@ -1,4 +1,4 @@
-import { SECRET_NAME_PATTERN } from '@momonga/foundation';
+import { SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
@@ -491,6 +491,14 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    gateway: {
+      type: 'object',
+      properties: {
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max },
+        managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max },
+      },
+      additionalProperties: false,
+    },
     network: {
       type: 'object',
       properties: {

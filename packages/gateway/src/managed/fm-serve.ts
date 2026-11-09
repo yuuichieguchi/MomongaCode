@@ -39,6 +39,7 @@ export interface FmServeOptions {
   healthTimeoutMs: number;
   restartBackoffMs: number;
   stopGraceMs: number;
+  readStopGraceMs?: () => number;
   maxRestarts: number;
   restartResetMs: number;
   preconditionTtlMs: number;
@@ -59,7 +60,7 @@ export interface FmServe {
   readonly restarts: number;
   start(signal?: AbortSignal): Promise<FmServeEndpoint>;
   ensureRunning(): Promise<FmServeEndpoint>;
-  stop(): Promise<void>;
+  stop(stop?: { stopGraceMs: number }): Promise<void>;
   health(): Promise<HealthResult>;
 }
 
@@ -243,7 +244,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
   const claimSocketPath = async (): Promise<void> => {
     if (options.markerDirectory !== undefined) {
       await fs.promises.mkdir(options.markerDirectory, { recursive: true, mode: 0o700 });
-      await reapStaleFmGroups({ markerDirectory: options.markerDirectory, graceMs: options.stopGraceMs, onWarning: options.onWarning });
+      await reapStaleFmGroups({ markerDirectory: options.markerDirectory, graceMs: stopGraceAtBegin(), onWarning: options.onWarning });
     }
     const existing = await fs.promises.lstat(options.socketPath).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;
@@ -298,6 +299,8 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     return managed;
   };
 
+  const stopGraceAtBegin = (): number => (options.readStopGraceMs === undefined ? options.stopGraceMs : options.readStopGraceMs());
+
   const waitForExit = (managed: ManagedChild, timeoutMs: number): Promise<boolean> =>
     new Promise((resolve) => {
       if (managed.exited) {
@@ -316,8 +319,9 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       }, timeoutMs);
     });
 
-  const terminate = (managed: ManagedChild): Promise<void> => {
+  const terminate = (managed: ManagedChild, givenGraceMs?: number): Promise<void> => {
     managed.terminating ??= (async () => {
+      const graceMs = givenGraceMs ?? stopGraceAtBegin();
       if (!managed.exited) {
         const exitedStop = new AbortController();
         managed.exitWaiters.push(() => exitedStop.abort());
@@ -329,14 +333,14 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
           }
         };
         await sendKill('SIGTERM');
-        if (!(await waitForExit(managed, options.stopGraceMs))) {
+        if (!(await waitForExit(managed, graceMs))) {
           await sendKill('SIGKILL');
-          if (!(await waitForExit(managed, options.stopGraceMs))) {
-            options.onWarning(`fm serve was not confirmed stopped: it did not exit within ${options.stopGraceMs} ms after SIGKILL`);
+          if (!(await waitForExit(managed, graceMs))) {
+            options.onWarning(`fm serve was not confirmed stopped: it did not exit within ${graceMs} ms after SIGKILL`);
           }
         }
       }
-      await managed.process.finalize?.(options.stopGraceMs);
+      await managed.process.finalize?.(graceMs);
     })();
     return managed.terminating;
   };
@@ -542,7 +546,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       return start();
     },
 
-    async stop(): Promise<void> {
+    async stop(stop): Promise<void> {
       state = 'stopped';
       generation += 1;
       endStart?.abort(stoppedDuringStart());
@@ -553,7 +557,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       }
       const stopping = current;
       const closing = client;
-      if (stopping !== undefined) await terminate(stopping);
+      if (stopping !== undefined) await terminate(stopping, stop?.stopGraceMs);
       const pendingStart = startPromise;
       if (pendingStart !== undefined) await pendingStart.then(undefined, () => undefined);
       const pendingRestart = restartRun;

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
+import { closeMarkerDescriptor, ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
@@ -14,9 +14,10 @@ const sandboxAnswering = (stdout: string, code: number | null) => {
   const spawned: { command: SandboxCommand; policy: SandboxPolicy; signal: AbortSignal }[] = [];
   const sandbox: Sandbox = {
     kind: 'none',
-    spawn: (command, policy, signal) => {
+    spawn: (command, policy, signal, descriptors) => {
       spawned.push({ command, policy, signal });
-      return { pid: 1, pgid: 1, stdout: bytes(stdout), stderr: bytes('ignored'), exited: Promise.resolve({ code, signal: null }) };
+      if (descriptors?.markerFd !== undefined) closeMarkerDescriptor(descriptors.markerFd);
+      return { pid: 999_989, pgid: 999_989, stdout: bytes(stdout), stderr: bytes('ignored'), exited: Promise.resolve({ code, signal: null }) };
     },
   };
   return { sandbox, spawned };

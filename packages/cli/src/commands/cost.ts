@@ -1,6 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import type { CostFilter } from '../client/runtime-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
@@ -23,7 +24,7 @@ const filterOf = (ports: Pick<CliPorts, 'cwd'>, options: CostOptions): CostFilte
 
 export const showCost = async (ports: CliPorts, paths: MomongaPaths, options: CostOptions): Promise<number> => {
   const filter = filterOf(ports, options);
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     if (options.breakdown === true) {

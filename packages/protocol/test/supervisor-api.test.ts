@@ -67,6 +67,7 @@ describe('supervisor control API wire types', () => {
       env: 'frozen at supervisor start';
       children: SupervisorChildHealth[];
       logs: { droppedLines: number };
+      stopBoundMs?: number;
     }>();
     expectTypeOf<SupervisorHealth>().not.toHaveProperty('state');
   });

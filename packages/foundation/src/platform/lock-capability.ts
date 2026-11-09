@@ -72,7 +72,7 @@ export const createLockedFile = (
   file: string,
   access: number,
   mode: number,
-  initialize: (descriptor: number) => void = () => undefined,
+  initialize: (staged: string) => void = () => undefined,
   files: StagingFiles = nodeFileSystemSync,
 ): number => {
   const staged = stagingPathOf(file);
@@ -80,7 +80,7 @@ export const createLockedFile = (
   const descriptor = ops.open(staged, createLockedFlags(access), mode);
   let linked = false;
   try {
-    initialize(descriptor);
+    initialize(staged);
     linkStaged(files, staged, file);
     linked = true;
     files.rmSync(staged);

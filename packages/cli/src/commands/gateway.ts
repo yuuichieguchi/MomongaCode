@@ -4,6 +4,7 @@ import type { EndpointProbeKey } from '@momonga/config';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { processOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -27,9 +28,9 @@ export class NotAProbeableTarget extends Error {
 export type ProbeOptions = { fmBinary: string; samples?: number; interrupt: AbortSignal };
 
 const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
-  const { stopped } = await stopDaemon(ports, paths);
+  const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
   if (stopped) {
-    await ensureDaemon(ports, paths);
+    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
     ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
   }
 };

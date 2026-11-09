@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { call, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
-import { markerOf, resultOf, runOne, world, writer } from './guard-world.ts';
+import { LEAVER_PGID, markerOf, resultOf, runOne, world, writer } from './guard-world.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
@@ -41,7 +41,7 @@ describe('T8 the guard, by the sideEffect field', () => {
     const h = world('held');
     await runOne(h, 'Leaver', 'first');
     await runOne(h, 'Writer', 'second');
-    expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r10000\n');
+    expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe(`r10000\ng${String(LEAVER_PGID).padStart(10, '0')}\n`);
     const listedAfterFirst = h.listed.length;
     await runOne(h, 'Writer', 'third');
     expect(h.listed.length).toBe(listedAfterFirst);
@@ -130,7 +130,7 @@ describe('T17 (b) two sessions guard the same marker at once', () => {
       runOne(h, 'Writer', 'third', [], { session: sessionOf('s-b') as never }),
     ]);
     expect([resultOf(a).status, resultOf(b).status]).toEqual(['failed', 'failed']);
-    expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r10000\n');
+    expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe(`r10000\ng${String(LEAVER_PGID).padStart(10, '0')}\n`);
     expect(oneReap).toBeGreaterThan(0);
     expect(h.listed.length - before).toBe(oneReap);
   });

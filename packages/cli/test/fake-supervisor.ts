@@ -10,6 +10,8 @@ export type FakeSupervisorOptions = {
   children?: SupervisorChildHealth[];
   phase?: SupervisorHealth['phase'];
   unresponsiveShutdown?: { onRequest(): void };
+  stopBoundMs?: number;
+  keepsLock?: boolean;
 };
 
 export const readyChildren = (): SupervisorChildHealth[] => [
@@ -19,6 +21,7 @@ export const readyChildren = (): SupervisorChildHealth[] => [
 
 export type FakeSupervisor = {
   readonly shutdowns: number;
+  readonly shutdownBodies: readonly string[];
   stop(): Promise<void>;
 };
 
@@ -26,6 +29,7 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
   const { paths } = options;
   let phase = options.phase ?? 'running';
   let shutdowns = 0;
+  const shutdownBodies: string[] = [];
   const server = http.createServer((request, response) => {
     if (request.method === 'POST' && request.url === '/v1/shutdown' && options.unresponsiveShutdown !== undefined) {
       options.unresponsiveShutdown.onRequest();
@@ -42,6 +46,7 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
         env: 'frozen at supervisor start',
         children: options.children ?? readyChildren(),
         logs: { droppedLines: 0 },
+        ...(options.stopBoundMs === undefined ? {} : { stopBoundMs: options.stopBoundMs }),
       };
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(health));
       return;
@@ -49,9 +54,15 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
     if (request.method === 'POST' && request.url === '/v1/shutdown') {
       shutdowns += 1;
       phase = 'draining';
-      response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ phase: 'draining' }));
-      setImmediate(() => {
-        void stop();
+      let body = '';
+      request.on('data', (chunk: Buffer) => (body += chunk.toString('utf8')));
+      request.on('end', () => {
+        shutdownBodies.push(body);
+        response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ phase: 'draining' }));
+        if (options.keepsLock === true) return;
+        setImmediate(() => {
+          void stop();
+        });
       });
       return;
     }
@@ -76,6 +87,9 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
   return {
     get shutdowns() {
       return shutdowns;
+    },
+    get shutdownBodies() {
+      return shutdownBodies;
     },
     stop,
   };

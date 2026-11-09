@@ -3,6 +3,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
 import { listenUnix } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
 import { GatewayError, gatewayClosedError } from '../core/errors.ts';
@@ -68,12 +69,12 @@ const closeServer = (server: http.Server): Promise<void> =>
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
 
-const closeAdapters = async (adapters: GatewayOptions['adapters']): Promise<unknown[]> => {
+const closeAdapters = (adapters: GatewayOptions['adapters']) => async (values: StopValues | undefined): Promise<unknown[]> => {
   const failures: unknown[] = [];
   await Promise.all(
     [...new Set(Object.values(adapters))].map(async (adapter) => {
       try {
-        await adapter.close?.();
+        await adapter.close?.(values);
       } catch (error) {
         failures.push(error);
       }
@@ -173,7 +174,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     const abortRequested = new Promise<'aborted'>((resolve) => {
       requestAbort = () => resolve('aborted');
     });
-    const close = (): Promise<void> => {
+    const close = (values?: StopValues): Promise<void> => {
       closing ??= (async () => {
         const reason = gatewayClosedError();
         closeController.abort(reason);
@@ -181,13 +182,17 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         for (const transport of transports) transport.beginClose();
         const closed = servers.map((server) => closeServer(server));
         for (const server of servers) server.closeIdleConnections();
+        const graceMs = values === undefined ? options.config.closeGraceMs : values.closeGraceMs;
         let graceHandle: unknown;
-        const grace = new Promise<'expired'>((resolve) => {
-          graceHandle = timers.setTimeout(() => resolve('expired'), options.config.closeGraceMs);
-        });
+        const grace =
+          graceMs === 0
+            ? Promise.resolve('expired' as const)
+            : new Promise<'expired'>((resolve) => {
+                graceHandle = timers.setTimeout(() => resolve('expired'), graceMs);
+              });
         const drained = Promise.all([responses.settled(), unary.settled(), tracker.idle()]).then(() => 'drained' as const);
         const outcome = await Promise.race([drained, grace, abortRequested]);
-        timers.clearTimeout(graceHandle);
+        if (graceHandle !== undefined) timers.clearTimeout(graceHandle);
         if (outcome !== 'drained') {
           abandonedRuns = responses.activeCount() + unary.activeCount();
           forceCloseController.abort(reason);
@@ -197,7 +202,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         for (const transport of transports) transport.terminateAll();
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
-        const adapterFailures = await closeAdapters(options.adapters);
+        const adapterFailures = await closeAdapters(options.adapters)(values);
         store.close();
         if (adapterFailures.length > 0) throw new AggregateError(adapterFailures, 'one or more adapters failed to close');
       })();
@@ -213,9 +218,9 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       },
       addCredential: (credential) => redactor.add(credential),
       close,
-      abort: () => {
+      abort: (values) => {
         requestAbort();
-        return close();
+        return close(values);
       },
     };
   } catch (error) {

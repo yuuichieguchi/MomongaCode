@@ -499,6 +499,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sandbox,
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
         enforcement: ruleEnforcementOf(sandbox.kind),
+        reap: { timing: reapTiming, inspector: runtime.inspector },
+        owners: runtime.owners,
+        onWarning,
       });
       const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });

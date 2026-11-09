@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { credentialEnvNames } from '@momonga/config';
 import { canonicalJson, createFileCredentialStore, createLockCapability, hostProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
@@ -59,6 +59,7 @@ export type ToolRuntime = {
   sessionStates: SessionStates;
   jobs: BackgroundJobRegistry;
   owners: MarkerOwners;
+  inspector: ProcessInspector;
 };
 
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
@@ -225,5 +226,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     },
   };
 
-  return { port, mcpPools, mcpAdmin, sessionStates, jobs, owners };
+  return { port, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
 };

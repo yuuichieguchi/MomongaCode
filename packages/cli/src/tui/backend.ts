@@ -63,6 +63,8 @@ export const createTuiBackend = (
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
   const closing = new AbortController();
+  const stopNotices: string[] = [];
+  const onNotice = (message: string): void => void stopNotices.push(message);
 
   const runtime = (): RuntimeClient => {
     if (client === undefined) throw new Error('the daemon connection is not open yet');
@@ -77,7 +79,7 @@ export const createTuiBackend = (
   return {
     cwd: ports.cwd,
     boot: async () => {
-      await ensureDaemon(ports, paths, { signal: closing.signal });
+      await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
       client = connectRuntime(paths);
       return client.trust(ports.cwd);
     },
@@ -121,7 +123,7 @@ export const createTuiBackend = (
         random: ports.random,
         runId,
         reconnectBoundMs: await daemonReadyBoundMs(),
-        restoreConnection: restoreDaemon(ports, paths),
+        restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
         onReconnecting: handlers.onReconnecting,
@@ -155,7 +157,7 @@ export const createTuiBackend = (
         await gateway.close();
       }
     },
-    startupNotices: async () => (await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat(),
+    startupNotices: async () => [...stopNotices.splice(0), ...(await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat()],
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),

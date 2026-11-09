@@ -24,6 +24,7 @@ import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
@@ -136,7 +137,7 @@ export const contextImprove = async (
   hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   const gatewayInfo = createCliGatewayClient({ socketPath: paths.sockets.gateway });
   try {
@@ -207,7 +208,7 @@ export const formatGuidelines = ({ current, guidelines }: GuidelinesResponse): s
   guidelines.length === 0 ? 'no guideline has been adopted' : guidelines.map((row) => formatGuideline(row, row.version === current?.version)).join('\n');
 
 export const guidelineList = async (ports: CliPorts, paths: MomongaPaths): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client: RuntimeClient = connectRuntime(paths);
   try {
     ports.stdout.write(`${formatGuidelines(await client.guidelines())}\n`);
@@ -237,7 +238,7 @@ export const adoptOutcome = async (stdout: Sink, client: Pick<RuntimeClient, 'gu
 
 export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outcomeFile: string): Promise<number> => {
   const outcomeText = await ports.files.readText(path.resolve(ports.cwd, outcomeFile));
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client: RuntimeClient = connectRuntime(paths);
   try {
     return await adoptOutcome(ports.stdout, client, outcomeText);
@@ -247,7 +248,7 @@ export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outco
 };
 
 export const guidelineRollback = async (ports: CliPorts, paths: MomongaPaths, version: number): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const row = await client.rollbackGuideline(version);

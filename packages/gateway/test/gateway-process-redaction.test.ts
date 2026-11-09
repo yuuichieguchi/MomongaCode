@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_MAX_CLOSE_MS, createJsonLogger, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -80,7 +80,7 @@ const startKeyedStack = async (
     async () => {
       if (!closed) await handle.close();
     },
-    GATEWAY_MAX_CLOSE_MS,
+    gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
@@ -320,7 +320,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     async () => {
       await handle.close();
     },
-    GATEWAY_MAX_CLOSE_MS,
+    gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());

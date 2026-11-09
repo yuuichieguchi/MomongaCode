@@ -28,6 +28,7 @@ export interface SandboxExit {
   code: number | null;
   signal: string | null;
   killedBy?: 'abort' | 'grace-kill';
+  groupNotStopped?: true;
 }
 
 export interface SandboxedProcess {
