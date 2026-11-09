@@ -103,7 +103,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
 
   const reapGroup = async (): Promise<void> => {
     graceCancelled = true;
-    const stop = stopBound ?? signal;
+    const stop = stopBound ?? deadlineSignal(timing, groupTerminationBoundMs(killGraceMs));
     const outcome = await terminateGroup(pid, {
       graceMs: killGraceMs,
       ...(termDeadline === undefined ? {} : { termDeadline }),
