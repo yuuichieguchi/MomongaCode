@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { OUTPUT_RESERVE } from '@momonga/protocol';
+import { budgetFor } from '@momonga/context';
+import { MARGIN, MIN_MARGIN, OUTPUT_RESERVE, ceilRatio, marginFloorFor } from '@momonga/protocol';
+import type { Capabilities } from '@momonga/protocol';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofBool } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
-import { aliasWindowOf, ceilOf, hypothesesSatisfiable, named, windowOf } from './budget-model.ts';
+import { aliasWindowOf, ceilOf, hypothesesSatisfiable, named, unboundedWindowOf, windowOf } from './budget-model.ts';
 import type { AliasWindow } from './budget-model.ts';
 
 const everyMemberFits = (arith: ProofArith, window: AliasWindow): ProofBool => {
@@ -100,4 +102,63 @@ describe('design-chatgpt-plan.md P2 item 6 and I-K5: the context budget of an al
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
+
+  it(
+    'N4 proves, for one target whose outputBoundField is none and under the load-time rule, that R = maxOutputTokens and input + output <= W - margin for every output the route may emit',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'N4');
+      const window = unboundedWindowOf(arith, { loadRule: true });
+      const output = arith.int('output');
+      arith.given(output.ge(0), output.le(window.maxOutput));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      const goal = arith.ctx.And(window.I0.add(window.R).add(window.margin).le(window.W), window.I0.add(output).add(window.margin).le(window.W));
+      expect(await prove(arith, goal)).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'N4w refutes the output fit of a none target when R is the bounded reserve instead of maxOutputTokens',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'N4w');
+      const bounded = windowOf(arith);
+      const output = arith.int('output');
+      arith.given(output.ge(0), output.le(bounded.maxOutput));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, bounded.I0.add(output).add(bounded.margin).le(bounded.W));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+});
+
+describe('budgetFor computes the none branch the model states (drift)', () => {
+  const BASE: Capabilities = {
+    contextWindow: 1,
+    maxOutputTokens: 1,
+    toolCalling: 'native',
+    structuredOutput: 'json_schema',
+    streaming: true,
+    stopSequences: true,
+    imageInput: false,
+    schemaDialect: 'json-schema-2020-12',
+    tokenCounting: 'exact',
+    usageReported: true,
+    maxConcurrency: 1,
+    source: 'declared',
+  };
+  const modelMargin = (window: number): number => Math.max(ceilRatio(MARGIN, window), MIN_MARGIN);
+  const SAMPLES: ReadonlyArray<{ window: number; maxOutput: number; unbounded?: number }> = [
+    { window: 8192, maxOutput: 4096 },
+    { window: 8192, maxOutput: 4096, unbounded: 6000 },
+    { window: 128_000, maxOutput: 32_000 },
+    { window: 200_000, maxOutput: 64_000, unbounded: 100_000 },
+    { window: 1000, maxOutput: 1000 },
+  ];
+
+  it.each(SAMPLES)('reserves the unbounded output and keeps the model margin for %o', ({ window, maxOutput, unbounded }) => {
+    const capabilities = { ...BASE, contextWindow: window, maxOutputTokens: maxOutput, outputBoundField: 'none' as const, ...(unbounded === undefined ? {} : { unboundedOutputTokens: unbounded }) };
+    const R = unbounded ?? maxOutput;
+    expect(marginFloorFor(window)).toBe(modelMargin(window));
+    expect(budgetFor(capabilities, 0)).toEqual({ W: window, R, margin: modelMargin(window), I: Math.max(0, window - R - modelMargin(window)) });
+  });
 });
