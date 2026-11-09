@@ -140,16 +140,26 @@ describe('chat-completions target with toolCalling auto', () => {
     expect(fake.requests.filter((entry) => entry.path === '/v1/models')).toHaveLength(1);
   });
 
-  it('still detects a re-pull when the server keeps the creation time of a model stable', async () => {
+  it('still detects a re-pull when the server keeps the creation time of a model stable, and probes it again', async () => {
     let created = 1_700_000_000;
     const { home, fake } = await probedSetup(() => [{ id: 'qwen-fake', object: 'model', created, owned_by: 'library' }]);
     created = 1_800_000_000;
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureEndpoint: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.message).toContain('stale');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(measured).toHaveLength(1);
     expect(completions(fake)).toEqual([]);
   });
 
