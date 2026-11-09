@@ -17,21 +17,33 @@ const scriptClassOf = (codePoint: number): ScriptClass => {
   return ALPHABETIC_CHARACTER.test(character) ? 'alphabetic' : 'per_character';
 };
 
-export const tokensForText = (text: string): number => {
-  let narrowUnits = 0;
-  let alphabeticCharacters = 0;
-  let perCharacter = 0;
-  for (let index = 0; index < text.length; ) {
-    const codePoint = text.codePointAt(index) as number;
-    const units = codePoint >= FIRST_ASTRAL ? 2 : 1;
-    const scriptClass = scriptClassOf(codePoint);
-    if (scriptClass === 'narrow') narrowUnits += units;
-    else if (scriptClass === 'alphabetic') alphabeticCharacters += 1;
-    else perCharacter += 1;
-    index += units;
+export class TokenTally {
+  private narrowUnits = 0;
+  private alphabeticCharacters = 0;
+  private perCharacter = 0;
+
+  add(text: string): void {
+    for (let index = 0; index < text.length; ) {
+      const codePoint = text.codePointAt(index) as number;
+      const units = codePoint >= FIRST_ASTRAL ? 2 : 1;
+      const scriptClass = scriptClassOf(codePoint);
+      if (scriptClass === 'narrow') this.narrowUnits += units;
+      else if (scriptClass === 'alphabetic') this.alphabeticCharacters += 1;
+      else this.perCharacter += 1;
+      index += units;
+    }
   }
-  return Math.max(
-    1,
-    Math.ceil(narrowUnits / ESTIMATED_CHARACTERS_PER_TOKEN) + Math.ceil(alphabeticCharacters / ALPHABETIC_CHARACTERS_PER_TOKEN) + perCharacter,
-  );
+
+  get tokens(): number {
+    return Math.max(
+      1,
+      Math.ceil(this.narrowUnits / ESTIMATED_CHARACTERS_PER_TOKEN) + Math.ceil(this.alphabeticCharacters / ALPHABETIC_CHARACTERS_PER_TOKEN) + this.perCharacter,
+    );
+  }
+}
+
+export const tokensForText = (text: string): number => {
+  const tally = new TokenTally();
+  tally.add(text);
+  return tally.tokens;
 };

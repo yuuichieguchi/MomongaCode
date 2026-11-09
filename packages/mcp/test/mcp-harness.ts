@@ -110,7 +110,7 @@ export type PoolHarness = {
 
 export const makePool = (
   servers: McpServerEntry[],
-  options: { requestTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock } = {},
+  options: { requestTimeoutMs?: number; toolIdleTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock; credentialNames?: readonly string[] } = {},
 ): PoolHarness => {
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
@@ -122,7 +122,9 @@ export const makePool = (
     random: options.random ?? (() => 0),
     ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
     ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+    ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),
     ...(options.resetAfterMs === undefined ? {} : { resetAfterMs: options.resetAfterMs }),
+    ...(options.credentialNames === undefined ? {} : { credentialNames: options.credentialNames }),
   });
   onCleanup(() => pool.close());
   const registry = createToolRegistry();

@@ -81,6 +81,7 @@ export class StreamDriver {
     for (const fragment of chunk.toolCalls) this.sink.toolCall(fragment);
     if (chunk.finishReason !== undefined) this.finishReason = chunk.finishReason;
     if (chunk.usage !== undefined) this.usage = chunk.usage;
+    if (chunk.promptProgress) this.emitter.noteProgress();
   }
 
   private acceptReasoning(field: ChatReasoningField, text: string): void {

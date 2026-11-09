@@ -11,7 +11,6 @@ export const RIPGREP_STAGED_PREFIX = 'rg.partial-';
 export const RIPGREP_REPLACEMENT = 'replaceFile';
 export const RIPGREP_RESOLUTION_STEPS = ['start', 'hash', 'decompress', 'rename', 'rehash', 'checked', 'staged'] as const;
 export const RIPGREP_EXECUTABLE_MODE = 0o700;
-export const RIPGREP_DIRECTORY_MODE = 0o700;
 
 export type RipgrepResolutionStep = (typeof RIPGREP_RESOLUTION_STEPS)[number];
 
@@ -24,7 +23,7 @@ export type RipgrepManifest = {
 
 export type RipgrepEntryKind = 'file' | 'directory' | 'symlink' | 'other' | 'absent';
 
-export type RipgrepDistributionFiles = Pick<FileSystem, 'lstat' | 'mkdir' | 'open' | 'readFile' | 'rename' | 'rm' | 'readdir'>;
+export type RipgrepDistributionFiles = Pick<FileSystem, 'lstat' | 'mkdirPrivate' | 'open' | 'readFile' | 'rename' | 'rm' | 'readdir'>;
 
 export type RipgrepDistributionPorts = {
   asset(name: string): Uint8Array;
@@ -185,7 +184,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
   const { ports, final } = resolution;
   switch (state.step) {
     case 'start': {
-      await ports.files.mkdir(resolution.directory, RIPGREP_DIRECTORY_MODE);
+      await ports.files.mkdirPrivate(resolution.directory);
       await sweepStaleStaged(resolution);
       const kind = await kindOf(ports.files, final);
       if (kind === 'absent') return { step: 'decompress' };

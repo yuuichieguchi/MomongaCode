@@ -37,7 +37,7 @@ const statsOf = (entry: Entry): fs.Stats =>
 
 const makeFiles = () => {
   const entries = new Map<string, Entry>();
-  const directoryModes = new Map<string, number | undefined>();
+  const privateDirectories: string[] = [];
   const busy = new Set<string>();
   const failWrites = { next: false };
   const counts = { writes: 0, reads: new Map<string, number>(), renames: 0, removes: 0 };
@@ -51,8 +51,8 @@ const makeFiles = () => {
       if (entry === undefined) throw errno('missing', 'ENOENT');
       return statsOf(entry);
     },
-    mkdir: async (directory, mode) => {
-      directoryModes.set(directory, mode);
+    mkdirPrivate: async (directory) => {
+      privateDirectories.push(directory);
       mkdirs(directory);
     },
     open: async (file, flags, mode) => {
@@ -95,7 +95,7 @@ const makeFiles = () => {
     },
     readdir: async (directory) => [...entries.keys()].filter((key) => path.dirname(key) === directory).map((key) => path.basename(key)),
   };
-  return { entries, directoryModes, busy, failWrites, counts, opened, files };
+  return { entries, privateDirectories, busy, failWrites, counts, opened, files };
 };
 
 type Fixture = ReturnType<typeof makeFiles>;
@@ -154,7 +154,7 @@ describe('ensureBundledRipgrep', () => {
     expect(resolved.version).toBe(VERSION);
     expect(text(fixture.entries.get(FINAL))).toBe('#!rg-binary-bytes');
     expect(fixture.entries.get(FINAL)).toMatchObject({ mode: 0o700 });
-    expect(fixture.directoryModes.get(DIRECTORY)).toBe(0o700);
+    expect(fixture.privateDirectories).toContain(DIRECTORY);
     expect(text(fixture.entries.get(path.join(DIRECTORY, 'NOTICE.txt')))).toBe('COPYING\nUNLICENSE\nLICENSE-MIT\n');
     await resolved.release();
     expect(stagedNames(fixture)).toEqual([]);

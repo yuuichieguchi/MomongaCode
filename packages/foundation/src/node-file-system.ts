@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, FileContent } from './atomic-file.ts';
-import { noFollowFlag } from './platform/privacy.ts';
+import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
 export const OPEN_FLAGS = {
   readOnly: fs.constants.O_RDONLY,
@@ -24,7 +24,9 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readdirEntries(directory: string): Promise<fs.Dirent[]>;
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
-  mkdir(directory: string, mode?: number): Promise<void>;
+  mkdir(directory: string): Promise<void>;
+  mkdirPrivate(directory: string): Promise<void>;
+  readOwnerOnlyTextFile(file: string, description: string): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string): Promise<void>;
   cp(from: string, to: string): Promise<void>;
@@ -67,7 +69,26 @@ export const nodeFileSystem: FileSystem = {
   readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
-  mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, mode === undefined ? { recursive: true } : { recursive: true, mode })),
+  mkdir: async (directory) => void (await fs.promises.mkdir(directory, { recursive: true })),
+  mkdirPrivate: async (directory) => {
+    await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
+    await fs.promises.chmod(directory, PRIVATE_MODE.directory);
+  },
+  readOwnerOnlyTextFile: async (file, description) => {
+    let handle: fs.promises.FileHandle;
+    try {
+      handle = await fs.promises.open(file, fs.constants.O_RDONLY | noFollowFlag());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      throw error;
+    }
+    try {
+      assertPrivateRegularFile(await handle.stat(), description);
+      return await handle.readFile('utf8');
+    } finally {
+      await handle.close();
+    }
+  },
   writeFile: (file, content) => fs.promises.writeFile(file, content),
   access: (file) => fs.promises.access(file),
   cp: (from, to) => fs.promises.cp(from, to, { recursive: true, force: true }),

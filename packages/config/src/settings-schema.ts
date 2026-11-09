@@ -404,6 +404,11 @@ export const SETTINGS_SCHEMA = {
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
+    mcp: {
+      type: 'object',
+      properties: { toolIdleTimeoutMs: NON_NEGATIVE_INTEGER, toolTotalTimeoutMs: POSITIVE_INTEGER },
+      additionalProperties: false,
+    },
     models: {
       type: 'object',
       properties: {

@@ -20,6 +20,7 @@ import type {
 import { echoedFields } from '../../core/resource.ts';
 import { echoedToolChoice } from '../../core/tool-choice.ts';
 import { invertReply } from '../../dialect/unwrap.ts';
+import { TokenTally } from '@momonga/protocol';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
 import { UpstreamProtocolError } from './failures.ts';
 
@@ -50,6 +51,8 @@ export type ResponseEmitterOptions = {
   wraps?: ReadonlyMap<string, WrapRecord>;
   narrowings?: readonly SchemaNarrowing[];
   jsonReply?: JsonReplyPath | undefined;
+  onOutput?: () => void;
+  outputCeiling?: number | undefined;
 };
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
@@ -81,6 +84,8 @@ export class ResponseEmitter {
   private message: OpenMessage | undefined;
   private textChars = 0;
   private ended = false;
+  private readonly output = new TokenTally();
+  private outputSeen = false;
 
   constructor(options: ResponseEmitterOptions) {
     this.options = options;
@@ -93,6 +98,8 @@ export class ResponseEmitter {
   }
 
   take(): StreamEvent[] {
+    const ceiling = this.options.outputCeiling;
+    if (!this.ended && ceiling !== undefined && this.outputSeen && this.output.tokens >= ceiling) this.incomplete('max_output_tokens', undefined);
     const events = this.pending;
     this.pending = [];
     return events;
@@ -117,9 +124,20 @@ export class ResponseEmitter {
     this.append('refusal', delta);
   }
 
+  noteProgress(): void {
+    this.options.onOutput?.();
+  }
+
+  private observe(delta: string): void {
+    this.output.add(delta);
+    this.outputSeen = true;
+    this.options.onOutput?.();
+  }
+
   private append(kind: MessagePart['kind'], delta: string): void {
     if (delta === '') return;
     this.countText(delta);
+    this.observe(delta);
     this.endImplicitReasoning();
     const { message, index } = this.partOf(kind);
     (message.parts[index] as MessagePart).text += delta;
@@ -179,6 +197,7 @@ export class ResponseEmitter {
   beginCall(key: number, callId: string, name: string): void {
     this.endImplicitReasoning();
     const call: OpenCall = { kind: 'call', id: newId('fc', this.options.clock), outputIndex: this.allocate(), callId, name, args: '' };
+    this.observe(name);
     this.callIndexByKey.set(key, call.outputIndex);
     this.open.set(call.outputIndex, call);
     this.emit({ type: 'response.output_item.added', output_index: call.outputIndex, item: this.callItem(call, 'in_progress') });
@@ -195,6 +214,7 @@ export class ResponseEmitter {
       throw new UpstreamProtocolError(`the arguments of tool call "${call.name}" exceed ${MAX_CALL_ARGUMENT_CHARS} characters`);
     }
     call.args += delta;
+    this.observe(delta);
     if (this.options.wraps?.has(call.name) === true) return;
     this.emit({ type: 'response.function_call_arguments.delta', item_id: call.id, output_index: call.outputIndex, delta });
   }
@@ -223,6 +243,7 @@ export class ResponseEmitter {
   appendReasoning(key: number, delta: string, contentIndex = 0): void {
     if (delta === '') return;
     this.countText(delta);
+    this.observe(delta);
     const reasoning = this.reasoningOf(key);
     if (reasoning.content[contentIndex] === undefined) {
       if (contentIndex !== reasoning.content.length) throw new UpstreamProtocolError(`reasoning content part ${contentIndex} was opened out of order`);
@@ -242,6 +263,7 @@ export class ResponseEmitter {
   appendReasoningSummary(key: number, delta: string, summaryIndex = 0): void {
     if (delta === '') return;
     this.countText(delta);
+    this.observe(delta);
     const reasoning = this.reasoningOf(key);
     if (reasoning.summary[summaryIndex] === undefined) {
       if (summaryIndex !== reasoning.summary.length) throw new UpstreamProtocolError(`reasoning summary part ${summaryIndex} was opened out of order`);
