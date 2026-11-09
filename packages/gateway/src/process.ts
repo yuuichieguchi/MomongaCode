@@ -592,7 +592,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       serviceVersion: options.version,
       clock,
       store: traceStore,
-      exporters: exportersFor(settings.telemetry),
+      exporters: exportersFor(settings.telemetry, network),
       captureMessageContent: telemetrySettings.captureMessageContent,
       contentRetentionMs,
     });

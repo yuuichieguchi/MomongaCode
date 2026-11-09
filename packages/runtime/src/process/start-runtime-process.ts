@@ -20,7 +20,7 @@ import {
   nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -315,14 +315,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings } = await step('settings', async () => {
+    const { cache, settings, network } = await step('settings', async () => {
       const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
       const trust = await installTrust(networkConfig, nodeFileSystem);
       for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
-      return { cache: created, settings: snapshot.settings };
+      const outbound: OutboundNetwork = { config: networkConfig, trust };
+      return { cache: created, settings: snapshot.settings, network: outbound };
     });
 
     const kind: SandboxKind = settings.sandbox;
@@ -431,7 +432,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         serviceVersion: version,
         clock,
         store: traceStore,
-        exporters: exportersFor(settings.telemetry),
+        exporters: exportersFor(settings.telemetry, network),
         captureMessageContent: telemetrySettings.captureMessageContent,
         contentRetentionMs,
       }),
