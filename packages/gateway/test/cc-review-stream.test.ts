@@ -2,6 +2,7 @@ import http from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { collect, expectSpecValid, makeAdapter, ofType, startFake, terminalOf, userText } from './cc-support.ts';
 import { registerCleanup } from './gateway-helpers.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const plain = { model: 'system', input: [userText('hi')] };
 
@@ -100,7 +101,7 @@ describe('tcp endpoint paths', () => {
     registerCleanup(() => new Promise<void>((resolve) => server.close(() => resolve())));
     const { port } = server.address() as { port: number };
     const fake = await startFake({ scenario: 'tools-ok' });
-    const adapter = makeAdapter(fake, { resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: `http://127.0.0.1:${port}${suffix}` }) });
+    const adapter = makeAdapter(fake, { resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: `http://127.0.0.1:${port}${suffix}`, network: UNCONFIGURED_NETWORK }) });
     const { error } = await collect(adapter, plain);
     expect(error).toBeUndefined();
     return paths[0] as string;

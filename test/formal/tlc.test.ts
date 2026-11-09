@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
-import { killGroup } from './runner.ts';
+import { groupKiller, killGroup } from './runner.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const specDir = path.join(repoRoot, 'specs', 'tla');
@@ -554,6 +554,29 @@ describe('killing a process group', () => {
     } finally {
       holder.kill('SIGKILL');
     }
+  });
+
+  const refusedGroupSignal = (): never => {
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+  };
+  const killerSeeing = (rows: string[]) => groupKiller({ signalGroup: refusedGroupSignal, groupStates: () => `${rows.join('\n')}\n` });
+
+  it.each([
+    ['a macOS member that is exiting', ['41 40 ?E', '42 40 RE']],
+    ['a macOS zombie', ['41 40 Z']],
+    ['a Linux zombie', ['41 40 Z+']],
+    ['a Linux dead task', ['41 40 X']],
+  ])('treats a refused group signal as done when the only members left are %s', (_label, rows) => {
+    expect(() => killerSeeing([...rows, '50 51 R', '52 53 S'])(40)).not.toThrow();
+  });
+
+  it.each([
+    ['a macOS runnable member', '41 40 R'],
+    ['a macOS sleeping member', '41 40 Ss'],
+    ['a Linux uninterruptible member', '41 40 D'],
+    ['a Linux stopped member', '41 40 T'],
+  ])('rethrows a refused group signal while %s can still run', (_label, row) => {
+    expect(() => killerSeeing(['42 40 ?E', row])(40)).toThrow('kill EPERM');
   });
 });
 

@@ -9,6 +9,7 @@ import type { UpstreamEndpoint, UpstreamLiveness } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, driveFakeTime, openResponsesTextReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const BOUND_MS = 50;
 const UNDICI_TIMEOUT_TICK_MS = 1000;
@@ -105,7 +106,7 @@ const startUpstream = async (transport: Transport, steps: readonly UpstreamStep[
   }
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as net.AddressInfo;
-  return { endpoint: { kind: 'tcp', baseUrl: `http://127.0.0.1:${address.port}/v1` }, requests: () => received };
+  return { endpoint: { kind: 'tcp', baseUrl: `http://127.0.0.1:${address.port}/v1`, network: UNCONFIGURED_NETWORK }, requests: () => received };
 };
 
 const settingsLiveness = (headersTimeoutMs: number, idleTimeoutMs: number): UpstreamLiveness => ({ headersTimeoutMs, idleTimeoutMs }) as unknown as UpstreamLiveness;

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -17,7 +17,8 @@ import {
   secretKeyFile,
 } from '@momonga/foundation';
 import type { EndpointProbeKey } from '@momonga/config';
-import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
+import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
   closeTelemetry,
@@ -45,6 +46,7 @@ import { createProbedOllamaTarget } from './probe/ollama-target.ts';
 import { createSecretResolver } from './secrets.ts';
 import { targetCounterOf } from './target-counter.ts';
 import type { SecretResolver } from './secrets.ts';
+import { reachableEndpoint } from './adapters/shared/http-client.ts';
 import type { UpstreamLiveness } from './adapters/shared/http-client.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
@@ -195,10 +197,12 @@ const credentialValuesOf = (
   envNames: readonly string[],
   secretValues: ReadonlyMap<string, string>,
   warn: (message: string) => void,
+  network: NetworkConfig | undefined,
 ): string[] => {
   const labelled: Array<[string, string | undefined]> = [
     ...envNames.map((name): [string, string | undefined] => [name, env[name]]),
     ...[...secretValues].map(([name, value]): [string, string | undefined] => [`secret ${name}`, value]),
+    ...(network === undefined ? [] : proxyPasswordsOf(network)).map(({ source, password }): [string, string | undefined] => [`the proxy password of ${source}`, password]),
   ];
   return labelled.flatMap(([label, value]) => {
     if (value === undefined || value.trim() === '') return [];
@@ -255,11 +259,12 @@ const createAutoChatCompletionsAdapter = async (
   readKey: ReturnType<typeof apiKeyReader>,
   probeRecordDir: string,
   clock: Clock,
-  refusal: PreconditionFailedError | undefined,
+  identify: Identification,
   userDialects: UserDialects,
   liveness: UpstreamLiveness,
+  network: OutboundNetwork,
 ) => {
-  const upstream = upstreamEndpointOf(target);
+  const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
   const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
@@ -278,7 +283,7 @@ const createAutoChatCompletionsAdapter = async (
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
-      if (refusal !== undefined) throw refusal;
+      await identify(signal);
       await probed.verify(signal);
       return upstream;
     },
@@ -296,8 +301,16 @@ const createAutoChatCompletionsAdapter = async (
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock, userDialects: UserDialects, liveness: UpstreamLiveness) => {
-  const upstream = upstreamEndpointOf(target);
+const createProbedOllamaAdapter = async (
+  name: string,
+  target: Extract<RemoteTarget, { adapter: 'ollama' }>,
+  probeRecordDir: string,
+  clock: Clock,
+  userDialects: UserDialects,
+  liveness: UpstreamLiveness,
+  network: OutboundNetwork,
+) => {
+  const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
   const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
@@ -322,16 +335,25 @@ const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTar
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const ollamaRefusalsOf = async (targets: ReadonlyArray<readonly [string, ResolvedTarget]>, signal: AbortSignal): Promise<Map<string, PreconditionFailedError>> => {
-  const candidates = targets.filter((entry): entry is readonly [string, OllamaDetectable] => {
-    const [, target] = entry;
-    return (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined;
-  });
-  const answers = await Promise.all(candidates.map(async ([, target]) => answersAsOllama(upstreamEndpointOf(target), signal)));
-  return new Map(
-    candidates.flatMap(([name, target], index) => (answers[index] === true ? [[name, ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target)))] as const] : [])),
-  );
+type Identification = (signal: AbortSignal) => Promise<void>;
+
+const UNIDENTIFIED = Symbol('unidentified');
+
+const ollamaIdentificationOf = (name: string, target: OllamaDetectable, network: OutboundNetwork): Identification => {
+  let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
+  return async (signal) => {
+    if (refusal === UNIDENTIFIED) {
+      const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), signal);
+      refusal = isOllama ? ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
+    }
+    if (refusal !== null) throw refusal;
+  };
 };
+
+const NO_IDENTIFICATION: Identification = async () => undefined;
+
+const identificationOf = (name: string, target: ServedTarget, network: OutboundNetwork): Identification =>
+  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(name, target, network) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
@@ -464,6 +486,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const { settings, warnings } = await loadUserSettings({ home: options.home });
     for (const warning of warnings) logger.warn(warning);
+    const networkConfig = resolveNetwork(settings.network, options.env);
+    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
+    for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
     signal?.throwIfAborted();
     const hmacKey = secretKeyFile(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
@@ -538,8 +563,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
     const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs };
-    const ollamaRefusals = await ollamaRefusalsOf(targets, signal ?? new AbortController().signal);
-    signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
@@ -549,15 +572,15 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         continue;
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness);
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, network);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
       }
       const readKey = apiKeyReader(options.env, secretResolver, target);
-      const refusal = ollamaRefusals.get(name);
+      const identify = identificationOf(name, target, network);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal, userDialects, liveness);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, network);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -565,9 +588,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       counters[name] = targetCounterOf({ target, codeDigest });
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
       const common = {
-        resolveEndpoint: async () => {
-          if (refusal !== undefined) throw refusal;
-          return upstreamEndpointOf(target);
+        resolveEndpoint: async (_target: AdapterTarget, requestSignal: AbortSignal) => {
+          await identify(requestSignal);
+          return reachableEndpoint(upstreamEndpointOf(target), network);
         },
         capabilities: async () => capabilitiesOf(target, mode),
         clock,
@@ -591,10 +614,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const gateway = await createGateway({
       config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases), counters),
       adapters,
-      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message)),
+      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
       credentialFeed: (add) =>
         secretResolver.onResolved((name, value) => {
-          for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message))) add(credential);
+          for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) add(credential);
         }),
       clock,
       timers,

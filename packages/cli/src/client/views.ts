@@ -54,7 +54,6 @@ export type ApprovalView = {
   readonly callId: string;
   readonly status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   readonly options: readonly PermissionOption[];
-  readonly expiresAt: number;
   readonly createdAt: number;
   readonly suggestedRule?: string;
   readonly reason: string;

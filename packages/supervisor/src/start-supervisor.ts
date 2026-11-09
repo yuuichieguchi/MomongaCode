@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createUserSettingsCache, userSettingsChangeKey } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
 import {
   EXIT_VERSION_MISMATCH,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -27,7 +27,7 @@ import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launch
 import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { digestsOf, planRoles, runRestartPlan } from './plan.ts';
+import { changedSections, digestsOf, planRoles, runRestartPlan } from './plan.ts';
 import type { RestartPlanPort } from './plan.ts';
 import { resolveRestartPolicy } from './restart-policy.ts';
 import type { RestartPolicy } from './restart-policy.ts';
@@ -156,7 +156,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       sleep: (ms) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms)),
     };
 
-    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })) });
+    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
 
     const createManager = (role: ChildRole): ChildManager =>
       createChildManager({
@@ -261,9 +261,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       const current = digestsOf(snapshot.settings);
       const runtimeApplied = runtime.appliedDigests();
       const gatewayApplied = gateway.appliedDigests();
-      const modelsChanged = (runtimeApplied !== undefined && runtimeApplied.models !== current.models) || (gatewayApplied !== undefined && gatewayApplied.models !== current.models);
-      const sandboxChanged = runtimeApplied !== undefined && runtimeApplied.sandbox !== current.sandbox;
-      if (modelsChanged || sandboxChanged) log(settingsChanged({ models: modelsChanged, sandbox: sandboxChanged }));
+      const changed = changedSections(current, runtimeApplied, gatewayApplied);
+      const modelsChanged = changed.models;
+      const sandboxChanged = changed.sandbox;
+      if (Object.values(changed).some((value) => value)) log(settingsChanged(changed));
       const roles = planRoles(current, {
         ...(runtimeApplied !== undefined && PLANNABLE_STATES.has(runtime.state()) ? { runtime: runtimeApplied } : {}),
         ...(gatewayApplied !== undefined && PLANNABLE_STATES.has(gateway.state()) ? { gateway: gatewayApplied } : {}),

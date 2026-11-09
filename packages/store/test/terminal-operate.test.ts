@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, StalePreparation, createJournalReader } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
+import { EXPIRES_MS, awaitingInput } from './approval-fixture.ts';
 import { LEASE_MS, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 import { contributionOf, fakePreparer } from './preparer-fixture.ts';
 import type { FakePreparer, Reply } from './preparer-fixture.ts';
@@ -159,14 +159,14 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 describe('approval expiry is an operation that awaits the preparer', () => {
   it('expireApprovals returns a promise and hands the preparer the expiry and the notice as leading events, which precede the contribution', async () => {
     const h = withPreparer();
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
 
     const pending = h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; });
 
     expect(pending).toBeInstanceOf(Promise);
     expect(await pending).toEqual([runId]);
-    expect(h.fake.requests.map((request) => request.leading.map((event) => event.type))).toEqual([['tool.permission.cancelled', 'notice']]);
-    expect(typesOf(h.store, runId).slice(-4)).toEqual(['tool.permission.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
+    expect(h.fake.requests.map((request) => request.leading.map((event) => event.type))).toEqual([['tool.elicitation.cancelled', 'notice']]);
+    expect(typesOf(h.store, runId).slice(-4)).toEqual(['tool.elicitation.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
   });
 });
 

@@ -1,10 +1,10 @@
+import { isIP } from 'node:net';
 import { isLoopbackHost } from '@momonga/foundation';
 import type { GatewayOptions } from '../types.ts';
 
 const MIN_HMAC_KEY_BYTES = 32;
-const NON_LITERAL_LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '[::1]']);
 
-export const isLoopbackAddress = (address: string): boolean => isLoopbackHost(address) && !NON_LITERAL_LOOPBACK_HOSTS.has(address);
+export const isLoopbackAddress = (address: string): boolean => (isIP(address) === 4 && isLoopbackHost(address)) || address === '::1';
 
 const requirePositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`createGateway: ${name} must be a positive integer, got ${value}`);

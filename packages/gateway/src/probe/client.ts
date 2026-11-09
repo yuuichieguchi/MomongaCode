@@ -1,7 +1,7 @@
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
-import { Agent, request } from 'undici';
-import { Deadline, createUdsClient } from '@momonga/foundation';
-import type { UdsClient } from '@momonga/foundation';
+import { request } from 'undici';
+import { Deadline, createOutboundDispatcher, createUdsClient } from '@momonga/foundation';
+import type { OutboundNetwork, UdsClient } from '@momonga/foundation';
 
 export interface HttpResult {
   status: number;
@@ -14,7 +14,7 @@ export const systemSleep = (ms: number, signal: AbortSignal | undefined): Promis
 
 export type ProbeEndpoint =
   | { kind: 'unix'; socketPath: string }
-  | { kind: 'tcp'; baseUrl: string; headers?: Record<string, string> };
+  | { kind: 'tcp'; baseUrl: string; network: OutboundNetwork; headers?: Record<string, string> };
 
 export type ProbeRoute = 'health' | 'models' | 'chat';
 
@@ -34,13 +34,13 @@ const tcpPathsOf = (baseUrl: string): Record<ProbeRoute, string> => {
   return { health: `${prefix}/health`, models: `${prefix}/models`, chat: `${prefix}/chat/completions` };
 };
 
-const transportOf = (endpoint: ProbeEndpoint): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
+const transportOf = (endpoint: ProbeEndpoint, stepTimeoutMs: number): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
   if (endpoint.kind === 'unix') return { uds: createUdsClient(endpoint.socketPath), paths: UNIX_PATHS, headers: {} };
-  return { uds: createTcpClient(new URL(endpoint.baseUrl).origin), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
+  return { uds: createTcpClient(new URL(endpoint.baseUrl).origin, endpoint.network, stepTimeoutMs), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
 };
 
-const createTcpClient = (origin: string): UdsClient => {
-  const agent = new Agent();
+const createTcpClient = (origin: string, network: OutboundNetwork, stepTimeoutMs: number): UdsClient => {
+  const agent = createOutboundDispatcher(network, { connectReplyTimeoutMs: stepTimeoutMs });
   return {
     request: async (options) => {
       const response = await request(`${origin}${options.path}`, {
@@ -77,7 +77,7 @@ export const createProbeClient = (
   stepTimeoutMs: number,
   hasHealthRoute = false,
 ): ProbeClient => {
-  const { uds, paths, headers: authHeaders } = transportOf(endpoint);
+  const { uds, paths, headers: authHeaders } = transportOf(endpoint, stepTimeoutMs);
 
   const withTimeout = async <T>(
     method: string,

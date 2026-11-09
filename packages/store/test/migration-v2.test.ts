@@ -55,7 +55,7 @@ describe('migration v2 on a populated v1 database', () => {
         `INSERT INTO approvals (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at)
          VALUES ('appr-renewed', 'run-1', 'call_1', 'pending', ?, NULL, ?, ?, NULL)`,
       )
-      .run(OPTIONS_JSON, START_MS + 120_000, START_MS + 100);
+      .run(OPTIONS_JSON, null, START_MS + 100);
     expect(store.approvals.listPending('run-1').map((approval) => approval.callId).sort()).toEqual(['call_1', 'call_2']);
   });
 
@@ -66,7 +66,7 @@ describe('migration v2 on a populated v1 database', () => {
 
     const db = new DatabaseSync(dbPath);
     try {
-      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]);
+      expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
       expect(db.prepare('SELECT id, subject_digest FROM approvals ORDER BY id').all().map((row) => [row['id'], row['subject_digest']])).toEqual([
         ['appr-pending', null],
         ['appr-resolved', null],
@@ -77,7 +77,7 @@ describe('migration v2 on a populated v1 database', () => {
             `INSERT INTO approvals (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at)
              VALUES ('appr-dup', 'run-1', 'call_2', 'pending', ?, NULL, ?, ?, NULL)`,
           )
-          .run(OPTIONS_JSON, START_MS + 60_000, START_MS),
+          .run(OPTIONS_JSON, null, START_MS),
       ).toThrow(/UNIQUE/);
     } finally {
       db.close();
