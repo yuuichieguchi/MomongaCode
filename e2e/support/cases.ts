@@ -35,7 +35,8 @@ export type E2eCaseFile =
   | 'hooks-auto-cli.test.ts'
   | 'token-anatomy.test.ts'
   | 'roles.test.ts'
-  | 'first-run.test.ts';
+  | 'first-run.test.ts'
+  | 'core-on-defaults.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -184,6 +185,8 @@ export const E2E_CASES = [
   { id: 'inject-faults', file: 'inject.test.ts', title: 'holds the ten faults of section 4.3, each in its own scenario, and only the out-of-disk fault needs the Linux container', needsBash: false },
   { id: 'inject-p9', file: 'inject.test.ts', title: 'P9: in every scenario that can run on this host, every effect key is witnessed at most once', needsBash: false },
   { id: 'inject-not-run', file: 'inject.test.ts', title: 'reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', needsBash: false },
+  { id: 'core-on-token-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no core setting declared, the first run pins every token key on and its request offers the concise tool descriptions', needsBash: false },
+  { id: 'core-on-memory-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no memory setting declared, a verified run in a trusted folder is reflected on and its candidate waits for review', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];
