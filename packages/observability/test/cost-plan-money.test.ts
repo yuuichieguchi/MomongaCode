@@ -20,7 +20,7 @@ const recorded = async (specs: readonly Spec[]) => {
       { providerName: 'acme', billing: spec.billing as ChatBilling, requestModel: spec.model ?? 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1 },
       parent,
     );
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 300, outputTokens: 40, ...(spec.cacheReadAbsent === true ? {} : { cachedInputTokens: 0 }) } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 300, outputTokens: 40, ...(spec.cacheReadAbsent === true ? {} : { cachedInputTokens: 0 }) } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());

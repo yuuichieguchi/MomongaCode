@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { amountOfUnits, definePriceTable, priceCall } from '@momonga/observability';
 import type { CostInput, PriceEntry } from '@momonga/observability';
 
-const metered = (input: CostInput) => priceCall({ ...input, billing: 'metered' });
+const metered = (input: CostInput) => priceCall({ ...input, billing: 'metered', usageSource: 'reported' });
 
 const CACHING: PriceEntry = {
   provider: 'acme',

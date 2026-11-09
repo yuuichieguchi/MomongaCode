@@ -37,6 +37,7 @@ const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeo
     if (spec.role !== undefined) chat.setAttribute('momonga.role', spec.role);
     recordChatResponse(chat, {
       finishReasons: ['stop'],
+      usageSource: 'reported',
       usage: { inputTokens: spec.input, outputTokens: spec.output, ...(spec.cached === undefined ? {} : { cachedInputTokens: spec.cached }) },
     });
     chat.end(h.clock.now());
@@ -58,6 +59,7 @@ const asBreakdownCall = (call: BilledCall): BreakdownCall => ({
 describe('priceCall on a plan target', () => {
   it('is unpriced with the reason plan, not zero, even when the table has an entry for the model', () => {
     const priced = priceCall({
+      usageSource: 'reported',
       provider: 'acme',
       model: 'm1',
       billing: 'plan',
@@ -69,7 +71,7 @@ describe('priceCall on a plan target', () => {
   });
 
   it('is unpriced with the reason plan on an empty table', () => {
-    const priced = priceCall({ provider: 'x', model: 'y', billing: 'plan', usage: { inputTokens: 1, outputTokens: 1 }, at: new Date(AT), table: definePriceTable([]) });
+    const priced = priceCall({ usageSource: 'reported', provider: 'x', model: 'y', billing: 'plan', usage: { inputTokens: 1, outputTokens: 1 }, at: new Date(AT), table: definePriceTable([]) });
     expect(priced).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 });
@@ -163,7 +165,7 @@ describe('the cost breakdown on plan calls', () => {
     const breakdown = buildCostBreakdown(calls, {});
 
     expect(breakdown.unpriced).toEqual([]);
-    expect(breakdown.cost).toEqual({ amount: 1, currency: 'USD', unpricedCalls: 1, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 1, currency: 'USD', unpricedCalls: 0, unpriced: { plan: 1 }, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.plan).toEqual({ calls: 1, inputTokens: 300, outputTokens: 40 });
     const text = formatCostBreakdown(breakdown);
     expect(text).toContain('plan usage, no per-token price: 1 call(s), 300 input + 40 output tokens');

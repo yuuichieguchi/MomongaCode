@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { RUN_API_SCHEMAS, UNPRICED_CODES } from '@momonga/protocol';
 import { UNPRICED_CODE_TEXT, definePriceTable, priceCall } from '@momonga/observability';
 import type { CallBilling, CostUsage } from '@momonga/observability';
+import type { UsageSource } from '@momonga/protocol';
 
 const PACKAGES = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -45,13 +46,14 @@ describe('UNPRICED_CODES is the one source of the codes (DC.6 item 8)', () => {
   it('gives every code of the list from some branch of priceCall, and no other code', () => {
     const at = new Date(Date.parse('2026-07-10T00:00:00Z'));
     const table = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);
-    const inputs: readonly { billing: CallBilling; model: string; usage: CostUsage }[] = [
-      { billing: 'plan', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
-      { billing: 'unknown', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
-      { billing: 'metered', model: 'unlisted', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
-      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
-      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 1 } },
-      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
+    const inputs: readonly { billing: CallBilling; usageSource: UsageSource; model: string; usage: CostUsage }[] = [
+      { billing: 'plan', usageSource: 'reported', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
+      { billing: 'unknown', usageSource: 'reported', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
+      { billing: 'metered', usageSource: 'reported', model: 'unlisted', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
+      { billing: 'metered', usageSource: 'estimated', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
+      { billing: 'metered', usageSource: 'reported', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
+      { billing: 'metered', usageSource: 'reported', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 1 } },
+      { billing: 'metered', usageSource: 'reported', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
     ];
     const codes = new Set(
       inputs.flatMap((input) => {

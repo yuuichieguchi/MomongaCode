@@ -32,6 +32,7 @@ const callOf = (overrides: Partial<BreakdownCall> & Pick<BreakdownCall, 'usage'>
   const identity = { runId: 'run-a', provider: 'acme', model: 'm1', billing: 'metered' as const, at: AT, ...overrides };
   return {
     price: priceCall({
+      usageSource: 'reported',
       provider: identity.provider,
       model: identity.model,
       billing: identity.billing,
@@ -91,7 +92,7 @@ describe('buildCostBreakdown', () => {
   });
 
   it('prices every call with its own cache rates and sums the cost exactly', () => {
-    expect(buildCostBreakdown(THREE_CALLS, {}).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(buildCostBreakdown(THREE_CALLS, {}).cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(formatCostBreakdown(buildCostBreakdown(THREE_CALLS, {}))).toContain('cost: 0.0048 USD at price version 2026-01-01');
   });
 
@@ -99,7 +100,7 @@ describe('buildCostBreakdown', () => {
     const calls = [...THREE_CALLS, callOf({ model: 'unlisted', usage: { inputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 1, reasoningTokens: 0 } })];
     const breakdown = buildCostBreakdown(calls, {});
 
-    expect(breakdown.cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 1, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 0.0048, currency: 'USD', unpricedCalls: 1, unpriced: { no_price_entry: 1 }, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.billed.inputTokens).toBe(3010);
     expect(formatCostBreakdown(breakdown)).toContain('cost: not complete: no price entry in 1 call(s); priced part: 0.0048 USD over 3 of 4 call(s)');
   });

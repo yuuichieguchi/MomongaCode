@@ -66,6 +66,6 @@ describe('a cache read the upstream never reported stays absent in the gateway',
 
   it('model cost: a call whose cache read was not reported is unpriced with the code cache_read_not_reported', () => {
     const usage = { input_tokens: 100, output_tokens: 2, total_tokens: 102, input_tokens_details: {}, output_tokens_details: { reasoning_tokens: 0 } } as unknown as Usage;
-    expect(modelCostOf({ provider: 'scripted', model: 'upstream-model', billing: 'metered', usage, cacheWriteInputTokens: undefined, at: 0, table: definePriceTable([ENTRY]) })).toEqual({ kind: 'unpriced', code: 'cache_read_not_reported', reason: 'the upstream did not report the cache reads of the call' });
+    expect(modelCostOf({ provider: 'scripted', model: 'upstream-model', billing: 'metered', usage, usageSource: 'reported', cacheWriteInputTokens: undefined, at: 0, table: definePriceTable([ENTRY]) })).toEqual({ kind: 'unpriced', code: 'cache_read_not_reported', reason: 'the upstream did not report the cache reads of the call' });
   });
 });

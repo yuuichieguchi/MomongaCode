@@ -125,7 +125,7 @@ describe('one rule for unpricedCalls on the report and the breakdown', () => {
     for (const [index, billing] of billings.entries()) {
       h.clock.set(AT.getTime() + index);
       const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing, requestModel: 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1 }, parent);
-      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 } });
+      recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 } });
       chat.end(h.clock.now());
     }
     agent.end(h.clock.now());

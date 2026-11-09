@@ -61,10 +61,11 @@ describe('the closed wire schemas', () => {
   const totals = {
     calls: 1,
     localCalls: 0,
-    unpricedCalls: 1,
+    unpricedCalls: 0,
     unknownBillingCalls: 0,
     cacheReadNotReportedCalls: 1,
     cacheReadUnpricedCalls: 1,
+    priceNotRecordedCalls: 0,
     planCalls: 0,
     planInputTokens: 0,
     planOutputTokens: 0,

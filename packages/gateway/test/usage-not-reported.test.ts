@@ -1,9 +1,10 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { definePriceTable } from '@momonga/observability';
-import type { AdapterCompactResult, CompactMomongaExtension, CompactResource, UsageSource } from '@momonga/protocol';
+import type { AdapterCompactResult, CompactResource, ModelCost, UnpricedOutcome, UsageSource } from '@momonga/protocol';
 import { messageEvents, openResponsesStream, openResponsesTextReply, openingEvents, terminalEvent } from '@momonga/testkit';
+import type { FakeScriptedReply } from '@momonga/testkit';
 import { modelCostOf } from '../src/core/model-cost.ts';
-import { ccAdapterFor, textReply } from './cc-compact-support.ts';
+import { ccAdapterFor } from './cc-compact-support.ts';
 import { startFake } from './cc-support.ts';
 import { postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { startOpenResponsesGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
@@ -62,7 +63,8 @@ describe('a compaction whose adapter estimated its usage carries usage_not_repor
   });
 
   it('chat-completions: the summary reported no usage', async () => {
-    const fake = await startFake({ scenario: 'tools-ok', usageReported: false, script: [textReply('The user asked for X.')] });
+    const withoutUsage: FakeScriptedReply = { kind: 'stream', chunks: [{ delta: { role: 'assistant', content: 'The user asked for X.' } }, { delta: {}, finishReason: 'stop' }] };
+    const fake = await startFake({ scenario: 'tools-ok', usageReported: false, script: [withoutUsage] });
     const gateway = await startGateway({
       adapters: { remote: ccAdapterFor(fake) },
       config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'system', kind: 'remote', billing: 'metered' } } },
@@ -78,6 +80,7 @@ describe('a compaction whose adapter estimated its usage carries usage_not_repor
 describe('the compaction types state the source and always carry momonga', () => {
   it('AdapterCompactResult requires usageSource and CompactResource requires momonga', () => {
     expectTypeOf<AdapterCompactResult['usageSource']>().toEqualTypeOf<UsageSource>();
-    expectTypeOf<Pick<CompactResource, 'momonga'>>().toEqualTypeOf<{ momonga: CompactMomongaExtension }>();
+    expectTypeOf<Pick<CompactResource, 'momonga'>>().toEqualTypeOf<Required<Pick<CompactResource, 'momonga'>>>();
+    expectTypeOf<CompactResource['momonga']>().toEqualTypeOf<{ target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome }>();
   });
 });

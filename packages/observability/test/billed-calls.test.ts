@@ -59,6 +59,7 @@ const record = async (runId: string, specs: readonly Spec[], h: ReturnType<typeo
     recordChatResponse(chat, {
       ...(spec.responseId === undefined ? {} : { responseId: spec.responseId }),
       finishReasons: ['stop'],
+      usageSource: 'reported',
       usage: {
         inputTokens: spec.input,
         outputTokens: 2,
@@ -155,7 +156,7 @@ describe('pageBilledCalls', () => {
     const h = harness();
     await record('run-a', [{ step: 1, input: 1 }], h);
     const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: false, attempt: 1 });
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 9, outputTokens: 1 } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 9, outputTokens: 1 } });
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
 

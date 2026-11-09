@@ -20,7 +20,7 @@ const recordCalls = async (runId: string, calls: readonly Call[], h: ReturnType<
     h.clock.set(call.at);
     const input = { providerName: 'acme', billing: 'metered' as const, requestModel: 'm1', stream: true, runId, step: index + 1, attempt: 1, ...(call.role === undefined ? {} : { role: call.role }) };
     const chat = startChatSpan(h.telemetry.tracer, input as Parameters<typeof startChatSpan>[1], parent);
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, cachedInputTokens: 0, outputTokens: call.output } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: call.input, cachedInputTokens: 0, outputTokens: call.output } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());

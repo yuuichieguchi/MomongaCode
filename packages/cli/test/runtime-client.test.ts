@@ -236,7 +236,7 @@ describe('the token anatomy endpoints', () => {
     duration: null,
     roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },
     callsWithoutResponseId: 0,
-    cost: { amount: null, currency: 'USD', unpricedCalls: 1, priceVersions: [] },
+    cost: { amount: null, currency: 'USD', unpricedCalls: 1, unpriced: { unpriceable_usage: 1 }, priceNotRecordedCalls: 0, priceVersions: [] },
     plan: { calls: 0, inputTokens: 0, outputTokens: 0 },
     unpriced: [{ runId: 'run-1', provider: 'acme', model: 'm1', step: 2, code: 'unpriceable_usage', reason: 'cached input (60) and written input (50) together exceed the input (100)' }],
     inconsistentUsage: [{ runId: 'run-1', provider: 'acme', model: 'm1', step: 2, reason: 'cached input (60) and written input (50) together exceed the input (100)' }],

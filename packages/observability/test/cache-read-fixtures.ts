@@ -33,6 +33,7 @@ export const recordCalls = async (h: Harness, runId: string, specs: readonly Cal
     if (billing === 'unknown') chat.setAttribute(MOMONGA_ATTRIBUTES.billing, 'unknown');
     recordChatResponse(chat, {
       finishReasons: ['stop'],
+      usageSource: 'reported',
       usage: {
         inputTokens: spec.input,
         outputTokens: spec.output ?? 2,

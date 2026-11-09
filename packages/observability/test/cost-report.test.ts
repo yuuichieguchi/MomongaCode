@@ -20,7 +20,7 @@ const recordCalls = async (runId: string, calls: readonly Call[], h: ReturnType<
     h.clock.set(call.at);
     const chat = startChatSpan(h.telemetry.tracer, { providerName: call.provider, billing: call.billing ?? 'metered', requestModel: call.model, stream: true, runId, step: index + 1, attempt: 1 }, parent);
     if (call.fail === true) recordError(chat, new Error('boom'), 'upstream_error');
-    else recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, outputTokens: call.output, ...(call.cached === undefined ? {} : { cachedInputTokens: call.cached }) } });
+    else recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: call.input, outputTokens: call.output, ...(call.cached === undefined ? {} : { cachedInputTokens: call.cached }) } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());
@@ -132,7 +132,7 @@ describe('buildCostReport', () => {
         { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1, target: fallback ? 'secondary' : 'primary' },
         parent,
       );
-      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 10, outputTokens: 5 } });
+      recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 10, outputTokens: 5 } });
       if (fallback) recordFallbackCauses(chat, causes);
       chat.end(h.clock.now());
     }

@@ -14,7 +14,7 @@ const plainTurn = () =>
 const billed = (billing: 'local' | 'plan') => ({ targets: { remote: { model: 'upstream-model', kind: 'remote', billing } }, aliases: { fast: ['remote'] } });
 
 const outcomeOf = (billing: 'metered' | 'local' | 'plan' | 'unknown', table: ReturnType<typeof definePriceTable> | undefined) =>
-  modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: USAGE, cacheWriteInputTokens: undefined, at: 0, table });
+  modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: USAGE, usageSource: 'reported', cacheWriteInputTokens: undefined, at: 0, table });
 
 describe('modelCostOf returns the price outcome and never null', () => {
   it('returns the cost of a priced call as a priced outcome', () => {
@@ -33,7 +33,7 @@ describe('modelCostOf returns the price outcome and never null', () => {
   it('returns cache_read_not_reported for a metered call whose cache-read count is absent, and plan for a plan call without it', () => {
     const absent = { ...USAGE, input_tokens_details: {} };
     const at = (billing: 'metered' | 'plan') =>
-      modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: absent, cacheWriteInputTokens: undefined, at: 0, table: definePriceTable([ENTRY]) });
+      modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: absent, usageSource: 'reported', cacheWriteInputTokens: undefined, at: 0, table: definePriceTable([ENTRY]) });
 
     expect(at('metered')).toMatchObject({ kind: 'unpriced', code: 'cache_read_not_reported' });
     expect(at('plan')).toMatchObject({ kind: 'unpriced', code: 'plan' });

@@ -3,7 +3,7 @@ import { amountOfUnits, definePriceTable, priceCall } from '@momonga/observabili
 import type { CostInput, PriceEntry } from '@momonga/observability';
 
 const metered = (input: CostInput) => {
-  const priced = priceCall({ ...input, billing: 'metered' });
+  const priced = priceCall({ ...input, billing: 'metered', usageSource: 'reported' });
   return priced.kind === 'priced' ? { amount: amountOfUnits(priced.units), currency: priced.currency, priceVersion: priced.priceVersion } : null;
 };
 
@@ -37,7 +37,7 @@ describe('priceCall on a metered target', () => {
 
   it('prices a reported zero cached count and leaves a call whose cached count was not reported unpriced', () => {
     expect(cost('m1', '2025-03-01T00:00:00Z', { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 100_000 })?.amount).toBe(1.25);
-    expect(priceCall({ provider: 'acme', model: 'm1', usage: { inputTokens: 100_000, outputTokens: 100_000 }, at: new Date('2025-03-01T00:00:00Z'), table, billing: 'metered' })).toEqual({
+    expect(priceCall({ usageSource: 'reported', provider: 'acme', model: 'm1', usage: { inputTokens: 100_000, outputTokens: 100_000 }, at: new Date('2025-03-01T00:00:00Z'), table, billing: 'metered' })).toEqual({
       kind: 'unpriced',
       code: 'cache_read_not_reported',
       reason: 'the upstream did not report the cache reads of the call',
@@ -59,7 +59,7 @@ describe('priceCall on a metered target', () => {
 
   it('leaves a call with more cached than input unpriced and never throws', () => {
     expect(cost('m1', '2025-07-01T00:00:00Z', { inputTokens: 10, cachedInputTokens: 11, outputTokens: 0 })).toBeNull();
-    expect(priceCall({ provider: 'acme', model: 'm1', usage: { inputTokens: 10, cachedInputTokens: 11, outputTokens: 0 }, at: new Date('2025-07-01T00:00:00Z'), table, billing: 'metered' })).toEqual({
+    expect(priceCall({ usageSource: 'reported', provider: 'acme', model: 'm1', usage: { inputTokens: 10, cachedInputTokens: 11, outputTokens: 0 }, at: new Date('2025-07-01T00:00:00Z'), table, billing: 'metered' })).toEqual({
       kind: 'unpriced',
       code: 'unpriceable_usage',
       reason: expect.stringContaining('exceed'),

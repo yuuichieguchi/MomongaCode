@@ -41,6 +41,7 @@ describe('the price time of a call is the start of its attempt span', () => {
     if (span === undefined) throw new Error('the call recorded no chat span');
     expect(startMsOf(span)).toBe(START_MS);
     const reported = priceCall({
+      usageSource: 'reported',
       provider: 'scripted',
       model: 'scripted-primary',
       billing: 'metered',

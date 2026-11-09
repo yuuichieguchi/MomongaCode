@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { UNPRICED_CODES } from '@momonga/protocol';
 import { definePriceTable, priceCall } from '@momonga/observability';
 import type { CallBilling, CostUsage, PriceTable } from '@momonga/observability';
+import type { UsageSource } from '@momonga/protocol';
 
 const AT = new Date(Date.parse('2026-07-10T00:00:00Z'));
 
@@ -11,7 +12,8 @@ const FULL = definePriceTable([
 const BARE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);
 const EMPTY = definePriceTable([]);
 
-const price = (billing: CallBilling, usage: CostUsage, table: PriceTable, at: Date = AT) => priceCall({ provider: 'acme', model: 'm1', billing, usage, at, table });
+const price = (billing: CallBilling, usage: CostUsage, table: PriceTable, at: Date = AT, usageSource: UsageSource = 'reported') =>
+  priceCall({ provider: 'acme', model: 'm1', billing, usageSource, usage, at, table });
 
 describe('priceCall names the cause of an unpriced call with a closed code', () => {
   it('gives the code plan to a plan call, even with a price entry', () => {
@@ -24,6 +26,10 @@ describe('priceCall names the cause of an unpriced call with a closed code', () 
 
   it('gives the code cache_read_not_reported to a metered call whose cache-read count is absent', () => {
     expect(price('metered', { inputTokens: 100, outputTokens: 10 }, FULL)).toMatchObject({ kind: 'unpriced', code: 'cache_read_not_reported' });
+  });
+
+  it('gives the code usage_not_reported to a metered call whose usage is the gateway estimate', () => {
+    expect(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, FULL, AT, 'estimated')).toMatchObject({ kind: 'unpriced', code: 'usage_not_reported' });
   });
 
   it('gives the code no_price_entry to a metered call with no entry', () => {
@@ -57,6 +63,7 @@ describe('priceCall names the cause of an unpriced call with a closed code', () 
 describe('every call lands in exactly one class (I-P2)', () => {
   const BILLINGS: readonly CallBilling[] = ['metered', 'local', 'plan', 'unknown'];
   const COUNTS: readonly ('reported' | 'absent')[] = ['reported', 'absent'];
+  const SOURCES: readonly UsageSource[] = ['reported', 'estimated'];
   const OUTCOMES: readonly { usage: CostUsage; table: PriceTable; at: Date }[] = [
     { usage: { inputTokens: 100, outputTokens: 10 }, table: FULL, at: AT },
     { usage: { inputTokens: 100, outputTokens: 10 }, table: EMPTY, at: AT },
@@ -76,10 +83,12 @@ describe('every call lands in exactly one class (I-P2)', () => {
     return String(record['code']);
   };
 
-  it('reaches every class of the product of billing, cache-read count and outcome, and no call lands in two or none', () => {
+  it('reaches every class of the product of billing, usage source, cache-read count and outcome, and no call lands in two or none', () => {
     const reached = new Set<string>();
     for (const billing of BILLINGS) {
-      for (const count of COUNTS) for (const entry of OUTCOMES) reached.add(classOf(price(billing, withCount(entry.usage, count), entry.table, entry.at)));
+      for (const source of SOURCES) {
+        for (const count of COUNTS) for (const entry of OUTCOMES) reached.add(classOf(price(billing, withCount(entry.usage, count), entry.table, entry.at, source)));
+      }
     }
     reached.add(classOf(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 40 }, BARE)));
     expect([...reached].sort()).toEqual(['priced', ...UNPRICED_CODES].sort());

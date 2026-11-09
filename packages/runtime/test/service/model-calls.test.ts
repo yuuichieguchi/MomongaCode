@@ -94,7 +94,7 @@ describe('costBreakdownOf', () => {
     expect(breakdown.layers.callsWithoutAnatomy).toBe(0);
     expect(breakdown.layers.tokens['system']).toBe(30);
     expect(breakdown.duration?.n).toBe(3);
-    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0, priceVersions: ['2026-01-01'] });
+    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0, unpriced: {}, priceNotRecordedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.unjoined).toEqual([]);
   });
 
