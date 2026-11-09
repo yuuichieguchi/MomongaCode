@@ -3574,8 +3574,8 @@
       "role": "check",
       "expect": "holds",
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 1255970,
+      "tier": "deep",
+      "distinctStates": 843130,
       "measuredSeconds": 215.26,
       "measuredCpuSeconds": 865.69,
       "budgetCpuSeconds": 1735
@@ -3586,7 +3586,7 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 208253,
+      "distinctStates": 188999,
       "measuredSeconds": 13.17,
       "measuredCpuSeconds": 46.34,
       "budgetCpuSeconds": 96
@@ -3600,7 +3600,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2733,
+      "distinctStates": 8153,
       "measuredSeconds": 1.31,
       "measuredCpuSeconds": 2.71,
       "budgetCpuSeconds": 9
@@ -3614,7 +3614,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 47,
+      "distinctStates": 374,
       "measuredSeconds": 1.13,
       "measuredCpuSeconds": 1.59,
       "budgetCpuSeconds": 7
@@ -3628,7 +3628,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1194,
+      "distinctStates": 7301,
       "measuredSeconds": 1.28,
       "measuredCpuSeconds": 2.41,
       "budgetCpuSeconds": 8
@@ -3642,7 +3642,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1153,
+      "distinctStates": 54777,
       "measuredSeconds": 1.29,
       "measuredCpuSeconds": 2.35,
       "budgetCpuSeconds": 8
@@ -3656,7 +3656,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 20743,
+      "distinctStates": 56279,
       "measuredSeconds": 1.47,
       "measuredCpuSeconds": 3.63,
       "budgetCpuSeconds": 11
@@ -3670,7 +3670,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 49,
+      "distinctStates": 355,
       "measuredSeconds": 1.13,
       "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7
@@ -3684,7 +3684,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 490,
+      "distinctStates": 3331,
       "measuredSeconds": 1.2,
       "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
@@ -3698,7 +3698,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 29161,
+      "distinctStates": 39182,
       "measuredSeconds": 4.57,
       "measuredCpuSeconds": 16.24,
       "budgetCpuSeconds": 36
@@ -3712,7 +3712,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 489,
+      "distinctStates": 1148,
       "measuredSeconds": 1.22,
       "measuredCpuSeconds": 1.97,
       "budgetCpuSeconds": 7
@@ -3726,7 +3726,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4037,
+      "distinctStates": 66949,
       "measuredSeconds": 1.34,
       "measuredCpuSeconds": 2.92,
       "budgetCpuSeconds": 9
@@ -4464,6 +4464,147 @@
       "measuredSeconds": 1.61,
       "measuredCpuSeconds": 4.02,
       "budgetCpuSeconds": 12
+    },
+    {
+      "config": "UpdateSwitch.every",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 417283,
+      "measuredSeconds": 101.57,
+      "measuredCpuSeconds": 201.76,
+      "budgetCpuSeconds": 407,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.crash",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 238363,
+      "measuredSeconds": 6.14,
+      "measuredCpuSeconds": 13.82,
+      "budgetCpuSeconds": 31,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.sessionsDeep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 595391,
+      "measuredSeconds": 90.65,
+      "measuredCpuSeconds": 172.66,
+      "budgetCpuSeconds": 349,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.failSetsNone",
+      "role": "evidence",
+      "expect": {
+        "violates": "CurrentOnlyByPromotion",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1629,
+      "measuredSeconds": 1.09,
+      "measuredCpuSeconds": 1.89,
+      "budgetCpuSeconds": 7,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.scanAlloc",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoNumberReuse",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 229,
+      "measuredSeconds": 0.94,
+      "measuredCpuSeconds": 1.34,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.noJoin",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDuplicateStart",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 44,
+      "measuredSeconds": 0.91,
+      "measuredCpuSeconds": 1.14,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.releaseEarly",
+      "role": "evidence",
+      "expect": {
+        "violates": "StarterKeepsDir",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 30,
+      "measuredSeconds": 0.89,
+      "measuredCpuSeconds": 1.12,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.publishNoCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "CurrentOnlyByPromotion",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1872,
+      "measuredSeconds": 1.07,
+      "measuredCpuSeconds": 1.83,
+      "budgetCpuSeconds": 7,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.staleStarter",
+      "role": "evidence",
+      "expect": {
+        "violates": "StarterSucceedsCurrent",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 405,
+      "measuredSeconds": 0.95,
+      "measuredCpuSeconds": 1.41,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.claimUnchecked",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveRemoved",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 157,
+      "measuredSeconds": 0.91,
+      "measuredCpuSeconds": 1.23,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
     }
   ]
 }
