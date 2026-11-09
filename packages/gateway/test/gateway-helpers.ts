@@ -8,7 +8,7 @@ import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
-import type { StreamEvent } from '@momonga/protocol';
+import type { StreamEvent, TargetBilling } from '@momonga/protocol';
 import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
@@ -63,6 +63,7 @@ export type TargetSpec = {
 
 export type ConfigOverrides = {
   aliases?: Record<string, string[]>;
+  billingChanges?: ReadonlyArray<{ from: TargetBilling; to: TargetBilling; alias?: string }>;
   targets?: Record<string, TargetSpec>;
   retry?: Partial<GatewayConfig['retry']>;
   breaker?: Partial<GatewayConfig['breaker']>;
@@ -90,7 +91,11 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
     };
   }
   return {
-    models: { aliases: overrides.aliases ?? { fast: ['primary'] }, targets },
+    models: {
+      aliases: overrides.aliases ?? { fast: ['primary'] },
+      targets,
+      ...(overrides.billingChanges === undefined ? {} : { billingChanges: overrides.billingChanges.map((change) => ({ ...change })) }),
+    },
     retry: { maxAttempts: 3, totalWaitMs: 84_000, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },
     limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, readerStallMs: 30_000, ...overrides.limits },
