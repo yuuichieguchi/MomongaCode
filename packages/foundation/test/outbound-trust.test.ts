@@ -11,7 +11,7 @@ const FIXTURE = path.join(import.meta.dirname, 'fixtures', 'test-ca.pem');
 
 const fingerprints = (pems: readonly string[]): Set<string> => new Set(pems.map((pem) => new X509Certificate(pem).fingerprint256));
 
-const readFile = (file: string): Promise<string> => fs.promises.readFile(file, 'utf8');
+const files = { readTextFile: (file: string): Promise<string> => fs.promises.readFile(file, 'utf8') };
 
 let original: string[] = [];
 let scratch = '';
@@ -31,7 +31,7 @@ describe('installTrust', () => {
     const before = { bundled: tls.getCACertificates('bundled'), system: tls.getCACertificates('system'), extra: tls.getCACertificates('extra') };
     const config: NetworkConfig = { caFiles: [{ value: FIXTURE, source: 'network.extraCaFiles' }] };
 
-    const report = await installTrust(config, readFile);
+    const report = await installTrust(config, files);
 
     const installed = fingerprints(tls.getCACertificates('default'));
     for (const fingerprint of fingerprints([...before.bundled, ...before.system, ...before.extra])) expect(installed.has(fingerprint)).toBe(true);
@@ -50,7 +50,7 @@ describe('installTrust', () => {
       ],
     };
 
-    const report = await installTrust(config, readFile);
+    const report = await installTrust(config, files);
 
     expect(report.failures).toHaveLength(1);
     expect(report.failures[0]).toMatchObject({ file: missing, source: 'SSL_CERT_FILE' });
@@ -61,7 +61,7 @@ describe('installTrust', () => {
     const empty = path.join(scratch, 'not-a-cert.pem');
     fs.writeFileSync(empty, 'this is not a certificate\n');
 
-    const report = await installTrust({ caFiles: [{ value: empty, source: 'network.extraCaFiles' }] }, readFile);
+    const report = await installTrust({ caFiles: [{ value: empty, source: 'network.extraCaFiles' }] }, files);
 
     expect(report.failures).toEqual([{ file: empty, source: 'network.extraCaFiles', reason: 'the file holds no certificate' }]);
   });

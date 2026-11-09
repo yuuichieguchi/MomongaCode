@@ -15,6 +15,7 @@ import {
   reapMarkerDirectory,
   ruleEnforcementOf,
   systemClock,
+  nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
@@ -316,7 +317,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
-      const trust = await installTrust(networkConfig, (file) => fs.promises.readFile(file, 'utf8'));
+      const trust = await installTrust(networkConfig, nodeFileSystem);
       for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
       return { cache: created, settings: snapshot.settings };
     });

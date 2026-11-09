@@ -9,6 +9,7 @@ import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import { detectModels } from '../src/commands/models.ts';
 import { processOutboundNetwork, withIdentityReadFetch } from '../src/network.ts';
+import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 
 const READS_PER_ADDRESS = 2;
@@ -25,6 +26,7 @@ const portsWith = (written: string[]): CliPorts => {
   return {
     home,
     env: {},
+    files: nodeFiles,
     stdout: { write: (text: string) => void written.push(text) },
     stderr: { write: (text: string) => void written.push(text) },
   } as unknown as CliPorts;

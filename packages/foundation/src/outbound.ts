@@ -3,6 +3,7 @@ import tls from 'node:tls';
 import { Agent, Dispatcher, Pool, ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { RequestInit as UndiciRequestInit, Response as UndiciResponse, buildConnector } from 'undici';
 import { isLoopbackHost } from './loopback.ts';
+import type { FileSystem } from './node-file-system.ts';
 import { routeOf } from './network-route.ts';
 import type { NetworkConfig, NetworkSource, Route } from './network-route.ts';
 
@@ -80,10 +81,10 @@ const codeOf = (error: unknown): string | undefined => {
 
 type LoadedFile = { readonly certificates: readonly string[] } | { readonly reason: string };
 
-const loadCaFile = async (file: string, readFile: (file: string) => Promise<string>): Promise<LoadedFile> => {
+const loadCaFile = async (file: string, files: TrustFiles): Promise<LoadedFile> => {
   let text: string;
   try {
-    text = await readFile(file);
+    text = await files.readTextFile(file);
   } catch (error) {
     return { reason: `the file could not be read (${codeOf(error) ?? (error instanceof Error ? error.message : String(error))})` };
   }
@@ -97,7 +98,9 @@ const loadCaFile = async (file: string, readFile: (file: string) => Promise<stri
   return { certificates };
 };
 
-export const installTrust = async (config: NetworkConfig, readFile: (file: string) => Promise<string>): Promise<TrustReport> => {
+export type TrustFiles = Pick<FileSystem, 'readTextFile'>;
+
+export const installTrust = async (config: NetworkConfig, files: TrustFiles): Promise<TrustReport> => {
   const bundled = tls.getCACertificates('bundled');
   const system = tls.getCACertificates('system');
   const extra = tls.getCACertificates('extra');
@@ -109,7 +112,7 @@ export const installTrust = async (config: NetworkConfig, readFile: (file: strin
   const failures: TrustFailure[] = [];
   const fromFiles: string[] = [];
   for (const { value: file, source } of config.caFiles) {
-    const loaded = await loadCaFile(file, readFile);
+    const loaded = await loadCaFile(file, files);
     if ('reason' in loaded) {
       failures.push({ file, source, reason: loaded.reason });
       continue;

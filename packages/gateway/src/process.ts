@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
@@ -488,7 +487,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const { settings, warnings } = await loadUserSettings({ home: options.home });
     for (const warning of warnings) logger.warn(warning);
     const networkConfig = resolveNetwork(settings.network, options.env);
-    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, (file) => fs.promises.readFile(file, 'utf8')) };
+    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
     for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
     signal?.throwIfAborted();
     const hmacKey = secretKeyFile(paths.gatewayKey, {
