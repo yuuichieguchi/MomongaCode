@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { enqueue, harness, makeStoreDir, mustClaim, newSession, registerCleanup } from './helpers.ts';
 
 const STORE_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/index.ts')).href;
@@ -30,7 +30,7 @@ while (written < rounds) {
 store.close();
 `;
 
-describe('writers in separate processes', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('writers in separate processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('serialize through BEGIN IMMEDIATE and busy_timeout without losing or duplicating seq', async () => {
     const { dbPath, store } = harness();
     const run = enqueue(store, newSession(store).id);

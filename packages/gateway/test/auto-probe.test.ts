@@ -8,7 +8,7 @@ import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
@@ -116,7 +116,7 @@ const expectProbing = (response: { status: number; body: { error: { code: string
 
 const probeStarted = (gateway: Awaited<ReturnType<typeof setup>>, count = 1) => until(() => gateway.probes().length === count, `probe fm serve number ${count} to start`);
 
-describe('the automatic probe of an fm target with no probe record', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the automatic probe of an fm target with no probe record', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   describe('P3 NoRecordGets503 and RetryAfterIsHonest', () => {
     it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key', async () => {
       const gateway = await setup();

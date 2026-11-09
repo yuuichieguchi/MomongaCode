@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, homePaths, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -33,7 +33,7 @@ const servedOnce = async (target: Record<string, unknown>, recorded: boolean): P
   return traceBytesUnder(homePaths(home).root);
 };
 
-describe('rule M: the shown model of a managed target (design-managed-servers section 7 row 10; section 18, item 5)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('rule M: the shown model of a managed target (design-managed-servers section 7 row 10; section 18, item 5)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('is the id the server lists after its first probe when no model is declared, never "not listed yet" and never the target name', async () => {
     const traces = await servedOnce({}, true);
     expect(traces).toContain('system');

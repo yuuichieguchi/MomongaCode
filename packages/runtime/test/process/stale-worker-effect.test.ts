@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import { HAS_SEATBELT, createRun, createSession, fenceFor, makeRuntimeFixture, makeTempHome, runBashThroughPort, writeUserSettings } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const LEASE_EXPIRY_MS = 30_001;
 const CALL_ID = 'call-1';
 

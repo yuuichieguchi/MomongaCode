@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import { FIRST_GENERATION, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import type { RunServiceOptions } from '@momonga/runtime';
 import { writeUserSettings } from './helpers.ts';
@@ -96,7 +96,7 @@ vi.mock('@momonga/store', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 beforeEach(() => {
   control.failDrain = undefined;
@@ -119,7 +119,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(control.storeCloses).toBe(1);
     expect(fs.existsSync(firstGeneration(stack.temp.paths).sockets.runtime)).toBe(false);
-  }, DAEMON_PROCESS_TEST_TIMEOUT_MS);
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('a rejecting telemetry.forceFlush still calls telemetry.shutdown during teardown', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();

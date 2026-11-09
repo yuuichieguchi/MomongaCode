@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_DETERMINISTIC_REPLY } from '@momonga/testkit';
 import { eventTypes, launchRuntime, readDb, startStack, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 describe('scenario b1: abort mid-request, then restart (system timers, in-process gateway)', () => {
   it('a run aborted while its model request is in flight completes after a restart with a single upstream request', PROCESS_TIMEOUT, async () => {

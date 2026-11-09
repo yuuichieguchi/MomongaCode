@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
 import { launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, startGateway, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
@@ -11,7 +11,7 @@ vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) =>
   return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const WINDOW_HOLDING_EVERY_TOOL = 65_536;
 const THROWING = 'mcp__fx__validator_throws';
 const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;

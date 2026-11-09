@@ -123,7 +123,6 @@ export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_
 export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
   BUILT_BINARY_TEST_TIMEOUT_MS,
-  DAEMON_PROCESS_TEST_TIMEOUT_MS,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
   TEST_HEARTBEAT_MS,

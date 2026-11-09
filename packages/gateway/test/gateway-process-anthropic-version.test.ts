@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, anthropicCountTokensReply, anthropicTextReply, startFakeAnthropic } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, anthropicCountTokensReply, anthropicTextReply, startFakeAnthropic } from '@momonga/testkit';
 import { postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { FAKE_API_KEY } from './upstream-gateway-support.ts';
@@ -37,7 +37,7 @@ const launchWith = async (apiVersion: string | undefined) => {
   return { created, counted, versionOn };
 };
 
-describe('the anthropic API version in settings reaches the upstream header through the gateway process', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the anthropic API version in settings reaches the upstream header through the gateway process', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('sends 2023-06-01 on create and on count_tokens when the target declares it', async () => {
     const { created, counted, versionOn } = await launchWith('2023-06-01');
     expect(created.status).toBe(200);

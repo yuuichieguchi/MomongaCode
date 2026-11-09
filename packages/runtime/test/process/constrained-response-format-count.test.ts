@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, fakeUsageOfRequest } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeUsageOfRequest } from '@momonga/testkit';
 import { launchRuntime, prepareStack, startGateway, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const finalEnvelope = {
   kind: 'stream' as const,

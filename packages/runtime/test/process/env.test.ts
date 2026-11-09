@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import {
   DECLARED_CREDENTIAL,
   HAS_SEATBELT,
@@ -19,7 +19,7 @@ import {
 } from './helpers.ts';
 
 const SENTINEL = 'MOMONGA_ENV_TEST_SENTINEL';
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const withSentinel = async <T>(task: () => Promise<T>): Promise<T> => {
   process.env[SENTINEL] = 'leaked-from-process-env';

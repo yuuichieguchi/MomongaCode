@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { request } from 'undici';
 import { FIRST_GENERATION, generationLayout, momongaPaths } from '@momonga/foundation';
 import { runGatewayEntry } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo } from '@momonga/testkit';
 import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
 
@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const VERSION = '1.10.0-debug-tcp-test';
 const TOKEN = 'momonga-entry-debug-token';
-const ENTRY_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const ENTRY_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const launch = async (context: CleanupContext, extraFlags: (home: string, aux: string) => string[]): Promise<{ io: FakeEntryIo; exit: Promise<number>; home: string; aux: string }> => {
   const aux = withTempDir(context);

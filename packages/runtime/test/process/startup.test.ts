@@ -6,7 +6,7 @@ import { ConfigError } from '@momonga/config';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -107,7 +107,7 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 beforeEach(() => {
   control.events = [];
@@ -520,7 +520,7 @@ describe('startup cancellation through signal (system timers)', () => {
       expect(stdout.chunks).toEqual([]);
       expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     },
-    DAEMON_PROCESS_TEST_TIMEOUT_MS,
+    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 
   it('a signal aborted during step 16 is honoured before the ready line', PROCESS_TIMEOUT, async () => {

@@ -5,7 +5,7 @@ import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClie
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -330,7 +330,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   return { client };
 };
 
-describe('T5: fm text with a configured key on another target', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T5: fm text with a configured key on another target', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('redacts the fm license output in GET /v1/momonga/health', async (context) => {
     const exec: FmStackOptions['exec'] = async (file, args) =>
       args[0] === 'license' ? { exitCode: 1, stdout: `license status: ${TEST_API_KEY}`, stderr: '' } : fakeExec(file, args);

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
 import type { ManagedServerOptions } from '../src/managed/server.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
@@ -34,7 +34,7 @@ const settingsWith = (managedServerStopGraceMs: number) => ({
   models: { aliases: { default: ['apple'] }, targets: { apple: { adapter: 'managed', server: 'fm' } } },
 });
 
-describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('the managed server reads its stop grace from the user settings at each stop begin', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();

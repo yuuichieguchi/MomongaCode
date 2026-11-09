@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
@@ -32,7 +32,7 @@ const runThroughFakeFm = async (settings: unknown, alias: string, target: string
   return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: alias, input: userInput('hello fm') }));
 };
 
-describe('the model id a run sends to fm serve', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the model id a run sends to fm serve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('is a model fm serve lists, for the fm target the person configured under the alias default', async () => {
     const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' } }, aliases: { default: ['fm'] } } }, 'default', 'fm');
     expect(reply.body.error ?? null).toBeNull();

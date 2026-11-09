@@ -6,7 +6,7 @@ import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterS
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { ManagedChild } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { saveFakeFmRecord } from './fm-record-support.ts';
@@ -137,7 +137,7 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   return { tookMs: clock.now() - closeBegan, probeTerminatedAfterMs: serves.probeTerminatedAt.map((at) => at - closeBegan) };
 };
 
-describe('the gateway process close bound with an fm probe in flight', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway process close bound with an fm probe in flight', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it.each<[ProbePhase, StopValues]>([
     ['running', DEFAULT_STOP_VALUES],
     ['waiting on health', DEFAULT_STOP_VALUES],

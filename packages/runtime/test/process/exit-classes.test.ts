@@ -6,11 +6,11 @@ import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_FAILURE, FIRST_GENERATION, Proc
 import { trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, launchRuntime, makeRunHome, runtimeAlreadyRunningError, startRuntimeProcess, startStack } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const exitClassOf = (error: unknown): number => {
   if (error instanceof ConfigError) return EXIT_CONFIG;

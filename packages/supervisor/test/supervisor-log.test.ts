@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LOG_KEEP, LOG_MAX_BYTES, createJsonLogger, createRotatingLogFile, momongaPaths, systemClock } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { JsonLine } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import { OVERLONG_STDERR_BYTES, OWN_LOG_MSG, RAW_STDERR_LINES, STRAY_STDOUT_LINE } from './fixtures/p3b-engine-child.ts';
@@ -24,7 +24,7 @@ const readLines = (file: string): JsonLine[] =>
         .map((line) => JSON.parse(line) as JsonLine)
     : [];
 
-describe('supervisor.log and role logs with real children', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('supervisor.log and role logs with real children', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('real child end-to-end', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, {});

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack, waitForCondition } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -103,7 +103,7 @@ describe('the journal thread in the runtime process (shutdown order, S3)', () =>
     await launched.handle.close();
 
     expect(control.order).toEqual(['store.close', 'thread.close']);
-  }, DAEMON_PROCESS_TEST_TIMEOUT_MS);
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('a terminal still awaiting the thread at shutdown rejects with JournalThreadError, commits nothing, and nothing is written after the store closes', async () => {
     const stack = await startStack();
@@ -122,5 +122,5 @@ describe('the journal thread in the runtime process (shutdown order, S3)', () =>
     const dbPath = stack.temp.paths.databases.runtime;
     expect(readDb<{ status: string }>(dbPath, 'SELECT status FROM runs WHERE id = ?', run.id)[0]?.status).toBe('RUNNING');
     expect(readDb<{ n: number }>(dbPath, "SELECT COUNT(*) AS n FROM events WHERE run_id = ? AND type = 'context.contribution'", run.id)[0]?.n).toBe(0);
-  }, DAEMON_PROCESS_TEST_TIMEOUT_MS);
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 });

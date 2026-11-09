@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { writeInvalidUserSettings } from './helpers.ts';
 import { launchRuntime, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 describe('fail-closed user settings under a running runtime (system timers, in-process gateway)', () => {
   it('after the user settings file becomes invalid, session create answers 422 config_error', PROCESS_TIMEOUT, async () => {

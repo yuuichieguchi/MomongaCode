@@ -12,8 +12,8 @@ const resolveAndInstall = async (ports: NetworkPorts): Promise<OutboundNetwork> 
   const { settings } = await loadUserSettings({ home: ports.home });
   const config = resolveNetwork(settings.network, ports.env);
   const bound = new AbortController();
-  systemTiming.setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS);
-  const trust = await installTrust(config, ports.files, { signal: bound.signal });
+  const timer = systemTiming.setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS);
+  const trust = await installTrust(config, ports.files, { signal: bound.signal }).finally(() => systemTiming.clearTimeout(timer));
   for (const failure of trust.failures) ports.stderr.write(`${escapedLines([`momonga: ${trustFailureText(failure)}`])}\n`);
   return { config, trust };
 };

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import { corruptSchema, entriesNamed, isLockFree, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 describe('fatal errors under a running runtime (system timers, in-process gateway)', () => {
   it('a malformed schema under a running runtime resolves fatal after abort, close afterwards is a no-op and returns the same result with fatal set', PROCESS_TIMEOUT, async () => {
