@@ -3,6 +3,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createFakeKernelLock } from '@momonga/testkit';
 import {
   createUdsClient,
   currentSocketResolver,
@@ -87,7 +88,7 @@ describe('publishCurrentGeneration', () => {
       link: async (from, to) => void operations.push({ op: 'link', file: from, to }),
       rm: async (file) => void operations.push({ op: 'rm', file }),
     };
-    await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), files);
+    await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), files, createFakeKernelLock({ inheritable: false }));
     const writesToCurrent = operations.filter((operation) => operation.file === paths.current && operation.op.startsWith('open'));
     expect(writesToCurrent).toEqual([]);
     const renames = operations.filter((operation) => operation.op === 'rename');

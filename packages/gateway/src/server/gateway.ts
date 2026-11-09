@@ -2,7 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
-import { listenUnix } from '@momonga/foundation';
+import { listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
 import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
@@ -144,7 +144,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
     const unixServer = http.createServer(getRequestListener(handler));
     webSocket.attach(unixServer);
     servers.push(unixServer);
-    await listenUnix(unixServer, options.socketPath);
+    await listenUnix(unixServer, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
     if (options.onFatal !== undefined) watchServerErrors(unixServer, options.onFatal);
 
     let tcpPort: number | undefined;

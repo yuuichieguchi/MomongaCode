@@ -554,6 +554,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const runService = await step('service', () =>
       createRunService({
+        ...(signal === undefined ? {} : { startSignal: signal }),
         store,
         clock,
         redactor,

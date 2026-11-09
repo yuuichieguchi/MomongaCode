@@ -7,7 +7,6 @@ import { startGatewayProcess } from './process.ts';
 
 export const GATEWAY_ENTRY_FLAGS = {
   ...CHILD_ENTRY_FLAGS,
-  'fm-binary': { kind: 'string' },
   'debug-tcp-port': { kind: 'int' },
   'debug-tcp-token-file': { kind: 'string' },
 } as const satisfies FlagSpec;
@@ -31,7 +30,6 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, env, signal, logger, stdout, acquireLock }) => {
       installOtelErrorHandler((error) => logger.warn('otel.error', { err: error }));
-      const fmBinary = flags['fm-binary'];
       const debugPort = flags['debug-tcp-port'];
       const debugTokenFile = flags['debug-tcp-token-file'];
       if ((debugPort === undefined) !== (debugTokenFile === undefined)) {
@@ -47,7 +45,6 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
         signal,
         acquireLock,
         stopValues: stopValuesOf(home, logger),
-        ...(fmBinary === undefined ? {} : { fmBinary }),
         ...(debugPort === undefined || debugTokenFile === undefined ? {} : { debugTcp: { port: debugPort, tokenFile: debugTokenFile } }),
         ...(deps.secretStore === undefined ? {} : { secretStore: deps.secretStore }),
       });

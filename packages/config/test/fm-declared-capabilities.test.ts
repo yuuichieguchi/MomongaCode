@@ -17,7 +17,7 @@ const loadWith = async (target: Record<string, unknown>) => {
 
 describe('an fm target that declares the capabilities a probe would measure', () => {
   it('keeps the declared context window and output bound', async () => {
-    const { settings } = await loadWith({ adapter: 'fm', toolCalling: 'native', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } });
+    const { settings } = await loadWith({ adapter: 'managed', server: 'fm', toolCalling: 'native', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } });
 
     expect(settings.models.targets['local']).toMatchObject({ capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } });
   });
@@ -27,6 +27,6 @@ describe('an fm target that declares the capabilities a probe would measure', ()
     ['an output bound without a context window', { maxOutputTokens: 1024 }],
     ['an unknown capability', { contextWindow: 8192, maxOutputTokens: 1024, streaming: true }],
   ])('refuses %s', async (_label, capabilities) => {
-    await expect(loadWith({ adapter: 'fm', capabilities })).rejects.toThrow(/capabilities/);
+    await expect(loadWith({ adapter: 'managed', server: 'fm', capabilities })).rejects.toThrow(/capabilities/);
   });
 });

@@ -10,7 +10,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { TOOL_GROUPS_SQL, createProcessLedger, formatPidsLine, parsePidsFile } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
-import { killListedGroups, leftoverEntries } from './teardown.ts';
+import { killListedGroups, leakedTestkitEntries, leftoverEntries } from './teardown.ts';
 
 const DETACHED_GRANDCHILD_SCRIPT = [
   "const child = require('node:child_process').spawn('sleep', ['30'], { detached: true, stdio: 'ignore' });",
@@ -421,10 +421,15 @@ describe('tolerant readers', () => {
 });
 
 describe('teardown helpers', () => {
-  it('leftoverEntries reports the roots of this run and testkit dirs, never the harness files or other runs', () => {
+  it('leftoverEntries reports the roots of this run, never the harness files, testkit dirs or other runs', () => {
     const listing = ['mme-ab12-pids', 'mme-ab12-live', 'mme-ab12-x1Y2z3', 'mme-cd34-aaaaaa', 'mmt-ab12-QqQqQq', 'mmt-x-zzzzzz', 'mm-abcdef', 'mme-ab12-a0b1c2'];
-    expect([...leftoverEntries(listing, 'ab12')].sort()).toEqual(['mme-ab12-a0b1c2', 'mme-ab12-x1Y2z3', 'mmt-ab12-QqQqQq']);
+    expect([...leftoverEntries(listing, 'ab12')].sort()).toEqual(['mme-ab12-a0b1c2', 'mme-ab12-x1Y2z3']);
     expect(leftoverEntries(['mme-ab12-pids', 'mme-ab12-live'], 'ab12')).toEqual([]);
+  });
+
+  it('leakedTestkitEntries reports only the testkit dirs of this run', () => {
+    const listing = ['mme-ab12-x1Y2z3', 'mmt-ab12-QqQqQq', 'mmt-x-zzzzzz', 'mmt-cd34-aaaaaa', 'mm-abcdef'];
+    expect(leakedTestkitEntries(listing, 'ab12')).toEqual(['mmt-ab12-QqQqQq']);
   });
 
   it('killListedGroups kills the live listed groups with a matching start time and skips a reused pid', async (context) => {

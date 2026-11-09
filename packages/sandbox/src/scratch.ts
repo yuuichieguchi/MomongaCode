@@ -12,13 +12,3 @@ export function assertExistingDirectory(root: string, port: DirectoryPort = node
     throw new SandboxPolicyError('writable_root_missing', `writable root does not exist or is not a directory: ${root}`, { path: root });
   }
 }
-
-export function removePrivateTmpDir(dir: string): void {
-  const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
-  if (stat === undefined) return;
-  if (stat.isSymbolicLink() || !stat.isDirectory()) {
-    fs.unlinkSync(dir);
-    return;
-  }
-  fs.rmSync(dir, { recursive: true, force: true });
-}

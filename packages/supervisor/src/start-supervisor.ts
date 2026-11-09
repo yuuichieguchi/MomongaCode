@@ -408,6 +408,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
     options.signal?.throwIfAborted();
     server = await startControlServer({
+      ...omitUndefined({ startSignal: options.signal }),
       socketPath: own.sockets.supervisor,
       timers,
       health,

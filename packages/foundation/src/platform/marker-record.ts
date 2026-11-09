@@ -104,10 +104,12 @@ export const groupRecordOutcome = (recording: Promise<void>, marker: string): Pr
     (error: unknown) => groupRecordNotice(marker, error),
   );
 
-export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => {
-  const found = GROUP_FORM.exec(await files.read(marker));
+export const parseRecordedGroup = (text: string): number | undefined => {
+  const found = GROUP_FORM.exec(text);
   return found === null ? undefined : Number(found[1]);
 };
+
+export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => parseRecordedGroup(await files.read(marker));
 
 export const markIgnored = (marker: string, { files = nodeRecordFiles }: RecordOptions): Promise<void> =>
   singleFlight(marker, async () => {

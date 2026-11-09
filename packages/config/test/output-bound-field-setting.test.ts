@@ -25,7 +25,7 @@ describe('the outputBoundField setting', () => {
   });
 
   it('is kept on an fm target', async () => {
-    const { loaded } = load({ targets: { local: { adapter: 'fm', outputBoundField: 'max_tokens' } }, aliases: { default: 'local' } });
+    const { loaded } = load({ targets: { local: { adapter: 'managed', server: 'fm', outputBoundField: 'max_tokens' } }, aliases: { default: 'local' } });
     expect((await loaded).settings.models.targets['local']).toMatchObject({ outputBoundField: 'max_tokens' });
   });
 

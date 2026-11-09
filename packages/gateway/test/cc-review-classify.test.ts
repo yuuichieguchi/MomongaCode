@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
-import type { FmServe, ProbeRecordKey } from '@momonga/gateway';
+import { createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import type { ManagedServer } from '@momonga/gateway';
+import type { KnownProbeKey } from '@momonga/config';
 import { FAKE_GUARDRAIL_ERROR } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
-import { CURRENT_DIALECTS } from './dialect-currency.ts';
-import { primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
 
-const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
+const RECORD_KEY: KnownProbeKey = fmRecordKey('cd'.repeat(32), '25A100');
 
-const idleServe: FmServe = {
+const idleServe: ManagedServer = {
   restarts: 0,
   start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
   ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
@@ -20,15 +20,16 @@ const idleServe: FmServe = {
 
 const managedWith = async (guardrail: unknown | undefined) => {
   const dir = makeDir();
-  await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, CURRENT_DIALECTS);
-  return primed(createManagedFmTarget({
-    fmServe: idleServe,
+  await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, FM_CURRENCY);
+  return primed(createManagedTarget({
+    ...fmTargetBase(),
+    server: idleServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '1\n', stderr: '' }),
     probeRecordDir: dir,
     ...recordKeyOptions(RECORD_KEY),
     toolCallingSetting: 'auto',
-  }), RECORD_KEY.target);
+  }), 'fm');
 };
 
 const blocked = (code: string | null, type = 'invalid_request_error') => ({

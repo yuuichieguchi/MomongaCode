@@ -42,9 +42,9 @@ describe('the live timeout of RunRecovery.tla against the executor', () => {
     expect(evidence).toMatchObject({ role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 }, tier: 'every-run' });
   });
 
-  it('names the one settle function of the executor in the code map of the spec, and the executor defines it', () => {
+  it('the executor defines the one settle function, and the model live kill is defined on the call', () => {
     expect(executorSource).toMatch(/const settleInterrupted = /);
-    expect(spec).toMatch(/executor\.ts[^\n]*settleInterrupted/);
+    expect(spec).toMatch(/^LiveKill\(w, outcomes\(_, _\)\) ==/m);
   });
 
   it('settles the live abort exit through settleInterrupted and no longer completes it as a bare failure', () => {

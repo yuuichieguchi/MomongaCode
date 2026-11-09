@@ -1,15 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fakePolicyFilesystem } from '@momonga/testkit';
-import * as runtime from '@momonga/runtime';
+import { claimPathOf, createKernelLockMechanism, hostKernelLock } from '@momonga/foundation';
+import type { KernelLockMechanism } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../../src/process/tmp-sweep.ts';
-import { createSession, makeDir, makeLogger, makeTempHome, openStore, START_MS } from './helpers.ts';
+import { makeDir, makeTempHome, START_MS } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
 
 const DAY_MS = 86_400_000;
 const NOW = START_MS + 30 * DAY_MS;
-const REMOVING_NAME = /^\.removing-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const sessionId = (n: number): string => `01900000-0000-7000-8000-${String(n).padStart(12, '0')}`;
 
@@ -38,8 +37,18 @@ const warnings = () => {
   return { messages, onWarning: (message: string) => void messages.push(message) };
 };
 
+const abandonedDirectory = (parent: string, name: string): string => {
+  const directory = path.join(parent, name);
+  const lock = hostKernelLock();
+  const claimed = lock.claimSync?.(claimPathOf(lock, directory, 'sidecar'));
+  if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${directory} could not be claimed by the test`);
+  fs.mkdirSync(directory);
+  claimed.lock.release();
+  return directory;
+};
+
 const sessionDir = (temp: TempHome, id: string, file = 'note.txt'): string => {
-  const dir = makeDir(temp.paths.tmp.sessions, id);
+  const dir = abandonedDirectory(temp.paths.tmp.sessions, id);
   fs.writeFileSync(path.join(dir, file), 'x');
   return dir;
 };
@@ -53,17 +62,17 @@ const exists = (target: string): boolean => {
   }
 };
 
-const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false) => {
+const sweep = (temp: TempHome, store: { sessionActivity(id: string): Activity | undefined }, hasInMemoryState: (id: string) => boolean = () => false, lock: KernelLockMechanism = hostKernelLock()) => {
   const warned = warnings();
-  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning }) };
+  return { warned, result: sweepSessionTmp({ root: temp.paths.tmp.sessions, store, now: NOW, hasInMemoryState, onWarning: warned.onWarning, lock }) };
 };
 
 describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
-  it('removes spawn dirs at start', async () => {
+  it('removes spawn dirs whose sidecar lock no one holds, at start', async () => {
     const temp = await makeTempHome();
     const spawnRoot = temp.paths.tmp.spawn;
-    fs.writeFileSync(path.join(makeDir(spawnRoot, 'rg-1', 'nested'), 'f'), 'x');
-    makeDir(spawnRoot, 'rg-2');
+    fs.writeFileSync(path.join(makeDir(abandonedDirectory(spawnRoot, 'rg-1'), 'nested'), 'f'), 'x');
+    abandonedDirectory(spawnRoot, 'rg-2');
     fs.writeFileSync(path.join(spawnRoot, 'stray-file'), 'x');
     const warned = warnings();
 
@@ -73,7 +82,7 @@ describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
     expect(warned.messages).toEqual([]);
   });
 
-  it('unlinks a symlink in spawn without following it', async () => {
+  it('keeps a symlink in spawn, which cannot carry a lock, without following it', async () => {
     const temp = await makeTempHome();
     const outside = makeDir(temp.root, 'outside');
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
@@ -81,7 +90,7 @@ describe('sweepSpawnTmp (fake clock, fake timers, none armed)', () => {
 
     await sweepSpawnTmp({ dir: temp.paths.tmp.spawn, onWarning: warnings().onWarning });
 
-    expect(fs.readdirSync(temp.paths.tmp.spawn)).toEqual([]);
+    expect(fs.readdirSync(temp.paths.tmp.spawn)).toEqual(['link']);
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
   });
 });
@@ -149,16 +158,22 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     expect(exists(dir)).toBe(true);
   });
 
-  it('unlinks file entries of removable names', async () => {
-    const temp = await makeTempHome();
-    const file = path.join(temp.paths.tmp.sessions, sessionId(1));
-    fs.writeFileSync(file, 'stray');
+  for (const platform of ['darwin', 'linux'] as const) {
+    it(`${platform} mechanism: unlinks file entries of removable names, made in the form the product writes them`, async () => {
+      const lock = createKernelLockMechanism(platform);
+      const temp = await makeTempHome();
+      const file = path.join(temp.paths.tmp.sessions, sessionId(1));
+      const claimed = await lock.claim(file);
+      if (claimed.kind !== 'claimed') throw new Error(`${file} could not be claimed by the test`);
+      fs.writeFileSync(file, 'stray');
+      claimed.lock.release();
 
-    const { result } = sweep(temp, activityStore({}));
+      const { result } = sweep(temp, activityStore({}), () => false, lock);
 
-    expect(await result).toEqual({ removed: 1, kept: 0 });
-    expect(exists(file)).toBe(false);
-  });
+      expect(await result).toEqual({ removed: 1, kept: 0 });
+      expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
+    });
+  }
 
   it('a symlink entry of a live session is kept untouched (in-memory state)', async () => {
     const temp = await makeTempHome();
@@ -187,7 +202,7 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
   });
 
-  it('a symlink or file entry of an unknown session is unlinked without being followed', async () => {
+  it('a file entry of an unknown session is unlinked, and a symlink, which cannot carry a lock, is kept without being followed', async () => {
     const temp = await makeTempHome();
     const outside = makeDir(temp.root, 'outside');
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'kept');
@@ -199,8 +214,8 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
 
     const { result } = sweep(temp, activityStore({}));
 
-    expect(await result).toEqual({ removed: 3, kept: 0 });
-    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
+    expect(await result).toEqual({ removed: 1, kept: 2 });
+    expect(fs.readdirSync(temp.paths.tmp.sessions).sort()).toEqual([sessionId(1), sessionId(2)]);
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('kept');
     expect(fs.readFileSync(outsideFile, 'utf8')).toBe('kept too');
   });
@@ -237,45 +252,42 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
     await expect(result).rejects.toBe(failure);
   });
 
-  it('a store error from sessionActivity on the second removability check propagates', async () => {
+  it('a store error while the claim is held releases the claim and propagates, and the dir is kept', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));
     const failure = Object.assign(new Error('database disk image is malformed'), { code: 'SQLITE_CORRUPT' });
-    let lookups = 0;
 
     const { result, warned } = sweep(
       temp,
       activityStore({
         [sessionId(1)]: () => {
-          lookups += 1;
-          if (lookups === 1) return undefined;
           throw failure;
         },
       }),
     );
 
     await expect(result).rejects.toBe(failure);
-    expect(lookups).toBe(2);
     expect(warned.messages).toEqual([]);
     expect(exists(dir)).toBe(true);
+    expect(await hostKernelLock().isHeld(claimPathOf(hostKernelLock(), dir, 'sidecar'))).toBe(false);
   });
 
-  it('a session that gains in-memory state between the listing and the removal is kept', async () => {
+  it('retention is decided once, under the claim: in-memory state is read once per entry', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));
     let checks = 0;
 
     const { result } = sweep(temp, activityStore({}), () => {
       checks += 1;
-      return checks > 1;
+      return true;
     });
 
     expect(await result).toEqual({ removed: 0, kept: 1 });
-    expect(checks).toBe(2);
+    expect(checks).toBe(1);
     expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
   });
 
-  it('a session that gains an active run between the listing and the removal is kept', async () => {
+  it('retention is decided once, under the claim: the store is asked once per entry', async () => {
     const temp = await makeTempHome();
     const dir = sessionDir(temp, sessionId(1));
     let lookups = 0;
@@ -285,65 +297,39 @@ describe('sweepSessionTmp (fake clock, fake timers, none armed)', () => {
       activityStore({
         [sessionId(1)]: () => {
           lookups += 1;
-          return lookups === 1 ? idle(8 * DAY_MS) : { lastActivityAt: NOW, hasActiveRun: true };
+          return { lastActivityAt: NOW, hasActiveRun: true };
         },
       }),
     );
 
     expect(await result).toEqual({ removed: 0, kept: 1 });
-    expect(lookups).toBe(2);
+    expect(lookups).toBe(1);
     expect(fs.readFileSync(path.join(dir, 'note.txt'), 'utf8')).toBe('x');
   });
 
-  it('a removable dir is renamed to .removing-<uuidv7> before it is removed, and a policyFor after the rename creates a fresh dir', async () => {
+  it('a removable dir is removed in place under its claim, with no rename', async () => {
     const temp = await makeTempHome();
-    const { store: realStore, clock } = openStore(temp);
-    const session = createSession(realStore, temp.project);
-    const dir = sessionDir(temp, session.id, 'old.txt');
-    const policyFor = runtime.createPolicyFor({ paths: temp.paths, home: temp.home, sessionStates: runtime.createSessionStates({ clock, store: realStore, logger: makeLogger() }), fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });
-    const renames: Array<[string, string]> = [];
-    const originalRename = fs.renameSync;
-    vi.spyOn(fs, 'renameSync').mockImplementation(((from: fs.PathLike, to: fs.PathLike) => {
-      renames.push([String(from), String(to)]);
-      originalRename(from, to);
-    }) as typeof fs.renameSync);
-    const originalRm = fs.promises.rm;
-    let policyRan = false;
-    vi.spyOn(fs.promises, 'rm').mockImplementation(async (target, options) => {
-      if (!policyRan) {
-        policyRan = true;
-        await policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [] });
-      }
-      return originalRm(target, options);
-    });
+    const dir = sessionDir(temp, sessionId(1), 'old.txt');
+    const renameSpy = vi.spyOn(fs, 'renameSync');
 
     const { result } = sweep(temp, activityStore({}));
 
     expect(await result).toEqual({ removed: 1, kept: 0 });
-    expect(renames).toHaveLength(1);
-    const [from, to] = renames[0] as [string, string];
-    expect(from).toBe(dir);
-    expect(path.dirname(to)).toBe(temp.paths.tmp.sessions);
-    expect(path.basename(to)).toMatch(REMOVING_NAME);
-    expect(policyRan).toBe(true);
-    expect(exists(to)).toBe(false);
-    expect(fs.statSync(dir).isDirectory()).toBe(true);
-    expect(fs.readdirSync(dir)).toEqual([]);
-    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([session.id]);
+    expect(renameSpy).not.toHaveBeenCalled();
+    expect(exists(dir)).toBe(false);
+    expect(fs.readdirSync(temp.paths.tmp.sessions)).toEqual([]);
   });
 
-  it('a leftover .removing-* entry is removed in place at the next sweep', async () => {
+  it('a .removing-* dir left by a build before L1 has no sidecar, so no proof can be made, and it is kept (S5)', async () => {
     const temp = await makeTempHome();
     const leftover = path.join(temp.paths.tmp.sessions, '.removing-01900000-0000-7000-8000-000000000009');
     fs.writeFileSync(path.join(makeDir(leftover, 'deep'), 'f'), 'x');
-    const renameSpy = vi.spyOn(fs, 'renameSync');
     const store = activityStore({});
 
     const { result } = sweep(temp, store);
 
-    expect(await result).toEqual({ removed: 1, kept: 0 });
-    expect(exists(leftover)).toBe(false);
-    expect(renameSpy).not.toHaveBeenCalled();
+    expect(await result).toEqual({ removed: 0, kept: 1 });
+    expect(exists(leftover)).toBe(true);
   });
 
   it('removability is decided before lstat (a spy asserts no lstat for a kept entry)', async () => {

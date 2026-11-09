@@ -58,7 +58,7 @@ describe('a plan target', () => {
   it('does not set contextWindow, maxOutputTokens, promptCache or reasoning', async () => {
     const { result } = await loadTargets({ gpt: planTarget() });
     const target = result.settings.models.targets['gpt'];
-    for (const key of ['contextWindow', 'maxOutputTokens', 'promptCache', 'reasoning']) expect(target?.adapter === 'fm' ? {} : target?.capabilities).not.toHaveProperty(key);
+    for (const key of ['contextWindow', 'maxOutputTokens', 'promptCache', 'reasoning']) expect(target?.adapter === 'managed' ? {} : target?.capabilities).not.toHaveProperty(key);
   });
 
   it('keeps the account label that pins the target', async () => {
@@ -159,7 +159,7 @@ describe('the credential reference invariants', () => {
       b: planTarget({ baseUrl: 'https://api.openai.com/v1/alt', plan: { profile: 'chatgpt', account: 'b' } }),
     });
     for (const target of Object.values(result.settings.models.targets)) {
-      if (target.adapter === 'fm' || !('plan' in target)) continue;
+      if (target.adapter === 'managed' || !('plan' in target)) continue;
       expect(new URL(target.baseUrl ?? '').origin).toBe('https://api.openai.com');
     }
   });

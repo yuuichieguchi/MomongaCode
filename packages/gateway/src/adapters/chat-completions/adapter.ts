@@ -54,7 +54,7 @@ const modeOf = ({ toolCalling }: Capabilities): ToolCallingMode => {
 
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
-  const { health, countTokens, isGuardrail } = options;
+  const { health, roomFacts, countTokens, isGuardrail } = options;
   const baseVocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
   const guardrailMatcher = (target: AdapterTarget) => (status: number, parsed: unknown): boolean =>
     isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(target, status, parsed);
@@ -235,6 +235,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     toolChoiceWire,
     classify: classifyChatCompletionsError,
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
+    ...(roomFacts === undefined ? {} : { roomFacts: (target: AdapterTarget) => roomFacts(target) }),
     ...(countTokens === undefined
       ? {}
       : {

@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
+import type { ManagedServerDescription } from '@momonga/protocol';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -10,15 +12,21 @@ import {
   givenSecretStoreChildEnv,
   EntryUsageError,
   minimalChildEnv,
-  adapterSocketPath,
+  startDeadlineSignal,
   codeDigestOfRunningProcess,
+  createBinaryHashCache,
+  createHeldHostReadings,
+  managedInstancePaths,
   momongaPaths,
   secretKeyFile,
+  sweepLeftovers,
+  hostKernelLock,
+  leftoverDirectories,
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
-import type { Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
+import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
 import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -54,33 +62,28 @@ import { createChatCompletionsAdapter } from './adapters/chat-completions/adapte
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
 import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
-import {
-  ANTHROPIC_PROVIDER_NAME,
-  FM_PROVIDER_NAME,
-  FM_SERVE_DEFAULTS,
-  OLLAMA_PROVIDER_NAME,
-  GATEWAY_CONFIG_DEFAULTS,
-} from './defaults.ts';
+import { ANTHROPIC_PROVIDER_NAME, OLLAMA_PROVIDER_NAME, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
 import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
-import { PRECONDITION_MESSAGE, createFmServe } from './managed/fm-serve.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
-import type { ExecFn, FmServe, FmServeTimers, SpawnFn } from './managed/fm-serve.ts';
+import { createManagedServer } from './managed/server.ts';
+import type { ManagedServer, ManagedServerTimers, SpawnFn } from './managed/server.ts';
+import type { ExecFn } from './managed/preconditions.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
-import { createFmKeyCache, readOsBuild } from './managed/fm-record-key.ts';
-import { PROBE_RETRY_AFTER_MS, createAutoProbe, targetNotReadyError } from './probe/auto-probe.ts';
+import { PROBE_RETRY_AFTER_MS, createAutoProbe } from './probe/auto-probe.ts';
 import type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
-import { fmDialectCurrencyOf, fmProbeSubject, measureManagedFm } from './probe/probe-fm.ts';
+import { createInstanceProbe } from './probe/instance-probe.ts';
+import { loadProbeRecord } from './probe/record.ts';
+import type { ManagedRecordCurrency, ManagedRecordKey } from './probe/record.ts';
+import { lockKeyOf, managedCurrencyOf, managedKeyReader, managedPrecondition, managedProbeSubject, measureManagedServer } from './probe/probe-fm.ts';
 import { endpointPrecondition, endpointProbeSubject, measureEndpoint } from './probe/probe-endpoint.ts';
 import type { EndpointMeasurement } from './probe/probe-endpoint.ts';
 import { measureOllama, ollamaPrecondition, ollamaProbeSubject } from './probe/ollama.ts';
 import type { OllamaMeasurement } from './probe/ollama.ts';
 import { endpointKeyOfLock, endpointLockKeyOf } from './probe/endpoint-record.ts';
 import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
-import type { ProbeRecordKey } from './probe/record.ts';
-import type { ProbeReport } from '@momonga/protocol';
-import { createManagedFmTarget } from './managed/fm-target.ts';
-import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
+import { createManagedTarget } from './managed/target.ts';
+import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
 import { systemProcessPorts } from './process-ports.ts';
 import type { ProcessFilePorts } from './process-ports.ts';
@@ -95,7 +98,6 @@ export type StartGatewayProcessOptions = {
   timers?: GatewayTimers;
   random?: () => number;
   files?: ProcessFilePorts;
-  fmBinary?: string;
   exec?: ExecFn;
   execWithStdin?: ExecWithStdinFn;
   secretStore?: SecretStore;
@@ -105,7 +107,7 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
-  measureFm?: MeasureProbe<ProbeRecordKey, ProbeReport>;
+  managedServers?: readonly ManagedServerDescription[];
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
@@ -139,30 +141,13 @@ const closeTogether = async (closing: readonly Promise<unknown>[]): Promise<void
   if (failures.length > 0) throw new AggregateError(failures, 'the gateway and its probes did not close cleanly');
 };
 
-const DEFAULT_FM_BINARY = '/usr/bin/fm';
-
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
 type ResolvedTarget = ResolvedTargets[string];
 type PlanTarget = Extract<ResolvedTarget, { plan: unknown }>;
 type ServedTarget = Exclude<ResolvedTarget, PlanTarget>;
-type RemoteTarget = Exclude<ServedTarget, { adapter: 'fm' }>;
+type RemoteTarget = Exclude<ServedTarget, { adapter: 'managed' }>;
 type KeyedTarget = Exclude<RemoteTarget, { adapter: 'ollama' }>;
 type OllamaDetectable = Extract<RemoteTarget, { adapter: 'chat-completions' | 'open-responses' }>;
-
-const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: ProcessFilePorts): ManagedFmTarget => {
-  const detail = `fm binary not found at ${binary}`;
-  return {
-    ...managed,
-    resolveEndpoint: async (target) => {
-      if (!(await files.isUsableBinary(binary))) {
-        throw new PreconditionFailedError(PRECONDITION_MESSAGE, detail, undefined);
-      }
-      return managed.resolveEndpoint(target);
-    },
-    health: async (target) =>
-      (await files.isUsableBinary(binary)) ? managed.health(target) : { ok: false, reason: 'precondition_failed', detail },
-  };
-};
 
 const modelFieldOf = (model: string | undefined): { model?: string } => (model === undefined ? {} : { model });
 
@@ -238,19 +223,6 @@ const credentialValuesOf = (
   });
 };
 
-type FmContext = {
-  paths: MomongaPaths;
-  binary: string;
-  fmServe: FmServe;
-  execWithStdin: ExecWithStdinFn;
-  osBuild: string;
-  binarySha256: string | { unreadable: string };
-  readRecordKey: (target: string) => Promise<ProbeRecordKey>;
-  autoProbe: AutoProbe;
-  exec: ExecFn;
-  measure: (target: string) => MeasureProbe<ProbeRecordKey, ProbeReport>;
-};
-
 type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: AbortSignal }) => Promise<Measurement>;
 
 type ProbeWiring = {
@@ -264,34 +236,129 @@ const onRecordKey =
   ({ key, signal }) =>
     port({ key: endpointKeyOfLock(key), signal });
 
-const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects, liveness: UpstreamLiveness) => {
-  const managed = await createManagedFmTarget({
-    fmServe: context.fmServe,
-    binary: context.binary,
-    exec: context.execWithStdin,
-    probeRecordDir: context.paths.probe,
+const SAMPLING_OF: Record<ManagedServerDescription['sampling'], { renders: [] }> = { none: { renders: [] } };
+
+const requiredServer = (servers: readonly ManagedServerDescription[], id: string): ManagedServerDescription => {
+  const description = managedServerOf(servers, id);
+  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`);
+  return description;
+};
+
+type ManagedAdapterWiring = {
+  name: string;
+  target: Extract<ResolvedTarget, { adapter: 'managed' }>;
+  description: ManagedServerDescription;
+  paths: MomongaPaths;
+  generation: number;
+  childEnv: Readonly<Record<string, string>>;
+  exec: ExecFn;
+  execWithStdin: ExecWithStdinFn;
+  hashes: BinaryHashCache;
+  files: ProcessFilePorts;
+  autoProbe: AutoProbe;
+  probeServers: Set<ManagedServer>;
+  timers: ManagedServerTimers;
+  readStopGraceMs: () => number;
+  requestLimitMs: number;
+  startSignal: AbortSignal;
+  userDialects: UserDialects;
+  clock: Clock;
+  liveness: UpstreamLiveness;
+  spawn?: SpawnFn;
+  onWarning: (message: string) => void;
+};
+
+const listedModelOf = async (wiring: ManagedAdapterWiring, key: ManagedRecordKey, currency: ManagedRecordCurrency): Promise<string | undefined> => {
+  if (wiring.target.model !== undefined) return undefined;
+  const report = await loadProbeRecord(wiring.paths.probe, key, currency, wiring.name);
+  return report?.modelId;
+};
+
+const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ adapter: ProviderAdapter; probeKey: string | undefined; listedModel: string | undefined }> => {
+  const { name, target, description, paths } = wiring;
+  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', target: name });
+  const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', target: name });
+  const host = createHeldHostReadings();
+  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
+  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
+  const currency = managedCurrencyOf(description, { userDialects: wiring.userDialects });
+  const spawnPort = wiring.spawn === undefined ? {} : { spawn: wiring.spawn };
+  let managed: ManagedTarget | undefined;
+  const server = createManagedServer({
+    description,
     target: name,
-    readRecordKey: () => context.readRecordKey(name),
-    startProbe: (key) =>
-      context.autoProbe.ensure(
-        fmProbeSubject({
-          target: name,
-          binary: context.binary,
-          exec: context.exec,
-          probeRecordDir: context.paths.probe,
-          readKey: () => context.readRecordKey(name),
-          measure: context.measure(name),
-          currency: fmDialectCurrencyOf({ userDialects }),
-        }),
-        key,
-      ),
+    binary: target.binary,
+    socketPath: serving.socketPath,
+    lockPath: serving.lockPath,
+    markerDirectory: serving.markerDirectory,
+    readyTimeoutMs: target.readyTimeoutMs,
+    env: wiring.childEnv,
+    exec: wiring.exec,
+    timers: wiring.timers,
+    readStopGraceMs: wiring.readStopGraceMs,
+    onWarning: wiring.onWarning,
+    onChildExit: () => managed?.childExited(),
+    ...spawnPort,
+  });
+  const measure = measureManagedServer({
+    description,
+    target: name,
+    binary: target.binary,
+    instance: probing,
+    readyTimeoutMs: target.readyTimeoutMs,
+    env: wiring.childEnv,
+    exec: wiring.exec,
+    execWithStdin: wiring.execWithStdin,
+    userDialects: wiring.userDialects,
+    servers: wiring.probeServers,
+    timers: wiring.timers,
+    readStopGraceMs: wiring.readStopGraceMs,
+    onWarning: wiring.onWarning,
+    ...modelFieldOf(target.model),
+    ...spawnPort,
+  });
+  const subject = managedProbeSubject({
+    target: name,
+    precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
+    probeRecordDir: paths.probe,
+    readKey: freshKey,
+    keySignal: () => AbortSignal.timeout(wiring.requestLimitMs),
+    measure,
+    currency,
+  });
+  managed = await createManagedTarget({
+    description,
+    server,
+    binary: target.binary,
+    exec: wiring.execWithStdin,
+    probeRecordDir: paths.probe,
+    target: name,
+    requestLimitMs: wiring.requestLimitMs,
+    isUsableBinary: wiring.files.isUsableBinary,
+    readKey,
+    onInstanceEnd: () => host.release(),
+    startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
+    instanceProbe: (unknown) =>
+      createInstanceProbe({
+        target: name,
+        unknown,
+        dir: paths.probe,
+        measure: (signal) => measure({ key: {}, signal }),
+        retryAfterMs: PROBE_RETRY_AFTER_MS,
+        onNotice: wiring.onWarning,
+        onFailure: (error) => wiring.onWarning(`the measurement of the target ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
+      }),
+    currency,
     ...(target.capabilities === undefined ? {} : { declaredCapabilities: target.capabilities }),
     toolCallingSetting: target.toolCalling,
-    userDialects,
+    userDialects: wiring.userDialects,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock, userDialects, liveness });
+  const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
+  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
+  if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
+  return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
 };
 
 const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
@@ -454,10 +521,12 @@ const identificationOf = (name: string, target: ServedTarget, network: OutboundN
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
-const providerNameOf = (target: ResolvedTarget): string => {
+const NOT_LISTED_YET = 'not listed yet';
+
+const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerDescription[]): string => {
   switch (target.adapter) {
-    case 'fm':
-      return FM_PROVIDER_NAME;
+    case 'managed':
+      return requiredServer(servers, target.server).provider;
     case 'anthropic':
       return ANTHROPIC_PROVIDER_NAME;
     case 'chat-completions':
@@ -486,7 +555,12 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
   },
 });
 
-export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string, string | string[]>): UncountedGatewayConfig => ({
+export const gatewayConfigOf = (
+  targets: ResolvedTargets,
+  aliases: Record<string, string | string[]>,
+  servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
+  listedModels: ReadonlyMap<string, string> = new Map(),
+): UncountedGatewayConfig => ({
   models: {
     aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
     targets: Object.fromEntries(
@@ -494,8 +568,8 @@ export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string
         name,
         {
           kind: target.adapter,
-          provider: providerNameOf(target),
-          model: target.adapter === 'fm' ? (target.model ?? name) : target.model,
+          provider: providerNameOf(target, servers),
+          model: target.model ?? listedModels.get(name) ?? NOT_LISTED_YET,
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
@@ -512,8 +586,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
-  const binary = options.fmBinary ?? DEFAULT_FM_BINARY;
+  const managedServers = options.managedServers ?? MANAGED_SERVERS;
   const { signal } = options;
+  const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, process.platform, {});
   signal?.throwIfAborted();
@@ -585,13 +660,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
   try {
     signal?.throwIfAborted();
-    const { settings, warnings } = await loadUserSettings({ home: options.home });
+    const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers });
     for (const warning of warnings) logger.warn(warning);
     stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
     for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
     signal?.throwIfAborted();
+    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
     const hmacKey = secretKeyFile(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
@@ -626,20 +702,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return [name, target];
     });
     const adapters: Record<string, ProviderAdapter> = {};
+    const listedModels = new Map<string, string>();
     const closeAdapters = async (): Promise<void> => {
       await Promise.all(Object.values(adapters).map((adapter) => adapter.close?.()));
     };
     cleanups.push(closeAdapters);
 
-    const fmTargets = targets.filter(([, target]) => target.adapter === 'fm');
-    const fmModels = new Map(fmTargets.map(([name, target]) => [name, target.adapter === 'fm' ? target.model : undefined]));
-    const fmKeys = createFmKeyCache(binary, exec, FM_SERVE_DEFAULTS.healthTimeoutMs);
-    const readRecordKey = async (target: string): Promise<ProbeRecordKey> => {
-      if (!(await files.isUsableBinary(binary))) {
-        throw targetNotReadyError(target, { kind: 'refused', message: 'the fm binary is missing', detail: `fm binary not found at ${binary}`, remedy: undefined });
-      }
-      return fmKeys.read(target);
-    };
     const autoProbe = createAutoProbe({
       dir: paths.probe,
       clock,
@@ -649,9 +717,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         else logger.warn(`the automatic probe of the target ${event.target} failed and recorded nothing`, { err: event.error });
       },
     });
-    const probeServes = new Set<FmServe>();
+    const probeServers = new Set<ManagedServer>();
     const closeProbes = async (): Promise<void> => {
-      await Promise.all([autoProbe.close(), ...[...probeServes].map((serve) => serve.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
+      await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
     const probes: ProbeWiring = {
@@ -659,50 +727,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
-    const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
     const readStopGraceMs = (): number => stopValues.read().managedServerStopGraceMs;
-    const fmTimers: FmServeTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
-    const fmContext: FmContext | undefined =
-      fmTargets.length === 0
-        ? undefined
-        : {
-            paths,
-            binary,
-            fmServe: createFmServe({
-              ...FM_SERVE_DEFAULTS,
-              binary,
-              socketPath: adapterSocketPath(options.home, 'fm', process.platform),
-              env: childEnv,
-              markerDirectory: path.join(paths.markers.targets, 'fm'),
-              readStopGraceMs,
-              onWarning: (message) => logger.warn(message),
-              exec,
-              ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-              timers: fmTimers,
-            }),
-            execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
-            osBuild: startKey?.osBuild ?? (await readOsBuild(exec, AbortSignal.timeout(FM_SERVE_DEFAULTS.healthTimeoutMs))),
-            binarySha256: startKey?.binarySha256 ?? { unreadable: `no usable binary at ${binary}` },
-            readRecordKey,
-            autoProbe,
-            exec,
-            measure: (target) =>
-              options.measureFm ??
-              measureManagedFm({
-                binary,
-                socketPath: adapterSocketPath(options.home, `fm-probe-${target}`, process.platform),
-                env: options.env,
-                exec,
-                userDialects: settings.models.dialects,
-                ...modelFieldOf(fmModels.get(target)),
-                markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
-                serves: probeServes,
-                readStopGraceMs,
-                onWarning: (message) => logger.warn(message),
-                ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-                timers: fmTimers,
-              }),
-          };
+    const managedTimers: ManagedServerTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
+    const hashes = createBinaryHashCache();
+    const execWithStdin = options.execWithStdin ?? createExecWithStdin(childEnv);
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
     const counters: Record<string, string> = {};
@@ -717,10 +745,33 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs, timers };
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
-      if (target.adapter === 'fm') {
-        if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
-        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files, userDialects, liveness);
-        counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: typeof fmContext.binarySha256 === 'string' ? fmContext.binarySha256 : null, osBuild: fmContext.osBuild } });
+      if (target.adapter === 'managed') {
+        const wired = await createManagedAdapter({
+          name,
+          target,
+          description: requiredServer(managedServers, target.server),
+          paths,
+          childEnv,
+          exec,
+          execWithStdin,
+          hashes,
+          files,
+          autoProbe,
+          probeServers,
+          timers: managedTimers,
+          readStopGraceMs,
+          requestLimitMs: settings.models.headersTimeoutMs,
+          startSignal,
+          generation: options.generation,
+          userDialects,
+          clock,
+          liveness,
+          onWarning: (message) => logger.warn(message),
+          ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+        });
+        adapters[name] = wired.adapter;
+        if (wired.listedModel !== undefined) listedModels.set(name, wired.listedModel);
+        counters[name] = targetCounterOf({ target, codeDigest, ...(wired.probeKey === undefined ? {} : { probeKey: wired.probeKey }) });
         continue;
       }
       if (target.adapter === 'ollama') {
@@ -764,7 +815,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
     signal?.throwIfAborted();
     const gateway = await createGateway({
-      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases), counters),
+      startSignal,
+      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels), counters),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
       credentialFeed: (add) =>

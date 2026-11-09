@@ -528,6 +528,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       dir: options.paths.markers.targets,
       killGraceMs: values.managedServerStopGraceMs,
       label: 'managed server',
+      occasion: 'shutdown',
       onWarning: (detail) => log(settingsWarning({ detail })),
     });
   };

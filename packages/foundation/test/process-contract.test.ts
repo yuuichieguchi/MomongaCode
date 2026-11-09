@@ -21,7 +21,7 @@ import {
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
-  fmServeStopBoundMs,
+  managedServerStopBoundMs,
   gatewayMaxCloseMs,
   gatewayStopBudgetMs,
   managedServerReapBoundMs,
@@ -236,8 +236,8 @@ describe('close budgets', () => {
   });
 
   it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
-    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
-    expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 18_000, 28_000]);
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
+    expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 18_000, 28_000]);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);

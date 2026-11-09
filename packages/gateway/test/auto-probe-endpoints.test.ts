@@ -73,7 +73,7 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const fake = await startFake({ scenario: 'tools-ok' });
     const probeRecordDir = path.join(makeHome(), 'probe');
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
-    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key));
+    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system');
 
     const failure = await probeEndpointTarget({ probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).catch((error: unknown) => error);
 

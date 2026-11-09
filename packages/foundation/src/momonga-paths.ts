@@ -5,6 +5,11 @@ import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
+import { isAtomicWriteTemporary } from './atomic-file.ts';
+import type { LeftoverDirectory } from './leftover-sweep.ts';
+import { hostKernelLock } from './platform/host-kernel-lock.ts';
+import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import { claimNewEntry } from './platform/lock-form.ts';
 import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
@@ -147,6 +152,49 @@ export const momongaLayout = (
   };
 };
 
+export type ManagedInstancePurpose = 'serve' | 'probe';
+
+export type ManagedInstance =
+  | { owner: 'gateway'; generation: number; purpose: ManagedInstancePurpose; target: string }
+  | { owner: 'cli'; purpose: ManagedInstancePurpose; target: string };
+
+export type ManagedInstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
+
+const GATEWAY_INSTANCE_STEMS: Record<ManagedInstancePurpose, (target: string) => string> = {
+  serve: (target) => target,
+  probe: (target) => `_probe-${target}`,
+};
+
+const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, target: string): string => `_cli-${purpose}-${target}`;
+
+const GENERATION_TARGETS_DIRECTORY = 'targets';
+
+const CLI_MARKER_DIRECTORY = 'cli';
+
+const generationDirectoryName = (generation: number): string => {
+  if (!Number.isSafeInteger(generation) || generation < 1) throw new RangeError(`a generation number must be a positive integer, got ${generation}`);
+  return `g${generation}`;
+};
+
+export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInstance): ManagedInstancePaths => {
+  if (instance.owner === 'gateway') {
+    const generation = generationDirectoryName(instance.generation);
+    const stem = GATEWAY_INSTANCE_STEMS[instance.purpose](instance.target);
+    const targets = path.join(paths.run, generation, GENERATION_TARGETS_DIRECTORY);
+    return {
+      socketPath: path.join(targets, `${stem}.sock`),
+      lockPath: path.join(targets, `${stem}.lock`),
+      markerDirectory: path.join(paths.markers.root, generation, GENERATION_TARGETS_DIRECTORY, stem),
+    };
+  }
+  const stem = CLI_INSTANCE_STEM(instance.purpose, instance.target);
+  return {
+    socketPath: path.join(paths.run, `${stem}.sock`),
+    lockPath: path.join(paths.run, `${stem}.lock`),
+    markerDirectory: path.join(paths.markers.root, CLI_MARKER_DIRECTORY, `${instance.purpose}-${instance.target}`),
+  };
+};
+
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
 export const momongaPaths = (
@@ -160,6 +208,7 @@ export type PlatformDirectoryPorts = {
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal | undefined;
+  lock?: KernelLockMechanism;
 };
 
 export class MomongaDirectoryError extends Error {
@@ -220,7 +269,6 @@ const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPo
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
-    paths.markers.targets,
     paths.markers.daemons,
     paths.state,
     paths.traces.dir,
@@ -241,6 +289,21 @@ const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPo
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }
 };
+
+const STORE_BLOBS_DIRECTORY = 'blobs';
+
+const everyName = (): boolean => true;
+
+const retainedByItsOwnersRule = (): boolean => true;
+
+export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] => [
+  { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
+  { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
+  { directory: paths.tmp.spawn, isLeftover: everyName },
+  { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
+  { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
+  { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
+];
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));
@@ -307,8 +370,41 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
   return directory;
 };
 
+const heldSessionScratch = new Map<string, HeldKernelLock>();
+
+const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<boolean> => {
+  if (heldSessionScratch.has(directory)) return false;
+  heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
+  return true;
+};
+
+const releaseSessionScratch = (directory: string): void => {
+  const held = heldSessionScratch.get(directory);
+  heldSessionScratch.delete(directory);
+  held?.release();
+};
+
+const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
+  const stat = await lstatIfPresent(root);
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new SessionTmpDirError(`${root} is missing, a link, or not a directory; refusing to use it`);
+  }
+};
+
 export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
   assertSessionId(sessionId);
+  const directory = path.join(paths.tmp.sessions, sessionId);
+  await assertSessionsRootIsDirectory(paths.tmp.sessions);
+  const claimedNow = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  try {
+    return await ensureClaimedSessionTmpDir(paths, sessionId, ports);
+  } catch (error) {
+    if (claimedNow) releaseSessionScratch(directory);
+    throw error;
+  }
+};
+
+const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts): Promise<string> => {
   const platform = ports.platform ?? process.platform;
   if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();

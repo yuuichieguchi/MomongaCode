@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
-import type { FmServe, ProbeRecordKey } from '@momonga/gateway';
+import { createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import type { ManagedServer } from '@momonga/gateway';
+import type { KnownProbeKey } from '@momonga/config';
 import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
-import { CURRENT_DIALECTS } from './dialect-currency.ts';
-import { IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmTargetBase, IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, recordKeyOptions } from './fm-record-support.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
 
-const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
+const RECORD_KEY: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
 const LISTED = 'listed-by-fm';
 const TARGET = { name: 'fm', model: 'label-in-the-gateway' };
 
@@ -17,11 +17,11 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
 
-const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServe: FmServe; starts: () => number }> => {
+const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServe: ManagedServer; starts: () => number }> => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', modelId: LISTED });
   servers.push(fake);
   let starts = 0;
-  const fmServe: FmServe = {
+  const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     ensureRunning: async () => {
@@ -34,11 +34,12 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
   return { fake, fmServe, starts: () => starts };
 };
 
-const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport>; unprobed?: true } = {}) => {
+const targetOf = async (fmServe: ManagedServer, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport>; unprobed?: true } = {}) => {
   const probeRecordDir = makeDir();
-  if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), CURRENT_DIALECTS);
-  const managed = createManagedFmTarget({
-    fmServe,
+  if (extra.unprobed !== true) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report ?? makeReport(1, 1), FM_CURRENCY);
+  const managed = createManagedTarget({
+    ...fmTargetBase(),
+    server: fmServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     probeRecordDir,

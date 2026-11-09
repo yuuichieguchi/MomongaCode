@@ -19,6 +19,7 @@ export type HeldKernelLock = {
   writeHolder(text: string): void;
   release(): void;
   dispose(): void;
+  readonly stillNamed?: () => boolean;
 };
 
 export const writeHolderOrRelease = (lock: HeldKernelLock, text: string): void => {
@@ -37,6 +38,7 @@ export type InheritedLockRequest = { lockPath: string; descriptor: number; expec
 export interface KernelLockMechanism {
   readonly name: 'file-lock' | 'sqlite-lock';
   claim(lockPath: string): Promise<ClaimOutcome>;
+  readonly claimSync?: (lockPath: string) => ClaimOutcome;
   isHeld(lockPath: string): Promise<boolean>;
   readHolder(lockPath: string): Promise<string | undefined>;
   readHolderSync(lockPath: string): string | undefined;
@@ -89,6 +91,7 @@ const heldFile = (ops: FileLockOps, lockPath: string, descriptor: number): HeldK
     writeHolder: (text) => rewriteHolderThroughDescriptor(descriptor, text),
     release,
     dispose: () => removeFilesThenRelease([lockPath], release),
+    stillNamed: () => sameFile(ops.fstat(descriptor), ops.lstat(lockPath)),
   };
 };
 
@@ -143,6 +146,7 @@ const adoptFile =
 export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
   name: 'file-lock',
   claim: async (lockPath) => claimFile(ops)(lockPath),
+  claimSync: claimFile(ops),
   isHeld: async (lockPath) => probeFile(ops, lockPath),
   readHolder: readHolderFile,
   readHolderSync: readHolderFileSync,

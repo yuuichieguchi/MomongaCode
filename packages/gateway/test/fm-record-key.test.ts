@@ -1,23 +1,35 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { sha256OfFile } from '../src/managed/fm-record-key.ts';
+import { createBinaryHashCache } from '@momonga/foundation';
 import { makeDir } from './gateway-helpers.ts';
 
-describe('sha256OfFile', () => {
-  it('hashes a readable file', async () => {
+const asking = (): AbortSignal => new AbortController().signal;
+
+describe('the binary hash of a managed server binary (design-managed-servers section 6.2)', () => {
+  it('hashes the bytes of a readable file', async () => {
     const file = path.join(makeDir(), 'fm');
     fs.writeFileSync(file, 'binary');
-    expect(await sha256OfFile(file)).toMatch(/^[0-9a-f]{64}$/);
+    expect(await createBinaryHashCache().sha256Of(file, asking())).toBe(createHash('sha256').update('binary').digest('hex'));
   });
 
   it('fails when the file is missing, never answering with an empty hash', async () => {
-    await expect(sha256OfFile(path.join(makeDir(), 'missing'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(createBinaryHashCache().sha256Of(path.join(makeDir(), 'missing'), asking())).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('fails when the file is not readable, never answering with an empty hash', async () => {
     const file = path.join(makeDir(), 'fm');
     fs.writeFileSync(file, 'binary', { mode: 0o111 });
-    await expect(sha256OfFile(file)).rejects.toMatchObject({ code: 'EACCES' });
+    await expect(createBinaryHashCache().sha256Of(file, asking())).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
+  it('sees a replaced binary through its file identity', async () => {
+    const file = path.join(makeDir(), 'fm');
+    fs.writeFileSync(file, 'binary');
+    const cache = createBinaryHashCache();
+    await cache.sha256Of(file, asking());
+    fs.writeFileSync(file, 'replaced binary');
+    expect(await cache.sha256Of(file, asking())).toBe(createHash('sha256').update('replaced binary').digest('hex'));
   });
 });

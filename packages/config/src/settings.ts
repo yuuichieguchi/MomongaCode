@@ -37,7 +37,7 @@ export type McpRemoteServerConfig = {
 
 export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
-export type FmToolCalling = 'auto' | 'native' | 'constrained';
+export type ToolCallingSetting = 'auto' | 'native' | 'constrained';
 
 export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency' | 'schemaDialect'> & Partial<Pick<CapabilitiesCore, 'schemaDialect'>>;
 
@@ -48,15 +48,18 @@ export type TargetCapabilities = TargetCapabilitiesCore & DeclaredImage;
 export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
   Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
 
-export type FmDeclaredCapabilities = { contextWindow: number; maxOutputTokens: number };
+export type ManagedDeclaredCapabilities = { contextWindow: number; maxOutputTokens: number };
 
-export type FmTarget = {
-  adapter: 'fm';
+export type ManagedTarget = {
+  adapter: 'managed';
+  server: string;
+  binary?: string;
+  readyTimeoutMs?: number;
   answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
-  toolCalling?: FmToolCalling;
-  capabilities?: FmDeclaredCapabilities;
+  toolCalling?: ToolCallingSetting;
+  capabilities?: ManagedDeclaredCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -70,7 +73,7 @@ export type ChatCompletionsTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   provider: string;
-  toolCalling?: FmToolCalling;
+  toolCalling?: ToolCallingSetting;
   billing?: TargetBilling;
   capabilities: DeclaredTargetCapabilities;
   maxConcurrency?: number;
@@ -143,15 +146,18 @@ export type PlanOpenResponsesTarget = {
   admissionTimeoutMs?: number;
 };
 
-export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget;
+export type ModelTarget = ManagedTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget;
 
-export type ResolvedFmTarget = {
-  adapter: 'fm';
+export type ResolvedManagedTarget = {
+  adapter: 'managed';
+  server: string;
+  binary: string;
+  readyTimeoutMs: number;
   answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
-  toolCalling: FmToolCalling;
-  capabilities?: FmDeclaredCapabilities;
+  toolCalling: ToolCallingSetting;
+  capabilities?: ManagedDeclaredCapabilities;
   billing: 'local';
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -166,7 +172,7 @@ export type ResolvedChatCompletionsTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   provider: string;
-  toolCalling: FmToolCalling;
+  toolCalling: ToolCallingSetting;
   billing: TargetBilling;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
@@ -239,7 +245,7 @@ export type ResolvedOllamaTarget = {
 };
 
 export type ResolvedModelTarget =
-  | ResolvedFmTarget
+  | ResolvedManagedTarget
   | ResolvedChatCompletionsTarget
   | ResolvedOpenResponsesTarget
   | ResolvedPlanTarget

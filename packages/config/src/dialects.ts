@@ -22,8 +22,7 @@ export const resolveDialects = (declared: Record<string, DialectDefinition> | un
 
 export const checkTargetDialects = (targets: Record<string, ResolvedModelTarget>, dialects: Record<string, DialectDefinition>, source: string): void => {
   for (const [name, target] of Object.entries(targets)) {
-    if (target.adapter === 'fm') continue;
-    const id = target.capabilities.schemaDialect;
+    const id = target.capabilities !== undefined && 'schemaDialect' in target.capabilities ? target.capabilities.schemaDialect : undefined;
     if (id === undefined || isBuiltin(id) || Object.hasOwn(dialects, id)) continue;
     throw new Error(`${source}: models.targets.${name}: capabilities.schemaDialect ${JSON.stringify(id)} is neither a built-in dialect nor declared in models.dialects`);
   }
