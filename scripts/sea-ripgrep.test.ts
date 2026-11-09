@@ -10,6 +10,7 @@ import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstre
 import { defaultEntry } from './bundle.ts';
 import { RIPGREP_VERSION } from './ripgrep-release.ts';
 import { buildSea } from './sea.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
@@ -84,7 +85,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
       }),
     );
     await buildSea({ entry: defaultEntry, output: binary, workDir: path.join(root, 'work') });
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(async () => {
     if (binary !== '') await run('daemon', 'stop');
