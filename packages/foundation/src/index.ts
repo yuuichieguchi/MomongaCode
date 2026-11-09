@@ -152,6 +152,8 @@ export {
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
   LOCK_FD,
+  FM_STOP_GRACE_MS,
+  GATEWAY_CLOSE_GRACE_MS,
   GATEWAY_MAX_CLOSE_MS,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
@@ -181,6 +183,7 @@ export {
   minimalChildEnv,
   declaredChildEnv,
   parseReadyLine,
+  fmServeStopBoundMs,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';

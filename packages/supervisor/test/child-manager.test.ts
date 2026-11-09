@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { GATEWAY_MAX_CLOSE_MS, SHUTDOWN_MARGIN_MS } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -564,7 +565,7 @@ describe('stop', () => {
     const harness = createManagerHarness(context, { role: 'gateway' });
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
-    harness.timers.advance(19_999);
+    harness.timers.advance(GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS - 1);
     expect(harness.port.last().groupKills).toBe(0);
     harness.timers.advance(1);
     expect(harness.port.last().groupKills).toBe(1);

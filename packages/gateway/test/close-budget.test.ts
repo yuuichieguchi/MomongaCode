@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_MAX_CLOSE_MS, REAP_POLL_INTERVAL_MS, reapMarkedProcesses } from '@momonga/foundation';
+import { GATEWAY_MAX_CLOSE_MS, REAP_POLL_INTERVAL_MS, fmServeStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, createFmServe } from '@momonga/gateway';
 import type { FmChild, FmServeTimers } from '@momonga/gateway';
@@ -12,8 +12,8 @@ import { makeDir, registerCleanup, startGateway, userInput } from './gateway-hel
 import { bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
 
 describe('gateway close budget', () => {
-  it('GATEWAY_MAX_CLOSE_MS pins the gateway defaults (an arithmetic pin of constants)', () => {
-    expect(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + FM_SERVE_DEFAULTS.stopGraceMs + 2000).toBe(GATEWAY_MAX_CLOSE_MS);
+  it('GATEWAY_MAX_CLOSE_MS is the close grace plus the fm stop bound at the default stop grace', () => {
+    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + fmServeStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
   });
 });
 
