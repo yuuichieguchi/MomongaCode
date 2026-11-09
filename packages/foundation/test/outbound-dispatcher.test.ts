@@ -237,3 +237,39 @@ describe('createOutboundDispatcher: a CA file that could not be loaded', { timeo
     expect(await response.body.text()).toBe('from origin');
   });
 });
+
+describe("createOutboundDispatcher: a caller's abort is reported as that abort on every route", { timeout: TEST_TIMEOUT_MS }, () => {
+  const rejectionOf = (pending: Promise<unknown>): Promise<unknown> =>
+    pending.then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+
+  const abortingOnRequest = async (controller: AbortController, reason: Error): Promise<FakeProxy> =>
+    startFakeProxy((_socket, text) => {
+      if (text.includes('\r\n\r\n')) controller.abort(reason);
+    });
+
+  it("returns the caller's own abort reason on the direct route, not an origin-connection failure", async () => {
+    const controller = new AbortController();
+    const reason = new Error('interrupted by the caller');
+    const origin = await abortingOnRequest(controller, reason);
+    const dispatcher = dispatcherFor(networkOf({ caFiles: [] }), 1_000);
+
+    const error = await rejectionOf(request(`http://127.0.0.1:${origin.port}/`, { dispatcher, signal: controller.signal }));
+
+    expect(error).toBe(reason);
+  });
+
+  it("returns the caller's own abort reason on the proxy route, not a connection failure", async () => {
+    const controller = new AbortController();
+    const reason = new Error('interrupted by the caller');
+    const proxy = await abortingOnRequest(controller, reason);
+    const dispatcher = dispatcherFor(networkOf(viaProxy(proxy.port)), 1_000);
+
+    const error = await rejectionOf(request(REMOTE_HTTP, { dispatcher, signal: controller.signal }));
+
+    expect(proxy.received()).toContain(`GET ${REMOTE_HTTP}`);
+    expect(error).toBe(reason);
+  });
+});
