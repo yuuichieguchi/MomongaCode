@@ -203,7 +203,13 @@ export type RoleEndpoint = { socketPath: string; lockPath: string };
 
 export const roleEndpoint = (layout: GenerationLayout, role: GenerationRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
 
-export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+const refuseUnfitGenerationSockets = async (layout: GenerationLayout): Promise<void> => {
+  const sockets = Object.values(layout.sockets);
+  for (const socket of sockets) assertSocketPathLength(socket);
+  await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
+};
+
+const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts): Promise<void> => {
   const platform = ports.platform ?? process.platform;
   await createDirectory(path.dirname(paths.root), { recursive: true });
   for (const directory of [
@@ -236,12 +242,15 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
   }
 };
 
+export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+  await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));
+  await createMomongaDirs(paths, ports);
+};
+
 export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const layout = generationLayout(path.dirname(paths.root), generation);
-  const sockets = Object.values(layout.sockets);
-  for (const socket of sockets) assertSocketPathLength(socket);
-  await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
-  await ensureMomongaDirs(paths, ports);
+  await refuseUnfitGenerationSockets(layout);
+  await createMomongaDirs(paths, ports);
   await ensurePrivateDirectory(layout.dir, ports.platform ?? process.platform);
 };
 

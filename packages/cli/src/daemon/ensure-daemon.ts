@@ -1,5 +1,5 @@
 import { createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, startingSocketResolver, daemonStopBoundMs, inspectProcessLock, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, FIRST_GENERATION, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, startingSocketResolver, daemonStopBoundMs, inspectProcessLock, readCurrentGeneration, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
 import type { MomongaPaths, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -110,7 +110,7 @@ export const stopDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds
 
 type SpawnOutcome = { exit: DetachedExit } | { error: unknown };
 
-type SpawnedSupervisor = { outcome(): SpawnOutcome | undefined };
+type SpawnedSupervisor = { generation: number; outcome(): SpawnOutcome | undefined };
 
 const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): boolean => {
   const client = tryParseVersion(clientVersion);
@@ -135,7 +135,7 @@ const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: Super
         }
         const held = heldFailure(health);
         if (held !== undefined) throw new DaemonStartError(held, paths.logFiles.supervisor);
-        if (unready(health) === undefined) return health;
+        if (unready(health) === undefined && (spawned === undefined || (await readCurrentGeneration(paths))?.generation === spawned.generation)) return health;
       }
       const outcome = spawned?.outcome();
       if (outcome !== undefined && 'error' in outcome) throw outcome.error;
@@ -169,7 +169,7 @@ const startDaemon = async (
       outcome = { error };
     },
   );
-  return awaitReady(ports, paths, client, readyMs, signal, { outcome: () => outcome });
+  return awaitReady(ports, paths, client, readyMs, signal, { generation: FIRST_GENERATION, outcome: () => outcome });
 };
 
 export type EnsureDaemonOptions = { bounds?: DaemonBounds; signal?: AbortSignal; lifeline?: boolean; onNotice?: StopNotice };
