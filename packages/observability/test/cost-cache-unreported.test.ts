@@ -85,14 +85,14 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
     expect(breakdown.billed.inputTokens).toBe(200);
   });
 
-  it('leaves the amount unknown when a metered call did not report its cache reads, and lists the call as unpriced', async () => {
+  it('keeps the amount to the priced part when a metered call did not report its cache reads, and lists the call as unpriced with its code', async () => {
     const h = harness();
     await recordMainCalls([50, undefined], h);
 
     const breakdown = breakdownOf(h);
 
-    expect(breakdown.cost).toEqual({ amount: null, currency: 'USD', unpricedCalls: 1 });
-    expect(breakdown.unpriced).toEqual([{ runId: 'run-a', provider: 'acme', model: 'm1', step: 2, reason: 'the upstream did not report the cache reads of the call' }]);
+    expect(breakdown.cost).toEqual({ amount: 0.000141, currency: 'USD', unpricedCalls: 1, priceVersions: ['2026-01-01'] });
+    expect(breakdown.unpriced).toEqual([{ runId: 'run-a', provider: 'acme', model: 'm1', step: 2, code: 'cache_read_not_reported', reason: 'the upstream did not report the cache reads of the call' }]);
   });
 
   it('shows how many calls were left out of the cache figures because their cache reads were not reported', async () => {
@@ -102,6 +102,6 @@ describe('cache-miss causes for a target that never reports cached tokens', () =
     const lines = formatCostBreakdown(breakdownOf(h)).split('\n');
 
     expect(lines).toContain('cache reads not reported: 1 of 2 call(s) are left out of the cache split, the cache hit ratio and the cache-miss causes');
-    expect(lines).toContain('cost: unknown (1 of 2 call(s) have no price)');
+    expect(lines).toContain('cost: not complete: cache reads not reported in 1 call(s); priced part: 0.000141 USD over 1 of 2 call(s)');
   });
 });

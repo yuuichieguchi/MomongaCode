@@ -65,7 +65,7 @@ const pagedOver = (calls: readonly BilledCallView[], runIds: readonly string[]) 
 
 describe('costBreakdownOf', () => {
   it('returns a breakdown of metered and plan calls that the CostBreakdown wire schema accepts', async () => {
-    const calls = [billed('r1', 1, 4), billed('r1', 2, 300, { billing: 'plan', price: { kind: 'unpriced', reason: 'plan' } })];
+    const calls = [billed('r1', 1, 4), billed('r1', 2, 300, { billing: 'plan', price: { kind: 'unpriced', code: 'plan', reason: 'plan' } })];
     const { fetchPage } = pagedOver(calls, ['r1']);
 
     const { breakdown } = await costBreakdownOf({
@@ -94,7 +94,7 @@ describe('costBreakdownOf', () => {
     expect(breakdown.layers.callsWithoutAnatomy).toBe(0);
     expect(breakdown.layers.tokens['system']).toBe(30);
     expect(breakdown.duration?.n).toBe(3);
-    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0 });
+    expect(breakdown.cost).toEqual({ amount: 0.000006, currency: 'USD', unpricedCalls: 0, priceVersions: ['2026-01-01'] });
     expect(breakdown.unjoined).toEqual([]);
   });
 

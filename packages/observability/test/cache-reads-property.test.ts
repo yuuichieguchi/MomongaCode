@@ -77,7 +77,24 @@ describe('cache-read figures over random mixes of reporting and billing', () => 
 
       expect(report.total.cacheReadUnpricedCalls).toBe(meteredUnreported);
       expect(breakdown.unpriced.filter((entry) => entry.reason === 'the upstream did not report the cache reads of the call')).toHaveLength(meteredUnreported);
-      expect(report.total.unknownBillingCalls).toBe(generated.filter((call) => call.spec.billing === 'unknown').length);
+      const consistent = generated.filter((call) => call.kind !== 'inconsistent');
+      const expectedUnpriced = Object.fromEntries(
+        (
+          [
+            ['unpriceable_usage', n - consistent.length],
+            ['unknown_billing', consistent.filter((call) => call.spec.billing === 'unknown').length],
+            ['plan', consistent.filter((call) => call.spec.billing === 'plan').length],
+            ['cache_read_not_reported', meteredUnreported],
+          ] as const
+        ).filter(([, count]) => count > 0),
+      );
+      expect(report.total.unpriced).toEqual(expectedUnpriced);
+      expect(report.total.unknownBillingCalls).toBe(expectedUnpriced.unknown_billing ?? 0);
+      expect(report.total.planCalls).toBe(expectedUnpriced.plan ?? 0);
+      expect(report.total.unpricedCalls).toBe(expectedUnpriced.unpriceable_usage ?? 0);
+      const unpricedTotal = Object.values(expectedUnpriced).reduce((total, count) => total + count, 0);
+      if (unpricedTotal === n) expect(report.total.amount).toBeNull();
+      else expect(report.total.amount).not.toBeNull();
     });
   }
 });

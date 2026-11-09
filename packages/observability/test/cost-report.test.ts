@@ -74,8 +74,8 @@ describe('buildCostReport', () => {
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
-    expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, amount: 1, inputTokens: 2_000_005 });
-    expect(formatCostReport(report)).toContain('2 of 3 call(s) have no price entry and are not counted');
+    expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, unpriced: { no_price_entry: 2 }, amount: 1, inputTokens: 2_000_005 });
+    expect(formatCostReport(report)).toContain('  total: 3 call(s), 2000005 input (0 cached) + 5 output tokens, not complete: no price entry in 2 call(s); priced part: 1 USD over 1 of 3 call(s)');
   });
 
   it('does not bill a failed attempt that recorded no usage', async () => {
@@ -92,11 +92,15 @@ describe('buildCostReport', () => {
     const h = harness();
     await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, cached: 0, output: 10, at: AT_JULY }], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
-    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, inputTokens: 100 });
-    expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, amount: 0, priceVersions: [] });
+    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, inputTokens: 100 });
+    expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, unpriced: {}, amount: 0, priceVersions: [] });
+    const text = formatCostReport(report);
+    expect(text).toContain('    run run-a: 1 call(s), 100 input (0 cached) + 10 output tokens, not complete: no price entry in 1 call(s)');
+    expect(text).toContain('    run run-none: 0 call(s), 0 input (0 cached) + 0 output tokens, no calls');
+    expect(text).not.toContain('0 USD');
   });
 
-  it('reports a call to a local target as local with no amount, not as unpriced', async () => {
+  it('reports a call to a local target as priced 0, never as unpriced, so the figure is whole', async () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY, billing: 'local' },
@@ -105,7 +109,7 @@ describe('buildCostReport', () => {
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 2, localCalls: 1, unpricedCalls: 0, amount: 1, inputTokens: 1_000_100, outputTokens: 10 });
     const text = formatCostReport(report);
-    expect(text).toContain('1 of 2 call(s) ran locally and cost nothing');
+    expect(text).toContain('  total: 2 call(s), 1000100 input (0 cached in 1 of 2 call(s); cache reads not reported in 1 call(s)) + 10 output tokens, 1 USD at price version 2026-06-01');
     expect(text).not.toContain('no price entry');
   });
 

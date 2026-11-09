@@ -5,6 +5,8 @@ import {
   buildCostBreakdown,
   buildCostReport,
   definePriceTable,
+  formatCostBreakdown,
+  formatCostReport,
   pageBilledCalls,
   recordChatResponse,
   startAgentSpan,
@@ -102,7 +104,7 @@ describe('billedCallsOfRun', () => {
 
     const [call] = billedCallsOfRun(h.store, 'run-a', TABLE);
 
-    expect(call?.price).toEqual({ kind: 'unpriced', reason: 'cached input (8) and written input (8) together exceed the input (10)' });
+    expect(call?.price).toEqual({ kind: 'unpriced', code: 'unpriceable_usage', reason: 'cached input (8) and written input (8) together exceed the input (10)' });
   });
 });
 
@@ -189,7 +191,10 @@ describe('one pricing rule', () => {
 
     expect(report.total.unpricedCalls).toBe(1);
     expect(breakdown.cost.unpricedCalls).toBe(1);
-    expect(breakdown.cost.amount).toBeNull();
+    expect(breakdown.cost.amount).toBe(report.total.amount);
+    const moneyLine = 'not complete: no price entry in 1 call(s); priced part: 0.001466 USD over 3 of 4 call(s)';
+    expect(formatCostBreakdown(breakdown)).toContain(`cost: ${moneyLine}`);
+    expect(formatCostReport(report).split('\n').find((line) => line.startsWith('  total: '))?.endsWith(`output tokens, ${moneyLine}`)).toBe(true);
     const pricedOnly = buildCostBreakdown(billedCallsOfRun(h.store, 'run-a', TABLE).slice(0, 3).map(asBreakdownCall), {});
     expect(pricedOnly.cost.amount).toBe(report.total.amount);
     expect(report.total.amount).toBe(0.001466);

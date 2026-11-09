@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CACHE_READ_TEXT } from '@momonga/observability';
+import { CACHE_READS_NOT_REPORTED, UNPRICED_CODE_TEXT } from '@momonga/protocol';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -65,7 +66,13 @@ describe('one table of the cache-read texts', () => {
     expect(owners).toEqual(['packages/observability/src/cache-reads.ts']);
   });
 
-  it('keeps the eval wording of the cache-read causes in one eval source', () => {
-    expect(filesMatching(sourcesUnder('packages/eval/src'), /cache reads not reported/)).toHaveLength(1);
+  it('holds the phrase cache reads not reported once, as the protocol constant that the code table and every surface read', () => {
+    expect(CACHE_READS_NOT_REPORTED).toBe('cache reads not reported');
+    expect(UNPRICED_CODE_TEXT.cache_read_not_reported).toBe(CACHE_READS_NOT_REPORTED);
+    expect(filesMatching(ALL_SOURCES, /cache reads not reported/)).toEqual(['packages/protocol/src/token-anatomy.ts']);
+    expect([...filesMatching(SURFACE_SOURCES, /\bCACHE_READS_NOT_REPORTED\b/)].sort()).toEqual(['packages/eval/src/context-report.ts', 'packages/observability/src/cache-reads.ts']);
+    for (const user of ['packages/eval/src/context-report.ts', 'packages/observability/src/cache-reads.ts']) {
+      expect(fs.readFileSync(path.join(root, user), 'utf8')).toMatch(/import \{[^}]*\bCACHE_READS_NOT_REPORTED\b[^}]*\} from '@momonga\/protocol'/);
+    }
   });
 });

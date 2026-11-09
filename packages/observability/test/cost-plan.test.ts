@@ -65,12 +65,12 @@ describe('priceCall on a plan target', () => {
       at: new Date(AT),
       table: TABLE,
     });
-    expect(priced).toEqual({ kind: 'unpriced', reason: 'plan' });
+    expect(priced).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 
   it('is unpriced with the reason plan on an empty table', () => {
     const priced = priceCall({ provider: 'x', model: 'y', billing: 'plan', usage: { inputTokens: 1, outputTokens: 1 }, at: new Date(AT), table: definePriceTable([]) });
-    expect(priced).toEqual({ kind: 'unpriced', reason: 'plan' });
+    expect(priced).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 });
 
@@ -82,7 +82,7 @@ describe('billed calls of a plan target', () => {
     const [call] = billedCallsOfRun(h.store, 'run-a', TABLE);
 
     expect(call?.billing).toBe('plan');
-    expect(call?.price).toEqual({ kind: 'unpriced', reason: 'plan' });
+    expect(call?.price).toEqual({ kind: 'unpriced', code: 'plan', reason: 'plan' });
   });
 
   it('pages a plan call with the billing plan and the reason plan', async () => {
@@ -91,7 +91,7 @@ describe('billed calls of a plan target', () => {
 
     const page = pageBilledCalls(h.store, ['run-a'], TABLE, { run: 0, after: 0 }, 10, false);
 
-    expect(page.calls[0]).toMatchObject({ billing: 'plan', price: { kind: 'unpriced', reason: 'plan' } });
+    expect(page.calls[0]).toMatchObject({ billing: 'plan', price: { kind: 'unpriced', code: 'plan', reason: 'plan' } });
   });
 });
 
@@ -148,7 +148,7 @@ describe('the cost report on plan calls', () => {
 });
 
 describe('the cost breakdown on plan calls', () => {
-  it('keeps plan calls out of the unpriced list, leaves the amount of the other calls known, and reports the plan calls and tokens', async () => {
+  it('keeps plan calls out of the unpriced list, counts them by code in the money line beside the priced part, and reports the plan calls and tokens', async () => {
     const h = harness();
     await record(
       'run-a',
@@ -163,11 +163,12 @@ describe('the cost breakdown on plan calls', () => {
     const breakdown = buildCostBreakdown(calls, {});
 
     expect(breakdown.unpriced).toEqual([]);
-    expect(breakdown.cost).toEqual({ amount: 1, currency: 'USD', unpricedCalls: 0 });
+    expect(breakdown.cost).toEqual({ amount: 1, currency: 'USD', unpricedCalls: 1, priceVersions: ['2026-01-01'] });
     expect(breakdown.plan).toEqual({ calls: 1, inputTokens: 300, outputTokens: 40 });
     const text = formatCostBreakdown(breakdown);
     expect(text).toContain('plan usage, no per-token price: 1 call(s), 300 input + 40 output tokens');
-    expect(text).not.toContain('cost: unknown');
+    expect(text).toContain('cost: not complete: plan usage, no per-token price in 1 call(s); priced part: 1 USD over 1 of 2 call(s)');
+    expect(text).not.toContain('cost: 1 USD');
     expect(text).not.toContain('unpriced:');
   });
 });

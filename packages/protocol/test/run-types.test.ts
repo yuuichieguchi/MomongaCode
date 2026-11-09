@@ -28,6 +28,7 @@ import type {
   TokenAnatomy,
   ToolAwait,
   ToolKind,
+  UnpricedOutcome,
   WorkingFacts,
 } from '@momonga/protocol';
 
@@ -157,7 +158,7 @@ describe('run event payloads', () => {
         input_tokens_details?: { cached_tokens: number };
         output_tokens_details?: { reasoning_tokens: number };
       };
-      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost };
+      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
       timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{

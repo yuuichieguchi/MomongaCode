@@ -46,24 +46,28 @@ describe('/cost names the call set of its cached figure', () => {
 });
 
 describe('/cost counts a cost exclusion through the price outcome only', () => {
-  it('counts a metered unreported call in cacheReadUnpricedCalls, prints its sentence once, and leaves its price out of the amount', async () => {
+  it('counts a metered unreported call in cacheReadUnpricedCalls, prints the money line once, and leaves its price out of the priced part', async () => {
     const { report, totalLine } = await reportOf([{ input: 1000, cached: 800 }, { input: 1000 }]);
 
     expect(report.total.cacheReadUnpricedCalls).toBe(1);
     expect(report.total.unpricedCalls).toBe(0);
+    expect(report.total.unpriced).toEqual({ cache_read_not_reported: 1 });
     expect(report.total.amount).toBe(0.000816);
-    expect(occurrences(totalLine, METERED_TEXT)).toBe(1);
-    expect(totalLine).toContain(`, 1 of 2 ${METERED_TEXT}`);
+    expect(occurrences(totalLine, 'not complete: ')).toBe(1);
+    expect(totalLine).toMatch(/ output tokens, not complete: cache reads not reported in 1 call\(s\); priced part: 0\.000816 USD over 1 of 2 call\(s\)$/);
+    expect(totalLine).not.toContain(METERED_TEXT);
   });
 
-  it('keeps a local unreported call in the cached clause and prints no cost sentence for it', async () => {
+  it('keeps a local unreported call in the cached clause and prints the whole figure with no unpriced text for it', async () => {
     const { report, totalLine } = await reportOf([{ input: 1000, cached: 800 }, { billing: 'local', input: 1000 }]);
 
     expect(totalLine).toContain('2000 input (800 cached in 1 of 2 call(s); cache reads not reported in 1 call(s))');
     expect(report.total.cacheReadUnpricedCalls).toBe(0);
     expect(report.total.cacheReadNotReportedCalls).toBe(1);
+    expect(report.total.unpriced).toEqual({});
     expect(totalLine).not.toContain(METERED_TEXT);
-    expect(totalLine).toContain(', 1 of 2 call(s) ran locally and cost nothing');
+    expect(totalLine).not.toContain('not complete');
+    expect(totalLine).toMatch(/ output tokens, 0\.000816 USD at price version 2026-01-01$/);
   });
 
   it('lists an unknown-billing unreported call once for the cached figure and once for the cost, with different sentences', async () => {
@@ -73,7 +77,10 @@ describe('/cost counts a cost exclusion through the price outcome only', () => {
     expect(report.total.cacheReadUnpricedCalls).toBe(0);
     expect(report.total.cacheReadNotReportedCalls).toBe(1);
     expect(totalLine).toContain('1000 input (cached not reported: cache reads not reported in all 1 call(s))');
-    expect(occurrences(totalLine, 'have unknown billing and are not counted')).toBe(1);
+    expect(report.total.unpriced).toEqual({ unknown_billing: 1 });
+    expect(report.total.amount).toBeNull();
+    expect(occurrences(totalLine, 'billing unknown')).toBe(1);
+    expect(totalLine).toMatch(/ output tokens, not complete: billing unknown in 1 call\(s\)$/);
     expect(totalLine).not.toContain(METERED_TEXT);
     expect(totalLine).not.toContain(DELETED_CLAUSE);
   });

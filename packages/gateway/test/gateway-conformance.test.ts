@@ -32,7 +32,7 @@ describe('POST /v1/responses conformance with the vendored Open Responses schema
     expect(first.body.id).not.toBe(second.body.id);
     expect(outputText(first.body)).toBe('Hello, world');
     expect(first.body.usage).toEqual(usageOf(11, 3));
-    expect(first.body.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported' });
+    expect(first.body.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
     expect(primary.calls).toHaveLength(2);
     expect(primary.calls[0]?.request.model).toBe('scripted-primary');
   });
@@ -58,7 +58,7 @@ describe('POST /v1/responses conformance with the vendored Open Responses schema
     const completed = frames.at(-1)?.data.response;
     expect(created.id).toMatch(/^resp_/);
     expect(completed.id).toBe(created.id);
-    expect(completed.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported' });
+    expect(completed.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
     const deltas = frames.filter((frame) => frame.data.type === 'response.output_text.delta').map((frame) => frame.data.delta);
     expect(deltas.join('')).toBe('Hello, world');
   });

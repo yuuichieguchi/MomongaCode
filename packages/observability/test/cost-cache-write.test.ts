@@ -32,6 +32,7 @@ describe('the price of a cache write', () => {
     const table = definePriceTable([CACHING]);
     expect(metered({ provider: 'acme', model: 'm1', usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 41, outputTokens: 0 }, at: AT, table })).toEqual({
       kind: 'unpriced',
+      code: 'unpriceable_usage',
       reason: expect.stringContaining('exceed'),
     });
   });

@@ -61,7 +61,7 @@ describe('the closed wire schemas', () => {
   const totals = {
     calls: 1,
     localCalls: 0,
-    unpricedCalls: 0,
+    unpricedCalls: 1,
     unknownBillingCalls: 0,
     cacheReadNotReportedCalls: 1,
     cacheReadUnpricedCalls: 1,
@@ -71,9 +71,10 @@ describe('the closed wire schemas', () => {
     inputTokens: 100,
     outputTokens: 2,
     cachedInputTokens: null,
-    amount: 0,
+    amount: null,
     currency: 'USD',
     priceVersions: [],
+    unpriced: { cache_read_not_reported: 1 },
     roles: {},
   };
   const report = (total: Record<string, unknown>) => ({ runs: [], sessions: [], total, contextCharges: { charges: [], totalTokens: 0 } });
