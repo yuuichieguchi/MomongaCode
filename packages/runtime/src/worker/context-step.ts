@@ -22,7 +22,7 @@ import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, C
 import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
-import { outputOriginOf } from '@momonga/tools';
+import { harnessOutputToolsOf } from '@momonga/tools';
 import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -35,6 +35,8 @@ import type { ClaimContext } from './claim-context.ts';
 import { requestKey } from '../model-key.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
 import type { WrapUpReason } from './wrap-up.ts';
+import { heldSessionOf } from './known.ts';
+import type { HeldSession } from './known.ts';
 
 export type BuildOutcome =
   | { kind: 'built'; built: BuiltContext; wrapUp?: { reason: 'context'; notice: string } }
@@ -59,11 +61,7 @@ const escalates = (error: unknown): error is GatewayRequestError =>
   error.code !== 'invalid_compaction' &&
   (ESCALATING_CODES.includes(error.code) || (error.status >= 400 && error.status < 500 && !NON_ESCALATING_4XX.includes(error.status)));
 
-const sessionOf = (ctx: ClaimContext) => {
-  const session = ctx.options.store.getSession(ctx.run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
-  return session;
-};
+const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.store, ctx.run.sessionId);
 
 export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
@@ -90,7 +88,7 @@ const advanceTouched = async (ctx: ClaimContext): Promise<void> => {
 const prepareRecall = async (ctx: ClaimContext): Promise<void> => {
   const session = sessionOf(ctx);
   const task = taskOf(ctx);
-  const newest = ctx.options.store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS).map((entry) => entry.path);
+  const newest = (await ctx.options.store.sessionTouched.newest(session.id, MEMORY_QUERY_MAX_CHARS)).map((entry) => entry.path);
   await ctx.recalled.prepare({
     query: recallQueryOf(task.text, newest, session.cwd),
     capacity: { capabilities: withCalibration(ctx.capabilities, ctx.calibration), memoryShare: ctx.memoryShare },
@@ -224,7 +222,7 @@ const offeredInputOf = (
         }
       : {}),
     outputFormatters: ctx.token.outputFormatters,
-    harnessOutputTools: ctx.toolSet.tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name),
+    harnessOutputTools: harnessOutputToolsOf(ctx.toolSet.tools),
   };
   return { input, offered, governing: governingKey, kinds, joined: joined.map((tool) => tool.name) };
 };
@@ -631,7 +629,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
     return await buildNextUnguarded(ctx, options);
   } catch (error) {
     if (!(error instanceof PrefixChangedError)) throw error;
-    ctx.terminals.yieldTo('QUEUED', ctx.options.clock.now(), { refundAttempt: true });
+    await ctx.terminals.yieldTo('QUEUED', ctx.options.clock.now(), { refundAttempt: true });
     return { kind: 'done' };
   }
 };

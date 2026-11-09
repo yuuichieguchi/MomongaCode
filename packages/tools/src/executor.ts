@@ -1,13 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, recordMarkerGroup, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { createMarkerGuard } from './marker-guard.ts';
+import { createMarkerOwners } from './marker-owners.ts';
+import type { MarkerOwners } from './marker-owners.ts';
+import { createMarkerSettle } from './marker-settle.ts';
+import type { MarkerSettle } from './marker-settle.ts';
+import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, PathResolution, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { RipgrepLocator } from './ripgrep-locator.ts';
 import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
 import type { CallLock } from './call-lock.ts';
 import { readOnlyContextOf } from './read-only-call.ts';
@@ -17,11 +23,13 @@ import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
+import { callStopOf } from './call-stop.ts';
+import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
-import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+import type { AnyTool, CallOutputFit, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -96,6 +104,7 @@ export type ExecutionBatchInput = BatchCore & {
   rules: PermissionRule[];
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  ripgrep: RipgrepLocator;
   recoverOnly?: undefined;
 };
 
@@ -148,6 +157,7 @@ export type ToolExecutorOptions = {
   maxParallel?: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
+  owners?: MarkerOwners;
   callLockDir: string;
   kernelLock?: KernelLockMechanism;
   fs: PolicyHostFilesystem;
@@ -156,7 +166,7 @@ export type ToolExecutorOptions = {
   reconcileCapMs?: number;
   reconcileGraceMs?: number;
   onWarning(message: string): void;
-  reap?: { kill?: SignalSender; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
+  reap?: { kill?: SignalSender; groupPort?: ProcessGroupPort; timing?: ReapTiming; killGraceMs?: number; inspector?: ProcessInspector; uninspectable?: UninspectableRegistry };
 };
 
 export type AbandonTarget = { callId: string; idemKey: string };
@@ -486,6 +496,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
   };
   const activeKeys = new Map<string, number>();
+  const owners = options.owners ?? createMarkerOwners();
+  const guard = createMarkerGuard({
+    markerDir: options.processMarkerDir,
+    owners,
+    ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED' }),
+    onWarning: options.onWarning,
+    killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+    timing: reapTiming,
+    ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+    ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+    ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
+    ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+  });
 
   const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
 
@@ -519,9 +542,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return stored.handle;
   };
 
+  const fitOfCall = (fit: OutputFit, call: ToolCall): CallOutputFit => {
+    const identity = { callId: call.callId, tool: call.name };
+    return { fits: (text) => fit.fits(text, identity), fit: (text, handle) => fit.fit(text, handle, identity) };
+  };
+
   type FittedOutput = { output: string } | { output: string; truncated: boolean; handle: string };
 
-  const formattedResult = async (result: ToolResult, tool: AnyTool, fit: OutputFit, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
+  const formattedResult = async (result: ToolResult, tool: AnyTool, fit: CallOutputFit, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
     if (formatOutput === undefined || tool.pagesOutput === true) return undefined;
     let formatted: ReturnType<BatchOutputFormatter>;
     try {
@@ -542,7 +570,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const fittedOutput = async (result: ToolResult, fit: OutputFit, runId: string): Promise<FittedOutput> => {
+  const fittedOutput = async (result: ToolResult, fit: CallOutputFit, runId: string): Promise<FittedOutput> => {
     if (await fit.fits(result.output)) return { output: result.output };
     const handle = storedHandle(result.output, runId);
     return { output: await fit.fit(result.output, handle), truncated: true, handle };
@@ -551,7 +579,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const finalizeResult = async (
     result: ToolResult,
     tool: AnyTool,
-    fit: OutputFit,
+    fit: CallOutputFit,
     runId: string,
     formatOutput?: BatchOutputFormatter,
   ): Promise<ResultOutcome['result']> => {
@@ -569,6 +597,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+      ...(result.backend === undefined ? {} : { backend: result.backend }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };
@@ -843,11 +872,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     reconcileCtx: ReconcileContext;
     abortReason(): AbortReason | undefined;
     abortWith(reason: AbortReason): void;
-    armTimer(ms: number): void;
-    timerMs(): number;
-    extendTimerToDeadline(): void;
+    armTimer(bounds: { totalMs: number; idleMs: number | undefined }): void;
+    stop(): { bound: CallStop['bound']; ms: number };
+    reportProgress(): void;
     disarmTimer(): void;
     closeContext(): void;
+    openMarker(): Promise<{ handle: MarkerHandle; settle: MarkerSettle }>;
+    spawnMarker(): Promise<SpawnMarker>;
+    settleMarker(): Promise<void>;
     ledger: LeasedIdempotencyPort;
     holding(outcome: LeasedOutcome): boolean;
     deferred: CallOutcome;
@@ -855,6 +887,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     trackEffect(running: Promise<unknown>): void;
     checkpoint(state: Record<string, unknown> | undefined): void;
     complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome'], interrupted?: AbortReason): CallOutcome;
+    noteAfterOutput(text: string): void;
     waiting(pending: ToolPending): CallOutcome;
     release(): void;
   };
@@ -865,8 +898,30 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let abortReason: AbortReason | undefined;
     let recordCompleted = false;
     let contextClosed = false;
-    let timer: NodeJS.Timeout | undefined;
-    let timerMs = 0;
+    let markerSettle: MarkerSettle | undefined;
+    let callMarker: { handle: MarkerHandle; settle: MarkerSettle } | undefined;
+    let callMarkerSpawned = false;
+    const spawnMarkers: Array<{ handle: MarkerHandle; settle: MarkerSettle }> = [];
+    const groupRecords: Promise<void>[] = [];
+    let markerOwned = false;
+    let processAttached = false;
+    let noteAfterOutput: string | undefined;
+    let fixedTimer: NodeJS.Timeout | undefined;
+    let idleTimer: NodeJS.Timeout | undefined;
+    let bounds: { startedAt: number; totalMs: number; idleMs: number | undefined } | undefined;
+    let fired: CallStop['bound'] = 'total';
+    const expire = (bound: CallStop['bound']): void => {
+      if (abortReason !== undefined) return;
+      fired = bound;
+      abortWith('timeout');
+    };
+    const armIdle = (): void => {
+      if (bounds === undefined || abortReason !== undefined) return;
+      clearTimeout(idleTimer);
+      const now = clock.now();
+      const stop = callStopOf({ startedAt: bounds.startedAt, lastProgressAt: now, idleMs: bounds.idleMs, totalMs: bounds.totalMs, deadlineAt });
+      if (stop.bound === 'idle') idleTimer = setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
+    };
     let heldLock: CallLock | undefined;
     let effect: Promise<unknown> | undefined;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
@@ -881,7 +936,25 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       abortReason = reason;
       controller.abort();
     };
+    const openMarkerAt = async (file: string, name: string): Promise<{ handle: MarkerHandle; settle: MarkerSettle }> => {
+      const inspector = options.reap?.inspector ?? defaultProcessInspector();
+      owners.register(name, { alive: () => markerOwned });
+      const handle = await createMarker(file, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+      const settle = createMarkerSettle({
+        marker: file,
+        mode: handle.mode,
+        inspector,
+        onWarning: options.onWarning,
+        ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+        timing: reapTiming,
+      });
+      owners.remember(name, handle.mode);
+      return { handle, settle };
+    };
     const processMarker = path.join(options.processMarkerDir, key);
+    let attachingMarker = processMarker;
     const onBatchAbort = (): void => abortWith('cancelled');
     batch.signal.addEventListener('abort', onBatchAbort, { once: true });
     activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
@@ -893,8 +966,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       step: batch.step,
       callId,
       idemKey: key,
-      outputFit: fit,
-      ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
+      outputFit: fitOfCall(fit, call),
+      ...(startsProcesses(tool) ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
       env: batch.env,
@@ -905,7 +978,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
+        processAttached = true;
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
+        if (callMarker === undefined) return Promise.resolve();
+        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
+        groupRecords.push(
+          recorded.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
+        return recorded;
       },
       update: (content) => {
         if (!contextClosed) batch.onUpdate?.(callId, content);
@@ -918,19 +1001,64 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reconcileCtx,
       abortReason: () => abortReason,
       abortWith,
-      armTimer: (ms) => {
-        timerMs = ms;
-        timer = setTimeout(() => abortWith('timeout'), ms);
+      armTimer: ({ totalMs, idleMs }) => {
+        const now = clock.now();
+        bounds = { startedAt: now, totalMs, idleMs };
+        armIdle();
+        const fixed = callStopOf({ startedAt: now, lastProgressAt: now, idleMs: undefined, totalMs, deadlineAt });
+        fixedTimer = setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
       },
-      timerMs: () => timerMs,
-      extendTimerToDeadline: () => {
-        clearTimeout(timer);
-        timerMs = Math.max(0, deadlineAt - clock.now());
-        timer = setTimeout(() => abortWith('timeout'), timerMs);
+      stop: () => {
+        const startedAt = bounds?.startedAt ?? clock.now();
+        const ms = fired === 'idle' ? (bounds?.idleMs ?? 0) : fired === 'total' ? (bounds?.totalMs ?? 0) : deadlineAt - startedAt;
+        return { bound: fired, ms: Math.max(0, ms) };
       },
-      disarmTimer: () => clearTimeout(timer),
+      reportProgress: armIdle,
+      disarmTimer: () => {
+        bounds = undefined;
+        clearTimeout(idleTimer);
+        clearTimeout(fixedTimer);
+      },
       closeContext: () => {
         contextClosed = true;
+      },
+      openMarker: async () => {
+        markerOwned = true;
+        callMarker = await openMarkerAt(processMarker, key);
+        markerSettle = callMarker.settle;
+        return callMarker;
+      },
+      spawnMarker: async () => {
+        if (callMarker !== undefined && !callMarkerSpawned) {
+          callMarkerSpawned = true;
+          attachingMarker = processMarker;
+          return { file: processMarker, fd: callMarker.handle.fd, settle: callMarker.settle };
+        }
+        const name = `${key}-${spawnMarkers.length + 1}`;
+        const file = path.join(options.processMarkerDir, name);
+        const opened = await openMarkerAt(file, name);
+        spawnMarkers.push(opened);
+        attachingMarker = file;
+        return { file, fd: opened.handle.fd, settle: opened.settle };
+      },
+      settleMarker: async () => {
+        try {
+          await Promise.all(groupRecords.splice(0));
+          for (const { handle, settle } of spawnMarkers.splice(0)) {
+            handle.close();
+            await settle.state(controller.signal);
+            await settle.remove();
+          }
+          if (markerSettle === undefined || !recordCompleted) return;
+          if (!processAttached) {
+            await markerSettle.discard();
+            return;
+          }
+          await markerSettle.state(controller.signal);
+          await markerSettle.remove();
+        } finally {
+          markerOwned = false;
+        }
       },
       ledger,
       holding,
@@ -948,8 +1076,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       checkpoint: (state) => {
         if (!leaseLost() && !contextClosed) holding(ledger.checkpoint(key, state));
       },
-      complete: (result, reconciled, interrupted) => {
+      noteAfterOutput: (text) => {
+        noteAfterOutput = text;
+      },
+      complete: (completed, reconciled, interrupted) => {
         if (leaseLost()) return deferred;
+        const result = noteAfterOutput === undefined ? completed : { ...completed, output: `${completed.output}\n${noteAfterOutput}` };
         const reconstructed = reconciled === 'already_applied' || reconciled === 'unknown' ? { ...result, ...factsOf() } : result;
         const outcome: ResultOutcome = {
           callId,
@@ -959,7 +1091,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...(reconciled === undefined ? {} : { reconciled }),
           ...(interrupted === undefined ? {} : { interrupted }),
         };
-        if (!holding(ledger.complete(key, outcome))) return deferred;
+        const markerState = markerSettle?.cached();
+        const meta = markerSettle === undefined || markerState === undefined ? undefined : { markerState, markerMode: markerSettle.mode };
+        if (!holding(ledger.complete(key, outcome, meta))) return deferred;
         recordCompleted = true;
         return outcome;
       },
@@ -968,7 +1102,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return { callId, kind: 'waiting', awaits: pending.awaits, ...(pending.wakeAt === undefined ? {} : { wakeAt: pending.wakeAt }) };
       },
       release: () => {
-        clearTimeout(timer);
+        clearTimeout(idleTimer);
+        clearTimeout(fixedTimer);
         const lock = heldLock;
         heldLock = undefined;
         if (lock !== undefined) {
@@ -982,18 +1117,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const remaining = (activeKeys.get(key) ?? 0) - 1;
         if (remaining > 0) activeKeys.set(key, remaining);
         else activeKeys.delete(key);
-        if (recordCompleted && tool.sideEffect === 'exec') {
-          try {
-            fs.rmSync(processMarker, { force: true });
-          } catch (error) {
-            options.onWarning(`the process marker of call ${key} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
       },
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
     const marker = path.join(options.processMarkerDir, key);
     let reaped: ReapReport;
     try {
@@ -1004,6 +1132,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
+        signal,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
         ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
         ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
@@ -1016,10 +1145,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       );
     }
     if (!reaped.removed) {
+      if (reaped.uninspectable.length > 0 || signal.aborted) {
+        throw new EarlierAttemptNotStoppedError(
+          `a process holding the marker of the earlier attempt of call ${key} could not be inspected, so it could not be verified as stopped: ${reaped.uninspectable.map(({ pid, command }) => `${pid} (${command})`).join(', ')}`,
+          'unverifiable',
+        );
+      }
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
-    }
-    if (reaped.uninspectable.length > 0) {
-      return { stopped: false, uninspectable: reaped.uninspectable.map(({ pid, command }) => ({ pid, command })) };
     }
     return { stopped: reaped.stopped };
   };
@@ -1029,7 +1161,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
-    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
@@ -1055,10 +1187,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (resumed.kind === 'outcome') return resumed.outcome;
       const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
-        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fit, batch.runId), 'not_applied');
+        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1118,7 +1250,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
     const contextForBasis = (): ToolContext => (requireBasis(target) === 'read_only' ? readOnlyContextOf(toolContext) : toolContext);
 
     try {
@@ -1170,13 +1302,29 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        const executionCtx: ToolContext = { ...contextForBasis(), outputFit: batch.outputFit, ...(resume === undefined ? {} : { resume }) };
-        if (tool.sideEffect === 'exec') {
-          fs.rmSync(scope.processMarker, { force: true });
-          fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
+        if (tool.sideEffect !== 'read_only' || startsProcesses(tool)) {
+          const verdict = await guard.check(scope.controller.signal, key);
+          if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+          if (verdict.kind === 'refuse') return scope.complete({ status: 'failed', output: verdict.text });
+          if (verdict.kind === 'note') scope.noteAfterOutput(verdict.text);
         }
+        const marker = startsProcesses(tool) ? await scope.openMarker() : undefined;
+        try {
+          return await executeWithMarker(marker, reconciled, resume);
+        } finally {
+          marker?.handle.close();
+          await scope.settleMarker();
+        }
+      };
+
+      const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
+        const executionCtx: ToolContext = {
+          ...contextForBasis(),
+          outputFit: fitOfCall(batch.outputFit, call),
+          ...(resume === undefined ? {} : { resume }),
+          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, spawnMarker: scope.spawnMarker }),
+        };
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
-        const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 
         const runTool = async (): Promise<ToolResult | ToolPending | ToolInputRequired> => {
           for (let attempt = 0; ; attempt += 1) {
@@ -1201,7 +1349,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (scope.controller.signal.aborted) resolve();
           else scope.controller.signal.addEventListener('abort', () => resolve(), { once: true });
         });
-        scope.armTimer(timeoutMs);
+        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs });
         const observation = observesCall(batch, tool) ? observationOf(batch) : undefined;
         const window = observation === undefined ? undefined : await openWindow(batch, observation);
         const running = runTool();
@@ -1220,11 +1368,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           const effects = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window);
           const { detached, ...reported } = hooked;
-          return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, batch.outputFit, batch.runId, batch.formatOutput), reconciled);
+          return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, fitOfCall(batch.outputFit, call), batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
-          fit: batch.outputFit,
+          fit: fitOfCall(batch.reconcileFit, call),
           runId: batch.runId,
           leaseLost: () => batch.leaseLost?.() === true,
           ...(batch.formatOutput === undefined ? {} : { formatOutput: batch.formatOutput }),
@@ -1262,7 +1410,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1301,8 +1449,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return { outcome: 'unknown', output: interruptedOutput(tool) };
   };
 
-  const interruptedText = (tool: AnyTool, reason: AbortReason, ms: number, settled: ReconcileResult): string => {
-    const sentence = reason === 'timeout' ? `${tool.name} timed out after ${ms} ms` : `${tool.name} was cancelled`;
+  const interruptedText = async (tool: AnyTool, reason: AbortReason, stop: { bound: CallStop['bound']; ms: number }, record: ToolIdempotencyRecord, settled: ReconcileResult): Promise<string> => {
+    const { stopText } = tool;
+    if (reason === 'timeout' && stopText !== undefined) {
+      const checkpoint = record.meta['checkpoint'];
+      return stopText.call(tool, { bound: stop.bound, ms: stop.ms, checkpoint: isRecord(checkpoint) ? checkpoint : undefined });
+    }
+    const sentence = reason === 'timeout' ? `${tool.name} timed out after ${stop.ms} ms` : `${tool.name} was cancelled`;
     if (settled.outcome === 'unknown') return hasUnknownEffects(tool) ? `${sentence}. ${UNKNOWN_EFFECTS_NOTICE}` : sentence;
     return settled.output === '' ? sentence : `${sentence}. ${settled.output}`;
   };
@@ -1313,7 +1466,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     input: unknown,
     key: string,
     reason: AbortReason,
-    limits: { fit: OutputFit; runId: string; formatOutput?: BatchOutputFormatter; leaseLost: () => boolean },
+    limits: { fit: CallOutputFit; runId: string; formatOutput?: BatchOutputFormatter; leaseLost: () => boolean },
   ): Promise<CallOutcome> => {
     if (limits.leaseLost()) return scope.deferred;
     const current = idempotency.get(key);
@@ -1323,7 +1476,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const ctx: ReconcileContext = { ...scope.reconcileCtx, signal: reconciling.signal, deadlineAt: clock.now() + reconcileCapMs + reconcileGraceMs };
     const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext);
     const status = settled.outcome === 'already_applied' ? 'completed' : 'failed';
-    const output = interruptedText(tool, reason, scope.timerMs(), settled);
+    const output = await interruptedText(tool, reason, scope.stop(), record, settled);
     return scope.complete(await finalizeResult({ status, output }, tool, limits.fit, limits.runId, limits.formatOutput), settled.outcome, reason);
   };
 
@@ -1475,7 +1628,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const lock = await callLocks.acquire(key, signal);
     if (lock === 'aborted') throw signal.reason;
     try {
-      await reapEarlierAttempt(key, pgid);
+      await reapEarlierAttempt(key, pgid, signal);
     } finally {
       releaseCallLock(lock);
     }

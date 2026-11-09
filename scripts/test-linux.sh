@@ -1,6 +1,7 @@
 set -eu
 apt-get update -qq
-apt-get install -y -qq bubblewrap git lsof procps ripgrep tini openssh-client openjdk-17-jre-headless > /dev/null
+if [ "${WITHOUT_SYSTEM_RIPGREP:-}" = 1 ]; then SYSTEM_RIPGREP=; else SYSTEM_RIPGREP=ripgrep; fi
+apt-get install -y -qq bubblewrap git lsof procps $SYSTEM_RIPGREP tini openssh-client openjdk-17-jre-headless > /dev/null
 apt-get install -y -qq build-essential libcurl4-openssl-dev libssl-dev zlib1g-dev libexpat1-dev xz-utils > /dev/null
 mkdir /opt/git-build
 curl -fsSL https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.54.0.tar.xz | tar -xJ -C /opt/git-build --strip-components=1

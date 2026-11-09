@@ -4,7 +4,7 @@ import type { RunEventPayload, StreamEvent } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import { responseResource, usageOf } from '@momonga/testkit';
 import { within } from './deferred.ts';
-import { makeEnv } from './harness.ts';
+import { START_MS, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, gated, textStep, textThenCallsStep } from './scripts.ts';
 import {
@@ -122,7 +122,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
   it('closes calls of a run cancelled between model.responded and recordCalls', async () => {
     const env = await makeEnv();
     const first = env.enqueue('Write both');
-    env.seed(first.id, [startedPayload(), requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1')), functionCallItem(writeCall(env, 'call_w_2'))])], 'release');
+    await env.seed(first.id, [startedPayload(), requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1')), functionCallItem(writeCall(env, 'call_w_2'))])], 'release');
     expect((await env.cancelToEnd(first.id)).status).toBe('CANCELLED');
 
     const second = await nextRun(env, 'Next task');
@@ -159,7 +159,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
   it('closes the calls of a run that failed after its model response', async () => {
     const env = await makeEnv();
     const first = env.enqueue('Write it');
-    const claim = env.seed(first.id, [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))])], 'hold');
+    const claim = await env.seed(first.id, [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))])], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } })).kind).toBe('ok');
 
     const second = await nextRun(env, 'Next task');
@@ -171,7 +171,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     const env = await makeEnv();
     const first = env.enqueue('Write it');
     const file = path.join(env.project, 'call_w_1.txt');
-    const claim = env.seed(
+    const claim = await env.seed(
       first.id,
       [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))]), toolCallPayload('call_w_1', file), { type: 'tool.started', callId: 'call_w_1', idemKey: 'k-w-1' }],
       'hold',
@@ -184,20 +184,20 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     expect(inheritedEventOf(env, second).closures[0]?.effect).toBe('unknown');
   });
 
-  it('closes a call whose approval timed out through the sweeper', async () => {
+  it('closes a call whose run reached its deadline while its approval waited', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([writeCall(env, 'call_w_1')]));
-    const first = env.enqueue('Write it', { limits: { approvalTtlMs: 60_000 } });
+    const first = env.enqueue('Write it', { deadlineAt: START_MS + 60_000 });
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('WAITING_HUMAN');
-    env.clock.advance(60_001);
+    env.clock.advance(60_000);
     expect((await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; }))).toEqual([first.id]);
-    expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+    expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     const callId = env.gateway.callId('call_w_1');
 
     const second = await nextRun(env, 'Next task');
 
-    expectClosed(env, second, [[callId, CLOSURE_TEXT.approvalTimeout]], [true]);
+    expectClosed(env, second, [[callId, CLOSURE_TEXT.timeout]], [true]);
   });
 });
 
@@ -224,7 +224,7 @@ describe('interrupted run 1 in the request of run 2', () => {
       stream: (_body, options) =>
         (async function* () {
           yield* opening;
-          env.store.requestCancel(first.id);
+          await env.store.requestCancel(first.id);
           await untilAborted(options.signal);
           throw new Error('The operation was aborted');
         })(),
@@ -250,7 +250,7 @@ describe('interrupted run 1 in the request of run 2', () => {
     const first = env.enqueue('First request');
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 5 }));
     await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
-    env.cancel(first.id);
+    await env.cancel(first.id);
     await within(running, 5_000, 'the cancelled claim');
     expect(env.run(first.id).status).toBe('CANCELLED');
 
@@ -353,8 +353,8 @@ describe('first claim CANCELLING', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
     const second = env.enqueue('Cancelled early');
-    env.seed(second.id, [], 'crash');
-    expect(env.cancel(second.id).status).toBe('CANCELLING');
+    await env.seed(second.id, [], 'crash');
+    expect((await env.cancel(second.id)).status).toBe('CANCELLING');
     await env.runOnce(env.worker());
     expect(env.run(second.id).status).toBe('CANCELLED');
     const inherited = inheritedEventOf(env, second.id);
@@ -422,8 +422,8 @@ describe('inheritance failures', () => {
     const first = await answered(env, 'Say hello', 'Hello there.');
     plantUnreadableEvent(env, first, 2);
     const second = env.enqueue('Cancelled while broken');
-    env.seed(second.id, [], 'crash');
-    expect(env.cancel(second.id).status).toBe('CANCELLING');
+    await env.seed(second.id, [], 'crash');
+    expect((await env.cancel(second.id)).status).toBe('CANCELLING');
 
     await env.runOnce(env.worker());
 

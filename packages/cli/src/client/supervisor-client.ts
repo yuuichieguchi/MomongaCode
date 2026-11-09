@@ -1,15 +1,16 @@
 import { SUPERVISOR_RESPONSE_BOUND_MS, createUdsClient, isRecord } from '@momonga/foundation';
+import type { SocketResolver, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth, SupervisorPhase, SupervisorShutdownResponse } from '@momonga/protocol';
 
 export type ChildRole = SupervisorChildHealth['role'];
 
 export type SupervisorClient = {
   health(): Promise<SupervisorHealth>;
-  shutdown(signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }>;
+  shutdown(values?: StopValues, signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }>;
   close(): Promise<void>;
 };
 
-export type SupervisorClientOptions = { socketPath: string; responseBoundMs?: number; onHealth?: (health: SupervisorHealth) => Promise<void> };
+export type SupervisorClientOptions = { resolveSocket: SocketResolver; responseBoundMs?: number; onHealth?: (health: SupervisorHealth) => Promise<void> };
 
 const PHASES: ReadonlySet<string> = new Set<SupervisorPhase>(['reaping-orphans', 'running', 'draining']);
 const ROLES: ReadonlySet<string> = new Set<ChildRole>(['gateway', 'runtime']);
@@ -37,13 +38,14 @@ const isSupervisorHealth = (value: unknown): value is SupervisorHealth =>
   typeof value['phase'] === 'string' &&
   PHASES.has(value['phase']) &&
   Array.isArray(value['children']) &&
-  value['children'].every(isChildHealth);
+  value['children'].every(isChildHealth) &&
+  (value['stopBoundMs'] === undefined || (typeof value['stopBoundMs'] === 'number' && Number.isInteger(value['stopBoundMs']) && value['stopBoundMs'] >= 0));
 
 const isShutdownResponse = (value: unknown): value is SupervisorShutdownResponse => isRecord(value) && value['phase'] === 'draining';
 
 export const createSupervisorClient = (options: SupervisorClientOptions): SupervisorClient => {
   const responseBoundMs = options.responseBoundMs ?? SUPERVISOR_RESPONSE_BOUND_MS;
-  const http = createUdsClient(options.socketPath, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
+  const http = createUdsClient(options.resolveSocket, { headersTimeoutMs: responseBoundMs, bodyTimeoutMs: responseBoundMs });
 
   const health = async (): Promise<SupervisorHealth> => {
     const response = await http.request({ method: 'GET', path: '/v1/health' });
@@ -55,8 +57,15 @@ export const createSupervisorClient = (options: SupervisorClientOptions): Superv
     return body;
   };
 
-  const shutdown = async (signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }> => {
-    const response = await http.request({ method: 'POST', path: '/v1/shutdown', ...(signal === undefined ? {} : { signal }) });
+  const shutdown = async (values?: StopValues, signal?: AbortSignal): Promise<{ status: number; body: SupervisorShutdownResponse }> => {
+    const response = await http.request({
+      method: 'POST',
+      path: '/v1/shutdown',
+      ...(values === undefined
+        ? {}
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs }) }),
+      ...(signal === undefined ? {} : { signal }),
+    });
     const text = await response.text();
     const body: unknown = JSON.parse(text);
     if (!isShutdownResponse(body)) throw new Error(`POST /v1/shutdown answered ${response.status} with an unexpected body: ${text}`);

@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, GroupNotStoppedError, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -22,7 +22,8 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: number;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number }) => Promise<TerminateOutcome>;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal }) => Promise<TerminateOutcome>;
+  timing?: DeadlineTiming;
 }
 
 export interface StdioTransportExit {
@@ -169,7 +170,13 @@ class StdioTransportImpl implements StdioTransport {
     const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
     const args = config.args ?? [];
     if (markerPath === undefined) return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    const markerFd = fs.openSync(markerPath, 'wx', 0o600);
+    const creator = fs.openSync(markerPath, 'wx', 0o600);
+    let markerFd: number;
+    try {
+      markerFd = fs.openSync(markerPath, 'r');
+    } finally {
+      fs.closeSync(creator);
+    }
     try {
       return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe', markerFd] }) as ServerProcess;
     } finally {
@@ -214,17 +221,22 @@ class StdioTransportImpl implements StdioTransport {
     try {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
+        const stopBound = Deadline.after(groupTerminationBoundMs(this.closeGraceMs), this.options.timing ?? systemTiming);
         child.stdin.end();
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs });
+          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
+          if (outcome === 'unconfirmed') terminateFailure = { error: new GroupNotStoppedError(child.pid) };
         } catch (error) {
           terminateFailure = { error };
+        } finally {
+          stopBound.dispose();
         }
         await this.raceTimeout(this.stdoutEnded);
         let sweepFailure: { error: unknown } | undefined;
         if (this.markerPath !== undefined && this.options.markers !== undefined) {
+          const sweep = operationSignal(undefined);
           try {
             await reapMarkedProcesses({
               marker: this.markerPath,
@@ -232,9 +244,12 @@ class StdioTransportImpl implements StdioTransport {
               killGraceMs: this.closeGraceMs,
               label: 'mcp',
               onWarning: this.options.markers.onWarning,
+              signal: sweep.signal,
             });
           } catch (error) {
             sweepFailure = { error };
+          } finally {
+            sweep.end();
           }
         }
         if (terminateFailure !== undefined && sweepFailure !== undefined) {

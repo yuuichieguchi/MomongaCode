@@ -1,6 +1,6 @@
 import { request } from 'undici';
 import { describe, expect, it } from 'vitest';
-import { createJsonLogger, systemClock } from '@momonga/foundation';
+import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
@@ -14,6 +14,7 @@ describe('gateway process ports', () => {
     const lines: string[] = [];
     const asked: string[] = [];
     const handle = await startGatewayProcess({
+      generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
       version: PROCESS_VERSION,
@@ -25,6 +26,9 @@ describe('gateway process ports', () => {
           return TOKEN;
         },
         databaseExists: () => false,
+        readTextFile: async (file) => {
+          throw new Error(`no CA file is configured in this test, yet ${file} was read`);
+        },
       },
       random: () => 0.25,
       logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),

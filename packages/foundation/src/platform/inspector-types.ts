@@ -1,4 +1,6 @@
 import { isTransientErrno, isTransientErrnoCode } from '../transient-errno.ts';
+import type { MarkerMode, MarkerState } from '../marker-state.ts';
+import type { LockCapabilityProbe } from './lock-capability.ts';
 
 export type ProbeCause = 'transient' | 'deterministic';
 
@@ -13,12 +15,18 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
-export type UninspectableProcess = { pid: number; command: string; startTicks: string };
+export type UninspectableProcess = { pid: number; command: string; startedAt: number };
+
+export type ProbeOptions = { signal: AbortSignal };
+
+export type MarkerStateOptions = ProbeOptions & { mode?: MarkerMode };
 
 export interface ProcessInspector {
-  startTimeOf(pid: number): Promise<ProbeResult<number>>;
-  holdersOf(marker: string, onUninspectable?: (process: UninspectableProcess) => void): Promise<ProbeResult<number[]>>;
-  groupsOf(pids: readonly number[], candidateGroups: readonly number[]): Promise<ProbeResult<Map<number, number>>>;
+  readonly capability?: LockCapabilityProbe;
+  startTimeOf(pid: number, options: ProbeOptions): Promise<ProbeResult<number>>;
+  holdersOf(marker: string, options: ProbeOptions, onUninspectable?: (process: UninspectableProcess) => void): Promise<ProbeResult<number[]>>;
+  groupsOf(pids: readonly number[], candidateGroups: readonly number[], options: ProbeOptions): Promise<ProbeResult<Map<number, number>>>;
+  markerState(marker: string, options: MarkerStateOptions): Promise<MarkerState>;
 }
 
 export const classifyProbeCause = (evidence: ProbeEvidence): ProbeCause => {

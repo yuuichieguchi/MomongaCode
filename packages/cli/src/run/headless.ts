@@ -1,11 +1,12 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessText } from '@momonga/protocol';
-import type { AliasCapabilities, PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import type { AliasCapabilities, PermissionMode, ProbingCapabilities, PublicRunEvent } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
@@ -33,7 +34,7 @@ export type HeadlessOptions = {
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
   modelAlias?: string;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -209,7 +210,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     ...(options.after === undefined ? {} : { seenThrough: options.after }),
     onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
-    restoreConnection: restoreDaemon(ports, paths),
+    restoreConnection: restoreDaemon(ports, paths, stderrStopNotice(ports)),
     onEvent: sink.handle,
     onChildEvent: sink.handleChild,
     onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
@@ -262,6 +263,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   if (session === undefined) return EXIT_CANCELLED;
   try {
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.modelAlias));
+    if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
     if (readiness.state === 'needs_probe') {
       const message = readinessText(readiness);
       ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);

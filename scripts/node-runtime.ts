@@ -71,17 +71,32 @@ export const assertFileChecksum = (file: string, expected: string): void => {
   if (actual !== expected) throw new Error(`sha256 mismatch for ${file}: expected ${expected}, got ${actual}`);
 };
 
-const download = async (url: string): Promise<Buffer> => {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`GET ${url} failed with HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+export const BUILD_DOWNLOAD_LIMIT_MS = 600_000;
+
+const isTimeout = (error: unknown): boolean => error instanceof DOMException && error.name === 'TimeoutError';
+
+export const downloadWithin = async (url: string, limitMs: number): Promise<Buffer> => {
+  const signal = AbortSignal.timeout(limitMs);
+  try {
+    const response = await fetch(url, { signal });
+    if (!response.ok) throw new Error(`GET ${url} failed with HTTP ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    if (!isTimeout(error)) throw error;
+    throw new Error(
+      `GET ${url} did not finish within ${limitMs / 1000} s. A build download stops at this fixed limit so that a dead or stalled network ends the build instead of hanging it; the limit leaves room for the largest pinned archive on a slow connection.`,
+      { cause: error },
+    );
+  }
 };
+
+export const download = (url: string): Promise<Buffer> => downloadWithin(url, BUILD_DOWNLOAD_LIMIT_MS);
 
 const archiveMatchesPin = (archive: string, pinned: string): boolean => fs.existsSync(archive) && sha256OfFile(archive) === pinned;
 
 export type ExtractCommand = { readonly file: string; readonly args: readonly string[] };
 
-export const extractCommand = (target: SeaTarget, archive: string, cacheDir: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): ExtractCommand => {
+export const extractCommand = (target: Pick<SeaTarget, 'archiveExtension'>, archive: string, cacheDir: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): ExtractCommand => {
   if (platform === 'win32') {
     const systemRoot = env['SystemRoot'];
     if (systemRoot === undefined) throw new Error('SystemRoot is required to find the Windows tar.exe');

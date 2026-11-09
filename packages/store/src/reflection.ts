@@ -3,7 +3,8 @@ import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from '@momonga/protocol';
 import type { ReflectionDrop } from '@momonga/protocol';
-import { corrupt, expectOneOf, expectRecord, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, expectRecord, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import type { ContextChargeStore, MemoryStore, ReflectionJob, ReflectionStore } from './types.ts';
 
@@ -20,12 +21,12 @@ const decodeDropped = (identity: string, value: unknown): ReflectionDrop[] => {
   });
 };
 
-const decodeJob = (row: Row): ReflectionJob => {
+const decodeJob = (row: Row, context: DecodeContext): ReflectionJob => {
   const identity = String(row['run_id']);
   const reader = readerFor('reflection_jobs', identity, row);
   return {
     runId: reader.string('run_id'),
-    state: expectOneOf('reflection_jobs', identity, 'state', REFLECTION_JOB_STATES, reader.string('state')),
+    state: storedOneOf(context, 'reflection_jobs', identity, 'state', REFLECTION_JOB_STATES, reader.string('state')),
     attempts: reader.number('attempts'),
     lastError: reader.nullableString('last_error'),
     dropped: decodeDropped(identity, reader.nullableJson('dropped_json')),
@@ -38,6 +39,7 @@ export const createReflectionStore = (
   db: DatabaseSync,
   clock: Clock,
   writers: { memories: Pick<MemoryStore, 'saveCandidate'>; contextCharges: Pick<ContextChargeStore, 'record'> },
+  context: DecodeContext,
 ): ReflectionStore => {
   const insert = db.prepare("INSERT OR IGNORE INTO reflection_jobs (run_id, state, attempts, created_at, updated_at) VALUES (:runId, 'pending', 0, :now, :now)");
   const select = db.prepare('SELECT * FROM reflection_jobs WHERE run_id = :runId');
@@ -66,7 +68,7 @@ export const createReflectionStore = (
   const required = (runId: string): ReflectionJob => {
     const row = select.get({ runId });
     if (row === undefined) throw new Error(`reflection job ${runId} does not exist`);
-    return decodeJob(row);
+    return decodeJob(row, context);
   };
 
   const finishJob = (runId: string, reason: string | undefined, dropped: readonly ReflectionDrop[] = []): ReflectionJob => {
@@ -80,23 +82,23 @@ export const createReflectionStore = (
   return {
     runOrigin: (runId) => {
       const row = origin.get({ runId });
-      return row === undefined ? undefined : expectOneOf('runs', runId, 'origin', MEMORY_ORIGINS, readerFor('runs', runId, row).string('origin'));
+      return row === undefined ? undefined : storedOneOf(context, 'runs', runId, 'origin', MEMORY_ORIGINS, readerFor('runs', runId, row).string('origin'));
     },
     enqueue: (runId) => Number(insert.run({ runId, now: clock.now() }).changes) === 1,
     get: (runId) => {
       const row = select.get({ runId });
-      return row === undefined ? undefined : decodeJob(row);
+      return row === undefined ? undefined : decodeJob(row, context);
     },
     latestForProject: (project) => {
       const row = latestForProject.get({ project });
-      return row === undefined ? undefined : decodeJob(row);
+      return row === undefined ? undefined : decodeJob(row, context);
     },
     aheadOf: (runId) => {
       const row = ahead.get({ runId });
       if (row === undefined) throw new Error(`could not count the reflection jobs ahead of ${runId}`);
       return readerFor('reflection_jobs', runId, row).number('n');
     },
-    next: (exclude = new Set()) => oldestOpen.all().map(decodeJob).find((job) => !exclude.has(job.runId)),
+    next: (exclude = new Set()) => oldestOpen.all().map((row) => decodeJob(row, context)).find((job) => !exclude.has(job.runId)),
     begin: (runId) => {
       if (Number(begin.run({ runId, now: clock.now() }).changes) !== 1) throw new Error(`reflection job ${runId} cannot begin: it is missing or finished`);
       return required(runId);

@@ -6,7 +6,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit'
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
-import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, onCleanup, resultOf, sha256 } from './fixtures.ts';
+import { HAS_RG, RG_PATH, makeBuiltins, onCleanup, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
 const BASE_TIME = 1_700_000_000;
@@ -127,13 +127,16 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(fs.lstatSync(fifo).isFIFO()).toBe(true);
   });
 
-  it('Grep with the JS backend refuses a FIFO path promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('Grep refuses a FIFO path promptly, before it locates ripgrep', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
-    const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { env: { PATH: JS_BACKEND_PATH } }, PROMPT_MS, () => unblockFifo(fifo));
+    let located = 0;
+    const ripgrep = { locate: async () => ({ ok: false as const, cause: `located ${(located += 1)} times` }) };
+    const outcome = await runWithin(tools, 'Grep', { pattern: 'alpha', path: fifo }, { ripgrep }, PROMPT_MS, () => unblockFifo(fifo));
     expect(outcome.hung).toBe(false);
     expect(outcome.result?.status).toBe('failed');
     expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
+    expect(located).toBe(0);
   });
 });
 
@@ -301,8 +304,8 @@ describe('review 6: directory fsync failure after the rename', () => {
 });
 
 describe('review 7: symlinked files into readDenied and dangling symlinks', () => {
-  const makeLinkedTree = async () => {
-    const tools = await makeBuiltins();
+  const makeLinkedTree = async (realSandbox = false) => {
+    const tools = await makeBuiltins({ realSandbox });
     const older = put(tools, 'older.txt', 'alpha older\n', 1);
     const newer = put(tools, 'newer.txt', 'alpha newer\n', 2);
     const vault = path.join(tools.layout.home, '.momonga');
@@ -321,9 +324,9 @@ describe('review 7: symlinked files into readDenied and dangling symlinks', () =
     expect(result.output.split('\n')).toEqual([newer, older].map((file) => path.relative(tools.layout.project, file)));
   });
 
-  it('Grep with the JS backend skips them', async () => {
-    const { tools, older, newer } = await makeLinkedTree();
-    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: JS_BACKEND_PATH } }));
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const { tools, older, newer } = await makeLinkedTree(true);
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: RG_PATH } }));
     expect(result.status).toBe('completed');
     expect(result.output.split('\n')).toEqual([newer, older].map((file) => path.relative(tools.layout.project, file)));
   });
@@ -349,12 +352,12 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
     expect(result.output.split('\n')).toEqual([path.relative(tools.layout.project, visible)]);
   });
 
-  it('Grep with the JS backend skips a subtree whose readDenied entry differs in case', async () => {
-    const tools = await makeBuiltins();
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips a subtree whose readDenied entry differs in case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
     const visible = put(tools, 'visible.txt', 'alpha', 1);
     put(tools, 'vault/secret.txt', 'alpha', 2);
     const sandboxPolicy = withReadDenied(tools, path.join(tools.layout.project, 'VAULT'));
-    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy, env: { PATH: JS_BACKEND_PATH } }));
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy, env: { PATH: RG_PATH } }));
     expect(result.output.split('\n')).toEqual([path.relative(tools.layout.project, visible)]);
   });
 });
@@ -362,7 +365,6 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
 describe('review 9: Grep parity for type and .rgignore', () => {
   const backends: Array<[string, string, boolean, boolean]> = [
     ['ripgrep', RG_PATH, HAS_RG, true],
-    ['JS fallback', JS_BACKEND_PATH, true, false],
   ];
 
   describe.each(backends)('%s backend', (_name, envPath, available, realSandbox) => {
@@ -384,17 +386,15 @@ describe('review 9: Grep parity for type and .rgignore', () => {
     });
   });
 
-  it.runIf(HAS_RG)('gives the same unknown-type message from both backends', async () => {
-    const outputs: string[] = [];
-    for (const [envPath, realSandbox] of [
-      [RG_PATH, true],
-      [JS_BACKEND_PATH, false],
-    ] as const) {
-      const tools = await makeBuiltins({ realSandbox });
-      put(tools, 'a.ts', 'alpha\n');
-      outputs.push(resultOf(await tools.run('Grep', { pattern: 'alpha', type: 'nope' }, { env: { PATH: envPath } })).output);
-    }
-    expect(outputs[0]).toBe(outputs[1]);
+  it('gives the shared unknown-type message before it locates ripgrep', async () => {
+    const tools = await makeBuiltins();
+    put(tools, 'a.ts', 'alpha\n');
+    let located = 0;
+    const ripgrep = { locate: async () => ({ ok: false as const, cause: `located ${(located += 1)} times` }) };
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha', type: 'nope' }, { ripgrep }));
+    expect(result.status).toBe('failed');
+    expect(result.output.startsWith('Unknown file type "nope". Known types: ')).toBe(true);
+    expect(located).toBe(0);
   });
 
   it('Glob honors .rgignore over .ignore over .gitignore', async () => {

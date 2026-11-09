@@ -1,12 +1,12 @@
-import { EXIT_VERSION_MISMATCH, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { EXIT_VERSION_MISMATCH, ensureMomongaDirs, fixedSocket, momongaPaths, startingSocketResolver } from '@momonga/foundation';
+import { firstGeneration, registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { DaemonStartError, ensureDaemon, probeSupervisor, restoreDaemon, stopDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import { createSupervisorClient } from '../src/client/supervisor-client.ts';
 import type { SelfExecutable } from '../src/ports.ts';
-import { readyChildren, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, readyChildren, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
@@ -17,23 +17,25 @@ const setup = async (context: TestContext) => {
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
   await ensureMomongaDirs(paths);
+  const work = createFakeWork();
   const running: FakeSupervisor[] = [];
   registerCleanup(context, async () => {
+    await work.settled();
     await Promise.all(running.map((supervisor) => supervisor.stop()));
   });
-  const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths'>): Promise<FakeSupervisor> => {
-    const supervisor = await startFakeSupervisor({ paths, ...options });
+  const start = async (options: Omit<Parameters<typeof startFakeSupervisor>[0], 'paths' | 'work'>): Promise<FakeSupervisor> => {
+    const supervisor = await startFakeSupervisor({ paths, work, ...options });
     running.push(supervisor);
     return supervisor;
   };
-  const portsWith = (spawn: DaemonPorts['spawnDetached']): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(), self: SELF, spawnDetached: spawn });
+  const portsWith = (spawn: DaemonPorts['spawnDetached']): DaemonPorts => ({ version: VERSION, env: { PATH: '/usr/bin' }, home, clock: virtualClock(work), self: SELF, spawnDetached: spawn });
   return { home, paths, start, portsWith };
 };
 
 describe('probeSupervisor', () => {
   it('answers undefined only when nothing listens on the socket', async (context) => {
     const { paths } = await setup(context);
-    const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
+    const client = createSupervisorClient({ resolveSocket: startingSocketResolver(paths, 'supervisor') });
     expect(await probeSupervisor(client)).toBeUndefined();
     await client.close();
   });
@@ -41,7 +43,7 @@ describe('probeSupervisor', () => {
   it('lets any other failure propagate with its meaning', async (context) => {
     const { paths, start } = await setup(context);
     await start({ version: VERSION });
-    const client = createSupervisorClient({ socketPath: paths.sockets.supervisor.replace('supervisor.sock', 'supervisor.sock/x') });
+    const client = createSupervisorClient({ resolveSocket: fixedSocket(firstGeneration(paths).sockets.supervisor.replace('supervisor.sock', 'supervisor.sock/x')) });
     await expect(probeSupervisor(client)).rejects.toThrow();
     await client.close();
   });
@@ -168,9 +170,11 @@ describe('ensureDaemon', () => {
       return undefined;
     });
 
-    await restoreDaemon(portsWith(spawn), paths)(undefined);
+    const notices: string[] = [];
+    await restoreDaemon(portsWith(spawn), paths, (message) => notices.push(message))(undefined);
 
     expect(old.shutdowns).toBe(1);
+    expect(notices).toEqual([]);
   });
 
   it('reports a child held by its configuration instead of waiting for it', async (context) => {

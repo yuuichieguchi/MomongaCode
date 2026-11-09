@@ -1,5 +1,5 @@
 import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -17,7 +17,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
 
 export type { Clock };
 
@@ -112,8 +112,12 @@ export type ToolRuntimePort = {
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
+  ripgrepLocator(env: ToolEnv): RipgrepLocator;
   shellHost: ShellHost;
   markerDir: string;
+  owners?: MarkerOwners;
+  lockCapability?: LockCapabilityProbe;
+  inspector?: ProcessInspector;
   sessionState(session: Session): ToolSessionState;
   workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
 };
@@ -121,6 +125,7 @@ export type ToolRuntimePort = {
 export type TraceSpan = {
   traceparent: string;
   recordToolContent(content: { arguments: unknown; result?: unknown }): void;
+  recordToolBackend(backend: { source: string; version: string }): void;
   end(error?: unknown): void;
 };
 

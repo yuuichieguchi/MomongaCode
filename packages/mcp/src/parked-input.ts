@@ -35,8 +35,8 @@ type Flight = {
 };
 
 export type ParkedInputs = {
-  run(signal: AbortSignal | undefined, timeoutMs: number, start: (signal: AbortSignal, endBudget: () => void) => Promise<CallToolResult>): Promise<CallToolResult>;
-  resume(parkId: string, answers: Record<string, ElicitationAnswer>, timeoutMs: number, signal: AbortSignal | undefined): Promise<CallToolResult>;
+  run(signal: AbortSignal | undefined, timeoutMs: number | undefined, start: (signal: AbortSignal, endBudget: () => void) => Promise<CallToolResult>): Promise<CallToolResult>;
+  resume(parkId: string, answers: Record<string, ElicitationAnswer>, timeoutMs: number | undefined, signal: AbortSignal | undefined): Promise<CallToolResult>;
   release(parkId: string): void;
   serverRequest(params: unknown): Promise<ElicitationAnswer>;
   closeAll(): void;
@@ -63,8 +63,9 @@ export const createParkedInputs = (epoch: number, timers: McpTimers): ParkedInpu
     flight.deadline = undefined;
   };
 
-  const arm = (flight: Flight, timeoutMs: number): void => {
+  const arm = (flight: Flight, timeoutMs: number | undefined): void => {
     disarm(flight);
+    if (timeoutMs === undefined) return;
     flight.deadline = timers.setTimeout(() => flight.abort.abort(new SdkError(SdkErrorCode.RequestTimeout, 'Request timed out', { timeout: timeoutMs })), timeoutMs);
   };
 

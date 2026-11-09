@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createJsonLogger, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -20,6 +20,7 @@ import {
   expectNoCredential,
   expectRedacted,
 } from './credential-support.ts';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const body = { model: 'fast', input: userInput('hi') };
@@ -67,6 +68,7 @@ const startKeyedStack = async (
   });
   const log = captureLog();
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
     version: PROCESS_VERSION,
@@ -74,10 +76,14 @@ const startKeyedStack = async (
     stdout: { write: () => true },
   });
   let closed = false;
-  registerCleanup(context, async () => {
-    if (!closed) await handle.close();
-  });
-  const client = createUdsClient(handle.socketPath);
+  registerCleanup(
+    context,
+    async () => {
+      if (!closed) await handle.close();
+    },
+    gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
+  );
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   const closeAndScan = async (scan: ScanOptions = {}): Promise<void> => {
     closed = true;
@@ -299,7 +305,9 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
       targets: { fm: { adapter: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
     },
   });
+  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),
     version: PROCESS_VERSION,
@@ -309,10 +317,14 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     stdout: { write: () => true },
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: captureLog() }),
   });
-  registerCleanup(context, async () => {
-    await handle.close();
-  });
-  const client = createUdsClient(handle.socketPath);
+  registerCleanup(
+    context,
+    async () => {
+      await handle.close();
+    },
+    gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
+  );
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return { client };
 };

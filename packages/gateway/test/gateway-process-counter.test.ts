@@ -1,18 +1,20 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
 import { getJson } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePaths, launchGateway, makeHome, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
+import type { SecretHostProgram } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
 const SECRET_NAME = 'counter-test-secret';
 const IDENTITY_FIELDS = ['id', 'object', 'owned_by'];
+const KEYCHAIN_HOST: SecretHostProgram = { program: 'security', canonicalBinary: SECURITY_BINARY, extraEnv: {} };
 
 const listedCounters = async (socketPath: string): Promise<Record<string, string>> => {
   const models = await getJson(clientFor(socketPath), '/v1/momonga/models');
@@ -32,7 +34,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const counters = await listedCounters(handle.socketPath);
 
@@ -47,10 +49,10 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const secondHome = makeHome();
     writeSettings(secondHome, settings);
 
-    const first = await launchGateway({ home: firstHome, env: baseEnv(firstHome, { [KEY_VARIABLE]: 'first-value-of-the-key' }), version: PROCESS_VERSION });
+    const first = await launchGateway({ generation: FIRST_GENERATION, home: firstHome, env: baseEnv(firstHome, { [KEY_VARIABLE]: 'first-value-of-the-key' }), version: PROCESS_VERSION });
     const firstCounters = await listedCounters(first.socketPath);
     await first.close();
-    const second = await launchGateway({ home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
+    const second = await launchGateway({ generation: FIRST_GENERATION, home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
     const secondCounters = await listedCounters(second.socketPath);
 
     expect(firstCounters['primary']).toMatch(/^[0-9a-f]{64}$/);
@@ -63,17 +65,26 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const launchWithSecret = async (value: string) => {
       const home = makeHome();
       writeSettings(home, settings);
-      const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, execWithStdin: createFakeSecurityPort(() => ({ [SECRET_NAME]: value })) });
+      const host = fakeSecretHost(makeHome(), KEYCHAIN_HOST);
+      const security = portOnSecretHost(createFakeSecurityPort(() => ({ [SECRET_NAME]: value })), KEYCHAIN_HOST, host);
+      const lines: string[] = [];
+      const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security, logger });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
-      return counters;
+      return { counters, reads: security.calls, programPath: host.programPath, log: lines.join('') };
     };
 
     const first = await launchWithSecret('first-value-of-the-secret');
     const second = await launchWithSecret('second-value-of-the-secret');
 
-    expect(first['primary']).toMatch(/^[0-9a-f]{64}$/);
-    expect(second).toEqual(first);
+    const lookupArgs = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'];
+    expect(first.reads).toEqual([{ file: first.programPath, args: lookupArgs, stdin: '' }]);
+    expect(second.reads).toEqual([{ file: second.programPath, args: lookupArgs, stdin: '' }]);
+    expect(first.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
+    expect(second.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
+    expect(first.counters['primary']).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.counters).toEqual(first.counters);
   });
 
   it('covers the upstream identity of the probe record of a probed endpoint target, and changes with a newly saved record', async () => {
@@ -84,7 +95,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       const home = makeHome();
       writeSettings(home, settings);
       await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
-      const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
       return { counters, target: await resolvedPrimary(home) };

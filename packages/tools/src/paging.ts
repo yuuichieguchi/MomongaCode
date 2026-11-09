@@ -1,8 +1,8 @@
-import type { OutputFit } from './types.ts';
+import type { CallOutputFit } from './types.ts';
 
 const FIRST_BUDGET_CHARS = 1024;
 
-export const pageToFit = async (outputFit: OutputFit, render: (budgetChars: number) => string): Promise<string> => {
+export const pageToFit = async (outputFit: CallOutputFit, render: (budgetChars: number) => string): Promise<string> => {
   let fitting = 0;
   let budget = FIRST_BUDGET_CHARS;
   let rendered = render(budget);

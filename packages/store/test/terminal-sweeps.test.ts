@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JournalThreadError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { awaitingApproval } from './approval-fixture.ts';
+import { EXPIRES_MS, awaitingApproval, awaitingInput } from './approval-fixture.ts';
 import { LEASE_MS, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 import { contributionOf, fakePreparer } from './preparer-fixture.ts';
 import type { Reply } from './preparer-fixture.ts';
@@ -23,14 +23,14 @@ const reporter = () => {
   return { reported, onError: (error: unknown, runId: string) => void reported.push({ error, runId }) };
 };
 
-describe('approval expiry reports a failing run and expires the others of the same sweep', () => {
+describe('the expiry of requests for input reports a failing run and expires the others of the same sweep', () => {
   it('hands one failing run to onError with its id, leaves it waiting unchanged, stops the other run, and stops the failed one at the next sweep', async () => {
     const failure = new JournalThreadError('the journal thread exited');
     const h = withPreparer([{ kind: 'fail', error: failure }]);
-    const first = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
-    const second = awaitingApproval(h.store, [{ callId: 'call_2' }], 'waiting');
+    const first = await awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
+    const second = await awaitingInput(h.store, [{ callId: 'call_2' }], 'waiting');
     const { reported, onError } = reporter();
-    const expiresAt = Math.max(...[...first.approvals, ...second.approvals].map((approval) => approval.expiresAt));
+    const expiresAt = EXPIRES_MS;
 
     const stopped = await h.store.expireApprovals(expiresAt, onError);
 
@@ -53,7 +53,7 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
   it('ends a run cancelled while QUEUED as CANCELLED with its contribution, clears the cancel origin, and measures that run only', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
-    h.store.requestCancel(run.id);
+    await h.store.requestCancel(run.id);
     const { reported, onError } = reporter();
 
     const pending = h.store.finishCancelled(onError);
@@ -68,8 +68,8 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
 
   it('ends a run cancelled while WAITING_HUMAN as CANCELLED', async () => {
     const h = withPreparer();
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
-    h.store.requestCancel(runId);
+    const { runId } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    await h.store.requestCancel(runId);
 
     expect(await h.store.finishCancelled(reporter().onError)).toEqual([runId]);
 
@@ -81,7 +81,7 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
-    h.store.requestCancel(run.id);
+    await h.store.requestCancel(run.id);
     h.clock.advance(LEASE_MS + 1);
 
     expect(await h.store.finishCancelled(reporter().onError)).toEqual([]);
@@ -95,8 +95,8 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
     const h = withPreparer([{ kind: 'fail', error: failure }]);
     const first = enqueue(h.store, newSession(h.store, '/work/a').id);
     const second = enqueue(h.store, newSession(h.store, '/work/b').id);
-    h.store.requestCancel(first.id);
-    h.store.requestCancel(second.id);
+    await h.store.requestCancel(first.id);
+    await h.store.requestCancel(second.id);
     const before = typesOf(h.store, first.id);
     const { reported, onError } = reporter();
 
@@ -114,7 +114,7 @@ describe('the sweeper-owned finish of a cancelled run that never ran (finishCanc
 });
 
 describe('dead-lettering has one owner, the sweep (O7); claim only claims', () => {
-  it('claim neither returns nor dead-letters an exhausted run, stays synchronous and never asks the preparer', () => {
+  it('claim neither returns nor dead-letters an exhausted run, stays synchronous and never asks the preparer', async () => {
     const h = withPreparer([], { maxAttempts: 1 });
     const run = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
@@ -165,8 +165,8 @@ describe('dead-lettering has one owner, the sweep (O7); claim only claims', () =
     const h = withPreparer([], { maxAttempts: 1, maxTotalAttempts: 1 });
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
-    expect(h.store.release(claim, 'QUEUED').kind).toBe('ok');
-    h.store.requestCancel(run.id);
+    expect((await h.store.release(claim, 'QUEUED')).kind).toBe('ok');
+    await h.store.requestCancel(run.id);
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED', attempts: 1 });
 
     expect(await h.store.deadLetterExhausted(reporter().onError)).toEqual([]);

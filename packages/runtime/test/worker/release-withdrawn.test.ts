@@ -15,7 +15,7 @@ const REQUESTS: ElicitationRequestView[] = [
 ];
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
-const askTool = (released: Array<Record<string, unknown>>, beforeAsking: () => void = () => undefined): AnyTool =>
+const askTool = (released: Array<Record<string, unknown>>, beforeAsking: () => Promise<void> = async () => undefined): AnyTool =>
   defineTool<Record<string, unknown>>({
     name: 'Ask',
     description: 'Asks the user for a name before answering',
@@ -27,7 +27,7 @@ const askTool = (released: Array<Record<string, unknown>>, beforeAsking: () => v
     subject: () => ({ kind: 'none', tool: 'Ask' }),
     releaseCheckpoint: async (checkpoint) => void released.push(checkpoint),
     execute: async () => {
-      beforeAsking();
+      await beforeAsking();
       throw new ToolInputRequired({ server: SERVER, requests: REQUESTS, checkpoint: CHECKPOINT });
     },
   });
@@ -89,7 +89,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const released: Array<Record<string, unknown>> = [];
     const run = env.enqueue('Ask the user');
     const key = toolKey(run.id, 1, 'call_ask');
-    const claim = env.seed(
+    const claim = await env.seed(
       run.id,
       [
         pinnedStart(),
@@ -103,9 +103,9 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const ledger = env.store.idempotency.holding(claim);
     ledger.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
     ledger.checkpoint(key, CHECKPOINT);
-    expect(env.store.requestElicitation(claim, { callId: 'call_ask', expiresAt: START_MS + 60_000, server: SERVER, requests: REQUESTS }).kind).toBe('ok');
+    expect((await env.store.requestElicitation(claim, { callId: 'call_ask', expiresAt: START_MS + 60_000, server: SERVER, requests: REQUESTS })).kind).toBe('ok');
     env.clock.advance(31_000);
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     expect(env.ofType(run.id, 'tool.elicitation.cancelled')).toHaveLength(1);
 
     await env.runOnce(env.worker('worker-2', { toolList: () => [askTool(released)] }));
@@ -121,7 +121,9 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const released: Array<Record<string, unknown>> = [];
     env.gateway.script.push(callsStep([{ callId: 'call_ask', name: 'Ask', args: {} }]));
     const run = env.enqueue('Ask the user');
-    const cancelWhileAsking = (): void => void env.cancel(run.id);
+    const cancelWhileAsking = async (): Promise<void> => {
+      await env.cancel(run.id);
+    };
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [askTool(released, cancelWhileAsking)] }));
 

@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { ProcessLockHeldError, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -127,7 +127,7 @@ const spawnDetachedSleeper = (): number => {
 const startBare = (temp: RunHome, extra: Record<string, unknown> = {}) => {
   const logger = hookLogger(() => undefined);
   const stdout = captureStream();
-  return { logger, stdout, started: startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...extra }) };
+  return { logger, stdout, started: startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...extra }) };
 };
 
 const sandboxNoneHome = (): RunHome => {
@@ -155,7 +155,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       service: 'runtime',
       pid: process.pid,
       version: RUNTIME_VERSION,
-      socketPath: stack.temp.paths.sockets.runtime,
+      socketPath: firstGeneration(stack.temp.paths).sockets.runtime,
       startedAt: new Date(START_MS).toISOString(),
     });
     expect(launched.handle.sandbox).toBe('none');
@@ -164,14 +164,15 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('takes the lock before the database: a held lock on a fresh home throws ProcessLockHeldError and state/runtime.db does not exist', PROCESS_TIMEOUT, async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    const holder = (await startLockHolder(context, temp.paths.locks.runtime)).pid;
+    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    const holder = (await startLockHolder(context, firstGeneration(temp.paths).locks.runtime)).pid;
     const { started, stdout } = startBare(temp);
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
     expect(error).toBeInstanceOf(runtimeAlreadyRunningError());
-    expect(error).toMatchObject({ lockPath: temp.paths.locks.runtime, holderPid: holder });
+    expect(error).toMatchObject({ lockPath: firstGeneration(temp.paths).locks.runtime, holderPid: holder });
     expect(fs.existsSync(temp.paths.databases.runtime)).toBe(false);
-    expect(fs.readFileSync(temp.paths.locks.runtime, 'utf8').trim()).toBe(String(holder));
+    expect(fs.readFileSync(firstGeneration(temp.paths).locks.runtime, 'utf8').trim()).toBe(String(holder));
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -181,7 +182,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const { started, stdout } = startBare(stack.temp);
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(runtimeAlreadyRunningError());
-    expect(error).toMatchObject({ lockPath: stack.temp.paths.locks.runtime, holderPid: process.pid });
+    expect(error).toMatchObject({ lockPath: firstGeneration(stack.temp.paths).locks.runtime, holderPid: process.pid });
     expect(stdout.chunks).toEqual([]);
     expect((await clientOf(stack.temp).http('GET', '/v1/health')).status).toBe(200);
   });
@@ -189,13 +190,14 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('a ProcessLockHeldError from the runtime socket lock (a live pid in runtime.sock.lock) has a lockPath other than the runtime lock', PROCESS_TIMEOUT, async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    const holder = (await startLockHolder(context, `${temp.paths.sockets.runtime}.lock`)).pid;
+    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    const holder = (await startLockHolder(context, `${firstGeneration(temp.paths).sockets.runtime}.lock`)).pid;
     const { started, stdout } = startBare(temp);
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ProcessLockHeldError);
     expect(error).not.toBeInstanceOf(runtimeAlreadyRunningError());
-    expect(error).toMatchObject({ lockPath: `${temp.paths.sockets.runtime}.lock`, holderPid: holder });
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(error).toMatchObject({ lockPath: `${firstGeneration(temp.paths).sockets.runtime}.lock`, holderPid: holder });
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -207,7 +209,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const error = await failureOf(started);
     expect(error).toBeInstanceOf(ConfigError);
     expect(stepsLogged(logger).at(-1)).toBe('settings');
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(fs.existsSync(temp.paths.databases.runtime)).toBe(false);
     expect(stdout.chunks).toEqual([]);
   });
@@ -229,7 +231,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     } finally {
       spy.mockRestore();
     }
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 
   it('a missing sandbox-exec (sandboxExecPath) throws ConfigError with the remediation text', PROCESS_TIMEOUT, async () => {
@@ -243,7 +245,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       `sandbox-exec is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
     );
     expect(stepsLogged(logger).at(-1)).toBe('sandbox');
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -257,12 +259,13 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((error as Error).message).toBe(
       `bwrap is not available at ${missing}; set "sandbox": "none" in ${temp.paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
     );
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 
   describe.runIf(process.platform === 'linux')('the empty placeholder that a killed runtime left in a workspace', () => {
     const leave = async (temp: RunHome): Promise<string> => {
       await ensureMomongaDirs(temp.paths);
+      await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
       const leftover = path.join(temp.root, '.mcp.json');
       const journal = createPlaceholderJournal(path.join(temp.paths.state, 'placeholders'));
       journal.intend(leftover, Date.now());
@@ -275,7 +278,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: setting });
       const leftover = await leave(temp);
-      fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+      fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
       const { started, logger } = startBare(temp, { sandboxExecPath: '/bin/true', platform: 'linux' });
       await failureOf(started);
       expect(fs.existsSync(leftover)).toBe(false);
@@ -307,7 +310,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as Error).message).toContain("bwrap: Can't mount proc on /newroot/proc: Operation not permitted");
       expect((error as Error).message).toContain(`set "sandbox": "none" in ${temp.paths.settingsFile}`);
-      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+      expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     });
   });
 
@@ -340,7 +343,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       expect(error).toBeInstanceOf(ConfigError);
       expect((error as Error).message).toContain('/bin/bash or /usr/bin/bash');
       expect(fs.existsSync(log)).toBe(false);
-      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+      expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     });
   });
 
@@ -364,15 +367,16 @@ describe('startRuntimeProcess startup (system timers)', () => {
   it('a late failure (runtime.sock path occupied by a regular file) unwinds: the lock is free, the store is closed and the error is rethrown unchanged', PROCESS_TIMEOUT, async () => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
-    fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
     const { started, stdout, logger } = startBare(temp);
     const error = await failureOf(started);
     expect(error).not.toBeInstanceOf(AggregateError);
-    expect((error as Error).message).toBe(`${temp.paths.sockets.runtime} exists and is not a socket`);
+    expect((error as Error).message).toBe(`${firstGeneration(temp.paths).sockets.runtime} exists and is not a socket`);
     expect(stepsLogged(logger).at(-1)).toBe('service');
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(control.events).toEqual(['trace-store.close', 'store.close']);
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -385,7 +389,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stepsLogged(logger).at(-1)).toBe('telemetry');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['body-purge', 'trace-store', 'store', 'lock']);
     expect(control.events).toEqual(['trace-store.close', 'store.close']);
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -397,7 +401,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((error as Error).message).toBe('worker 1 failed to start');
     expect(control.events).toEqual([`abort runtime-${process.pid}-${START_MS}-0`, 'trace-store.close', 'store.close']);
     expect(control.workerCount).toBe(2);
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -409,9 +413,9 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await failureOf(started)).toBe(fatal);
     expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'error', msg: 'runtime.fatal', fields: expect.objectContaining({ err: fatal }) }));
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(control.events.at(-1)).toBe('store.close');
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 
@@ -419,7 +423,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const stack = await prepareStack();
     const launched = await launchRuntime(stack.temp);
     expect(launched.stdout.lines()).toHaveLength(1);
-    expect(fs.existsSync(stack.temp.paths.sockets.gateway)).toBe(false);
+    expect(fs.existsSync(firstGeneration(stack.temp.paths).sockets.gateway)).toBe(false);
     expect((await launched.http('GET', '/v1/health')).status).toBe(200);
   });
 
@@ -455,11 +459,11 @@ describe('startRuntimeProcess startup (system timers)', () => {
     const stack = await prepareStack();
     const link = path.join(stack.temp.root, 'link');
     fs.symlinkSync(stack.temp.home, link);
-    const viaLink = await startRuntimeProcess({ home: link, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
+    const viaLink = await startRuntimeProcess({ generation: FIRST_GENERATION, home: link, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
     try {
-      expect(viaLink.ready.socketPath).toBe(stack.temp.paths.sockets.runtime);
+      expect(viaLink.ready.socketPath).toBe(firstGeneration(stack.temp.paths).sockets.runtime);
       expect(fs.existsSync(stack.temp.paths.databases.runtime)).toBe(true);
-      expect(fs.existsSync(stack.temp.paths.locks.runtime)).toBe(true);
+      expect(fs.existsSync(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
       expect(fs.existsSync(path.join(link, '.momonga'))).toBe(true);
       expect(fs.lstatSync(path.join(stack.temp.home, '.momonga')).isDirectory()).toBe(true);
     } finally {
@@ -467,9 +471,9 @@ describe('startRuntimeProcess startup (system timers)', () => {
     }
     const upper = path.join(stack.temp.root, 'H');
     if (fs.existsSync(upper)) {
-      const viaCase = await startRuntimeProcess({ home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
+      const viaCase = await startRuntimeProcess({ generation: FIRST_GENERATION, home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
       try {
-        expect(viaCase.ready.socketPath).toBe(momongaPaths(stack.temp.home, process.platform, {}).sockets.runtime);
+        expect(viaCase.ready.socketPath).toBe(generationLayout(stack.temp.home, FIRST_GENERATION).sockets.runtime);
       } finally {
         await viaCase.close();
       }
@@ -496,7 +500,7 @@ describe('startup cancellation through signal (system timers)', () => {
     ['lock', ['lock']],
     ['store', ['store', 'lock']],
     ['telemetry', ['telemetry', 'body-purge', 'trace-store', 'store', 'lock']],
-    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']],
+    ['workers', ['workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']],
   ] as const)(
     'a signal aborted by the logger hook during step %s unwinds the registered cleanups and throws the reason unchanged, with no ready line and the lock free',
     async (step, teardown) => {
@@ -507,12 +511,12 @@ describe('startup cancellation through signal (system timers)', () => {
         if (msg === 'startup.step' && logged === step) controller.abort(reason);
       });
       const stdout = captureStream();
-      const error = await failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
+      const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
       expect(error).toBe(reason);
       expect(stepsLogged(logger).at(-1)).toBe(step);
       expect(stepsLogged(logger, 'teardown.step')).toEqual([...teardown]);
       expect(stdout.chunks).toEqual([]);
-      expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+      expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     },
     DAEMON_PROCESS_TEST_TIMEOUT_MS,
   );
@@ -525,13 +529,13 @@ describe('startup cancellation through signal (system timers)', () => {
       if (msg === 'startup.step' && logged === 'ready') controller.abort(reason);
     });
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
+    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, signal: controller.signal }));
     expect(error).toBe(reason);
     expect(stepsLogged(logger)).toEqual([...STARTUP_STEPS]);
-    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
+    expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(stdout.chunks).toEqual([]);
     expect(entriesNamed(logger, 'runtime ready')).toEqual([]);
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 
   it('a signal aborted after ready has no effect', PROCESS_TIMEOUT, async () => {
@@ -544,7 +548,7 @@ describe('startup cancellation through signal (system timers)', () => {
     expect(health.status).toBe(200);
     expect(health.json).toMatchObject({ state: 'running' });
     expect(stepsLogged(launched.logger, 'teardown.step')).toEqual([]);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(false);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(false);
   });
 
   it('the abort reason is not mapped to a config or lock class', PROCESS_TIMEOUT, async () => {
@@ -563,7 +567,7 @@ describe('startup cancellation through signal (system timers)', () => {
     const logger = hookLogger((logged, msg) => {
       if (msg === 'startup.step' && logged === 'settings') controller.abort(reason);
     });
-    const second = await failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream(), signal: controller.signal }));
+    const second = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream(), signal: controller.signal }));
     expect(second).toBe(reason);
     expect(second).not.toBeInstanceOf(ConfigError);
     expect(second).not.toBeInstanceOf(ProcessLockHeldError);

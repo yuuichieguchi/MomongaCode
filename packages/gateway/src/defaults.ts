@@ -1,3 +1,4 @@
+import { DEFAULT_STOP_VALUES } from '@momonga/foundation';
 import type { GatewayConfig } from './types.ts';
 
 const MIB = 1024 * 1024;
@@ -10,11 +11,29 @@ export const GATEWAY_CONFIG_DEFAULTS = {
   breaker: { failureThreshold: 2, openMs: 30_000 },
   limits: { maxBodyBytes: 32 * MIB, maxIdempotencyFrameBytes: 64 * MIB, readerStallMs: 30_000 },
   idempotency: { ttlMs: SEVEN_DAYS_MS },
-  closeGraceMs: 10_000,
+  closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs,
   sseKeepAliveMs: 15_000,
   detachedMaxMs: THIRTY_MINUTES_MS,
   websocketConnectionMs: SIXTY_MINUTES_MS,
 } as const satisfies Omit<GatewayConfig, 'models'>;
+
+const PLAN_ACCESS_LIFETIME_MS = 3_600_000;
+const PLAN_ATTEMPT_TIMEOUT_MS = 15_000;
+const PLAN_REVOCATION_TIMEOUT_MS = 10_000;
+const PLAN_SKEW_MS = 60_000;
+const planRetry = GATEWAY_CONFIG_DEFAULTS.retry;
+const PLAN_REFRESH_BUDGET_MS = planRetry.maxAttempts * PLAN_ATTEMPT_TIMEOUT_MS + (planRetry.maxAttempts - 1) * planRetry.maxMs;
+
+export const PLAN_SESSION_DEFAULTS = {
+  accessLifetimeMs: PLAN_ACCESS_LIFETIME_MS,
+  attemptTimeoutMs: PLAN_ATTEMPT_TIMEOUT_MS,
+  revocationTimeoutMs: PLAN_REVOCATION_TIMEOUT_MS,
+  skewMs: PLAN_SKEW_MS,
+  refreshBudgetMs: PLAN_REFRESH_BUDGET_MS,
+  marginMs: PLAN_SKEW_MS + PLAN_REFRESH_BUDGET_MS,
+  revocationBudgetMs: planRetry.maxAttempts * PLAN_REVOCATION_TIMEOUT_MS + planRetry.baseMs + 2 * planRetry.baseMs,
+  persistRetryMs: GATEWAY_CONFIG_DEFAULTS.breaker.openMs,
+} as const;
 
 export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 } as const;
 
@@ -25,7 +44,7 @@ export const OLLAMA_PROVIDER_NAME = 'ollama';
 export const FM_SERVE_DEFAULTS = {
   healthTimeoutMs: 10_000,
   restartBackoffMs: 1000,
-  stopGraceMs: 3000,
+  stopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs,
   maxRestarts: 5,
   restartResetMs: 60_000,
   preconditionTtlMs: 60_000,

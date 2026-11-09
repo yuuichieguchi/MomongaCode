@@ -13,7 +13,7 @@ import type { StackParentReport, StackParentRequest } from './fixtures/stack-par
 import { createE2eHome, registerE2eCleanup } from './home.ts';
 import { supervisorLog } from './log-reader.ts';
 import { isAlive } from './process.ts';
-import { E2E_RUN_ENV } from './run-env.ts';
+import { E2E_RUN_ENV, e2eTmpRoot } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
 import {
   DEFAULT_E2E_DEPS,
@@ -30,7 +30,9 @@ import {
 } from './stack.ts';
 import { createSupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV, guardSupervisorHome } from './supervisor-main.ts';
-import { E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, until, withinBound } from './wait.ts';
+import { E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
+
+const PARENT_KILLED_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const STDERR_FLOOD_PATH = path.join(FIXTURES, 'stderr-flood-supervisor.ts');
@@ -54,7 +56,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
     stderr += chunk;
   });
   child.stdout?.resume();
-  return withinBound(once(child, 'close'), E2E_READY_DEADLINE_MS, 'supervisor-main exit').then(
+  return withinBound(once(child, 'close'), E2E_SUPERVISOR_CLOSE_BOUND_MS, 'supervisor-main exit').then(
     ([code]: unknown[]) => ({ code: typeof code === 'number' ? code : null, stderr }),
     (error: unknown) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}; stderr: ${stderr}`, { cause: error });
@@ -63,7 +65,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
 };
 
 const manualE2eRoot = (context: CleanupContext): string => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `mme-${runToken()}-`));
+  const root = fs.mkdtempSync(path.join(e2eTmpRoot(), `mme-${runToken()}-`));
   registerCleanup(context, () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -193,10 +195,10 @@ describe('supervisor-main lifeline and pipes', () => {
     expect(supervisor.stderrTail().length).toBeGreaterThan(0);
     expect(Buffer.byteLength(supervisor.stderrTail())).toBeLessThanOrEqual(STDERR_TAIL_BYTES);
     supervisor.child.stdin.end();
-    await expect(withinBound(supervisor.exited, E2E_READY_DEADLINE_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
+    await expect(withinBound(supervisor.exited, E2E_SUPERVISOR_CLOSE_BOUND_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
   });
 
-  it('a parent that is SIGKILLed leaves no supervisor and no daemon', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+  it('a parent that is SIGKILLed leaves no supervisor and no daemon', { timeout: PARENT_KILLED_TIMEOUT_MS }, async (context) => {
     const home = await createE2eHome();
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, socketPath: home.upstreamSocket });
     registerE2eCleanup(() => fake.close());

@@ -96,9 +96,9 @@ describe('worker shutdown through abort', () => {
   it('writes nothing during cancel recovery and leaves the run CANCELLING with the lease cleared', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Mark it');
-    env.seed(run.id, markCallSeed(run.id), 'crash');
+    await env.seed(run.id, markCallSeed(run.id), 'crash');
     env.store.idempotency.begin(toolKey(run.id, 1, 'call_m_1'), { expiresAt: START_MS + 86_400_000, meta: { tool: 'Mark' } });
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const reconcileReached = deferred<void>();
     const reconcileGate = deferred<void>();
     env.toolbox.reconcileHook = async () => {
@@ -127,8 +127,8 @@ describe('worker shutdown through abort', () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
     const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
-    env.seed(run.id, [{ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body }], 'crash');
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await env.seed(run.id, [{ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body }], 'crash');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const cancelReached = deferred<void>();
     const cancelGate = deferred<void>();
     env.gateway.cancelHook = async () => {

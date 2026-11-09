@@ -31,7 +31,7 @@ describe('cancel recovery of an interrupted call', () => {
     const runs: string[] = [];
     const run = env.enqueue('Touch it');
     const key = toolKey(run.id, 1, 'call_t_1');
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_t_1', name: 'Touch', args: { value: 'a' } })], usage: USAGE } },
@@ -41,7 +41,7 @@ describe('cancel recovery of an interrupted call', () => {
       'crash',
     );
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Touch' } });
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [...env.toolbox.tools(), touchTool(runs)] }));
 
@@ -151,7 +151,7 @@ describe('incomplete responses', () => {
   it('recovers a crash after a recorded incomplete answer to STOPPED(max_tokens)', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Long');
-    env.seed(
+    await env.seed(
       run.id,
       [
         {
@@ -192,7 +192,7 @@ describe('final-summary guard on recovery', () => {
       { type: 'model.requested', step: 2, attempt: 1, digest: bodyDigest(summaryBody), body: summaryBody },
       { type: 'model.responded', step: 2, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_e_2', name: 'Echo', args: { value: 'y' } })], usage: USAGE } },
     ];
-    env.seed(run.id, payloads, 'crash');
+    await env.seed(run.id, payloads, 'crash');
 
     await env.runOnce(env.worker());
 

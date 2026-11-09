@@ -82,7 +82,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Targets for Apple's `fm`, chat-completions servers, Open Responses servers, Anthropic, and Ollama. An alias names one target or an ordered list of targets. `momonga gateway probe <target>` measures a target's capabilities and records the result.
 - **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background jobs), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), and `activate_skill`.
-- **Permission modes.** `default`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`.
+- **Permission modes.** `default`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
 - **Policy verification.** `momonga policy verify` checks the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not.
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
@@ -211,6 +211,18 @@ The values in `capabilities` are what you declare for your model; set them to th
 
 Other keys under `models`: `roles` (an alias for `compaction`, `reflection`, or `analysis` calls), `dialects`, `billingChanges`, `headersTimeoutMs`, and `idleTimeoutMs`. A target can also set `billing`, `maxConcurrency`, and `admissionTimeoutMs`.
 
+### Permission rules
+
+In the example above, `Bash(npm test:*)` allows every command whose first words are `npm test`, with any options after them. A rule matches only when its words are the first words of the command, with nothing between them: `git -c core.pager=<program> log` does not match `Bash(git log:*)`, but it does match `Bash(git:*)`.
+
+A `Bash(...)` allow rule matches the command text literally, as in Claude Code, and does not check what the options of the program do. So it also allows options that make the program run another program, such as `npm test --script-shell=<program>` under `Bash(npm test:*)`, `find . -exec <program> {} \;` under `Bash(find:*)`, or `git -c core.pager=<program> log` under `Bash(git:*)`. Write an allow rule only for a program whose every option you accept.
+
+A command allowed this way still runs inside the sandbox. Network access is denied. File deny rules, such as `Read(...)` and `Edit(...)`, are enforced by the operating system, so no program the command starts can read or write a denied path. The command can write only where the sandbox allows writes. A `Bash(...)` deny rule, such as `Bash(rm:*)` in the example, matches only the command text, so it does not stop a program that an allowed command starts through an option.
+
+With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
+
+[docs/threat-model.md](docs/threat-model.md) states these and the other risks that Momonga Code accepts by design.
+
 ### Other settings
 
 | Key | Meaning |
@@ -325,6 +337,8 @@ Building a release executable is done with `npm run sea` (see `scripts/sea.ts`).
 ## 10. License
 
 Momonga Code is open source under the MIT License. See the [`LICENSE`](LICENSE) file.
+
+Bundles ripgrep (MIT or Unlicense); see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
 
 ## 11. Disclaimer
 

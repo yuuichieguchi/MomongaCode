@@ -7,7 +7,7 @@ import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
 import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
-const TODAYS_KILL_WAIT_FLOOR_MS = 1000;
+const RETIRED_KILL_WAIT_FLOOR_MS = 1000;
 const TODAYS_POLL_INTERVAL_MS = 10;
 const DESIGNED_POLL_INTERVAL_MS = 25;
 const ABORT_SETTLE_LIMIT_MS = heldCallWaitMs(0) - SANDBOX_STOP_BOUND_MS;
@@ -33,7 +33,7 @@ describe('HB2: the bound of stopping a process group', () => {
     expect(ABORT_SETTLE_LIMIT_MS).toBe(2000);
     expect(RUNTIME_ABORT_BUDGET_MS).toBe(5000);
     expect(groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS)).toBe(SANDBOX_STOP_BOUND_MS);
-    expect(groupTerminationBoundMs(0)).toBe(2 * TODAYS_POLL_INTERVAL_MS + TODAYS_KILL_WAIT_FLOOR_MS);
+    expect(groupTerminationBoundMs(0)).toBe(2 * TODAYS_POLL_INTERVAL_MS);
   });
 
   it(
@@ -52,17 +52,17 @@ describe('HB2: the bound of stopping a process group', () => {
   );
 
   it(
-    'K1w refutes that the wait after SIGKILL stays within one grace plus one poll while the wait is floored at 1000 ms, as today',
+    'K1w refutes that the wait after SIGKILL stays within one grace plus one poll while the wait is floored at 1000 ms, as it was before the floor was removed',
     async () => {
       const arith = proofArith(z3.engine().api, 'K1w');
       const grace = arith.int('g');
       const poll = arith.int('p');
       arith.given(grace.ge(0), poll.gt(0));
-      const floored = arith.max(grace, arith.ctx.Int.val(BigInt(TODAYS_KILL_WAIT_FLOOR_MS)));
+      const floored = arith.max(grace, arith.ctx.Int.val(BigInt(RETIRED_KILL_WAIT_FLOOR_MS)));
       const afterKill = waitOf(arith, 'afterKill', floored, poll);
       expect(await satisfiable(arith)).toBe(true);
       const model = await expectRefuted(arith, afterKill.le(grace.add(poll)));
-      expect(BigInt(model.g as string)).toBeLessThan(BigInt(TODAYS_KILL_WAIT_FLOOR_MS));
+      expect(BigInt(model.g as string)).toBeLessThan(BigInt(RETIRED_KILL_WAIT_FLOOR_MS));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
+import { DEFAULT_KEEP_RECENT_TURNS } from '../packages/context/src/levels.ts';
 import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { skipCase, titleOf } from './support/cases.ts';
@@ -16,6 +17,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { startStack } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
@@ -76,7 +78,7 @@ const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> =>
 type Json = Record<string, any>;
 
 const rawClient = (home: E2eHome) => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   const call = async (method: string, target: string, body?: unknown): Promise<{ status: number; json: Json }> => {
     const response = await client.request({
       method,
@@ -175,7 +177,11 @@ describe('g: agent skills', () => {
         const tools = (post.body as { tools?: { function?: { name?: string } }[] }).tools ?? [];
         expect(tools.map((tool) => tool.function?.name)).toContain('activate_skill');
       }
-      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').map((event) => event.data['message'])).toEqual([]);
+      for (const [turn, runId] of [first.id, ...later].entries()) {
+        const journalOfRun = journalOf(home, runId);
+        const reductions = ofType(journalOfRun, 'context.compacted').map(() => ({ code: 'recent_turns_shrunk', reduction: { turn, from: DEFAULT_KEEP_RECENT_TURNS, to: 1 } }));
+        expect(ofType(journalOfRun, 'notice').map((event) => ({ code: event.data['code'], reduction: event.data['reduction'] }))).toEqual(reductions);
+      }
     } finally {
       await runtime.close();
     }

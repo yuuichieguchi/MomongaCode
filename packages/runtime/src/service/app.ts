@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
+import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
@@ -41,6 +42,7 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
 import { registerGuidelineRoutes } from './guidelines.ts';
 import { registerMemoryRoutes } from './memories.ts';
+import { registerMarkerRoutes } from './markers.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
@@ -73,6 +75,7 @@ export type RunAppDeps = {
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   evidenceRun: (project: string) => EvidenceRun;
@@ -90,6 +93,7 @@ export type RunAppDeps = {
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
+  markerOwners: MarkerOwners;
   onError: (error: unknown) => void;
 };
 
@@ -188,19 +192,23 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const sessionSettingsOf = async (cwd: string): Promise<SessionCreateSettings> => {
+  const settingsThrough = async (load: (cwd: string) => Promise<SessionCreateSettings>, cwd: string): Promise<SessionCreateSettings> => {
     try {
-      return await deps.sessionCreateSettings(cwd);
+      return await load(cwd);
     } catch (error) {
       if (error instanceof ConfigError) throw configError(error.message);
       throw error;
     }
   };
 
+  const sessionSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionCreateSettings, cwd);
+
+  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionReadSettings, cwd);
+
   const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
     const view = toSessionView(store, session);
     if (session.permissionMode !== 'auto') return view;
-    const settings = loaded ?? (await sessionSettingsOf(session.cwd));
+    const settings = loaded ?? (await sessionReadSettingsOf(session.cwd));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
     const autoClassifier = await readAutoClassifierView({ alias: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
     return { ...view, autoClassifier };
@@ -263,7 +271,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
-      const settings = await sessionSettingsOf(session.cwd);
+      const settings = await sessionReadSettingsOf(session.cwd);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
     }
     if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
@@ -337,6 +345,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (drained !== undefined) return drained;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
+    await sessionSettingsOf(session.cwd);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     if (body.images !== undefined && body.images.length > 0) {
       let capabilities: Capabilities;
@@ -384,14 +393,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const runAnsweredBy: Handler = (context) => json({ answeredBy: answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
+  const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
 
   const getRun: Handler = (context) => json({ run: toRunView(requireRun(context.req.param('id') ?? '')) });
 
-  const cancelRun: Handler = (context) => {
+  const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
-    const result = store.requestCancel(id);
+    const result = await store.requestCancel(id);
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
+    if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);
   };
@@ -450,14 +460,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return new Response(`${text}${chargesText === '' ? '' : `\n${chargesText}`}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   };
 
-  const listRunApprovals: Handler = (context) => {
+  const listRunApprovals: Handler = async (context) => {
     const run = requireRun(context.req.param('id') ?? '');
-    return json({ approvals: store.pendingApprovalViews(run.id) });
+    return json({ approvals: await store.pendingApprovalViews(run.id) });
   };
 
-  const getApproval: Handler = (context) => {
+  const getApproval: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
-    const approval = store.approvalView(id);
+    const approval = await store.approvalView(id);
     if (approval === undefined) throw notFound(`approval ${id} does not exist`);
     return json({ approval });
   };
@@ -478,7 +488,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       case 'option_not_offered':
         throw invalidRequest(`option ${body.optionId} was not offered for approval ${id}`, 'optionId');
       case 'ok': {
-        const approval = store.approvalView(result.approval.id);
+        const approval = await store.approvalView(result.approval.id);
         if (approval === undefined) throw new Error(`approval ${result.approval.id} vanished after it was resolved`);
         return json({ approval, run: toRunView(result.run) });
       }
@@ -504,10 +514,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const source: EventSource = {
       read: (after, limit) => {
         const current = requireRun(run.id);
-        return { events: store.readRunEvents(run.id, after, limit), endsAt: isTerminalStatus(current.status) ? current.lastSeq : undefined };
+        return { events: store.readRunEventStream(run.id, after, limit), endsAt: isTerminalStatus(current.status) ? current.lastSeq : undefined };
       },
       cursorOf: (event) => {
-        if (!('seq' in event)) throw new Error(`run ${run.id} stream read a session event`);
+        if (!('seq' in event) || event.seq === null) throw new Error(`run ${run.id} stream read a session event`);
         return event.seq;
       },
     };
@@ -518,7 +528,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     const cursor = parseCursor(context.req.raw, store.sessionMaxEventId(session.id));
     const source: EventSource = {
-      read: (after, limit) => ({ events: store.readSessionEvents(session.id, after, limit), endsAt: undefined }),
+      read: (after, limit) => ({ events: store.readSessionEventStream(session.id, after, limit), endsAt: undefined }),
       cursorOf: (event) => event.id,
     };
     return streamOf(context, source, cursor, (wake) => notifier.watchSession(session.id, wake));
@@ -560,6 +570,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
   });
+  registerMarkerRoutes(route, { home: deps.home, owners: deps.markerOwners, closeSignal: deps.closeSignal });
   registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
 
   app.notFound(() => errorResponse(notFound('no such route')));

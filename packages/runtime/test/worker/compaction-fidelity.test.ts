@@ -46,7 +46,7 @@ const conversation = (handle?: string, readOutput = 'contents'): RunEventPayload
 const prepare = async (payloads: RunEventPayload[] = conversation()) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   const run = env.enqueue('question one');
-  env.seed(run.id, payloads, 'release');
+  await env.seed(run.id, payloads, 'release');
   return { env, run };
 };
 
@@ -110,7 +110,7 @@ describe('a model summary that passes the check', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
     const { handle } = await env.store.blobs.put('full output naming src/deep/only-in-blob.ts', { mediaType: 'text/plain', runId: run.id });
-    env.seed(run.id, conversation(handle, 'head [truncated]'), 'release');
+    await env.seed(run.id, conversation(handle, 'head [truncated]'), 'release');
     env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/deep/only-in-blob.ts'));
     await runToEnd(env);
     expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'model', fidelity: { fabricated: [] } });
@@ -130,7 +130,7 @@ describe('a model summary that passes the check', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'Never touch src/pinned/rule.ts');
     const run = env.enqueue('question one');
-    env.seed(run.id, conversation(), 'release');
+    await env.seed(run.id, conversation(), 'release');
     env.gateway.compactSummaries.push(CLEAN.replace('GOAL:\ng', 'GOAL:\nkeep `src/pinned/rule.ts` untouched'));
     await runToEnd(env);
     expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'model', fidelity: { fabricated: [] } });
@@ -140,7 +140,7 @@ describe('a model summary that passes the check', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'Never touch src/pinned/rule.ts');
     const run = env.enqueue('question one');
-    env.seed(run.id, conversation(), 'release');
+    await env.seed(run.id, conversation(), 'release');
     env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/pinned/rule.ts'));
     await runToEnd(env);
     expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'deterministic', fidelity: { fabricated: ['src/pinned/rule.ts'] } });
@@ -305,7 +305,7 @@ describe('replay and recovery', () => {
     const deterministic = compactionSummaryMessage('recorded', 'code');
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
-    env.seed(run.id, [...payloads.slice(0, 7), { type: 'context.compacted', item: deterministic, summary: 'recorded', replacedThroughSeq: 6, source: 'deterministic' }, ...payloads.slice(7)], 'crash');
+    await env.seed(run.id, [...payloads.slice(0, 7), { type: 'context.compacted', item: deterministic, summary: 'recorded', replacedThroughSeq: 6, source: 'deterministic' }, ...payloads.slice(7)], 'crash');
     await runToEnd(env);
     expect(env.gateway.compacts).toEqual([]);
     expect(env.fold(run.id).summary?.item).toEqual(deterministic);
@@ -317,7 +317,7 @@ describe('unchanged behaviour', () => {
   it('never rejects a message summary at the gateway', async () => {
     const env = await makeEnv();
     const run = env.enqueue('question one');
-    env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s', 'code'), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
+    await env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s', 'code'), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
     await runToEnd(env);
     expect(env.ofType(run.id, 'context.compaction_rejected')).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -326,7 +326,7 @@ describe('unchanged behaviour', () => {
   it('still stops on a CompactionBlock, with no deterministic summary', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(8192) });
     const run = env.enqueue('question one');
-    env.seed(run.id, [responded(1, [assistantMessage('m1', 'y'.repeat(60_000))]), { type: 'user.message', text: 'question two' }], 'release');
+    await env.seed(run.id, [responded(1, [assistantMessage('m1', 'y'.repeat(60_000))]), { type: 'user.message', text: 'question two' }], 'release');
     await env.runOnce(env.worker());
     expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
     expect(env.gateway.compacts).toEqual([]);

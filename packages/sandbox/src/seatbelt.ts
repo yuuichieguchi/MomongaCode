@@ -4,7 +4,7 @@ import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
 import { buildSeatbeltProfile } from './profile.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
-import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
+import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
 
@@ -23,7 +23,7 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
 
   return {
     kind: 'seatbelt',
-    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
+    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess {
       for (const root of policy.writableRoots) assertExistingDirectory(root);
       if (command.tmpDir !== undefined) {
         assertExistingDirectory(command.tmpDir);
@@ -33,6 +33,7 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
           cwd: command.cwd,
           ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+        ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
           ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
           env: { ...command.env, TMPDIR: command.tmpDir },
           signal,
@@ -49,6 +50,7 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           args: ['-p', profile, ...paramArgsOf(params), '--', ...command.argv],
           cwd: command.cwd,
           ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+        ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
           ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
           env: { ...command.env, TMPDIR: tmpDir },
           signal,

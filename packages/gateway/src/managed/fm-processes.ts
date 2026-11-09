@@ -31,8 +31,13 @@ export { createExecWithStdin } from '@momonga/foundation';
 
 export const createPlainSpawn =
   (env: ChildEnv | undefined): SpawnFn =>
-  (file, args) =>
-    nodeSpawn(file, [...args], { ...envOption(env), stdio: 'ignore' });
+  (file, args) => {
+    const child = nodeSpawn(file, [...args], { ...envOption(env), stdio: 'ignore' });
+    return {
+      kill: async (signal) => child.kill(signal),
+      once: child.once.bind(child) as FmChild['once'],
+    };
+  };
 
 const MARKER_FD_INDEX = 3;
 
@@ -43,9 +48,9 @@ const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSin
   child.once('error', removeMarker);
   if (child.pid !== undefined) fs.writeFileSync(marker, `${child.pid}\n`);
   return {
-    kill: (signal = 'SIGTERM') => {
+    kill: async (signal = 'SIGTERM', stop) => {
       if (child.pid === undefined) return false;
-      signalGroup(child.pid, signal);
+      await signalGroup(child.pid, signal, undefined, stop);
       return true;
     },
     finalize: async (graceMs) => {
@@ -61,7 +66,16 @@ export const createGroupSpawn =
   ({ env, markerDirectory, onWarning }: GroupSpawnOptions): SpawnFn =>
   (file, args) => {
     const marker = path.join(markerDirectory, randomUUID());
-    const markerFd = fs.openSync(marker, 'w', 0o600);
+    const creator = fs.openSync(marker, 'w', 0o600);
+    let markerFd: number;
+    try {
+      markerFd = fs.openSync(marker, 'r');
+    } catch (error) {
+      fs.rmSync(marker, { force: true });
+      throw error;
+    } finally {
+      fs.closeSync(creator);
+    }
     const stdio: Array<'ignore' | number> = ['ignore', 'ignore', 'ignore'];
     stdio[MARKER_FD_INDEX] = markerFd;
     let child: ChildProcess;

@@ -17,26 +17,30 @@ if (process.env['LIFELINE_GRANDCHILD'] === '1') {
 
 const keepAlive = setInterval(() => undefined, 60_000);
 
-const dispose = watchLifeline(3, () => {
-  calls += 1;
-  if (resultFile !== undefined) fs.writeFileSync(resultFile, 'eof');
-  report('eof');
-  if (process.env['LIFELINE_COUNT'] === '1') {
-    setTimeout(() => {
-      report(`calls ${calls}`);
-      clearInterval(keepAlive);
-      process.exitCode = 0;
-    }, 500);
-    return;
-  }
-  clearInterval(keepAlive);
-  process.exitCode = 0;
+const watch = watchLifeline(3, {
+  onLine: () => undefined,
+  onOverlongLine: () => undefined,
+  onEnd: () => {
+    calls += 1;
+    if (resultFile !== undefined) fs.writeFileSync(resultFile, 'eof');
+    report('eof');
+    if (process.env['LIFELINE_COUNT'] === '1') {
+      setTimeout(() => {
+        report(`calls ${calls}`);
+        clearInterval(keepAlive);
+        process.exitCode = 0;
+      }, 500);
+      return;
+    }
+    clearInterval(keepAlive);
+    process.exitCode = 0;
+  },
 });
 
 if (resultFile !== undefined) fs.writeFileSync(`${resultFile}.watching`, '');
 
 if (process.env['LIFELINE_DISPOSE'] === '1') {
-  dispose();
+  watch.dispose();
   report('disposed');
   setTimeout(() => {
     report(`calls ${calls}`);

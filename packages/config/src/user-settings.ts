@@ -1,8 +1,14 @@
 import fs from 'node:fs';
-import { isTransientErrno } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, isTransientErrno } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
+import type { JsonFile } from './json-file.ts';
+import { createKeptSettings } from './kept-settings.ts';
+import type { KeptRecords, KeptSettings } from './kept-settings.ts';
+import { keptOrThrow } from './last-good.ts';
+import type { Kept } from './last-good.ts';
 import { layoutOf } from './layout.ts';
-import { readUserLayer } from './layers.ts';
+import { readUserJsonFile, readUserLayer, userLayerFrom, userSettingsFile } from './layers.ts';
 import type { UserLayer } from './layers.ts';
 import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
@@ -15,9 +21,9 @@ export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: str
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-const readUserSettingsSync = (home: string): UserSettingsLoad => {
+const userSettingsFrom = (home: string, read: JsonFile): UserSettingsLoad => {
   try {
-    const user = readUserLayer(home);
+    const user = userLayerFrom(home, read);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
@@ -30,7 +36,7 @@ const readUserSettingsSync = (home: string): UserSettingsLoad => {
 };
 
 const loadUserSettingsSync = (home: string): LoadUserSettingsResult => {
-  const { settings, user, warnings } = readUserSettingsSync(home);
+  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home));
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
@@ -55,13 +61,17 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
 
 export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
 
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void };
+export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords };
 
-export type UserSettingsSnapshot = { settings: ResolvedSettings; user: UserLayer } | { error: ConfigError };
+export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
+
+export type UserSettingsSnapshot = UserSettingsLoaded | { error: ConfigError };
 
 export type UserSettingsCache = {
   get(): ResolvedSettings;
+  read(): UserSettingsLoaded;
   snapshot(): UserSettingsSnapshot;
+  kept: KeptSettings;
 };
 
 const changeKeyOf = (file: string): string => {
@@ -76,19 +86,27 @@ const changeKeyOf = (file: string): string => {
 
 export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
 
-export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSettingsCacheOptions): UserSettingsCache => {
+  const file = userSettingsFile(home);
+  const kept = createKeptSettings({ records: keptRecords, onWarning });
   let latest: UserSettingsSnapshot | undefined;
-  let lastGood: ResolvedSettings | undefined;
+  let lastGood: Kept<UserSettingsLoaded>;
   let seenKey: string | undefined;
+  let failedKey = '';
 
-  let warnedFailure: string | undefined;
+  const keptCopy = (): Kept<UserSettingsLoaded> => {
+    if (lastGood !== undefined) return lastGood;
+    const recalled = kept.recall(file);
+    if (recalled === undefined) return undefined;
+    const rebuilt = userSettingsFrom(home, recalled.value);
+    lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
+    return lastGood;
+  };
 
   const failWith = (error: ConfigError, key: string | undefined): void => {
     latest = { error };
-    const failure = `${key}\u0000${error.message}`;
-    if (lastGood === undefined || failure === warnedFailure) return;
-    warnedFailure = failure;
-    onWarning(`settings file is invalid: ${error.message}`);
+    failedKey = key ?? '';
+    if (keptCopy() !== undefined) kept.report(file, { kind: 'invalid', error, identity: failedKey });
   };
 
   const refresh = (): UserSettingsSnapshot => {
@@ -104,11 +122,13 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
     if (latest !== undefined && !('error' in latest) && key === seenKey) return latest;
     seenKey = key;
     try {
-      const loaded = readUserSettingsSync(home);
+      const read = readUserJsonFile(home);
+      const loaded = userSettingsFrom(home, read);
       for (const warning of loaded.warnings) onWarning(warning);
-      lastGood = loaded.settings;
-      warnedFailure = undefined;
-      latest = { settings: loaded.settings, user: loaded.user };
+      kept.remember(file, read);
+      const current = { settings: loaded.settings, user: loaded.user };
+      latest = current;
+      lastGood = { value: current };
     } catch (error) {
       if (isTransientErrno(error)) seenKey = undefined;
       rethrowIfTransient(error);
@@ -117,20 +137,53 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
     return latest as UserSettingsSnapshot;
   };
 
+  const read = (): UserSettingsLoaded => {
+    let snapshot: UserSettingsSnapshot;
+    try {
+      snapshot = refresh();
+    } catch (error) {
+      if (!isTransientErrno(error)) throw error;
+      return keptOrThrow('read', lastGood, error);
+    }
+    if (!('error' in snapshot)) return snapshot;
+    const copy = keptOrThrow('read', keptCopy(), snapshot.error);
+    const notice = kept.report(file, { kind: 'invalid', error: snapshot.error, identity: failedKey });
+    return { settings: copy.settings, user: { ...copy.user, warnings: [...copy.user.warnings, notice] } };
+  };
+
   return {
-    get: () => {
-      let snapshot: UserSettingsSnapshot;
-      try {
-        snapshot = refresh();
-      } catch (error) {
-        if (isTransientErrno(error) && lastGood !== undefined) return lastGood;
-        throw error;
-      }
-      if (!('error' in snapshot)) return snapshot.settings;
-      if (lastGood === undefined) throw snapshot.error;
-      return lastGood;
-    },
+    get: () => read().settings,
+    read,
     snapshot: refresh,
+    kept,
+  };
+};
+
+
+export const readUserStopValues = (home: string): StopValues => loadUserSettingsSync(home).settings.gateway;
+
+export type StopValuesReaderOptions = { load(): StopValues; onNotice(message: string): void };
+
+export type StopValuesReader = { read(): StopValues; remember(values: StopValues): void };
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const createStopValuesReader = ({ load, onNotice }: StopValuesReaderOptions): StopValuesReader => {
+  let lastValid: StopValues | undefined;
+  return {
+    read: () => {
+      try {
+        lastValid = load();
+        return lastValid;
+      } catch (error) {
+        const kept = lastValid;
+        onNotice(`the stop values could not be read from the user settings (${messageOf(error)}); ${kept === undefined ? 'the default values were used' : 'the values last read were used'}`);
+        return kept ?? DEFAULT_STOP_VALUES;
+      }
+    },
+    remember: (values) => {
+      lastValid = values;
+    },
   };
 };
 

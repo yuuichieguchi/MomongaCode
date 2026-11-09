@@ -19,7 +19,10 @@ export type WalkOptions = {
   includeSymlinkedFiles: boolean;
   signal: AbortSignal;
   onUnreadable(): void;
+  onRuleBlocked(entry: RuleBlockedEntry): void;
 };
+
+export type RuleBlockedEntry = { absolute: string; isDirectory: boolean };
 
 export type Blocks = {
   blocksResolved(resolved: string): boolean;
@@ -149,7 +152,10 @@ async function* walkDirectory(
       }
       continue;
     }
-    if (!entry.isSymbolicLink() && denied.blockedByForms(absolute, absolute, options.tool) !== undefined) continue;
+    if (!entry.isSymbolicLink() && denied.blockedByForms(absolute, absolute, options.tool) !== undefined) {
+      if (!isIgnored(active, relative, entry.isDirectory())) options.onRuleBlocked({ absolute, isDirectory: entry.isDirectory() });
+      continue;
+    }
     let isDirectory = entry.isDirectory();
     let isFile = entry.isFile();
     if (entry.isSymbolicLink()) {

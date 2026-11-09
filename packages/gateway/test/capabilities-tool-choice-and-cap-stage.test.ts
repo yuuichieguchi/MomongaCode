@@ -10,6 +10,7 @@ import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
 import { makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 type Harness = Awaited<ReturnType<typeof startGateway>>;
 
@@ -68,7 +69,7 @@ const breakerOf = async (harness: Harness, name: string) => (await getJson(harne
 const openResponsesTarget = async () => {
   const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['from remote']), openResponsesTextReply(['from remote'])] });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

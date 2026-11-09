@@ -9,6 +9,7 @@ import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
+import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 
 const ALIAS = 'default';
 
@@ -56,8 +57,8 @@ beforeAll(async () => {
     }),
     { mode: 0o600 },
   );
-  const gateway = await startGatewayProcess({ home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
-  const client = createGatewayClient({ socketPath: gateway.socketPath, clock: fakeClock(), version: CLIENT_VERSION });
+  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 

@@ -23,7 +23,7 @@ export type DistributionFiles = Pick<FileSystem, 'readFile' | 'mkdir' | 'rm' | '
 export type DistributionPorts = {
   asset(name: string): Uint8Array;
   files: DistributionFiles;
-  cacheBase: string;
+  executablesRoot: string;
   random(): number;
 };
 
@@ -80,7 +80,7 @@ const extract = async (ports: DistributionPorts, manifest: Z3Manifest, directory
 
 export const ensureBundledZ3 = async (ports: DistributionPorts): Promise<BundledZ3> => {
   const manifest = parseZ3Manifest(new TextDecoder().decode(ports.asset(Z3_MANIFEST_ASSET)));
-  const directory = path.join(ports.cacheBase, `z3-${manifest.contentHash.slice(0, 16)}`);
+  const directory = path.join(ports.executablesRoot, `z3-${manifest.contentHash.slice(0, 16)}`);
   if (!(await ports.files.exists(directory))) await extract(ports, manifest, directory);
   for (const file of manifest.files) {
     const bytes = await ports.files.readFile(path.join(directory, file.name));

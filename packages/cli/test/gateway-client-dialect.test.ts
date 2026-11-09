@@ -3,6 +3,7 @@ import path from 'node:path';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
+import { fixedSocket } from '@momonga/foundation';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 import type { GatewayClient } from '../src/client/gateway-client.ts';
 
@@ -28,7 +29,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createGatewayClient({ socketPath });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(socketPath) });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();
@@ -40,7 +41,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
 describe('the gateway client reads a dialect id as an open string', () => {
   it.for(['json-schema-2020-12', 'explicit-keys', 'strict-closed', 'inlined-subset', 'ordered-subset'])('accepts the dialect id %s', async (id, context) => {
     const client = await serveModels(context, id);
-    expect((await client.capabilitiesOf('default')).schemaDialect).toBe(id);
+    expect(await client.capabilitiesOf('default')).toMatchObject({ schemaDialect: id });
   });
 
   it.for([

@@ -1,5 +1,5 @@
 import { parseOutsideJson } from '@momonga/foundation';
-import { RELIABILITY_FORMAT } from '@momonga/protocol';
+import { RELIABILITY_FORMAT, RETIRED_RELIABILITY_FORMATS } from '@momonga/protocol';
 import { GROUP_KEYS } from './types.ts';
 import type { Indicators } from './types.ts';
 import { REPORT_KINDS } from './report.ts';
@@ -45,6 +45,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       cancelled: countAt(buckets, 'cancelled', `${path}.buckets`),
       pendingFacts: countAt(buckets, 'pendingFacts', `${path}.buckets`),
       factsUnavailable: countAt(buckets, 'factsUnavailable', `${path}.buckets`),
+      unknownValues: countAt(buckets, 'unknownValues', `${path}.buckets`),
     },
     completion: {
       k: countAt(completion, 'k', `${path}.completion`),
@@ -150,7 +151,11 @@ export const encodeReliabilityReport = (report: ReliabilityReport): string => JS
 
 export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   const fields = fieldsAt(parseOutsideJson(text), 'report');
-  if (fields['format'] !== RELIABILITY_FORMAT) {
+  const format = fields['format'];
+  if (typeof format === 'string' && Object.hasOwn(RETIRED_RELIABILITY_FORMATS, format)) {
+    throw new TypeError(`${format} reports do not record ${RETIRED_RELIABILITY_FORMATS[format]}, so ${format} is retired; rebuild the report as ${RELIABILITY_FORMAT}`);
+  }
+  if (format !== RELIABILITY_FORMAT) {
     throw new TypeError(`${RELIABILITY_FORMAT}: the report declares format ${JSON.stringify(fields['format'])}, which is not supported`);
   }
   const kind = REPORT_KINDS.find((candidate) => candidate === fields['kind']);

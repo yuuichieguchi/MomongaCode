@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { RunEventPayload, ToolKind } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
+import { groupAlive } from '@momonga/foundation';
 import { killGroupsForCleanup } from '@momonga/testkit';
 import { START_MS, capabilitiesFor, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -21,14 +22,7 @@ afterEach(async () => {
   await killGroupsForCleanup(groups.splice(0));
 });
 
-export const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const pinnedStart = (): RunEventPayload => ({
   type: 'run.started',
@@ -40,7 +34,7 @@ export const pinnedStart = (): RunEventPayload => ({
 
 export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown> };
 
-export const seedStartedCalls = (env: Env, calls: readonly StartedCall[], options: { cancel?: boolean } = {}) => {
+export const seedStartedCalls = async (env: Env, calls: readonly StartedCall[], options: { cancel?: boolean } = {}) => {
   const run = env.enqueue('Work');
   const keys = Object.fromEntries(calls.map((call) => [call.callId, toolKey(run.id, 1, call.callId)]));
   const payloads: RunEventPayload[] = [
@@ -57,9 +51,9 @@ export const seedStartedCalls = (env: Env, calls: readonly StartedCall[], option
       { type: 'tool.started', callId: call.callId, idemKey: keys[call.callId] as string },
     ]),
   ];
-  env.seed(run.id, payloads, 'crash');
+  await env.seed(run.id, payloads, 'crash');
   for (const call of calls) env.store.idempotency.begin(keys[call.callId] as string, { expiresAt: START_MS + 86_400_000, meta: { tool: call.name } });
-  if (options.cancel !== false && env.cancel(run.id).status !== 'CANCELLING') throw new Error('expected the run to be CANCELLING');
+  if (options.cancel !== false && (await env.cancel(run.id)).status !== 'CANCELLING') throw new Error('expected the run to be CANCELLING');
   return { run, keys };
 };
 

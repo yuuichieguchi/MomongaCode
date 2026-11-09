@@ -7,6 +7,7 @@ import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
+import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 
 const GATEWAY_VERSION = '1.10.0-test';
 const REPLY_TEXT = 'Hello there';
@@ -49,9 +50,9 @@ beforeAll(async () => {
     }),
     { mode: 0o600 },
   );
-  const gateway = await startGatewayProcess({ home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
+  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
-  const client = createGatewayClient({ socketPath: gateway.socketPath, clock: fakeClock(), version: CLIENT_VERSION });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 
@@ -78,8 +79,9 @@ describe('gateway client against a real gateway', () => {
   });
 
   it('lists the models with their capabilities', async () => {
-    const models = await context.client.models();
-    expect(models.map((model) => model.id)).toEqual(['default']);
+    const listed = await context.client.models();
+    expect(listed.map((model) => model.id)).toEqual(['default']);
+    const models = listed.flatMap((model) => ('probing' in model ? [] : [model]));
     expect(models[0]?.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
     expect(Object.keys(models[0] ?? {}).sort()).toEqual(['capabilities', 'id', 'targetCapabilities', 'targetCounters', 'targets']);
     expect(Object.keys(models[0]?.targetCapabilities ?? {})).toHaveLength(1);
@@ -88,7 +90,8 @@ describe('gateway client against a real gateway', () => {
   });
 
   it('looks up the capabilities of a target of the alias', async () => {
-    const [target] = Object.keys((await context.client.models())[0]?.targetCapabilities ?? {});
+    const [ready] = (await context.client.models()).flatMap((model) => ('probing' in model ? [] : [model]));
+    const [target] = Object.keys(ready?.targetCapabilities ?? {});
     const capabilities = await context.client.capabilities('default', { signal: new AbortController().signal, target: String(target) });
     expect(capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
   });

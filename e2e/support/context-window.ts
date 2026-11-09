@@ -1,14 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
-import type { Capabilities } from '@momonga/protocol';
+import { createTokenMeter, renderWorkingState, workingStateCapFor, workingStateMessage } from '@momonga/context';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, MAX_JOURNAL_SEQ_DIGITS, emptyWorkingFacts, tokensForText } from '@momonga/protocol';
+import { initialRunState } from '@momonga/store';
+import { HISTORY_READ_TOOL_NAME } from '@momonga/tools';
+import type { Capabilities, RunState } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeRoute } from '@momonga/testkit';
 import { sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
 import type { Sizing } from './budget.ts';
 import { runCli } from './cli.ts';
-import { createGatewayCountClient } from './gateway-count.ts';
+import { E2E_MODEL_ALIAS, createGatewayCountClient } from './gateway-count.ts';
+import type { GatewayCountClient } from './gateway-count.ts';
 import type { E2eHome } from './home.ts';
 import { chatCompletions, textReply, toolCallReply } from './upstream.ts';
+import { E2E_MARGIN_MS } from './wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 export const PREFIX_PROBE_TASK = 'Report the size of the prefix.';
 
@@ -42,7 +48,29 @@ export const calibrationRoute: FakeRoute = {
   },
 };
 
-export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number };
+export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number; factlessWorkingStateTokens: number };
+
+const widestFactlessWorkingStateText = (capabilities: Capabilities): string => {
+  const state: RunState = {
+    ...initialRunState({ runId: 'r', sessionId: 's' }),
+    summary: { item: { type: 'message', role: 'user', content: '' }, summary: '', replacedThroughSeq: 1 },
+    evicted: ['call'],
+    workingFacts: { ...emptyWorkingFacts(), replacedThroughEventSeq: Number('9'.repeat(MAX_JOURNAL_SEQ_DIGITS)) },
+  };
+  const text = renderWorkingState(state, {
+    capTokens: workingStateCapFor(capabilities),
+    tokensOf: tokensForText,
+    verificationCommands: [],
+    readers: { history_range: HISTORY_READ_TOOL_NAME },
+  });
+  if (text === undefined) throw new Error('a state with a summary renders no working state');
+  return text;
+};
+
+const factlessWorkingStateTokensOf = async (client: GatewayCountClient, capabilities: Capabilities): Promise<number> => {
+  const meter = createTokenMeter({ counter: { count: (request) => client.gateway.countTokens(request, { signal: AbortSignal.timeout(E2E_MARGIN_MS) }) }, model: E2E_MODEL_ALIAS, capabilities });
+  return meter.countItem(workingStateMessage(widestFactlessWorkingStateText(capabilities)), { callNames: {}, withTools: true });
+};
 
 const calibrationDataset = (): string =>
   JSON.stringify({
@@ -90,9 +118,11 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   if (small === undefined || large === undefined) throw new Error('the calibration needs two file sizes');
   const growth = (entry: { first: number; afterRead: number }): number => entry.afterRead - entry.first;
   const readLineTokens = (growth(large) - growth(small)) / (large.lines - small.lines);
-  const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
+  const client = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
+  const capabilities = await client.capabilities();
   return {
     capabilities,
+    factlessWorkingStateTokens: await factlessWorkingStateTokensOf(client, capabilities),
     person: sizingFor(capabilities, wireTokensOfBody(personRequest.body)),
     benchmark: sizingFor(capabilities, small.first),
     readFixedTokens: growth(small) - small.lines * readLineTokens,

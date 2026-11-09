@@ -12,14 +12,16 @@ describe('recovery inside one turn', () => {
     env.gateway.script.push(...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })), textStep('done'));
     const run = env.enqueue('Fill the context');
     let crashed = false;
+    const steals: Promise<void>[] = [];
     const { store } = recordingStore(env, (payloads) => {
       if (!crashed && payloads.some((payload) => payload.type === 'context.compacted')) {
         crashed = true;
-        stealLease(env);
+        steals.push(stealLease(env));
       }
     });
 
     await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(), store }));
+    await Promise.all(steals);
     expect(crashed).toBe(true);
     expect(env.ofType(run.id, 'context.compacted')).toEqual([]);
 
@@ -39,14 +41,16 @@ describe('recovery inside one turn', () => {
     env.gateway.script.push(...[...'abcdefgh'].map((letter, index) => bigStep(`k${index}`, { letter, size: 1800, pad: '' })), textStep('done'));
     const run = env.enqueue('Fill the context');
     let crashed = false;
+    const steals: Promise<void>[] = [];
     const { store } = recordingStore(env, (payloads) => {
       if (!crashed && payloads.some((payload) => payload.type === 'model.requested') && env.ofType(run.id, 'context.truncated').length > 0) {
         crashed = true;
-        stealLease(env);
+        steals.push(stealLease(env));
       }
     });
 
     await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(), store }));
+    await Promise.all(steals);
     expect(crashed).toBe(true);
     const journaledBefore = env.ofType(run.id, 'context.truncated').map((event) => event.callId);
     expect(journaledBefore).toHaveLength(1);

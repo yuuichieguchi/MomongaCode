@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { COMMON_ENTRY_FLAGS, LOCK_FD_ENV, LOCK_NONCE_ENV, runDaemonEntry } from '@momonga/foundation';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, LOCK_FD_ENV, LOCK_NONCE_ENV, runDaemonEntry } from '@momonga/foundation';
 import type { DaemonDefinition, DaemonHandle } from '@momonga/foundation';
 import { createFakeEntryIo, createFakeKernelLock, withTempDir } from '@momonga/testkit';
 
@@ -27,6 +27,7 @@ describe('lock adoption in the daemon entry', () => {
       version: '1.0.0',
       flags: COMMON_ENTRY_FLAGS,
       maxCloseMs: () => 1000,
+      readStopValues: () => DEFAULT_STOP_VALUES,
       ownLockPath: () => lockPath,
       logPath: (directory) => path.join(directory, '.momonga', 'logs', 'runtime.log'),
       isConfigError: () => false,

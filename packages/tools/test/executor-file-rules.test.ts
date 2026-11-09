@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
@@ -9,7 +11,7 @@ import type { PermissionRule, RuleEffect } from '@momonga/policy';
 import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import type { CallOutcome } from '@momonga/tools';
 import { createReadAccessMatcher } from '../src/read-access.ts';
-import { JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts';
+import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import type { Builtins } from './builtins/fixtures.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { minimalPolicyFor } from './helpers.ts';
@@ -58,16 +60,18 @@ const stream = (text: string): AsyncIterable<Uint8Array> => ({
   },
 });
 
-type Spawned = { command: SandboxCommand; policy: SandboxPolicy };
+type Spawned = { command: SandboxCommand; policy: SandboxPolicy; config: string[] };
 
 const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxCommand) => string): { sandbox: Sandbox; spawned: Spawned[] } => {
   const spawned: Spawned[] = [];
   const sandbox: Sandbox = {
     kind,
     spawn: (command, policy): SandboxedProcess => {
-      spawned.push({ command, policy });
+      if (command.argv[1] === '--version') return { pid: 999_990, pgid: 999_990, stdout: stream('ripgrep 15.2.0\n'), stderr: stream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+      const configFile = command.env?.['RIPGREP_CONFIG_PATH'];
+      spawned.push({ command, policy, config: configFile === undefined ? [] : fs.readFileSync(configFile, 'utf8').split('\n') });
       const text = stdout(command);
-      return { pid: 0, pgid: 0, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
+      return { pid: 999_990, pgid: 999_990, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
     },
   };
   return { sandbox, spawned };
@@ -119,12 +123,72 @@ describe('executor guards read the user file rules', () => {
     expect(output).not.toContain('.env');
   });
 
-  it('omits a denied file from a JavaScript Grep over a directory', async () => {
-    const tools = await makeBuiltins();
+  it.runIf(HAS_RG)('omits a denied file from a ripgrep Grep over a directory under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     const visible = tools.write('notes.txt', 'secret');
-    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
-    expect(resultOf(outcome).output).toBe(inProject(tools, visible));
+    const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } }));
+    const lines = resultOf(outcome).output.split('\n');
+    expect(lines).toContain(inProject(tools, visible));
+    expect(lines.filter((line) => line.includes('.env'))).toEqual([]);
+  });
+
+  it.runIf(HAS_RG)('answers a Grep over a directory with Read(.env) with exactly the visible matches and no unreadable note, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('.env', 'secret');
+    tools.write(path.join('sub', '.env'), 'secret');
+    const visible = tools.write('notes.txt', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+    const content = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, output_mode: 'content' }, options);
+    expect(resultOf(content).output).toBe(`${inProject(tools, visible)}:1:secret`);
+  });
+
+  it.runIf(HAS_RG)('keeps a file that a ! exception carves out of a deny rule in a directory Grep, and agrees with Read on both, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const carved = tools.write(path.join('config', 'sample.env'), 'secret');
+    const denied = tools.write(path.join('config', 'prod.env'), 'secret');
+    const rules = [{ ...ruleOf(tools, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule];
+    const options = withRules(tools, rules, { env: { PATH: RG_PATH, LANG: 'C' } });
+    expect(resultOf(await tools.run('Read', { file_path: carved }, options)).status).toBe('completed');
+    expect(resultOf(await tools.run('Read', { file_path: denied }, options)).status).toBe('failed');
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, carved));
+  });
+
+  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const argumentLimit = Number(execFileSync('/usr/bin/getconf', ['ARG_MAX'], { encoding: 'utf8' }).trim());
+    const stem = 'd'.repeat(230);
+    const deniedDirectory = path.join(tools.layout.project, 'many');
+    fs.mkdirSync(deniedDirectory);
+    const count = Math.ceil(argumentLimit / stem.length) + 100;
+    for (let index = 0; index < count; index += 1) fs.writeFileSync(path.join(deniedDirectory, `${stem}-${index}.env`), 'secret');
+    const visible = tools.write('notes.txt', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('line\nbreak.env', 'secret');
+    tools.write('trailing.env ', 'secret');
+    tools.write('#hash.env', 'secret');
+    const visible = tools.write('line\tbreak.envx', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(*.env)'), ruleOf(tools, 'deny', 'Read(trailing.env*)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+  });
+
+  it.runIf(HAS_RG)('lets no glob the model passes bring back a denied file, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('.env', 'secret');
+    const visible = tools.write('sample.envrc', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, glob: '*.env*' }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
@@ -133,7 +197,8 @@ describe('executor guards read the user file rules', () => {
     const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { sandbox, env: { PATH: RG_PATH, LANG: 'C' } });
     const outcome = await tools.run('Grep', { pattern: 'secret', path: project }, options);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]?.command.argv).toContain('--null');
+    expect(spawned[0]?.config).toContain('--null');
+    expect(spawned[0]?.command.argv).not.toContain('--null');
     expect((spawned[0]?.policy as SandboxPolicy & { fileRules?: unknown }).fileRules).toBe((options.sandboxPolicy as SandboxPolicy & { fileRules: unknown }).fileRules);
     expect(resultOf(outcome).output).toBe(inProject(tools, path.join(project, 'notes.txt')));
   });
@@ -381,22 +446,22 @@ describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', 
   });
 
   const secretsFixture = async (ruleText: string) => {
-    const tools = await makeBuiltins();
+    const tools = await makeBuiltins({ realSandbox: true });
     const secret = tools.write(path.join('secrets', 'k'), 'KEY\n');
     const visible = tools.write('notes.txt', 'KEY\n');
     fs.utimesSync(visible, 2_000_000, 2_000_000);
     fs.utimesSync(secret, 1_000_000, 1_000_000);
-    return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }) };
+    return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: RG_PATH, LANG: 'C' } }) };
   };
 
-  it('a Glob deny hides the file from Glob and leaves Read and Grep alone', async () => {
+  it.runIf(HAS_RG)('a Glob deny hides the file from Glob and leaves Read and Grep alone', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const { tools, secret, visible, options } = await secretsFixture('Glob(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
     expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
     expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
   });
 
-  it('a Grep deny hides the file from Grep and leaves Read and Glob alone', async () => {
+  it.runIf(HAS_RG)('a Grep deny hides the file from Grep and leaves Read and Glob alone', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const { tools, secret, visible, options } = await secretsFixture('Grep(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
     expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));

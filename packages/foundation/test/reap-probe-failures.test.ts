@@ -12,7 +12,10 @@ const inspectorOf = (holders: () => ProbeResult<number[]>): ProcessInspector => 
   startTimeOf: async () => ({ kind: 'gone' }),
   holdersOf: async () => holders(),
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  markerState: async () => 'free',
 });
+
+const LIVE = { signal: new AbortController().signal };
 
 const timing = () => {
   const clock = createFakeClock(0);
@@ -27,15 +30,15 @@ const marker = (context: Parameters<typeof withTempDir>[0]): string => {
 
 describe('findHolders', () => {
   it('lists the holders other than the current process', async () => {
-    expect(await findHolders('/m', inspectorOf(() => ({ kind: 'value', value: [process.pid, 77] })))).toEqual([77]);
+    expect(await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => ({ kind: 'value', value: [process.pid, 77] })) })).toEqual([77]);
   });
 
   it('reports a missing marker as having no holders', async () => {
-    expect(await findHolders('/m', inspectorOf(() => ({ kind: 'gone' })))).toEqual([]);
+    expect(await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => ({ kind: 'gone' })) })).toEqual([]);
   });
 
   it('throws a typed error for a failed probe instead of reporting no holders', async () => {
-    const failure = await findHolders('/m', inspectorOf(() => transient)).then(
+    const failure = await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => transient) }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -46,23 +49,24 @@ describe('findHolders', () => {
 
 const inspectorReporting = (processes: readonly UninspectableProcess[]): ProcessInspector => ({
   startTimeOf: async () => ({ kind: 'gone' }),
-  holdersOf: async (_marker, report) => {
+  holdersOf: async (_marker, _options, report) => {
     for (const process of processes) report?.(process);
     return { kind: 'value', value: [] };
   },
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  markerState: async () => (processes.length > 0 ? 'held' : 'free'),
 });
 
 const aliveRegistry = () => createUninspectableRegistry({ isAlive: () => true });
 
-const ssh = { pid: 77, command: 'ssh-agent', startTicks: '1001' };
-const otherSsh = { pid: 77, command: 'ssh-agent', startTicks: '1002' };
+const ssh = { pid: 77, command: 'ssh-agent', startedAt: 1001 };
+const otherSsh = { pid: 77, command: 'ssh-agent', startedAt: 1002 };
 
 describe('findHolders and reportUninspectableOnce with a process that cannot be inspected', () => {
   it('hands the process to the callback and still lists the holders', async () => {
     const seen: UninspectableProcess[] = [];
     const inspector = inspectorReporting([ssh]);
-    expect(await findHolders('/m', inspector, (process) => void seen.push(process))).toEqual([]);
+    expect(await findHolders('/m', { ...LIVE, inspector, onUninspectable: (process) => void seen.push(process) })).toEqual([]);
     expect(seen).toEqual([ssh]);
   });
 
@@ -70,11 +74,11 @@ describe('findHolders and reportUninspectableOnce with a process that cannot be 
     const warnings: string[] = [];
     const registry = aliveRegistry();
     const report = reportUninspectableOnce((message) => void warnings.push(message), 'tool marker /m', registry);
-    const fresh = { pid: 9001, command: 'sshd', startTicks: '5' };
+    const fresh = { pid: 9001, command: 'sshd', startedAt: 5 };
     report(fresh);
     report(fresh);
     reportUninspectableOnce((message) => void warnings.push(message), 'background job j1', registry)(fresh);
-    report({ ...fresh, startTicks: '6' });
+    report({ ...fresh, startedAt: 6 });
     expect(warnings).toEqual([
       'tool marker /m: process 9001 (sshd) could not be inspected, so it was left alone',
       'background job j1: process 9001 (sshd) could not be inspected, so it was left alone',
@@ -84,7 +88,7 @@ describe('findHolders and reportUninspectableOnce with a process that cannot be 
 });
 
 describe('reapMarkedProcessesWithReport with a process that cannot be inspected', () => {
-  it('completes, removes the marker, and names the process once as one that could not be inspected', async (context) => {
+  it('keeps the marker, signals nothing, and names the process once as one that could not be inspected', async (context) => {
     const file = marker(context);
     const warnings: string[] = [];
     const result = await reapMarkedProcessesWithReport({
@@ -96,12 +100,12 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([ssh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [ssh] });
-    expect(fs.existsSync(file)).toBe(false);
+    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [ssh] });
+    expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
 
-  it('does the same when the recorded group is reconciled', async (context) => {
+  it('keeps the marker in the same way when the recorded group is reconciled', async (context) => {
     const file = marker(context);
     const warnings: string[] = [];
     const gone = Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
@@ -118,7 +122,8 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([otherSsh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [otherSsh] });
+    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [otherSsh] });
+    expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
 
@@ -134,7 +139,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
         label: 'tool',
         onWarning: (message) => void warnings.push(message),
         timing: timing(),
-        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startTicks: '77' }]),
+        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77 }]),
         uninspectable: registry,
       });
     }
@@ -153,7 +158,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
         label,
         onWarning: (message) => void warnings.push(message),
         timing: timing(),
-        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startTicks: '77' }]),
+        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77 }]),
         uninspectable: registry,
       });
     }

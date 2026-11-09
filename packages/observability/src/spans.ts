@@ -155,6 +155,12 @@ export const recordChatResponseContent = (span: Span, outputMessages: readonly G
   span.setAttribute(C.ATTR_GEN_AI_OUTPUT_MESSAGES, JSON.stringify(outputMessages));
 };
 
+export type ToolBackendAttributes = { source: string; version: string };
+
+export const recordToolBackend = (span: Span, backend: ToolBackendAttributes): void => {
+  span.setAttributes({ [MOMONGA_ATTRIBUTES.toolBackendSource]: backend.source, [MOMONGA_ATTRIBUTES.toolBackendVersion]: backend.version });
+};
+
 export const recordToolContent = (span: Span, content: ToolContent): void => {
   span.setAttributes({
     [C.ATTR_GEN_AI_TOOL_CALL_ARGUMENTS]: JSON.stringify(content.arguments),

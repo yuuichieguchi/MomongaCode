@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, defaultProcessInspector, findHolders, groupAlive, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 
@@ -87,11 +87,11 @@ export const processGroupOf = (pid: number): Promise<number | undefined> =>
   });
 
 export const defaultLedgerPorts: LedgerPorts = {
-  startTimeOf: (pid) => defaultProcessInspector().startTimeOf(pid),
-  groupAlive,
+  startTimeOf: (pid) => defaultProcessInspector().startTimeOf(pid, { signal: new AbortController().signal }),
+  groupAlive: (pgid) => isProcessAlive(-pgid),
   pidAlive: (pid) => isProcessAlive(pid),
   killGroups: killGroupsForCleanup,
-  findHolders,
+  findHolders: (marker) => findHolders(marker, { signal: new AbortController().signal }),
   pgidOf: processGroupOf,
 };
 
@@ -181,7 +181,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
-    const text = readTextIfPresent(paths.locks.supervisor);
+    const text = readTextIfPresent(firstGeneration(paths).locks.supervisor);
     const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
     if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
   };

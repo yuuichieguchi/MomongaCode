@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { createUserSettingsCache } from '@momonga/config';
+import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, ReapTiming } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -114,10 +114,15 @@ export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
 export const makeCache = (home: string): CountingCache => {
-  const inner = createUserSettingsCache({ home, onWarning: () => undefined });
+  const inner = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(home)) });
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),
+    kept: inner.kept,
+    read: () => {
+      cache.snapshots += 1;
+      return inner.read();
+    },
     snapshot: () => {
       cache.snapshots += 1;
       return inner.snapshot();
@@ -365,6 +370,7 @@ export const runBashThroughPort = async (
     session: port.sessionState(session),
     sandbox: port.sandbox,
     sandboxPolicy: policy.sandboxPolicy,
+    ripgrep: port.ripgrepLocator(policy.env),
     deadlineAt: f.clock.now() + 120_000,
     outputFit: UNBOUNDED_OUTPUT_FIT,
     reconcileFit: UNBOUNDED_OUTPUT_FIT,

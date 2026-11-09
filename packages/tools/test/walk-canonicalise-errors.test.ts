@@ -31,6 +31,7 @@ describe('walker canonicalisation of a symlinked file (OP-8 debt: node:fs spy un
         includeSymlinkedFiles: true,
         signal: new AbortController().signal,
         onUnreadable: () => undefined,
+        onRuleBlocked: () => undefined,
       })) {
         continue;
       }

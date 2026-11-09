@@ -4,17 +4,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { assertSocketPathLength, ensureMomongaDirs, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
+import { FIRST_GENERATION, assertSocketPathLength, ensureMomongaDirs, generationLayout, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
 import type { CommandRunner } from '@momonga/foundation';
 
 describe('win32 layout', () => {
   const home = 'C:\\Users\\Alice';
   const env = { LOCALAPPDATA: 'C:\\Users\\Alice\\AppData\\Local', APPDATA: 'C:\\Users\\Alice\\AppData\\Roaming' };
   const paths = momongaLayout(home, 'win32', env);
+  const first = generationLayout(home, FIRST_GENERATION, 'win32');
 
   it('uses windows separators and per-user locations', () => {
     expect(paths.root).toBe('C:\\Users\\Alice\\.momonga');
-    expect(paths.locks.runtime).toBe('C:\\Users\\Alice\\.momonga\\run\\runtime.lock');
+    expect(first.locks.runtime).toBe('C:\\Users\\Alice\\.momonga\\run\\g1\\runtime.lock');
     expect(paths.cacheBase).toBe('C:\\Users\\Alice\\AppData\\Local\\momonga');
     expect(paths.keychains).toBe('C:\\Users\\Alice\\AppData\\Roaming\\Microsoft\\Credentials');
   });
@@ -26,10 +27,10 @@ describe('win32 layout', () => {
   });
 
   it('names the endpoints as named pipes scoped by the home directory, ignoring case', () => {
-    expect(paths.sockets.runtime).toMatch(/^\\\\\.\\pipe\\momonga-[0-9a-f]{16}-runtime$/);
-    expect(new Set(Object.values(paths.sockets)).size).toBe(3);
-    expect(momongaLayout('c:\\users\\alice', 'win32', env).sockets.runtime).toBe(paths.sockets.runtime);
-    expect(momongaLayout('C:\\Users\\Bob', 'win32', env).sockets.runtime).not.toBe(paths.sockets.runtime);
+    expect(first.sockets.runtime).toMatch(/^\\\\\.\\pipe\\momonga-[0-9a-f]{16}-g1-runtime$/);
+    expect(new Set(Object.values(first.sockets)).size).toBe(3);
+    expect(generationLayout('c:\\users\\alice', FIRST_GENERATION, 'win32').sockets.runtime).toBe(first.sockets.runtime);
+    expect(generationLayout('C:\\Users\\Bob', FIRST_GENERATION, 'win32').sockets.runtime).not.toBe(first.sockets.runtime);
   });
 
   it('accepts the pipe names through momongaPaths', () => {

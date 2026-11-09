@@ -43,7 +43,7 @@ describe('cancel', () => {
     const claim = env.claimRun(run.id);
     const target = path.join(env.layout.projectReal, 'a.txt');
     env.append(claim, [toolCallPayload('call_1', target)]);
-    const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 60_000);
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
     const before = (await env.getRun(run.id)).lastSeq as number;
 
     const response = await env.http('POST', `/v1/runs/${run.id}/cancel`);

@@ -1,6 +1,7 @@
 import { resolveSandbox } from './sandbox.ts';
 
 export type E2eCaseFile =
+  | 'inject.test.ts'
   | 'b1-model-call.test.ts'
   | 'b2-bash.test.ts'
   | 'b3-gateway-kill.test.ts'
@@ -45,8 +46,8 @@ export const E2E_CASES = [
   { id: 'b2-reap-escapee', file: 'b2-bash.test.ts', title: 'b2: after a runtime SIGKILL, recovery also stops a child that left the group with setsid but still holds the call marker', needsBash: true },
   { id: 'b2-reap-escapee-dropped', file: 'b2-bash.test.ts', title: 'b2: after a runtime SIGKILL, a child that left the group and closed the call marker survives recovery, because nothing ties it to the call, unless the sandbox itself ends with the runtime (bubblewrap --die-with-parent)', needsBash: true },
   { id: 'b3-gateway-kill', file: 'b3-gateway-kill.test.ts', title: 'b3: a gateway killed mid-call is restarted and the run completes', needsBash: false },
-  { id: 'c1', file: 'c-cancel.test.ts', title: 'c1: cancel during sleep 30', needsBash: true },
-  { id: 'c1b', file: 'c-cancel.test.ts', title: 'c1b: cancel when the command ignores SIGTERM', needsBash: true },
+  { id: 'c1', file: 'c-cancel.test.ts', title: 'c1: cancel during sleep 30 ends the command through its SIGTERM handler', needsBash: true },
+  { id: 'c1b', file: 'c-cancel.test.ts', title: 'c1b: cancel when the command ignores SIGTERM and never ends on its own kills it after the grace', needsBash: true },
   { id: 'c2', file: 'c-cancel.test.ts', title: 'c2: cancel mid-stream cuts the upstream connection', needsBash: false },
   { id: 'c3', file: 'c-cancel.test.ts', title: 'c3: cancel of a queued run', needsBash: false },
   { id: 'mt1', file: 'multi-turn.test.ts', title: 'mt1: two sequential runs share the conversation', needsBash: false },
@@ -90,7 +91,7 @@ export const E2E_CASES = [
   { id: 'g-skills-untrusted', file: 'skills.test.ts', title: 'g: an untrusted folder offers no project skills', needsBash: false },
   { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: momonga eval runs the starter dataset through the daemon against the fake upstream, records transcripts and replays them to the same report', needsBash: false },
   { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: momonga eval exits 1 and counts a write allowed by acceptEdits and labelled ask as a false allow, while a blocked read labelled deny is observed as deny', needsBash: false },
-  { id: 'context-improve-adopt', file: 'context-improve.test.ts', title: 'context improve: a contrastive scenario, one improving candidate, a real improve that writes its outcome and stores nothing, an adopt of that outcome file under the operator declaration, a refused second adopt, and a following run whose compaction carries the guideline', needsBash: false },
+  { id: 'context-improve-adopt', file: 'context-improve.test.ts', title: 'context improve: a contrastive scenario, one improving candidate, a real improve that writes its outcome and stores nothing, a token cap whose last planned benchmark carries the spend past it, an adopt of that outcome file, a refused second adopt, and a following run whose compaction carries the guideline', needsBash: false },
   { id: 'eval-context-live', file: 'eval-context.test.ts', title: 'eval context: a live run through the real stack gives a Bash call the home of the case, compacts the on case only, loads the revised rule, sees the stale memory, reports the numbers and replays to the same report', needsBash: true },
   { id: 'eval-context-kill', file: 'eval-context-kill.test.ts', title: 'eval context: a case daemon stops when the CLI that started it is killed with SIGKILL, and the next eval context removes the home it left', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
@@ -180,6 +181,9 @@ export const E2E_CASES = [
   { id: 'cli-auto-unavailable', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode without a configured classifier fails with mode_unavailable stated plainly and never calls the model', needsBash: false },
   { id: 'roles-compaction', file: 'roles.test.ts', title: 'roles: with models.roles.compaction set, compaction goes to the target of the role alias, the steps of the run go to the target of the run alias, and the cost report shows both roles', needsBash: false },
   { id: 'cli-user-prompt-blocked', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose UserPromptSubmit hook blocks the prompt prints the hook run and states that the prompt was blocked', needsBash: true },
+  { id: 'inject-faults', file: 'inject.test.ts', title: 'holds the ten faults of section 4.3, each in its own scenario, and only the out-of-disk fault needs the Linux container', needsBash: false },
+  { id: 'inject-p9', file: 'inject.test.ts', title: 'P9: in every scenario that can run on this host, every effect key is witnessed at most once', needsBash: false },
+  { id: 'inject-not-run', file: 'inject.test.ts', title: 'reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

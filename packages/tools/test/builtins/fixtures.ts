@@ -5,18 +5,17 @@ import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
-import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
+import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
+import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import type { ApprovalSpec } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-export const JS_BACKEND_PATH = '/nonexistent-ripgrep-directory';
-const RG_CANDIDATES = ['/opt/homebrew/bin/rg', '/usr/bin/rg'];
-export const RG_BIN = RG_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? (RG_CANDIDATES[0] as string);
-export const HAS_RG = fs.existsSync(RG_BIN) && HAS_REAL_SANDBOX;
+export const RG_BIN = pinnedRipgrepPath();
+export const HAS_RG = HAS_REAL_SANDBOX;
 export const RG_PATH = `${path.dirname(RG_BIN)}:${BASE_PATH}`;
 export const BASE_ENV = { PATH: BASE_PATH, LANG: 'C' };
 
@@ -80,10 +79,10 @@ export type RunExtra = Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { mod
 
 export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 
-export const makeBuiltins = async (options: { outputLimitChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox } = {}) => {
+export const makeBuiltins = async (options: { outputLimitChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox; executor?: Partial<ToolExecutorOptions> } = {}) => {
   const harness = makeHarness({
     ...(options.outputLimitChars === undefined ? {} : { outputLimitChars: options.outputLimitChars }),
-    ...(options.jobs === undefined ? {} : { executor: { jobs: options.jobs } }),
+    executor: { ...(options.jobs === undefined ? {} : { jobs: options.jobs }), ...options.executor },
   });
   const { layout } = harness;
   const sessionsTmpRoot = sessionsTmpRootOf(layout);

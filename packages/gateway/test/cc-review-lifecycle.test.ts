@@ -12,6 +12,8 @@ import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { recordKeyOptions } from './fm-record-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ef'.repeat(32), osBuild: '25A100' };
 const userRequest = { model: 'fast', input: [{ type: 'message' as const, role: 'user' as const, content: 'x' }] };
@@ -29,7 +31,7 @@ class Child extends EventEmitter {
       else this.server = server;
     });
   }
-  kill(signal: string = 'SIGTERM'): boolean {
+  async kill(signal: string = 'SIGTERM'): Promise<boolean> {
     this.signals.push(signal);
     void this.exit();
     return true;
@@ -87,11 +89,11 @@ const managedFm = async () => {
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     probeRecordDir: path.join(dir, 'probe'),
-    recordKey: KEY,
+    ...recordKeyOptions(KEY),
     toolCallingSetting: 'native',
   });
   const clock = createFakeClock(START_MS);
-  const adapter = createChatCompletionsAdapter({ ...managed, clock });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   return { managed, adapter, children, fmServe };
 };
 
@@ -104,7 +106,7 @@ describe('managed endpoint', () => {
       binary: '/usr/bin/fm',
       exec: okExec,
       probeRecordDir: makeDir(),
-      recordKey: KEY,
+      ...recordKeyOptions(KEY),
       toolCallingSetting: 'native',
     });
     await managed.resolveEndpoint(TARGET);
@@ -192,7 +194,7 @@ describe('count-tokens', () => {
         return { exitCode: 0, stdout: `${counted}\n`, stderr: '' };
       },
       probeRecordDir: dir,
-      recordKey: KEY,
+      ...recordKeyOptions(KEY),
       toolCallingSetting: 'auto',
     });
   };
@@ -222,7 +224,7 @@ describe('count-tokens', () => {
 describe('closed adapter', () => {
   it('rejects create after close without resolving an endpoint', async () => {
     const resolveEndpoint = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/never.sock' }));
-    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+    const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint,
       capabilities: async () => {
         throw new Error('unused');

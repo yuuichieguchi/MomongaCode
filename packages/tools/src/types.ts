@@ -1,7 +1,10 @@
+import type { CallStop } from './call-stop.ts';
 import type { Clock } from '@momonga/foundation';
+import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { RipgrepLocator } from './ripgrep-locator.ts';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
 export type ToolContent =
@@ -15,6 +18,8 @@ export type PlanEntry = {
 };
 
 export type SkillActivation = { name: string; content: string };
+
+export type ToolBackend = { source: string; version: string };
 
 export type ToolResult = {
   status: 'completed' | 'failed';
@@ -31,6 +36,7 @@ export type ToolResult = {
   memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
+  backend?: ToolBackend;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };
@@ -55,18 +61,33 @@ export type ToolResume = {
   inputResponses: Record<string, unknown> | undefined;
 };
 
+export type SpawnMarker = { file: string; fd: number; settle: MarkerSettle };
+
 export type ToolContext = ReconcileContext & {
+  markerFd?: number;
+  markerSettle?: MarkerSettle;
+  spawnMarker?(): Promise<SpawnMarker>;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  ripgrep: RipgrepLocator;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;
-  extendToRunDeadline(): void;
+  reportProgress(): void;
 };
 
+export type OutputCall = { readonly callId: string; readonly tool: string };
+
+export type ToolStop = { bound: CallStop['bound']; ms: number; checkpoint: Record<string, unknown> | undefined };
+
 export type OutputFit = {
+  fits(text: string, call: OutputCall): Promise<boolean>;
+  fit(text: string, handle: string, call: OutputCall): Promise<string>;
+  ready?(): Promise<void>;
+};
+
+export type CallOutputFit = {
   fits(text: string): Promise<boolean>;
   fit(text: string, handle: string): Promise<string>;
-  ready?(): Promise<void>;
 };
 
 export type ReconcileContext = SubjectContext & {
@@ -74,10 +95,10 @@ export type ReconcileContext = SubjectContext & {
   step: number;
   callId: string;
   idemKey: string;
-  outputFit: OutputFit;
+  outputFit: CallOutputFit;
   tmpDir?: string;
   processMarker?: string;
-  earlierAttempt?: { stopped: boolean; uninspectable?: ReadonlyArray<{ pid: number; command: string }> };
+  earlierAttempt?: { stopped: boolean };
   traceparent?: string;
   tracestate?: string;
   env: Readonly<Record<string, string>>;
@@ -87,7 +108,7 @@ export type ReconcileContext = SubjectContext & {
   clock: Clock;
   jobs?: BackgroundJobs;
   session: ToolSessionState;
-  attachProcess(process: { pgid: number; startedAt: number }): void;
+  attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;
   update(content: ToolContent[]): void;
 };
 
@@ -134,6 +155,9 @@ export type ToolBody<Input> = {
   server?: string;
   validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
+  idleTimeoutMs?: number;
+  startsProcesses?: true;
+  stopText?(stop: ToolStop): Promise<string>;
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
@@ -145,6 +169,10 @@ export type ToolBody<Input> = {
 export type AnyTool = ToolDefinition<unknown>;
 
 export const outputOriginOf = (tool: AnyTool): ToolOutputOrigin => (tool.server === undefined ? (tool.output ?? 'external') : 'external');
+
+export const startsProcesses = (tool: AnyTool): boolean => tool.sideEffect === 'exec' || tool.startsProcesses === true;
+
+export const harnessOutputToolsOf = (tools: readonly AnyTool[]): string[] => tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name);
 
 export const defineTool = <Input>(definition: ToolDefinition<Input>): AnyTool => definition as unknown as AnyTool;
 

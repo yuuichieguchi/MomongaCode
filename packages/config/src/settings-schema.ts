@@ -1,4 +1,4 @@
-import { SECRET_NAME_PATTERN } from '@momonga/foundation';
+import { SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
@@ -82,6 +82,12 @@ const FM_TARGET_SCHEMA = {
     outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    capabilities: {
+      type: 'object',
+      properties: { contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT }, maxOutputTokens: POSITIVE_INTEGER },
+      required: ['contextWindow', 'maxOutputTokens'],
+      additionalProperties: false,
+    },
   },
   required: ['adapter'],
   additionalProperties: false,
@@ -404,6 +410,11 @@ export const SETTINGS_SCHEMA = {
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
+    mcp: {
+      type: 'object',
+      properties: { toolIdleTimeoutMs: NON_NEGATIVE_INTEGER, toolTotalTimeoutMs: POSITIVE_INTEGER },
+      additionalProperties: false,
+    },
     models: {
       type: 'object',
       properties: {
@@ -476,10 +487,29 @@ export const SETTINGS_SCHEMA = {
     },
     tools: {
       type: 'object',
-      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' } },
+      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' }, ripgrep: { type: 'string', minLength: 1 } },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    gateway: {
+      type: 'object',
+      properties: {
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max },
+        managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max },
+      },
+      additionalProperties: false,
+    },
+    network: {
+      type: 'object',
+      properties: {
+        httpProxy: { type: 'string', minLength: 1 },
+        httpsProxy: { type: 'string', minLength: 1 },
+        noProxy: { type: 'string', minLength: 1 },
+        extraCaFiles: { type: 'array', items: { type: 'string', minLength: 1 } },
+        environment: { type: 'boolean' },
+      },
+      additionalProperties: false,
+    },
     pricing: {
       type: 'array',
       items: {

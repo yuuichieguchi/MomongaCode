@@ -327,7 +327,6 @@ describe('response schemas', () => {
       callId: 'call_1',
       status: 'pending',
       options: OPTIONS,
-      expiresAt: 1_800_000_060_000,
       createdAt: 1_800_000_000_000,
       suggestedRule: 'Write(/work/a/x)',
       reason: 'edits require approval',
@@ -338,6 +337,7 @@ describe('response schemas', () => {
     expect(accepts('ApprovalView', { ...view, status: 'bogus' })).toBe(false);
     const { toolCall: _omitted, ...withoutToolCall } = view;
     expect(accepts('ApprovalView', withoutToolCall)).toBe(false);
+    expect(accepts('ApprovalView', { ...view, expiresAt: 1_800_000_060_000 })).toBe(false);
   });
 
   it('carries the reason the policy asked on an ApprovalView, and requires it as a string', () => {
@@ -347,7 +347,6 @@ describe('response schemas', () => {
       callId: 'call_1',
       status: 'pending',
       options: OPTIONS,
-      expiresAt: 1_800_000_060_000,
       createdAt: 1_800_000_000_000,
       reason: 'edit outside the workspace requires approval',
       toolCall: { callId: 'call_1', name: 'Write', title: 'Write x', kind: 'edit', rawInput: { file_path: '/elsewhere/x' } },
@@ -641,7 +640,8 @@ describe('memory schemas', () => {
     expect(accepts('MemoryView', { ...view, scope: 'user', project: null })).toBe(true);
     expect(accepts('MemoryView', { ...view, scope: 'team' })).toBe(false);
     expect(accepts('MemoryView', { ...view, origin: 'untrusted' })).toBe(true);
-    expect(accepts('MemoryView', { ...view, origin: 'unknown' })).toBe(false);
+    expect(accepts('MemoryView', { ...view, origin: 'unknown' })).toBe(true);
+    expect(accepts('MemoryView', { ...view, origin: 'vouched' })).toBe(false);
     const { origin: _origin, ...withoutOrigin } = view;
     expect(accepts('MemoryView', withoutOrigin)).toBe(false);
     expect(accepts('MemoryView', { ...view, source: { ...view.source, seq: undefined } })).toBe(false);

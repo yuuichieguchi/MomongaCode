@@ -4,7 +4,10 @@ import net from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ENTRY_HARD_EXIT_MARGIN_MS,
-  GATEWAY_MAX_CLOSE_MS,
+  DEFAULT_STOP_VALUES,
+  gatewayAbortBudgetMs,
+  gatewayMaxCloseMs,
+  gatewayStopBudgetMs,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
@@ -13,9 +16,9 @@ import {
   inspectProcessLock,
 } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { GATEWAY_ABORT_BUDGET_MS, KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
+import { KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import {
@@ -36,7 +39,8 @@ import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
 const DEFAULT_DRAIN = 30_000;
 const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(DEFAULT_DRAIN) + SHUTDOWN_MARGIN_MS;
-const GATEWAY_TERM_BOUND = GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
+const GATEWAY_TERM_BOUND = gatewayStopBudgetMs(DEFAULT_STOP_VALUES);
+const GATEWAY_INT_BOUND = gatewayAbortBudgetMs(DEFAULT_STOP_VALUES);
 const RUNTIME_INT_BOUND = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
 
 const running = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
@@ -56,11 +60,11 @@ const finish = async (h: Harness, promise: Promise<SupervisorCloseResult>, maxMs
 
 describe('childCloseBudgetMs', () => {
   it('uses the foundation budgets', () => {
-    expect(childCloseBudgetMs('runtime', 'term', 0)).toBe(runtimeMaxCloseMs(0) + SHUTDOWN_MARGIN_MS);
-    expect(childCloseBudgetMs('runtime', 'term', DEFAULT_DRAIN)).toBe(RUNTIME_TERM_BOUND);
-    expect(childCloseBudgetMs('gateway', 'term', DEFAULT_DRAIN)).toBe(GATEWAY_TERM_BOUND);
-    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_DRAIN)).toBe(RUNTIME_INT_BOUND);
-    expect(childCloseBudgetMs('gateway', 'int', DEFAULT_DRAIN)).toBe(GATEWAY_ABORT_BUDGET_MS);
+    expect(childCloseBudgetMs('runtime', 'term', 0, DEFAULT_STOP_VALUES)).toBe(runtimeMaxCloseMs(0) + SHUTDOWN_MARGIN_MS);
+    expect(childCloseBudgetMs('runtime', 'term', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(RUNTIME_TERM_BOUND);
+    expect(childCloseBudgetMs('gateway', 'term', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(GATEWAY_TERM_BOUND);
+    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(RUNTIME_INT_BOUND);
+    expect(childCloseBudgetMs('gateway', 'int', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(23_000);
   });
 });
 
@@ -121,13 +125,14 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     await waitFor(() => h.fake.latest('runtime').signals.length === 1 && h.fake.latest('gateway').signals.length === 1);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGINT']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGINT']);
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_ABORT_BUDGET_MS + 1000 });
-    expect(h.clock.now() - start).toBeGreaterThanOrEqual(GATEWAY_ABORT_BUDGET_MS);
-    expect(h.clock.now() - start).toBeLessThanOrEqual(GATEWAY_ABORT_BUDGET_MS + 50);
-    expect(h.fake.latest('runtime').groupKills).toBe(0);
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_INT_BOUND });
+    expect(RUNTIME_INT_BOUND).toBeLessThan(GATEWAY_INT_BOUND);
+    await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_INT_BOUND + 1000 });
     expect(h.clock.now() - start).toBeGreaterThanOrEqual(RUNTIME_INT_BOUND);
     expect(h.clock.now() - start).toBeLessThanOrEqual(RUNTIME_INT_BOUND + 50);
+    expect(h.fake.latest('gateway').groupKills).toBe(0);
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_INT_BOUND });
+    expect(h.clock.now() - start).toBeGreaterThanOrEqual(GATEWAY_INT_BOUND);
+    expect(h.clock.now() - start).toBeLessThanOrEqual(GATEWAY_INT_BOUND + 50);
     const result = await finish(h, aborting);
     expect(result.clean).toBe(false);
     expect([...result.killed].sort()).toEqual(['gateway', 'runtime']);
@@ -216,12 +221,12 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
 
   it('supervisor.lock and the control socket are gone after close', async (context) => {
     const h = await running(context);
-    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'held', pid: process.pid });
-    expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(true);
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'held', pid: process.pid });
+    expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(true);
     await finish(h, h.supervisor.close());
-    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'free' });
-    expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${h.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
   });
 
   it('restart timers are cleared', async (context) => {
@@ -249,7 +254,7 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     const lock = createFakeKernelLock({ inheritable: false });
     const holder = spawnTracked(context, 'sleep', ['30']);
     const h = await running(context, {
-      prepare: (_home, paths) => lock.holdExternally(paths.locks.runtime, holder.pid),
+      prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid),
       overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
     h.fake.latest('gateway').exit(78);
@@ -357,14 +362,14 @@ describe('shutdown and marker reaps', () => {
       },
     };
     const h = await running(context, {
-      prepare: (_home, paths) => lock.holdExternally(paths.locks.runtime, process.pid),
+      prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.runtime, process.pid),
       overrides: { lockWaitMs: 3_600_000, lockMechanism: inFlight },
     });
     h.fake.latest('runtime').exit(75);
     await pumpUntil(h.timers, () => polls === 1, { realWork: h.realWork, maxMs: 5000 });
     const closing = h.supervisor.close();
     await quiesce(h.realWork);
-    lock.releaseExternally(h.paths.locks.runtime);
+    lock.releaseExternally(firstGeneration(h.paths).locks.runtime);
     poll.resolve(false);
     await finish(h, closing);
     await quiesce(h.realWork);
@@ -448,12 +453,12 @@ describe('shutdown and marker reaps', () => {
     });
     for (const role of ['runtime', 'gateway'] as const) h.fake.setBehaviour(role, { onTerm: 'ignore', holdPipes: true });
     const start = h.clock.now();
-    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain) + 10_000);
+    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES) + 10_000);
     const elapsed = h.clock.now() - start;
-    const floor = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + 2 * STDIO_FLUSH_MS + SHUTDOWN_REAP_BOUND_MS;
+    const floor = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS + 2 * STDIO_FLUSH_MS + SHUTDOWN_REAP_BOUND_MS;
     expect(elapsed).toBeGreaterThanOrEqual(floor);
-    expect(elapsed).toBeLessThanOrEqual(supervisorMaxCloseMs(drain));
-    expect(elapsed).toBeLessThan(supervisorMaxCloseMs(drain) + ENTRY_HARD_EXIT_MARGIN_MS);
+    expect(elapsed).toBeLessThanOrEqual(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES));
+    expect(elapsed).toBeLessThan(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS);
     expect(result.clean).toBe(false);
     expect([...result.killed].sort()).toEqual(['gateway', 'runtime']);
     expect(result.leaked).toEqual([]);
@@ -501,14 +506,14 @@ describe('shutdown and marker reaps', () => {
     expect(h.clock.now() - stepFiveAt).toBeGreaterThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS);
     expect(h.clock.now() - stepFiveAt).toBeLessThanOrEqual(SHUTDOWN_RELEASE_BOUND_MS + 100);
     expect(h.log.withMsg('shutdown.step').filter((line) => line['detail'] === 'step 5 bound reached')).toEqual([expect.objectContaining({ level: 'warn' })]);
-    expect(await inspectProcessLock(h.paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).toEqual({ state: 'free' });
     expect(result.killed).toEqual([]);
     expect(result.leaked).toEqual([]);
   });
 
   it('step 5 with a half-sent request completes within the bound', async (context) => {
     const h = await running(context);
-    const raw = net.connect(h.paths.sockets.supervisor);
+    const raw = net.connect(firstGeneration(h.paths).sockets.supervisor);
     registerCleanup(context, () => void raw.destroy());
     raw.on('error', () => undefined);
     await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
@@ -516,8 +521,8 @@ describe('shutdown and marker reaps', () => {
     await quiesce(h.realWork);
     const result = await finish(h, h.supervisor.close(), 120_000);
     expect(result.clean).toBe(true);
-    expect(fs.existsSync(h.paths.sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${h.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(fs.existsSync(firstGeneration(h.paths).sockets.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${firstGeneration(h.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
   });
 });
@@ -610,7 +615,7 @@ describe('shutdown during the orphan reap', () => {
     expect(signal).toBeDefined();
     let result: SupervisorCloseResult;
     if (trigger === 'post') {
-      expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+      expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
       result = await finish(h, h.supervisor.closed);
     } else {
       result = await finish(h, trigger === 'close' ? h.supervisor.close() : h.supervisor.abort());

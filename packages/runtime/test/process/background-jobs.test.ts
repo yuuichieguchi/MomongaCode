@@ -10,6 +10,7 @@ import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { createJobOutput } from '../../src/process/job-output.ts';
+import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 
 const START_MS = 1_800_000_000_000;
 
@@ -70,7 +71,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}) => {
+const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}, extra: Record<string, unknown> = {}) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-')));
   roots.push(root);
   const markerDir = path.join(root, 'markers');
@@ -102,7 +103,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       findHolders: async () => holders,
       reconcileProcessGroup: async ({ pgid }) => {
         reconciled.push({ pgid });
-        return { outcome: 'unknown', output: '', stopped: false, leftAlonePids: [], unsignalledPids: [] };
+        return { outcome: 'unknown', output: '', stopped: holders.length > 0, stoppedHolders: [...holders], leftAlonePids: [], unsignalledPids: [] };
       },
       reapMarkedProcesses: async ({ marker, pgid }) => {
         reaped.push({ marker, pgid });
@@ -110,6 +111,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       },
       ...probes,
     },
+    ...extra,
   });
   const spawned: FakeProcess[] = [];
   const start = (callKey: string, command = 'sleep 30', timeoutMs = 60_000) =>
@@ -131,7 +133,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
 };
 
 describe('the job output window', () => {
-  it('keeps everything under the cap and reports absolute offsets', () => {
+  it('keeps everything under the cap and reports absolute offsets', async () => {
     const output = createJobOutput(100);
     output.push(Buffer.from('hello '));
     output.push(Buffer.from('world'));
@@ -141,7 +143,7 @@ describe('the job output window', () => {
     expect(window.bytes.toString()).toBe('hello world');
   });
 
-  it('drops the oldest bytes beyond the cap without splitting a character', () => {
+  it('drops the oldest bytes beyond the cap without splitting a character', async () => {
     const output = createJobOutput(5);
     output.push(Buffer.from('aaaa'));
     output.push(Buffer.from('é€'));
@@ -256,9 +258,22 @@ describe('background jobs', () => {
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
   });
 
+  it('counts only the holders the reap proved and signalled, and names the ones it left alone', async () => {
+    const t = setup({
+      reconcileProcessGroup: async () => ({ outcome: 'unknown', output: '', stopped: false, stoppedHolders: [], leftAlonePids: [777], unsignalledPids: [] }),
+    });
+    t.holders.push(777);
+    const { jobId } = await t.start('call-1');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    const { output } = await t.jobs.read(t.run.id, jobId, { call: 'read-7' });
+    expect(output).not.toContain('Terminated');
+    expect(output).toContain('Still running but no longer verified as belonging to this call, so left alone: process 777.');
+  });
+
   const reportingSshd = {
-    findHolders: async (_marker: string, _inspector?: unknown, onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void): Promise<number[]> => {
-      onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
+    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startedAt: number }) => void }): Promise<number[]> => {
+      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startedAt: 515151 });
       return [];
     },
   };
@@ -312,7 +327,7 @@ describe('background jobs', () => {
     expect(t.store.readRunEvents(t.run.id, 0, 100).filter((event) => event.type === 'job.finished')).toMatchObject([{ jobId, status: 'unknown' }]);
     expect(t.store.jobs.listForSession(t.run.sessionId).filter((job) => job.status === 'running')).toEqual([]);
     expect(t.jobs.liveKeys().size).toBe(0);
-    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(message === 'lsof is unavailable');
   });
 
   it('refuses a job id that belongs to another session tree', async () => {
@@ -356,7 +371,7 @@ describe('background jobs', () => {
     const claim = t.store.claim('w1');
     if (claim === null) throw new Error('expected a claim');
     const { jobId } = await t.start('call-1');
-    t.store.release(claim, 'WAITING_TOOL', START_MS + 100_000, { awaits: { runIds: [], jobIds: [jobId] } });
+    await t.store.release(claim, 'WAITING_TOOL', START_MS + 100_000, { awaits: { runIds: [], jobIds: [jobId] } });
     expect(t.store.getRun(t.run.id)?.status).toBe('WAITING_TOOL');
     t.spawned[0]?.exit({ code: 0, signal: null });
     await t.settled(jobId);
@@ -380,5 +395,60 @@ describe('background jobs', () => {
     expect(events).toMatchObject([{ jobId: 'bash_orphan000000', status: 'unknown' }]);
     await t.jobs.reconcileOrphans();
     expect(t.reaped).toHaveLength(1);
+  });
+});
+
+describe('T16 (a) a live background job owns its marker (PT 3H rule 4: "A marker is owned while a live owner holds it")', () => {
+  it('while the job runs its marker is not unsettled and nothing signals it; at its end a held marker becomes unsettled', async () => {
+    const owners = createMarkerOwners();
+    const t = setup({}, { owners });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([]);
+    expect(t.reconciled).toEqual([]);
+    t.holders.push(5000);
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([key]);
+  });
+});
+
+
+describe('a finished job removes its marker only once the marker reads free', () => {
+  const readingState = (state: 'held' | 'free') => {
+    const read: string[] = [];
+    const probes = {
+      findHolders: async () => [],
+      markerState: async (marker: string) => {
+        read.push(marker);
+        return state;
+      },
+    };
+    return { probes, read };
+  };
+
+  it('keeps the marker of a job whose marker is still held with nobody named, and leaves it to the next occasion', async () => {
+    const owners = createMarkerOwners();
+    const { probes, read } = readingState('held');
+    const t = setup(probes, { owners });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(read).toEqual([path.join(t.markerDir, key)]);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([key]);
+  });
+
+  it('removes the marker of a finished job whose marker reads free', async () => {
+    const { probes, read } = readingState('free');
+    const t = setup(probes);
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(read).toEqual([path.join(t.markerDir, key)]);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
   });
 });

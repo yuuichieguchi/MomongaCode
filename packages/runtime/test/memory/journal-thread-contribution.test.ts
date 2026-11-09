@@ -56,12 +56,12 @@ describe('the contribution handler of the embedded journal thread', () => {
     const env = await makeEnv({ preparer: thread.preparer });
     dbPath = env.dbPath;
     const saver = env.enqueue('Save notes', { history: 'fresh' });
-    const saverClaim = env.seed(saver.id, [callOf(0), callOf(1)], 'hold');
-    const memoryIds = [0, 1].map((index) => env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note zorpWord${index}`, runId: saver.id, step: 1, callId: `save_${index}` }).memory.id);
+    const saverClaim = await env.seed(saver.id, [callOf(0), callOf(1)], 'hold');
+    const memoryIds = await Promise.all([0, 1].map(async (index) => (await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note zorpWord${index}`, runId: saver.id, step: 1, callId: `save_${index}` })).memory.id));
     expect((await env.store.transition(saverClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     env.clock.advance(1);
     const run = env.enqueue('Work through it', { history: 'fresh' });
-    const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) }, responded('the answer mentions zorpWord1 only')], 'hold');
+    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) }, responded('the answer mentions zorpWord1 only')], 'hold');
     const inProcess = await journalReaderPreparer(env.dbPath).measure({ runId: run.id, leading: [] });
 
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');

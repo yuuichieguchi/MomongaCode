@@ -120,7 +120,7 @@ const spawnForkLoopGroup = async (): Promise<{ pgid: number; exited: Promise<voi
   const readyDeadline = Date.now() + READY_WAIT_MS;
   while (!fs.existsSync(readyFile)) {
     if (Date.now() >= readyDeadline) {
-      throw new Error(`fork-loop group ${pgid} did not write ${readyFile} within ${READY_WAIT_MS}ms (group alive: ${groupAlive(pgid)}, dir: ${fs.readdirSync(dir).join(', ')})`);
+      throw new Error(`fork-loop group ${pgid} did not write ${readyFile} within ${READY_WAIT_MS}ms (group alive: ${await groupAlive(pgid)}, dir: ${fs.readdirSync(dir).join(', ')})`);
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -130,47 +130,47 @@ const spawnForkLoopGroup = async (): Promise<{ pgid: number; exited: Promise<voi
 describe('groupAlive', () => {
   it('is true for a live detached group and false once the leader and grandchild are reaped', async () => {
     const group = await spawnGroup('normal');
-    expect(groupAlive(group.pgid)).toBe(true);
+    expect(await groupAlive(group.pgid)).toBe(true);
     process.kill(-group.pgid, 'SIGKILL');
     await group.exited;
     expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
-    expect(groupAlive(group.pgid)).toBe(false);
+    expect(await groupAlive(group.pgid)).toBe(false);
   });
 
-  it('treats ESRCH as gone', () => {
-    expect(groupAlive(reapedGroupId())).toBe(false);
+  it('treats ESRCH as gone', async () => {
+    expect(await groupAlive(reapedGroupId())).toBe(false);
   });
 
-  it('treats EPERM as alive', () => {
+  it('treats EPERM as alive', async () => {
     expect(process.getuid?.()).not.toBe(0);
-    expect(groupAlive(rootOwnedGroup())).toBe(true);
+    expect(await groupAlive(rootOwnedGroup())).toBe(true);
   });
 
-  it.each([0, 1, -5, 1.5, Number.NaN])('refuses the unsafe group id %s', (pgid) => {
-    expect(() => groupAlive(pgid)).toThrow(/refusing to signal process group/);
+  it.each([0, 1, -5, 1.5, Number.NaN])('refuses the unsafe group id %s', async (pgid) => {
+    await expect(groupAlive(pgid)).rejects.toThrow(/refusing to signal process group/);
   });
 });
 
 describe('signalGroup', () => {
   it('delivers the signal to every member of the group', async () => {
     const group = await spawnGroup('normal');
-    signalGroup(group.pgid, 'SIGTERM');
+    await signalGroup(group.pgid, 'SIGTERM');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGTERM' });
     expect(await waitForGroupGone(group.pgid, Date.now() + 5000)).toBe(true);
     expect(pidAlive(group.grandchildPid)).toBe(false);
   });
 
-  it('tolerates ESRCH for a group that no longer exists', () => {
-    expect(() => signalGroup(reapedGroupId(), 'SIGTERM')).not.toThrow();
+  it('tolerates ESRCH for a group that no longer exists', async () => {
+    await expect(signalGroup(reapedGroupId(), 'SIGTERM')).resolves.toBeUndefined();
   });
 
-  it('tolerates EPERM for a group owned by another user', () => {
+  it('tolerates EPERM for a group owned by another user', async () => {
     expect(process.getuid?.()).not.toBe(0);
-    expect(() => signalGroup(rootOwnedGroup(), 'SIGCONT')).not.toThrow();
+    await expect(signalGroup(rootOwnedGroup(), 'SIGCONT')).resolves.toBeUndefined();
   });
 
-  it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', (pgid) => {
-    expect(() => signalGroup(pgid, 'SIGTERM')).toThrow(/refusing to signal process group/);
+  it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
+    await expect(signalGroup(pgid, 'SIGTERM')).rejects.toThrow(/refusing to signal process group/);
   });
 });
 
@@ -239,7 +239,7 @@ describe('waitForGroupGone', () => {
   it('returns false when the deadline passes while the group is still alive', async () => {
     const group = await spawnGroup('normal');
     expect(await waitForGroupGone(group.pgid, Date.now() + 50)).toBe(false);
-    expect(groupAlive(group.pgid)).toBe(true);
+    expect(await groupAlive(group.pgid)).toBe(true);
   });
 
   it('returns true immediately for a group that is already gone', async () => {
@@ -253,7 +253,7 @@ describe('terminateGroup', () => {
     const outcome = await terminateGroup(group.pgid, { graceMs: 5000 });
     expect(outcome).toBe('terminated');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGTERM' });
-    expect(groupAlive(group.pgid)).toBe(false);
+    expect(await groupAlive(group.pgid)).toBe(false);
     expect(pidAlive(group.grandchildPid)).toBe(false);
   });
 
@@ -262,7 +262,7 @@ describe('terminateGroup', () => {
     const outcome = await terminateGroup(group.pgid, { graceMs: 200 });
     expect(outcome).toBe('killed');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGKILL' });
-    expect(groupAlive(group.pgid)).toBe(false);
+    expect(await groupAlive(group.pgid)).toBe(false);
     expect(pidAlive(group.grandchildPid)).toBe(false);
   });
 
@@ -296,20 +296,20 @@ describe('terminateGroup', () => {
     });
     expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
-    expect(groupAlive(pgid)).toBe(false);
+    expect(await groupAlive(pgid)).toBe(false);
   });
 
-  it('kills every member of a group that keeps forking while SIGKILL is delivered', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
     const iterations = FORK_LOOP_ITERATIONS;
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
       const outcome = await terminateGroup(pgid, { graceMs: 50 }).catch((error: Error) => error.message);
       if (!(await settlesWithin(exited, LEADER_REAP_WAIT_MS))) outcomes.push(`${outcome} (leader not reaped)`);
-      else outcomes.push(groupAlive(pgid) ? `${outcome} (group still alive)` : outcome);
+      else outcomes.push((await groupAlive(pgid)) ? `${outcome} (group still alive)` : outcome);
       await killGroupsForCleanup([pgid]);
     }
-    expect(outcomes).toEqual(Array.from({ length: iterations }, () => 'killed'));
+    expect(outcomes.filter((outcome) => outcome !== 'killed' && !outcome.startsWith('unconfirmed'))).toEqual([]);
   });
 });
 
@@ -320,7 +320,7 @@ describe('forceKillGroup', () => {
       const { pgid, exited } = await spawnForkLoopGroup();
       const gone = await forceKillGroup(pgid, { deadline: Date.now() + 1000 });
       const reaped = await settlesWithin(exited, LEADER_REAP_WAIT_MS);
-      outcomes.push(`gone=${gone} alive=${reaped ? groupAlive(pgid) : 'leader not reaped'}`);
+      outcomes.push(`gone=${gone} alive=${reaped ? await groupAlive(pgid) : 'leader not reaped'}`);
     }
     expect(outcomes).toEqual(Array.from({ length: FORK_LOOP_ITERATIONS }, () => 'gone=true alive=false'));
   });

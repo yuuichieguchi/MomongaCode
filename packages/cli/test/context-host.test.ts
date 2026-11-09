@@ -3,7 +3,7 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
-import { momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
@@ -344,7 +344,7 @@ describe('a live context run', () => {
   it('measures the sockets on the canonical path of the home, the one the supervisor builds them from', async () => {
     const limit = socketPathLimit('darwin');
     const probe = '/tmp/mc-0';
-    const suffix = Math.max(...Object.values(momongaLayout(probe, 'darwin', {}).sockets).map((socket) => Buffer.byteLength(socket))) - Buffer.byteLength(probe);
+    const suffix = Math.max(...Object.values(generationLayout(probe, FIRST_GENERATION, 'darwin').sockets).map((socket) => Buffer.byteLength(socket))) - Buffer.byteLength(probe);
     const canonicalPrefix = '/private';
     const rootLength = limit - 1 - suffix - Buffer.byteLength('/tmp/mc-') - 1;
     const plain = harness({ rootLength });
@@ -584,8 +584,8 @@ describe('the isolation of a case', () => {
 
   it('accepts a short temporary home and refuses a long one, with the limit of the platform', () => {
     expect(() => assertSocketsFit('/tmp/mc-abc123', 'darwin')).not.toThrow();
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(72)}`, 'darwin')).toThrow(/shorter than 104 bytes on darwin/);
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(72)}`, 'linux')).not.toThrow();
+    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'darwin')).toThrow(/shorter than 104 bytes on darwin/);
+    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'linux')).not.toThrow();
   });
 });
 

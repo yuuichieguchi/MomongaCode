@@ -9,6 +9,7 @@ import { createRequestValidator } from '../src/core/validation.ts';
 import { TARGET, startFake, userText } from './cc-support.ts';
 import { ccAdapterFor, estimatedTokens, KEEP_CLAUSE, RESTATE_CLAUSE } from './cc-compact-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const GUIDELINE = 'Keep every failing test name in DONE.';
 const SECTIONS = ['GOAL:', 'STATE:', 'DONE:', 'TODO:', 'DECISIONS:', 'GUARDRAILS:'];
@@ -66,6 +67,7 @@ describe('every adapter renders the same prompt', () => {
     resolveEndpoint: async () => ({ kind: 'unix' as const, socketPath: '/nonexistent' }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(0),
+    liveness: UNDICI_DEFAULT_LIVENESS,
   };
 
   const wires = async (request: AdapterCompactRequest): Promise<[string, string][]> => {

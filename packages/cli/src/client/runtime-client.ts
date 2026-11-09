@@ -1,6 +1,6 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
-import type { UdsResponse } from '@momonga/foundation';
+import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
@@ -139,6 +139,7 @@ export type RuntimeClient = {
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
   ruleHistory(id: string): Promise<GoverningFactView[]>;
+  ignoreMarker(name: string): Promise<void>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
   guidelines(): Promise<GuidelinesResponse>;
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
@@ -199,8 +200,8 @@ const frameOf = (event: { id?: string; event?: string; data: string }, descripti
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export const createRuntimeClient = (options: { socketPath: string }): RuntimeClient => {
-  const http = createUdsClient(options.socketPath);
+export const createRuntimeClient = (options: { resolveSocket: SocketResolver }): RuntimeClient => {
+  const http = createUdsClient(options.resolveSocket);
 
   const send = async (
     method: string,
@@ -487,6 +488,10 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkRule(body, `POST ${path}`).fact;
   };
 
+  const ignoreMarker = async (name: string): Promise<void> => {
+    await send('POST', `/v1/markers/${encodeURIComponent(name)}/ignore`, [204]);
+  };
+
   const ruleHistory = async (id: string): Promise<GoverningFactView[]> => {
     const path = `/v1/rules/${encodeURIComponent(id)}/history`;
     const { body } = await send('GET', path, [200]);
@@ -630,6 +635,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     addRule,
     retireRule,
     ruleHistory,
+    ignoreMarker,
     policyGovernance,
     guidelines,
     adoptGuideline,

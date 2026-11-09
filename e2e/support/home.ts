@@ -2,17 +2,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { SOCKET_PATH_LIMIT, ensureMomongaDirs, isProcessAlive, momongaLayout, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, SOCKET_PATH_LIMIT, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolder } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
 import type { ProcessLedger } from './ledger.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath } from './run-env.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, withinBound } from './wait.ts';
 
-export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX } from './run-env.ts';
+export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
 export const PROJECT_DIR_NAME = 'p';
 export const SESSION_TMP_DIR_NAME = 'session-tmp';
 export const UPSTREAM_SOCKET_NAME = 'u.sock';
@@ -43,8 +43,6 @@ const MARKER_FILE_MODE = 0o600;
 const cleanups: E2eCleanup[] = [];
 const homes: E2eHome[] = [];
 
-export const e2eTmpRoot = (): string => fs.realpathSync(os.tmpdir());
-
 const runTokenFrom = (value: string | undefined): string => {
   if (value === undefined) throw new Error(`${E2E_RUN_ENV} is not set; the e2e global setup did not run`);
   if (!E2E_RUN_PATTERN.test(value)) throw new Error(`${E2E_RUN_ENV} must be 4 lowercase hex characters, got ${JSON.stringify(value)}`);
@@ -63,7 +61,7 @@ export const assertInside = (candidate: string, container: string): void => {
 };
 
 const longestSocketBytes = (tmpRoot: string, run: string): number => {
-  const sockets = Object.values(momongaLayout(path.join(tmpRoot, `${e2eEntryPrefix(run)}${ROOT_SUFFIX_PLACEHOLDER}`)).sockets);
+  const sockets = Object.values(generationLayout(path.join(tmpRoot, `${e2eEntryPrefix(run)}${ROOT_SUFFIX_PLACEHOLDER}`), FIRST_GENERATION).sockets);
   return Math.max(...sockets.map((socket) => Buffer.byteLength(socket)));
 };
 

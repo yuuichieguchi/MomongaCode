@@ -4,7 +4,7 @@ import * as runtime from '@momonga/runtime';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { releaseStoppedRunsAtStartup } from '../../src/service/sweeper.ts';
 import { callsStep } from '../worker/scripts.ts';
-import { DEFAULT_TTL_MS, START_MS, attachWorkerKit, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
+import { FORMER_APPROVAL_LIMIT_MS, START_MS, attachWorkerKit, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
 
 type Sweeper = { close(): void | Promise<void> };
@@ -227,8 +227,8 @@ describe('startApprovalSweeper release of stopped runs', () => {
 });
 
 describe('sweeper inside the run service', () => {
-  it('expires a pending approval, appends the cancelled event and the notice, and stops the run with approval_timeout', async () => {
-    const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000 });
+  it('keeps a pending approval past the former 30-minute limit and writes nothing while it waits', async () => {
+    const env = await startService({ fakeTimers: true, sweepIntervalMs: 60_000, dataVersionPollMs: 60_000 });
     const timers = env.timers;
     if (timers === undefined) throw new Error('fake timers missing');
     const kit = attachWorkerKit(env);
@@ -239,17 +239,11 @@ describe('sweeper inside the run service', () => {
     const [approval] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
     const before = (await env.getRun(run.id)).lastSeq as number;
 
-    timers.advance(DEFAULT_TTL_MS - 1000);
-    expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
-    timers.advance(1000);
+    await tick(timers, FORMER_APPROVAL_LIMIT_MS + 60_000, 60_000);
 
-    expect(await env.getRun(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
-    expect((await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval.status).toBe('expired');
-    const after = env.runEvents(run.id).filter((event) => event.seq > before);
-    expect(after.map((event) => event.type)).toEqual(['tool.permission.cancelled', 'notice', 'run.status']);
-    expect(after[0]).toMatchObject({ approvalId: approval.id, reason: 'expired' });
-    expect(after[1]).toMatchObject({ message: `The approval for ${kit.gateway.callId('call_w_1')} expired.` });
-    expect(after[2]).toMatchObject({ from: 'WAITING_HUMAN', to: 'STOPPED' });
+    expect(await env.getRun(run.id)).toMatchObject({ status: 'WAITING_HUMAN', lastSeq: before });
+    expect((await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval.status).toBe('pending');
+    expect(env.runEvents(run.id).filter((event) => event.seq > before)).toEqual([]);
   });
 
   it('stops a WAITING_HUMAN run whose deadline passed with timeout and withdraws its approvals', async () => {
@@ -260,8 +254,8 @@ describe('sweeper inside the run service', () => {
     const run = await env.createRun(session.id, { timeoutMs: 60_000 });
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 10 * 60_000);
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
 
     await tick(timers, 60_000);
@@ -271,7 +265,7 @@ describe('sweeper inside the run service', () => {
     expect(env.ofType(run.id, 'tool.permission.cancelled')).toEqual([expect.objectContaining({ approvalId, reason: 'withdrawn' })]);
   });
 
-  it('leaves expired approvals of RUNNING runs untouched', async () => {
+  it('leaves the approvals of RUNNING runs untouched', async () => {
     const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000 });
     const timers = env.timers;
     if (timers === undefined) throw new Error('fake timers missing');
@@ -279,7 +273,7 @@ describe('sweeper inside the run service', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 2000);
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
     const before = (await env.getRun(run.id)).lastSeq;
 
     await tick(timers, 5000);
@@ -298,9 +292,9 @@ describe('release of runs that stop while waiting for input', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const requested = env.store.requestElicitation(claim, { callId: 'call_1', expiresAt, server: 'remote', requests: REQUESTS });
+    const requested = await env.store.requestElicitation(claim, { callId: 'call_1', expiresAt, server: 'remote', requests: REQUESTS });
     if (requested.kind !== 'ok') throw new Error('expected an elicitation');
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     return { run, id: requested.approval.id };
   };
 

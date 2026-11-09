@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -44,6 +45,7 @@ export type TuiBackend = {
   addRule(request: AddRuleRequest): Promise<RuleAddResponse>;
   retireRule(id: string): Promise<GoverningFactView>;
   ruleHistory(id: string): Promise<GoverningFactView[]>;
+  ignoreMarker(name: string): Promise<void>;
   model(): Promise<MomongaModelEntry>;
   startupNotices(): Promise<readonly string[]>;
   readImage(file: string): Promise<ImageAttachment>;
@@ -62,6 +64,8 @@ export const createTuiBackend = (
   let client: RuntimeClient | undefined;
   let session: SessionView | undefined;
   const closing = new AbortController();
+  const stopNotices: string[] = [];
+  const onNotice = (message: string): void => void stopNotices.push(message);
 
   const runtime = (): RuntimeClient => {
     if (client === undefined) throw new Error('the daemon connection is not open yet');
@@ -76,7 +80,7 @@ export const createTuiBackend = (
   return {
     cwd: ports.cwd,
     boot: async () => {
-      await ensureDaemon(ports, paths, { signal: closing.signal });
+      await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
       client = connectRuntime(paths);
       return client.trust(ports.cwd);
     },
@@ -99,7 +103,7 @@ export const createTuiBackend = (
       return session;
     },
     models: async () => {
-      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
       try {
         return await gateway.models();
       } finally {
@@ -120,7 +124,7 @@ export const createTuiBackend = (
         random: ports.random,
         runId,
         reconnectBoundMs: await daemonReadyBoundMs(),
-        restoreConnection: restoreDaemon(ports, paths),
+        restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
         onReconnecting: handlers.onReconnecting,
@@ -145,15 +149,16 @@ export const createTuiBackend = (
     addRule: (request) => runtime().addRule(request),
     retireRule: (id) => runtime().retireRule(id),
     ruleHistory: (id) => runtime().ruleHistory(id),
+    ignoreMarker: (name) => runtime().ignoreMarker(name),
     model: async () => {
-      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
       try {
         return await gateway.modelOf(current().modelAlias);
       } finally {
         await gateway.close();
       }
     },
-    startupNotices: async () => (await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat(),
+    startupNotices: async () => [...stopNotices.splice(0), ...(await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat()],
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),
     recordHistory: (text) => history.append(text),

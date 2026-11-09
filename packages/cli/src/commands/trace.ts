@@ -1,9 +1,10 @@
-import { describeFallbackCause } from '@momonga/foundation';
+import { currentSocketResolver, describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries } from '@momonga/protocol';
 import type { FallbackCauseView, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -75,11 +76,11 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
 };
 
 export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));
-    const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+    const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
     try {
       const usage = await gateway.usageOf(trace.runId);
       ports.stdout.write(`${json ? JSON.stringify({ ...trace, usage }) : renderTrace(trace, usage)}\n`);

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import { openDaemonMarker } from '../src/orphans.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -20,6 +20,10 @@ const markerPath = (harness: ManagerHarness): string => {
   const names = harness.markers();
   expect(names).toHaveLength(1);
   return path.join(harness.paths.markers.daemons, names[0] as string);
+};
+
+const untilReapEnds = async (reapEnded: () => boolean): Promise<void> => {
+  while (!reapEnded()) await new Promise<void>((resolve) => setTimeout(resolve, 10));
 };
 
 const trackUnhandled = (context: Parameters<typeof registerCleanup>[0]): unknown[] => {
@@ -135,7 +139,7 @@ describe('daemon markers at spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (
       const paths = momongaPaths(home, process.platform, {});
       const args = [SUPERVISOR_FIXTURE, `--home=${home}`, `--child=${CHILD_FIXTURE}`, ...(leak ? ['--leak-marker-fd'] : [])];
       const supervisor = spawnTracked(context, process.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-      trackSupervisorChildren(context, paths.sockets.supervisor);
+      trackSupervisorChildren(context, firstGeneration(paths).sockets.supervisor);
       let errors = '';
       supervisor.stderr?.on('data', (chunk: Buffer) => {
         errors += chunk.toString();
@@ -195,7 +199,7 @@ describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     harness.spawnInitial();
     const marker = markerPath(harness);
     harness.port.last().exit(1);
-    await pollUntil(() => harness.manager.state() === 'backoff', 5000, 'exit handled');
+    await untilReapEnds(() => harness.manager.state() === 'backoff');
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.manager.unreapedMarkers()).toEqual([]);
   });
@@ -212,7 +216,7 @@ describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     await pollUntil(() => reportedPid(harness, 'grandchild') !== undefined, 5000, 'grandchild reported');
     const grandchild = reportedPid(harness, 'grandchild') as number;
     port.trackGroup(grandchild);
-    await pollUntil(() => !isProcessAlive(grandchild) && !fs.existsSync(marker), 5000, 'holder killed and marker removed');
+    await untilReapEnds(() => !isProcessAlive(grandchild) && !fs.existsSync(marker));
   });
 
   it('a grandchild spawned without explicit mapping does not hold the marker', async (context) => {

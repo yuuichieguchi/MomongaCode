@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { lexicallyWithin } from '@momonga/foundation';
-import type { MemoryEvidence, MemoryStatus } from '@momonga/protocol';
+import type { MemoryEvidence, MemoryStatus, StoredMemoryEvidence } from '@momonga/protocol';
 
 export class EvidenceOutsideRootError extends Error {
   constructor(target: string) {
@@ -47,7 +47,13 @@ const commitIsAncestor = async (entries: readonly Extract<MemoryEvidence, { kind
   return true;
 };
 
-export const memoryStatus = async (memory: { evidence: readonly MemoryEvidence[] }, context: MemoryStatusContext): Promise<MemoryStatus> => {
+export const memoryStatus = async (memory: { evidence: readonly StoredMemoryEvidence[] }, context: MemoryStatusContext): Promise<MemoryStatus> => {
+  const checked = await knownEvidenceStatus(memory.evidence.filter((entry): entry is MemoryEvidence => entry.kind !== 'unknown'), context);
+  return checked === 'stale' || memory.evidence.every((entry) => entry.kind !== 'unknown') ? checked : 'unverifiable';
+};
+
+const knownEvidenceStatus = async (evidence: readonly MemoryEvidence[], context: MemoryStatusContext): Promise<MemoryStatus> => {
+  const memory = { evidence };
   const files = memory.evidence.filter((entry): entry is Extract<MemoryEvidence, { kind: 'file' }> => entry.kind === 'file');
   if (files.length > 0) {
     let unchecked = false;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContributionPayload } from '@momonga/store';
-import { awaitingApproval } from './approval-fixture.ts';
+import { awaitingInput } from './approval-fixture.ts';
 import { START_MS, harness, mustRun, rawDb } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 
@@ -42,15 +42,15 @@ const measuring = (): { h: Harness; measurements: Measurement[] } => {
   return { h, measurements };
 };
 
-describe('an approval answer that arrives after one of two approvals is due, while the clock moves past the other', () => {
+describe('an answer for input that arrives after one of two requests for input is due, while the clock moves past the other', () => {
   it('measures the run once, outside the write transaction, on the time the operation read once', async () => {
     const { h, measurements } = measuring();
-    const waiting = awaitingApproval(h.store, [{ callId: 'a', expiresAt: FIRST_DUE_MS }, { callId: 'b', expiresAt: SECOND_DUE_MS }], 'waiting');
+    const waiting = await awaitingInput(h.store, [{ callId: 'a', expiresAt: FIRST_DUE_MS }, { callId: 'b', expiresAt: SECOND_DUE_MS }], 'waiting');
     const [first] = waiting.approvals;
-    if (first === undefined) throw new Error('expected the first approval');
+    if (first === undefined) throw new Error('expected the first request for input');
     h.clock.set(FIRST_DUE_MS + 1);
 
-    expect((await h.store.resolveApproval(first.id, 'allow_once'))).toMatchObject({ kind: 'approval_not_pending', status: 'expired' });
+    expect((await h.store.resolveElicitation(first.id, {}))).toMatchObject({ kind: 'approval_not_pending', status: 'expired' });
 
     expect(mustRun(h.store, waiting.runId).status).toBe('STOPPED');
     expect(measurements).toEqual([{ runId: waiting.runId, underWriteLock: false }]);

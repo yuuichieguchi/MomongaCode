@@ -30,6 +30,7 @@ export type {
   RecordedRequest,
 } from './fake-chat-completions.ts';
 export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
+export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';
@@ -115,7 +116,7 @@ export {
   nestedNotSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
-export { killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
+export { CLEANUP_KILL_DEADLINE_MS, killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export {
@@ -243,3 +244,4 @@ export {
 } from './mcp-http-fixture.ts';
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
+export { firstGeneration } from './first-generation.ts';

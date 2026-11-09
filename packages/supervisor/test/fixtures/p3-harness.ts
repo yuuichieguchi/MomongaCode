@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
-import { createJsonLogger, momongaPaths } from '@momonga/foundation';
+import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
@@ -163,7 +163,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
         onSpawnError: (listener) => void errorListeners.push(listener),
         onExit: (listener) => void exitListeners.push(listener),
         kill: () => undefined,
-        killGroup: () => undefined,
+        killGroup: async () => undefined,
       };
       later(() => {
         for (const listener of errorListeners) listener(errno('ENOENT'));
@@ -232,7 +232,7 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
         else if (signal === 'SIGINT') react(child.behaviour.onInt);
         else if (signal === 'SIGKILL' && child.behaviour.onKill === 'die') later(() => child.exit(null, 'SIGKILL'));
       },
-      killGroup: () => {
+      killGroup: async () => {
         child.groupKills += 1;
         events.push({ kind: 'killGroup', role, pid, at: now() });
         order.push(`SIGKILL-group:${role}`);
@@ -320,10 +320,10 @@ export const recordingMarkerPorts = (overrides: MarkerPorts = {}, record?: strin
   const calls: MarkerCalls = { findHolders: [], reapMarkerDirectory: [], reapMarkedProcesses: [] };
   const ports: Required<MarkerPorts> = {
     files: overrides.files ?? nodeMarkerFiles,
-    findHolders: async (marker) => {
+    findHolders: async (marker, probe) => {
       calls.findHolders.push(marker);
       record?.push('findHolders');
-      return overrides.findHolders === undefined ? [] : overrides.findHolders(marker);
+      return overrides.findHolders === undefined ? [] : overrides.findHolders(marker, probe);
     },
     reapMarkerDirectory: async (options) => {
       calls.reapMarkerDirectory.push(options);
@@ -511,7 +511,7 @@ export const httpOver = async (
   body?: string,
 ): Promise<SimpleResponse> => {
   const { createUdsClient } = await import('@momonga/foundation');
-  const client = createUdsClient(socketPath, { headersTimeoutMs: 5000 });
+  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 5000 });
   registerCleanup(context, () => client.destroy());
   const response = await client.request({ method, path: requestPath, ...(body === undefined ? {} : { body, headers: { 'content-type': 'application/json' } }) });
   const text = await response.text();

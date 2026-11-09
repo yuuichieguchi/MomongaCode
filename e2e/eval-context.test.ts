@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TRANSCRIPT_FORMAT } from '@momonga/eval';
+import { SHORT_TEMP_BASE } from '@momonga/foundation';
 import { envelopeOf } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
-import { SHORT_TEMP_BASE } from '../packages/cli/src/eval/context-effects.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
-import { fitLimitAfterReport, summaryRoute } from './support/budget.ts';
+import { fitLimitAfterReport, gainThresholdOf, summaryRoute } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { calibrationRoute, compactableTokens, fillerOfTokens, measureWindow, prefixProbeRoute, stepTokensToOverflowTheRoom } from './support/context-window.ts';
@@ -152,7 +153,7 @@ describe('momonga eval context live', () => {
     expect(
       compactableTokens(LONG_STEPS, DEFAULT_KEEP_RECENT_STEPS, stepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
-    ).toBeGreaterThanOrEqual(sizing.gainThreshold);
+    ).toBeGreaterThanOrEqual(gainThresholdOf(sizing, measured.factlessWorkingStateTokens));
     stepText = fillerOfTokens(stepTokens);
     const dataset = path.join(home.root, 'context.json');
     fs.writeFileSync(dataset, JSON.stringify(DATASET));
@@ -209,7 +210,7 @@ describe('momonga eval context live', () => {
     const names = fs.readdirSync(recordings).sort();
     expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
-    expect(header).toMatchObject({ format: 'momonga-transcript/6', policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
+    expect(header).toMatchObject({ format: TRANSCRIPT_FORMAT, policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
 
     const callsBefore = chatCompletions(fake).length;
     const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--report', replayFile]);

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createUserSettingsCache, userSettingsChangeKey } from '@momonga/config';
+import { createStopValuesReader, createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
+import type { StopValuesReader } from '@momonga/config';
 import {
   EXIT_VERSION_MISMATCH,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -8,17 +9,21 @@ import {
   announceReady,
   canonicalPath,
   createJsonLogger,
-  ensureMomongaDirs,
+  daemonStopBoundMs,
+  ensureGenerationDirs,
+  generationLayout,
   momongaPaths,
+  publishCurrentGeneration,
+  roleEndpoint,
   runtimeMaxCloseMs,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, TextStream } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_GENERATION, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
@@ -26,8 +31,9 @@ import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
 import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
+import { orphanReapBoundMs } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { digestsOf, planRoles, runRestartPlan } from './plan.ts';
+import { changedSections, digestsOf, planRoles, runRestartPlan } from './plan.ts';
 import type { RestartPlanPort } from './plan.ts';
 import { resolveRestartPolicy } from './restart-policy.ts';
 import type { RestartPolicy } from './restart-policy.ts';
@@ -60,19 +66,36 @@ export type SupervisorOptions = {
   lockMechanism?: KernelLockMechanism;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
+  currentFileSystem?: AtomicWriteFileSystem;
   stdout?: TextStream;
   spawn: SpawnPort;
   signal?: AbortSignal;
-  onShutdownRequested?: () => void;
+  stopValues?: StopValuesReader;
+  onShutdownRequested?: (values?: StopValues) => void;
 };
+
+export type SupervisorStartTiming = { drainTimeoutMs: number; startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
+
+export const resolveStartTiming = (options: Pick<SupervisorOptions, 'runtime' | 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals'>): SupervisorStartTiming => {
+  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
+  return {
+    drainTimeoutMs,
+    startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
+    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs),
+    orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
+    orphanPollMs: resolveIntervals(options.intervals).orphanPollMs,
+  };
+};
+
+export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => orphanReapBoundMs(timing) + timing.startupTimeoutMs;
 
 export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error; exitCode?: number };
 
 export type SupervisorProcess = {
   ready: ReadyFields;
   health(): SupervisorHealth;
-  close(): Promise<SupervisorCloseResult>;
-  abort(): Promise<SupervisorCloseResult>;
+  close(values?: StopValues): Promise<SupervisorCloseResult>;
+  abort(values?: StopValues): Promise<SupervisorCloseResult>;
   closed: Promise<SupervisorCloseResult>;
   fatal: Promise<Error>;
 };
@@ -92,15 +115,17 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const logger = options.logger ?? createJsonLogger({ service: SUPERVISOR_SERVICE, clock });
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
-  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
-  const startupTimeoutMs = options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS;
+  const startTiming = resolveStartTiming(options);
+  const { drainTimeoutMs, startupTimeoutMs } = startTiming;
   const canonicalHome = canonicalPath(options.home);
   const paths = momongaPaths(canonicalHome, process.platform, {});
   const env = { ...(options.env ?? process.env) };
   const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
 
-  await ensureMomongaDirs(paths);
-  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(paths.locks.supervisor);
+  const own = generationLayout(canonicalHome, SUPERVISOR_GENERATION);
+
+  await ensureGenerationDirs(paths, own.generation);
+  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(own.locks.supervisor);
 
   let server: ControlServer | undefined;
   try {
@@ -115,7 +140,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let planPromise: Promise<void> = Promise.resolve();
     let settingsWatcher: SettingsWatch | undefined;
     let versionMismatch = false;
-    let requestShutdown: () => void = () => undefined;
+    let requestShutdown: (values?: StopValues) => void = () => undefined;
+    let stopBoundMs: number | undefined;
+    let published = false;
+    let publishPromise: Promise<void> = Promise.resolve();
+    let publishOnceAllReady: () => void = () => undefined;
     const launchController = new AbortController();
     const planController = new AbortController();
     const reportedSources = new Set<string>();
@@ -156,13 +185,25 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       sleep: (ms) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms)),
     };
 
-    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })) });
+    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
+    const stopValues =
+      options.stopValues ??
+      createStopValuesReader({
+        load: () => {
+          const snapshot = settings.snapshot();
+          if ('error' in snapshot) throw snapshot.error;
+          return snapshot.settings.gateway;
+        },
+        onNotice: (detail) => log(settingsWarning({ detail })),
+      });
 
     const createManager = (role: ChildRole): ChildManager =>
       createChildManager({
         role,
         home: canonicalHome,
         paths,
+        generation: own.generation,
+        endpoint: roleEndpoint(own, role),
         launcher: options.launcher,
         env,
         spawn: options.spawn,
@@ -182,6 +223,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
           versionMismatch = true;
           requestShutdown();
         },
+        stopValues,
+        onReady: () => publishOnceAllReady(),
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
@@ -190,6 +233,14 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const gateway = createManager('gateway');
     const runtime = createManager('runtime');
     const managers = [gateway, runtime] as const;
+
+    publishOnceAllReady = (): void => {
+      if (published || draining || !managers.every((manager) => manager.state() === 'ready')) return;
+      published = true;
+      publishPromise = publishCurrentGeneration(paths, { generation: own.generation, version: options.version, sockets: own.sockets }, options.currentFileSystem).catch((error: unknown) =>
+        reportBackground(error, 'publish-current'),
+      );
+    };
     const managerOf = (role: ChildRole): ChildManager => (role === 'gateway' ? gateway : runtime);
 
     const health = (): SupervisorHealth => ({
@@ -202,6 +253,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       env: 'frozen at supervisor start',
       children: [gateway.health(), runtime.health()],
       logs: { droppedLines: options.droppedLogLines?.() ?? 0 },
+      ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
     });
 
     const planPort: RestartPlanPort = {
@@ -261,9 +313,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       const current = digestsOf(snapshot.settings);
       const runtimeApplied = runtime.appliedDigests();
       const gatewayApplied = gateway.appliedDigests();
-      const modelsChanged = (runtimeApplied !== undefined && runtimeApplied.models !== current.models) || (gatewayApplied !== undefined && gatewayApplied.models !== current.models);
-      const sandboxChanged = runtimeApplied !== undefined && runtimeApplied.sandbox !== current.sandbox;
-      if (modelsChanged || sandboxChanged) log(settingsChanged({ models: modelsChanged, sandbox: sandboxChanged }));
+      const changed = changedSections(current, runtimeApplied, gatewayApplied);
+      const modelsChanged = changed.models;
+      const sandboxChanged = changed.sandbox;
+      if (Object.values(changed).some((value) => value)) log(settingsChanged(changed));
       const roles = planRoles(current, {
         ...(runtimeApplied !== undefined && PLANNABLE_STATES.has(runtime.state()) ? { runtime: runtimeApplied } : {}),
         ...(gatewayApplied !== undefined && PLANNABLE_STATES.has(gateway.state()) ? { gateway: gatewayApplied } : {}),
@@ -319,7 +372,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         settingsWatcher?.stop();
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, planPromise]);
+        await Promise.all([launchPromise, planPromise, publishPromise]);
       },
       closeControl: async () => {
         await server?.close();
@@ -333,31 +386,38 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       return versionMismatch ? { ...result, exitCode: EXIT_VERSION_MISMATCH } : result;
     };
     const closedWithExitCode = withExitCode(shutdown.closed);
-    const closeWithExitCode = (): Promise<SupervisorCloseResult> => {
-      void shutdown.close();
+    const valuesOfStop = (given: StopValues | undefined): StopValues | undefined => {
+      if (shutdown.mode() !== 'idle') return given;
+      const values = given ?? stopValues.read();
+      stopBoundMs = daemonStopBoundMs(values);
+      return values;
+    };
+    const closeWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+      void shutdown.close(valuesOfStop(values));
       return closedWithExitCode;
     };
-    const abortWithExitCode = (): Promise<SupervisorCloseResult> => {
-      void shutdown.abort();
+    const abortWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+      void shutdown.abort(valuesOfStop(values));
       return closedWithExitCode;
     };
 
-    requestShutdown = (): void => {
-      if (options.onShutdownRequested === undefined) void closeWithExitCode();
-      else options.onShutdownRequested();
+    requestShutdown = (values?: StopValues): void => {
+      if (options.onShutdownRequested === undefined) void closeWithExitCode(values);
+      else options.onShutdownRequested(values);
     };
 
     options.signal?.throwIfAborted();
     server = await startControlServer({
-      socketPath: paths.sockets.supervisor,
+      socketPath: own.sockets.supervisor,
       timers,
       health,
-      onShutdownRequested: () => requestShutdown(),
+      onShutdownRequested: (values) => requestShutdown(values),
+      onIgnoredStopValues: (reason) => log(settingsWarning({ detail: `the stop values of the shutdown request were malformed and were ignored: ${reason}` })),
       onError: (error) => reportBackground(error, 'control-server'),
       ...lockOptions,
     });
 
-    const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: paths.sockets.supervisor, startedAt };
+    const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt };
     announceReady(ready, options.stdout);
 
     launchPromise = runLaunchTask({
@@ -365,9 +425,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       logger,
       reap: {
         markersDir: paths.markers.daemons,
-        orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs) + 2000,
-        orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
-        orphanPollMs: intervals.orphanPollMs,
+        orphanGraceMs: startTiming.orphanGraceMs,
+        orphanReapGraceMs: startTiming.orphanReapGraceMs,
+        orphanPollMs: startTiming.orphanPollMs,
         drainTimeoutMs,
         timers,
         signal: launchController.signal,

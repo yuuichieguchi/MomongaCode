@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import {
@@ -107,12 +107,19 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     expect(h.fake.spawnCount('runtime')).toBe(2);
   });
 
+  it('a network-only change is logged as a settings change and restarts the runtime and the gateway', async (context) => {
+    const h = await watched(context, { settings: validSettings() });
+    await edit(h, { ...validSettings(), network: { httpsProxy: 'http://proxy.corp:3128' } });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2 && h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 30_000 });
+    expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: false, telemetry: false, network: true })]);
+  });
+
   it('models change restarts runtime then gateway then runtime comes up', async (context) => {
     const h = await watched(context);
     const mark = h.order.length;
     await edit(h, validSettings({ model: 'gpt-y' }));
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 30_000 });
-    expect(after(h.order, mark)).toEqual(['SIGTERM:runtime', 'exit:runtime', 'SIGTERM:gateway', 'exit:gateway', 'spawn:gateway', 'spawn:runtime']);
+    expect(after(h.order, mark)).toEqual(['SIGTERM:runtime', 'exit:runtime', 'SIGTERM:gateway', 'exit:gateway', 'reapMarkerDirectory', 'spawn:gateway', 'spawn:runtime']);
     expect(h.fake.latest('gateway').index).toBeLessThan(h.fake.latest('runtime').index);
     expect(h.log.withMsg('plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime,gateway', planned: 2 })]);
     const spawns = h.log.withMsg('child.spawn').slice(-2);
@@ -176,7 +183,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
       settings: validSettings({ sandbox: 'seatbelt' }),
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
@@ -318,7 +325,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
         if (!holdsLock) return;
         const holder = spawnTracked(context, 'sleep', ['30']);
         holderPid = holder.pid;
-        lock.holdExternally(paths.locks.gateway, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.gateway, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: state === 'external' ? 1000 : 3_600_000 },
     });
@@ -343,7 +350,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
@@ -364,7 +371,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
@@ -407,7 +414,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });

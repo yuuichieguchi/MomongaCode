@@ -35,8 +35,8 @@ describe('memory api', () => {
   it('lists, reads and deletes memories with their provenance', async () => {
     const env = await startService({ fakeTimers: true });
     const { session, run } = await seedCalls(env);
-    const user = env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' }).memory;
-    const project = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 2, callId: 'c2' }).memory;
+    const user = (await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'prefers tabs', runId: run.id, step: 1, callId: 'c1' })).memory;
+    const project = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 2, callId: 'c2' })).memory;
     const call = env.runEvents(run.id).find((event) => event.type === 'tool.call' && event.callId === 'c1');
 
     const listed = await env.http('GET', '/v1/memories');
@@ -66,9 +66,9 @@ describe('memory api', () => {
     const { session, run } = await seedCalls(env);
     const other = path.join(env.layout.root, 'other');
     fs.mkdirSync(other);
-    const user = env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'u', runId: run.id, step: 1, callId: 'c1' }).memory;
-    const here = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'here', runId: run.id, step: 1, callId: 'c2' }).memory;
-    const there = env.store.memories.save({ origin: 'trusted', scope: 'project', project: fs.realpathSync.native(other), text: 'there', runId: run.id, step: 1, callId: 'c3' }).memory;
+    const user = (await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: 'u', runId: run.id, step: 1, callId: 'c1' })).memory;
+    const here = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'here', runId: run.id, step: 1, callId: 'c2' })).memory;
+    const there = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: fs.realpathSync.native(other), text: 'there', runId: run.id, step: 1, callId: 'c3' })).memory;
 
     expect((await env.http('GET', '/v1/memories?scope=user')).json).toEqual({ memories: [viewed(user)], next: null });
     expect((await env.http('GET', '/v1/memories?scope=project')).json).toEqual({ memories: [viewed(here), viewed(there)], next: null });
@@ -91,7 +91,7 @@ describe('memory api', () => {
     const env = await startService({ fakeTimers: true });
     const { run } = await seedCalls(env);
     const gone = path.join(env.layout.root, 'gone');
-    const memory = env.store.memories.save({ origin: 'trusted', scope: 'project', project: gone, text: 'left behind', runId: run.id, step: 1, callId: 'c1' }).memory;
+    const memory = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: gone, text: 'left behind', runId: run.id, step: 1, callId: 'c1' })).memory;
     expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(gone)}`)).json).toEqual({ memories: [viewed(memory)], next: null });
   });
 
@@ -132,7 +132,7 @@ describe('reading memories when the evidence process cannot start', () => {
       });
       const { session, run } = await seedCalls(env);
       expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
-      const saved = env.store.memories.save({
+      const saved = (await env.store.memories.save({
         origin: 'trusted',
         scope: 'project',
         project: session.cwd,
@@ -141,7 +141,7 @@ describe('reading memories when the evidence process cannot start', () => {
         step: 1,
         callId: 'c1',
         evidence: [{ kind: 'commit', sha: COMMIT }],
-      }).memory;
+      })).memory;
 
       const listed = await env.http('GET', '/v1/memories');
       const read = await env.http('GET', `/v1/memories/${saved.id}`);
@@ -173,7 +173,7 @@ describe('reading memories when the evidence process cannot start', () => {
     });
     const { session, run } = await seedCalls(env);
     expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
-    env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 1, callId: 'c1', evidence: [{ kind: 'commit', sha: COMMIT }] });
+    await env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'tests live in test/', runId: run.id, step: 1, callId: 'c1', evidence: [{ kind: 'commit', sha: COMMIT }] });
 
     expect((await env.http('GET', '/v1/memories')).status).toBe(500);
   });

@@ -29,7 +29,7 @@ const cancellingRun = async (): Promise<{ env: Env; claim: Claim; leave: ReturnT
   const run = env.enqueue();
   const claim = env.store.claim('w1');
   if (claim === null) throw new Error('the run could not be claimed');
-  env.store.requestCancel(run.id);
+  await env.store.requestCancel(run.id);
   expect(env.run(run.id).status).toBe('CANCELLING');
   const control = startClaimControl({ store: env.store, timers: createFakeTimers(env.clock), claim, heartbeatMs: 1000, cancelPollMs: 1000 });
   const journal = openJournal({ store: env.store, claim, lost: control.lost });
@@ -46,7 +46,7 @@ describe('what a worker leaving a CANCELLING run does, against RunRecovery.tla W
   it.each(['WAITING_HUMAN', 'WAITING_TOOL', 'QUEUED'] as const)('yieldTo(%s) leaves the run as the spec says, and the next claim runs cancel recovery', async (to) => {
     const { env, claim, leave } = await cancellingRun();
     const attemptsBefore = env.run(claim.runId).attempts;
-    leave.yieldTo(to);
+    await leave.yieldTo(to);
     const run = env.run(claim.runId);
     expect(outcomeOf(run)).toBe(whenCancelling().yield);
     expect(run.attempts).toBe(attemptsBefore - 1);
@@ -54,7 +54,7 @@ describe('what a worker leaving a CANCELLING run does, against RunRecovery.tla W
     expect(env.store.claim('w2')).toMatchObject({ runId: claim.runId, status: 'CANCELLING' });
   });
 
-  it('names exactly the two ways a worker leaves', () => {
+  it('names exactly the two ways a worker leaves', async () => {
     expect(Object.keys(whenCancelling()).sort()).toEqual(['finish', 'yield']);
   });
 

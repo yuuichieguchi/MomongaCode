@@ -51,5 +51,5 @@ export const deferredPinFor = async (input: {
 }): Promise<Pick<TokenPin, 'deferred'>> => {
   const { store, settings, session, run } = input;
   if (run.parentRunId !== null || !(await settings.tools(session)).deferral) return {};
-  return { deferred: deferredSetOf({ runs: toolUsageWindowOf(store, session.cwd) }) };
+  return { deferred: deferredSetOf({ runs: await toolUsageWindowOf(store, session.cwd) }) };
 };

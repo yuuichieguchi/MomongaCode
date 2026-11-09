@@ -22,7 +22,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
   it('stops with loop and executes nothing when the recorded step repeats the previous one', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Loop', { limits: { loopThreshold: 2 } });
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [echoCall('call_1')]),
@@ -44,7 +44,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
   it('stops with max_tokens without a model call when an incomplete response held only reasoning', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Think');
-    env.seed(run.id, [responded(1, [{ type: 'reasoning', id: 'rs_1', summary: [] }], 'max_output_tokens')], 'crash');
+    await env.seed(run.id, [responded(1, [{ type: 'reasoning', id: 'rs_1', summary: [] }], 'max_output_tokens')], 'crash');
 
     await env.runOnce(env.worker());
 
@@ -55,7 +55,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
   it('stops with refusal and executes nothing when the recorded output refused and also called a tool', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Refuse');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [
@@ -77,7 +77,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
   it('completes without a model call when the recorded output was empty', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Nothing');
-    env.seed(run.id, [responded(1, [])], 'crash');
+    await env.seed(run.id, [responded(1, [])], 'crash');
 
     await env.runOnce(env.worker());
 
@@ -88,7 +88,7 @@ describe('worker recovery replays the post-response decision of a recorded step'
   it('fails with incomplete_response when the recorded incomplete reason is unknown', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Mystery');
-    env.seed(run.id, [responded(1, [assistantMessage('msg_m', 'partial')], 'mystery_reason')], 'crash');
+    await env.seed(run.id, [responded(1, [assistantMessage('msg_m', 'partial')], 'mystery_reason')], 'crash');
 
     await env.runOnce(env.worker());
 
@@ -124,7 +124,7 @@ describe('worker cancel recovery past the run deadline', () => {
     const env = await makeEnv();
     const run = env.enqueue('Mark it', { deadlineAt: START_MS + 10 });
     const key = toolKey(run.id, 1, 'call_m_1');
-    env.seed(
+    await env.seed(
       run.id,
       [
         pinnedStart(),
@@ -136,7 +136,7 @@ describe('worker cancel recovery past the run deadline', () => {
       'crash',
     );
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Mark' } });
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
     await env.runOnce(env.worker());
 

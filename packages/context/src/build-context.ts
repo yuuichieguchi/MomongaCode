@@ -1,9 +1,7 @@
 import {
-  COMPACTION_MIN_GAIN,
   COMPACT_AT,
   EVICT_LOW_WATER,
   SUMMARY_PROMPT_TOKENS,
-  ceilRatio,
   findDanglingOutput,
   findUnpairedCalls,
   floorRatio,
@@ -12,7 +10,7 @@ import {
   summaryTokenCapFor,
 } from '@momonga/protocol';
 import type { Capabilities, FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorAt, withCalibration } from './budget.ts';
+import { MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, proactiveGainFor, summaryInputCeilingFor, pinnedFloorAt, withCalibration } from './budget.ts';
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
@@ -965,7 +963,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         };
         continue;
       }
-      const closes = kind === 'proactive' ? region >= Math.max(ceilRatio(COMPACTION_MIN_GAIN, item), item + previousSummary) : region - item >= deficit;
+      const closes = kind === 'proactive' ? region >= proactiveGainFor(item, previousSummary) : region - item >= deficit;
       if (!closes) {
         return kind === 'proactive'
           ? { declined: true }

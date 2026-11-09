@@ -100,7 +100,7 @@ describe('claims across processes', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
       expect([parentClaim, childClaim].filter((claim) => claim !== null)).toHaveLength(1);
       const winner = parentClaim ?? childClaim!;
       wins[winner.workerId === 'parent' ? 'parent' : 'child'] += 1;
-      expect(store.release(winner, 'COMPLETED').kind).toBe('ok');
+      expect((await store.release(winner, 'COMPLETED')).kind).toBe('ok');
     }
     expect(wins.parent).toBeGreaterThan(0);
     expect(wins.child).toBeGreaterThan(0);
@@ -118,7 +118,7 @@ describe('claims across processes', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     expect(store.append(stale, [{ type: 'notice', level: 'info', message: 'stale' }])).toEqual({ kind: 'lease_lost' });
     expect(store.heartbeat(stale)).toEqual({ kind: 'lease_lost' });
     expect(await store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
-    expect(store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
+    expect(await store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(store.readRunEvents(run.id, 0, 100)).toHaveLength(before);
     expect(store.append(reclaimed!, [{ type: 'notice', level: 'info', message: 'fresh' }]).kind).toBe('ok');
   });

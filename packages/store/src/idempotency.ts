@@ -1,8 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { expectOneOf, expectRecord, readerFor } from './rows.ts';
-import type { Row } from './rows.ts';
+import { expectRecord, knownValue, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
+import type { Row, Stored } from './rows.ts';
 import type {
   IdempotencyBegin,
   IdempotencyLookup,
@@ -16,7 +17,7 @@ import type {
 
 const OPEN_STATES = ['PENDING', 'UNKNOWN'] as const;
 
-const decodeRecord = (row: Row): IdempotencyRecord => {
+const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord, 'state'> & { state: Stored<IdempotencyRecord['state']> } => {
   const key = String(row['key']);
   const reader = readerFor('idempotency', key, row);
   const pgid = reader.nullableNumber('pgid');
@@ -24,7 +25,7 @@ const decodeRecord = (row: Row): IdempotencyRecord => {
   const leaseToken = reader.nullableNumber('lease_token');
   return {
     key,
-    state: expectOneOf('idempotency', key, 'state', OPEN_STATES, reader.string('state')),
+    state: storedOneOf(context, 'idempotency', key, 'state', OPEN_STATES, reader.string('state')),
     meta: expectRecord('idempotency', key, 'meta_json', reader.json('meta_json')),
     ...(pgid === null ? {} : { pgid }),
     ...(startedAt === null ? {} : { startedAt }),
@@ -34,7 +35,7 @@ const decodeRecord = (row: Row): IdempotencyRecord => {
   };
 };
 
-export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLease: (fence: LeaseFence) => boolean): IdempotencyStore => {
+export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLease: (fence: LeaseFence) => boolean, context: DecodeContext): IdempotencyStore => {
   const insert = db.prepare(
     `INSERT INTO idempotency (key, state, meta_json, lease_token, created_at, expires_at)
      VALUES (:key, 'PENDING', :meta, :leaseToken, :createdAt, :expiresAt)
@@ -52,6 +53,9 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const complete = db.prepare(
     "UPDATE idempotency SET state = 'COMPLETED', result_json = :result WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')",
   );
+  const completeWithMeta = db.prepare(
+    "UPDATE idempotency SET state = 'COMPLETED', result_json = :result, meta_json = json_patch(meta_json, :meta) WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')",
+  );
   const markUnknown = db.prepare("UPDATE idempotency SET state = 'UNKNOWN' WHERE key = :key AND state = 'PENDING'");
   const purge = db.prepare('DELETE FROM idempotency WHERE expires_at <= :nowMs');
 
@@ -64,7 +68,8 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const lookupRow = (key: string, row: Row): IdempotencyLookup => {
     const reader = readerFor('idempotency', key, row);
     if (reader.string('state') === 'COMPLETED') return { s: 'COMPLETED', result: reader.json('result_json') };
-    const rec = decodeRecord(row);
+    const stored = decodeRecord(row, context);
+    const rec = { ...stored, state: knownValue(stored.state, `idempotency key ${key}`) };
     return rec.state === 'PENDING' ? { s: 'PENDING', rec } : { s: 'UNKNOWN', rec };
   };
 
@@ -86,8 +91,12 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
     requireChange(attach.run({ key, pgid: process.pgid, startedAt: process.startedAt }).changes, key, 'attach a process to', 'PENDING');
   };
 
-  const completeRecord = (key: string, result: unknown): void => {
-    requireChange(complete.run({ key, result: canonicalJson(result) }).changes, key, 'complete', 'PENDING or UNKNOWN');
+  const completeRecord = (key: string, result: unknown, meta?: Record<string, unknown>): void => {
+    const changes =
+      meta === undefined
+        ? complete.run({ key, result: canonicalJson(result) }).changes
+        : completeWithMeta.run({ key, result: canonicalJson(result), meta: canonicalJson(meta) }).changes;
+    requireChange(changes, key, 'complete', 'PENDING or UNKNOWN');
   };
 
   const leasedBy = (fence: LeaseFence): LeasedIdempotency => {
@@ -112,7 +121,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
           const changes = state === undefined ? clearCheckpoint.run({ key }).changes : setCheckpoint.run({ key, state: canonicalJson(state) }).changes;
           requireChange(changes, key, 'checkpoint', 'PENDING');
         }),
-      complete: (key, result) => whileHolding(() => completeRecord(key, result)),
+      complete: (key, result, meta) => whileHolding(() => completeRecord(key, result, meta)),
     };
   };
 
@@ -120,6 +129,11 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
     get: (key) => {
       const row = select.get({ key });
       return row === undefined ? undefined : lookupRow(key, row);
+    },
+    processGroupOf: (key) => {
+      const row = select.get({ key });
+      if (row === undefined) return undefined;
+      return readerFor('idempotency', key, row).nullableNumber('pgid') ?? undefined;
     },
     holding: leasedBy,
     clearCheckpoint: (key) => {

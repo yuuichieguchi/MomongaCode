@@ -12,7 +12,7 @@ export type OpenDatabaseOptions = { busyTimeoutMs?: number; createDirectory?: bo
 
 export type Migration = { version: number; name: string; sql: string };
 
-export type MigrateResult = { applied: number[] };
+export type MigrateResult = { applied: number[]; unknownApplied: number[] };
 
 const formatMode = (mode: number): string => (mode & 0o777).toString(8).padStart(4, '0');
 
@@ -159,6 +159,31 @@ const validateMigrations = (migrations: readonly Migration[]): Migration[] => {
   return sorted;
 };
 
+const readerFloorOf = (db: DatabaseSync): { minReader: number; release: string } | undefined => {
+  const table = db.prepare("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'store_compat'").get();
+  if (table === undefined) return undefined;
+  const row = db.prepare('SELECT min_reader, min_reader_release FROM store_compat WHERE id = 1').get();
+  if (row === undefined) return undefined;
+  const { min_reader: minReader, min_reader_release: release } = row;
+  if (typeof minReader !== 'number' || typeof release !== 'string') throw new Error(`store_compat contains a malformed row: ${JSON.stringify(row)}`);
+  return { minReader, release };
+};
+
+const assertReaderFloor = (db: DatabaseSync, highestKnown: number): void => {
+  const floor = readerFloorOf(db);
+  if (floor !== undefined && highestKnown < floor.minReader) {
+    throw new Error(`this database needs momonga v${floor.release} or newer; update or restart this CLI`);
+  }
+};
+
+export const highestAppliedMigration = (db: DatabaseSync): number => {
+  const row = db.prepare('SELECT MAX(version) AS highest FROM schema_migrations').get();
+  const highest = row?.['highest'];
+  if (highest === null) return 0;
+  if (typeof highest !== 'number') throw new Error(`schema_migrations has a malformed version: ${JSON.stringify(row)}`);
+  return highest;
+};
+
 export const migrate = (db: DatabaseSync, migrations: readonly Migration[]): MigrateResult => {
   const sorted = validateMigrations(migrations);
   immediateTx(db, () => {
@@ -167,12 +192,13 @@ export const migrate = (db: DatabaseSync, migrations: readonly Migration[]): Mig
     );
   });
   const known = new Map(sorted.map((migration) => [migration.version, migration]));
+  assertReaderFloor(db, sorted.at(-1)?.version ?? 0);
+  const unknownApplied: number[] = [];
   for (const row of readApplied(db)) {
     const migration = known.get(row.version);
     if (migration === undefined) {
-      throw new Error(
-        `database has migration version ${row.version} (${row.name}) which this build does not know; it was created by a newer build`,
-      );
+      unknownApplied.push(row.version);
+      continue;
     }
     if (row.checksum !== sha256Hex(migration.sql)) throw checksumMismatch(row.version, row.name);
   }
@@ -197,5 +223,5 @@ export const migrate = (db: DatabaseSync, migrations: readonly Migration[]): Mig
     });
     if (didApply) applied.push(migration.version);
   }
-  return { applied };
+  return { applied, unknownApplied };
 };

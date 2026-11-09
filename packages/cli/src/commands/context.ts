@@ -16,7 +16,7 @@ import {
   parseOutcomeFile,
 } from '@momonga/eval';
 import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
@@ -24,11 +24,13 @@ import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
+import { isProbingCapabilities } from '@momonga/protocol';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -67,7 +69,7 @@ type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompl
 
 const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
   const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
-  const gateway = createGatewayClient({ socketPath: paths.sockets.gateway, clock: ports.clock, version: ports.version });
+  const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
   const signal = interrupt ?? new AbortController().signal;
   const complete: Completer = async (request) => {
     const body: CreateResponseBody = {
@@ -135,16 +137,21 @@ export const contextImprove = async (
   hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
-  const gatewayInfo = createCliGatewayClient({ socketPath: paths.sockets.gateway });
+  const gatewayInfo = createCliGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
     const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
     const models = loadUserModels({ home: ports.home });
-    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: (alias) => gatewayInfo.capabilitiesOf(alias) });
+    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: async (alias) => {
+        const capabilities = await gatewayInfo.capabilitiesOf(alias);
+        if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+        return capabilities;
+      },
+    });
     const adopted = (await client.guidelines()).current;
     const current = adopted === null ? undefined : { version: adopted.version, text: adopted.text };
     const completer = await completerFor(ports, paths, analysis.alias, analysis.capabilities, options.interrupt);
@@ -201,7 +208,7 @@ export const formatGuidelines = ({ current, guidelines }: GuidelinesResponse): s
   guidelines.length === 0 ? 'no guideline has been adopted' : guidelines.map((row) => formatGuideline(row, row.version === current?.version)).join('\n');
 
 export const guidelineList = async (ports: CliPorts, paths: MomongaPaths): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client: RuntimeClient = connectRuntime(paths);
   try {
     ports.stdout.write(`${formatGuidelines(await client.guidelines())}\n`);
@@ -231,7 +238,7 @@ export const adoptOutcome = async (stdout: Sink, client: Pick<RuntimeClient, 'gu
 
 export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outcomeFile: string): Promise<number> => {
   const outcomeText = await ports.files.readText(path.resolve(ports.cwd, outcomeFile));
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client: RuntimeClient = connectRuntime(paths);
   try {
     return await adoptOutcome(ports.stdout, client, outcomeText);
@@ -241,7 +248,7 @@ export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outco
 };
 
 export const guidelineRollback = async (ports: CliPorts, paths: MomongaPaths, version: number): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     const row = await client.rollbackGuideline(version);

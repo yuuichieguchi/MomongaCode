@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
+import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -37,14 +37,7 @@ export const pidAlive = (pid: number): boolean => {
   }
 };
 
-export const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-src-')));
@@ -110,7 +103,7 @@ export type PoolHarness = {
 
 export const makePool = (
   servers: McpServerEntry[],
-  options: { requestTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock } = {},
+  options: { requestTimeoutMs?: number; toolIdleTimeoutMs?: number; resetAfterMs?: number; connectTimeoutMs?: number; random?: () => number; clock?: FakeClock; credentialNames?: readonly string[] } = {},
 ): PoolHarness => {
   const clock = options.clock ?? createFakeClock(1_000_000);
   const projectDir = makeDir();
@@ -122,7 +115,9 @@ export const makePool = (
     random: options.random ?? (() => 0),
     ...(options.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: options.connectTimeoutMs }),
     ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+    ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),
     ...(options.resetAfterMs === undefined ? {} : { resetAfterMs: options.resetAfterMs }),
+    ...(options.credentialNames === undefined ? {} : { credentialNames: options.credentialNames }),
   });
   onCleanup(() => pool.close());
   const registry = createToolRegistry();
@@ -140,6 +135,7 @@ const makeIdempotency = (): IdempotencyPort => {
       if (rec === undefined) return undefined;
       return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
     },
+    processGroupOf: (key) => open.get(key)?.pgid,
     holding: () => ({
       begin: (key, beginOptions): LeasedBegin => {
         if (completed.has(key)) return { s: 'COMPLETED', result: completed.get(key) };
@@ -240,6 +236,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       env: {},
       session: { cwd: project, workingDirectory: project, readLedger: new Map() },
       sandbox: unusedSandbox,
+      ripgrep: { locate: () => Promise.reject(new Error('the MCP harness runs no Grep')) },
       sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, ruleEnforcementOf('none')), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       outputFit: UNBOUNDED_OUTPUT_FIT,

@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { groupAlive, momongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { killGroupsForCleanup, registerCleanup, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { TOOL_GROUPS_SQL, createProcessLedger, formatPidsLine, parsePidsFile } from './ledger.ts';
@@ -85,14 +85,14 @@ describe('process ledger: kill', () => {
     const grandchild = Number(await firstLine(parent.stdout as NodeJS.ReadableStream));
     registerCleanup(context, () => killGroupsForCleanup([grandchild]));
     expect(Number.isInteger(grandchild) && grandchild > 0).toBe(true);
-    expect(groupAlive(grandchild)).toBe(true);
+    expect(await groupAlive(grandchild)).toBe(true);
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context) });
     await ledger.add(parent.pid, 'fixture');
     await ledger.add(grandchild, 'fixture');
     const killed = await ledger.kill();
     expect([...killed].sort((a, b) => a - b)).toEqual([parent.pid, grandchild].sort((a, b) => a - b));
-    expect(groupAlive(parent.pid)).toBe(false);
-    expect(groupAlive(grandchild)).toBe(false);
+    expect(await groupAlive(parent.pid)).toBe(false);
+    expect(await groupAlive(grandchild)).toBe(false);
   });
 
   it('kills the union of recorded and freshly read groups', async (context) => {
@@ -213,8 +213,8 @@ describe('process ledger: sources', () => {
     const readyFile = path.join(home, 'gc.ready');
     fs.writeFileSync(recordFile, `${JSON.stringify({ type: 'ready', pid: 801 })}\n${JSON.stringify({ type: 'list', cursor: null })}\n${JSON.stringify({ type: 'grandchild', pid: 802 })}\n`);
     fs.writeFileSync(readyFile, '803');
-    fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(paths.locks.supervisor, '301');
+    fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(firstGeneration(paths).locks.supervisor, '301');
     fs.mkdirSync(paths.markers.tools, { recursive: true, mode: 0o700 });
     const marker = path.join(paths.markers.tools, 'tool-marker');
     fs.writeFileSync(marker, '');

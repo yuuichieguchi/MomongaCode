@@ -1,12 +1,12 @@
-import { forceKillGroup, inspectProcessLock, isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, forceKillGroup, generationLayout, inspectProcessLock, isProcessAlive } from '@momonga/foundation';
 
-const CLEANUP_KILL_DEADLINE_MS = 5000;
+export const CLEANUP_KILL_DEADLINE_MS = 5000;
 const HOLDER_EXIT_POLL_MS = 20;
 
 const isMissingProcess = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ESRCH';
 
 export const stopSupervisorHolder = async (home: string): Promise<number | undefined> => {
-  const lockPath = momongaLayout(home).locks.supervisor;
+  const lockPath = generationLayout(home, FIRST_GENERATION).locks.supervisor;
   const lock = await inspectProcessLock(lockPath);
   if (lock.state === 'free') return undefined;
   if (lock.state === 'unreadable') throw new Error(`the supervisor lock ${lockPath} is held by a process that cannot be identified`);

@@ -1,7 +1,9 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
-import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
+import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING, agentReadiness, isToolCallingState } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
+
+const MS_PER_SECOND = 1000;
 import type {
   Capabilities,
   CompactRequest,
@@ -51,7 +53,7 @@ export class GatewayRequestError extends Error {
 }
 
 export type GatewayClientOptions = {
-  socketPath: string;
+  resolveSocket: SocketResolver;
   clock: Clock;
   timers?: ServiceTimers;
   version: string;
@@ -68,8 +70,13 @@ export type GatewayModel = {
   targetCounters: Record<string, string>;
 };
 
+export type ListedGatewayModel = Pick<GatewayModel, 'id' | 'targets' | 'targetCounters'> & {
+  capabilities: Record<string, unknown>;
+  targetCapabilities: Record<string, Record<string, unknown>>;
+};
+
 export type GatewayClient = GatewayPort & {
-  models(): Promise<GatewayModel[]>;
+  models(): Promise<ListedGatewayModel[]>;
   health(): Promise<GatewayHealth>;
   cost(runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean): Promise<{ report: GatewayCostReportView; text: string }>;
   billedCalls(runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal): Promise<BilledCallsPageView>;
@@ -172,7 +179,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
   const unaryTimeoutMs = options.unaryTimeoutMs ?? DEFAULT_UNARY_TIMEOUT_MS;
   const cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
   const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
-  const uds: UdsClient = createUdsClient(options.socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+  const uds: UdsClient = createUdsClient(options.resolveSocket, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
   let destroyed = false;
 
   const clientDestroyed = (): GatewayRequestError => transportError('client_destroyed', 'the gateway client was destroyed');
@@ -275,24 +282,23 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
 
   const noSignal = new AbortController().signal;
 
-  const listModels = async (signal: AbortSignal): Promise<GatewayModel[]> => {
+  const listModels = async (signal: AbortSignal): Promise<ListedGatewayModel[]> => {
     const parsed = await unary({ method: 'GET', path: '/v1/momonga/models', headers: {} }, signal, unaryBound());
     const data = isRecord(parsed) ? parsed['data'] : undefined;
     if (!Array.isArray(data)) throw invalidResponse('the model list has no data array');
-    return data.map((entry: unknown): GatewayModel => {
-      if (!isRecord(entry) || typeof entry['id'] !== 'string' || !isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) {
-        throw invalidResponse('the model list holds a malformed entry');
-      }
+    return data.map((entry: unknown): ListedGatewayModel => {
+      if (!isRecord(entry) || typeof entry['id'] !== 'string') throw invalidResponse('the model list holds a malformed entry');
       const targets = entry['targets'];
       const counters = entry['targetCounters'];
       if (!Array.isArray(targets) || !targets.every((target) => typeof target === 'string') || !isRecord(counters) || !targets.every((target) => typeof counters[target] === 'string')) {
         throw invalidResponse('the model list holds an entry without its targets and their counters');
       }
+      if (!isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) throw invalidResponse('the model list holds a malformed entry');
       return {
         id: entry['id'],
         targets,
-        capabilities: entry['capabilities'] as Capabilities,
-        targetCapabilities: entry['targetCapabilities'] as Record<string, Capabilities>,
+        capabilities: entry['capabilities'],
+        targetCapabilities: entry['targetCapabilities'] as Record<string, Record<string, unknown>>,
         targetCounters: counters as Record<string, string>,
       };
     });
@@ -303,7 +309,14 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     if (found === undefined) {
       throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
     }
-    return found;
+    const { toolCalling } = found.capabilities;
+    if (isToolCallingState(toolCalling)) {
+      const readiness = agentReadiness({ toolCalling });
+      if (readiness.state === 'probing') {
+        throw new GatewayRequestError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: readiness.message, retryAfterMs: readiness.retryAfterSeconds * MS_PER_SECOND });
+      }
+    }
+    return { ...found, capabilities: found.capabilities as Capabilities, targetCapabilities: found.targetCapabilities as Record<string, Capabilities> };
   };
 
   const timedChunksOf = async function* (guard: Guard, response: UdsResponse): AsyncGenerator<Uint8Array> {

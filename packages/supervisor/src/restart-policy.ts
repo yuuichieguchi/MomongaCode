@@ -1,6 +1,6 @@
-import { computeBackoff } from '@momonga/foundation';
+import { computeBackoff, markerReapClockBoundMs } from '@momonga/foundation';
 import type { SupervisorExitReason } from '@momonga/protocol';
-import { RESTART_BASE_MS, RESTART_MAX_MS, RESTART_MIN_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS } from './constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, RESTART_BASE_MS, RESTART_MAX_MS, RESTART_MIN_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS } from './constants.ts';
 
 export type RestartPolicy = {
   baseMs: number;
@@ -96,3 +96,6 @@ export const decideAfterExit = (input: { exit: ExitClassification; consecutiveFa
       return { next: 'backoff', delayMs: backoffDelay(input) };
   }
 };
+
+export const childRestartBoundMs = (input: { policy: RestartPolicy; startupTimeoutMs: number; stdioFlushMs: number }): number =>
+  input.stdioFlushMs + markerReapClockBoundMs(DAEMON_MARKER_KILL_GRACE_MS) + Math.max(input.policy.minMs, input.policy.maxMs) + input.startupTimeoutMs;

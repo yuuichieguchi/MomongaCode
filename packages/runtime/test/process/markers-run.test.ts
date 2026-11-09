@@ -2,12 +2,12 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, groupAlive, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, spawnTracked, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
-import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, waitForCondition } from './run-helpers.ts';
+import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 const control = vi.hoisted(() => ({ lookupError: undefined as Error | undefined }));
@@ -41,14 +41,7 @@ beforeEach(() => {
   control.lookupError = undefined;
 });
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const spawnHolder = (marker: string, content?: (pid: number) => string): number => {
   const fd = fs.openSync(marker, 'w', 0o600);
@@ -82,14 +75,14 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     await ensureMomongaDirs(stack.temp.paths);
     const marker = path.join(stack.temp.paths.markers.mcp, 'fx-left-behind');
     const pgid = spawnHolder(marker, (pid) => `${pid}\n`);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toContain('mcp-markers');
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('tool markers are reaped at start by record state: COMPLETED, missing and UNKNOWN holders are reaped, PENDING is kept, holder-less markers are deleted', PROCESS_TIMEOUT, async () => {
+  it('tool markers are reaped at start by record state: every held marker is reaped whatever its row says, holder-less markers are deleted', PROCESS_TIMEOUT, async () => {
     const stack = await prepareStack();
     await ensureMomongaDirs(stack.temp.paths);
     const markers = stack.temp.paths.markers.tools;
@@ -117,11 +110,11 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     });
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(holders['completed'] as number)).toBe(false);
-    expect(groupExists(holders['missing'] as number)).toBe(false);
-    expect(groupExists(holders['unknown'] as number)).toBe(false);
-    expect(groupExists(holders['pending'] as number)).toBe(true);
-    expect(fs.readdirSync(markers).sort()).toEqual([keyOf('d')]);
+    expect(await groupExists(holders['completed'] as number)).toBe(false);
+    expect(await groupExists(holders['missing'] as number)).toBe(false);
+    expect(await groupExists(holders['unknown'] as number)).toBe(false);
+    expect(await groupExists(holders['pending'] as number)).toBe(false);
+    expect(fs.readdirSync(markers)).toEqual([]);
   });
 
   it('marks a job a dead runtime left running unknown, and reaps its process group, before the service and the workers start', PROCESS_TIMEOUT, async () => {
@@ -137,7 +130,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
       pgid = spawnHolder(path.join(stack.temp.paths.markers.tools, idemKey));
       store.jobs.attachProcess(jobId, pgid);
     });
-    const seen: Record<string, { status: string | undefined; alive: boolean }> = {};
+    const seen: Record<string, { status: string | undefined; alive: Promise<boolean> }> = {};
     const logger = hookLogger((step, msg) => {
       if (msg !== 'startup.step' || (step !== 'service' && step !== 'workers')) return;
       seen[step] = { status: readDb<{ status: string }>(stack.temp.paths.databases.runtime, 'SELECT status FROM jobs WHERE id = ?', jobId)[0]?.status, alive: groupExists(pgid as number) };
@@ -145,7 +138,8 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
 
     await launchRuntime(stack.temp, { logger });
 
-    expect(seen).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
+    const settled = Object.fromEntries(await Promise.all(Object.entries(seen).map(async ([step, { status, alive }]) => [step, { status, alive: await alive }])));
+    expect(settled).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
   });
 
   it('a store error during tool-marker reaping fails startup before any process is signalled and unwinds', PROCESS_TIMEOUT, async () => {
@@ -156,19 +150,18 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     control.lookupError = injected;
     const logger = hookLogger(() => undefined);
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout }));
+    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger, stdout }));
     expect(error).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'lock']);
-    expect(groupExists(holder)).toBe(true);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await groupExists(holder)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
 });
 
 const LEASE_MS = 30_000;
 const MAX_ATTEMPTS = 5;
-const SWEEP_MS = 30_000;
 const DEAD_LETTER_KEY = 'd'.repeat(64);
 
 const trackedRunHome = (context: CleanupContext): RunHome => {
@@ -229,27 +222,16 @@ const deadLetterOf = (temp: RunHome, runId: string): { status: string; dead_lett
   readDb<{ status: string; dead_letter: number }>(temp.paths.databases.runtime, 'SELECT status, dead_letter FROM runs WHERE id = ?', runId)[0];
 
 describe('dead-lettered runs: real holders (§8)', () => {
-  it('a real holder of a dead-lettered run is killed by the periodic sweep while the runtime is live', PROCESS_TIMEOUT, async (context) => {
+  it('a real holder of a run that is not dead-lettered is killed at start too, because no owner lives after a restart', PROCESS_TIMEOUT, async (context) => {
     const temp = trackedRunHome(context);
-    const { runId, pgid, lastClaimAt } = await seedTakenOverRun(context, temp, false);
+    const { pgid } = await seedTakenOverRun(context, temp, false);
     const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
-    const clock = createFakeClock(lastClaimAt + 1000);
-    const timers = createFakeTimers(clock);
 
-    const launched = await launchRuntime(temp, { clock, fakeTimers: timers });
+    const launched = await launchRuntime(temp);
+
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(pgid)).toBe(true);
-    expect(fs.existsSync(marker)).toBe(true);
-
-    for (let elapsed = 0; elapsed < 4 * SWEEP_MS && (groupExists(pgid) || fs.existsSync(marker)); elapsed += 1000) {
-      timers.advance(1000);
-      await afterMicrotasks();
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
-
-    expect(deadLetterOf(temp, runId)).toEqual({ status: 'FAILED', dead_letter: 1 });
-    expect(groupExists(pgid)).toBe(false);
-    await waitForCondition(() => !fs.existsSync(marker), 'the marker to be removed');
+    expect(await groupExists(pgid)).toBe(false);
+    expect(fs.existsSync(marker)).toBe(false);
     expect(idempotencyState(temp)).toBe('PENDING');
   });
 
@@ -262,7 +244,7 @@ describe('dead-lettered runs: real holders (§8)', () => {
     const launched = await launchRuntime(temp);
 
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(idempotencyState(temp)).toBe('PENDING');
   });

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders } from '@momonga/foundation';
+import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -31,14 +31,7 @@ const pidAlive = (pid: number): boolean => {
   }
 };
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const eventually = async (condition: () => Promise<boolean> | boolean, description: string, attempts = 2000): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -50,7 +43,7 @@ const eventually = async (condition: () => Promise<boolean> | boolean, descripti
 
 const waitUntilGone = async (pgid: number): Promise<void> => {
   const deadline = Date.now() + 5000;
-  while (groupExists(pgid)) {
+  while (await groupExists(pgid)) {
     if (Date.now() > deadline) throw new Error(`process group ${pgid} is still alive`);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -113,7 +106,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending')).toEqual([{ op: 'markUnknownIfPending', key: KEY_A, changed: true }]);
@@ -126,14 +119,14 @@ describe('executor abandon', () => {
     const pgid = spawnHolder(marker, 'sleep 30 & exec 3>&-; wait');
     seedPending(harness, KEY_A, pgid);
     await eventually(async () => {
-      const holders = await findHolders(marker);
+      const holders = await findHolders(marker, { signal: new AbortController().signal });
       return holders.length === 1 && holders[0] !== pgid;
     }, 'the leader to close fd 3 while its sleep child keeps it');
 
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
   });
@@ -148,12 +141,12 @@ describe('executor abandon', () => {
     const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
     pids.push(grandchild);
     expect(grandchild).toBeGreaterThan(1);
-    await eventually(async () => (await findHolders(marker)).includes(grandchild), 'the grandchild to hold the marker');
+    await eventually(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
 
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(pidAlive(grandchild)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
   });
@@ -167,7 +160,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('COMPLETED');
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending' && entry.changed)).toEqual([]);
@@ -182,7 +175,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe(state === 'UNKNOWN' ? 'UNKNOWN' : undefined);
   });
@@ -320,7 +313,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / REAP_POLL_INTERVAL_MS);
+    expect(timing.sleeps).toBe((2 * STUBBORN_GRACE_MS) / REAP_POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
@@ -342,7 +335,7 @@ describe('executor abandon', () => {
       ),
     ).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', reason: 'unverifiable', message: expect.stringContaining(brokenMarker) });
 
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.idempotency.stateOf(KEY_B)).toBe('UNKNOWN');
@@ -399,19 +392,20 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
   });
 
-  const unreadable = { pid: 31_340, command: 'ssh-agent', startTicks: '9' };
+  const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9 };
   const unreadableInspector: ProcessInspector = {
     startTimeOf: async () => ({ kind: 'gone' }),
-    holdersOf: async (_marker, report) => {
+    holdersOf: async (_marker, _options, report) => {
       report?.(unreadable);
       return { kind: 'value', value: [] };
     },
     groupsOf: async () => ({ kind: 'value', value: new Map() }),
+    markerState: async () => 'held',
   };
   const unreadableHarness = (): Harness =>
     harnessWith({ inspector: unreadableInspector, uninspectable: createUninspectableRegistry({ isAlive: () => true }), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
 
-  it('reconciles the earlier attempt as not stopped, naming the process that could not be inspected, at the first attempt', async () => {
+  it('refuses the earlier attempt as unverifiable when a process holding its marker could not be inspected: the marker is kept and reconcile does not run', async () => {
     const harness = unreadableHarness();
     const marker = markerOf(harness, KEY_A);
     fs.writeFileSync(marker, '', { mode: 0o600 });
@@ -427,22 +421,82 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
       },
     });
 
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]));
-
-    expect(seen).toEqual([{ stopped: false, uninspectable: [{ pid: 31_340, command: 'ssh-agent' }] }]);
+    await expect(harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')]))).rejects.toMatchObject({
+      name: 'EarlierAttemptNotStoppedError',
+      reason: 'unverifiable',
+    });
+    expect(seen).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
+    expect(harness.idempotency.stateOf(KEY_A)).toBe('PENDING');
     expect(harness.warnings).toEqual(expect.arrayContaining([`tool marker ${marker}: process 31340 (ssh-agent) could not be inspected, so it was left alone`]));
   });
 
-  it('abandon completes as unknown, without a failure, when a process could not be inspected', async () => {
+  it('abandon refuses as unverifiable when a process holding the marker could not be inspected, keeps the marker and still marks the record UNKNOWN', async () => {
     const harness = unreadableHarness();
     const marker = markerOf(harness, KEY_A);
     fs.writeFileSync(marker, '', { mode: 0o600 });
     seedPending(harness, KEY_A);
 
-    const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
-
-    expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
+    await expect(harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() })).rejects.toMatchObject({
+      name: 'EarlierAttemptNotStoppedError',
+      reason: 'unverifiable',
+    });
+    expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(harness.warnings).toEqual(expect.arrayContaining([`tool marker ${marker}: process 31340 (ssh-agent) could not be inspected, so it was left alone`]));
+  });
+  const hungInspector = (seen: AbortSignal[]): ProcessInspector =>
+    ({
+      startTimeOf: async () => ({ kind: 'gone' }),
+      groupsOf: async () => ({ kind: 'value', value: new Map() }),
+      markerState: (_marker: string, options: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          seen.push(options.signal);
+          options.signal.addEventListener('abort', () => resolve('unknown'), { once: true });
+        }),
+      holdersOf: (_marker: string, options: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          seen.push(options.signal);
+          options.signal.addEventListener('abort', () => resolve({ kind: 'failed', cause: 'transient', evidence: { kind: 'opaque', detail: 'aborted' } }), { once: true });
+        }),
+    }) as unknown as ProcessInspector;
+
+  const settlesAfterAbort = async (running: Promise<unknown>, seen: AbortSignal[], abort: () => void): Promise<void> => {
+    await eventually(() => seen.length > 0, 'the reap started its first probe', 200);
+    abort();
+    let settled = false;
+    void running.then(
+      () => void (settled = true),
+      () => void (settled = true),
+    );
+    await eventually(() => settled, 'the reap ended with its operation', 200);
+    expect(seen.every((signal) => signal.aborted)).toBe(true);
+  };
+
+  it('abandon bounds every probe of its reap by the abandon signal: a listing that never answers ends with it, refused as unverifiable, the marker kept', PROCESS_TIMEOUT, async () => {
+    const seen: AbortSignal[] = [];
+    const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+    const controller = new AbortController();
+    const running = harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: controller.signal });
+    await settlesAfterAbort(running, seen, () => controller.abort());
+    await expect(running).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', reason: 'unverifiable' });
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('recovery bounds every probe of the earlier-attempt reap by the batch signal: a listing that never answers ends with it and reconcile does not run', PROCESS_TIMEOUT, async () => {
+    const seen: AbortSignal[] = [];
+    const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+    const reconciled: unknown[] = [];
+    const tool = makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile: async (_input, _record, ctx) => { reconciled.push(ctx.earlierAttempt); return { outcome: 'unknown', output: 'unknown' }; } });
+    const controller = new AbortController();
+    const running = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
+    await settlesAfterAbort(running, seen, () => controller.abort());
+    expect(reconciled).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
   });
 });

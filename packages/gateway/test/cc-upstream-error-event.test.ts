@@ -1,12 +1,16 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedFmTarget } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
 import type { ExecResult, FmServe } from '@momonga/gateway';
 import type { HealthResult } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
+import { primed, recordKeyOptions } from './fm-record-support.ts';
+import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FM_ROLE_CHUNK = {
   id: 'chatcmpl-fm',
@@ -41,22 +45,28 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     health: async (): Promise<HealthResult> => ({ ok: true }),
   };
   const countTokens = async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' });
-  const managed = await createManagedFmTarget({
-    fmServe,
-    binary: '/opt/fake/fm',
-    exec: countTokens,
-    probeRecordDir: path.join(makeDir(), 'probe'),
-    recordKey: { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' },
-    toolCallingSetting: 'native',
-    declaredModel: 'system',
-  });
-  const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
+  const probeRecordDir = path.join(makeDir(), 'probe');
+  const key = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
+  await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), CURRENT_DIALECTS);
+  const managed = await primed(
+    createManagedFmTarget({
+      fmServe,
+      binary: '/opt/fake/fm',
+      exec: countTokens,
+      probeRecordDir,
+      ...recordKeyOptions(key),
+      toolCallingSetting: 'native',
+      declaredModel: 'system',
+    }),
+    key.target,
+  );
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };
 
 const genericAdapter = (upstream: FakeUpstreamServer) => {
-  const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),

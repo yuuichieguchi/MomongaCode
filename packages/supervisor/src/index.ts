@@ -4,7 +4,6 @@ export {
   DAEMON_MARKER_KILL_GRACE_MS,
   DEFAULT_INTERVALS,
   EXTERNAL_POLL_MS,
-  GATEWAY_ABORT_BUDGET_MS,
   HELD_REASON_MAX_CHARS,
   HELD_RETRY_MS,
   KILL_CONFIRM_MS,
@@ -33,15 +32,15 @@ export {
 export type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 export { omitUndefined } from './omit-undefined.ts';
 export type { OmitUndefined } from './omit-undefined.ts';
-export { startSupervisor } from './start-supervisor.ts';
-export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess } from './start-supervisor.ts';
+export { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from './start-supervisor.ts';
+export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess, SupervisorStartTiming } from './start-supervisor.ts';
 export { runSupervisorEntry } from './entry.ts';
 export type { SupervisorEntryDeps } from './entry.ts';
 export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher.ts';
 export type { ChildRole, GatewayTuning, LaunchSpec, Launcher, ResolvedLaunch, RuntimeTuning } from './launcher.ts';
-export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, GATEWAY_TRUST_ENV_NAMES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
+export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
 export type { CredentialSettings, SourceEnv } from './child-env.ts';
-export { DEFAULT_RESTART_POLICY, backoffDelay, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
+export { DEFAULT_RESTART_POLICY, backoffDelay, childRestartBoundMs, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
 export type { ExitClass, ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 export { createChildManager } from './child-manager.ts';
 export type {
@@ -69,7 +68,7 @@ export { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from './settings-watch
 export type { SettingsWatch, WatchSettingsOptions } from './settings-watch.ts';
 export { createControlRequestHandler, respondShutdown, startControlServer } from './control-server.ts';
 export type { ControlHandlerOptions, ControlServer, ControlServerOptions, ShutdownResponseWriter } from './control-server.ts';
-export { openDaemonMarker, reapDaemonMarker, reapOrphans } from './orphans.ts';
+export { openDaemonMarker, orphanPhaseOneBoundMs, orphanReapBoundMs, reapDaemonMarker, reapOrphans } from './orphans.ts';
 export type { DaemonMarker, MarkerFiles, MarkerPorts, OrphanReapOptions, OrphanReapResult } from './orphans.ts';
 export { runLaunchTask } from './launch.ts';
 export type { LaunchTaskOptions } from './launch.ts';

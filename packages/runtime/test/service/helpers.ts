@@ -6,7 +6,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
@@ -20,7 +20,8 @@ import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -41,6 +42,7 @@ export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
 export const HOUR_MS = 3_600_000;
 export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
+export const FORMER_APPROVAL_LIMIT_MS = DEFAULT_TTL_MS;
 export const DEFAULT_LIMITS = { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: DEFAULT_TTL_MS, loopThreshold: 3 };
 export const SOCKET_PATH_LIMIT = 104;
 export const SERVICE_PID = 424_242;
@@ -107,6 +109,7 @@ export type FakePorts = {
   aliasesFailure: { error?: unknown };
   modelAliases: () => Promise<readonly string[]>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
+  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
 };
 
 export const createFakePorts = (): FakePorts => {
@@ -114,6 +117,19 @@ export const createFakePorts = (): FakePorts => {
   const settingsCalls: string[] = [];
   const settingsFailure: { error?: unknown } = {};
   const aliasesFailure: { error?: unknown } = {};
+  const settingsOf = (cwd: string): SessionCreateSettingsResult => {
+    const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
+    const entry = settingsByCwd.get(real) ?? {};
+    return {
+      ...(entry.defaultMode === undefined ? {} : { defaultMode: entry.defaultMode }),
+      ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
+      additionalDirectories: entry.additionalDirectories ?? [],
+      credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
+      ...(entry.autoModeClassifier === undefined
+        ? {}
+        : { autoModeClassifier: entry.autoModeClassifier, autoModeKey: { classifier: `fake|${entry.autoModeClassifier}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' } }),
+    };
+  };
   return {
     settingsByCwd,
     settingsCalls,
@@ -126,17 +142,11 @@ export const createFakePorts = (): FakePorts => {
     sessionCreateSettings: async (cwd) => {
       settingsCalls.push(cwd);
       if (settingsFailure.error !== undefined) throw settingsFailure.error;
-      const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
-      const entry = settingsByCwd.get(real) ?? {};
-      return {
-        ...(entry.defaultMode === undefined ? {} : { defaultMode: entry.defaultMode }),
-        ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
-        additionalDirectories: entry.additionalDirectories ?? [],
-        credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
-        ...(entry.autoModeClassifier === undefined
-          ? {}
-          : { autoModeClassifier: entry.autoModeClassifier, autoModeKey: { classifier: `fake|${entry.autoModeClassifier}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' } }),
-      };
+      return settingsOf(cwd);
+    },
+    sessionReadSettings: async (cwd) => {
+      settingsCalls.push(cwd);
+      return settingsOf(cwd);
     },
   };
 };
@@ -494,6 +504,7 @@ export const serviceOptions = (
     };
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
+  sessionReadSettings: base.ports.sessionReadSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
@@ -559,7 +570,7 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
     await service.close();
   };
   onCleanup(closeService);
-  const client = createUdsClient(layout.socketPath);
+  const client = createUdsClient(fixedSocket(layout.socketPath));
   onCleanup(() => client.close());
   let rawDb: DatabaseSync | undefined;
   onCleanup(() => rawDb?.close());
@@ -658,17 +669,15 @@ export const toolCallPayload = (callId: string, target: string): RunEventPayload
   locations: [{ path: target }],
 });
 
-export const requestManualApproval = (
+export const requestManualApproval = async (
   env: ServiceEnv,
   claim: Claim,
   callId: string,
-  expiresAt: number,
   extra: { suggestedRule?: string } = {},
-): string => {
-  const result = env.store.requestApproval(claim, {
+): Promise<string> => {
+  const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    expiresAt,
     event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);
@@ -727,6 +736,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,
+    ripgrepLocator: (target) => createHostRipgrepLocator({ setting: pinnedRipgrepPath(), env: target }),
     shellHost: nodeShellHost(),
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({

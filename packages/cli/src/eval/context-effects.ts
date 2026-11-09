@@ -1,17 +1,15 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { ensureMomongaDirs, inspectProcessLock, isProcessAlive } from '@momonga/foundation';
+import { currentGenerationLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
-import { daemonStopBoundMs, ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
 import type { ContextHostEffects, EvalOwner } from './context-host.ts';
-
-export const SHORT_TEMP_BASE = '/tmp';
 
 export const MAX_TIMER_MS = 2_147_483_647;
 
@@ -26,8 +24,6 @@ const signalProcess = (pid: number, signal: NodeJS.Signals, group: boolean): voi
     if (!isMissingProcess(error)) throw error;
   }
 };
-
-export const shortTempBase = (platform: NodeJS.Platform): string => (platform === 'win32' ? os.tmpdir() : SHORT_TEMP_BASE);
 
 const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number): Promise<boolean> => {
   const until = ports.clock.now() + boundMs;
@@ -115,14 +111,14 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   },
   makeDirectory: (directory) => ports.files.mkdir(directory),
   canonical: (directory) => fs.realpath(directory),
-  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true })).pid,
+  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
   daemonHolder: async (paths) => {
-    const lock = await inspectProcessLock(paths.locks.supervisor);
+    const lock = await inspectProcessLock(await currentGenerationLock(paths, 'supervisor'));
     return lock.state === 'held' ? lock.pid : undefined;
   },
   terminate: async (pid) => {
     signalProcess(pid, 'SIGTERM', false);
-    if (await gone(ports, pid, daemonStopBoundMs())) return;
+    if (await gone(ports, pid, STOP_WAIT_WHEN_UNKNOWN_MS)) return;
     signalProcess(pid, 'SIGKILL', true);
     signalProcess(pid, 'SIGKILL', false);
     if (!(await gone(ports, pid, KILL_WAIT_MS))) throw new Error(`the daemon with pid ${pid} did not stop after SIGTERM and SIGKILL`);

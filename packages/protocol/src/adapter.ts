@@ -49,6 +49,7 @@ export type AdapterContext = {
 
 export type ClassifiedError = {
   retryable: boolean;
+  stalled?: true;
   retryAfterMs?: number;
   error: ErrorBody;
 };
@@ -72,6 +73,8 @@ export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteIn
 
 export type ClientOperation = 'create' | 'compact' | 'count_tokens';
 
+export type AdapterStop = { readonly managedServerStopGraceMs: number };
+
 export type ProviderAdapter = {
   readonly kind: string;
   readonly sampling: AdapterSampling;
@@ -80,7 +83,7 @@ export type ProviderAdapter = {
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
   health?(target: AdapterTarget): Promise<HealthResult>;
-  close?(): Promise<void>;
+  close?(stop?: AdapterStop): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;

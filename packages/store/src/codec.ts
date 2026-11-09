@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
+import { DATABASE_NOT_NEWER } from './decode-context.ts';
+import type { DecodeContext } from './decode-context.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
-import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
@@ -28,14 +30,14 @@ const expectServerRecords = (identity: string, value: unknown): SessionMcpServer
   return record as SessionMcpServers;
 };
 
-export const decodeSession = (row: Row): Session => {
+export const decodeSession = (row: Row, context: DecodeContext): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
   return {
     id: reader.string('id'),
     cwd: reader.string('cwd'),
     env: expectStringRecord('sessions', identity, 'env_json', reader.json('env_json')),
-    permissionMode: expectOneOf('sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
+    permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     modelAlias: reader.string('model_alias'),
     bypassAllowed: reader.flag('bypass_allowed'),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
@@ -44,7 +46,7 @@ export const decodeSession = (row: Row): Session => {
   };
 };
 
-const HISTORY_MODES = ['inherit', 'fresh'] as const;
+export const HISTORY_MODES = ['inherit', 'fresh'] as const;
 
 const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   const record = expectRecord('runs', identity, 'usage_json', value);
@@ -55,8 +57,8 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   return { inputTokens, outputTokens, totalTokens };
 };
 
-const decodeCancelOrigin = (identity: string, value: string | null): Run['cancelOrigin'] =>
-  value === null ? null : expectOneOf('runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
+const decodeCancelOrigin = (context: DecodeContext, identity: string, value: string | null): Run['cancelOrigin'] =>
+  value === null ? null : storedOneOf(context, 'runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
 
 const decodeRunError = (identity: string, value: unknown): RunError => {
   const record = expectRecord('runs', identity, 'error_json', value);
@@ -66,7 +68,7 @@ const decodeRunError = (identity: string, value: unknown): RunError => {
   return { code: record['code'], message: record['message'] };
 };
 
-export const decodeRun = (row: Row): Run => {
+export const decodeRun = (row: Row, context: DecodeContext): Run => {
   const identity = identityOf(row);
   const reader = readerFor('runs', identity, row);
   const stopReason = reader.nullableString('stop_reason');
@@ -75,7 +77,7 @@ export const decodeRun = (row: Row): Run => {
     id: reader.string('id'),
     sessionId: reader.string('session_id'),
     ordinal: reader.number('ordinal'),
-    status: expectOneOf('runs', identity, 'status', RUN_STATUSES, reader.string('status')),
+    status: storedOneOf(context, 'runs', identity, 'status', RUN_STATUSES, reader.string('status')),
     version: reader.number('version'),
     leaseOwner: reader.nullableString('lease_owner'),
     leaseToken: reader.number('lease_token'),
@@ -93,13 +95,13 @@ export const decodeRun = (row: Row): Run => {
     lastSeq: reader.number('last_seq'),
     usage: decodeUsage(identity, reader.json('usage_json')),
     previousRunId: reader.nullableString('previous_run_id'),
-    history: expectOneOf('runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
+    history: storedOneOf(context, 'runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
     parentRunId: reader.nullableString('parent_run_id'),
     parentCallId: reader.nullableString('parent_call_id'),
-    origin: expectOneOf('runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
-    cancelOrigin: decodeCancelOrigin(identity, reader.nullableString('cancel_origin')),
+    origin: storedOneOf(context, 'runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
+    cancelOrigin: decodeCancelOrigin(context, identity, reader.nullableString('cancel_origin')),
   };
-  if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
+  if (stopReason !== null) run.stopReason = storedOneOf(context, 'runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);
   return run;
 };
@@ -199,7 +201,6 @@ const assertInheritedForm = (identity: string, payload: Record<string, unknown>)
 
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
-  if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
   if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
   if (type === 'context.inherited') assertInheritedForm(identity, payload);
   const envelope = {
@@ -214,11 +215,8 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
   return { ...payload, ...envelope } as RunEvent;
 };
 
-const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): SessionEvent => {
+const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>, context: DecodeContext): SessionEvent => {
   const reader = readerFor('events', identity, row);
-  if (!Object.hasOwn(SESSION_EVENT_TYPES, type)) {
-    throw corrupt('events', identity, `column run_id is NULL but type "${type}" is not a session event type`);
-  }
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
   if (type === 'model.changed') {
     const { modelAlias, previousModelAlias } = payload;
@@ -229,23 +227,60 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   }
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
-  return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
+  return { type: 'mode.changed', mode: storedOneOf(context, 'events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
 };
 
-export const decodeEvent = (row: Row): RunEvent | SessionEvent => {
+export { DATABASE_NOT_NEWER, decodeContextOf } from './decode-context.ts';
+export type { DecodeContext } from './decode-context.ts';
+
+const opaqueEventOf = (row: Row, identity: string, type: string, payload: Record<string, unknown>): OpaqueEvent => {
+  const reader = readerFor('events', identity, row);
+  return {
+    opaque: true,
+    type,
+    id: reader.number('id'),
+    runId: reader.nullableString('run_id'),
+    sessionId: reader.string('session_id'),
+    seq: reader.nullableNumber('seq'),
+    step: reader.nullableNumber('step'),
+    createdAt: reader.number('created_at'),
+    payload,
+  };
+};
+
+export const decodeStoredEvent = (row: Row, context: DecodeContext): RunEvent | SessionEvent | OpaqueEvent => {
   const identity = identityOf(row);
   const reader = readerFor('events', identity, row);
   const type = reader.string('type');
   const payload = expectRecord('events', identity, 'payload_json', reader.json('payload_json'));
   if (payload['type'] !== type) throw corrupt('events', identity, `payload_json type does not match column type "${type}"`);
-  return reader.nullableString('run_id') === null ? decodeSessionEvent(row, identity, type, payload) : decodeRunEvent(row, identity, type, payload);
+  const sessionScoped = reader.nullableString('run_id') === null;
+  if (!Object.hasOwn(sessionScoped ? SESSION_EVENT_TYPES : EVENT_TYPES, type)) {
+    if (context.databaseIsNewer()) return opaqueEventOf(row, identity, type, payload);
+    throw corrupt('events', identity, sessionScoped ? `column run_id is NULL but type "${type}" is not a session event type` : `column type has unknown event type "${type}"`);
+  }
+  return sessionScoped ? decodeSessionEvent(row, identity, type, payload, context) : decodeRunEvent(row, identity, type, payload);
 };
 
-export const decodeRunEvents = (rows: readonly Row[]): RunEvent[] =>
-  rows.map((row) => {
-    const event = decodeEvent(row);
+export const isOpaqueEvent = (event: RunEvent | SessionEvent | OpaqueEvent): event is OpaqueEvent => 'opaque' in event;
+
+export const decodeKnownEvent = (row: Row, context: DecodeContext): RunEvent | SessionEvent | undefined => {
+  const event = decodeStoredEvent(row, context);
+  return isOpaqueEvent(event) ? undefined : event;
+};
+
+export const decodeEvent = (row: Row): RunEvent | SessionEvent => {
+  const event = decodeStoredEvent(row, DATABASE_NOT_NEWER);
+  if (isOpaqueEvent(event)) throw corrupt('events', identityOf(row), `decoded the unknown event type "${event.type}" without a database`);
+  return event;
+};
+
+export const decodeRunEvents = (rows: readonly Row[], context: DecodeContext = DATABASE_NOT_NEWER): RunEvent[] =>
+  rows.flatMap((row) => {
+    const event = decodeKnownEvent(row, context);
+    if (event === undefined) return [];
     if (!('runId' in event)) throw corrupt('events', identityOf(row), 'a run event query returned a session event');
-    return event;
+    return [event];
   });
 
 const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;

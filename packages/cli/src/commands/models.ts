@@ -1,8 +1,10 @@
-import type { MomongaPaths } from '@momonga/foundation';
-import { LOCAL_SERVER_CANDIDATES, agentReadiness } from '@momonga/protocol';
+import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
+import { currentSocketResolver } from '@momonga/foundation';
+import { LOCAL_SERVER_CANDIDATES, agentReadiness, isProbingCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, DetectedLocalServer, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
@@ -25,11 +27,13 @@ const describeCapabilities = (capabilities: AliasCapabilities): string[] => [
 export const formatModels = (models: readonly MomongaModelEntry[]): string =>
   models.length === 0
     ? 'the gateway lists no model aliases'
-    : escapedLines(models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...describeCapabilities(model.capabilities)]));
+    : escapedLines(
+        models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...(isProbingCapabilities(model.capabilities) ? [`    ${model.capabilities.toolCalling.message}`] : describeCapabilities(model.capabilities))]),
+      );
 
 export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths);
-  const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
     const models = await gateway.models();
     ports.stdout.write(`${json ? JSON.stringify(models) : formatModels(models)}\n`);
@@ -53,14 +57,14 @@ export const formatDetected = (servers: readonly DetectedLocalServer[], settings
 export const detectModels = async (
   ports: CliPorts,
   paths: MomongaPaths,
-  options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch?: typeof fetch },
+  options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch: OutboundFetch | typeof fetch },
 ): Promise<number> => {
   const { detectLocalServers } = await import('@momonga/gateway');
   const found = await detectLocalServers({
     candidates: LOCAL_SERVER_CANDIDATES,
     typed: options.typed,
     signal: options.interrupt,
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    fetch: options.fetch,
   });
   ports.stdout.write(`${options.json ? JSON.stringify(found) : formatDetected(found, paths.settingsFile)}\n`);
   return 0;

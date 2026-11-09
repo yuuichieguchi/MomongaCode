@@ -227,7 +227,7 @@ describe('a crash during the wrap-up call', () => {
   ])('resends the recorded wrap-up body unchanged and stops with max_steps when the resend gets $label', async ({ reply, rejected }) => {
     const env = await makeEnv();
     const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_c_1', name: 'Echo', args: { value: 'x' } })], usage: USAGE } },

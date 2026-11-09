@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
+import { processOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 export const DEFAULT_FM_BINARY = '/usr/bin/fm';
@@ -26,9 +28,9 @@ export class NotAProbeableTarget extends Error {
 export type ProbeOptions = { fmBinary: string; samples?: number; interrupt: AbortSignal };
 
 const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
-  const { stopped } = await stopDaemon(ports, paths);
+  const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
   if (stopped) {
-    await ensureDaemon(ports, paths);
+    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
     ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
   }
 };
@@ -38,8 +40,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects);
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects);
+  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
+  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -119,11 +121,12 @@ const probeChatCompletions = async (
   target: ChatCompletionsConfig,
   options: ProbeOptions,
   userDialects: Record<string, DialectDefinition>,
+  network: OutboundNetwork,
 ): Promise<number> => {
-  const { probeEndpointTarget } = await import('@momonga/gateway');
+  const { probeEndpointTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, toolCalling, key } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
-    upstream: upstreamEndpointOf(target),
+    upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(name, target),
     model: target.model,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
@@ -137,11 +140,19 @@ const probeChatCompletions = async (
   return 0;
 };
 
-const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions, userDialects: Record<string, DialectDefinition>): Promise<number> => {
-  const { probeOllamaTarget } = await import('@momonga/gateway');
+const probeOllama = async (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  name: string,
+  target: OllamaConfig,
+  options: ProbeOptions,
+  userDialects: Record<string, DialectDefinition>,
+  network: OutboundNetwork,
+): Promise<number> => {
+  const { probeOllamaTarget, reachableEndpoint } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
-    upstream: upstreamEndpointOf(target),
+    upstream: reachableEndpoint(upstreamEndpointOf(target), network),
     key: endpointRecordKeyOf(name, target),
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
@@ -174,6 +185,5 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeFmText(target, paths.probe, report, toolCalling, configured.outputBoundField));
-  await restartDaemon(ports, paths);
   return 0;
 };

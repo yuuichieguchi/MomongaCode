@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, createUserSettingsCache, loadSettings, loadUserSettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, loadSettings, loadUserSettings, noKeptRecords } from '@momonga/config';
 import {
   localSettingsDir,
   localSettingsPath,
@@ -68,7 +68,7 @@ describe('loadUserSettings', () => {
 describe('createUserSettingsCache', () => {
   const cacheFor = (tree: Tree) => {
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: (message: string) => warnings.push(message) });
+    const cache = createUserSettingsCache({ home: tree.home, onWarning: (message: string) => warnings.push(message), keptRecords: noKeptRecords });
     return { cache, warnings };
   };
 

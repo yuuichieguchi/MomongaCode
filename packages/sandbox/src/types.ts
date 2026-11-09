@@ -20,10 +20,15 @@ export interface SandboxCommand {
   stdin?: string;
 }
 
+export interface SandboxDescriptors {
+  markerFd?: number;
+}
+
 export interface SandboxExit {
   code: number | null;
   signal: string | null;
   killedBy?: 'abort' | 'grace-kill';
+  groupNotStopped?: true;
 }
 
 export interface SandboxedProcess {
@@ -37,5 +42,5 @@ export interface SandboxedProcess {
 export interface Sandbox {
   kind: 'seatbelt' | 'bubblewrap' | 'none';
   sweep?(): void;
-  spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess;
+  spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess;
 }

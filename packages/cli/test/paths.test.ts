@@ -18,7 +18,7 @@ describe('pathsOf', () => {
     const windows = await pathsOf({ home, platform: 'win32' });
     const linux = await pathsOf({ home, platform: 'linux' });
 
-    expect(windows.sockets.supervisor).not.toBe(linux.sockets.supervisor);
+    expect(windows.current).not.toBe(linux.current);
   });
 
   it('hands the paths out only after ensuring the private tree for the platform of the ports', async () => {

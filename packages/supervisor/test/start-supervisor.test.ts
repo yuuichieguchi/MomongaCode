@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
-import { startSupervisor } from '../src/start-supervisor.ts';
+import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
+import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { orphanReapBoundMs } from '../src/orphans.ts';
+import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   INVALID_SETTINGS_TEXT,
   TEST_VERSION,
@@ -38,8 +40,8 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const h = await startHarness(context, {
       order,
       prepare: (_home, paths) => {
-        lockPath = paths.locks.supervisor;
-        socketPath = paths.sockets.supervisor;
+        lockPath = firstGeneration(paths).locks.supervisor;
+        socketPath = firstGeneration(paths).sockets.supervisor;
         writeMarker(paths, 'runtime-old');
       },
       onStdout: () => order.push(`listening lock=${fs.existsSync(lockPath)} socket=${fs.existsSync(socketPath)}`),
@@ -63,7 +65,7 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const phases: string[] = [];
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        socketPath = paths.sockets.supervisor;
+        socketPath = firstGeneration(paths).sockets.supervisor;
         writeMarker(paths, 'runtime-old');
       },
       markerPorts: {
@@ -85,7 +87,7 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const h = await startHarness(context);
     expect(h.stdout.lines()).toHaveLength(1);
     const ready = parseReadyLine(h.stdout.lines()[0] ?? '');
-    expect(ready).toEqual({ service: 'supervisor', pid: process.pid, version: TEST_VERSION, socketPath: h.paths.sockets.supervisor, startedAt: expect.stringMatching(ISO) });
+    expect(ready).toEqual({ service: 'supervisor', pid: process.pid, version: TEST_VERSION, socketPath: firstGeneration(h.paths).sockets.supervisor, startedAt: expect.stringMatching(ISO) });
     expect(h.supervisor.ready).toEqual(ready);
     expect(h.health().startedAt).toBe(ready?.startedAt);
   });
@@ -126,26 +128,26 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(ProcessLockHeldError);
-    expect((error as ProcessLockHeldError).lockPath).toBe(h.paths.locks.supervisor);
+    expect((error as ProcessLockHeldError).lockPath).toBe(firstGeneration(h.paths).locks.supervisor);
   });
 
   it('a supervisor.sock.lock left behind by a dead holder does not block the start', async (context) => {
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-        fs.writeFileSync(`${paths.sockets.supervisor}.lock`, '999999', { mode: 0o600 });
+        fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(`${firstGeneration(paths).sockets.supervisor}.lock`, '999999', { mode: 0o600 });
       },
     });
-    expect(fs.statSync(h.paths.sockets.supervisor).isSocket()).toBe(true);
-    expect(fs.readFileSync(`${h.paths.sockets.supervisor}.lock`, 'utf8').trim()).toBe(String(process.pid));
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health')).status).toBe(200);
+    expect(fs.statSync(firstGeneration(h.paths).sockets.supervisor).isSocket()).toBe(true);
+    expect(fs.readFileSync(`${firstGeneration(h.paths).sockets.supervisor}.lock`, 'utf8').trim()).toBe(String(process.pid));
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health')).status).toBe(200);
   });
 
   it('startup failure after the lock unwinds and releases the lock', async (context) => {
     const { home, paths } = prepareHome(context);
     writeSettings(home, validSettings());
-    fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(paths.sockets.supervisor, 'not a socket');
+    fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(firstGeneration(paths).sockets.supervisor, 'not a socket');
     const clock = createFakeClock(0);
     const stdout = captureText();
     const fake = createFakeSpawn();
@@ -162,8 +164,8 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
       markerPorts: recordingMarkerPorts().ports,
     });
     await expect(attempt).rejects.toThrow(/not a socket/);
-    expect(await inspectProcessLock(paths.locks.supervisor)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(`${paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(paths).locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(`${firstGeneration(paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
     expect(stdout.text()).toBe('');
     expect(fake.spawnCount()).toBe(0);
   });
@@ -247,7 +249,7 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     };
     let explodeRandom = false;
     const h = await startHarness(context, {
-      prepare: (_home, paths) => lock.holdExternally(paths.locks.gateway, holder.pid),
+      prepare: (_home, paths) => lock.holdExternally(firstGeneration(paths).locks.gateway, holder.pid),
       overrides: {
         lockMechanism: exploding,
         random: () => {
@@ -270,5 +272,32 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(unhandled).toEqual([]);
     const sources = h.log.withMsg('supervisor.background_failed').map((line) => String(line['source']));
     expect(new Set(sources).size).toBe(sources.length);
+  });
+});
+
+describe('resolveStartTiming', () => {
+  it('resolves the start-up timing a supervisor runs with when nothing is injected', () => {
+    expect(resolveStartTiming({})).toEqual({
+      drainTimeoutMs: RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+      startupTimeoutMs: STARTUP_TIMEOUT_MS,
+      orphanGraceMs: runtimeMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
+      orphanReapGraceMs: ORPHAN_REAP_GRACE_MS,
+      orphanPollMs: ORPHAN_POLL_MS,
+    });
+  });
+
+  it('takes every injected value in place of its default', () => {
+    expect(resolveStartTiming({ runtime: { drainTimeoutMs: 1000 }, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
+      drainTimeoutMs: 1000,
+      startupTimeoutMs: 7000,
+      orphanGraceMs: 3000,
+      orphanReapGraceMs: 400,
+      orphanPollMs: 50,
+    });
+  });
+
+  it('bounds the start as the orphan reap followed by the startup timeout of the children', () => {
+    const timing = resolveStartTiming({ orphanGraceMs: 3000 });
+    expect(supervisorStartBoundMs(timing)).toBe(orphanReapBoundMs(timing) + timing.startupTimeoutMs);
   });
 });

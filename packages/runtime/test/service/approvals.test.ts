@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { callsStep } from '../worker/scripts.ts';
-import { DEFAULT_TTL_MS, OPTIONS, START_MS, attachWorkerKit, expectError, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
+import { FORMER_APPROVAL_LIMIT_MS, OPTIONS, attachWorkerKit, expectError, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
 
 const askToWrite = async (env: ServiceEnv, runBody: Record<string, unknown> = {}, files: string[] = ['out.txt']) => {
@@ -33,10 +33,10 @@ describe('approval views', () => {
       runId: run.id,
       callId: kit.gateway.callId('call_w_1'),
       status: 'pending',
-      expiresAt: START_MS + DEFAULT_TTL_MS,
       suggestedRule: `Write(/${target})`,
       toolCall: { callId: kit.gateway.callId('call_w_1'), name: 'Write', title: `Write ${target}`, kind: 'edit', rawInput: { file_path: target, content: 'approved' }, locations: [{ path: target }] },
     });
+    expect(approval).not.toHaveProperty('expiresAt');
     expect(approval.options.map((option: { kind: string }) => option.kind).sort()).toEqual(['allow_always', 'allow_once', 'reject_always', 'reject_once']);
     const requested = env.ofType(run.id, 'tool.permission.requested').at(-1);
     expect(approval.id).toBe(requested?.approvalId);
@@ -64,10 +64,10 @@ describe('approval views', () => {
     expectError(await env.http('POST', '/v1/approvals/apr_missing', { body: { optionId: 'x' } }), 404, 'not_found');
   });
 
-  it('caps the approval expiry at the run deadline', async () => {
+  it('serves no expiry on an approval, whatever the run deadline', async () => {
     const env = await startService();
     const { approvals } = await askToWrite(env, { timeoutMs: 60_000 });
-    expect(approvals[0]?.expiresAt).toBe(START_MS + 60_000);
+    expect(approvals[0]).not.toHaveProperty('expiresAt');
   });
 });
 
@@ -124,8 +124,8 @@ describe('approval resolution', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const first = requestManualApproval(env, claim, 'call_1', START_MS + 60_000);
-    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
+    const first = await requestManualApproval(env, claim, 'call_1');
+    const result = await env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
     expect(result.kind).toBe('ok');
     expect((await env.http('GET', `/v1/approvals/${first}`)).json.approval.status).toBe('superseded');
 
@@ -147,20 +147,18 @@ describe('approval resolution', () => {
     expect(response.json.error.message).toContain('withdrawn');
   });
 
-  it('expires an expired-but-unswept approval on resolve and stops the run with approval_timeout', async () => {
+  it('resolves an approval answered after the former 30-minute limit, without a sweep, and requeues the run', async () => {
     const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000 });
     const { run, approvals } = await askToWrite(env);
     const [approval] = approvals;
-    env.clock.advance(DEFAULT_TTL_MS);
+    env.clock.advance(FORMER_APPROVAL_LIMIT_MS);
 
     const response = await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: optionOf(approval, 'allow_once') } });
 
-    expectError(response, 409, 'approval_not_pending');
-    expect(response.json.error.message).toContain('expired');
-    expect((await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval.status).toBe('expired');
-    expect(await env.getRun(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
-    expect(env.ofType(run.id, 'tool.permission.cancelled')).toEqual([expect.objectContaining({ approvalId: approval.id, reason: 'expired' })]);
-    expect(env.ofType(run.id, 'tool.permission.resolved')).toEqual([]);
+    expect(response.status).toBe(200);
+    expect(response.json.approval).toMatchObject({ id: approval.id, status: 'resolved' });
+    expect(response.json.run).toMatchObject({ id: run.id, status: 'QUEUED' });
+    expect(env.ofType(run.id, 'tool.permission.cancelled')).toEqual([]);
   });
 
   it('rejects a pending approval on a run with cancel requested with 409 run_cancelled', async () => {
@@ -197,14 +195,14 @@ describe('approval resolution', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 60_000);
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
 
     const response = await env.http('POST', `/v1/approvals/${approvalId}`, { body: { optionId: 'opt-allow-once' } });
 
     expect(response.status).toBe(200);
     expect(response.json.run.status).toBe('RUNNING');
     expect(env.ofType(run.id, 'tool.permission.resolved')).toEqual([expect.objectContaining({ approvalId, optionId: 'opt-allow-once' })]);
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     expect((await env.getRun(run.id)).status).toBe('QUEUED');
   });
 
@@ -215,8 +213,8 @@ describe('approval resolution', () => {
     const claim = env.claimRun(run.id);
     const target = path.join(env.layout.projectReal, 'a.txt');
     env.append(claim, [toolCallPayload('call_1', target), toolCallPayload('call_2', target)]);
-    const withRule = requestManualApproval(env, claim, 'call_1', START_MS + 60_000, { suggestedRule: 'Write(/a.txt)' });
-    const withoutRule = requestManualApproval(env, claim, 'call_2', START_MS + 60_000);
+    const withRule = await requestManualApproval(env, claim, 'call_1', { suggestedRule: 'Write(/a.txt)' });
+    const withoutRule = await requestManualApproval(env, claim, 'call_2');
 
     expect((await env.http('GET', `/v1/approvals/${withRule}`)).json.approval).toMatchObject({ suggestedRule: 'Write(/a.txt)', toolCall: { callId: 'call_1' } });
     const plain = (await env.http('GET', `/v1/approvals/${withoutRule}`)).json.approval;

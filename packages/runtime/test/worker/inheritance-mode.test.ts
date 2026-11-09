@@ -25,7 +25,7 @@ const answeredWithoutRecordedMode = async (env: Env, task: string, answer: strin
     { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: MODEL_ALIAS, input: 'seed' } },
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_old', answer)], usage: USAGE } },
   ];
-  const claim = env.seed(run.id, payloads, 'hold');
+  const claim = await env.seed(run.id, payloads, 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   expect(env.fold(run.id).mode).toBeUndefined();
   return run.id;
@@ -33,8 +33,8 @@ const answeredWithoutRecordedMode = async (env: Env, task: string, answer: strin
 
 const claimedFirstAsCancelling = async (env: Env, task: string): Promise<string> => {
   const run = env.enqueue(task);
-  env.seed(run.id, [], 'crash');
-  expect(env.cancel(run.id).status).toBe('CANCELLING');
+  await env.seed(run.id, [], 'crash');
+  expect((await env.cancel(run.id)).status).toBe('CANCELLING');
   await env.runOnce(env.worker());
   expect(env.run(run.id).status).toBe('CANCELLED');
   expect(env.ofType(run.id, 'run.started')).toEqual([]);

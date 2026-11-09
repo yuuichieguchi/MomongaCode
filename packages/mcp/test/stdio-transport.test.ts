@@ -6,6 +6,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
+import { groupAlive, holderGroups } from '@momonga/foundation';
 import type { TerminateOutcome } from '@momonga/foundation';
 import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -38,14 +39,9 @@ const pidAlive = (pid: number): boolean => {
   }
 };
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
+
+const groupOfPid = async (pid: number): Promise<number | undefined> => (await holderGroups([pid], [], { signal: new AbortController().signal }))[0];
 
 const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-')));
@@ -145,9 +141,9 @@ const harness = async (options: HarnessOptions = {}): Promise<Harness> => {
   return { transport, messages, errors, events, closeCount: () => closes, request };
 };
 
-const until = async (predicate: () => boolean, description: string): Promise<void> => {
+const until = async (predicate: () => boolean | Promise<boolean>, description: string): Promise<void> => {
   const deadline = Date.now() + 20000;
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${description}`);
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -164,7 +160,7 @@ describe('createStdioTransport spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     const { transport, request } = await harness();
     const { pid } = (await request('pid')) as { pid: number };
     expect(transport.pgid).toBe(pid);
-    expect(groupExists(pid)).toBe(true);
+    expect(await groupExists(pid)).toBe(true);
   });
 
   it('resolves a bare command against the composed env PATH, not the test process PATH', async () => {
@@ -261,7 +257,7 @@ describe('createStdioTransport framing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     await until(() => closeCount() === 1, 'close after oversized message');
     expect(errors.length).toBeGreaterThanOrEqual(1);
     expect(errors[0]).toBeInstanceOf(Error);
-    await until(() => !groupExists(pgid), 'group reaped after oversized message');
+    await until(async () => !(await groupExists(pgid)), 'group reaped after oversized message');
   });
 
   it('reports a non-JSON line through onerror without closing', async () => {
@@ -303,10 +299,10 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: 0, signal: null });
-    expect(pidAlive(grandchildPid)).toBe(false);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(closeCount()).toBe(1);
   });
 
@@ -316,10 +312,10 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: null, signal: 'SIGTERM' });
-    expect(pidAlive(grandchildPid)).toBe(false);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
   });
 
   it('escalates to SIGKILL after a second grace when the server ignores SIGTERM', async () => {
@@ -328,10 +324,10 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: null, signal: 'SIGKILL' });
-    expect(pidAlive(grandchildPid)).toBe(false);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
   });
 
   it('is idempotent and fires onclose once', async () => {

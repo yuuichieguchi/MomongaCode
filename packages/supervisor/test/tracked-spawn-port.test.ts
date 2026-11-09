@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, generationLayout, isProcessAlive, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -92,7 +92,7 @@ describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
 describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('cleanup kills the children of a fixture supervisor that is left running', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    const socketPath = momongaPaths(home, process.platform, {}).sockets.supervisor;
+    const socketPath = generationLayout(home, FIRST_GENERATION).sockets.supervisor;
     const supervisor = spawnTracked(context, process.execPath, [SUPERVISOR_FIXTURE, `--home=${home}`, `--child=${CHILD_FIXTURE}`], { stdio: ['ignore', 'pipe', 'pipe'] });
     const captured = capturedContext();
     const tracker = trackSupervisorChildren(captured.context, socketPath);
@@ -107,7 +107,7 @@ describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (
     supervisor.once('exit', () => {
       exited = true;
     });
-    const client = createUdsClient(socketPath);
+    const client = createUdsClient(fixedSocket(socketPath));
     registerCleanup(context, () => client.destroy());
     const health = async (): Promise<SupervisorHealth | undefined> => {
       try {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
+import { fixedSocket } from '@momonga/foundation';
 import { ContractViolation } from '../src/client/contract.ts';
 import { RunApiError, createRunBody, createRuntimeClient, eventsHeadersOf, eventsQueryOf } from '../src/client/runtime-client.ts';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
@@ -26,7 +27,7 @@ const serve = async (context: TestContext, reply: (seen: Seen) => Reply): Promis
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-  const client = createRuntimeClient({ socketPath });
+  const client = createRuntimeClient({ resolveSocket: fixedSocket(socketPath) });
   registerCleanup(context, async () => {
     await client.close();
     server.closeAllConnections();
@@ -235,6 +236,7 @@ describe('the token anatomy endpoints', () => {
     roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },
     callsWithoutResponseId: 0,
     cost: { amount: null, currency: 'USD', unpricedCalls: 1 },
+    plan: { calls: 0, inputTokens: 0, outputTokens: 0 },
     unpriced: [],
     inconsistentUsage: [{ runId: 'run-1', provider: 'acme', model: 'm1', step: 2, reason: 'cached input (60) and written input (50) together exceed the input (100)' }],
     unjoined: [],

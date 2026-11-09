@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
-import { FactsRefusedError, createBlobStore, createJournalReader } from '@momonga/store';
+import { FactsRefusedError, createBlobStore, createJournalReader, knownValue } from '@momonga/store';
 import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
@@ -224,8 +224,8 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         runId,
         rootRunId: String(rootRow['id']),
         sessionId: run.sessionId,
-        status: run.status,
-        ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+        status: knownValue(run.status, `the status of run ${runId}`),
+        ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${runId}`) }),
         createdAt: run.createdAt,
         limits: { ...(maxSteps === undefined ? {} : { maxSteps }), ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }) },
         deadlineAt: run.deadlineAt,

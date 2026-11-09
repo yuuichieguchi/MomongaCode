@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
+import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
@@ -46,6 +48,7 @@ const fakeFmSetup = async () => {
   const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
   fm.configure({ envDumpFile: dumpFile });
   const home = makeHome();
+  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   return { fm, dumpFile, home };
 };
 
@@ -79,7 +82,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
       MOMONGA_CANARY: 'must-not-leak',
       NODE_OPTIONS: '--max-old-space-size=64',
     });
-    const handle = await launchGateway({ home, env, version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', body))).status).toBe(200);
     expect((await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'default', input: 'one two three' }))).status).toBe(200);
@@ -104,7 +107,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body))).status).toBe(200);
     const [pid] = servePids(dumpFile);
     if (pid === undefined) throw new Error('fm serve was not started');
@@ -124,7 +127,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     declareNativeFm(home);
     const paths = homePaths(home);
     fs.mkdirSync(paths.fmMarkers, { recursive: true, mode: 0o700 });
-    for (const dir of [paths.root, path.dirname(paths.socket), path.dirname(paths.fmMarkers), paths.fmMarkers]) fs.chmodSync(dir, 0o700);
+    for (const dir of [paths.root, path.dirname(paths.fmSocket), path.dirname(paths.fmMarkers), paths.fmMarkers]) fs.chmodSync(dir, 0o700);
     const marker = path.join(paths.fmMarkers, randomUUID());
     const markerFd = fs.openSync(marker, 'w', 0o600);
     const orphan = spawn(fm.binaryPath, ['serve', '--socket', paths.fmSocket], {
@@ -138,7 +141,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     registerCleanup(() => killGroupsForCleanup([orphanPid]));
     await until(() => fs.existsSync(paths.fmSocket), 'the orphan fm socket');
 
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(200);
     await until(() => !isAlive(orphanPid), 'the orphan fm to be killed');
@@ -150,7 +153,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const home = makeHome();
     declareAutoFm(home);
     const missing = path.join(makeDir(), 'no-such-fm');
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: missing, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: missing, exec: fakeExec });
     const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
@@ -168,7 +171,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: FAKE_OS_BUILD }, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
     expect(entry.targets).toEqual(['fm']);
@@ -180,7 +183,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     reapServeGroups(dumpFile);
     declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
     const target = (await loadUserSettings({ home })).settings.models.targets['fm'];
@@ -190,19 +193,28 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     });
   });
 
-  it('treats a probe record for another OS build as unprobed', async () => {
+  it('treats a probe record for another OS build as no record: the alias is listed as probing, with no capability', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: `${FAKE_OS_BUILD}x` }, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const measured: string[] = [];
+    const handle = await launchGateway({
+      generation: FIRST_GENERATION,
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      fmBinary: fm.binaryPath,
+      exec: fakeExec,
+      measureFm: ({ key }) => {
+        measured.push(key.osBuild);
+        return new Promise(() => undefined);
+      },
+    });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
-    expect(entry.capabilities.source).toBe('unprobed');
-    expect(entry.capabilities.toolCalling.state).toBe('needs_probe');
-    expect(entry.targetCapabilities.fm.toolCalling.remedy).toBe('run `momonga gateway probe fm`');
-    expect(entry.targetCapabilities.fm.toolCalling.evidence).toContain(binarySha256);
-    expect(entry.targetCapabilities.fm.toolCalling.evidence).toContain(FAKE_OS_BUILD);
+    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
+    expect(measured).toEqual([FAKE_OS_BUILD]);
   });
 });

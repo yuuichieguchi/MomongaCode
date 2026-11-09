@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { request } from 'undici';
-import { momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, momongaPaths } from '@momonga/foundation';
 import { runGatewayEntry } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo } from '@momonga/testkit';
@@ -19,7 +19,7 @@ const launch = async (context: CleanupContext, extraFlags: (home: string, aux: s
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, {}) } } });
   const io = createFakeEntryIo({
-    argv: [`--home=${home}`, '--log-target=stderr', ...extraFlags(home, aux)],
+    argv: [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr', ...extraFlags(home, aux)],
     home,
     env: { PATH: MINIMAL_PATH, HOME: home },
   });
@@ -59,7 +59,7 @@ describe('gateway entry debug listener flags', () => {
     const { io, home } = await launch(context, () => []);
     await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(parseJsonLines(io.stderrLines()).some((line) => line['msg'] === 'gateway.debug_listener')).toBe(false);
-    expect(fs.existsSync(momongaPaths(home, process.platform, {}).sockets.gateway)).toBe(true);
+    expect(fs.existsSync(generationLayout(home, FIRST_GENERATION).sockets.gateway)).toBe(true);
   });
 
   it.for([

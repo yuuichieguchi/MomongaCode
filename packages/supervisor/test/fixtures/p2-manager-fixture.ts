@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import { createUserSettingsCache } from '@momonga/config';
-import { createJsonLogger, momongaPaths, systemClock } from '@momonga/foundation';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
+import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaPaths, roleEndpoint, systemClock } from '@momonga/foundation';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/constants.ts';
 import { createChildManager } from '../../src/child-manager.ts';
 import { DEFAULT_RESTART_POLICY } from '../../src/restart-policy.ts';
@@ -18,6 +18,8 @@ if (home === undefined || child === undefined) throw new Error('p2-manager-fixtu
 
 const paths = momongaPaths(home, process.platform, {});
 fs.mkdirSync(paths.markers.daemons, { recursive: true });
+const layout = generationLayout(home, FIRST_GENERATION);
+fs.mkdirSync(layout.dir, { recursive: true });
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
 const manager = createChildManager({
   role: 'runtime',
@@ -27,10 +29,13 @@ const manager = createChildManager({
   },
   home,
   paths,
+  generation: FIRST_GENERATION,
+  endpoint: roleEndpoint(layout, 'runtime'),
+  onReady: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn: createSpawnPort(),
-  settings: createUserSettingsCache({ home, onWarning: () => undefined }),
+  settings: createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }),
   logger,
   clock: systemClock,
   timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },

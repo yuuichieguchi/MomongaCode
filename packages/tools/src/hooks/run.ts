@@ -1,13 +1,14 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
-import { canonicalJson, findHolders, reconcileProcessGroup, sha256Hex } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
-import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, groupRecordOutcome, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
+import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
+import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from '../capture.ts';
 import { resolveBashPath } from '../builtins/shell.ts';
 import type { ShellHost } from '../builtins/shell.ts';
+import { createMarkerSettle, settleFinishedCommand } from '../marker-settle.ts';
+import type { MarkerOwners } from '../marker-owners.ts';
 import { cancellableTimer } from '../timers.ts';
 import { parseHookOutput } from './output.ts';
 import type { ParsedHookOutput } from './output.ts';
@@ -24,6 +25,9 @@ export type HookRunContext = {
   projectDir: string;
   tmpDir?: string;
   markerDir: string;
+  inspector?: ProcessInspector;
+  groupPort?: ProcessGroupPort;
+  owners?: MarkerOwners;
   runId: string;
   session: { id: string; permissionMode: PermissionMode };
   clock: Clock;
@@ -57,8 +61,13 @@ const executeHook = async (
 ): Promise<HookReply> => {
   const started = ctx.clock.now();
   const base = { hookEvent: event, command: command.command, ...(callId === undefined ? {} : { callId }) } as const;
+  let groupNotice: string | undefined;
+  const systemMessageOf = (hookMessage: string | undefined): { systemMessage?: string } => {
+    const lines = [hookMessage, groupNotice].filter((line): line is string => line !== undefined);
+    return lines.length === 0 ? {} : { systemMessage: lines.join('\n') };
+  };
   const finish = (execution: Omit<HookExecution, 'hookEvent' | 'command' | 'durationMs' | 'callId'>, output?: ParsedHookOutput, stderr = ''): HookReply => ({
-    execution: { ...base, ...execution, durationMs: Math.max(0, ctx.clock.now() - started) },
+    execution: { ...base, ...execution, ...systemMessageOf(execution.systemMessage), durationMs: Math.max(0, ctx.clock.now() - started) },
     output,
     stderr,
   });
@@ -84,9 +93,16 @@ const executeHook = async (
     ...payload,
   });
   const marker = path.join(ctx.markerDir, `hook-${sha256Hex(canonicalJson([ctx.runId, event, callId ?? null, command.command]))}`);
+  const inspector = ctx.inspector ?? defaultProcessInspector();
+  let handle: Awaited<ReturnType<typeof createMarker>> | undefined;
+  let settle: ReturnType<typeof createMarkerSettle> | undefined;
+  let spawned = false;
+  let running = true;
+  ctx.owners?.register(path.basename(marker), { alive: () => running });
   try {
-    fs.rmSync(marker, { force: true });
-    fs.closeSync(fs.openSync(marker, 'wx', 0o600));
+    handle = await createMarker(marker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+    ctx.owners?.remember(path.basename(marker), handle.mode);
+    settle = createMarkerSettle({ marker, mode: handle.mode, inspector, ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }), onWarning: () => undefined });
     const child = ctx.sandbox.spawn(
       {
         argv: [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: ctx.env }), '-c', command.command],
@@ -98,13 +114,15 @@ const executeHook = async (
       },
       ctx.sandboxPolicy,
       controller.signal,
+      { markerFd: handle.fd },
     );
+    spawned = true;
     const captures = [createCapture(), createCapture()] as const;
     const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk));
-    let exit;
+    let exit: SandboxExit;
     try {
-      exit = await child.exited;
-      if ((await findHolders(marker)).length > 0) await reconcileProcessGroup({ pgid: child.pgid, marker });
+      [exit, groupNotice] = await Promise.all([child.exited, groupRecordOutcome(recordMarkerGroup(marker, child.pgid), marker)]);
+      await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: controller.signal });
       await pump.settle();
     } finally {
       await pump.close();
@@ -143,7 +161,10 @@ const executeHook = async (
       stderr,
     );
   } finally {
-    fs.rmSync(marker, { force: true });
+    handle?.close();
+    if (handle !== undefined && !spawned) await settle?.discard();
+    else await settle?.remove();
+    running = false;
     timer.cancel();
     ctx.signal.removeEventListener('abort', onCancel);
   }

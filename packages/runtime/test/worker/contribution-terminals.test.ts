@@ -19,7 +19,7 @@ const saveNote = async (env: Env): Promise<string> => {
 };
 
 describe('context.contribution on the terminals the worker does not reach', () => {
-  it('records the event before the status when an approval timeout stops the run', async () => {
+  it('records the event before the status when the deadline stops a run that waits for an approval', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env);
     env.setMode('default');
@@ -27,12 +27,12 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const run = env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    const [approval] = env.store.pendingApprovalViews(run.id);
+    const [approval] = await env.store.pendingApprovalViews(run.id);
     if (approval === undefined) throw new Error('the run asked for no approval');
 
-    expect(await env.store.expireApprovals(approval.expiresAt, (error: unknown) => { throw error; })).toEqual([run.id]);
+    expect(await env.store.expireApprovals(env.run(run.id).deadlineAt, (error: unknown) => { throw error; })).toEqual([run.id]);
 
-    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     const events = env.events(run.id);
     const contribution = events.filter((event) => event.type === 'context.contribution');
     expect(contribution).toMatchObject([{ items: [{ kind: 'memory', id, contributed: true }] }]);

@@ -3,18 +3,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createUdsClient, decodeSse } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, fmServeStopBoundMs, fixedSocket } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
 import type { StreamEvent } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
+import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
 export const HMAC_KEY = Buffer.from('momonga-test-hmac-key-0001-padded-to-32-bytes', 'utf8');
 export const validator = createOpenResponsesValidator();
+
+export const REAL_FM_STOP_GRACE_MS = 5000;
+
+const CLEANUP_HOOK_BOUND_MS = fmServeStopBoundMs(REAL_FM_STOP_GRACE_MS) + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + CLEANUP_KILL_DEADLINE_MS;
 
 const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -29,7 +33,7 @@ afterEach(async () => {
   }
   if (failures.length === 1) throw failures[0];
   if (failures.length > 1) throw new AggregateError(failures, 'several cleanups failed');
-});
+}, CLEANUP_HOOK_BOUND_MS);
 
 export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
   cleanups.push(cleanup);
@@ -148,7 +152,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
   registerCleanup(() => gateway.close());
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
   return { gateway, client, clock, timers, dir, socketPath, dbPath };
 };

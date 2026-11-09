@@ -13,6 +13,7 @@ import { createRuntimeClient } from './runtime-client.ts';
 import { startStack } from './stack.ts';
 import { chatCompletions, messagesOf, textReply } from './upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const ROUTED_TASK = 'answer from the route';
 const COMPARED_TYPES: ReadonlySet<string> = new Set(['user.message', 'model.requested', 'tool.completed', 'context.truncated', 'context.compacted', 'notice', 'run.status']);
@@ -195,7 +196,7 @@ describe('acceptance (a) support', () => {
     const home = await createE2eHome();
     const route = { match: (body: unknown) => JSON.stringify(body).includes(ROUTED_TASK), reply: textReply('routed') };
     const stack = await startStack({ home, sandbox: 'none', target: acceptanceTarget('native'), routes: [route], script: [textReply('scripted')] });
-    const count = createGatewayCountClient(home.paths.sockets.gateway);
+    const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     const capabilities = await count.capabilities();
     expect({ contextWindow: capabilities.contextWindow, maxOutputTokens: capabilities.maxOutputTokens, toolCalling: capabilities.toolCalling }).toEqual({
       contextWindow: 4096,
@@ -242,7 +243,7 @@ describe('acceptance (a) support', () => {
     const spec: PlanCaseSpec = { name: 'perturbation', toolCalling: 'native', deny: [], grid: [], probeFillers: 0 };
     const steps = plannedSteps(home.project, haystack, { tool: 'Read', lineChars: 90 }, 2);
 
-    const run = await dryRun({ plan: { spec, home, haystack, gatewaySocket: planningHome.paths.sockets.gateway, summary }, steps, perturbation, fillers: 2 });
+    const run = await dryRun({ plan: { spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, steps, perturbation, fillers: 2 });
 
     expect(run.perturbation).toBe(perturbation);
     expect(run.counts.length).toBeGreaterThan(0);
@@ -257,7 +258,7 @@ describe('acceptance (a) support', () => {
     const planningHome = await createE2eHome();
     await startStack({ home: planningHome, sandbox: 'none', target, routes: [summaryRoute(summary)] });
     const steps = plannedSteps(home.project, haystack, shape, fillers);
-    const predicted = await dryRun({ plan: { spec, home, haystack, gatewaySocket: planningHome.paths.sockets.gateway, summary }, steps, perturbation: 0, fillers });
+    const predicted = await dryRun({ plan: { spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, steps, perturbation: 0, fillers });
 
     const stack = await startStack({
       home,
@@ -267,7 +268,7 @@ describe('acceptance (a) support', () => {
       script: upstreamRepliesOf(steps, spec.toolCalling),
       routes: [summaryRoute(summary)],
     });
-    const count = createGatewayCountClient(home.paths.sockets.gateway);
+    const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     const capabilities = await count.capabilities();
     expect(capabilities.toolCalling).toBe(spec.toolCalling);
     const runId = await runTask(home, 'Search the haystack');

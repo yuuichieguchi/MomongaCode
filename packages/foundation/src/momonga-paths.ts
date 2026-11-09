@@ -11,15 +11,20 @@ export interface MomongaPaths {
   root: string;
   settingsFile: string;
   run: string;
-  sockets: { gateway: string; runtime: string; supervisor: string };
-  locks: { gateway: string; runtime: string; supervisor: string };
+  current: string;
+  generationLock: string;
   callLocks: string;
+  grepArguments: string;
+  lockProof: string;
   markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
   traces: { dir: string; gateway: string; runtime: string };
   gatewayKey: string;
   probe: string;
+  planSessions: string;
+  planHost: string;
+  planActive: string;
   logs: string;
   logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
@@ -28,6 +33,7 @@ export interface MomongaPaths {
   launcher: string;
   keychains: string;
   cacheBase: string;
+  executables: string;
   tmp: { root: string; spawn: string; sessions: string };
 }
 
@@ -53,6 +59,39 @@ const keychainsOf = (home: string, platform: NodeJS.Platform, env: Readonly<Reco
 export const adapterSocketPath = (home: string, name: string, platform: NodeJS.Platform = process.platform): string =>
   platform === 'win32' ? pipePathFor(home, name) : pathFor(platform).join(home, '.momonga', 'run', `${name}.sock`);
 
+export const FIRST_GENERATION = 1;
+
+export type GenerationRole = 'gateway' | 'runtime' | 'supervisor';
+
+export const GENERATION_ROLES: readonly GenerationRole[] = ['gateway', 'runtime', 'supervisor'];
+
+export type GenerationSockets = Record<GenerationRole, string>;
+
+export type GenerationLayout = {
+  generation: number;
+  dir: string;
+  sockets: GenerationSockets;
+  locks: Record<GenerationRole, string>;
+};
+
+const byRole = (value: (role: GenerationRole) => string): Record<GenerationRole, string> => ({
+  gateway: value('gateway'),
+  runtime: value('runtime'),
+  supervisor: value('supervisor'),
+});
+
+export const generationLayout = (home: string, generation: number, platform: NodeJS.Platform = process.platform): GenerationLayout => {
+  if (!Number.isSafeInteger(generation) || generation < 1) throw new RangeError(`a generation number must be a positive integer, got ${generation}`);
+  const join = pathFor(platform).join;
+  const dir = join(home, '.momonga', 'run', `g${generation}`);
+  return {
+    generation,
+    dir,
+    sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
+    locks: byRole((role) => join(dir, `${role}.lock`)),
+  };
+};
+
 export const momongaLayout = (
   home: string,
   platform: NodeJS.Platform = process.platform,
@@ -67,14 +106,15 @@ export const momongaLayout = (
   const traces = join(state, 'traces');
   const cacheBase = cacheBaseOf(home, platform, env);
   const tmp = join(cacheBase, 'tmp');
-  const socket = (name: string): string => adapterSocketPath(home, name, platform);
   return {
     root,
     settingsFile: join(root, 'settings.json'),
     run,
-    sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
-    locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
+    current: join(run, 'current'),
+    generationLock: join(run, 'generation.lock'),
     callLocks: join(run, 'call-locks'),
+    grepArguments: join(run, 'grep-arguments'),
+    lockProof: join(run, 'lock-proof'),
     markers: {
       root: markers,
       tools: join(markers, 'tools'),
@@ -87,6 +127,9 @@ export const momongaLayout = (
     traces: { dir: traces, gateway: join(traces, 'gateway.db'), runtime: join(traces, 'runtime.db') },
     gatewayKey: join(state, 'gateway.key'),
     probe: join(state, 'probe'),
+    planSessions: join(state, 'plan-sessions'),
+    planHost: join(state, 'plan-host.json'),
+    planActive: join(state, 'plan-active.json'),
     logs: join(root, 'logs'),
     logFiles: {
       supervisor: join(root, 'logs', 'supervisor.log'),
@@ -99,6 +142,7 @@ export const momongaLayout = (
     launcher: platform === 'win32' ? join(home, 'AppData', 'Local', 'Programs', 'momonga', 'momonga.exe') : join(home, '.local', 'bin', 'momonga'),
     keychains: keychainsOf(home, platform, env),
     cacheBase,
+    executables: join(cacheBase, 'executables'),
     tmp: { root: tmp, spawn: join(tmp, 'spawn'), sessions: join(tmp, 'sessions') },
   };
 };
@@ -109,16 +153,13 @@ export const momongaPaths = (
   home: string,
   platform: NodeJS.Platform = process.platform,
   env: Readonly<Record<string, string | undefined>> = process.env,
-): MomongaPaths => {
-  const paths = momongaLayout(home, platform, env);
-  for (const socket of Object.values(paths.sockets)) assertSocketPathLength(socket);
-  return paths;
-};
+): MomongaPaths => momongaLayout(home, platform, env);
 
 export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
+  signal?: AbortSignal | undefined;
 };
 
 export class MomongaDirectoryError extends Error {
@@ -143,30 +184,39 @@ const createDirectory = async (directory: string, options: { mode: number } | { 
   }
 };
 
-export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
-  const platform = ports.platform ?? process.platform;
-  for (const socket of Object.values(paths.sockets)) {
-    if (!isPipePath(socket)) await refuseUnbindableUnixSocketPath(socket);
+const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platform): Promise<void> => {
+  let stat = await lstatIfPresent(directory);
+  if (stat === undefined) {
+    await createDirectory(directory, { mode: 0o700 });
+    stat = await fs.lstat(directory);
   }
-  const ensureDirectory = async (directory: string): Promise<void> => {
-    let stat = await lstatIfPresent(directory);
-    if (stat === undefined) {
-      await createDirectory(directory, { mode: 0o700 });
-      stat = await fs.lstat(directory);
-    }
-    if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
-    if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
-    const owner = ownerProblem(stat, platform);
-    if (owner !== undefined) {
-      throw new Error(`${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
-    }
-    if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
-  };
+  if (stat.isSymbolicLink()) throw new Error(`${directory} is a symlink; refusing to use it`);
+  if (!stat.isDirectory()) throw new Error(`${directory} exists and is not a directory`);
+  const owner = ownerProblem(stat, platform);
+  if (owner !== undefined) {
+    throw new Error(`${directory} is owned by uid ${owner.found}, but the current user is uid ${owner.expected}; the directory must be owned by the current user`);
+  }
+  if (!modeIsPrivate(stat, 'directory', platform)) await fs.chmod(directory, 0o700);
+};
+
+export type RoleEndpoint = { socketPath: string; lockPath: string };
+
+export const roleEndpoint = (layout: GenerationLayout, role: GenerationRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
+
+const refuseUnfitGenerationSockets = async (layout: GenerationLayout): Promise<void> => {
+  const sockets = Object.values(layout.sockets);
+  for (const socket of sockets) assertSocketPathLength(socket);
+  await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
+};
+
+const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts): Promise<void> => {
+  const platform = ports.platform ?? process.platform;
   await createDirectory(path.dirname(paths.root), { recursive: true });
   for (const directory of [
     paths.root,
     paths.run,
     paths.callLocks,
+    paths.lockProof,
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
@@ -179,17 +229,29 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     paths.projects,
     paths.skills,
   ]) {
-    await ensureDirectory(directory);
+    await ensurePrivateDirectory(directory, platform);
   }
   await createDirectory(path.dirname(paths.cacheBase), { recursive: true });
   for (const directory of [paths.cacheBase, paths.tmp.root, paths.tmp.spawn, paths.tmp.sessions]) {
-    await ensureDirectory(directory);
+    await ensurePrivateDirectory(directory, platform);
   }
   if (platform === 'win32') {
-    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env };
+    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env, signal: ports.signal };
     await ensureWindowsPrivateTree(paths.root, windows);
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }
+};
+
+export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+  await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));
+  await createMomongaDirs(paths, ports);
+};
+
+export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+  const layout = generationLayout(path.dirname(paths.root), generation);
+  await refuseUnfitGenerationSockets(layout);
+  await createMomongaDirs(paths, ports);
+  await ensurePrivateDirectory(layout.dir, ports.platform ?? process.platform);
 };
 
 export class SessionTmpDirError extends Error {}

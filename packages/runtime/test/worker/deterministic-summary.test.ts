@@ -37,7 +37,7 @@ const escalating = (): GatewayRequestError => new GatewayRequestError({ status: 
 const deterministicAfter = async (cause: 'escalating' | 'rejected') => {
   const env: Env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   const run = env.enqueue('question one');
-  env.seed(run.id, journal(), 'release');
+  await env.seed(run.id, journal(), 'release');
   if (cause === 'escalating') {
     env.gateway.compactHook = async () => {
       throw escalating();
@@ -53,7 +53,7 @@ const deterministicAfter = async (cause: 'escalating' | 'rejected') => {
 };
 
 describe('a deterministic summary holds no model text', () => {
-  it('names the fixed sentence', () => {
+  it('names the fixed sentence', async () => {
     expect(DETERMINISTIC_SUMMARY_TEXT).toBe(
       'A model summary of the earlier events is not available. The facts recorded by code are in the working state; the recorded events are the record.',
     );
@@ -78,7 +78,7 @@ describe('a deterministic summary holds no model text', () => {
     expect(second.event.summary).toBe(first.event.summary);
   });
 
-  it('fits every cap, so its estimate is at most MIN_SUMMARY_TOKENS', () => {
+  it('fits every cap, so its estimate is at most MIN_SUMMARY_TOKENS', async () => {
     expect(tokensForText(DETERMINISTIC_SUMMARY_TEXT)).toBeLessThanOrEqual(MIN_SUMMARY_TOKENS);
   });
 });

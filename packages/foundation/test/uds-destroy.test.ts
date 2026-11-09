@@ -3,7 +3,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUdsClient, listenUnix } from '@momonga/foundation';
+import { createUdsClient, listenUnix, fixedSocket } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -49,7 +49,7 @@ const startHangingServer = async (mode: 'no-headers' | 'partial-body'): Promise<
 describe('UdsClient.destroy', () => {
   it('rejects a request still waiting for response headers and closes its connection', async () => {
     const server = await startHangingServer('no-headers');
-    const client = createUdsClient(server.socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    const client = createUdsClient(fixedSocket(server.socketPath), { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
     cleanups.push(() => client.destroy());
     const pending = client.request({ method: 'GET', path: '/hang' });
     const outcome = pending.then(
@@ -67,7 +67,7 @@ describe('UdsClient.destroy', () => {
 
   it('rejects reading a body that is still streaming', async () => {
     const server = await startHangingServer('partial-body');
-    const client = createUdsClient(server.socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    const client = createUdsClient(fixedSocket(server.socketPath), { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
     cleanups.push(() => client.destroy());
     const response = await client.request({ method: 'GET', path: '/stream' });
     expect(response.status).toBe(200);
@@ -86,7 +86,7 @@ describe('UdsClient.destroy', () => {
 
   it('rejects requests made after destroy without connecting', async () => {
     const server = await startHangingServer('no-headers');
-    const client = createUdsClient(server.socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    const client = createUdsClient(fixedSocket(server.socketPath), { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
     await client.destroy();
 
     await expect(client.request({ method: 'GET', path: '/late' })).rejects.toThrow();
@@ -95,7 +95,7 @@ describe('UdsClient.destroy', () => {
 
   it('is idempotent and safe after close', async () => {
     const server = await startHangingServer('no-headers');
-    const client = createUdsClient(server.socketPath);
+    const client = createUdsClient(fixedSocket(server.socketPath));
     await client.close();
     await expect(client.destroy()).resolves.toBeUndefined();
     await expect(client.destroy()).resolves.toBeUndefined();

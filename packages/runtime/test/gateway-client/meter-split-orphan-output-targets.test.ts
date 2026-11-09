@@ -3,13 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
-import { momongaPaths } from '@momonga/foundation';
+import { momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { probeOllamaTarget, startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const ALIAS = 'default';
 const CONTEXT_WINDOW = 12288;
@@ -44,9 +45,9 @@ const writeTarget = (home: string, target: Record<string, unknown>): void => {
 const launch = async (home: string) => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   closers.push(() => stdout.mockRestore());
-  const gateway = await startGatewayProcess({ home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
+  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
   closers.push(() => gateway.close());
-  const client = createGatewayClient({ socketPath: gateway.socketPath, clock: fakeClock(), version: CLIENT_VERSION });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   closers.push(() => client.destroy().catch(() => {}));
   return client;
 };
@@ -73,7 +74,7 @@ const ollamaClient = async () => {
   await probeOllamaTarget({
     key: { endpoint: fake.origin, model: OLLAMA_MODEL },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin },
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
     model: OLLAMA_MODEL,
     contextWindow: CONTEXT_WINDOW,
   });

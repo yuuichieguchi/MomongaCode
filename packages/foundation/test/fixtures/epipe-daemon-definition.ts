@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { COMMON_ENTRY_FLAGS, announceReady } from '../../src/index.ts';
+import { COMMON_ENTRY_FLAGS, DEFAULT_STOP_VALUES, announceReady } from '../../src/index.ts';
 import type { DaemonDefinition } from '../../src/index.ts';
 
 const FLAGS = { ...COMMON_ENTRY_FLAGS, 'bulk-bytes': { kind: 'int' } } as const;
@@ -9,6 +9,7 @@ export const epipeDaemon: DaemonDefinition<typeof FLAGS> = {
   version: '9.9.9',
   flags: FLAGS,
   maxCloseMs: () => 5000,
+  readStopValues: () => DEFAULT_STOP_VALUES,
   ownLockPath: (home) => path.join(home, '.momonga', 'run', 'runtime.lock'),
   logPath: (home) => path.join(home, '.momonga', 'logs', 'runtime.log'),
   isConfigError: () => false,

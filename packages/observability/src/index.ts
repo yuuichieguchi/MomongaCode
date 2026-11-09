@@ -20,6 +20,7 @@ export {
   recordChatResponse,
   recordChatResponseContent,
   recordError,
+  recordToolBackend,
   recordToolContent,
   startAgentSpan,
   startChatSpan,
@@ -35,6 +36,7 @@ export type {
   GenAiMessage,
   GenAiPart,
   GenAiToolDefinition,
+  ToolBackendAttributes,
   ToolContent,
   ToolSpanInput,
 } from './spans.ts';

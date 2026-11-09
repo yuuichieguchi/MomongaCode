@@ -15,6 +15,7 @@ import {
   journalOfRows,
   ofType,
   planScript,
+  seenOutputTokens,
   summaryRoute,
   summaryTextOf,
   upstreamRepliesOf,
@@ -35,6 +36,7 @@ import { startStack } from './support/stack.ts';
 import type { E2eStack } from './support/stack.ts';
 import { chatCompletions } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const PLANNED_CASE_TIMEOUT_MS = 4 * E2E_TEST_TIMEOUT_MS;
 const MEMORY_DENY = ['MemorySave', 'MemorySearch'] as const;
@@ -42,7 +44,8 @@ const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
 const LEAN_DENY = ['Write', 'Edit', 'Bash', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
-const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const FULL_LINE_CHARS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const LEAN_LINE_CHARS = [90, 80, 70, 60, 50, 40, 30, 20, 10] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const AFTER_COMPACTION = 'after compaction';
 
@@ -57,7 +60,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction-lean',
     title: titleOf('a-compaction-lean'),
-    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16, escalates: true },
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: LEAN_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 16, escalates: true },
   },
   {
     id: 'a-compaction-constrained',
@@ -159,7 +162,7 @@ const assertAcceptance = async (
   expect(grep?.data['handle']).toBe(haystack.handle);
   const grepInline = String(grep?.data['output']);
   expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
-  expect(grepInline.length).toBeLessThanOrEqual(plan.sizing.inlineChars);
+  expect(await seenOutputTokens(count, { callId: String(grep?.data['callId']), tool: 'Grep' }, grepInline)).toBeLessThanOrEqual(plan.sizing.itemCap);
 
   expect(compacted.length).toBeGreaterThanOrEqual(1);
   const firstCompaction = compacted[0] as JournalEvent;
@@ -261,12 +264,12 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
 
     const planningHome = await createE2eHome();
     await startStack({ home: planningHome, sandbox: 'none', target, routes: [summaryRoute(summary)] });
-    const planningCount = createGatewayCountClient(planningHome.paths.sockets.gateway);
+    const planningCount = createGatewayCountClient(firstGeneration(planningHome.paths).sockets.gateway);
     const capabilities = await planningCount.capabilities();
-    const plan = await planScript({ spec, home, haystack, gatewaySocket: planningHome.paths.sockets.gateway, summary }, capabilities);
+    const plan = await planScript({ spec, home, haystack, gatewaySocket: firstGeneration(planningHome.paths).sockets.gateway, summary }, capabilities);
 
     const stack = await startStack({ home, sandbox: 'none', target, settings: denySettings(spec.deny), script: plan.replies, routes: [summaryRoute(summary)] });
-    const count = createGatewayCountClient(home.paths.sockets.gateway);
+    const count = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
     expect(await count.capabilities()).toEqual(capabilities);
     const runId = await runToEnd(home);
     const observed = observe(stack, runId);
@@ -281,7 +284,7 @@ describe('a: within-turn truncation and compaction at W=4096', () => {
     writeHaystack(home.project);
     const target = acceptanceTarget('constrained');
     const stack = await startStack({ home, sandbox: 'none', target, script: upstreamRepliesOf([{ kind: 'final', text: 'Done.' }], 'constrained') });
-    const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
+    const capabilities = await createGatewayCountClient(firstGeneration(home.paths).sockets.gateway).capabilities();
     const runId = await runToEnd(home);
     const row = runRowOf(home, runId);
     expect({ status: row.status, stopReason: row.stop_reason }).toEqual({ status: 'COMPLETED', stopReason: null });

@@ -1,5 +1,5 @@
 import { ndJsonStream } from '@agentclientprotocol/sdk';
-import { canonicalPath } from '@momonga/foundation';
+import { canonicalPath, currentSocketResolver } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
@@ -16,8 +16,9 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   if (ports.acpStdio === undefined) throw new Error('this build has no standard streams to speak the Agent Client Protocol on');
   const stdio = ports.acpStdio();
   const runtime = connectRuntime(paths);
-  const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+  const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   const reconnectBoundMs = await daemonReadyBoundMs();
+  const onNotice = (message: string): void => void ports.stderr.write(acpDiagnosticText(message));
   const app = createAcpAgent({
     version: ports.version,
     runtime,
@@ -28,7 +29,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,
     daemonReady: async () => {
-      await ensureDaemon(ports, paths, { signal: interrupt });
+      await ensureDaemon(ports, paths, { signal: interrupt, onNotice });
     },
     retryAfterRestore: (operation, signal) =>
       retryAfterRestore(
@@ -37,7 +38,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
           random: ports.random,
           reconnectBoundMs,
           boundExceeded: (boundMs, cause) => new DaemonUnreachable(boundMs, cause),
-          restoreConnection: restoreDaemon(ports, paths),
+          restoreConnection: restoreDaemon(ports, paths, onNotice),
           onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the connection to the daemon, reconnecting (attempt ${attempt + 1})\n`),
           signal,
         },
@@ -50,7 +51,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         random: ports.random,
         runId,
         reconnectBoundMs,
-        restoreConnection: restoreDaemon(ports, paths),
+        restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent,
         onChildEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
@@ -64,7 +65,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
         sessionId,
         after,
         reconnectBoundMs,
-        restoreConnection: restoreDaemon(ports, paths),
+        restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent,
         onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the session event stream, reconnecting (attempt ${attempt + 1})\n`),
         signal,

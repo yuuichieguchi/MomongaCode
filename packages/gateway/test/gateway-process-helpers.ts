@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { killPidsForCleanup } from '@momonga/testkit';
+import type { FakeSecurityPort } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
 export const PROCESS_VERSION = '1.10.0-test';
@@ -24,11 +25,12 @@ export const makeHome = (): string => {
 
 export const homePaths = (home: string) => {
   const root = path.join(home, '.momonga');
+  const own = generationLayout(home, FIRST_GENERATION);
   return {
     root,
     settings: path.join(root, 'settings.json'),
-    socket: path.join(root, 'run', 'gateway.sock'),
-    lock: path.join(root, 'run', 'gateway.lock'),
+    socket: own.sockets.gateway,
+    lock: own.locks.gateway,
     fmSocket: path.join(root, 'run', 'fm.sock'),
     fmMarkers: path.join(root, 'run', 'markers', 'targets', 'fm'),
     db: path.join(root, 'state', 'gateway.db'),
@@ -48,6 +50,26 @@ export const baseEnv = (home: string, extra: Record<string, string> = {}): Recor
   TMPDIR: home,
   ...extra,
 });
+
+export type SecretHostProgram = { program: string; canonicalBinary: string; extraEnv: Record<string, string> };
+
+export type SecretHost = { env: Record<string, string>; programPath: string };
+
+export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHost => {
+  const programPath = path.join(bin, store.program);
+  fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
+  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
+};
+
+export const portOnSecretHost = (inner: FakeSecurityPort, store: SecretHostProgram, host: SecretHost): FakeSecurityPort => {
+  const calls: FakeSecurityPort['calls'] = [];
+  const port = async (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => {
+    calls.push({ file, args, stdin });
+    if (file !== host.programPath) throw new Error(`the gateway ran ${file}, not the fake ${store.program} on PATH at ${host.programPath}`);
+    return inner(store.canonicalBinary, args, stdin, signal);
+  };
+  return Object.assign(port, { calls });
+};
 
 export type StdoutCapture = { lines(): string[] };
 
@@ -70,7 +92,7 @@ export const launchGateway = async (options: GatewayProcessOptions): Promise<Gat
 };
 
 export const clientFor = (socketPath: string): UdsClient => {
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
   return client;
 };

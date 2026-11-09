@@ -14,7 +14,9 @@ import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstr
 import { SCRIPTED_USAGE, chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
-import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, daemonReplacingRunBoundMs, until } from './support/wait.ts';
+
+const DAEMON_REPLACING_RUN_BOUND_MS = await daemonReplacingRunBoundMs();
 
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
@@ -272,14 +274,14 @@ describe('cli: momonga -p', () => {
     expect(Number(/pid (\d+)/.exec(again.stdout)?.[1])).not.toBe(pid);
   });
 
-  it(titleOf('cli-version-restart'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-version-restart'), { timeout: DAEMON_REPLACING_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('from the new daemon')], version: '1.0.0' });
     const oldPid = stack.supervisor.pid;
     expect(stack.health.version).toBe('1.0.0');
 
     setFakeCliVersion(home, '2.0.0');
-    const result = await runCliWithFakes(home, ['-p', 'hello']);
+    const result = await runCliWithFakes(home, ['-p', 'hello'], { boundMs: DAEMON_REPLACING_RUN_BOUND_MS });
 
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('from the new daemon\n');
@@ -289,7 +291,7 @@ describe('cli: momonga -p', () => {
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
   });
 
-  it(titleOf('cli-older-daemon-active-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-older-daemon-active-run'), { timeout: DAEMON_REPLACING_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('held run'), textReply('resumed run'), textReply('another run')], version: '1.0.0' });
     const hold = stack.fake.hold();
@@ -300,7 +302,7 @@ describe('cli: momonga -p', () => {
     const oldPid = stack.supervisor.pid;
 
     setFakeCliVersion(home, '2.0.0');
-    const another = await runCliWithFakes(home, ['-p', 'another']);
+    const another = await runCliWithFakes(home, ['-p', 'another'], { boundMs: DAEMON_REPLACING_RUN_BOUND_MS });
 
     expect(another.code).toBe(0);
     expect((await stack.supervisor.exited).code).toBe(0);
@@ -411,7 +413,7 @@ describe('cli: gateway probe of a chat-completions target', () => {
       expect(probed.stdout).toContain('tool calling: native');
       expect(probed.stdout).toContain('parallel tool calls: true');
       expect(probed.stdout).toContain('reasoning: cannot be controlled, leaves room for 90 tokens');
-      expect(fs.readdirSync(home.paths.probe).filter((name) => name.startsWith('endpoint-'))).toHaveLength(1);
+      expect(fs.readdirSync(home.paths.probe).filter((name) => /^endpoint-[0-9a-f]+\.json$/.test(name))).toHaveLength(1);
     } finally {
       await fake.close();
     }

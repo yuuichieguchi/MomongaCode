@@ -60,9 +60,20 @@ export const lastTextOf = (output: readonly unknown[]): string | undefined => {
 
 export type RecordedEvent = { eventId: number; runId: string; sessionId: string; seq: number; step: number; payload: RunEventPayload | SessionEventPayload };
 
+export const APPEND_TIME_RECORDS_DERIVATION = 20;
+export const SESSION_TOUCHED_DERIVATION = 23;
+export const RUN_ANSWERERS_DERIVATION = 24;
+
+export const RECORD_DERIVATIONS = [RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
+
+export type RecordDerivation = (typeof RECORD_DERIVATIONS)[number];
+
 export type AppendRecords = {
   record(event: RecordedEvent): void;
+  recordFor(derivation: RecordDerivation, event: RecordedEvent): void;
   toolCallSeq(runId: string, callId: string): number | undefined;
+  modelCallRowsOf(runId: string): Row[];
+  toolCallNamesOf(rootRunId: string): string[];
   finalTextOf(runId: string): string;
   inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
   startedCallsOf(runId: string): StartedCall[];
@@ -71,7 +82,12 @@ export type AppendRecords = {
   answeringTargetsOf(runId: string): string[];
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
+  permissionRequestOf(runId: string, approvalId: string): Row | undefined;
+  elicitationRequested(runId: string, approvalId: string): boolean;
+  toolCallEventOf(runId: string, callId: string): Row | undefined;
 };
+
+export type AppendRecordReaders = Omit<AppendRecords, 'record' | 'recordFor'>;
 
 export const answerTargetOf = (payload: RunEventPayload | SessionEventPayload): string | undefined => {
   switch (payload.type) {
@@ -84,18 +100,28 @@ export const answerTargetOf = (payload: RunEventPayload | SessionEventPayload): 
   }
 };
 
-const missesOf = (identity: string, parsed: unknown): { miss: number; uncounted: number }[] => {
+type WindowMiss = { eventId: number; miss: number; uncounted: number };
+
+const missesOf = (identity: string, parsed: unknown): WindowMiss[] => {
   if (!Array.isArray(parsed)) throw corrupt('meter_records', identity, 'column misses_json must be a JSON array');
   return parsed.map((entry: unknown) => {
     const record = expectRecord('meter_records', identity, 'misses_json', entry);
-    const { miss, uncounted } = record;
-    if (typeof miss !== 'number' || typeof uncounted !== 'number') throw corrupt('meter_records', identity, 'a miss entry must carry numbers');
-    return { miss, uncounted };
+    const { eventId, miss, uncounted } = record;
+    if (typeof eventId !== 'number' || typeof miss !== 'number' || typeof uncounted !== 'number') throw corrupt('meter_records', identity, 'a miss entry must carry numbers');
+    return { eventId, miss, uncounted };
   });
+};
+
+const windowOf = (misses: readonly WindowMiss[]): WindowMiss[] => {
+  const byEvent = new Map(misses.map((entry) => [entry.eventId, entry]));
+  return [...byEvent.values()].sort((a, b) => a.eventId - b.eventId).slice(-ERROR_WINDOW);
 };
 
 export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (rows: number, bytes: number) => void } = {}): AppendRecords => {
   const sql = {
+    permissionRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1"),
+    elicitationRequest: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1"),
+    toolCallEvent: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallSeq: db.prepare("SELECT seq FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallRow: db.prepare("SELECT seq, tool_name FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     runRecord: db.prepare('SELECT final_text, in_flight_step, in_flight_attempt FROM run_records WHERE run_id = :runId'),
@@ -113,7 +139,10 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     ),
     finishCall: db.prepare('DELETE FROM started_calls WHERE run_id = :runId AND call_id = :callId'),
     startedCalls: db.prepare('SELECT call_id, name, idem_key FROM started_calls WHERE run_id = :runId ORDER BY call_seq'),
-    insertTouched: db.prepare('INSERT OR IGNORE INTO session_touched (session_id, path, first_event_id) VALUES (:sessionId, :path, :eventId)'),
+    insertTouched: db.prepare(
+      `INSERT INTO session_touched (session_id, path, first_event_id) VALUES (:sessionId, :path, :eventId)
+       ON CONFLICT (session_id, path) DO UPDATE SET first_event_id = MIN(first_event_id, excluded.first_event_id)`,
+    ),
     touchedAfter: db.prepare(
       'SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId AND first_event_id > :after ORDER BY first_event_id, path LIMIT :limit',
     ),
@@ -123,6 +152,14 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     touchedNewest: db.prepare('SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId ORDER BY first_event_id DESC, path DESC LIMIT :limit'),
     insertAnswerer: db.prepare('INSERT OR IGNORE INTO run_answerers (run_id, target) VALUES (:runId, :target)'),
     answerers: db.prepare('SELECT target FROM run_answerers WHERE run_id = :runId ORDER BY target'),
+    modelCallRows: db.prepare(
+      `SELECT seq, step, type, model_call_json
+       FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
+    ),
+    toolCallNames: db.prepare(
+      `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
+       SELECT DISTINCT e.tool_name AS name FROM tree t CROSS JOIN events e ON e.run_id = t.id WHERE e.tool_name IS NOT NULL ORDER BY name`,
+    ),
     noticeCode: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'notice' AND notice_code = :code LIMIT 1"),
     meterRecord: db.prepare(
       `SELECT run_id, seq, event_json, misses_json FROM meter_records
@@ -153,19 +190,20 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     sql.setInFlight.run({ runId, step: null, attempt: null });
   };
 
-  const recordMeter = (event: { runId: string; sessionId: string; seq: number; payload: Extract<RunEventPayload, { type: 'meter.observed' }> }): void => {
+  const recordMeter = (event: { eventId: number; runId: string; sessionId: string; seq: number; payload: Extract<RunEventPayload, { type: 'meter.observed' }> }): void => {
     const { payload } = event;
     const key = { sessionId: event.sessionId, counter: payload.counter, contextWindow: payload.contextWindow, tokenErrorRatio: payload.tokenErrorRatio ?? null, tokenCounting: payload.tokenCounting };
     const existing: Row | undefined = sql.meterRecord.get(key);
     const previous = existing === undefined ? [] : missesOf(`${event.sessionId}/${payload.counter}`, readerFor('meter_records', event.sessionId, existing).json('misses_json'));
-    const row = {
-      ...key,
-      runId: event.runId,
-      seq: event.seq,
-      eventJson: canonicalJson(payload),
-      missesJson: canonicalJson([...previous, { miss: payload.miss, uncounted: payload.uncounted }].slice(-ERROR_WINDOW)),
-    };
-    (existing === undefined ? sql.insertMeter : sql.updateMeter).run(row);
+    const missesJson = canonicalJson(windowOf([...previous, { eventId: event.eventId, miss: payload.miss, uncounted: payload.uncounted }]));
+    const observed = { ...key, runId: event.runId, seq: event.seq, eventJson: canonicalJson(payload), missesJson };
+    if (existing === undefined) {
+      sql.insertMeter.run(observed);
+      return;
+    }
+    const greatest = previous.reduce((most, entry) => Math.max(most, entry.eventId), 0);
+    const kept = readerFor('meter_records', event.sessionId, existing);
+    sql.updateMeter.run(event.eventId > greatest ? observed : { ...key, runId: kept.string('run_id'), seq: kept.number('seq'), eventJson: kept.string('event_json'), missesJson });
   };
 
   const touchedOf = (rows: readonly Row[], sessionId: string): SessionTouched[] =>
@@ -174,14 +212,19 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       return { path: reader.string('path'), firstEventId: reader.number('first_event_id') };
     });
 
-  const record = (event: RecordedEvent): void => {
+  const recordAnswerer = (event: RecordedEvent): void => {
+    const answerer = answerTargetOf(event.payload);
+    if (answerer !== undefined) sql.insertAnswerer.run({ runId: event.runId, target: answerer });
+  };
+
+  const recordTouched = (event: RecordedEvent): void => {
+    if (event.payload.type !== 'tool.call') return;
+    for (const path of locationPathsOf(event.payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
+  };
+
+  const recordRunFacts = (event: RecordedEvent): void => {
     const { runId, payload } = event;
-    const answerer = answerTargetOf(payload);
-    if (answerer !== undefined) sql.insertAnswerer.run({ runId, target: answerer });
     switch (payload.type) {
-      case 'tool.call':
-        for (const path of locationPathsOf(payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
-        return;
       case 'model.requested':
         sql.setInFlight.run({ runId, step: event.step, attempt: payload.attempt });
         return;
@@ -214,15 +257,28 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         sql.finishCall.run({ runId, callId: payload.callId });
         return;
       case 'meter.observed':
-        recordMeter({ runId, sessionId: event.sessionId, seq: event.seq, payload });
+        recordMeter({ eventId: event.eventId, runId, sessionId: event.sessionId, seq: event.seq, payload });
         return;
       default:
         return;
     }
   };
 
+  const RECORDERS: Record<RecordDerivation, (event: RecordedEvent) => void> = {
+    [APPEND_TIME_RECORDS_DERIVATION]: recordRunFacts,
+    [SESSION_TOUCHED_DERIVATION]: recordTouched,
+    [RUN_ANSWERERS_DERIVATION]: recordAnswerer,
+  };
+
+  const recordFor = (derivation: RecordDerivation, event: RecordedEvent): void => RECORDERS[derivation](event);
+
+  const record = (event: RecordedEvent): void => {
+    for (const derivation of RECORD_DERIVATIONS) recordFor(derivation, event);
+  };
+
   return {
     record,
+    recordFor,
     toolCallSeq: (runId, callId) => {
       const row: Row | undefined = sql.toolCallSeq.get({ runId, callId });
       return row === undefined ? undefined : readerFor('events', `${runId}/${callId}`, row).number('seq');
@@ -239,6 +295,11 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         const reader = readerFor('started_calls', runId, row);
         return { callId: reader.string('call_id'), name: reader.string('name'), idemKey: reader.string('idem_key') };
       }),
+    permissionRequestOf: (runId, approvalId) => sql.permissionRequest.get({ runId, approvalId }),
+    elicitationRequested: (runId, approvalId) => sql.elicitationRequest.get({ runId, approvalId }) !== undefined,
+    toolCallEventOf: (runId, callId) => sql.toolCallEvent.get({ runId, callId }),
+    modelCallRowsOf: (runId) => sql.modelCallRows.all({ runId }).sort((a, b) => readerFor('events', runId, a).number('seq') - readerFor('events', runId, b).number('seq')),
+    toolCallNamesOf: (rootRunId) => sql.toolCallNames.all({ runId: rootRunId }).map((row) => readerFor('events', rootRunId, row).string('name')),
     hasNoticeCode: (runId, code) => sql.noticeCode.get({ runId, code }) !== undefined,
     answeringTargetsOf: (runId) => sql.answerers.all({ runId }).map((row) => readerFor('run_answerers', runId, row).string('target')),
     touchedAfter: (sessionId, afterEventId, limit, afterPath) =>
@@ -255,7 +316,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         runId: reader.string('run_id'),
         seq: reader.number('seq'),
         event: event as MeterRecord['event'],
-        misses: missesOf(sessionId, reader.json('misses_json')),
+        misses: missesOf(sessionId, reader.json('misses_json')).map(({ miss, uncounted }) => ({ miss, uncounted })),
       };
     },
   };

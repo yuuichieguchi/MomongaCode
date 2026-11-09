@@ -91,18 +91,13 @@ describe('every terminal operation measures one run, outside the write transacti
     outsideTheTransaction(measurements, [parent.id, child.id]);
   });
 
-  it('a late answer to an expired approval stops the run through an awaited operation, outside the transaction', async () => {
+  it('an answer to an approval long after the request requeues the run and measures nothing', async () => {
     const { h, measurements } = measuring();
-    const { runId, approvals } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
-    h.clock.set(EXPIRES_MS);
+    const { runId, approvals } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    h.clock.set(mustRun(h.store, runId).deadlineAt - 1);
 
-    const pending = h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once');
-
-    expect(pending).toBeInstanceOf(Promise);
-    expect(await pending).toEqual({ kind: 'approval_not_pending', status: 'expired' });
-    expect(mustRun(h.store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
-    outsideTheTransaction(measurements, [runId]);
-    expect(contributionsOf(h.store, runId)).toBe(1);
+    expect(await h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'ok', run: { status: 'QUEUED' } });
+    expect(measurements).toEqual([]);
   });
 
   it('a late answer to an expired elicitation stops the run through an awaited operation, outside the transaction', async () => {
@@ -110,9 +105,9 @@ describe('every terminal operation measures one run, outside the write transacti
     const run = enqueue(h.store, newSession(h.store).id);
     const claim: Claim = mustClaim(h.store, 'w1');
     expect(h.store.append(claim, [callEvent('call_1')]).kind).toBe('ok');
-    const requested = h.store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
+    const requested = await h.store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
     if (requested.kind !== 'ok') throw new Error('expected an elicitation');
-    expect(h.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await h.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     h.clock.set(EXPIRES_MS);
 
     const pending = h.store.resolveElicitation(requested.approval.id, {});
@@ -123,7 +118,7 @@ describe('every terminal operation measures one run, outside the write transacti
     outsideTheTransaction(measurements, [run.id]);
   });
 
-  it('a cancel that reaches grandchildren through a running child moves every descendant to CANCELLING and measures none', () => {
+  it('a cancel that reaches grandchildren through a running child moves every descendant to CANCELLING and measures none', async () => {
     const { h, measurements } = measuring();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
@@ -131,14 +126,14 @@ describe('every terminal operation measures one run, outside the write transacti
     mustClaim(h.store, 'w-child');
     const grandchild = spawn(h.store, child.id, 'call_grandchild');
 
-    expect(cancel(h.store, parent.id).status).toBe('CANCELLING');
+    expect((await cancel(h.store, parent.id)).status).toBe('CANCELLING');
 
     expect(mustRun(h.store, child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'RUNNING' });
     expect(mustRun(h.store, grandchild.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
     expect(measurements).toEqual([]);
   });
 
-  it('a cancel that reaches a child waiting for a person and its queued child moves both to CANCELLING with their own origins and measures none', () => {
+  it('a cancel that reaches a child waiting for a person and its queued child moves both to CANCELLING with their own origins and measures none', async () => {
     const { h, measurements } = measuring();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
@@ -146,16 +141,15 @@ describe('every terminal operation measures one run, outside the write transacti
     const childClaim = mustClaim(h.store, 'w-child');
     const grandchild = spawn(h.store, child.id, 'call_grandchild');
     expect(h.store.append(childClaim, [callEvent('call_w')]).kind).toBe('ok');
-    const approval = h.store.requestApproval(childClaim, {
+    const approval = await h.store.requestApproval(childClaim, {
       callId: 'call_w',
       options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
-      expiresAt: EXPIRES_MS,
       event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' },
     });
     expect(approval.kind).toBe('ok');
-    expect(h.store.release(childClaim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await h.store.release(childClaim, 'WAITING_HUMAN')).kind).toBe('ok');
 
-    cancel(h.store, parent.id);
+    await cancel(h.store, parent.id);
 
     expect(mustRun(h.store, child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' });
     expect(mustRun(h.store, grandchild.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });

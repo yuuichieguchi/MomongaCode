@@ -31,7 +31,7 @@ describe('search indexing', () => {
     expect(duplicateDocs(dbPath)).toBe(0);
   });
 
-  it('skips runs that have not ended', () => {
+  it('skips runs that have not ended', async () => {
     const { store, dbPath } = harness();
     const { run } = openRun(store, '/work/a', 'running', [STEP]);
     expect(store.search.indexBatch({ limit: 10, redactor })).toEqual({ runs: 0 });
@@ -50,7 +50,7 @@ describe('search indexing', () => {
     const session = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm' });
     const created = store.createRunAndEnqueue(session.id, { input: 'never started', timeoutMs: 1000, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(created.kind);
-    store.requestCancel(created.run.id);
+    await store.requestCancel(created.run.id);
     expect(await store.finishCancelled(() => undefined)).toEqual([created.run.id]);
     expect(store.getRun(created.run.id)?.status).toBe('CANCELLED');
     store.search.indexBatch({ limit: 10, redactor });

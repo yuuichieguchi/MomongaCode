@@ -1,4 +1,5 @@
-import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import path from 'node:path';
+import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
@@ -47,12 +48,15 @@ export type TargetCapabilities = TargetCapabilitiesCore & DeclaredImage;
 export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
   Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
 
+export type FmDeclaredCapabilities = { contextWindow: number; maxOutputTokens: number };
+
 export type FmTarget = {
   adapter: 'fm';
   answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling?: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -147,6 +151,7 @@ export type ResolvedFmTarget = {
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   billing: 'local';
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -259,6 +264,8 @@ export type ModelsSettings = {
   idleTimeoutMs?: number;
 };
 
+export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number };
+
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
@@ -304,9 +311,13 @@ export type ContextSettings = {
   unboundedOutputReserve?: boolean;
 };
 
-export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean };
+export type RipgrepSetting = 'bundled' | 'system' | (string & {});
+
+export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting };
 
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[] };
+
+export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
 
 export type Settings = {
   permissions?: PermissionsSettings;
@@ -318,16 +329,21 @@ export type Settings = {
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
+  mcp?: McpCallSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
+  gateway?: GatewaySettings;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
+  network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   memory?: MemorySettings;
   verification?: VerificationSettings;
   context?: ContextSettings;
   tools?: ToolsSettings;
 };
+
+export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
@@ -358,11 +374,22 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
   }
 };
 
+const assertGatewayStopValues = (value: unknown, source: string): void => {
+  const gateway = isRecord(value) ? value['gateway'] : undefined;
+  if (!isRecord(gateway)) return;
+  for (const name of STOP_VALUE_NAMES) {
+    if (!Object.hasOwn(gateway, name)) continue;
+    const problem = stopValueProblem(name, gateway[name]);
+    if (problem !== undefined) throw new Error(`${source}: gateway.${problem}`);
+  }
+};
+
 export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
   assertPlanAdapters(value, source);
+  assertGatewayStopValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;
@@ -372,6 +399,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
     } catch (error) {
       throw new Error(`${source}: invalid settings at /credentials/valuePatterns/${index}: not a regular expression`, { cause: error });
     }
+  });
+  (settings.network?.extraCaFiles ?? []).forEach((file, index) => {
+    if (!path.isAbsolute(file)) throw new Error(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
   });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {

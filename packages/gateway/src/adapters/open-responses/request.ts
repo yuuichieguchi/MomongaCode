@@ -1,5 +1,5 @@
 import { DEFAULT_DIALECT_ID, compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin } from '@momonga/protocol';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
@@ -70,7 +70,9 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
   }
 };
 
-export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined };
+export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined; carriesOutputBound?: boolean };
+
+export const carriesResponsesOutputBound = (capabilities: Pick<Capabilities, 'outputBoundField'>): boolean => capabilities.outputBoundField !== 'none';
 
 const textFieldOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { text?: { format: unknown } } => {
   if (isJsonOnlyEnforced(plan)) return { text: { format: { type: 'json_object' } } };
@@ -96,7 +98,7 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     ...(tools.length === 0 ? {} : { tools }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
     ...(tools.length === 0 || request.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: request.parallel_tool_calls }),
-    ...(request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),
+    ...(rendering.carriesOutputBound === false || request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),
     ...textFieldOf(rendering.jsonReply, dialect),
     ...carriedSamplingOf(request),
   };

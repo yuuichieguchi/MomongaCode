@@ -1,21 +1,28 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
   canonicalPath,
   createJsonLogger,
   createRedactor,
-  ensureMomongaDirs,
+  createLockCapability,
+  ensureGenerationDirs,
+  fixedSocket,
+  generationLayout,
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
+  resolveKernelLock,
   ruleEnforcementOf,
   systemClock,
+  nodeFileSystem,
+  nodeFileSystemSync,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -23,8 +30,8 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
-import type { ShellHost } from '@momonga/tools';
+import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
+import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
@@ -94,6 +101,7 @@ import type { ToolRuntime } from './tool-runtime.ts';
 
 export type StartRuntimeProcessOptions = {
   home: string;
+  generation: number;
   version: string;
   clock?: Clock;
   timers?: ServiceTimers;
@@ -108,7 +116,10 @@ export type StartRuntimeProcessOptions = {
   drainTimeoutMs?: number;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
+  bundledRipgrep?: BundledRipgrepSource;
 };
+
+export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -168,6 +179,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const onWarning = (message: string): void => logger.warn(message);
 
   const cleanups: TeardownStep[] = [];
+  const markerOwners = createMarkerOwners();
   const workers: StartedWorker[] = [];
   const periodics: Periodic[] = [];
   let workersSettled = false;
@@ -293,15 +305,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   try {
     const paths = await step('dirs', async () => {
       const resolved = momongaPaths(canonicalHome, process.platform, {});
-      await ensureMomongaDirs(resolved);
+      await ensureGenerationDirs(resolved, options.generation, { signal });
       return resolved;
     });
+    const own = generationLayout(canonicalHome, options.generation);
 
     const lock: ProcessLock = await step('lock', async () => {
       try {
-        return await (options.acquireLock ?? acquireProcessLock)(paths.locks.runtime);
+        return await (options.acquireLock ?? acquireProcessLock)(own.locks.runtime);
       } catch (error) {
-        if (error instanceof ProcessLockHeldError && error.lockPath === paths.locks.runtime) {
+        if (error instanceof ProcessLockHeldError && error.lockPath === own.locks.runtime) {
           throw new RuntimeAlreadyRunningError(error.message, error.lockPath, error.holderPid);
         }
         throw error;
@@ -309,11 +322,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings } = await step('settings', () => {
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning });
+    const { cache, settings, network } = await step('settings', async () => {
+      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
-      return { cache: created, settings: snapshot.settings };
+      const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
+      const trust = await installTrust(networkConfig, nodeFileSystem);
+      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+      const outbound: OutboundNetwork = { config: networkConfig, trust };
+      return { cache: created, settings: snapshot.settings, network: outbound };
     });
 
     const kind: SandboxKind = settings.sandbox;
@@ -362,7 +379,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('mcp-markers', async () => {
-      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
+      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
@@ -399,7 +416,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
       await clearCallLocks(paths.callLocks);
     });
 
@@ -422,7 +439,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         serviceVersion: version,
         clock,
         store: traceStore,
-        exporters: exportersFor(settings.telemetry),
+        exporters: exportersFor(settings.telemetry, network),
         captureMessageContent: telemetrySettings.captureMessageContent,
         contentRetentionMs,
       }),
@@ -441,7 +458,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const gatewayClient: GatewayClient = await step('gateway-client', () =>
       createGatewayClient({
-        socketPath: options.gatewaySocketPath ?? paths.sockets.gateway,
+        resolveSocket: fixedSocket(options.gatewaySocketPath ?? own.sockets.gateway),
         clock,
         timers,
         version,
@@ -450,9 +467,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     );
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
-    const ports = await step('ports', () => {
+    const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, cache, store });
+      const lockCapability = createLockCapability({ proofDir: paths.lockProof });
+      const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
+        owners: markerOwners,
+        lockCapability,
+        kernelLock,
         paths,
         home: canonicalHome,
         store,
@@ -467,6 +489,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reapTiming,
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
+        ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths) }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({
@@ -480,6 +503,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sandbox,
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
         enforcement: ruleEnforcementOf(sandbox.kind),
+        reap: { timing: reapTiming, inspector: runtime.inspector },
+        owners: runtime.owners,
+        onWarning,
       });
       const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
@@ -504,6 +530,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       evidenceRunFor,
     } = ports;
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
+    cleanups.push({
+      name: 'tool-markers',
+      run: async () => {
+        const stop = new AbortController();
+        const handle = timers.setTimeout(() => stop.abort(), RUNTIME_TEARDOWN_BUDGET_MS);
+        try {
+          await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
+        } finally {
+          timers.clearTimeout(handle);
+        }
+      },
+    });
     cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
       name: 'mcp-pools',
@@ -521,7 +559,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         redactor,
         home: canonicalHome,
         version,
-        socketPath: paths.sockets.runtime,
+        socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
         sandboxKind: kind,
@@ -530,6 +568,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
         evidenceRun: evidenceRunFor,
@@ -542,7 +581,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
-            : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
+            : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
         runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
         runCostBreakdown: (runs, signal, includeRunless) =>
@@ -554,6 +593,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         mcp: toolRuntime.mcpAdmin,
+        markerOwners: toolRuntime.owners,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),
@@ -639,6 +679,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reflect: (sweepSignal) => reflector.runOne(sweepSignal),
         onError: report,
       });
+      const sweepStop = new AbortController();
       const factsSweeper = startFactsSweeper({
         store,
         thread: journalThread,
@@ -685,7 +726,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                 onWarning,
                 timing: reapTiming,
-                scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
+                signal: sweepStop.signal,
+                event: 'sweep',
+                owners: toolRuntime.owners,
               });
             } catch (error) {
               failures.push(error);
@@ -699,7 +742,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       );
       cleanups.push({
         name: 'timers',
-        run: async () => void (await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+        run: async () => {
+          sweepStop.abort();
+          await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())]);
+        },
       });
     });
 
@@ -712,7 +758,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         latchFatal(asError(error));
       }
       if (fatalError !== undefined) throw fatalError;
-      const fields: ReadyFields = { service: 'runtime', pid: process.pid, version, socketPath: paths.sockets.runtime, startedAt };
+      const fields: ReadyFields = { service: 'runtime', pid: process.pid, version, socketPath: own.sockets.runtime, startedAt };
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { ensureMomongaDirs } from '@momonga/foundation';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
+import { FIRST_GENERATION, ensureGenerationDirs, ensureMomongaDirs } from '@momonga/foundation';
 import type { RunServiceOptions } from '@momonga/runtime';
 import { writeUserSettings } from './helpers.ts';
 import {
@@ -114,9 +114,9 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     control.failDrain = new Error('beginDraining failed');
     const result = await launched.handle[method]();
     expect(result.clean).toBe(false);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(control.storeCloses).toBe(1);
-    expect(fs.existsSync(stack.temp.paths.sockets.runtime)).toBe(false);
+    expect(fs.existsSync(firstGeneration(stack.temp.paths).sockets.runtime)).toBe(false);
   }, DAEMON_PROCESS_TEST_TIMEOUT_MS);
 
   it('a rejecting telemetry.forceFlush still calls telemetry.shutdown during teardown', PROCESS_TIMEOUT, async () => {
@@ -125,7 +125,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     control.flushError = new Error('flush failed');
     await launched.handle.close();
     expect(control.shutdowns).toBe(1);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
   });
 
   it('a non-fatal service error is logged as service error and does not latch', PROCESS_TIMEOUT, async () => {
@@ -154,14 +154,15 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
-    fs.writeFileSync(temp.paths.sockets.runtime, 'not a socket');
+    await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
+    fs.writeFileSync(firstGeneration(temp.paths).sockets.runtime, 'not a socket');
     const flushError = new Error('flush failed during unwind');
     control.flushError = flushError;
     const logger = hookLogger(() => undefined);
-    const error = await failureOf(startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream() }));
-    expect((error as Error).message).toBe(`${temp.paths.sockets.runtime} exists and is not a socket`);
+    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout: captureStream() }));
+    expect((error as Error).message).toBe(`${firstGeneration(temp.paths).sockets.runtime} exists and is not a socket`);
     expect(entriesNamed(logger, 'startup.cleanup_failed').map((entry) => entry.fields?.err)).toEqual([flushError]);
     expect(control.shutdowns).toBe(1);
-    expect(await isLockFree(temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 });

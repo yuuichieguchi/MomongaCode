@@ -15,6 +15,7 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
+import { heldSessionOf } from './known.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -45,8 +46,7 @@ const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { c
 export const recordCalls = async (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): Promise<void> => {
   const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [...leading];
-  const session = ctx.options.store.getSession(ctx.run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
+  const session = heldSessionOf(ctx.options.store, ctx.run.sessionId);
   const display = ctx.options.tools.sessionState(session);
   for (const { item } of ownEntries(ctx.journal.state)) {
     if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(await callPayload(ctx, display, item));
@@ -124,12 +124,11 @@ const requireSuggestedRule = (callId: string, call: PendingCall): string => {
   return rule;
 };
 
-const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void => {
+const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome): Promise<void> => {
   const { options, journal } = ctx;
-  const created = options.store.requestApproval(ctx.claim, {
+  const created = await options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
     options: approvalOptions(outcome.suggestedRule),
-    expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     event: {
       subjectDigest: outcome.subjectDigest,
       reason: outcome.decision.reason,
@@ -140,9 +139,9 @@ const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void
   journal.sync();
 };
 
-const requestInput = (ctx: ClaimContext, outcome: NeedsInputOutcome): void => {
+const requestInput = async (ctx: ClaimContext, outcome: NeedsInputOutcome): Promise<void> => {
   const { options, journal } = ctx;
-  const created = options.store.requestElicitation(ctx.claim, {
+  const created = await options.store.requestElicitation(ctx.claim, {
     callId: outcome.callId,
     expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     server: outcome.server,
@@ -181,6 +180,11 @@ const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonl
   });
 };
 
+const recordToolBackend = (spans: ReadonlyMap<string, TraceSpan>, outcome: ResultOutcome): void => {
+  if (outcome.result.backend === undefined) return;
+  spans.get(outcome.callId)?.recordToolBackend(outcome.result.backend);
+};
+
 export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const { options, journal, run } = ctx;
   await recordCalls(ctx);
@@ -189,8 +193,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const runnable = entries.filter(([, call]) => call.status === 'requested' || call.status === 'started');
   if (runnable.length === 0) return 'continue';
 
-  const session = options.store.getSession(run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
+  const session = heldSessionOf(options.store, run.sessionId);
 
   const calls: ToolCall[] = [];
   const rejected: RunEventPayload[] = [];
@@ -247,6 +250,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
+      ripgrep: options.tools.ripgrepLocator(policy.env),
       workTreeObserver: options.tools.workTreeObserver(session, options.settings.trusted(session)),
       windowShared: ctx.windowShared,
       deadlineAt: run.deadlineAt,
@@ -275,6 +279,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         journal.append(outcomePayloads(outcome));
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
+        recordToolBackend(spans, outcome);
       },
       toolUnavailable: (toolKey) => toolRefusedInJournal(ctx, toolKey),
       onWarning: (message, toolKey) => journal.append([{ type: 'notice', level: 'warning', message, code: TOOL_VALIDATOR_FAILED_CODE, toolKey }]),
@@ -298,8 +303,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
   const inputs = outcomes.filter((outcome): outcome is NeedsInputOutcome => outcome.kind === 'needs_input');
   if (asking.length > 0 || inputs.length > 0) {
-    for (const outcome of asking) requestApproval(ctx, outcome);
-    for (const outcome of inputs) requestInput(ctx, outcome);
+    for (const outcome of asking) await requestApproval(ctx, outcome);
+    for (const outcome of inputs) await requestInput(ctx, outcome);
     return ctx.terminals.yieldTo('WAITING_HUMAN');
   }
   const waiting = outcomes.filter((outcome): outcome is WaitingOutcome => outcome.kind === 'waiting');
@@ -309,7 +314,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
 
 const sameAwait = (left: ToolAwait | undefined, right: ToolAwait): boolean => left !== undefined && canonicalJson(left) === canonicalJson(right);
 
-const yieldForTools = (ctx: ClaimContext, waiting: readonly WaitingOutcome[]): Flow => {
+const yieldForTools = async (ctx: ClaimContext, waiting: readonly WaitingOutcome[]): Promise<Flow> => {
   const fresh = waiting.filter((outcome) => !sameAwait(ctx.journal.state.pendingCalls[outcome.callId]?.awaiting, outcome.awaits));
   if (fresh.length > 0) {
     ctx.journal.append(

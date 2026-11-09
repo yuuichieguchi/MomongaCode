@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { InspectProcessLockOptions, ProcessLockInspection } from '@momonga/foundation';
 import { ProbeFailedError, createKernelLockMechanism, probeFailed } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROBE_HEADERS_TIMEOUT_MS, createExternalHealthProbe, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from '../src/lock-watch.ts';
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
@@ -394,14 +394,14 @@ describe('a held lock through the supervisor', () => {
     const lock = createFakeKernelLock({ inheritable: false });
     const h = await startHarness(context, { overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 } });
     await h.waitForState('runtime', 'ready');
-    lock.holdExternally(h.paths.locks.runtime, EXTERNAL_PID);
+    lock.holdExternally(firstGeneration(h.paths).locks.runtime, EXTERNAL_PID);
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock');
     await pump(h.timers, h.realWork, 5 * 60_000);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     expect(h.child('runtime')).toMatchObject({ state: 'waiting-lock', consecutiveFailures: 0 });
     expect(h.child('runtime').lastExit).toMatchObject({ code: 75, reason: 'lock-held' });
-    lock.releaseExternally(h.paths.locks.runtime);
+    lock.releaseExternally(firstGeneration(h.paths).locks.runtime);
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 10_000, description: 'respawn after the lock frees' });
     expect(h.log.withMsg('child.spawn').at(-1)).toMatchObject({ child: 'runtime', reason: 'lock-free' });
     expect(h.child('runtime').consecutiveFailures).toBe(0);
@@ -412,7 +412,7 @@ describe('a held lock through the supervisor', () => {
     let lockPath = '';
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        lockPath = paths.locks.runtime;
+        lockPath = firstGeneration(paths).locks.runtime;
         fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
         lock.holdExternally(lockPath, EXTERNAL_PID);
       },
@@ -436,8 +436,8 @@ describe('a held lock through the supervisor', () => {
     const lock = createFakeKernelLock({ inheritable: true });
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        fs.mkdirSync(path.dirname(paths.locks.runtime), { recursive: true, mode: 0o700 });
-        lock.holdExternally(paths.locks.runtime, EXTERNAL_PID);
+        fs.mkdirSync(path.dirname(firstGeneration(paths).locks.runtime), { recursive: true, mode: 0o700 });
+        lock.holdExternally(firstGeneration(paths).locks.runtime, EXTERNAL_PID);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 2000 },
     });
@@ -460,8 +460,8 @@ describe('a held lock through the supervisor', () => {
     };
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        fs.mkdirSync(path.dirname(paths.locks.runtime), { recursive: true, mode: 0o700 });
-        lock.holdExternally(paths.locks.runtime, EXTERNAL_PID);
+        fs.mkdirSync(path.dirname(firstGeneration(paths).locks.runtime), { recursive: true, mode: 0o700 });
+        lock.holdExternally(firstGeneration(paths).locks.runtime, EXTERNAL_PID);
       },
       overrides: { lockMechanism: flaky, lockWaitMs: 3_600_000 },
     });
@@ -471,7 +471,7 @@ describe('a held lock through the supervisor', () => {
     expect(h.log.withMsg('supervisor.background_failed')).toEqual([]);
     expect(h.log.withMsg('supervisor.background_transient')).toHaveLength(1);
     failing = false;
-    lock.releaseExternally(h.paths.locks.runtime);
+    lock.releaseExternally(firstGeneration(h.paths).locks.runtime);
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 1, { realWork: h.realWork, maxMs: 10_000, description: 'spawn after the poll recovers' });
   });
 });

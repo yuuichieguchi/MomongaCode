@@ -49,7 +49,7 @@ describe('worker recovery (b2): crash during a tool with a PENDING record', () =
     const env = await makeEnv();
     const run = env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
-    env.seed(
+    await env.seed(
       run.id,
       [
         requestedOffering(1, ['Mark']),
@@ -79,7 +79,7 @@ describe('worker recovery of pending calls', () => {
   it('executes a call left requested between tool.call and the batch, without re-requesting the recorded step', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Echo');
-    env.seed(
+    await env.seed(
       run.id,
       [
         requestedOffering(1, ['Echo']),
@@ -102,7 +102,7 @@ describe('worker recovery of pending calls', () => {
   it('completes a run whose recorded final answer was never followed by a transition, without a model call', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Answer');
-    env.seed(run.id, [responded(1, [assistantMessage('msg_done', 'Already answered.')])], 'crash');
+    await env.seed(run.id, [responded(1, [assistantMessage('msg_done', 'Already answered.')])], 'crash');
 
     await env.runOnce(env.worker());
 
@@ -118,7 +118,7 @@ describe('worker recovery of pending calls', () => {
       { optionId: 'opt-ao', name: 'Allow once', kind: 'allow_once' as const },
       { optionId: 'opt-ro', name: 'Reject once', kind: 'reject_once' as const },
     ];
-    const seeder = env.seed(
+    const seeder = await env.seed(
       run.id,
       [
         responded(1, [functionCallItem({ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } })]),
@@ -126,7 +126,7 @@ describe('worker recovery of pending calls', () => {
       ],
       'hold',
     );
-    const created = env.store.requestApproval(seeder, { callId: 'call_w_1', options, expiresAt: START_MS + 1_800_000, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' } });
+    const created = await env.store.requestApproval(seeder, { callId: 'call_w_1', options, event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' } });
     if (created.kind !== 'ok') throw new Error('expected an approval');
     env.clock.advance(LEASE_MS + 1);
 

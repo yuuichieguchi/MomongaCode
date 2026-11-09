@@ -3,7 +3,8 @@ import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { APPROVAL_STATUSES } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption } from '@momonga/protocol';
-import { corrupt, expectOneOf, isRecord, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, isRecord, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import type { Approval, ApprovalStore } from './types.ts';
 
@@ -35,7 +36,7 @@ const decodeResponses = (identity: string, value: unknown): Record<string, Elici
 
 const APPROVAL_KINDS = ['permission', 'elicitation'] as const;
 
-const decodeApproval = (row: Row): Approval => {
+const decodeApproval = (row: Row, context: DecodeContext): Approval => {
   const identity = String(row['id']);
   const reader = readerFor('approvals', identity, row);
   const server = reader.nullableString('server');
@@ -44,31 +45,37 @@ const decodeApproval = (row: Row): Approval => {
   const optionId = reader.nullableString('option_id');
   const resolvedAt = reader.nullableNumber('resolved_at');
   const subjectDigest = reader.nullableString('subject_digest');
-  return {
+  const kind = storedOneOf(context, 'approvals', identity, 'kind', APPROVAL_KINDS, reader.string('kind'));
+  const expiresAt = reader.nullableNumber('expires_at');
+  const record = {
     id: reader.string('id'),
     runId: reader.string('run_id'),
     callId: reader.string('call_id'),
-    kind: expectOneOf('approvals', identity, 'kind', APPROVAL_KINDS, reader.string('kind')),
     ...(server === null ? {} : { server }),
     ...(hasRequests ? { requests: decodeRequests(identity, reader.json('requests_json')) } : {}),
     ...(hasResponses ? { responses: decodeResponses(identity, reader.json('responses_json')) } : {}),
-    status: expectOneOf('approvals', identity, 'status', APPROVAL_STATUSES, reader.string('status')),
+    status: storedOneOf(context, 'approvals', identity, 'status', APPROVAL_STATUSES, reader.string('status')),
     options: decodeOptions(identity, reader.json('options_json')),
-    expiresAt: reader.number('expires_at'),
     createdAt: reader.number('created_at'),
     ...(optionId === null ? {} : { optionId }),
     ...(resolvedAt === null ? {} : { resolvedAt }),
     ...(subjectDigest === null ? {} : { subjectDigest }),
   };
+  if (kind === 'unknown') return { ...record, kind, ...(expiresAt === null ? {} : { expiresAt }) };
+  if (kind === 'elicitation') {
+    if (expiresAt === null) throw corrupt('approvals', identity, 'a request for input must carry its expiry');
+    return { ...record, kind, expiresAt };
+  }
+  if (expiresAt !== null) throw corrupt('approvals', identity, 'only a request for input carries an expiry');
+  return { ...record, kind };
 };
 
 export type ApprovalRequest = {
   runId: string;
   callId: string;
   options: PermissionOption[];
-  expiresAt: number;
   subjectDigest: string;
-  elicitation?: { server: string; requests: ElicitationRequestView[] };
+  elicitation?: { server: string; requests: ElicitationRequestView[]; expiresAt: number };
 };
 
 export type ApprovalOps = {
@@ -80,7 +87,7 @@ export type ApprovalOps = {
   end(id: string, status: 'expired' | 'withdrawn'): void;
 };
 
-export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps => {
+export const createApprovalStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): ApprovalOps => {
   const runExists = db.prepare('SELECT 1 AS present FROM runs WHERE id = :runId');
   const insert = db.prepare(
     `INSERT INTO approvals (id, run_id, call_id, status, options_json, expires_at, created_at, subject_digest, kind, server, requests_json)
@@ -103,7 +110,7 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
 
   const get = (id: string): Approval | undefined => {
     const row = selectById.get({ id });
-    return row === undefined ? undefined : decodeApproval(row);
+    return row === undefined ? undefined : decodeApproval(row, context);
   };
 
   const mustGet = (id: string): Approval => {
@@ -119,7 +126,7 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
       runId: input.runId,
       callId: input.callId,
       options: canonicalJson(input.options),
-      expiresAt: input.expiresAt,
+      expiresAt: input.elicitation === undefined ? null : input.elicitation.expiresAt,
       createdAt: clock.now(),
       subjectDigest: input.subjectDigest,
       kind: input.elicitation === undefined ? 'permission' : 'elicitation',
@@ -133,7 +140,7 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
     if (runExists.get({ runId: input.runId }) === undefined) throw new Error(`cannot create approval: unknown run ${input.runId}`);
     const pendingRow = selectPendingByCall.get({ runId: input.runId, callId: input.callId });
     if (pendingRow !== undefined) {
-      const current = decodeApproval(pendingRow);
+      const current = decodeApproval(pendingRow, context);
       if (canonicalJson(current.options) === canonicalJson(input.options) && current.subjectDigest === input.subjectDigest) {
         return { approval: current, created: false };
       }
@@ -145,12 +152,12 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock): ApprovalOps
 
   const store: ApprovalStore = {
     get,
-    listPending: (runId) => listPending.all({ runId }).map(decodeApproval),
+    listPending: (runId) => listPending.all({ runId }).map((row) => decodeApproval(row, context)),
   };
   return {
     store,
     request,
-    listPendingDue: (runId, nowMs) => listPendingDue.all({ runId, nowMs }).map(decodeApproval),
+    listPendingDue: (runId, nowMs) => listPendingDue.all({ runId, nowMs }).map((row) => decodeApproval(row, context)),
     markResolved: (id, optionId) => {
       const result = resolve.run({ id, optionId, resolvedAt: clock.now() });
       if (Number(result.changes) !== 1) throw new Error(`approval ${id} could not be resolved`);

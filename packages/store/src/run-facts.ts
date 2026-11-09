@@ -12,29 +12,32 @@ import {
   TERMINAL_STATUSES,
 } from '@momonga/protocol';
 import type { RecoveryEpisodeView, ReportPage, RunCallView, RunFactsView } from '@momonga/protocol';
-import { expectOneOf, readerFor } from './rows.ts';
+import { readerFor, refuseUnknown, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import type { FactsBatch, FactsCommit, FactsCursor, RunFactsStore, StoredFacts } from './types.ts';
 
 const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ');
 
+const STOP_REASON_LIST = STOP_REASONS.map((reason) => `'${reason}'`).join(', ');
+
 const optional = <K extends string, V>(key: K, value: V | null): { [P in K]?: V } => (value === null ? {} : ({ [key]: value } as { [P in K]: V }));
 
-const episodeOf = (row: Row): RecoveryEpisodeView => {
+const episodeOf = (row: Row, context: DecodeContext): RecoveryEpisodeView => {
   const reader = readerFor('run_recoveries', `${String(row['run_id'])}/${String(row['ordinal'])}`, row);
   const identity = `${String(row['run_id'])}/${String(row['ordinal'])}`;
   return {
     ordinal: reader.number('ordinal'),
-    cause: expectOneOf('run_recoveries', identity, 'cause', RECOVERY_CAUSES, reader.string('cause')),
+    cause: storedOneOf(context, 'run_recoveries', identity, 'cause', RECOVERY_CAUSES, reader.string('cause')),
     failedAt: reader.number('failed_at'),
     progressAt: reader.nullableNumber('progress_at'),
-    outcome: expectOneOf('run_recoveries', identity, 'outcome', RECOVERY_OUTCOMES, reader.string('outcome')),
+    outcome: storedOneOf(context, 'run_recoveries', identity, 'outcome', RECOVERY_OUTCOMES, reader.string('outcome')),
     startedSeq: reader.number('started_seq'),
     progressSeq: reader.nullableNumber('progress_seq'),
   };
 };
 
-const callOf = (row: Row): RunCallView => {
+const callOf = (row: Row, context: DecodeContext): RunCallView => {
   const identity = `${String(row['run_id'])}/${String(row['call_id'])}`;
   const reader = readerFor('run_calls', identity, row);
   const basis = reader.nullableString('basis');
@@ -42,13 +45,13 @@ const callOf = (row: Row): RunCallView => {
   return {
     runId: reader.string('run_id'),
     callId: reader.string('call_id'),
-    basis: basis === null ? null : expectOneOf('run_calls', identity, 'basis', APPROVAL_BASES, basis),
-    sideEffect: sideEffect === null ? null : expectOneOf('run_calls', identity, 'side_effect', SIDE_EFFECTS, sideEffect),
+    basis: basis === null ? null : storedOneOf(context, 'run_calls', identity, 'basis', APPROVAL_BASES, basis),
+    sideEffect: sideEffect === null ? null : storedOneOf(context, 'run_calls', identity, 'side_effect', SIDE_EFFECTS, sideEffect),
     asked: reader.flag('asked'),
   };
 };
 
-const factsOf = (row: Row, recoveries: RecoveryEpisodeView[]): RunFactsView => {
+const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeContext): RunFactsView => {
   const identity = String(row['run_id']);
   const reader = readerFor('run_facts', identity, row);
   const stopReason = reader.nullableString('stop_reason');
@@ -61,11 +64,11 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[]): RunFactsView => {
     sessionId: reader.string('session_id'),
     definitionsVersion: reader.number('definitions_version'),
     modelAlias: reader.string('model_alias'),
-    mode: expectOneOf('run_facts', identity, 'mode', PERMISSION_MODES, reader.string('mode')),
+    mode: storedOneOf(context, 'run_facts', identity, 'mode', PERMISSION_MODES, reader.string('mode')),
     agent: reader.string('agent'),
     origin: reader.string('origin'),
-    status: expectOneOf('run_facts', identity, 'status', RUN_STATUSES, reader.string('status')),
-    ...(stopReason === null ? {} : { stopReason: expectOneOf('run_facts', identity, 'stop_reason', STOP_REASONS, stopReason) }),
+    status: storedOneOf(context, 'run_facts', identity, 'status', RUN_STATUSES, reader.string('status')),
+    ...(stopReason === null ? {} : { stopReason: storedOneOf(context, 'run_facts', identity, 'stop_reason', STOP_REASONS, stopReason) }),
     createdAt: reader.number('created_at'),
     endedAt: reader.number('ended_at'),
     elapsedMs: reader.number('elapsed_ms'),
@@ -96,13 +99,13 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[]): RunFactsView => {
   };
 };
 
-export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
+export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): RunFactsStore => {
   const readCursor = db.prepare('SELECT definitions_version, after_event_id FROM facts_cursor WHERE id = 1');
   const writeCursor = db.prepare('UPDATE facts_cursor SET definitions_version = :version, after_event_id = :eventId WHERE id = 1');
   const nextTerminal = db.prepare(
     `SELECT e.id AS event_id, e.run_id
      FROM events e JOIN runs r ON r.id = e.run_id
-     WHERE e.id > :cursor AND e.type = 'run.status' AND r.status IN (${TERMINAL_LIST})
+     WHERE e.id > :cursor AND e.type = 'run.status' AND r.status IN (${TERMINAL_LIST}) AND (r.stop_reason IS NULL OR r.stop_reason IN (${STOP_REASON_LIST}))
        AND e.seq = (SELECT MAX(x.seq) FROM events x WHERE x.run_id = e.run_id AND x.type = 'run.status')
      ORDER BY e.id LIMIT :limit`,
   );
@@ -154,6 +157,7 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
   };
 
   const storeFacts = (facts: RunFactsView): void => {
+    refuseUnknown(`the facts of run ${facts.runId}`, [facts.mode, facts.status, facts.stopReason, ...facts.recoveries.flatMap((episode) => [episode.cause, episode.outcome])]);
     deleteRecoveries.run({ runId: facts.runId });
     upsertFacts.run({
       runId: facts.runId,
@@ -231,6 +235,7 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
           upsertUnavailable.run({ runId, version: INDICATOR_DEFINITIONS_VERSION });
         }
         for (const call of batch.calls) {
+          refuseUnknown(`call ${call.callId} of run ${call.runId}`, [call.basis, call.sideEffect]);
           insertCall.run({ runId: call.runId, callId: call.callId, basis: call.basis, sideEffect: call.sideEffect, asked: call.asked ? 1 : 0 });
         }
         writeCursor.run({ version: INDICATOR_DEFINITIONS_VERSION, eventId: batch.throughEventId });
@@ -241,7 +246,7 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
       const row = factsRow.get({ runId });
       if (row === undefined) return undefined;
       if (readerFor('run_facts', runId, row).flag('unavailable')) return { kind: 'unavailable' };
-      return { kind: 'facts', facts: factsOf(row, recoveriesOf.all({ runId }).map(episodeOf)) };
+      return { kind: 'facts', facts: factsOf(row, recoveriesOf.all({ runId }).map((recovery) => episodeOf(recovery, context)), context) };
     },
 
     page: (after, limit): ReportPage => {
@@ -253,12 +258,12 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
       const episodes = new Map<string, RecoveryEpisodeView[]>();
       for (const row of pageRecoveries.all({ after, last: lastId })) {
         const runId = readerFor('run_recoveries', 'page', row).string('run_id');
-        episodes.set(runId, [...(episodes.get(runId) ?? []), episodeOf(row)]);
+        episodes.set(runId, [...(episodes.get(runId) ?? []), episodeOf(row, context)]);
       }
       const available = shown.filter((row) => !readerFor('run_facts', 'page', row).flag('unavailable'));
       const unavailable = shown.filter((row) => readerFor('run_facts', 'page', row).flag('unavailable'));
       return {
-        rows: available.map((row) => factsOf(row, episodes.get(readerFor('run_facts', 'page', row).string('run_id')) ?? [])),
+        rows: available.map((row) => factsOf(row, episodes.get(readerFor('run_facts', 'page', row).string('run_id')) ?? [], context)),
         unavailable: unavailable.map((row) => {
           const reader = readerFor('run_facts', 'page', row);
           return { runId: reader.string('run_id'), rootRunId: reader.string('root_run_id') };
@@ -268,6 +273,6 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
     },
 
     calls: (after, limit): RunCallView[] =>
-      (after === null ? firstCalls.all({ limit }) : nextCalls.all({ runId: after.runId, callId: after.callId, limit })).map(callOf),
+      (after === null ? firstCalls.all({ limit }) : nextCalls.all({ runId: after.runId, callId: after.callId, limit })).map((row) => callOf(row, context)),
   };
 };

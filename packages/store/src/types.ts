@@ -1,3 +1,4 @@
+import type { Stored, UNKNOWN_VALUE } from './rows.ts';
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -18,6 +19,7 @@ import type {
   RunEventPayload,
   RunState,
   RunStatus,
+  OpaqueEvent,
   SessionEvent,
   ContextChargePurpose,
   GoverningEnforcement,
@@ -44,7 +46,7 @@ export type Session = {
   id: string;
   cwd: string;
   env: Record<string, string>;
-  permissionMode: PermissionMode;
+  permissionMode: Stored<PermissionMode>;
   modelAlias: string;
   bypassAllowed: boolean;
   additionalDirectories: readonly string[];
@@ -72,8 +74,8 @@ export type Run = {
   id: string;
   sessionId: string;
   ordinal: number;
-  status: RunStatus;
-  stopReason?: StopReason;
+  status: Stored<RunStatus>;
+  stopReason?: Stored<StopReason>;
   version: number;
   leaseOwner: string | null;
   leaseToken: number;
@@ -91,11 +93,11 @@ export type Run = {
   lastSeq: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   previousRunId: string | null;
-  history: HistoryMode;
+  history: Stored<HistoryMode>;
   parentRunId: string | null;
   parentCallId: string | null;
-  origin: MemoryOrigin;
-  cancelOrigin: CancelOrigin | null;
+  origin: Stored<MemoryOrigin>;
+  cancelOrigin: Stored<CancelOrigin> | null;
   error?: RunError;
 };
 
@@ -128,7 +130,7 @@ export type Conflict = { kind: 'conflict'; reason?: string };
 export type NotFound = { kind: 'not_found' };
 
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
-export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | NotFound;
+export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 
 export type SetModelAliasResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
@@ -201,11 +203,12 @@ export type LeasedIdempotency = {
   authorise(key: string): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
-  complete(key: string, result: unknown): LeasedOutcome;
+  complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
 
 export type IdempotencyStore = {
   get(key: string): IdempotencyLookup | undefined;
+  processGroupOf(key: string): number | undefined;
   holding(fence: LeaseFence): LeasedIdempotency;
   clearCheckpoint(key: string): void;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;
@@ -216,22 +219,25 @@ export type IdempotencyStore = {
   purgeExpired(nowMs: number): number;
 };
 
-export type Approval = {
+type ApprovalRecord = {
   id: string;
   runId: string;
   callId: string;
-  kind: 'permission' | 'elicitation';
-  status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
+  status: Stored<'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn'>;
   options: PermissionOption[];
   server?: string;
   requests?: ElicitationRequestView[];
   responses?: Record<string, ElicitationAnswerRecord>;
-  expiresAt: number;
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
   subjectDigest?: string;
 };
+
+export type Approval =
+  | (ApprovalRecord & { kind: 'permission' })
+  | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number })
+  | (ApprovalRecord & { kind: typeof UNKNOWN_VALUE; expiresAt?: number });
 
 export type ApprovalView = {
   id: string;
@@ -239,7 +245,6 @@ export type ApprovalView = {
   callId: string;
   status: Approval['status'];
   options: PermissionOption[];
-  expiresAt: number;
   createdAt: number;
   suggestedRule?: string;
   reason: string;
@@ -295,9 +300,11 @@ export type BlobScope = { runId: string };
 
 export type TrustDecision = 'trusted' | 'untrusted';
 
+export type StoredTrustDecision = Stored<TrustDecision>;
+
 export type TrustStore = {
-  get(path: string): TrustDecision | undefined;
-  decisionFor(path: string): { decision: TrustDecision | null; inheritedFrom?: string };
+  get(path: string): StoredTrustDecision | undefined;
+  decisionFor(path: string): { decision: StoredTrustDecision | null; inheritedFrom?: string };
   set(path: string, decision: TrustDecision): void;
   clear(path: string): void;
 };
@@ -353,13 +360,17 @@ export type MemoryListFilter = { scope?: MemoryScope; project?: string; state?: 
 
 export type MemoryListCursor = { createdAt: number; id: string };
 
-export type MemoryObservation = { status: MemoryStatus; observedAt: number };
+export type MemoryObservation = { status: Stored<MemoryStatus>; observedAt: number };
 
 export type SessionTouched = { path: string; firstEventId: number };
 
 export type SessionTouchedStore = {
-  after(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
-  newest(sessionId: string, limit: number): SessionTouched[];
+  after(sessionId: string, afterEventId: number, limit: number, afterPath?: string): Promise<SessionTouched[]>;
+  newest(sessionId: string, limit: number): Promise<SessionTouched[]>;
+};
+
+export type RuntimeMemoryStore = Omit<MemoryStore, 'save'> & {
+  save(input: SaveMemoryInput): Promise<{ memory: MemoryRecord; created: boolean }>;
 };
 
 export type MemoryStore = {
@@ -423,7 +434,7 @@ export type HistoryAnchor = {
   runId: string;
   sessionId: string;
   project: string;
-  origin: MemoryOrigin;
+  origin: Stored<MemoryOrigin>;
   outcome: string;
   at: number;
   seqFrom: number;
@@ -454,7 +465,7 @@ export type HistoryReadRequest = {
 };
 
 export type HistoryReadResult =
-  | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
+  | { kind: 'ok'; runId: string; project: string; origin: Stored<MemoryOrigin>; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
   | { kind: 'not_visible' };
 
 export type FactsCursor = { definitionsVersion: number; afterEventId: number };
@@ -478,13 +489,13 @@ export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
   query(visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult;
-  readRange(visibility: HistoryVisibility, request: HistoryReadRequest): HistoryReadResult;
+  readRange(visibility: HistoryVisibility, request: HistoryReadRequest): Promise<HistoryReadResult>;
   projectOf(visibility: HistoryVisibility, runId: string): string | undefined;
 };
 
 export type ReflectionJob = {
   runId: string;
-  state: ReflectionJobState;
+  state: Stored<ReflectionJobState>;
   attempts: number;
   lastError: string | null;
   dropped: ReflectionDrop[];
@@ -512,7 +523,7 @@ export type ReflectionCompletion = {
 };
 
 export type ReflectionStore = {
-  runOrigin(runId: string): MemoryOrigin | undefined;
+  runOrigin(runId: string): Stored<MemoryOrigin> | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): ReflectionJob | undefined;
   latestForProject(project: string): ReflectionJob | undefined;
@@ -525,7 +536,7 @@ export type ReflectionStore = {
   fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
 };
 
-export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };
+export type ContextCharge = Omit<ContextChargeInput, 'purpose'> & { purpose: Stored<ContextChargePurpose>; id: number; createdAt: number };
 
 export type ContextChargeStore = {
   record(input: ContextChargeInput): ContextCharge;
@@ -563,9 +574,9 @@ export type RuntimeStore = {
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<RunMutationResult>;
-  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): RunMutationResult;
-  releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
-  requestCancel(runId: string): RequestCancelResult;
+  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): Promise<RunMutationResult>;
+  releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): Promise<RunMutationResult>;
+  requestCancel(runId: string): Promise<RequestCancelResult>;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
   setModelAlias(sessionId: string, modelAlias: string): SetModelAliasResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
@@ -580,19 +591,21 @@ export type RuntimeStore = {
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
-  readModelCallEvents(runId: string): ModelCallRecord[];
-  toolCallSeq(runId: string, callId: string): number | undefined;
-  finalTextOf(runId: string): string;
-  inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
-  startedCallsOf(runId: string): StartedCall[];
-  hasNoticeCode(runId: string, code: string): boolean;
-  meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
-  answeringTargetsOf(runId: string): string[];
+  readModelCallEvents(runId: string): Promise<ModelCallRecord[]>;
+  toolCallSeq(runId: string, callId: string): Promise<number | undefined>;
+  finalTextOf(runId: string): Promise<string>;
+  inFlightModelRequestOf(runId: string): Promise<{ step: number; attempt: number } | undefined>;
+  startedCallsOf(runId: string): Promise<StartedCall[]>;
+  hasNoticeCode(runId: string, code: string): Promise<boolean>;
+  meterRecordOf(sessionId: string, key: MeterKey): Promise<MeterRecord | undefined>;
+  answeringTargetsOf(runId: string): Promise<string[]>;
   recordFidelityVerdicts(runId: string, cwd: string, reply: Pick<FidelityReply, 'checkedThrough' | 'verdicts'>): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
-  toolCallNames(rootRunId: string): string[];
+  toolCallNames(rootRunId: string): Promise<string[]>;
   toolOfferedNames(rootRunId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
+  readRunEventStream(runId: string, afterSeq: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
+  readSessionEventStream(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;
   load(runId: string): LoadedRun;
@@ -601,25 +614,24 @@ export type RuntimeStore = {
     input: {
       callId: string;
       options: PermissionOption[];
-      expiresAt: number;
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
-  ): RequestApprovalResult;
+  ): Promise<RequestApprovalResult>;
   resolveApproval(approvalId: string, optionId: string): Promise<ResolveApprovalResult>;
   requestElicitation(
     claim: Claim,
     input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
-  ): RequestApprovalResult;
+  ): Promise<RequestApprovalResult>;
   resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): Promise<ResolveElicitationResult>;
-  elicitationView(elicitationId: string): ElicitationView | undefined;
-  pendingElicitationViews(runId: string): ElicitationView[];
+  elicitationView(elicitationId: string): Promise<ElicitationView | undefined>;
+  pendingElicitationViews(runId: string): Promise<ElicitationView[]>;
   expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
-  approvalView(approvalId: string): ApprovalView | undefined;
-  pendingApprovalViews(runId: string): ApprovalView[];
+  approvalView(approvalId: string): Promise<ApprovalView | undefined>;
+  pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
@@ -632,7 +644,7 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
-  memories: MemoryStore;
+  memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;
   contextCharges: ContextChargeStore;
@@ -789,6 +801,6 @@ export type ChildRunInput = {
 
 export type CreateChildRunResult =
   | { kind: 'created' | 'existing'; run: Run; session: Session }
-  | { kind: 'parent_not_active'; status: RunStatus | 'missing' };
+  | { kind: 'parent_not_active'; status: Stored<RunStatus> | 'missing' };
 
 export type WaitTargets = { runIds: readonly string[]; jobIds: readonly string[] };

@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
-import { findHolders, holderGroups, reconcileProcessGroup } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
+import { REAP_POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import type { ProbeResult, ProcessInspector, ReapTiming } from '@momonga/foundation';
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -360,14 +360,14 @@ describe('reconcileProcessGroup structured result', () => {
 describe('findHolders', () => {
   it('returns an empty list when nothing holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const marker = makeMarker(makeDir());
-    expect(await findHolders(marker)).toEqual([]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
   });
 
   it('excludes the current process even when it holds the marker open', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const marker = makeMarker(makeDir());
     const fd = fs.openSync(marker, 'r');
     try {
-      expect(await findHolders(marker)).toEqual([]);
+      expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
     } finally {
       fs.closeSync(fd);
     }
@@ -377,7 +377,7 @@ describe('findHolders', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await findHolders(marker)).toEqual([holder]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 
@@ -388,7 +388,7 @@ describe('holderGroups', () => {
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
     const holders = holdersOf(marker);
     expect(holders.length).toBeGreaterThan(0);
-    const groups = await holderGroups(holders);
+    const groups = await holderGroups(holders, [], { signal: new AbortController().signal });
     expect(groups).toHaveLength(holders.length);
     expect(new Set(groups)).toEqual(new Set([group.pgid]));
   });
@@ -397,7 +397,7 @@ describe('holderGroups', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await holderGroups([holder])).toEqual([holder]);
+    expect(await holderGroups([holder], [], { signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 
@@ -444,5 +444,54 @@ describe('reconcileProcessGroup timing injection', () => {
       process.kill(pid, signal);
     };
     await expect(reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100, kill })).rejects.toThrow('kill EINVAL');
+  });
+});
+
+describe('markerReapClockBoundMs', () => {
+  const KILL_GRACE_MS = 2000;
+  const RECORDED_GROUP = 424_242;
+  const OWN_GROUP = 424_241;
+  const HOLDER = 424_243;
+  const HOLDER_STARTED_AT = 1_700_000_000;
+  const FAILURES_PER_WINDOW = KILL_GRACE_MS / REAP_POLL_INTERVAL_MS - 1;
+  const SLOW_PROBE: ProbeResult<number[]> = { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the probe was slow' } };
+
+  it('bounds the clock a marker reap spends when every probe window retries to its end and the holder never lets go', async () => {
+    const marker = path.join(makeDir(), 'marker');
+    fs.writeFileSync(marker, `${RECORDED_GROUP}\n`, { mode: 0o600 });
+    let current = 0;
+    const timing: ReapTiming = {
+      now: () => current,
+      sleep: async (ms: number) => {
+        current += ms;
+        await new Promise((resolve) => setImmediate(resolve));
+      },
+    };
+    const scriptedHolders: ProbeResult<number[]>[] = [
+      ...Array.from({ length: FAILURES_PER_WINDOW }, () => SLOW_PROBE),
+      { kind: 'value', value: [HOLDER] },
+      ...Array.from({ length: FAILURES_PER_WINDOW }, () => SLOW_PROBE),
+    ];
+    const inspector: ProcessInspector = {
+      startTimeOf: async () => ({ kind: 'value', value: HOLDER_STARTED_AT }),
+      holdersOf: async () => scriptedHolders.shift() ?? { kind: 'value', value: [HOLDER] },
+      groupsOf: async (pids) => ({ kind: 'value', value: new Map(pids.map((pid) => [pid, pid === process.pid ? OWN_GROUP : RECORDED_GROUP])) }),
+      markerState: async () => 'held',
+    };
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = [];
+    const kill = (pid: number, signal: NodeJS.Signals | number): void => {
+      if (signal !== 0) signals.push({ pid, signal });
+    };
+    const warnings: string[] = [];
+
+    const result = await reapMarkedProcesses({ marker, killGraceMs: KILL_GRACE_MS, label: 'daemon', onWarning: (warning) => warnings.push(warning), kill, timing, inspector });
+
+    expect(result).toEqual({ removed: false });
+    expect(signals).toEqual([
+      { pid: -RECORDED_GROUP, signal: 'SIGTERM' },
+      { pid: -RECORDED_GROUP, signal: 'SIGKILL' },
+    ]);
+    expect(current).toBeGreaterThan(3 * KILL_GRACE_MS);
+    expect(current).toBeLessThanOrEqual(markerReapClockBoundMs(KILL_GRACE_MS));
   });
 });

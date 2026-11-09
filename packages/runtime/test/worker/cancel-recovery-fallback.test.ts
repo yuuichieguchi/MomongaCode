@@ -30,7 +30,7 @@ const errorNotices = (env: Env, runId: string) => env.ofType(runId, 'notice').fi
 describe('cancel recovery fallback', () => {
   it('a cancel whose policy build would fail reaches CANCELLED and reconciles the started call, because recovery builds no policy', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK]);
+    const { run, keys } = await seedStartedCalls(env, [MARK]);
     const contexts: string[] = [];
     const worker = env.worker('worker-1', {
       tools: {
@@ -57,7 +57,7 @@ describe('cancel recovery fallback', () => {
 
   it('a cancel still reconciles when the protected set would rethrow EIO from readEntry', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK]);
+    const { run, keys } = await seedStartedCalls(env, [MARK]);
     const eio = Object.assign(new Error('EIO: injected readEntry failure'), { code: 'EIO' });
     const worker = env.worker('worker-1', {
       tools: {
@@ -77,11 +77,11 @@ describe('cancel recovery fallback', () => {
 
   it('a cancel where recoveryContextFor throws reaches CANCELLED, the process group is gone before CANCELLED, and the record is UNKNOWN', PROCESS_TIMEOUT, async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [BASH]);
+    const { run, keys } = await seedStartedCalls(env, [BASH]);
     const key = keys[BASH.callId] as string;
     const pgid = spawnMarkerHolder(env, key);
     const store = recordingStore(env);
-    const aliveAtCancel: boolean[] = [];
+    const aliveAtCancel: Array<Promise<boolean>> = [];
     store.onCancelled.push(() => aliveAtCancel.push(groupExists(pgid)));
     const errors: unknown[] = [];
     const failure = new Error('the sandbox profile could not be built');
@@ -98,7 +98,7 @@ describe('cancel recovery fallback', () => {
     await within(env.runOnce(worker), 20_000, 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(aliveAtCancel).toEqual([false]);
+    expect(await Promise.all(aliveAtCancel)).toEqual([false]);
     expect(env.store.idempotency.get(key)?.s).toBe('UNKNOWN');
     expect(errors).toEqual([failure]);
     expect(errorNotices(env, run.id).map((notice) => notice.message)).toEqual([`${RECONCILE_FAILURE_PREFIX}the sandbox profile could not be built`]);
@@ -110,11 +110,11 @@ describe('cancel recovery fallback', () => {
 
   it('the process group is gone before CANCELLED, including a child that closed fd 3', PROCESS_TIMEOUT, async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [BASH]);
+    const { run, keys } = await seedStartedCalls(env, [BASH]);
     const key = keys[BASH.callId] as string;
     const pgid = spawnMarkerHolder(env, key, 'sleep 30 & exec 3>&-; wait');
     const store = recordingStore(env);
-    const aliveAtCancel: boolean[] = [];
+    const aliveAtCancel: Array<Promise<boolean>> = [];
     store.onCancelled.push(() => aliveAtCancel.push(groupExists(pgid)));
     const worker = env.worker('worker-1', {
       store,
@@ -128,14 +128,14 @@ describe('cancel recovery fallback', () => {
     await within(env.runOnce(worker), 20_000, 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(aliveAtCancel).toEqual([false]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await Promise.all(aliveAtCancel)).toEqual([false]);
+    expect(await groupExists(pgid)).toBe(false);
     expect(env.store.idempotency.get(key)?.s).toBe('UNKNOWN');
   });
 
   it('a cancel where recoveryToolSet throws reaches CANCELLED', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK]);
+    const { run, keys } = await seedStartedCalls(env, [MARK]);
     const errors: unknown[] = [];
     const worker = env.worker('worker-1', {
       onError: (error) => errors.push(error),
@@ -158,7 +158,7 @@ describe('cancel recovery fallback', () => {
 
   it('a cancel where envFor throws ConfigError reaches CANCELLED', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK]);
+    const { run, keys } = await seedStartedCalls(env, [MARK]);
     const worker = env.worker('worker-1', {
       tools: {
         envFor: () => {
@@ -178,7 +178,7 @@ describe('cancel recovery fallback', () => {
 
   it('a started call whose tool is absent from the recovery tool set is abandoned as unknown and is not sent to the batch', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK, REMOTE]);
+    const { run, keys } = await seedStartedCalls(env, [MARK, REMOTE]);
     const worker = env.worker('worker-1');
 
     await within(env.runOnce(worker), 10_000, 'the cancel recovery');
@@ -198,7 +198,7 @@ describe('cancel recovery fallback', () => {
   it('calls settled before runBatch failed are not recorded twice', async () => {
     const env = await makeEnv();
     const second = { callId: 'call_m_2', name: 'Mark', args: { value: 'two' } };
-    const { run, keys } = seedStartedCalls(env, [MARK, second]);
+    const { run, keys } = await seedStartedCalls(env, [MARK, second]);
     const worker = env.worker('worker-1', {
       tools: {
         executor: {
@@ -227,7 +227,7 @@ describe('cancel recovery fallback', () => {
   it('abandon receives exactly the unsettled started calls', async () => {
     const env = await makeEnv();
     const second = { callId: 'call_m_2', name: 'Mark', args: { value: 'two' } };
-    const { run, keys } = seedStartedCalls(env, [MARK, second, REMOTE]);
+    const { run, keys } = await seedStartedCalls(env, [MARK, second, REMOTE]);
     const worker = env.worker('worker-1', {
       tools: {
         executor: {
@@ -254,7 +254,7 @@ describe('cancel recovery fallback', () => {
 
   it('a started call without an idemKey is reported unknown without abandon', async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [REMOTE], { cancel: false });
+    const { run } = await seedStartedCalls(env, [REMOTE], { cancel: false });
     env.clock.advance(1);
     const claim = env.store.claim('snapshotter');
     if (claim === null) throw new Error('expected to claim the run');
@@ -265,7 +265,7 @@ describe('cancel recovery fallback', () => {
     const written = env.store.writeSnapshot(claim, state.lastSeq, { ...state, pendingCalls: { ...state.pendingCalls, [REMOTE.callId]: withoutKey } });
     expect(written).toEqual({ kind: 'ok' });
     env.clock.advance(LEASE_MS + 1);
-    env.cancel(run.id);
+    await env.cancel(run.id);
 
     await within(env.runOnce(env.worker('worker-1')), 10_000, 'the cancel recovery');
 
@@ -276,7 +276,7 @@ describe('cancel recovery fallback', () => {
 
   it('cancel recovery never loads rules and never calls toolSet', async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [MARK]);
+    const { run } = await seedStartedCalls(env, [MARK]);
     env.settings.rulesHook = async () => {
       throw new Error('rules must not be loaded during cancel recovery');
     };
@@ -299,7 +299,7 @@ describe('cancel recovery fallback', () => {
 
   it('lease loss during the fallback writes nothing more', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [REMOTE]);
+    const { run, keys } = await seedStartedCalls(env, [REMOTE]);
     const before = env.events(run.id).length;
     const store = recordingStore(env);
     const worker = env.worker('worker-1', {
@@ -326,7 +326,7 @@ describe('cancel recovery fallback', () => {
 
   it('shutdown during cancel recovery yields without writing', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [REMOTE]);
+    const { run, keys } = await seedStartedCalls(env, [REMOTE]);
     const before = env.events(run.id).length;
     const store = recordingStore(env);
     let shutdown: Promise<void> | undefined;
@@ -353,7 +353,7 @@ describe('cancel recovery fallback', () => {
 
   it('a fatal store error in cancel recovery reaches onFatal', PROCESS_TIMEOUT, async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [MARK]);
+    const { run } = await seedStartedCalls(env, [MARK]);
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
     const worker = env.worker('worker-1', {
@@ -377,7 +377,7 @@ describe('cancel recovery fallback', () => {
 
   it('a fatal store error thrown by abandon reaches onFatal', PROCESS_TIMEOUT, async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [REMOTE]);
+    const { run } = await seedStartedCalls(env, [REMOTE]);
     const fatal = fatalStoreError();
     const fatals: Error[] = [];
     const worker = env.worker('worker-1', {
@@ -405,7 +405,7 @@ describe('cancel recovery fallback', () => {
 
   it('abandon rejecting with a plain Error still reaches CANCELLED with exactly one error notice', async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [REMOTE]);
+    const { run } = await seedStartedCalls(env, [REMOTE]);
     const errors: unknown[] = [];
     const worker = env.worker('worker-1', {
       onError: (error) => errors.push(error),
@@ -430,7 +430,7 @@ describe('cancel recovery fallback', () => {
 
   it('a throwing onError hook does not block cancellation', async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [MARK]);
+    const { run } = await seedStartedCalls(env, [MARK]);
     const worker = env.worker('worker-1', {
       onError: () => {
         throw new Error('the hook exploded');
@@ -451,13 +451,14 @@ describe('cancel recovery fallback', () => {
 
   it('cancel recovery runs under its own signal: a RUNNING claim with cancelRequested and an aborted claim signal still reaps the started calls', async () => {
     const env = await makeEnv();
-    const { run, keys } = seedStartedCalls(env, [MARK], { cancel: false });
+    const { run, keys } = await seedStartedCalls(env, [MARK], { cancel: false });
     let cancelPolls = 0;
+    const cancels: Promise<unknown>[] = [];
     const store = {
       ...env.store,
       claim: (workerId: string) => {
         const claim = env.store.claim(workerId);
-        if (claim !== null) env.store.requestCancel(claim.runId);
+        if (claim !== null) cancels.push(env.store.requestCancel(claim.runId));
         return claim;
       },
       getRun: (id: string) => {
@@ -480,6 +481,7 @@ describe('cancel recovery fallback', () => {
     });
 
     await within(env.runOnce(worker), 10_000, 'the cancel recovery');
+    await Promise.all(cancels);
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     expect(recoverySignal?.aborted).toBe(false);

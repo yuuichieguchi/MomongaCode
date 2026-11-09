@@ -2,11 +2,13 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
-import { ProcessLockHeldError, acquireProcessLock, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
-import { Agent, interceptors, request } from 'undici';
+import { ProcessLockHeldError, acquireProcessLock, createOutboundDispatcher, currentSocketResolver, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
+import type { MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
+import { interceptors, request } from 'undici';
+import type { Dispatcher } from 'undici';
+import { processOutboundNetwork } from '../network.ts';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
-import { defaultDaemonBounds, probeSupervisor } from '../daemon/ensure-daemon.ts';
+import { STOP_WAIT_WHEN_UNKNOWN_MS, daemonReadyBoundMs, probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
@@ -16,13 +18,20 @@ export const STAGING_PREFIX = '.momonga-update.';
 export const UPDATE_LOCK_FILE = 'update.lock';
 export const UPDATE_STATE_FILE = 'update.json';
 
-export const undiciUpdateHttp = (): UpdateHttp => {
-  const dispatcher = new Agent({ headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS }).compose(
-    interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true }),
-  );
+export const undiciUpdateHttp = (
+  network: Promise<OutboundNetwork>,
+  options: OutboundOptions = { connectReplyTimeoutMs: TRANSFER_STALL_TIMEOUT_MS, headersTimeout: TRANSFER_STALL_TIMEOUT_MS, bodyTimeout: TRANSFER_STALL_TIMEOUT_MS },
+): UpdateHttp => {
+  let dispatcher: Promise<Dispatcher> | undefined;
+  const dispatcherOnce = (): Promise<Dispatcher> => {
+    dispatcher ??= network.then((resolved) =>
+      createOutboundDispatcher(resolved, options).compose(interceptors.redirect({ maxRedirections: MAX_REDIRECTS, throwOnMaxRedirect: true })),
+    );
+    return dispatcher;
+  };
   return {
     get: async (url, { headers, signal }) => {
-      const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher });
+      const response = await request(url, { method: 'GET', headers: { ...headers }, signal, dispatcher: await dispatcherOnce() });
       return { status: response.statusCode, body: response.body };
     },
   };
@@ -129,7 +138,7 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
 
 export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
   running: async () => {
-    const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
+    const client = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
     try {
       return (await probeSupervisor(client)) !== undefined;
     } finally {
@@ -137,8 +146,7 @@ export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
     }
   },
   restartBoundMs: async () => {
-    const { readyMs, stopMs } = await defaultDaemonBounds();
-    return readyMs + stopMs;
+    return (await daemonReadyBoundMs()) + STOP_WAIT_WHEN_UNKNOWN_MS;
   },
 });
 
@@ -153,7 +161,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePor
   self: ports.self,
   env: definedEnv(ports.env),
   clock: ports.clock,
-  http: undiciUpdateHttp(),
+  http: undiciUpdateHttp(processOutboundNetwork(ports)),
   fs: nodeUpdateFs(),
   run: nodeCommandRunner,
   lock: nodeUpdateLock(paths),

@@ -1,4 +1,4 @@
-import { PERMISSION_MODES } from '@momonga/protocol';
+import { PERMISSION_MODES, isProbingCapabilities } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
@@ -35,7 +35,7 @@ export type SlashCommand = {
   readonly aliases?: readonly string[];
   readonly description: string;
   readonly usage?: string;
-  run(args: string, context: SlashContext): Promise<void> | void;
+  run(args: string, context: SlashContext): Promise<void>;
 };
 
 export type SlashRegistry = {
@@ -80,7 +80,7 @@ export const parseSlash = (line: string): ParsedSlash | undefined => {
 const help: SlashCommand = {
   name: 'help',
   description: 'list the slash commands and key bindings',
-  run: (_args, context) => {
+  run: async (_args, context) => {
     context.info(
       [
         'Slash commands',
@@ -96,7 +96,7 @@ const help: SlashCommand = {
 const clear: SlashCommand = {
   name: 'clear',
   description: 'clear the screen and start a new conversation',
-  run: (_args, context) => {
+  run: async (_args, context) => {
     context.clear();
   },
 };
@@ -105,7 +105,7 @@ const exit: SlashCommand = {
   name: 'exit',
   aliases: ['quit'],
   description: 'leave momonga; a running task continues in the daemon',
-  run: (_args, context) => {
+  run: async (_args, context) => {
     context.exit();
   },
 };
@@ -138,7 +138,7 @@ const model: SlashCommand = {
       context.info(
         [
           'models (the current one is marked *):',
-          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${entry.capabilities.contextWindow}-token window`),
+          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${isProbingCapabilities(entry.capabilities) ? entry.capabilities.toolCalling.message : `${entry.capabilities.contextWindow}-token window`}`),
           'switch with /model <alias>; a change applies from the next task',
         ].join('\n'),
       );

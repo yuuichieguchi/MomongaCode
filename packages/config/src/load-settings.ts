@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { canonicalDirectory, comparableContains } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import {
   defaultContextSettings,
@@ -15,11 +16,11 @@ import {
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
-import type { Layer, TrustOracle, UserLayer } from './layers.ts';
+import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpCallSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -42,10 +43,13 @@ export type ResolvedSettings = {
   disabledMcpjsonServers: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers: Record<string, McpServerConfig>;
+  mcp: McpCallSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
+  gateway: StopValues;
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
+  network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   memory: ResolvedMemorySettings;
   verification: ResolvedVerificationSettings;
@@ -59,6 +63,7 @@ export type LoadSettingsOptions = {
   cli: Settings;
   trust: TrustOracle;
   user?: UserLayer;
+  kept?: KeptLayers;
 };
 
 export type LoadSettingsResult = {
@@ -137,8 +142,10 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
     mcpServers: {},
+    mcp: {},
     models,
     autoUpdates: true,
+    gateway: DEFAULT_STOP_VALUES,
     sandbox: defaultSandboxSetting(),
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
@@ -156,9 +163,12 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       disabledMcpjsonServers,
       enableAllProjectMcpServers,
       mcpServers,
+      mcp,
       autoUpdates,
+      gateway,
       sandbox,
       telemetry,
+      network,
       pricing,
       memory,
       verification,
@@ -196,16 +206,19 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     merged.disabledMcpjsonServers.push(...(disabledMcpjsonServers ?? []));
     if (enableAllProjectMcpServers !== undefined) merged.enableAllProjectMcpServers = enableAllProjectMcpServers;
     Object.assign(merged.mcpServers, mcpServers);
+    Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;
+    if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
   }
   return merged;
 };
 
-export const loadSettings = async ({ home, projectDir, cli, trust, user }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
-  const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }) });
+export const loadSettings = async ({ home, projectDir, cli, trust, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+  const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
   const cliWarnings: string[] = [];
   try {

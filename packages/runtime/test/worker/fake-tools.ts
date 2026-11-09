@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineTool } from '@momonga/tools';
-import type { AnyTool, OutputFit, ToolContext } from '@momonga/tools';
+import type { AnyTool, CallOutputFit, ToolContext } from '@momonga/tools';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
 
@@ -10,7 +10,7 @@ export type Execution = {
   callId: string;
   input: Record<string, unknown>;
   traceparent: string | undefined;
-  outputFit: OutputFit;
+  outputFit: CallOutputFit;
   step: number;
 };
 
@@ -65,7 +65,8 @@ export const createFakeToolbox = (): FakeToolbox => {
     subject: () => ({ kind: 'none', tool: 'Echo' }),
     execute: async (input, ctx) => {
       await record('Echo', input, ctx);
-      return { status: 'completed', output: `echo:${String(input['value'])}` };
+      const output = `echo:${String(input['value'])}`;
+      return input['value'] === 'with-backend' ? { status: 'completed', output, backend: { source: 'bundled', version: '15.2.0' } } : { status: 'completed', output };
     },
   });
 

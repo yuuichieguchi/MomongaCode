@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Z3_API_FILE, Z3_EXTRACTED_FILES, Z3_MANIFEST_ASSET, Z3_RUNTIME_FILE, Z3_WASM_ASSET, ensureBundledZ3, openZ3, parseZ3Manifest } from '@momonga/verify';
 import { Z3_BROTLI_QUALITY, buildZ3Assets } from './z3-assets.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 describe('the Z3 assets embedded in the single executable', () => {
@@ -12,7 +13,7 @@ describe('the Z3 assets embedded in the single executable', () => {
   beforeAll(async () => {
     root = fs.realpathSync(createTempRoot());
     assets = await buildZ3Assets(path.join(root, 'work'), import.meta.url);
-  }, 120_000);
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(() => {
     removeTempRoot(root);
@@ -29,7 +30,7 @@ describe('the Z3 assets embedded in the single executable', () => {
     const read = (name: string): Uint8Array => fs.readFileSync(assets[name] as string);
     const bundled = await ensureBundledZ3({
       asset: read,
-      cacheBase,
+      executablesRoot: cacheBase,
       random: () => 0.5,
       files: {
         exists: async (target) => fs.existsSync(target),

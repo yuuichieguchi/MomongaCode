@@ -9,6 +9,7 @@ import type { UpstreamEndpoint, UpstreamLiveness } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, driveFakeTime, openResponsesTextReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const BOUND_MS = 50;
 const UNDICI_TIMEOUT_TICK_MS = 1000;
@@ -105,7 +106,7 @@ const startUpstream = async (transport: Transport, steps: readonly UpstreamStep[
   }
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as net.AddressInfo;
-  return { endpoint: { kind: 'tcp', baseUrl: `http://127.0.0.1:${address.port}/v1` }, requests: () => received };
+  return { endpoint: { kind: 'tcp', baseUrl: `http://127.0.0.1:${address.port}/v1`, network: UNCONFIGURED_NETWORK }, requests: () => received };
 };
 
 const settingsLiveness = (headersTimeoutMs: number, idleTimeoutMs: number): UpstreamLiveness => ({ headersTimeoutMs, idleTimeoutMs }) as unknown as UpstreamLiveness;
@@ -159,14 +160,17 @@ describe.each<Transport>(['tcp', 'unix'])('the upstream liveness bounds from mod
     expectEnded(reply);
   });
 
-  it('ends a connected upstream that sends headers and then stays silent past the idle bound', async () => {
+  it('ends a connected upstream that sends headers and then stays silent past the idle bound, with the idle stop', async () => {
     const { reply } = await askThrough(transport, ['silentAfterHeaders'], settingsLiveness(0, BOUND_MS));
-    expectEnded(reply);
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('stream_interrupted');
   });
 
-  it('keeps a stream alive while SSE comments keep arriving within the idle bound, past the bound in total', async () => {
-    const { reply } = await askThrough(transport, ['commentsPastTheBound'], settingsLiveness(0, BOUND_MS));
-    expectAnswered(reply);
+  it('ends a stream that sends only SSE comments past the idle bound: a keep-alive is not content (R-G1a)', async () => {
+    const { reply } = await askThrough(transport, ['commentsPastTheBound', 'commentsPastTheBound'], settingsLiveness(0, BOUND_MS));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('stream_interrupted');
+    expect(reply.body.error.message).toContain('The model sent no output for 0.05 s (only keep-alive signals arrived), so the call was stopped.');
   });
 
   it('completes a request whose headers arrive late when the headers bound is 0', async () => {
@@ -179,16 +183,17 @@ describe.each<Transport>(['tcp', 'unix'])('the upstream liveness bounds from mod
     expectAnswered(reply);
   });
 
-  it('retries an attempt ended by the headers bound as a gateway failure', async () => {
+  it('ends the call at an attempt ended by the headers bound, with no retry inside the gateway, under a policy that allows one', async () => {
     const { reply, requests } = await askThrough(transport, ['silentBeforeHeaders', 'answerAtOnce'], settingsLiveness(BOUND_MS, BOUND_MS), 2);
-    expectAnswered(reply);
-    expect(requests).toBe(2);
+    expectEnded(reply);
+    expect(requests).toBe(1);
   });
 
-  it('retries an attempt ended by the idle bound as a gateway failure', async () => {
+  it('ends the call at an attempt ended by the idle bound, with no retry inside the gateway, under a policy that allows one', async () => {
     const { reply, requests } = await askThrough(transport, ['silentAfterHeaders', 'answerAtOnce'], settingsLiveness(BOUND_MS, BOUND_MS), 2);
-    expectAnswered(reply);
-    expect(requests).toBe(2);
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('stream_interrupted');
+    expect(requests).toBe(1);
   });
 
   it('fails with the connection error when the upstream closes the connection', async () => {

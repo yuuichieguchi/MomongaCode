@@ -22,8 +22,8 @@ describe('token settings defaults', () => {
     expect((await resolvedWith({})).context).toEqual(OFF_CONTEXT);
   });
 
-  it('turns tool deferral and concise descriptions off', async () => {
-    expect((await resolvedWith({})).tools).toEqual({ deferral: false, conciseDescriptions: false });
+  it('turns tool deferral and concise descriptions off, and selects the bundled ripgrep', async () => {
+    expect((await resolvedWith({})).tools).toEqual({ deferral: false, conciseDescriptions: false, ripgrep: 'bundled' });
   });
 
   it('turns repository facts off', async () => {
@@ -47,7 +47,7 @@ describe('token settings values', () => {
       observedCapacity: true,
       unboundedOutputReserve: true,
     });
-    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true });
+    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
     expect(settings.memory).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: true });
   });
 
@@ -57,7 +57,7 @@ describe('token settings values', () => {
     writeJson(projectSettingsPath(tree), { context: { outputFormatters: ['json'] }, tools: { conciseDescriptions: true } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.context).toEqual({ ...OFF_CONTEXT, cachePrefix: true, outputFormatters: ['json'] });
-    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true });
+    expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true, ripgrep: 'bundled' });
   });
 
   it.each([

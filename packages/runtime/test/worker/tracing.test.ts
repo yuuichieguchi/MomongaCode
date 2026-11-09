@@ -46,6 +46,23 @@ describe('worker tracing', () => {
     expect(tool?.content).toEqual([{ arguments: { value: 'one' }, result: 'echo:one' }]);
   });
 
+  it('hands the backend a tool reports to its execute_tool span, and nothing for a tool that reports none', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(
+      callsStep([
+        { callId: 'call_b_1', name: 'Echo', args: { value: 'with-backend' } },
+        { callId: 'call_b_2', name: 'Echo', args: { value: 'plain' } },
+      ]),
+      textStep('Echoed.'),
+    );
+    env.enqueue('Echo twice');
+
+    await env.runOnce(env.worker());
+
+    const tools = env.tracer.spans.filter((span) => span.kind === 'tool');
+    expect(tools.map((span) => span.backends)).toEqual([[{ source: 'bundled', version: '15.2.0' }], []]);
+  });
+
   it('opens a fresh invoke_agent span for each claim of the same run', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'a.txt'), content: 'a' } }]));

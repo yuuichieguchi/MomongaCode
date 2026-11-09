@@ -30,8 +30,8 @@ const groupPort = (aliveUntil: () => boolean): { port: ProcessGroupPort; signals
   return {
     signals,
     port: {
-      signal: (_pgid, signal) => void signals.push(signal),
-      alive: () => aliveUntil(),
+      signal: async (_pgid, signal) => void signals.push(signal),
+      alive: async () => aliveUntil(),
     },
   };
 };
@@ -89,21 +89,22 @@ describe('process group termination on an injected timing', () => {
     let killed = false;
     const signals: string[] = [];
     const port: ProcessGroupPort = {
-      signal: (_pgid, signal) => {
+      signal: async (_pgid, signal) => {
         signals.push(signal);
         if (signal === 'SIGKILL') killed = true;
       },
-      alive: () => !killed,
+      alive: async () => !killed,
     };
     expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('killed');
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(fake.now()).toBeGreaterThanOrEqual(100);
   });
 
-  it('terminateGroup throws when SIGKILL does not take within the confirmation window', async () => {
+  it('terminateGroup reports unconfirmed when SIGKILL does not take within one grace', async () => {
     const fake = fakeGroupTiming();
     const { port } = groupPort(() => true);
-    await expect(terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).rejects.toThrow('did not terminate after SIGKILL');
-    expect(fake.now()).toBeGreaterThanOrEqual(1100);
+    expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('unconfirmed');
+    expect(fake.now()).toBeGreaterThanOrEqual(200);
+    expect(fake.now()).toBeLessThanOrEqual(220);
   });
 });

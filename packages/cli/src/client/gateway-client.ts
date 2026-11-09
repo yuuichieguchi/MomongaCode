@@ -1,11 +1,13 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import { JSON_MODES, isToolCallingState } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+import type { SocketResolver } from '@momonga/foundation';
+import { JSON_MODES, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, ProbingCapabilities, UsageReport } from '@momonga/protocol';
+
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   close(): Promise<void>;
@@ -33,6 +35,8 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
   (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
 
+const isProbingListing = (value: unknown): boolean => isRecord(value) && isToolCallingState(value['toolCalling']) && agentReadiness({ toolCalling: value['toolCalling'] }).state === 'probing';
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
@@ -42,7 +46,7 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      isCapabilities(entry['capabilities']),
+      (isCapabilities(entry['capabilities']) || isProbingListing(entry['capabilities'])),
   );
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -57,8 +61,8 @@ const isUsageReport = (value: unknown): value is UsageReport =>
   isCount(value['total']['output_tokens']) &&
   isCount(value['total']['total_tokens']);
 
-export const createGatewayClient = (options: { socketPath: string }): GatewayClient => {
-  const http = createUdsClient(options.socketPath);
+export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
+  const http = createUdsClient(options.resolveSocket);
 
   const getJson = async (path: string): Promise<unknown> => {
     const response = await http.request({ method: 'GET', path });
@@ -79,9 +83,13 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => (await modelOf(alias)).capabilities;
+  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities | ProbingCapabilities> => (await modelOf(alias)).capabilities;
 
-  const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
+  const contextWindowOf = async (alias: string): Promise<number> => {
+    const capabilities = await capabilitiesOf(alias);
+    if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+    return capabilities.contextWindow;
+  };
 
   const usageOf = async (runId: string): Promise<UsageReport> => {
     const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
