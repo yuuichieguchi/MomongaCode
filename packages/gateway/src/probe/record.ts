@@ -31,11 +31,15 @@ const recordPath = (dir: string, target: string): string => path.join(dir, `${pr
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
-export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
+export const ensurePrivateProbeDirectory = async (dir: string): Promise<void> => {
   await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   if (!modeIsPrivate(await fs.promises.stat(dir), 'directory')) {
     await fs.promises.chmod(dir, PRIVATE_DIRECTORY_MODE);
   }
+};
+
+export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
+  await ensurePrivateProbeDirectory(dir);
   const temporary = `${file}.${process.pid}.tmp`;
   try {
     await fs.promises.writeFile(temporary, content, { mode: 0o600 });

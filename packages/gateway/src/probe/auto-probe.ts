@@ -1,17 +1,15 @@
 import { createHash } from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { ProcessLockHeldError, acquireProcessLock, canonicalJson } from '@momonga/foundation';
 import type { ProcessLock } from '@momonga/foundation';
 import { TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
-import { probeTargetName } from './record.ts';
+import { ensurePrivateProbeDirectory, probeTargetName } from './record.ts';
 import { DEFAULT_STEP_TIMEOUT_MS } from './run-probe.ts';
 
 const MS_PER_SECOND = 1000;
 const LOCK_DIGEST_CHARS = 16;
-const PRIVATE_DIRECTORY_MODE = 0o700;
 
 export const PROBE_RETRY_AFTER_MS = Math.ceil(DEFAULT_STEP_TIMEOUT_MS / MS_PER_SECOND) * MS_PER_SECOND;
 
@@ -41,7 +39,7 @@ export const probeLockPath = (dir: string, key: ProbeLockKey): string => path.jo
 
 export const acquireProbeLock = async (dir: string, key: ProbeLockKey): Promise<ProcessLock> => {
   const lockPath = probeLockPath(dir, key);
-  await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await ensurePrivateProbeDirectory(dir);
   try {
     return await acquireProcessLock(lockPath);
   } catch (error) {
