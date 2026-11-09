@@ -7,8 +7,8 @@ This document states risks that Momonga Code accepts by design, and what still b
 A `Bash(...)` rule in `permissions.allow` matches the words of the command literally, in the same way as Claude Code. Momonga Code does not inspect what the options of the allowed program do. A prefix rule therefore allows every option of that program, including options that make it run another program:
 
 - `Bash(git:*)` allows `git -c core.pager=<program> log`, which runs `<program>` as the pager.
-- `Bash(find:*)` allows `find . -exec <program> {} ;`.
-- `Bash(npm run test:*)` allows `npm run test --script-shell=<program>`.
+- `Bash(find:*)` allows `find . -exec <program> {} \;`.
+- `Bash(npm test:*)` allows `npm test --script-shell=<program>`.
 
 A rule matches only when its words are the first words of the command, with nothing between them, so an option placed between those words still asks: `git -c core.pager=<program> log` and `git -C /tmp log` do not match `Bash(git log:*)`. Commands with no matching user rule are judged by the built-in read-only set, which does not approve such options automatically.
 
@@ -16,10 +16,12 @@ Write an allow rule only for a program whose every option you accept. What still
 
 - The operating-system sandbox (Seatbelt on macOS, bubblewrap on Linux) runs the command, including any program it starts.
 - Network access is denied inside the sandbox.
-- Deny rules are enforced by the operating system, so a program started through an option cannot read or write a denied path either.
+- File deny rules (`Read(...)` and `Edit(...)`) are enforced by the operating system, so a program started through an option cannot read or write a denied path either.
 - The command can write only where the sandbox allows writes, such as the workspace.
 
-With `"sandbox": "none"` none of these bounds apply.
+A `Bash(...)` deny rule matches only the command text, in the same literal way. It does not stop a program that an allowed command starts through an option.
+
+With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
 
 ## MCP credential redaction
 

@@ -211,7 +211,17 @@ The values in `capabilities` are what you declare for your model; set them to th
 
 Other keys under `models`: `roles` (an alias for `compaction`, `reflection`, or `analysis` calls), `dialects`, `billingChanges`, `headersTimeoutMs`, and `idleTimeoutMs`. A target can also set `billing`, `maxConcurrency`, and `admissionTimeoutMs`.
 
-In the example, `Bash(npm test:*)` allows every command whose first words are `npm test`, with any options after them. A `Bash(...)` allow rule matches the command text literally, as in Claude Code, and does not judge what the options of the program do. So it also allows options that make the program run another program, such as `npm test --script-shell=<program>`, `find . -exec <program> {} ;` under `Bash(find:*)`, or `git -c core.pager=<program> log` under `Bash(git:*)`. Write an allow rule only for a program whose every option you accept. Such a command still runs inside the sandbox: network access is denied, deny rules are enforced by the operating system, and it can write only where the sandbox allows writes. With `"sandbox": "none"` none of these bounds apply. [docs/threat-model.md](docs/threat-model.md) states this and the other risks that Momonga Code accepts by design.
+### Permission rules
+
+In the example above, `Bash(npm test:*)` allows every command whose first words are `npm test`, with any options after them. A rule matches only when its words are the first words of the command, with nothing between them: `git -c core.pager=<program> log` does not match `Bash(git log:*)`, but it does match `Bash(git:*)`.
+
+A `Bash(...)` allow rule matches the command text literally, as in Claude Code, and does not check what the options of the program do. So it also allows options that make the program run another program, such as `npm test --script-shell=<program>` under `Bash(npm test:*)`, `find . -exec <program> {} \;` under `Bash(find:*)`, or `git -c core.pager=<program> log` under `Bash(git:*)`. Write an allow rule only for a program whose every option you accept.
+
+A command allowed this way still runs inside the sandbox. Network access is denied. File deny rules (`Read(...)` and `Edit(...)`) are enforced by the operating system, so no program the command starts can read or write a denied path. The command can write only where the sandbox allows writes. A `Bash(...)` deny rule, such as `Bash(rm:*)` in the example, matches only the command text, so it does not stop a program that an allowed command starts through an option.
+
+With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer lets a command run without approval: Bash asks before every command, and in `auto` mode the classifier decides.
+
+[docs/threat-model.md](docs/threat-model.md) states these and the other risks that Momonga Code accepts by design.
 
 ### Other settings
 
