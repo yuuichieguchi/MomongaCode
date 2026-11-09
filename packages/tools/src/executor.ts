@@ -977,7 +977,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
         if (callMarker === undefined) return Promise.resolve();
         const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
-        groupRecords.push(recorded);
+        groupRecords.push(
+          recorded.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
         return recorded;
       },
       update: (content) => {

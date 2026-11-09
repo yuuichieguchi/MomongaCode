@@ -9,14 +9,14 @@ import { orphansReaping, orphansWaiting, orphansWarning, writeEvent } from './lo
 import { omitUndefined } from './omit-undefined.ts';
 
 export type MarkerFiles = {
-  createExclusive(markerPath: string, mode: number): void;
+  createExclusive(markerPath: string, mode: number): number;
   openReadOnly(markerPath: string): number;
   closeDescriptor(descriptor: number): void;
   remove(markerPath: string): void;
 };
 
 export const nodeMarkerFiles: MarkerFiles = {
-  createExclusive: (markerPath, mode) => fs.closeSync(fs.openSync(markerPath, 'wx', mode)),
+  createExclusive: (markerPath, mode) => fs.openSync(markerPath, 'wx', mode),
   openReadOnly: (markerPath) => fs.openSync(markerPath, 'r'),
   closeDescriptor: (descriptor) => fs.closeSync(descriptor),
   remove: (markerPath) => fs.rmSync(markerPath, { force: true }),
@@ -57,13 +57,15 @@ const MARKER_MODE = 0o600;
 
 export const openDaemonMarker = (directory: string, role: ChildRole, files: MarkerFiles = nodeMarkerFiles): DaemonMarker => {
   const markerPath = path.join(directory, `${role}-${uuidv7()}`);
-  files.createExclusive(markerPath, MARKER_MODE);
+  const creator = files.createExclusive(markerPath, MARKER_MODE);
   let fd: number;
   try {
     fd = files.openReadOnly(markerPath);
   } catch (error) {
     files.remove(markerPath);
     throw error;
+  } finally {
+    files.closeDescriptor(creator);
   }
   let open = true;
   return {

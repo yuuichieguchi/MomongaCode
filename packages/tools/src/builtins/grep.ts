@@ -1,4 +1,4 @@
-import { EMPTY_PROTECTED_SET, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, groupRecordOutcome, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
@@ -235,8 +235,9 @@ type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
   const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
   const child = ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
-  const attached = ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
-  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
+  const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), file);
+  const [stdout, stderr, exit, groupNotice] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited, attached]);
+  if (groupNotice !== undefined) notes.push(groupNotice);
   notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
   return { stdout, stderr, exit };
 };

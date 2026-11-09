@@ -91,6 +91,19 @@ export const recordMarkerGroup = (marker: string, pgid: number, { files = nodeRe
     await files.writeByte(marker, GROUP_POSITION, groupText(pgid));
   });
 
+const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const groupRecordNotice = (marker: string, error: unknown): string =>
+  `the process group of the marker ${marker} could not be recorded: ${reasonOf(error)}; later checks of this marker cannot tell whether its processes still run`;
+
+export const unreadableMarkerNotice = (marker: string, error: unknown): string => `the marker ${marker} could not be read: ${reasonOf(error)}; it was left in place`;
+
+export const groupRecordOutcome = (recording: Promise<void>, marker: string): Promise<string | undefined> =>
+  recording.then(
+    () => undefined,
+    (error: unknown) => groupRecordNotice(marker, error),
+  );
+
 export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => {
   const found = GROUP_FORM.exec(await files.read(marker));
   return found === null ? undefined : Number(found[1]);

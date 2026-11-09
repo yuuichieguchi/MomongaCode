@@ -170,7 +170,13 @@ class StdioTransportImpl implements StdioTransport {
     const file = resolveCommand(config.command, cwd, env['PATH'] ?? '');
     const args = config.args ?? [];
     if (markerPath === undefined) return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] });
-    const markerFd = fs.openSync(markerPath, 'wx', 0o600);
+    const creator = fs.openSync(markerPath, 'wx', 0o600);
+    let markerFd: number;
+    try {
+      markerFd = fs.openSync(markerPath, 'r');
+    } finally {
+      fs.closeSync(creator);
+    }
     try {
       return spawn(file, args, { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe', markerFd] }) as ServerProcess;
     } finally {

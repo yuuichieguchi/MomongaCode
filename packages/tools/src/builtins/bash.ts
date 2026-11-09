@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
-import { reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
+import { groupRecordOutcome, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
@@ -125,14 +125,16 @@ export const bashTool = defineTool<BashInput>({
       ctx.signal,
       { markerFd },
     );
-    const attached = ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
+    const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), marker);
 
     const capture = createCapture();
     const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk));
     let exit: SandboxExit;
     const notes: string[] = [];
     try {
-      [exit] = await Promise.all([child.exited, attached]);
+      let groupNotice: string | undefined;
+      [exit, groupNotice] = await Promise.all([child.exited, attached]);
+      if (groupNotice !== undefined) notes.push(groupNotice);
       notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
       await pump.settle();
     } finally {
