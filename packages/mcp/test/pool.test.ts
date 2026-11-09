@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { holderGroups } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_GRANDCHILD_ENV, MODERN_FIXTURE_RECORD_ENV, MODERN_FIXTURE_STDERR_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import {
   entry,
@@ -13,7 +14,6 @@ import {
   makeRecordFile,
   modernConfig,
   onCleanup,
-  pidAlive,
   readRecords,
   waitForRecord,
   waitUntil,
@@ -107,9 +107,10 @@ describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIM
     const grandchildPid = grandchild.type === 'grandchild' ? grandchild.pid : -1;
     expect(grandchildPid).toBeGreaterThan(1);
     const pgids = harness.pool.diagnostics().map((diagnostics) => diagnostics.pgid as number);
+    const [grandchildGroup] = await holderGroups([grandchildPid], pgids, { signal: new AbortController().signal });
+    expect(pgids).toContain(grandchildGroup);
     await harness.pool.close();
     for (const pgid of pgids) expect(await groupExists(pgid)).toBe(false);
-    await waitUntil(() => !pidAlive(grandchildPid), 'grandchild is gone', 2000);
     expect(harness.pool.diagnostics().map((diagnostics) => diagnostics.state)).toEqual(['closed', 'closed']);
   });
 });

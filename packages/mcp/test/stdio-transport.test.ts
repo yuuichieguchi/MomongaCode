@@ -6,7 +6,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
 import { createStdioTransport, type StdioTransport } from '@momonga/mcp';
-import { groupAlive } from '@momonga/foundation';
+import { groupAlive, holderGroups } from '@momonga/foundation';
 import type { TerminateOutcome } from '@momonga/foundation';
 import { MCP_RAW_STDIO_SERVER_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -40,6 +40,8 @@ const pidAlive = (pid: number): boolean => {
 };
 
 const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
+
+const groupOfPid = async (pid: number): Promise<number | undefined> => (await holderGroups([pid], [], { signal: new AbortController().signal }))[0];
 
 const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-')));
@@ -297,9 +299,9 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: 0, signal: null });
-    expect(pidAlive(grandchildPid)).toBe(false);
     expect(await groupExists(pgid)).toBe(false);
     expect(closeCount()).toBe(1);
   });
@@ -310,9 +312,9 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: null, signal: 'SIGTERM' });
-    expect(pidAlive(grandchildPid)).toBe(false);
     expect(await groupExists(pgid)).toBe(false);
   });
 
@@ -322,9 +324,9 @@ describe('createStdioTransport close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
     if (pgid === undefined) throw new Error('missing pgid');
     const { pid: grandchildPid } = (await request('spawn_grandchild')) as { pid: number };
     trackGrandchild(grandchildPid);
+    expect(await groupOfPid(grandchildPid)).toBe(pgid);
     await transport.close();
     expect(transport.diagnostics().exit).toEqual({ code: null, signal: 'SIGKILL' });
-    expect(pidAlive(grandchildPid)).toBe(false);
     expect(await groupExists(pgid)).toBe(false);
   });
 
