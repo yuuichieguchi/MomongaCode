@@ -1,3 +1,4 @@
+import { addModelConnection } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock, FileSystem } from '@momonga/foundation';
@@ -7,6 +8,8 @@ import type {
   PlanAccountsResponse,
   PlanActiveResponse,
   PlanHostResetResponse,
+  PlanModelsResponse,
+  PlanTargetResponse,
   PlanResumeResponse,
   PlanSignInBeginResponse,
   PlanSignInCancelResponse,
@@ -18,6 +21,8 @@ import { PlanCredentialError, statusOf } from './auth-source.ts';
 import type { AccountView } from './auth-source.ts';
 import { readActiveAccount } from './active-account.ts';
 import { resetHostIdentity } from './host-identity.ts';
+import { NO_REPORTED_WINDOW } from './catalog.ts';
+import type { PlanCatalog } from './catalog.ts';
 import type { PlanSessions } from './session.ts';
 import type { PlanSignIn } from './signin.ts';
 
@@ -32,6 +37,8 @@ export type PlanApi = {
   signOut(body: unknown): Promise<PlanSignOutResponse>;
   resume(account: string, body: unknown): Promise<PlanResumeResponse>;
   resetHost(): Promise<PlanHostResetResponse>;
+  models(account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse>;
+  addTarget(account: string, body: unknown): Promise<PlanTargetResponse>;
 };
 
 export type PlanApiOptions = {
@@ -42,6 +49,8 @@ export type PlanApiOptions = {
   paths: { host: string; active: string };
   clock: Clock;
   planTargets: () => readonly PlanTargetRef[];
+  catalog: PlanCatalog;
+  settingsFile: string;
 };
 
 const stringField = (body: unknown, name: string): string => {
@@ -146,7 +155,34 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     };
   };
 
+  const signedInRef = async (profile: string | undefined, account: string): Promise<{ profile: PlanProfile; account: string }> => {
+    if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
+    const chosen = profileOf(profile);
+    if ((await sessions.registration({ profile: chosen.id, account })) === undefined) {
+      throw notFound('plan_account_not_found', `no ${chosen.id} account is labelled ${JSON.stringify(account)}`, 'account');
+    }
+    return { profile: chosen, account };
+  };
+
+  const models = (account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse> =>
+    translated(async () => {
+      const ref = await signedInRef(query.profile, account);
+      return options.catalog.read({ ...ref, refresh: query.refresh === '1', auth: sessions.authSource({ profile: ref.profile.id, account }), signal });
+    });
+
+  const addTarget = (account: string, body: unknown): Promise<PlanTargetResponse> =>
+    translated(async () => {
+      const ref = await signedInRef(stringField(body, 'profile'), account);
+      const slug = stringField(body, 'slug');
+      const entry = (await options.catalog.record(ref.profile.id, account))?.models[slug];
+      if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models --catalog lists them`, 'slug');
+      if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
+      return addModelConnection(options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug });
+    });
+
   return {
+    models,
+    addTarget,
     accounts,
     setActive: (body) =>
       translated(async () => {

@@ -268,6 +268,10 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   app.post(planRoute(PLAN_ROUTES.signInCancel), async (context) => context.json(planApi().cancel(await planBody(context))));
   app.post(planRoute(PLAN_ROUTES.signOut), async (context) => context.json(await planApi().signOut(await planBody(context))));
   app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => context.json(await planApi().resume(accountParam(context), await planBody(context))));
+  app.get(planRoute(PLAN_ROUTES.accountModels), async (context) =>
+    context.json(await planApi().models(accountParam(context), { profile: context.req.query('profile'), refresh: context.req.query('refresh') }, requestSignalOf(context))),
+  );
+  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context))));
   app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
 
   return app;

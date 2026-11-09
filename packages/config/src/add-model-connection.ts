@@ -7,7 +7,8 @@ import { LOCAL_CONNECTION_TARGET_SCHEMAS } from './settings-schema.ts';
 
 export type ModelConnection =
   | { kind: 'server'; baseUrl: string; shape: LocalServerShape; model: string; contextWindow: number }
-  | { kind: 'managed'; server: string; model: string };
+  | { kind: 'managed'; server: string }
+  | { kind: 'plan'; profile: string; model: string };
 
 export type WrittenConnection = { target: string; alias: string };
 
@@ -28,10 +29,14 @@ const LOCAL_SERVER_VALUES: Readonly<Record<'billing' | 'maxConcurrency' | 'provi
 
 const serializeInProcess = createKeyedSerializer();
 
-const adapterOf = (connection: ModelConnection): ConnectionAdapter => (connection.kind === 'managed' ? 'managed' : ADAPTER_OF_SHAPE[connection.shape]);
+type LocalConnection = Exclude<ModelConnection, { kind: 'plan' }>;
+
+const adapterOf = (connection: LocalConnection): ConnectionAdapter => (connection.kind === 'managed' ? 'managed' : ADAPTER_OF_SHAPE[connection.shape]);
+
+const PLAN_ADAPTER = 'open-responses';
 
 const assertConnection = (connection: ModelConnection): void => {
-  if (connection.kind === 'managed') return;
+  if (connection.kind !== 'server') return;
   if (!Number.isInteger(connection.contextWindow) || connection.contextWindow <= 0) {
     throw new Error(`the context window of ${connection.model} must be a positive whole number of tokens; enter the window the server runs this model with`);
   }
@@ -43,6 +48,7 @@ const declaredLocalValues = (connection: ModelConnection, adapter: ConnectionAda
 };
 
 const targetOf = (connection: ModelConnection): Record<string, unknown> => {
+  if (connection.kind === 'plan') return { adapter: PLAN_ADAPTER, model: connection.model, plan: { profile: connection.profile } };
   const adapter = adapterOf(connection);
   const local = declaredLocalValues(connection, adapter);
   if (connection.kind === 'managed') return { adapter, server: connection.server, ...local };
@@ -74,16 +80,35 @@ const recordAt = (document: Record<string, unknown>, key: string, file: string, 
   return value;
 };
 
-const withConnection = (document: Record<string, unknown>, file: string, connection: ModelConnection): WrittenConnection => {
+const nameSourceOf = (connection: ModelConnection): string => (connection.kind === 'managed' ? connection.server : connection.model);
+
+const isSamePlanTarget = (connection: Extract<ModelConnection, { kind: 'plan' }>, target: unknown): boolean =>
+  isRecord(target) && target['adapter'] === PLAN_ADAPTER && target['model'] === connection.model && isRecord(target['plan']) && target['plan']['profile'] === connection.profile;
+
+const membersOf = (alias: unknown): readonly unknown[] => (Array.isArray(alias) ? alias : [alias]);
+
+const existingPlanTarget = (connection: ModelConnection, targets: Record<string, unknown>, aliases: Record<string, unknown>): WrittenConnection | undefined => {
+  if (connection.kind !== 'plan') return undefined;
+  const name = Object.keys(targets).find((candidate) => isSamePlanTarget(connection, targets[candidate]));
+  if (name === undefined) return undefined;
+  const alias = Object.hasOwn(aliases, name) && membersOf(aliases[name]).includes(name) ? name : Object.keys(aliases).find((candidate) => membersOf(aliases[candidate]).includes(name));
+  return { target: name, alias: alias ?? name };
+};
+
+type Placed = { written: WrittenConnection; changed: boolean };
+
+const withConnection = (document: Record<string, unknown>, file: string, connection: ModelConnection): Placed => {
   const models = recordAt(document, 'models', file, 'models');
   const targets = recordAt(models, 'targets', file, 'models.targets');
   const aliases = recordAt(models, 'aliases', file, 'models.aliases');
-  const name = freeName(connectionTargetName(connection.model), new Set([...Object.keys(targets), ...Object.keys(aliases)]));
+  const existing = existingPlanTarget(connection, targets, aliases);
+  if (existing !== undefined) return { written: existing, changed: false };
+  const name = freeName(connectionTargetName(nameSourceOf(connection)), new Set([...Object.keys(targets), ...Object.keys(aliases)]));
   const firstTarget = Object.keys(targets).length === 0;
   models['targets'] = { ...targets, [name]: targetOf(connection) };
-  models['aliases'] = { ...aliases, [name]: name, ...(firstTarget ? { default: name } : {}) };
+  models['aliases'] = { ...aliases, [name]: [name], ...(firstTarget ? { default: [name] } : {}) };
   document['models'] = models;
-  return { target: name, alias: name };
+  return { written: { target: name, alias: name }, changed: true };
 };
 
 export const addModelConnection = async (settingsFile: string, connection: ModelConnection): Promise<WrittenConnection> => {
@@ -98,7 +123,8 @@ export const addModelConnection = async (settingsFile: string, connection: Model
           if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
           document = read.value;
         }
-        const written = withConnection(document, settingsFile, connection);
+        const { written, changed } = withConnection(document, settingsFile, connection);
+        if (!changed) return written;
         await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: systemFileLockPorts.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
         return written;
       },

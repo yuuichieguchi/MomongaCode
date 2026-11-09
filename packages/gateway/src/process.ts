@@ -27,7 +27,7 @@ import {
 } from '@momonga/foundation';
 import type { EndpointProbeKey, PlanProfiles, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
-import { createEncryptedCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, proxyPasswordsOf } from '@momonga/foundation';
+import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
   closeTelemetry,
@@ -65,6 +65,8 @@ import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts'
 import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions } from './plan/session.ts';
 import { createPlanApi } from './plan/api.ts';
+import { createPlanCatalog } from './plan/catalog.ts';
+import { readActiveAccount } from './plan/active-account.ts';
 import { createPlanSignIn } from './plan/signin.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
 import type { PlanFetch } from './plan/refresh.ts';
@@ -586,20 +588,23 @@ const healthResultOf = (health: PlanHealth): HealthResult => ({
 
 type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: UpstreamLiveness; network: OutboundNetwork };
 
-const planCapabilitiesOf = (name: string, target: PlanTarget): Capabilities => {
+const planCapabilitiesOf = (name: string, target: PlanTarget, reported: PlanReported): Capabilities => {
   const { contextWindow, maxOutputTokens, ...rest } = target.capabilities;
-  if (contextWindow === undefined || maxOutputTokens === undefined) {
-    throw new Error(`the plan target ${name} declares no contextWindow and maxOutputTokens, and the live model catalog that reports them is not built yet`);
+  const numbers = contextWindow !== undefined && maxOutputTokens !== undefined ? { contextWindow, maxOutputTokens } : reported();
+  if (numbers === undefined) {
+    throw new Error(`the plan target ${name} declares no contextWindow and maxOutputTokens, and the model list of its account reports none for ${target.model}; momonga models --catalog reads the list`);
   }
-  return withImageDefault({ ...rest, contextWindow, maxOutputTokens, toolCalling: target.toolCalling });
+  return withImageDefault({ ...rest, ...numbers, toolCalling: target.toolCalling });
 };
 
-const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, wiring: PlanAdapterWiring): ProviderAdapter => {
+type PlanReported = () => { contextWindow: number; maxOutputTokens: number } | undefined;
+
+const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
   const profile = profiles[target.plan.profile];
   if (profile === undefined) throw new Error(`the plan target ${name} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
   return createOpenResponsesAdapter({
     resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
-    capabilities: async () => planCapabilitiesOf(name, target),
+    capabilities: async () => planCapabilitiesOf(name, target, reported),
     health: async () => healthResultOf(auth.health()),
     authSource: () => auth,
     errorRules: profile.errorRules,
@@ -880,7 +885,16 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       warn: (message) => logger.warn(message),
     });
     cleanups.push(() => sessions.close());
+    const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog), clock, fetch: planFetch, sleep: planSleep });
+    const startAccounts = new Map<string, string | undefined>();
+    for (const [name, target] of planTargets) {
+      const account = target.plan.account ?? (await readActiveAccount(nodeFileSystem, paths.planActive, target.plan.profile));
+      startAccounts.set(name, account);
+      if (account !== undefined) await catalog.load(target.plan.profile, account);
+    }
     const planApi = createPlanApi({
+      catalog,
+      settingsFile: paths.settingsFile,
       profiles: planProfiles,
       sessions,
       signIn: createPlanSignIn({ profiles: planProfiles, sessions, clock, ports: { fetch: planFetch, sleep: planSleep }, fileSystem: nodeFileSystem, hostFile: paths.planHost }),
@@ -966,7 +980,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
     }
     for (const [name, target] of planTargets) {
-      adapters[name] = createPlanAdapter(name, target, sessions.authSource({ profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }), planProfiles, {
+      const startAccount = startAccounts.get(name);
+      const reported: PlanReported = () => (startAccount === undefined ? undefined : catalog.capabilitiesOf(target.plan.profile, startAccount, target.model));
+      adapters[name] = createPlanAdapter(name, target, sessions.authSource({ profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }), planProfiles, reported, {
         clock,
         userDialects,
         liveness,

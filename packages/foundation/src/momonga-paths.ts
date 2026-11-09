@@ -30,6 +30,7 @@ export interface MomongaPaths {
   planSessions: string;
   planHost: string;
   planActive: string;
+  planCatalog: string;
   logs: string;
   logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
@@ -135,6 +136,7 @@ export const momongaLayout = (
     planSessions: join(state, 'plan-sessions'),
     planHost: join(state, 'plan-host.json'),
     planActive: join(state, 'plan-active.json'),
+    planCatalog: join(state, 'plan-catalog'),
     logs: join(root, 'logs'),
     logFiles: {
       supervisor: join(root, 'logs', 'supervisor.log'),
@@ -298,6 +300,7 @@ const retainedByItsOwnersRule = (): boolean => true;
 
 export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] => [
   { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
+  { directory: paths.planCatalog, isLeftover: isAtomicWriteTemporary },
   { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
   { directory: paths.tmp.spawn, isLeftover: everyName },
   { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
