@@ -3,7 +3,6 @@ import type { ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
 
 const POLL_INTERVAL_MS = 10;
-const MIN_KILL_WAIT_MS = 1000;
 
 export interface GroupTiming {
   now(): number;
@@ -15,11 +14,19 @@ export const realGroupTiming: GroupTiming = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
 
-export type TerminateOutcome = 'terminated' | 'killed' | 'gone';
+export type TerminateOutcome = 'terminated' | 'killed' | 'gone' | 'unconfirmed';
 
-const killWaitMs = (graceMs: number): number => Math.max(graceMs, MIN_KILL_WAIT_MS);
+export const groupTerminationBoundMs = (graceMs: number): number => 2 * (graceMs + POLL_INTERVAL_MS);
 
-export const groupTerminationBoundMs = (graceMs: number): number => graceMs + POLL_INTERVAL_MS + killWaitMs(graceMs) + POLL_INTERVAL_MS;
+export class GroupNotStoppedError extends Error {
+  readonly pgid: number;
+
+  constructor(pgid: number) {
+    super(`process group ${pgid} was not stopped: a member that can still run remained after SIGTERM and SIGKILL`);
+    this.name = 'GroupNotStoppedError';
+    this.pgid = pgid;
+  }
+}
 
 export interface TerminateGroupOptions {
   graceMs: number;
@@ -85,7 +92,7 @@ export interface ForceKillGroupOptions {
 export async function forceKillGroup(pgid: number, { deadline, port = hostProcessGroupPort(), timing = realGroupTiming, signal }: ForceKillGroupOptions): Promise<boolean> {
   while (await groupAlive(pgid, port, signal)) {
     await signalGroup(pgid, 'SIGKILL', port, signal);
-    if (timing.now() >= deadline) return false;
+    if (timing.now() >= deadline) return !(await groupAlive(pgid, port, signal));
     await timing.sleep(POLL_INTERVAL_MS);
   }
   return true;
@@ -102,8 +109,5 @@ export async function terminateGroup(pgid: number, options: TerminateGroupOption
     await signalGroup(pgid, 'SIGTERM', port, signal);
   }
   if (await waitForGroupGone(pgid, termDeadline, port, timing, signal)) return 'terminated';
-  if (!(await forceKillGroup(pgid, { deadline: timing.now() + killWaitMs(options.graceMs), port, timing, signal }))) {
-    throw new Error(`process group ${pgid} did not terminate after SIGKILL`);
-  }
-  return 'killed';
+  return (await forceKillGroup(pgid, { deadline: timing.now() + options.graceMs, port, timing, signal })) ? 'killed' : 'unconfirmed';
 }

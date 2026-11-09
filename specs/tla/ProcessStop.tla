@@ -3,11 +3,11 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "exitingCountsAlive"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
-MemberStates == {"live", "stuck", "zombie", "gone"}
+MemberStates == {"live", "stuck", "exiting", "zombie", "gone"}
 
 VARIABLES inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved
 
@@ -34,13 +34,19 @@ TypeOK ==
 
 GroupOurs == {m \in Members : inGroup[m] /\ state[m] # "gone"}
 
+CanStillRun(m) == state[m] \in {"live", "stuck"}
+
+GroupRunnable == {m \in Members : inGroup[m] /\ CanStillRun(m)}
+
+LiveGroupAlive == IF Variant = "exitingCountsAlive" THEN GroupOurs # {} ELSE GroupRunnable # {}
+
 Rowless(m) == state[m] = "gone" /\ ~swapped[m]
 
 Outside == {m \in Members : listed[m] /\ (~inGroup[m] \/ (Variant = "rowlessIsOutside" /\ Rowless(m)))}
 
 HolderVisible(m) == m \in Outside /\ state[m] # "gone"
 
-OursVisible == GroupOurs # {} \/ \E m \in Members : HolderVisible(m)
+OursVisible == GroupRunnable # {} \/ \E m \in Members : HolderVisible(m)
 
 Init ==
     /\ inGroup \in [Members -> BOOLEAN]
@@ -64,7 +70,7 @@ Init ==
     /\ unprovedSignalled = FALSE
     /\ begunUnproved = FALSE
 
-GroupSeen == IF mode = "live" THEN GroupOurs # {} ELSE GroupOurs # {} \/ other
+GroupSeen == IF mode = "live" THEN LiveGroupAlive ELSE GroupOurs # {} \/ other
 
 Seen == GroupSeen \/ \E m \in Members : HolderVisible(m)
 
@@ -93,6 +99,11 @@ Reuse ==
 
 MemberExits(m) ==
     /\ state[m] \in {"live", "stuck"}
+    /\ state' = [state EXCEPT ![m] = "exiting"]
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+
+MemberFinishesExit(m) ==
+    /\ state[m] = "exiting"
     /\ state' = [state EXCEPT ![m] = "zombie"]
     /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
@@ -105,7 +116,7 @@ MemberDies(m) ==
     /\ state[m] = "live"
     /\ inGroup[m]
     /\ (termSent \/ killSent)
-    /\ state' = [state EXCEPT ![m] = "zombie"]
+    /\ state' = [state EXCEPT ![m] = "exiting"]
     /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 ReusePid(m) ==
@@ -156,7 +167,7 @@ Begin ==
                  /\ begunUnproved' = (GroupSeen /\ ~Proved)
                  /\ hstage' = [m \in Members |-> IF SigT(m) THEN "term" ELSE "idle"]
                  /\ provedOnce' = [m \in Members |-> provedOnce[m] \/ (SigT(m) /\ HolderTargetProved(m))]
-                 /\ \E dies \in SUBSET Members : state' = [m \in Members |-> IF SigT(m) /\ state[m] = "live" /\ m \in dies THEN "zombie" ELSE state[m]]
+                 /\ \E dies \in SUBSET Members : state' = [m \in Members |-> IF SigT(m) /\ state[m] = "live" /\ m \in dies THEN "exiting" ELSE state[m]]
                  /\ UNCHANGED <<outcome, marker>>
     /\ UNCHANGED <<inGroup, listed, swapped, attempts, retried, other, mode, killSent>>
 
@@ -172,7 +183,7 @@ TermWaitEnds ==
                  /\ killSent' = GroupKillGo
                  /\ unprovedSignalled' = (unprovedSignalled \/ (GroupKillGo /\ ~Proved) \/ \E m \in Members : SigK(m) /\ ~HolderTargetProved(m))
                  /\ hstage' = [m \in Members |-> IF SigK(m) THEN "kill" ELSE hstage[m]]
-                 /\ state' = [m \in Members |-> IF SigK(m) /\ state[m] = "live" THEN "zombie" ELSE state[m]]
+                 /\ state' = [m \in Members |-> IF SigK(m) /\ state[m] = "live" THEN "exiting" ELSE state[m]]
                  /\ UNCHANGED <<outcome, marker>>
     /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, attempts, retried, other, mode, termSent, begunUnproved>>
 
@@ -223,6 +234,7 @@ Next ==
     \/ Reuse
     \/ \E m \in Members :
         \/ MemberExits(m)
+        \/ MemberFinishesExit(m)
         \/ InitReaps(m)
         \/ MemberDies(m)
         \/ ReusePid(m)
@@ -253,6 +265,9 @@ AllEventsSpent == \A e \in Events : retried[e] >= 1
 ExhaustedIsFinal ==
     [][(AllEventsSpent /\ phase = "done") => (phase' = "done" /\ termSent' = termSent /\ killSent' = killSent /\ hstage' = hstage)]_vars
 
-UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupOurs # {}) => (outcome = "unconfirmed" /\ marker = "kept")
+UnconfirmedOnlyWhileOneCanRun ==
+    [][(mode = "live" /\ phase # "done" /\ phase' = "done" /\ outcome' = "unconfirmed") => GroupRunnable # {}]_vars
+
+UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupRunnable # {}) => (outcome = "unconfirmed" /\ marker = "kept")
 
 =============================================================================

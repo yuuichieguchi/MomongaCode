@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
+import { GroupNotStoppedError, closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
 import type { ProbeTiming, ProcessGroupPort } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
@@ -104,13 +104,14 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   const reapGroup = async (): Promise<void> => {
     graceCancelled = true;
     const stop = stopBound ?? signal;
-    await terminateGroup(pid, {
+    const outcome = await terminateGroup(pid, {
       graceMs: killGraceMs,
       ...(termDeadline === undefined ? {} : { termDeadline }),
       ...(groupPort === undefined ? {} : { port: groupPort }),
       timing,
       signal: stop,
     });
+    if (outcome === 'unconfirmed') throw new GroupNotStoppedError(pid);
   };
 
   let afterExitRan = false;

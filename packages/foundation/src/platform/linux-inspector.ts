@@ -5,6 +5,7 @@ import type { ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess 
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat, parseRealUid } from './linux-parsers.ts';
 import type { AuxvLayout } from './linux-parsers.ts';
 import type { FileIdentity, ProcFs } from './procfs.ts';
+import type { GroupStatesReader } from './run-state.ts';
 
 export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout };
 
@@ -166,3 +167,22 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
       }),
   });
 };
+
+export const createLinuxGroupStates =
+  (procfs: ProcFs): GroupStatesReader =>
+  async (pgid, { signal }) => {
+    const states: string[] = [];
+    for (const name of (await procfs.list('/proc')).filter(isPidDirectoryName)) {
+      signal?.throwIfAborted();
+      let text: string;
+      try {
+        text = await procfs.readText(`/proc/${name}/stat`);
+      } catch (error) {
+        if (isErrno(error, ...GONE_CODES)) continue;
+        throw error;
+      }
+      const stat = parseProcStat(text);
+      if (stat.groupId === pgid) states.push(stat.state);
+    }
+    return states;
+  };

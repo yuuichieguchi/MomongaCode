@@ -1,12 +1,14 @@
 import type { CommandResult, CommandRunner } from './command-runner.ts';
-import { failureOfError, probeFailed } from './inspector-types.ts';
+import { ProbeFailedError, failureOfError, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProcessInspector } from './inspector-types.ts';
+import type { GroupStatesReader } from './run-state.ts';
 
 export const PS_BINARY = '/bin/ps';
 export const LSOF_BINARY = '/usr/sbin/lsof';
 
 const ROW_FORMAT = /^\s*(\d+)\s+(\d+)\s*$/;
+const GROUP_STATE_ROW = /^\s*(\d+)\s+(\S+)\s*$/;
 const NO_MATCH_EXIT_CODE = 1;
 
 export const parseLstart = (text: string): number | undefined => {
@@ -31,6 +33,16 @@ export const parsePidGroupRows = (text: string): Map<number, number> | undefined
     rows.push([Number(match[1]), Number(match[2])]);
   }
   return new Map(rows);
+};
+
+export const parseGroupStateRows = (text: string): Array<[number, string]> | undefined => {
+  const rows: Array<[number, string]> = [];
+  for (const line of contentLines(text)) {
+    const [, group, stat] = GROUP_STATE_ROW.exec(line) ?? [];
+    if (group === undefined || stat === undefined) return undefined;
+    rows.push([Number(group), stat]);
+  }
+  return rows;
 };
 
 export type DarwinInspectorPorts = { run: CommandRunner };
@@ -88,3 +100,14 @@ export const createDarwinInspector = ({ run }: DarwinInspectorPorts): ProcessIns
     },
   });
 };
+
+export const createDarwinGroupStates =
+  (run: CommandRunner): GroupStatesReader =>
+  async (pgid, { signal }) => {
+    const operation = `reading the run states of process group ${pgid}`;
+    const result = await run(PS_BINARY, ['-A', '-o', 'pgid=,stat='], { env: { LC_ALL: 'C' }, signal });
+    if (result.exitCode !== 0) throw new ProbeFailedError(operation, exitFailure('ps', result.exitCode, result.stderr));
+    const rows = parseGroupStateRows(result.stdout);
+    if (rows === undefined) throw new ProbeFailedError(operation, unparseable('ps', result.stdout));
+    return rows.filter(([group]) => group === pgid).map(([, stat]) => stat);
+  };
