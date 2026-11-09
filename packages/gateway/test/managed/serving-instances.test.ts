@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_SERVER, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeFm, createFakeManagedServer, killGroupsForCleanup } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
-import { fmServer } from './managed-support.ts';
+import { runPreconditions } from '../../src/managed/preconditions.ts';
 
 type DumpRecord = { argv: string[]; pid: number };
 
@@ -70,20 +70,22 @@ describe('each managed target has its own serving instance, named by the target 
   });
 });
 
-describe('a second kind of server runs through the registration port with no branch on its id (design section 13.2)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
-  const setup = async (keySet: boolean) => {
+describe('a second kind of server, declared in the user settings, runs through the one registry with no branch on its id (design sections 13.2, 19.12)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('answers a request through the fake server, launched as "run --socket run/g<N>/targets/workbench.sock", and stops it at close', async () => {
     const fake = await createFakeManagedServer({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fake.binaryPath), 'argv.jsonl');
-    fake.configure({ keySet, envDumpFile: dumpFile });
+    fake.configure({ envDumpFile: dumpFile });
     reapLaunched(dumpFile, 'run');
     const home = makeHome();
-    writeSettings(home, { models: { targets: { workbench: { adapter: 'managed', server: 'fake', binary: fake.binaryPath, ...DECLARED } }, aliases: { default: ['workbench'] } } });
-    const handle = await launch(home, { managedServers: [fmServer(), FAKE_SERVER] });
-    return { home, dumpFile, handle, client: clientFor(handle.socketPath) };
-  };
-
-  it('answers a request through the fake server, launched as "run --socket run/g<N>/targets/workbench.sock", and stops it at close', async () => {
-    const { home, dumpFile, handle, client } = await setup(true);
+    writeSettings(home, {
+      models: {
+        servers: { fake: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
+        targets: { workbench: { adapter: 'managed', server: 'fake', model: 'fake-1', ...DECLARED } },
+        aliases: { default: ['workbench'] },
+      },
+    });
+    const handle = await launch(home, { exec: fakeExec });
+    const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
     const runs = launched(dumpFile, 'run');
     expect(runs).toHaveLength(1);
@@ -92,14 +94,37 @@ describe('a second kind of server runs through the registration port with no bra
     await until(() => !isAlive((runs[0] as DumpRecord).pid), 'the fake server to exit');
     expect(fs.readdirSync(path.join(generationTargets(home).markers, 'workbench'))).toEqual([]);
   });
+});
 
-  it('refuses with 412, the description text and its remedy when the precondition of the second kind is not met', async () => {
-    const { dumpFile, client } = await setup(false);
-    const answered = await readJson(await postJson(client, '/v1/responses', ask('default')));
-    expect(answered.status).toBe(412);
-    const text = JSON.stringify(answered.body);
-    expect(text).toContain(`the target \\"workbench\\" is not ready: ${FAKE_SERVER_REFUSAL}`);
-    expect(text).toContain(FAKE_SERVER_REMEDY);
-    expect(launched(dumpFile, 'run')).toEqual([]);
+describe('the generic precondition runner follows the description it is given, with no branch on its id (design section 13.2; 19.14 items 1 and 16d)', () => {
+  const answering = (exitCode: number) => {
+    const calls: { file: string; args: readonly string[] }[] = [];
+    const exec = async (file: string, args: readonly string[]) => {
+      calls.push({ file, args });
+      return { exitCode, stdout: '', stderr: exitCode === 0 ? '' : 'FAKE_KEY is not set' };
+    };
+    return { calls, exec };
+  };
+
+  it('refuses with the description text and its remedy when the precondition command exits with the refused code', async () => {
+    const { calls, exec } = answering(FAKE_SERVER_KEY_MISSING_EXIT);
+    expect(await runPreconditions(FAKE_SERVER, '/opt/fake/bin/fake-server', exec, AbortSignal.timeout(30_000))).toEqual({
+      kind: 'refused',
+      message: FAKE_SERVER_REFUSAL,
+      detail: 'FAKE_KEY is not set',
+      remedy: FAKE_SERVER_REMEDY,
+    });
+    expect(calls).toEqual([{ file: '/opt/fake/bin/fake-server', args: ['check-env'] }]);
+  });
+
+  it('is met when the precondition command exits 0', async () => {
+    const { exec } = answering(0);
+    expect(await runPreconditions(FAKE_SERVER, '/opt/fake/bin/fake-server', exec, AbortSignal.timeout(30_000))).toEqual({ kind: 'met' });
+  });
+
+  it('runs no command for a description with no preconditions, as a declared server has', async () => {
+    const { calls, exec } = answering(FAKE_SERVER_KEY_MISSING_EXIT);
+    expect(await runPreconditions({ ...FAKE_SERVER, preconditions: [] }, '/opt/fake/bin/fake-server', exec, AbortSignal.timeout(30_000))).toEqual({ kind: 'met' });
+    expect(calls).toEqual([]);
   });
 });

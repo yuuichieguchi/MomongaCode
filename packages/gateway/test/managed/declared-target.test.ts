@@ -9,8 +9,8 @@ import { createManagedTarget, decideToolCalling, loadProbeRecord, managedCurrenc
 import type { ManagedServer } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING } from '@momonga/protocol';
 import type { ManagedServerDescription, ProbeReport } from '@momonga/protocol';
-import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
-import { makeDir } from '../gateway-helpers.ts';
+import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { makeDir, registerCleanup } from '../gateway-helpers.ts';
 import { makeHome } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { declaredForm, loadedDeclaration, writeExecutable } from './declared-support.ts';
@@ -26,6 +26,15 @@ const knownKey = (binarySha256: string): KnownProbeKey => {
 
 const KEY_A = knownKey('aa'.repeat(32));
 const KEY_B = knownKey('bb'.repeat(32));
+
+const dumpedPids = (file: string): number[] =>
+  fs.existsSync(file)
+    ? fs
+        .readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => (JSON.parse(line) as { pid: number }).pid)
+    : [];
 
 const sha256OfFile = (file: string): string => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
@@ -179,16 +188,18 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
 
   const measuredMode = async (scenario: 'tools-ok' | 'tools-400') => {
     const dir = makeDir();
-    const fm = await createFakeFm({ dir });
-    fm.configure({ serve: { scenario } });
+    const fake = await createFakeManagedServer({ dir });
+    const dumpFile = path.join(dir, 'argv.jsonl');
+    fake.configure({ scenario, envDumpFile: dumpFile });
+    registerCleanup(() => killGroupsForCleanup(dumpedPids(dumpFile)));
     const home = makeHome();
-    const description = await loadedDeclaration('bench', { command: fm.binaryPath, args: ['serve', '--socket', '{socket}'], readyPath: '/health' }, home);
+    const description = await loadedDeclaration('bench', { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' }, home);
     const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', target: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
       description,
       target: 'workbench',
-      binary: fm.binaryPath,
+      binary: fake.binaryPath,
       instance,
       readyTimeoutMs: description.ready.limitMs,
       env: {},

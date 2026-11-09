@@ -2,12 +2,26 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { loadUserModels } from '@momonga/config';
+import type { ServerRegistry } from '@momonga/config';
 import { momongaPaths } from '@momonga/foundation';
 import { NotAProbeableTarget, probeFm } from '../src/commands/gateway.ts';
 import { copyProbeRecord } from '../src/eval/context-effects.ts';
 import { processOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
+import type { ManagedRecordSource } from '../src/eval/context-host.ts';
+
+type CopyProbeRecordFromRegistry = (
+  files: Parameters<typeof copyProbeRecord>[0],
+  from: string,
+  to: string,
+  source: ManagedRecordSource,
+  servers: ServerRegistry,
+  signal: AbortSignal,
+) => Promise<boolean>;
+
+const copyFromRegistry = copyProbeRecord as unknown as CopyProbeRecordFromRegistry;
 
 const roots: string[] = [];
 
@@ -57,13 +71,15 @@ describe('the CLI readers resolve a declared server through the registry of the 
     expect((error as Error).message).toContain(`the executable was not found at ${missing}`);
   });
 
-  it('the eval record copy (R8, context-effects.ts) accepts a declared server and copies nothing when it was never probed', async () => {
+  it('the eval record copy (R8, context-effects.ts) resolves a declared server through the registry its caller loaded, and copies nothing when it was never probed (19.14 item 16a)', async () => {
     const binary = path.join(temporary(), 'loom-server');
     fs.writeFileSync(binary, '#!/bin/sh\n', { mode: 0o755 });
     const home = declaredHome(binary);
     const from = momongaPaths(home, process.platform, {}).probe;
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'workbench', server: 'loom', binary, model: 'fake-1' }, AbortSignal.timeout(30_000))).toBe(false);
+    const servers = loadUserModels({ home }).resolved.servers;
+    if (servers === undefined) throw new Error('the loaded settings carry no server registry');
+    expect(await copyFromRegistry(nodeFiles, from, to, { target: 'workbench', server: 'loom', binary, model: 'fake-1' }, servers, AbortSignal.timeout(30_000))).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 

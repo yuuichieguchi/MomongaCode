@@ -49,7 +49,10 @@ describe('one registry for every reader of the user settings, built from the one
   it("the supervisor's models digest covers the declared server it resolved", async () => {
     const { tree } = await declaredHome();
     const settings = (await loadUserSettings({ home: tree.home })).settings;
-    const withoutServers = { ...settings, models: { ...settings.models, servers: undefined } };
-    expect(digestsOf(settings).models).not.toBe(digestsOf(withoutServers).models);
+    const servers = settings.models.servers ?? {};
+    const builtInOnly = Object.fromEntries(Object.entries(servers).filter(([id]) => id !== 'loom'));
+    expect(Object.keys(servers).sort()).toEqual(['fm', 'loom']);
+    const withoutDeclared = { ...settings, models: { ...settings.models, servers: builtInOnly } };
+    expect(digestsOf(settings).models).not.toBe(digestsOf(withoutDeclared).models);
   });
 });

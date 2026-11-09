@@ -241,42 +241,42 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
   });
 });
 
-const declaredFm = async () => {
+const declaredFake = async () => {
   const dir = makeDir();
-  const fm = await createFakeFm({ dir });
+  const fake = await createFakeManagedServer({ dir });
   const dumpFile = path.join(dir, 'argv.jsonl');
-  fm.configure({ envDumpFile: dumpFile });
+  fake.configure({ envDumpFile: dumpFile });
   registerCleanup(() => killGroupsForCleanup(readDump(dumpFile).map((record) => record.pid)));
   const home = makeHome();
   writeSettings(home, {
     models: {
-      servers: { bench: { command: fm.binaryPath, args: ['serve', '--socket', '{socket}'], readyPath: '/health' } },
-      targets: { workbench: { adapter: 'managed', server: 'bench', model: 'system', toolCalling: 'auto' } },
+      servers: { bench: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
+      targets: { workbench: { adapter: 'managed', server: 'bench', model: 'fake-1', toolCalling: 'auto' } },
       aliases: { default: ['workbench'] },
     },
   });
-  return { binary: fm.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
+  return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
 };
 
 describe('the probe of a declared server records under the key of 19.4 on the instance places of 18.2.1 (R-S19-20)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('writes the record named by the digest of {subject, model, binarySha256, hostOsBuild}, probing on run/g<N>/targets/_probe-workbench.sock', async () => {
-    const { binary, dumpFile, home, description } = await declaredFm();
+    const { binary, dumpFile, home, description } = await declaredFake();
     const handle = await launch(home);
     expect((await postJson(clientFor(handle.socketPath), '/v1/responses', ask())).status).toBe(503);
-    const key = keyOf(description, binary, 'system');
-    expect(JSON.parse(key.canonical)).toEqual({ subject: 'bench', model: 'system', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
+    const key = keyOf(description, binary, 'fake-1');
+    expect(JSON.parse(key.canonical)).toEqual({ subject: 'bench', model: 'fake-1', binarySha256: sha256OfFile(binary), hostOsBuild: FAKE_OS_BUILD });
     await until(() => recordFiles(home).includes(`${key.digest}.json`), 'the probe record');
-    const probeRuns = serves(dumpFile, 'serve').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
+    const probeRuns = serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1]);
     expect(probeRuns).toContain(path.join(targetsDir(home), '_probe-workbench.sock'));
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()))).status).toBe(200);
-    expect(serves(dumpFile, 'serve').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toContain(path.join(targetsDir(home), 'workbench.sock'));
+    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toContain(path.join(targetsDir(home), 'workbench.sock'));
   });
 });
 
-describe('the running instance reads its record under the start key captured when the gateway wired it (19.11-a; R-S19-23)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the running instance reads its record under the start key captured when its child started (19.11-a, 19.14 item 16b; R-S19-23)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('keeps answering from the start key record after the binary bytes change, and starts no probe of the new key', async () => {
-    const { binary, home, description } = await declaredFm();
-    const startKey = keyOf(description, binary, 'system');
+    const { binary, home, description } = await declaredFake();
+    const startKey = keyOf(description, binary, 'fake-1');
     await saveProbeRecord(probeDir(home), startKey, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
@@ -284,5 +284,20 @@ describe('the running instance reads its record under the start key captured whe
     fs.appendFileSync(binary, '\n');
     expect((await readJson(await postJson(client, '/v1/responses', ask()))).status).toBe(200);
     expect(recordFiles(home)).toEqual([`${startKey.digest}.json`]);
+  });
+
+  it('runs the first child, and reads its record, under the key of the binary replaced after the gateway started and before that child started', async () => {
+    const { binary, dumpFile, home, description } = await declaredFake();
+    const keyAtGatewayStart = keyOf(description, binary, 'fake-1');
+    const handle = await launch(home);
+    expect(serves(dumpFile, 'run')).toEqual([]);
+    fs.appendFileSync(binary, '\n');
+    const keyAtChildStart = keyOf(description, binary, 'fake-1');
+    expect(keyAtChildStart.digest).not.toBe(keyAtGatewayStart.digest);
+    await saveProbeRecord(probeDir(home), keyAtChildStart, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
+    const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
+    expect(answered.status).toBe(200);
+    expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toEqual([path.join(targetsDir(home), 'workbench.sock')]);
+    expect(recordFiles(home)).toEqual([`${keyAtChildStart.digest}.json`]);
   });
 });
