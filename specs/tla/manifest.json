@@ -4464,6 +4464,179 @@
       "measuredSeconds": 1.61,
       "measuredCpuSeconds": 4.02,
       "budgetCpuSeconds": 12
+    },
+    {
+      "config": "SettingsSwap",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 119842,
+      "measuredSeconds": 16.83,
+      "measuredCpuSeconds": 14.53,
+      "budgetCpuSeconds": 33
+    },
+    {
+      "config": "SettingsSwap.underivable",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 72177,
+      "measuredSeconds": 11.72,
+      "measuredCpuSeconds": 11.76,
+      "budgetCpuSeconds": 27
+    },
+    {
+      "config": "SettingsSwap.removal",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 461081,
+      "measuredSeconds": 54.12,
+      "measuredCpuSeconds": 66.03,
+      "budgetCpuSeconds": 136
+    },
+    {
+      "config": "SettingsSwap.restartOnChange",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 94,
+      "measuredSeconds": 4.95,
+      "measuredCpuSeconds": 2.26,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.retireEager",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 279,
+      "measuredSeconds": 5.45,
+      "measuredCpuSeconds": 2.24,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.retireEagerPin",
+      "role": "evidence",
+      "expect": {
+        "violates": "PinStable",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 467,
+      "measuredSeconds": 4.34,
+      "measuredCpuSeconds": 2.35,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.staleRead",
+      "role": "evidence",
+      "expect": {
+        "violates": "FreshStart",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 54,
+      "measuredSeconds": 4.99,
+      "measuredCpuSeconds": 2.16,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.strictInRun",
+      "role": "evidence",
+      "expect": {
+        "violates": "InvalidKeepsRunning",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 44,
+      "measuredSeconds": 5.22,
+      "measuredCpuSeconds": 2.1,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.sweepWithJob",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoSweepWhileHeld",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3656,
+      "measuredSeconds": 7.27,
+      "measuredCpuSeconds": 3.36,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "SettingsSwap.splitGate",
+      "role": "evidence",
+      "expect": {
+        "violates": "CarryOverByIdentity",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 50,
+      "measuredSeconds": 7.28,
+      "measuredCpuSeconds": 2.24,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.lockWait",
+      "role": "evidence",
+      "expect": {
+        "violates": "FreshStart",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1807,
+      "measuredSeconds": 7.1,
+      "measuredCpuSeconds": 3.0,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "SettingsSwap.lateWake",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRetireInUse",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2703,
+      "measuredSeconds": 7.67,
+      "measuredCpuSeconds": 3.52,
+      "budgetCpuSeconds": 11
+    },
+    {
+      "config": "SettingsSwap.parallelDerive",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleDerivation",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 303,
+      "measuredSeconds": 5.42,
+      "measuredCpuSeconds": 2.3,
+      "budgetCpuSeconds": 8
     }
   ]
 }
