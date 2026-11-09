@@ -78,8 +78,9 @@ describe('gateway client against a real gateway', () => {
   });
 
   it('lists the models with their capabilities', async () => {
-    const models = await context.client.models();
-    expect(models.map((model) => model.id)).toEqual(['default']);
+    const listed = await context.client.models();
+    expect(listed.map((model) => model.id)).toEqual(['default']);
+    const models = listed.flatMap((model) => ('probing' in model ? [] : [model]));
     expect(models[0]?.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
     expect(Object.keys(models[0] ?? {}).sort()).toEqual(['capabilities', 'id', 'targetCapabilities', 'targetCounters', 'targets']);
     expect(Object.keys(models[0]?.targetCapabilities ?? {})).toHaveLength(1);
@@ -88,7 +89,8 @@ describe('gateway client against a real gateway', () => {
   });
 
   it('looks up the capabilities of a target of the alias', async () => {
-    const [target] = Object.keys((await context.client.models())[0]?.targetCapabilities ?? {});
+    const [ready] = (await context.client.models()).flatMap((model) => ('probing' in model ? [] : [model]));
+    const [target] = Object.keys(ready?.targetCapabilities ?? {});
     const capabilities = await context.client.capabilities('default', { signal: new AbortController().signal, target: String(target) });
     expect(capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
   });
