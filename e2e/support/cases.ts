@@ -1,6 +1,7 @@
 import { resolveSandbox } from './sandbox.ts';
 
 export type E2eCaseFile =
+  | 'inject.test.ts'
   | 'b1-model-call.test.ts'
   | 'b2-bash.test.ts'
   | 'b3-gateway-kill.test.ts'
@@ -180,6 +181,9 @@ export const E2E_CASES = [
   { id: 'cli-auto-unavailable', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run in auto mode without a configured classifier fails with mode_unavailable stated plainly and never calls the model', needsBash: false },
   { id: 'roles-compaction', file: 'roles.test.ts', title: 'roles: with models.roles.compaction set, compaction goes to the target of the role alias, the steps of the run go to the target of the run alias, and the cost report shows both roles', needsBash: false },
   { id: 'cli-user-prompt-blocked', file: 'hooks-auto-cli.test.ts', title: 'cli: a -p run whose UserPromptSubmit hook blocks the prompt prints the hook run and states that the prompt was blocked', needsBash: true },
+  { id: 'inject-faults', file: 'inject.test.ts', title: 'holds the ten faults of section 4.3, each in its own scenario, and only the out-of-disk fault needs the Linux container', needsBash: false },
+  { id: 'inject-p9', file: 'inject.test.ts', title: 'P9: in every scenario that can run on this host, every effect key is witnessed at most once', needsBash: false },
+  { id: 'inject-not-run', file: 'inject.test.ts', title: 'reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];
