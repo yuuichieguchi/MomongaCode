@@ -29,12 +29,10 @@ import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
-import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
+import { phaseChange, settingsChanged, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { orphanReapBoundMs } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { changedSections, digestsOf, planRoles, runRestartPlan } from './plan.ts';
-import type { RestartPlanPort } from './plan.ts';
 import { resolveRestartPolicy } from './restart-policy.ts';
 import type { RestartPolicy } from './restart-policy.ts';
 import { safeChangeKey, watchSettings } from './settings-watch.ts';
@@ -100,8 +98,6 @@ export type SupervisorProcess = {
   fatal: Promise<Error>;
 };
 
-const PLANNABLE_STATES: ReadonlySet<string> = new Set(['starting', 'ready', 'stopping', 'backoff']);
-
 const realTimers: SupervisorTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
   clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
@@ -132,12 +128,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const startedAt = new Date(clock.now()).toISOString();
     let phase: SupervisorPhase = 'reaping-orphans';
     let draining = false;
-    let planRunning = false;
-    let evaluationPending = false;
     let lastEvaluatedKey: string | undefined;
     let lastReadFailure: string | undefined;
     let launchPromise: Promise<void> = Promise.resolve();
-    let planPromise: Promise<void> = Promise.resolve();
     let settingsWatcher: SettingsWatch | undefined;
     let versionMismatch = false;
     let requestShutdown: (values?: StopValues) => void = () => undefined;
@@ -146,7 +139,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let publishPromise: Promise<void> = Promise.resolve();
     let publishOnceAllReady: () => void = () => undefined;
     const launchController = new AbortController();
-    const planController = new AbortController();
     const reportedSources = new Set<string>();
     let resolveFatal: (error: Error) => void = () => undefined;
     const fatal = new Promise<Error>((resolve) => {
@@ -256,36 +248,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
     });
 
-    const planPort: RestartPlanPort = {
-      isDraining: () => draining,
-      stop: async (role) => {
-        await managerOf(role).stop('plan-restart', 'term');
-      },
-      start: (role) => managerOf(role).planStart(),
-      awaitSettled: async (role, timeoutMs) => {
-        await managerOf(role).awaitLeave('starting', { timeoutMs, signal: planController.signal });
-      },
-      isPlanStopped: (role) => managerOf(role).isPlanStopped(),
-    };
-
-    let evaluate: () => void = () => undefined;
-
-    const startPlan = (roles: readonly ChildRole[]): void => {
-      planRunning = true;
-      log(planBegin({ roles: roles.join(','), planned: roles.length }));
-      planPromise = runRestartPlan({ roles, port: planPort, signal: planController.signal, startupTimeoutMs })
-        .catch((error: unknown) => reportBackground(error, 'restart-plan'))
-        .then(() => {
-          planRunning = false;
-          log(planEnd({ roles: roles.join(','), planned: roles.length }));
-          if (evaluationPending && !draining) {
-            evaluationPending = false;
-            evaluate();
-          }
-        })
-        .catch((error: unknown) => reportBackground(error, 'restart-plan'));
-    };
-
     const reportReadFailure = (error: unknown): void => {
       const failure = failureOf(error);
       if (failure.message === lastReadFailure) return;
@@ -310,27 +272,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         log(settingsInvalid({ detail: snapshot.error.message, action: 'keep-running-children-hold-spawns' }));
         return;
       }
-      const current = digestsOf(snapshot.settings);
-      const runtimeApplied = runtime.appliedDigests();
-      const gatewayApplied = gateway.appliedDigests();
-      const changed = changedSections(current, runtimeApplied, gatewayApplied);
-      const modelsChanged = changed.models;
-      const sandboxChanged = changed.sandbox;
-      if (Object.values(changed).some((value) => value)) log(settingsChanged(changed));
-      const roles = planRoles(current, {
-        ...(runtimeApplied !== undefined && PLANNABLE_STATES.has(runtime.state()) ? { runtime: runtimeApplied } : {}),
-        ...(gatewayApplied !== undefined && PLANNABLE_STATES.has(gateway.state()) ? { gateway: gatewayApplied } : {}),
-      });
-      log(settingsEvaluated({ modelsChanged, sandboxChanged, roles: roles.join(',') }));
-      if (roles.length > 0) startPlan(roles);
+      log(settingsChanged({}));
     };
 
-    evaluate = (): void => {
+    const evaluate = (): void => {
       if (draining) return;
-      if (planRunning) {
-        evaluationPending = true;
-        return;
-      }
       try {
         evaluateOnce();
       } catch (error) {
@@ -368,11 +314,10 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         draining = true;
         setPhase('draining');
         launchController.abort();
-        planController.abort();
         settingsWatcher?.stop();
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, planPromise, publishPromise]);
+        await Promise.all([launchPromise, publishPromise]);
       },
       closeControl: async () => {
         await server?.close();

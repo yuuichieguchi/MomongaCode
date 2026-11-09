@@ -53,13 +53,10 @@ export const childStderr = defineEvent<RawRecord>('child.stderr', 'warn');
 export const childStdout = defineEvent<RawRecord>('child.stdout', 'info');
 export const supervisorBackgroundFailed = defineEvent<{ source: string }>('supervisor.background_failed', 'error');
 export const supervisorBackgroundTransient = defineEvent<{ source: string }>('supervisor.background_transient', 'warn');
-export const settingsChanged = defineEvent<{ models: boolean; sandbox: boolean; telemetry: boolean; network: boolean }>('settings.changed', 'info');
-export const settingsEvaluated = defineEvent<{ modelsChanged: boolean; sandboxChanged: boolean; roles: string }>('settings.evaluated', 'info');
+export const settingsChanged = defineEvent<Record<string, never>>('settings.changed', 'info');
 export const settingsInvalid = defineEvent<{ detail: string; action: 'keep-running-children-hold-spawns' }>('settings.invalid', 'warn');
 export const settingsReadFailed = defineEvent<{ detail: string }>('settings.read_failed', 'warn');
 export const settingsWarning = defineEvent<{ detail: string }>('settings.warning', 'warn');
-export const planBegin = defineEvent<{ roles: string; planned: number }>('plan.begin', 'info');
-export const planEnd = defineEvent<{ roles: string; planned: number }>('plan.end', 'info');
 export const orphansWaiting = defineEvent<{ markers: number; holders: number }>('orphans.waiting', 'info');
 export const orphansReaping = defineEvent<{ holders: number }>('orphans.reaping', 'warn');
 export const orphansReaped = defineEvent<{ reaped: number; kept: number }>('orphans.reaped', (payload) => (payload.kept > 0 ? 'warn' : 'info'));
@@ -89,12 +86,9 @@ export const SUPERVISOR_EVENTS = {
   'supervisor.background_failed': supervisorBackgroundFailed,
   'supervisor.background_transient': supervisorBackgroundTransient,
   'settings.changed': settingsChanged,
-  'settings.evaluated': settingsEvaluated,
   'settings.invalid': settingsInvalid,
   'settings.read_failed': settingsReadFailed,
   'settings.warning': settingsWarning,
-  'plan.begin': planBegin,
-  'plan.end': planEnd,
   'orphans.waiting': orphansWaiting,
   'orphans.reaping': orphansReaping,
   'orphans.reaped': orphansReaped,

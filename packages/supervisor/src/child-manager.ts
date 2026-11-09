@@ -1,6 +1,6 @@
 import type { Duplex, Readable } from 'node:stream';
 import { createStopValuesReader } from '@momonga/config';
-import type { ResolvedSettings, StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
+import type { StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -43,8 +43,6 @@ import type { SupervisorLogEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { openDaemonMarker, reapDaemonMarker } from './orphans.ts';
 import type { DaemonMarker, MarkerPorts } from './orphans.ts';
-import { digestsOf } from './plan.ts';
-import type { SettingsDigests } from './plan.ts';
 import { watchLock } from './lock-watch.ts';
 import type { ExternalProbe, LockWatch } from './lock-watch.ts';
 import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank } from './restart-policy.ts';
@@ -74,7 +72,7 @@ export type SpawnPort = (command: string, args: readonly string[], options: Spaw
 
 export type ChildState = SupervisorChildState;
 
-export type SpawnReason = 'initial' | 'backoff' | 'lock-free' | 'held-retry' | 'settings-change' | 'plan';
+export type SpawnReason = 'initial' | 'backoff' | 'lock-free' | 'held-retry' | 'settings-change';
 
 export type HeldSource = 'child-exit' | 'settings';
 
@@ -118,12 +116,9 @@ export type ChildManager = {
   readonly role: ChildRole;
   state(): ChildState;
   health(): SupervisorChildHealth;
-  isPlanStopped(): boolean;
-  appliedDigests(): SettingsDigests | undefined;
   spawnWith(snapshot: UserSettingsSnapshot, reason: SpawnReason): void;
   spawnFresh(reason: SpawnReason): void;
   failWithoutProcess(reason: 'settings-read-failed'): void;
-  planStart(): void;
   retryHeld(): void;
   stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult>;
   enterDraining(): void;
@@ -189,10 +184,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   let generation = 0;
   let launches = 0;
   let consecutiveFailures = 0;
-  let planStopped = false;
   let leaked = false;
   let current: Life | undefined;
-  let appliedSettings: ResolvedSettings | undefined;
   let lastExit: LastExit | undefined;
   let readyAt: number | undefined;
   let heldReason: string | undefined;
@@ -249,7 +242,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const beginAttempt = (): void => {
     clearScheduled();
     generation += 1;
-    planStopped = false;
     leaked = false;
   };
 
@@ -338,10 +330,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     switch (decision.next) {
       case 'stopped':
         setState('stopped');
-        return;
-      case 'plan-stopped':
-        setState('stopped');
-        planStopped = true;
         return;
       case 'backoff':
         enterBackoff(decision.delayMs);
@@ -601,7 +589,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
     const handoff = claim.kind === 'claimed' ? claim.handoff : undefined;
     launches += 1;
-    appliedSettings = snapshot.settings;
     heldReason = undefined;
     readyAt = undefined;
     let started: { marker: DaemonMarker; handle: ChildHandle };
@@ -668,7 +655,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     generation += 1;
     leaked = true;
     setState('stopped');
-    planStopped = life.stopReason === 'plan-restart';
     unreaped.add(life.marker.path);
     log(childUnkillable({ child: role, childPid: life.pid ?? null }));
     settleStop(life, { killed: true, leaked: true });
@@ -722,13 +708,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const stopWithoutProcess = (reason: StopReason): ChildStopResult => {
-    if (reason !== 'plan-restart') {
-      clearScheduled();
-      if (state !== 'stopped') {
-        generation += 1;
-        setState('stopped');
-      }
-      planStopped = false;
+    clearScheduled();
+    if (state !== 'stopped') {
+      generation += 1;
+      setState('stopped');
     }
     return { killed: false, leaked };
   };
@@ -816,17 +799,11 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     role,
     state: () => state,
     health,
-    isPlanStopped: () => planStopped,
-    appliedDigests: (): SettingsDigests | undefined => (appliedSettings === undefined ? undefined : digestsOf(appliedSettings)),
     spawnWith: launch,
     spawnFresh,
     failWithoutProcess: (reason) => {
       beginAttempt();
       recordFailureWithoutProcess(reason);
-    },
-    planStart: () => {
-      if (options.isDraining() || !planStopped) return;
-      spawnFresh('plan');
     },
     retryHeld: () => {
       if (options.isDraining() || state !== 'held-config') return;
