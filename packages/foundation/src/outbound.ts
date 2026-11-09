@@ -297,8 +297,10 @@ class OutboundDispatcher extends Dispatcher {
       return this.#refuse(new OutboundConnectionError({ kind: 'proxy-unsupported', source: route.source, text: route.message }), options, handler);
     }
     const forwarded = route.kind === 'proxy' && !TLS_SCHEMES.has(destination.protocol);
+    const signal: unknown = 'signal' in options ? options.signal : undefined;
     const label = (error: Error): Error => {
       if (error instanceof OutboundConnectionError) return error;
+      if (signal instanceof AbortSignal && signal.aborted && error === signal.reason) return error;
       if (isAbort(error) && !causeChain(error).some((entry) => entry instanceof ProxyReplyError)) return error;
       const proxyFailure = route.kind === 'proxy' ? proxyFailureOf(route, error, caSources, forwarded) : undefined;
       if (proxyFailure !== undefined) return new OutboundConnectionError(proxyFailure, { cause: error });
