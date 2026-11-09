@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { RunStatus } from '@momonga/protocol';
+import type { RunStatus, Stored } from '@momonga/protocol';
 import { makeEnv, typesOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { inertTimers, preparerFake } from './preparer-fake.ts';
 import { callsStep, textStep } from './scripts.ts';
 
-type Step = { step: 'cancelUpstream' | 'releaseStopped'; runId: string; statusAtCall: RunStatus | undefined };
+type Step = { step: 'cancelUpstream' | 'releaseStopped'; runId: string; statusAtCall: Stored<RunStatus> | undefined };
 
 const recordingSweeper = async (env: Env) => {
   const steps: Step[] = [];

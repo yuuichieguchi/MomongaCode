@@ -47,7 +47,7 @@ describe('context types', () => {
     expectTypeOf<GoverningKind>().toEqualTypeOf<'constraint' | 'preference' | 'commitment' | 'role' | 'identity'>();
     expectTypeOf<GoverningFactView>().toEqualTypeOf<{
       id: string;
-      kind: GoverningKind;
+      kind: GoverningKind | 'unknown';
       target: string;
       text: string;
       scope: { level: 'user' } | { level: 'project'; project: string; paths: string[] };
@@ -71,7 +71,7 @@ describe('context types', () => {
       | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number }
     >();
     expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<MemoryEvidence[]>();
-    expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState>();
+    expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState | 'unknown'>();
     expectTypeOf<MemoryView['kind']>().toEqualTypeOf<MemoryKind>();
     expectTypeOf<MemoryView['duplicateOf']>().toEqualTypeOf<string | null>();
     expectTypeOf<MemoryView['supersedes']>().toEqualTypeOf<string[]>();

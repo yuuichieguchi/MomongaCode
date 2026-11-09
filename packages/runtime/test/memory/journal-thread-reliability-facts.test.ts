@@ -48,7 +48,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         runId: run.id,
         rootRunId: run.id,
         sessionId: stored.sessionId,
-        status: stored.status,
+        status: storeModule.knownValue(stored.status, `the status of run ${run.id}`),
         createdAt: stored.createdAt,
         limits: {},
         deadlineAt: stored.deadlineAt,

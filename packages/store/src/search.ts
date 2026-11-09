@@ -4,8 +4,9 @@ import type { Redactor } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { MemoryOrigin, RunEvent } from '@momonga/protocol';
 import { decodeRunEvents } from './codec.ts';
-import { corrupt, expectOneOf, isRecord, readerFor } from './rows.ts';
-import type { Row } from './rows.ts';
+import { corrupt, isRecord, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
+import type { Row, Stored } from './rows.ts';
 import { HISTORY_CANDIDATE_LIMIT, HISTORY_READ_PAGE_CHARS, HISTORY_SCAN_LIMIT, HISTORY_SEARCH_ANCHOR_LIMIT, HISTORY_SNIPPET_MAX_CHARS, HISTORY_STEP_HITS_PER_ANCHOR } from './search-constants.ts';
 import { asciiLower, instrFilters, partitionTerms, quoted, termsOf } from './search-terms.ts';
 import { INDEXED_PAYLOAD_TYPES, buildDocuments, locationPathsOf } from './search-documents.ts';
@@ -48,7 +49,7 @@ type Candidate = { id: number; runId: string; level: string; step: number | null
 
 type RunHits = { runId: string; outcome: string; at: number; score: number; runHit: boolean; steps: Candidate[] };
 
-const visibleRun = (visibility: HistoryVisibility, project: string, origin: MemoryOrigin): boolean =>
+const visibleRun = (visibility: HistoryVisibility, project: string, origin: Stored<MemoryOrigin>): boolean =>
   project === visibility.project || (visibility.trusted && origin === 'trusted');
 
 const rankRuns = (candidates: readonly Candidate[]): RunHits[] => {
@@ -80,7 +81,7 @@ const sessionsOf = (anchors: readonly HistoryAnchor[]): HistorySession[] => {
   return [...sessions.values()];
 };
 
-export const createSearchStore = (db: DatabaseSync): SearchStore => {
+export const createSearchStore = (db: DatabaseSync, context: DecodeContext): SearchStore => {
   const readCursor = db.prepare('SELECT last_event_id FROM search_cursor WHERE id = 1');
   const writeCursor = db.prepare('UPDATE search_cursor SET last_event_id = :eventId WHERE id = 1');
   const nextTerminal = db.prepare(
@@ -140,7 +141,7 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
         sessionId: reader.string('session_id'),
         runId,
         project: reader.string('project'),
-        origin: expectOneOf('runs', runId, 'origin', ORIGINS, reader.string('origin')),
+        origin: storedOneOf(context, 'runs', runId, 'origin', ORIGINS, reader.string('origin')),
         outcome,
         at: reader.number('ended_at'),
       };
@@ -246,7 +247,7 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
         runId: run.runId,
         sessionId: reader.string('session_id'),
         project,
-        origin: expectOneOf('search_docs', run.runId, 'origin', ORIGINS, reader.string('origin')),
+        origin: storedOneOf(context, 'search_docs', run.runId, 'origin', ORIGINS, reader.string('origin')),
         outcome: reader.string('outcome'),
         at: reader.number('at'),
         seqFrom: reader.number('seq_from'),
@@ -274,12 +275,12 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
       return { sessions: sessionsOf(anchors), ...(searched === undefined ? {} : { searched }), ...(withheld === 0 ? {} : { withheld }) };
     });
 
-  const lookupRun = (visibility: HistoryVisibility, runId: string): { project: string; origin: MemoryOrigin } | undefined => {
+  const lookupRun = (visibility: HistoryVisibility, runId: string): { project: string; origin: Stored<MemoryOrigin> } | undefined => {
     const row = runRow.get({ runId });
     if (row === undefined) return undefined;
     const reader = readerFor('runs', runId, row);
     const project = reader.string('project');
-    const origin = expectOneOf('runs', runId, 'origin', ORIGINS, reader.string('origin'));
+    const origin = storedOneOf(context, 'runs', runId, 'origin', ORIGINS, reader.string('origin'));
     return visibleRun(visibility, project, origin) ? { project, origin } : undefined;
   };
 

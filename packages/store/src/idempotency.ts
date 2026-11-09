@@ -1,8 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { expectOneOf, expectRecord, readerFor } from './rows.ts';
-import type { Row } from './rows.ts';
+import { expectRecord, knownValue, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
+import type { Row, Stored } from './rows.ts';
 import type {
   IdempotencyBegin,
   IdempotencyLookup,
@@ -16,7 +17,7 @@ import type {
 
 const OPEN_STATES = ['PENDING', 'UNKNOWN'] as const;
 
-const decodeRecord = (row: Row): IdempotencyRecord => {
+const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord, 'state'> & { state: Stored<IdempotencyRecord['state']> } => {
   const key = String(row['key']);
   const reader = readerFor('idempotency', key, row);
   const pgid = reader.nullableNumber('pgid');
@@ -24,7 +25,7 @@ const decodeRecord = (row: Row): IdempotencyRecord => {
   const leaseToken = reader.nullableNumber('lease_token');
   return {
     key,
-    state: expectOneOf('idempotency', key, 'state', OPEN_STATES, reader.string('state')),
+    state: storedOneOf(context, 'idempotency', key, 'state', OPEN_STATES, reader.string('state')),
     meta: expectRecord('idempotency', key, 'meta_json', reader.json('meta_json')),
     ...(pgid === null ? {} : { pgid }),
     ...(startedAt === null ? {} : { startedAt }),
@@ -34,7 +35,7 @@ const decodeRecord = (row: Row): IdempotencyRecord => {
   };
 };
 
-export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLease: (fence: LeaseFence) => boolean): IdempotencyStore => {
+export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLease: (fence: LeaseFence) => boolean, context: DecodeContext): IdempotencyStore => {
   const insert = db.prepare(
     `INSERT INTO idempotency (key, state, meta_json, lease_token, created_at, expires_at)
      VALUES (:key, 'PENDING', :meta, :leaseToken, :createdAt, :expiresAt)
@@ -64,7 +65,8 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const lookupRow = (key: string, row: Row): IdempotencyLookup => {
     const reader = readerFor('idempotency', key, row);
     if (reader.string('state') === 'COMPLETED') return { s: 'COMPLETED', result: reader.json('result_json') };
-    const rec = decodeRecord(row);
+    const stored = decodeRecord(row, context);
+    const rec = { ...stored, state: knownValue(stored.state, `idempotency key ${key}`) };
     return rec.state === 'PENDING' ? { s: 'PENDING', rec } : { s: 'UNKNOWN', rec };
   };
 

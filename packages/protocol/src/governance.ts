@@ -1,10 +1,11 @@
+import type { Stored } from './stored-value.ts';
 export const GOVERNING_KINDS = ['constraint', 'preference', 'commitment', 'role', 'identity'] as const;
 
 export type GoverningKind = (typeof GOVERNING_KINDS)[number];
 
 export type GoverningFactView = {
   id: string;
-  kind: GoverningKind;
+  kind: Stored<GoverningKind>;
   target: string;
   text: string;
   scope: { level: 'user' } | { level: 'project'; project: string; paths: string[] };

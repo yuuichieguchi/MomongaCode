@@ -9,6 +9,7 @@ import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoRef
 import type { InheritanceOutcome } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
+import { knownValue } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run } from './types.ts';
 
@@ -191,7 +192,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const loadRun = (runId: string): Run => {
     const row = selectRun.get({ id: runId });
     if (row === undefined) throw new Error(`unknown run ${runId}`);
-    return decodeRun(row);
+    return decodeRun(row, decodeContext);
   };
 
   const inheritedEventOf = (runId: string): (RunEvent & { type: 'context.inherited' }) | undefined => {
@@ -535,7 +536,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
 
   const outcomeOf = (run: Run & { status: TerminalStatus }): InheritanceOutcome => ({
     status: run.status,
-    ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+    ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${run.id}`) }),
     ...(run.error === undefined ? {} : { errorCode: run.error.code }),
   });
 
@@ -543,7 +544,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     if (child.previousRunId === null) throw new InheritanceError('previous_run_inconsistent', `run ${child.id} has no previous run`);
     const row = selectRun.get({ id: child.previousRunId });
     if (row === undefined) throw new InheritanceError('previous_run_inconsistent', `previous run ${child.previousRunId} of run ${child.id} does not exist`);
-    const previous = decodeRun(row);
+    const previous = decodeRun(row, decodeContext);
     if (previous.sessionId !== child.sessionId || previous.ordinal !== child.ordinal - 1) {
       throw new InheritanceError('previous_run_inconsistent', `previous run ${previous.id} is not the run before ${child.id} in session ${child.sessionId}`);
     }
@@ -560,10 +561,10 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     let base: TerminalRun;
     for (let cursor = run; ; ) {
       const previous = predecessorOf(cursor);
-      if (!isTerminalStatus(previous.status)) return { kind: 'conflict', reason: `previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal` };
+      if (previous.status === 'unknown' || !isTerminalStatus(previous.status)) return { kind: 'conflict', reason: `previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal` };
       const terminal = previous as TerminalRun;
       walked.push({ runId: previous.id, lastSeq: previous.lastSeq, status: previous.status });
-      if (previous.history === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
+      if (knownValue(previous.history, `the history mode of run ${previous.id}`) === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
         base = terminal;
         break;
       }

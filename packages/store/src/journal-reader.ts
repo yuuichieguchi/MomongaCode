@@ -72,9 +72,9 @@ const typePlaceholders = (types: readonly string[]): { list: string; bound: Reco
 export const createJournalReader = (db: DatabaseSync, options: JournalReaderOptions = {}): JournalReader => {
   const unit = options.unit ?? ((): void => undefined);
   const stepped = options.onRowsStepped ?? ((): void => undefined);
-  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK), governing: createGoverningFactStore(db, NO_CLOCK) };
-  const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const decodeContext = decodeContextOf(db);
+  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, decodeContext) };
+  const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
   const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
 
@@ -105,7 +105,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const lastSeqOf = (runId: string): number => {
     const row = selectRun.get({ id: runId });
     if (row === undefined) throw new Error(`unknown run ${runId}`);
-    return decodeRun(row).lastSeq;
+    return decodeRun(row, decodeContext).lastSeq;
   };
 
   function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
@@ -131,7 +131,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     readTx(db, () => {
       const row = selectRun.get({ id: runId });
       if (row === undefined) throw new Error(`unknown run ${runId}`);
-      const run = decodeRun(row);
+      const run = decodeRun(row, decodeContext);
       if (types.length === 0) return run;
       for (const eventRow of rangedRows(runId, throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, throughSeq), types, false)) {
         options.onDecode?.(1, typeof eventRow['payload_json'] === 'string' ? Buffer.byteLength(eventRow['payload_json']) : 0);
@@ -149,7 +149,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     const run = readTx(db, () => {
       const row = selectRun.get({ id: runId });
       if (row === undefined) throw new Error(`unknown run ${runId}`);
-      return decodeRun(row);
+      return decodeRun(row, decodeContext);
     });
     await walker.walk(runId, range.throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, range.throughSeq), types, visit, units, range.from === undefined ? {} : { from: range.from });
     return run;
@@ -206,7 +206,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     readTx(db, () => {
       const row = selectRun.get({ id: request.runId });
       if (row === undefined) throw new Error(`unknown run ${request.runId}`);
-      const run = decodeRun(row);
+      const run = decodeRun(row, decodeContext);
       const leading = request.leading.map(
         (payload, index): RunEvent => ({
           ...payload,

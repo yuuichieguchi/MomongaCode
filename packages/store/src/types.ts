@@ -1,3 +1,4 @@
+import type { Stored, UNKNOWN_VALUE } from './rows.ts';
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
@@ -45,7 +46,7 @@ export type Session = {
   id: string;
   cwd: string;
   env: Record<string, string>;
-  permissionMode: PermissionMode;
+  permissionMode: Stored<PermissionMode>;
   modelAlias: string;
   bypassAllowed: boolean;
   additionalDirectories: readonly string[];
@@ -73,8 +74,8 @@ export type Run = {
   id: string;
   sessionId: string;
   ordinal: number;
-  status: RunStatus;
-  stopReason?: StopReason;
+  status: Stored<RunStatus>;
+  stopReason?: Stored<StopReason>;
   version: number;
   leaseOwner: string | null;
   leaseToken: number;
@@ -92,11 +93,11 @@ export type Run = {
   lastSeq: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
   previousRunId: string | null;
-  history: HistoryMode;
+  history: Stored<HistoryMode>;
   parentRunId: string | null;
   parentCallId: string | null;
-  origin: MemoryOrigin;
-  cancelOrigin: CancelOrigin | null;
+  origin: Stored<MemoryOrigin>;
+  cancelOrigin: Stored<CancelOrigin> | null;
   error?: RunError;
 };
 
@@ -129,7 +130,7 @@ export type Conflict = { kind: 'conflict'; reason?: string };
 export type NotFound = { kind: 'not_found' };
 
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
-export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | NotFound;
+export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 
 export type SetModelAliasResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
@@ -221,7 +222,7 @@ type ApprovalRecord = {
   id: string;
   runId: string;
   callId: string;
-  status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
+  status: Stored<'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn'>;
   options: PermissionOption[];
   server?: string;
   requests?: ElicitationRequestView[];
@@ -232,7 +233,10 @@ type ApprovalRecord = {
   subjectDigest?: string;
 };
 
-export type Approval = (ApprovalRecord & { kind: 'permission' }) | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number });
+export type Approval =
+  | (ApprovalRecord & { kind: 'permission' })
+  | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number })
+  | (ApprovalRecord & { kind: typeof UNKNOWN_VALUE; expiresAt?: number });
 
 export type ApprovalView = {
   id: string;
@@ -295,9 +299,11 @@ export type BlobScope = { runId: string };
 
 export type TrustDecision = 'trusted' | 'untrusted';
 
+export type StoredTrustDecision = Stored<TrustDecision>;
+
 export type TrustStore = {
-  get(path: string): TrustDecision | undefined;
-  decisionFor(path: string): { decision: TrustDecision | null; inheritedFrom?: string };
+  get(path: string): StoredTrustDecision | undefined;
+  decisionFor(path: string): { decision: StoredTrustDecision | null; inheritedFrom?: string };
   set(path: string, decision: TrustDecision): void;
   clear(path: string): void;
 };
@@ -423,7 +429,7 @@ export type HistoryAnchor = {
   runId: string;
   sessionId: string;
   project: string;
-  origin: MemoryOrigin;
+  origin: Stored<MemoryOrigin>;
   outcome: string;
   at: number;
   seqFrom: number;
@@ -454,7 +460,7 @@ export type HistoryReadRequest = {
 };
 
 export type HistoryReadResult =
-  | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
+  | { kind: 'ok'; runId: string; project: string; origin: Stored<MemoryOrigin>; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
   | { kind: 'not_visible' };
 
 export type FactsCursor = { definitionsVersion: number; afterEventId: number };
@@ -484,7 +490,7 @@ export type SearchStore = {
 
 export type ReflectionJob = {
   runId: string;
-  state: ReflectionJobState;
+  state: Stored<ReflectionJobState>;
   attempts: number;
   lastError: string | null;
   dropped: ReflectionDrop[];
@@ -512,7 +518,7 @@ export type ReflectionCompletion = {
 };
 
 export type ReflectionStore = {
-  runOrigin(runId: string): MemoryOrigin | undefined;
+  runOrigin(runId: string): Stored<MemoryOrigin> | undefined;
   enqueue(runId: string): boolean;
   get(runId: string): ReflectionJob | undefined;
   latestForProject(project: string): ReflectionJob | undefined;
@@ -525,7 +531,7 @@ export type ReflectionStore = {
   fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
 };
 
-export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };
+export type ContextCharge = Omit<ContextChargeInput, 'purpose'> & { purpose: Stored<ContextChargePurpose>; id: number; createdAt: number };
 
 export type ContextChargeStore = {
   record(input: ContextChargeInput): ContextCharge;
@@ -790,6 +796,6 @@ export type ChildRunInput = {
 
 export type CreateChildRunResult =
   | { kind: 'created' | 'existing'; run: Run; session: Session }
-  | { kind: 'parent_not_active'; status: RunStatus | 'missing' };
+  | { kind: 'parent_not_active'; status: Stored<RunStatus> | 'missing' };
 
 export type WaitTargets = { runIds: readonly string[]; jobIds: readonly string[] };

@@ -15,6 +15,7 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
+import { heldSessionOf } from './known.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -45,8 +46,7 @@ const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { c
 export const recordCalls = async (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): Promise<void> => {
   const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [...leading];
-  const session = ctx.options.store.getSession(ctx.run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
+  const session = heldSessionOf(ctx.options.store, ctx.run.sessionId);
   const display = ctx.options.tools.sessionState(session);
   for (const { item } of ownEntries(ctx.journal.state)) {
     if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(await callPayload(ctx, display, item));
@@ -188,8 +188,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const runnable = entries.filter(([, call]) => call.status === 'requested' || call.status === 'started');
   if (runnable.length === 0) return 'continue';
 
-  const session = options.store.getSession(run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
+  const session = heldSessionOf(options.store, run.sessionId);
 
   const calls: ToolCall[] = [];
   const rejected: RunEventPayload[] = [];

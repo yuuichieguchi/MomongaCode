@@ -1,3 +1,5 @@
+import type { Stored } from './stored-value.ts';
+import { UNKNOWN_VALUE } from './stored-value.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
@@ -37,11 +39,13 @@ const nonNegativeInteger: JsonSchema = { type: 'integer', minimum: 0 };
 const boolean: JsonSchema = { type: 'boolean' };
 const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
+const storedEnumOf = (values: readonly string[]): JsonSchema => enumOf([...values, UNKNOWN_VALUE]);
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
+const storedPermissionMode = storedEnumOf(PERMISSION_MODES);
 const autoClassifierView = closed(
   {
     alias: string,
@@ -56,6 +60,7 @@ const autoClassifierView = closed(
 );
 const sessionMcpServers: JsonSchema = { type: 'object', additionalProperties: { type: 'object' } };
 const historyMode = enumOf(['inherit', 'fresh']);
+const storedHistoryMode = storedEnumOf(['inherit', 'fresh']);
 
 const permissionOption = closed(
   {
@@ -130,7 +135,7 @@ const jobView = closed(
     runId: string,
     callId: string,
     command: string,
-    status: enumOf(JOB_STATUSES),
+    status: storedEnumOf(JOB_STATUSES),
     exitCode: integer,
     signal: string,
     startedAt: integer,
@@ -199,10 +204,10 @@ const billedDetail = closed(
 const recoveryEpisodeView = closed(
   {
     ordinal: nonNegativeInteger,
-    cause: enumOf(RECOVERY_CAUSES),
+    cause: storedEnumOf(RECOVERY_CAUSES),
     failedAt: integer,
     progressAt: nullable(integer),
-    outcome: enumOf(RECOVERY_OUTCOMES),
+    outcome: storedEnumOf(RECOVERY_OUTCOMES),
     startedSeq: nonNegativeInteger,
     progressSeq: nullable(nonNegativeInteger),
   },
@@ -220,11 +225,11 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   sessionId: string,
   definitionsVersion: nonNegativeInteger,
   modelAlias: string,
-  mode: permissionMode,
+  mode: storedPermissionMode,
   agent: string,
   origin: string,
-  status: enumOf(RUN_STATUSES),
-  stopReason: enumOf(STOP_REASONS),
+  status: storedEnumOf(RUN_STATUSES),
+  stopReason: storedEnumOf(STOP_REASONS),
   createdAt: integer,
   endedAt: integer,
   elapsedMs: integer,
@@ -640,7 +645,7 @@ const costTotalsSchemaProperties: Record<string, JsonSchema> = {
 const contextChargeView = closed(
   {
     id: integer,
-    purpose: enumOf(CONTEXT_CHARGE_PURPOSES),
+    purpose: storedEnumOf(CONTEXT_CHARGE_PURPOSES),
     runId: nullable(string),
     project: string,
     model: string,
@@ -777,7 +782,7 @@ const governingScope: JsonSchema = {
 const governingFactView = closed(
   {
     id: string,
-    kind: enumOf(GOVERNING_KINDS),
+    kind: storedEnumOf(GOVERNING_KINDS),
     target: string,
     text: string,
     scope: governingScope,
@@ -832,7 +837,7 @@ const memoryView = closed(
     createdAt: integer,
     keptAt: integer,
     kind: enumOf(MEMORY_KINDS),
-    state: enumOf(MEMORY_STATES),
+    state: storedEnumOf(MEMORY_STATES),
     duplicateOf: nullable(string),
     supersedes: { type: 'array', items: string },
     supersededBy: { type: 'array', items: string },
@@ -867,7 +872,7 @@ const memoryView = closed(
 const reflectionJobView = closed(
   {
     runId: string,
-    state: enumOf(REFLECTION_JOB_STATES),
+    state: storedEnumOf(REFLECTION_JOB_STATES),
     attempts: nonNegativeInteger,
     reason: nullable(string),
     dropped: {
@@ -997,7 +1002,7 @@ export type GatewayCostReportView = {
 
 export type ContextChargeView = {
   id: number;
-  purpose: ContextChargePurpose;
+  purpose: Stored<ContextChargePurpose>;
   runId: string | null;
   project: string;
   model: string;
@@ -1067,8 +1072,8 @@ const runView = closed(
     id: string,
     sessionId: string,
     ordinal: integer,
-    status: enumOf(RUN_STATUSES),
-    stopReason: enumOf(STOP_REASONS),
+    status: storedEnumOf(RUN_STATUSES),
+    stopReason: storedEnumOf(STOP_REASONS),
     error: closed({ code: string, message: string }, ['code', 'message']),
     usage,
     step: nonNegativeInteger,
@@ -1078,10 +1083,10 @@ const runView = closed(
     cancelRequested: boolean,
     lastSeq: nonNegativeInteger,
     previousRunId: nullable(string),
-    history: historyMode,
+    history: storedHistoryMode,
     parentRunId: nullable(string),
     parentCallId: nullable(string),
-    origin: enumOf(MEMORY_ORIGINS),
+    origin: storedEnumOf(MEMORY_ORIGINS),
     agent: string,
   },
   [
@@ -1175,7 +1180,7 @@ export const RUN_API_SCHEMAS = {
         id: string,
         runId: string,
         callId: string,
-        status: enumOf(APPROVAL_STATUSES),
+        status: storedEnumOf(APPROVAL_STATUSES),
         server: string,
         requests: { type: 'array', items: elicitationRequest },
         expiresAt: integer,
@@ -1204,7 +1209,7 @@ export const RUN_API_SCHEMAS = {
       {
         id: string,
         cwd: string,
-        permissionMode,
+        permissionMode: storedPermissionMode,
         modelAlias: string,
         bypassAllowed: boolean,
         createdAt: integer,
@@ -1228,7 +1233,7 @@ export const RUN_API_SCHEMAS = {
         id: string,
         runId: string,
         callId: string,
-        status: enumOf(APPROVAL_STATUSES),
+        status: storedEnumOf(APPROVAL_STATUSES),
         options: { type: 'array', items: permissionOption },
         createdAt: integer,
         suggestedRule: string,

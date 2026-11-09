@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from '@momonga/foundation';
 import { findDanglingOutput } from '@momonga/protocol';
 import type { InputItem, PermissionMode, RunEvent, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
-import { JournalThreadError, applyInheritance, createJournalReader, foldRunState, initialRunState, projectInheritance } from '@momonga/store';
+import { JournalThreadError, applyInheritance, createJournalReader, foldRunState, initialRunState, knownValue, projectInheritance } from '@momonga/store';
 import { retractsTask } from '../../src/inherit.ts';
 import type { Claim, ContributionPreparer, InheritanceOutcome, JournalReaderOptions, Run, RuntimeStore } from '@momonga/store';
 import { createFakeClock, fixtureCompactionItem } from '@momonga/testkit';
@@ -151,7 +151,7 @@ export const foldEvents = (run: Run, events: readonly RunEvent[]): RunState => e
 
 export const outcomeOf = (run: Run): InheritanceOutcome => ({
   status: run.status as InheritanceOutcome['status'],
-  ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+  ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${run.id}`) }),
   ...(run.error === undefined ? {} : { errorCode: run.error.code }),
 });
 

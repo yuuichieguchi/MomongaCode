@@ -1,4 +1,4 @@
-import type { MemoryOrigin, RunEvent } from '@momonga/protocol';
+import type { MemoryOrigin, RunEvent, Stored } from '@momonga/protocol';
 
 export type HistoryScope = 'project' | 'all';
 
@@ -12,7 +12,7 @@ export type HistoryAnchor = {
   runId: string;
   sessionId: string;
   project: string;
-  origin: MemoryOrigin;
+  origin: Stored<MemoryOrigin>;
   outcome: string;
   at: number;
   seqFrom: number;
@@ -30,7 +30,7 @@ export type HistoryReadRequest = { runId: string; step?: number; seqFrom?: numbe
 export type HistoryReadPage = {
   runId: string;
   project: string;
-  origin: MemoryOrigin;
+  origin: Stored<MemoryOrigin>;
   events: RunEvent[];
   callPaths: Readonly<Record<string, readonly string[]>>;
   nextSeq: number | null;

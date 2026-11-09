@@ -6,7 +6,7 @@ import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
-import { isFatalStoreError } from '@momonga/store';
+import { UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
@@ -49,6 +49,7 @@ import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { heldSessionOf } from './known.ts';
 
 const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.some((terminal) => terminal === status));
 const DEFAULT_CANCEL_POLL_MS = 250;
@@ -141,7 +142,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       throw cause;
     }
     try {
-      if (control.shuttingDown()) {
+      if (control.shuttingDown() || cause instanceof UnknownValueError) {
         terminals.yieldLease();
         return;
       }
@@ -262,8 +263,7 @@ const drive = async (
   const { store, gateway, tools, clock } = options;
   const run = store.getRun(claim.runId);
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
-  const session = store.getSession(run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
+  const session = heldSessionOf(store, run.sessionId);
   if (journal.state.inherited === undefined) {
     const inherited = await store.inheritContext(claim, { mode: session.permissionMode, facts: store.journalFacts });
     if (inherited.kind === 'lease_lost') control.lost();

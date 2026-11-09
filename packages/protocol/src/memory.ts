@@ -1,3 +1,4 @@
+import type { Stored } from './stored-value.ts';
 export const MEMORY_SCOPES = ['user', 'project'] as const;
 
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
@@ -44,7 +45,7 @@ export type MemoryRecord = {
   createdAt: number;
   keptAt: number;
   kind: MemoryKind;
-  state: MemoryState;
+  state: Stored<MemoryState>;
   duplicateOf: string | null;
   supersedes: string[];
   supersededBy: string[];
@@ -106,7 +107,7 @@ export type ReflectionJobState = (typeof REFLECTION_JOB_STATES)[number];
 
 export type ReflectionJobView = {
   runId: string;
-  state: ReflectionJobState;
+  state: Stored<ReflectionJobState>;
   attempts: number;
   reason: string | null;
   dropped: ReflectionDrop[];

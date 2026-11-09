@@ -392,6 +392,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const id = context.req.param('id') ?? '';
     const result = store.requestCancel(id);
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
+    if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);
   };

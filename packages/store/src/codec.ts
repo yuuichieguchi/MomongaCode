@@ -1,13 +1,12 @@
 import path from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
-import { highestAppliedMigration } from '@momonga/foundation';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
-import { MIGRATIONS } from './schema.ts';
+import { DATABASE_NOT_NEWER } from './decode-context.ts';
+import type { DecodeContext } from './decode-context.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
-import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, storedOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
 
@@ -31,14 +30,14 @@ const expectServerRecords = (identity: string, value: unknown): SessionMcpServer
   return record as SessionMcpServers;
 };
 
-export const decodeSession = (row: Row): Session => {
+export const decodeSession = (row: Row, context: DecodeContext): Session => {
   const identity = identityOf(row);
   const reader = readerFor('sessions', identity, row);
   return {
     id: reader.string('id'),
     cwd: reader.string('cwd'),
     env: expectStringRecord('sessions', identity, 'env_json', reader.json('env_json')),
-    permissionMode: expectOneOf('sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
+    permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
     modelAlias: reader.string('model_alias'),
     bypassAllowed: reader.flag('bypass_allowed'),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
@@ -47,7 +46,7 @@ export const decodeSession = (row: Row): Session => {
   };
 };
 
-const HISTORY_MODES = ['inherit', 'fresh'] as const;
+export const HISTORY_MODES = ['inherit', 'fresh'] as const;
 
 const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   const record = expectRecord('runs', identity, 'usage_json', value);
@@ -58,8 +57,8 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   return { inputTokens, outputTokens, totalTokens };
 };
 
-const decodeCancelOrigin = (identity: string, value: string | null): Run['cancelOrigin'] =>
-  value === null ? null : expectOneOf('runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
+const decodeCancelOrigin = (context: DecodeContext, identity: string, value: string | null): Run['cancelOrigin'] =>
+  value === null ? null : storedOneOf(context, 'runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
 
 const decodeRunError = (identity: string, value: unknown): RunError => {
   const record = expectRecord('runs', identity, 'error_json', value);
@@ -69,7 +68,7 @@ const decodeRunError = (identity: string, value: unknown): RunError => {
   return { code: record['code'], message: record['message'] };
 };
 
-export const decodeRun = (row: Row): Run => {
+export const decodeRun = (row: Row, context: DecodeContext): Run => {
   const identity = identityOf(row);
   const reader = readerFor('runs', identity, row);
   const stopReason = reader.nullableString('stop_reason');
@@ -78,7 +77,7 @@ export const decodeRun = (row: Row): Run => {
     id: reader.string('id'),
     sessionId: reader.string('session_id'),
     ordinal: reader.number('ordinal'),
-    status: expectOneOf('runs', identity, 'status', RUN_STATUSES, reader.string('status')),
+    status: storedOneOf(context, 'runs', identity, 'status', RUN_STATUSES, reader.string('status')),
     version: reader.number('version'),
     leaseOwner: reader.nullableString('lease_owner'),
     leaseToken: reader.number('lease_token'),
@@ -96,13 +95,13 @@ export const decodeRun = (row: Row): Run => {
     lastSeq: reader.number('last_seq'),
     usage: decodeUsage(identity, reader.json('usage_json')),
     previousRunId: reader.nullableString('previous_run_id'),
-    history: expectOneOf('runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
+    history: storedOneOf(context, 'runs', identity, 'history_mode', HISTORY_MODES, reader.string('history_mode')),
     parentRunId: reader.nullableString('parent_run_id'),
     parentCallId: reader.nullableString('parent_call_id'),
-    origin: expectOneOf('runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
-    cancelOrigin: decodeCancelOrigin(identity, reader.nullableString('cancel_origin')),
+    origin: storedOneOf(context, 'runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
+    cancelOrigin: decodeCancelOrigin(context, identity, reader.nullableString('cancel_origin')),
   };
-  if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
+  if (stopReason !== null) run.stopReason = storedOneOf(context, 'runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);
   return run;
 };
@@ -231,9 +230,8 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
 };
 
-export type DecodeContext = { databaseIsNewer(): boolean };
-
-export const decodeContextOf = (db: DatabaseSync): DecodeContext => ({ databaseIsNewer: () => highestAppliedMigration(db) > MIGRATIONS.length });
+export { DATABASE_NOT_NEWER, decodeContextOf } from './decode-context.ts';
+export type { DecodeContext } from './decode-context.ts';
 
 const opaqueEventOf = (row: Row, identity: string, type: string, payload: Record<string, unknown>): OpaqueEvent => {
   const reader = readerFor('events', identity, row);
@@ -265,8 +263,6 @@ export const decodeStoredEvent = (row: Row, context: DecodeContext): RunEvent | 
 };
 
 export const isOpaqueEvent = (event: RunEvent | SessionEvent | OpaqueEvent): event is OpaqueEvent => 'opaque' in event;
-
-export const DATABASE_NOT_NEWER: DecodeContext = { databaseIsNewer: () => false };
 
 export const decodeKnownEvent = (row: Row, context: DecodeContext): RunEvent | SessionEvent | undefined => {
   const event = decodeStoredEvent(row, context);

@@ -3,7 +3,8 @@ import { immediateTx, joinedTx, readTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { DEFAULT_MEMORY_KIND, MEMORY_EVIDENCE_KINDS, MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES } from '@momonga/protocol';
 import type { MemoryEvidence, MemoryOrigin, MemoryScope, MemorySource, MemoryState, MemoryStatus } from '@momonga/protocol';
-import { corrupt, expectOneOf, readerFor } from './rows.ts';
+import { corrupt, expectOneOf, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row, RowReader } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
 import { asciiLower, instrFilters, partitionTerms, quoted } from './search-terms.ts';
@@ -55,7 +56,7 @@ const decodeObservedStatus = (identity: string, reader: RowReader): MemoryStatus
   return status === null ? null : expectOneOf('memories', identity, 'observed_status', MEMORY_STATUSES, status);
 };
 
-const decodeMemory = (row: Row, evidence: MemoryEvidence[], supersededBy: string[]): MemoryRecord => {
+const decodeMemory = (context: DecodeContext, row: Row, evidence: MemoryEvidence[], supersededBy: string[]): MemoryRecord => {
   const identity = String(row['id']);
   const reader = readerFor('memories', identity, row);
   const scope: MemoryScope = expectOneOf('memories', identity, 'scope', MEMORY_SCOPES, reader.string('scope'));
@@ -72,7 +73,7 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[], supersededBy: string
     createdAt: reader.number('created_at'),
     keptAt: reader.number('kept_at'),
     kind: expectOneOf('memories', identity, 'kind', MEMORY_KINDS, reader.string('kind')),
-    state: expectOneOf('memories', identity, 'state', MEMORY_STATES, reader.string('state')),
+    state: storedOneOf(context, 'memories', identity, 'state', MEMORY_STATES, reader.string('state')),
     duplicateOf: reader.nullableString('duplicate_of'),
     supersedes: decodeStringList(identity, reader, 'supersedes_json'),
     supersededBy,
@@ -119,7 +120,7 @@ const cursorOf = (part: RecallCursor['part'], row: Row): RecallCursor => {
   return { part, tier: reader.number('recall_tier'), contributed: reader.number('recall_contributed'), kept: reader.number('recall_kept'), id: reader.string('id') };
 };
 
-export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore => {
+export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): MemoryStore => {
   const toolCallEvent = db.prepare(
     "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
   );
@@ -149,6 +150,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
   const decode = (row: Row): MemoryRecord => {
     const id = String(row['id']);
     return decodeMemory(
+      context,
       row,
       evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)),
       replacedBy.all({ id }).map((successor) => readerFor('memories', id, successor).string('id')),
@@ -175,7 +177,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     }
     return rows.map((row) => {
       const id = String(row['id']);
-      return decodeMemory(row, evidenceById.get(id) ?? [], successorsById.get(id) ?? []);
+      return decodeMemory(context, row, evidenceById.get(id) ?? [], successorsById.get(id) ?? []);
     });
   };
   const stamp = db.prepare('UPDATE memories SET contributed_at = :at WHERE id = :id AND (contributed_at IS NULL OR contributed_at < :at)');
@@ -411,7 +413,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     activePage: (after, limit) =>
       activePage.all({ createdAt: after?.createdAt ?? -1, id: after?.id ?? '', limit }).map((row) => {
         const id = String(row['id']);
-        return decodeMemory(row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
+        return decodeMemory(context, row, evidenceOf.all({ id }).map((evidenceRow) => decodeEvidence(id, evidenceRow)), []);
       }),
     candidates: (filter = {}) => (filter.project === undefined ? candidateRows.all() : candidateRowsOfProject.all({ project: filter.project })).map(decode),
     accept: (id) => change(id, 'candidate', 'active', { done: 'accepted', refused: 'not_candidate' }, { kept: true }),

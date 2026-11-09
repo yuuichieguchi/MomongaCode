@@ -1,6 +1,7 @@
 import { childResultOf } from '@momonga/agents';
 import { isFatalStoreError } from '@momonga/store';
-import type { Claim, Run, Session } from '@momonga/store';
+import type { Claim, Run } from '@momonga/store';
+import type { HeldSession } from './known.ts';
 import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
@@ -16,7 +17,7 @@ export type CancelRecoveryInput = {
   options: WorkerOptions;
   claim: Claim;
   run: Run;
-  session: Session;
+  session: HeldSession;
   journal: Journal;
   control: ClaimControl;
 };

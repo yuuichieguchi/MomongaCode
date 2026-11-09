@@ -7,6 +7,8 @@ import type { PermissionRule } from '@momonga/config';
 import { permissionRulesFor } from '../governance/rules.ts';
 import type { ToolPolicy } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
+import { heldSessionOf } from './known.ts';
+import type { HeldSession } from './known.ts';
 
 export const HOOK_CONTEXT_PREFIX = 'hook context';
 
@@ -15,15 +17,11 @@ const hookCompleted = (execution: HookExecution): RunEventPayload => ({ type: 'h
 const contextMessage = (event: string, parts: readonly string[]): RunEventPayload[] =>
   parts.length === 0 ? [] : [{ type: 'user.message', text: `[${event} ${HOOK_CONTEXT_PREFIX}]\n${parts.join('\n')}` }];
 
-const sessionOf = (ctx: ClaimContext): Session => {
-  const session = ctx.options.store.getSession(ctx.run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
-  return session;
-};
+const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.store, ctx.run.sessionId);
 
 export const hookRunContextFor = (
   ctx: ClaimContext,
-  session: Session,
+  session: HeldSession,
   hooks: HooksSettings,
   policy: ToolPolicy,
   report: (execution: HookExecution) => void,
@@ -45,7 +43,7 @@ export const hookRunContextFor = (
   report,
 });
 
-type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; session: Session };
+type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; session: HeldSession };
 
 const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promise<LifecycleHooks> => {
   const session = sessionOf(ctx);

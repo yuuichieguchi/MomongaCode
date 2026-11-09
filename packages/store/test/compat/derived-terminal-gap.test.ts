@@ -102,6 +102,8 @@ describe('derived records of a run an older build finished, never claimed again 
 
   it('events.pinned_digest: the pinned digest column (journal-reader.ts:79) holds the digest of the request', () => {
     const { dbPath, run, seqs } = terminalRunWrittenByOlderBuild();
-    expect(rawDb(dbPath).prepare('SELECT pinned_digest FROM events WHERE run_id = ? AND seq = ?').get(run.id, seqs[0])).toEqual({ pinned_digest: PINNED });
+    const [requestedSeq] = seqs;
+    if (requestedSeq === undefined) throw new Error('the model.requested event was not appended');
+    expect(rawDb(dbPath).prepare('SELECT pinned_digest FROM events WHERE run_id = ? AND seq = ?').get(run.id, requestedSeq)).toEqual({ pinned_digest: PINNED });
   });
 });

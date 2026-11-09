@@ -35,6 +35,8 @@ import type { ClaimContext } from './claim-context.ts';
 import { requestKey } from '../model-key.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
 import type { WrapUpReason } from './wrap-up.ts';
+import { heldSessionOf } from './known.ts';
+import type { HeldSession } from './known.ts';
 
 export type BuildOutcome =
   | { kind: 'built'; built: BuiltContext; wrapUp?: { reason: 'context'; notice: string } }
@@ -59,11 +61,7 @@ const escalates = (error: unknown): error is GatewayRequestError =>
   error.code !== 'invalid_compaction' &&
   (ESCALATING_CODES.includes(error.code) || (error.status >= 400 && error.status < 500 && !NON_ESCALATING_4XX.includes(error.status)));
 
-const sessionOf = (ctx: ClaimContext) => {
-  const session = ctx.options.store.getSession(ctx.run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
-  return session;
-};
+const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.store, ctx.run.sessionId);
 
 export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);

@@ -1,7 +1,7 @@
 import { getEventListeners } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
+import type { RunEvent, RunEventPayload, RunState, RunStatus } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { LoadedRun, Run } from '@momonga/store';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
@@ -31,7 +31,7 @@ const responded = (seq: number, step: number, attempt: number): RunEvent =>
     response: { id: `resp-${step}`, status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } as never,
   });
 
-const status = (seq: number, from: Run['status'], to: Run['status']): RunEvent => event(seq, { type: 'run.status', from, to });
+const status = (seq: number, from: RunStatus, to: RunStatus): RunEvent => event(seq, { type: 'run.status', from, to });
 
 type CancelCall = { key: string; signal: AbortSignal };
 

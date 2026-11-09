@@ -13,6 +13,8 @@ export type {
   WindowEntry,
 } from './inherit-reference.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
+export { UNKNOWN_VALUE, UnknownValueError, knownValue } from './rows.ts';
+export type { Stored } from './rows.ts';
 export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
