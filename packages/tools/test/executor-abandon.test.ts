@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders } from '@momonga/foundation';
+import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
@@ -31,14 +31,7 @@ const pidAlive = (pid: number): boolean => {
   }
 };
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const eventually = async (condition: () => Promise<boolean> | boolean, description: string, attempts = 2000): Promise<void> => {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -50,7 +43,7 @@ const eventually = async (condition: () => Promise<boolean> | boolean, descripti
 
 const waitUntilGone = async (pgid: number): Promise<void> => {
   const deadline = Date.now() + 5000;
-  while (groupExists(pgid)) {
+  while (await groupExists(pgid)) {
     if (Date.now() > deadline) throw new Error(`process group ${pgid} is still alive`);
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -113,7 +106,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending')).toEqual([{ op: 'markUnknownIfPending', key: KEY_A, changed: true }]);
@@ -133,7 +126,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
   });
@@ -153,7 +146,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(pidAlive(grandchild)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
   });
@@ -167,7 +160,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('COMPLETED');
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending' && entry.changed)).toEqual([]);
@@ -182,7 +175,7 @@ describe('executor abandon', () => {
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
     expect(outcomes).toEqual([{ idemKey: KEY_A, callId: 'call-a', outcome: 'unknown' }]);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe(state === 'UNKNOWN' ? 'UNKNOWN' : undefined);
   });
@@ -342,7 +335,7 @@ describe('executor abandon', () => {
       ),
     ).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', reason: 'unverifiable', message: expect.stringContaining(brokenMarker) });
 
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
     expect(harness.idempotency.stateOf(KEY_B)).toBe('UNKNOWN');

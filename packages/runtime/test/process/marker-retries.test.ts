@@ -22,7 +22,7 @@ const markerDir = (): string => {
 
 const heldInspector = { markerState: async () => 'held', holdersOf: async () => ({ kind: 'value', value: [] }), startTimeOf: async () => ({ kind: 'gone' }), groupsOf: async () => ({ kind: 'value', value: new Map() }) } as unknown as ProcessInspector;
 
-const store = { idempotency: { get: () => undefined }, getRun: () => undefined } as never;
+const store = { idempotency: { get: () => undefined, processGroupOf: () => undefined }, getRun: () => undefined } as never;
 
 const NAME = 'e'.repeat(64);
 

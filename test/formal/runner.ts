@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { canStillRun } from '@momonga/foundation';
 import type { TlcRun, TlcRunOptions } from './manifest.ts';
 
 export const TLC_WORKERS = Math.ceil(os.availableParallelism() / 2);
@@ -52,11 +53,6 @@ const hostGroups: GroupHost = {
   signalGroup: (pgid) => process.kill(-pgid, 'SIGKILL'),
   groupStates: () => execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
 };
-
-const RUN_STATES_PAST_RUNNING = new Set(['Z', 'X']);
-const EXITING_FLAG = 'E';
-
-const canStillRun = (stat: string): boolean => !RUN_STATES_PAST_RUNNING.has(stat.charAt(0)) && !stat.slice(1).includes(EXITING_FLAG);
 
 const membersThatCanStillRun = (host: GroupHost, pgid: number): number[] =>
   host

@@ -39,7 +39,7 @@ describe('reapToolMarkers with a failing state check (the inspector is a fake; n
     const s = await setup();
     const broken = s.marker(1);
     const held = s.marker(2);
-    const store = { idempotency: { get: (): IdempotencyLookup | undefined => undefined } } as never;
+    const store = { idempotency: { get: (): IdempotencyLookup | undefined => undefined, processGroupOf: (): number | undefined => undefined } } as never;
     const inspector = inspectorOf(new Map<string, 'held' | Error>([[broken, new Error('lsof failed')], [held, 'held']]));
 
     await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), inspector, dir: s.temp.paths.markers.tools, store, killGraceMs: 2000, onWarning: s.onWarning, reap: s.reap as never });
@@ -57,6 +57,9 @@ describe('reapToolMarkers with a failing state check (the inspector is a fake; n
     const store = {
       idempotency: {
         get: (): IdempotencyLookup | undefined => {
+          throw failure;
+        },
+        processGroupOf: (): number | undefined => {
           throw failure;
         },
       },

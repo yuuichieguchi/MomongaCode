@@ -130,6 +130,11 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
       const row = select.get({ key });
       return row === undefined ? undefined : lookupRow(key, row);
     },
+    processGroupOf: (key) => {
+      const row = select.get({ key });
+      if (row === undefined) return undefined;
+      return readerFor('idempotency', key, row).nullableNumber('pgid') ?? undefined;
+    },
     holding: leasedBy,
     clearCheckpoint: (key) => {
       requireChange(clearCheckpoint.run({ key }).changes, key, 'checkpoint', 'PENDING');

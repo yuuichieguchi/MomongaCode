@@ -28,12 +28,12 @@ const emptyMarker = (dir: string, name: string): string => {
 
 const terminalWarningFor = (marker: string, runId: string): string => `tool marker ${marker}: run ${runId} is terminal, so its holder was reaped`;
 
-const pendingDeadLettered = (): { store: { idempotency: { get(key: string): IdempotencyLookup | undefined }; getRun(id: string): Pick<Run, 'id' | 'status' | 'deadLetter'> | undefined } } => {
+const pendingDeadLettered = (): { store: { idempotency: { get(key: string): IdempotencyLookup | undefined; processGroupOf(key: string): number | undefined }; getRun(id: string): Pick<Run, 'id' | 'status' | 'deadLetter'> | undefined } } => {
   const rec: IdempotencyRecord = { key: KEY, state: 'PENDING', meta: { runId: 'run-dead' }, pgid: PGID, createdAt: START_MS, expiresAt: START_MS + 86_400_000 };
   const lookup: IdempotencyLookup = { s: 'PENDING', rec } as IdempotencyLookup;
   return {
     store: {
-      idempotency: { get: (key: string) => (key === KEY ? lookup : undefined) },
+      idempotency: { get: (key: string) => (key === KEY ? lookup : undefined), processGroupOf: (key: string) => (key === KEY ? PGID : undefined) },
       getRun: (id: string) => (id === 'run-dead' ? { id: 'run-dead', status: 'FAILED', deadLetter: true } : undefined),
     },
   };

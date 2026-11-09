@@ -63,7 +63,7 @@ describe('MCP stdio transport markers', () => {
     await transport.close();
 
     expect(fs.readdirSync(dir)).toEqual([]);
-    expect(groupExists(pid)).toBe(false);
+    expect(await groupExists(pid)).toBe(false);
     expect(warnings).toEqual([]);
   });
 
@@ -88,7 +88,7 @@ describe('MCP stdio transport markers', () => {
     await transport.close();
 
     expect(pidAlive(grandchild)).toBe(false);
-    expect(groupExists(leader)).toBe(false);
+    expect(await groupExists(leader)).toBe(false);
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
@@ -107,7 +107,7 @@ describe('MCP stdio transport markers', () => {
 
       await transport.close();
 
-      expect(groupExists(pid)).toBe(false);
+      expect(await groupExists(pid)).toBe(false);
       expect(fs.existsSync(marker)).toBe(true);
       expect(warnings).toEqual([`mcp marker ${marker}: process ${agent.pid} (ssh-agent) could not be inspected, so it was left alone`]);
     });

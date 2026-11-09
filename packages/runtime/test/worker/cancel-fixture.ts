@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { RunEventPayload, ToolKind } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
+import { groupAlive } from '@momonga/foundation';
 import { killGroupsForCleanup } from '@momonga/testkit';
 import { START_MS, capabilitiesFor, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
@@ -21,14 +22,7 @@ afterEach(async () => {
   await killGroupsForCleanup(groups.splice(0));
 });
 
-export const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const pinnedStart = (): RunEventPayload => ({
   type: 'run.started',
