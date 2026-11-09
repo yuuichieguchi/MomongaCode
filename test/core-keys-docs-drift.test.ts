@@ -26,10 +26,11 @@ const settingsHelpOf = (source: string): string => {
 const tableRowsOf = (text: string): string[] => text.split('\n').filter((line) => line.startsWith('| `'));
 
 describe('the documents name every core key (design core-on 3.5, test 10)', () => {
-  it('names every key of the overlay, in its full dotted form, in the --settings help text', () => {
+  it('names every key of the core list, in its full dotted form, in the --settings help text, and the overlay holds the same keys', () => {
     const help = settingsHelpOf(REGISTER);
-    const missing = leavesOf(POLICY_OVERLAY_SCHEMA as unknown as SchemaNode, '').filter((key) => !help.includes(key));
+    const missing = CORE_SETTING_KEYS.filter((key: string) => !help.includes(key));
     expect(missing).toEqual([]);
+    expect(leavesOf(POLICY_OVERLAY_SCHEMA as unknown as SchemaNode, '').sort()).toEqual([...CORE_SETTING_KEYS].sort());
   });
 
   it('names every core key in the README settings table, and no row of a core key says it is off by default', () => {

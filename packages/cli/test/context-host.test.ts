@@ -595,7 +595,7 @@ describe('the isolation of a case', () => {
 });
 
 const RESOLVED_ON = {
-  context: { adaptiveBudget: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
+  context: { adaptiveBudget: true, autoCompact: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
   tools: { conciseDescriptions: true, deferral: true },
   memory: { reflection: { enabled: true }, repositoryFacts: true },
 };

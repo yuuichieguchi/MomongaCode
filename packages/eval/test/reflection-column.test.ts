@@ -72,9 +72,16 @@ const reportOf = (reflection: Transcript['reflection'], codeDigest = MAIN_CODE, 
   });
 
 describe('each call is tagged with its kind (design core-on 3.4 Part A, test 12)', () => {
-  it('tags a model response run, a compaction charge compaction and a reflection charge reflection', () => {
-    const facts = tokenFactsOf([publicEventsOf([modelCall(), charge('compaction')])], DONE_WITH_CHARGE);
-    expect(facts.calls.map((call) => (call as { kind?: unknown }).kind)).toEqual(['run', 'compaction', 'reflection']);
+  it('tags a model response run, a usage charge with its purpose from USAGE_CHARGE_PURPOSES, and a reflection charge reflection', () => {
+    const facts = tokenFactsOf([publicEventsOf([modelCall(), charge('compaction'), charge('permission_classifier'), charge('rejected_answer')])], DONE_WITH_CHARGE);
+    expect(facts.calls.map((call) => (call as { kind?: unknown }).kind)).toEqual(['run', 'compaction', 'permission_classifier', 'rejected_answer', 'reflection']);
+  });
+
+  it('counts a rejected answer and a classifier call in the primary figures and leaves the reflection out', () => {
+    const metrics = reportOf(DONE_WITH_CHARGE, MAIN_CODE, [charge('rejected_answer'), charge('permission_classifier')]).metrics;
+    expect(metrics.callsPerSuccess?.value).toBeCloseTo(3, 12);
+    expect(metrics.costPerSuccess?.value).toBeCloseTo(0.004, 12);
+    expect(metrics.uncachedInputPerSuccess?.value).toBeCloseTo(600 + 2 * 200, 9);
   });
 
   it('refuses a usage charge whose purpose is outside the known kinds when the report is built', () => {

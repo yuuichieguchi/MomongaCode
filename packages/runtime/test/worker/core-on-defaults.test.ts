@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultContextSettings, defaultToolsSettings } from '@momonga/config';
-import { TOOL_USAGE_WINDOW_RUNS } from '@momonga/memory';
+import { DEFAULT_MEMORY_SHARE, TOOL_USAGE_WINDOW_RUNS } from '@momonga/memory';
 import type { Run, Session } from '@momonga/store';
 import { tokenPinFor, tokenPolicyOf } from '../../src/worker/token-pin.ts';
 import { makeEnv } from './harness.ts';
@@ -28,7 +28,7 @@ describe('the token pin under the shipped defaults (design core-on 1, test 4)', 
     expect(tokenPolicyOf(undefined)).toEqual({ cachePrefix: false, conciseDescriptions: false, loopGuidance: false, observedCapacity: false, outputFormatters: [], deferred: undefined });
   });
 
-  it('records the on pin with an empty deferred set on run.started of the first run of a folder', async () => {
+  it('records the run-scoped core keys on run.started of the first run of a folder: the on token pin with an empty deferred set, and the memory share of the adaptive budget', async () => {
     const env = await defaultsEnv();
     env.gateway.script.push(textStep('Done.'));
     const run = env.enqueue('say done');
@@ -42,6 +42,7 @@ describe('the token pin under the shipped defaults (design core-on 1, test 4)', 
       observedCapacity: true,
       deferred: [],
     });
+    expect(env.ofType(run.id, 'run.started')[0]?.pins['memoryShare']).toBe(DEFAULT_MEMORY_SHARE);
   });
 });
 

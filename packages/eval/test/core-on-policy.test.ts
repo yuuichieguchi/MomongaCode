@@ -35,6 +35,7 @@ const RESOLVED_OFF = RESOLVED_OFF_POLICY;
 
 const OVERLAY_KEYS = [
   'context.adaptiveBudget',
+  'context.autoCompact',
   'context.cachePrefix',
   'context.loopGuidance',
   'context.observedCapacity',
@@ -79,10 +80,10 @@ const reportWith = (policy: unknown, codeDigest = MAIN_CODE) =>
   });
 
 describe('the overlay schema covers the core keys (design core-on 3.2, test 6)', () => {
-  it('holds exactly the ten keys of the overlay, each a core key', () => {
+  it('holds exactly the keys of the core list, autoCompact included', () => {
     const keys = leavesOf(POLICY_OVERLAY_SCHEMA as unknown as SchemaNode, '').sort();
     expect(keys).toEqual(OVERLAY_KEYS);
-    for (const key of keys) expect(CORE_SETTING_KEYS).toContain(key);
+    expect([...CORE_SETTING_KEYS].sort()).toEqual(keys);
   });
 });
 
@@ -155,7 +156,7 @@ describe('the report records the resolved policy (design core-on 3.2, test 8)', 
     const retired = JSON.stringify({ ...reportWith(RESOLVED_ON), format: 'momonga-eval-context-report/6', policy: {} });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/6 .*retired.*momonga-eval-context-report\/7/);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/defaults/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(
       /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
     );
@@ -171,6 +172,10 @@ describe('the transcript format (design core-on 3.2)', () => {
     const old = [JSON.stringify({ ...header, format: 'momonga-transcript/7' }), ...lines.slice(1)].join('\n');
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(TranscriptError);
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/momonga-transcript\/7.*momonga-transcript\/8/);
+    expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/policy .*recorded relative to the old defaults/);
+    expect(() => decodeTranscript(old, 't.jsonl')).toThrow(
+      /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>/,
+    );
   });
 });
 
@@ -220,5 +225,11 @@ describe('a live run records the resolved policy and passes only the overlay to 
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), portsFor(overlay));
     for (const transcript of transcripts) expect(transcript.policy).toEqual(RESOLVED_OFF);
     expect(caseSettingsFor({ sandbox: 'none' }, { policy: overlay })).toEqual({ sandbox: 'none', ...overlay });
+  });
+
+  it('lets a case that declares its own compaction keep it over the overlay of core-off.json', () => {
+    const overlay = parsePolicyOverlay(fs.readFileSync(CORE_OFF_FILE, 'utf8'), CORE_OFF_FILE);
+    const settings = caseSettingsFor({ sandbox: 'none' }, { compaction: 'on', policy: overlay }) as { context: Record<string, unknown> };
+    expect(settings.context).toEqual({ ...RESOLVED_OFF.context, autoCompact: true });
   });
 });

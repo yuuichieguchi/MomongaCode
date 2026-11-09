@@ -29,10 +29,11 @@ describe('every switch of the core sections is core and on, or named non-core (d
     expect([...NON_CORE_SETTING_KEYS].sort()).toEqual(['memory.forgetAfterDays', 'memory.reflection.maxTokens', 'tools.ripgrep']);
   });
 
-  it('names the ten keys of the token policy overlay as core', () => {
+  it('names the eleven keys of the token policy overlay as core', () => {
     expect(CORE_SETTING_KEYS).toEqual(
       expect.arrayContaining([
         'context.adaptiveBudget',
+        'context.autoCompact',
         'context.cachePrefix',
         'context.outputFormatters',
         'context.loopGuidance',

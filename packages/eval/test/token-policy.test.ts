@@ -53,7 +53,6 @@ describe('parsePolicyOverlay', () => {
   });
 
   it.each([
-    ['a context key outside the token design', { context: { autoCompact: false } }],
     ['a memory key outside the token design', { memory: { forgetAfterDays: 3 } }],
     ['a section outside the token design', { models: { aliases: {} } }],
     ['an unknown tools key', { tools: { lazy: true } }],
@@ -106,7 +105,7 @@ describe('the policy recorded in a context report', () => {
   });
 
   it('refuses a stored report whose policy holds a key outside the core list', () => {
-    const report = { ...reportWith(), policy: { ...RESOLVED_ON_POLICY, context: { ...RESOLVED_ON_POLICY.context, autoCompact: false } } };
+    const report = { ...reportWith(), policy: { ...RESOLVED_ON_POLICY, context: { ...RESOLVED_ON_POLICY.context, lazyPrefix: false } } };
     expect(() => parseContextReport(JSON.stringify(report), 'r.json')).toThrow(/not a context report/);
   });
 
@@ -170,6 +169,7 @@ describe('the context report format', () => {
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*retired.*momonga-eval-context-report\/7/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(
       /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
     );

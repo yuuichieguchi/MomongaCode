@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
+import { DEFAULT_MEMORY_SHARE } from '@momonga/memory';
 import { createBuiltinTools } from '@momonga/tools';
 import { firstGeneration } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
@@ -80,6 +81,7 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
         observedCapacity: true,
         deferred: [],
       });
+      expect(pins?.['memoryShare']).toBe(DEFAULT_MEMORY_SHARE);
 
       const offered = ((chatCompletions(stack.fake)[0]?.body as { tools?: ChatTool[] }).tools ?? []).find((tool) => tool.function.name === 'Read');
       const read = createBuiltinTools().find((tool) => tool.name === 'Read');
