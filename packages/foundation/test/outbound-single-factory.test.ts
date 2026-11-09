@@ -432,8 +432,8 @@ const CONSTRUCTIONS: readonly Construction[] = [
   { imports: "import { Agent } from 'undici';", line: 'class Undici extends Agent {}' },
   { imports: "import { ProxyAgent } from 'undici';", line: 'class Tunnel extends ProxyAgent {}' },
   { imports: "import { Dispatcher } from 'undici';", line: 'class Outbound extends Dispatcher {}' },
-  { imports: "import http from 'node:http';", line: 'const build = (base: typeof http.Agent): http.Agent => new (class extends base {})();' },
-  { imports: "import https from 'node:https';", line: 'const build = (base: typeof https.Agent): https.Agent => new (class extends base {})();' },
+  { imports: "import http from 'node:http';", line: 'const agent = build(http.Agent);' },
+  { imports: "import https from 'node:https';", line: 'const agent = build(https.Agent);' },
   { imports: '', line: 'const response = await fetch(url);' },
   { imports: '', line: 'const response = await globalThis.fetch(url);' },
   { imports: "import { fetch } from 'undici';", line: 'const response = await fetch(url);' },
@@ -447,6 +447,7 @@ const CONSTRUCTIONS: readonly Construction[] = [
   { imports: "import { HttpProxyAgent } from 'http-proxy-agent';", line: 'const agent = new HttpProxyAgent(proxyUrl);' },
   { imports: "import { Agent } from 'https';", line: 'const agent = new Agent({ keepAlive: true });' },
   { imports: "import { Agent as Plain } from 'http';", line: 'const agent = new Plain({ keepAlive: true });' },
+  { imports: "import http from 'node:http';\nimport https from 'node:https';", line: 'const base = secure ? https.Agent : http.Agent;' },
   { imports: "import * as h from 'node:https';", line: 'const agent = new h.Agent({ keepAlive: true });' },
 ];
 
@@ -474,6 +475,8 @@ const TYPE_REFERENCES: readonly string[] = [
   'type Send = typeof globalThis.fetch;',
   "import { fetch } from 'undici';\ntype Send = typeof fetch;",
   'const options: { fetch: OutboundFetch | typeof fetch } = { fetch: outbound };',
+  "import http from 'node:http';\nconst build = (base: typeof http.Agent): http.Agent => new (class extends base {})();",
+  "import https from 'node:https';\nconst build = (base: typeof https.Agent): https.Agent => new (class extends base {})();",
   "import { Agent } from 'undici';\nlet agent: Agent;",
   "import type { Dispatcher } from 'undici';\nconst use = (dispatcher: Dispatcher): void => {};",
   "import http from 'node:http';\nconst agents: http.Agent[] = [];",
