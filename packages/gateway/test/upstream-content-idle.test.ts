@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -128,7 +129,7 @@ describe('G1: the upstream idle bound restarts only when content arrives (audit-
       });
       const adapter = createAnthropicAdapter({
         resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
-        apiKey: async () => 'sk-test-key',
+        authSource: keyAuthSource(async () => 'sk-test-key'),
         capabilities: async () => REMOTE_CAPABILITIES,
         clock: createFakeClock(START_MS),
         apiVersion: '2026-10-21',

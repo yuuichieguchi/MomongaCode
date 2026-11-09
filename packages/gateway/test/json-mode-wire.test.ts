@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { ProviderAdapter } from '@momonga/gateway';
@@ -109,7 +110,7 @@ const anthropic: Surface = {
     registerCleanup(() => fake.close());
     const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-      apiKey: async () => FAKE_API_KEY,
+      authSource: keyAuthSource(async () => FAKE_API_KEY),
       capabilities: async () => capabilities,
       clock: createFakeClock(START_MS),
       apiVersion: '2026-10-21',

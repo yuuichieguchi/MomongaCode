@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
@@ -40,7 +41,7 @@ const anthropic = async (path: string): Promise<Upstream> => {
   registerCleanup(() => fake.close());
   const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    apiKey: async () => FAKE_API_KEY,
+    authSource: keyAuthSource(async () => FAKE_API_KEY),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
     apiVersion: '2026-10-21',

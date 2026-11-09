@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import { expect } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { PriceTable } from '@momonga/observability';
@@ -52,7 +53,7 @@ export const startAnthropicGateway = async (
   registerCleanup(() => fake.close());
   const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    apiKey: async () => options.sentKey ?? FAKE_API_KEY,
+    authSource: keyAuthSource(async () => options.sentKey ?? FAKE_API_KEY),
     capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
     apiVersion: options.apiVersion ?? DEFAULT_ANTHROPIC_API_VERSION,
@@ -73,7 +74,7 @@ export const startOpenResponsesGateway = async (
   registerCleanup(() => fake.close());
   const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    ...(options.sentKey === undefined ? {} : { apiKey: async () => options.sentKey }),
+    ...(options.sentKey === undefined ? {} : { authSource: keyAuthSource(async () => options.sentKey) }),
     capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
   });

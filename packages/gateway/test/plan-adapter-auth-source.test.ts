@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createAnthropicAdapter, createOpenResponsesAdapter, keyAuthSource } from '@momonga/gateway';
 import { planProfileOf } from '@momonga/config';
 import type { Capabilities } from '@momonga/protocol';
-import { PLAN_RESPONSES_PATH, UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS, createFakeClock, openResponsesTextReply, planErrorHttpReply, startFakePlanResponses } from '@momonga/testkit';
+import {
+  PLAN_RESPONSES_PATH,
+  UNCONFIGURED_NETWORK,
+  UNDICI_DEFAULT_LIVENESS,
+  anthropicTextReply,
+  createFakeClock,
+  openResponsesTextReply,
+  planErrorHttpReply,
+  planErrorStreamReply,
+  startFakeAnthropic,
+  startFakePlanResponses,
+} from '@momonga/testkit';
 import type { FakePlanResponses, FakeUpstreamReply } from '@momonga/testkit';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import type { AuthSource, PlanRead } from '../src/plan/auth-source.ts';
@@ -52,7 +63,7 @@ const startPlan = async (auth: AuthSource, accepted: (bearer: string | undefined
     clock: createFakeClock(START_MS),
     authSource: () => auth,
     errorRules: planProfileOf('chatgpt').errorRules,
-  } as Parameters<typeof createOpenResponsesAdapter>[0]);
+  });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({ adapters: { plan: adapter }, config: { aliases: { fast: ['plan'] }, targets: { plan: { model: 'plan-model', billing: 'plan' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } } });
   const post = async () => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
@@ -117,5 +128,61 @@ describe('the adapter applies the profile errorRules and their credential effect
     expect(response.status).toBe(429);
     expect(response.body.error.code).toBe('plan_usage_paused');
     expect(posts(plan.fake)).toHaveLength(0);
+  });
+
+  it('answers a paused read with 429 and retry-after from the pause end, and no POST', async () => {
+    const paused = Object.assign(new PlanCredentialError('plan_usage_paused', 'Usage limit reached', false), { retryAfterMs: 30_000 });
+    const auth = fakeAuth({ renew: false, failRead: paused });
+    const plan = await startPlan(auth, () => true, [openResponsesTextReply(['never'])]);
+    const response = await plan.post();
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('30');
+    expect(posts(plan.fake)).toHaveLength(0);
+  });
+
+  it('pauses on a response.failed usage code as on the HTTP answer, with no end when no Retry-After came', async () => {
+    const auth = fakeAuth({ renew: false });
+    const plan = await startPlan(auth, () => true, [planErrorStreamReply('subscription_sharing_usage_limit_exceeded', {})]);
+    const response = await plan.post();
+    expect(JSON.stringify(response.body)).toContain('plan_usage_limit');
+    expect(auth.pauses).toEqual([{}]);
+    expect(posts(plan.fake)).toHaveLength(1);
+  });
+});
+
+describe('a key target authenticates through the same AuthSource (P5a-w, M1, O-R5-3 e)', () => {
+  it('sends its header once and does not retry a 401', async () => {
+    const fake = await startFakePlanResponses({ verifyBearer: () => 'revoked', script: [] });
+    registerCleanup(() => fake.close());
+    const adapter = createOpenResponsesAdapter({
+      liveness: UNDICI_DEFAULT_LIVENESS,
+      resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: `${fake.origin}/v1`, network: UNCONFIGURED_NETWORK }),
+      capabilities: async () => REMOTE_CAPABILITIES,
+      clock: createFakeClock(START_MS),
+      authSource: keyAuthSource(async () => 'key-target-value'),
+    });
+    registerCleanup(() => adapter.close());
+    const harness = await startGateway({ adapters: { key: adapter }, config: { aliases: { fast: ['key'] }, targets: { key: { model: 'key-model' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } } });
+    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    expect(response.status).toBe(401);
+    expect(posts(fake).map((request) => request.headers['authorization'])).toEqual(['Bearer key-target-value']);
+  });
+
+  it('gives anthropic its x-api-key from the same source', async () => {
+    const fake = await startFakeAnthropic({ apiKey: 'anthropic-key-value', script: [anthropicTextReply(['ok'])] });
+    registerCleanup(() => fake.close());
+    const adapter = createAnthropicAdapter({
+      liveness: UNDICI_DEFAULT_LIVENESS,
+      resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
+      authSource: keyAuthSource(async () => 'anthropic-key-value'),
+      capabilities: async () => REMOTE_CAPABILITIES,
+      clock: createFakeClock(START_MS),
+      apiVersion: '2026-10-21',
+    });
+    registerCleanup(() => adapter.close());
+    const harness = await startGateway({ adapters: { claude: adapter }, config: { aliases: { fast: ['claude'] }, targets: { claude: { model: 'claude-model' } } } });
+    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    expect(response.status).toBe(200);
+    expect(fake.requests[0]?.headers['x-api-key']).toBe('anthropic-key-value');
   });
 });
