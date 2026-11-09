@@ -90,6 +90,7 @@ const startServer = async (
     socketPath,
     timers,
     health,
+    credential: () => ({ kind: 'undeclared' }),
     onShutdownRequested: () => {
       shutdowns += 1;
     },
@@ -194,6 +195,7 @@ describe('startControlServer', () => {
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
+      credential: () => ({ kind: 'undeclared' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,
     });

@@ -12,8 +12,11 @@ export type ShutdownResponseWriter = {
   end(body: string): unknown;
 };
 
+export type CredentialAnswer = { kind: 'value'; value: string } | { kind: 'undeclared' } | { kind: 'unset' };
+
 export type ControlHandlerOptions = {
   health(): SupervisorHealth;
+  credential(name: string): CredentialAnswer;
   onShutdownRequested(values?: StopValues): void;
   onIgnoredStopValues?(reason: string): void;
 };
@@ -32,6 +35,8 @@ export type ControlServer = {
 };
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+
+const CREDENTIALS_PATH = '/v1/credentials/';
 
 export const respondShutdown = (response: ShutdownResponseWriter, onShutdownRequested: () => void): void => {
   const body = JSON.stringify({ phase: 'draining' } satisfies SupervisorShutdownResponse);
@@ -97,6 +102,24 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
         return;
       }
       respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET, HEAD' });
+      return;
+    }
+    if (pathname.startsWith(CREDENTIALS_PATH)) {
+      if (method !== 'GET') {
+        respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET' });
+        return;
+      }
+      const name = decodeURIComponent(pathname.slice(CREDENTIALS_PATH.length));
+      const answer = options.credential(name);
+      if (answer.kind === 'value') {
+        respondJson(request, response, 200, { name, value: answer.value });
+        return;
+      }
+      if (answer.kind === 'undeclared') {
+        respondError(request, response, 403, { message: `the settings declare no credential variable ${name}`, type: 'invalid_request', code: 'credential_not_declared' });
+        return;
+      }
+      respondError(request, response, 404, { message: `the variable ${name} is unset or empty in the environment the daemon started with`, type: 'not_found', code: 'credential_not_set' });
       return;
     }
     if (pathname === '/v1/shutdown') {

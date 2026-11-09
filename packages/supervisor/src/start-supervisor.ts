@@ -26,6 +26,7 @@ import type { ChildManager, SpawnPort } from './child-manager.ts';
 import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_GENERATION, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
+import { handedCredentialNames } from './child-env.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
@@ -357,6 +358,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: own.sockets.supervisor,
       timers,
       health,
+      credential: (name) => {
+        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'undeclared' };
+        const value = env[name];
+        return value === undefined || value === '' ? { kind: 'unset' } : { kind: 'value', value };
+      },
       onShutdownRequested: (values) => requestShutdown(values),
       onIgnoredStopValues: (reason) => log(settingsWarning({ detail: `the stop values of the shutdown request were malformed and were ignored: ${reason}` })),
       onError: (error) => reportBackground(error, 'control-server'),
