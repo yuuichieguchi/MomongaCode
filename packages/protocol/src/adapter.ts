@@ -49,6 +49,7 @@ export type AdapterContext = {
 
 export type ClassifiedError = {
   retryable: boolean;
+  stalled?: true;
   retryAfterMs?: number;
   error: ErrorBody;
 };

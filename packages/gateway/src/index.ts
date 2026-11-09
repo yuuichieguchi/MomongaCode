@@ -81,3 +81,4 @@ export { probeOllamaTarget } from './probe/ollama.ts';
 export type { ProbeOllamaTargetOptions, ProbeOllamaTargetResult } from './probe/ollama.ts';
 export { detectLocalServers } from './detect-local-servers.ts';
 export type { DetectFetch, DetectLocalServersOptions } from './detect-local-servers.ts';
+export { UPSTREAM_IDLE_CODE, upstreamIdleText } from './adapters/shared/content-idle.ts';

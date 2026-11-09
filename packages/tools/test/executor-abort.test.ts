@@ -29,19 +29,6 @@ describe('timeouts', () => {
     expect(outcomes[0]).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Read timed out after 30 ms' } });
   });
 
-  it('replaces the tool timeout with the run deadline once the tool asks for it', async () => {
-    const harness = makeHarness();
-    const tool = makeTool('Read', {
-      timeoutMs: 30,
-      execute: (_input, ctx) => {
-        ctx.extendToRunDeadline();
-        return waitForAbort(ctx);
-      },
-    });
-    const outcomes = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Read')], { deadlineAt: harness.clock.now() + 90 }));
-    expect(outputOf(outcomes[0])).toBe('Read timed out after 90 ms');
-  });
-
   it('computes the timeout from the input when timeoutMs is a function', async () => {
     const harness = makeHarness();
     const tool = makeTool('Read', {

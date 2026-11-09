@@ -260,6 +260,8 @@ export type ModelsSettings = {
   idleTimeoutMs?: number;
 };
 
+export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?: number };
+
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
@@ -321,6 +323,7 @@ export type Settings = {
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
+  mcp?: McpCallSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;

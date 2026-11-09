@@ -29,6 +29,7 @@ describe('SETTINGS_SCHEMA', () => {
         'enabledMcpjsonServers',
         'env',
         'hooks',
+        'mcp',
         'mcpServers',
         'memory',
         'models',

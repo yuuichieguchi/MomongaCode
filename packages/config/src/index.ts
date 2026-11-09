@@ -57,6 +57,7 @@ export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,
   McpRemoteServerConfig,
+  McpCallSettings,
   McpServerConfig,
   McpStdioServerConfig,
   AnthropicTarget,
