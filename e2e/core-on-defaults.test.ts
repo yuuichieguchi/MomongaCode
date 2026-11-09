@@ -23,6 +23,12 @@ type ChatTool = { type: string; function: { name: string; description: string } 
 const NOTE = 'The answer constant lives in answer.ts and is 42.';
 const REFLECTION_ALIAS = 'reflector';
 
+const emptyHomeSettings = (home: E2eHome, extra: Readonly<Record<string, unknown>> = {}): string => {
+  const base = baseSettings(home, 'none');
+  const ripgrep = (base['tools'] as { ripgrep: string }).ripgrep;
+  return JSON.stringify({ ...extra, models: extra['models'] ?? base['models'], sandbox: 'none', tools: { ripgrep } }, null, 2);
+};
+
 const journalOf = (home: E2eHome, runId: string) =>
   journalOfRows(readDb<EventRow>(home.paths.databases.runtime, 'SELECT seq, type, payload_json FROM events WHERE run_id = ? ORDER BY seq', runId));
 
@@ -58,7 +64,7 @@ const trust = async (home: E2eHome, project: string): Promise<void> => {
 describe('the core areas on by default (design core-on 6, test 11)', () => {
   it(titleOf('core-on-token-defaults'), { timeout: 2 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, sandbox: 'none', version: cliPackage.version, settings: { models: baseSettings(home, 'none')['models'] }, script: [textReply('Done.')] });
+    const stack = await startStack({ home, sandbox: 'none', version: cliPackage.version, settingsText: emptyHomeSettings(home), script: [textReply('Done.')] });
     const runtime = createRuntimeClient(home);
     try {
       const { session } = await runtime.createSession({ permissionMode: 'default' });
@@ -92,7 +98,7 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
       home,
       sandbox: 'none',
       version: cliPackage.version,
-      settings: withStructuredRole({ models: baseSettings(home, 'none')['models'], verification: { commands: ['echo verified'] } }, 'reflection', REFLECTION_ALIAS),
+      settingsText: emptyHomeSettings(home, withStructuredRole({ models: baseSettings(home, 'none')['models'], verification: { commands: ['echo verified'] } }, 'reflection', REFLECTION_ALIAS)),
       script: [
         toolCallReply('Write', { file_path: path.join(project, 'answer.ts'), content: 'export const answer = 42;\n' }, 'call_write'),
         toolCallReply('Bash', { command: 'echo verified' }, 'call_check'),

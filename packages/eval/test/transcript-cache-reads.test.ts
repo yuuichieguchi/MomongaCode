@@ -20,8 +20,8 @@ describe('the transcript format records whether each call reported its cache rea
     const transcript = recorded('a-on', 0, [unreportedCall]);
     const text = encodeTranscript(transcript);
 
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/7');
-    expect(JSON.parse(text.split('\n')[0] ?? '{}')).toMatchObject({ format: 'momonga-transcript/7' });
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/8');
+    expect(JSON.parse(text.split('\n')[0] ?? '{}')).toMatchObject({ format: 'momonga-transcript/8' });
     expect(decodeTranscript(text, 'a.jsonl')).toEqual(transcript);
   });
 
@@ -31,7 +31,7 @@ describe('the transcript format records whether each call reported its cache rea
 
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
     expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(
-      'old.jsonl:1: momonga-transcript/6 transcripts do not record whether the upstream reported the cache reads of each call, so they cannot be graded as momonga-transcript/7; record the case again',
+      'old.jsonl:1: momonga-transcript/6 transcripts do not record whether the upstream reported the cache reads of each call, so they cannot be graded as momonga-transcript/8; record the case again',
     );
   });
 });

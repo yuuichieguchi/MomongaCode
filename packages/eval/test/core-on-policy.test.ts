@@ -24,23 +24,14 @@ import {
 } from '@momonga/eval';
 import type { ContextCaseHost, EvalRunApi, PolicyOverlay, Transcript } from '@momonga/eval';
 import { POLICY_OVERLAY_SCHEMA } from '../src/context-policy.ts';
-import { RECORDED_CODE_DIGEST } from './fixtures.ts';
+import { RECORDED_CODE_DIGEST, RESOLVED_OFF_POLICY, RESOLVED_ON_POLICY } from './fixtures.ts';
 import { contextCase, recorded } from './context-fixtures.ts';
 import { REAL_TARGET, buildReportAs } from './answered-fixtures.ts';
 
 const CORE_OFF_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'policies', 'core-off.json');
 
-const RESOLVED_ON = {
-  context: { adaptiveBudget: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'], unboundedOutputReserve: true },
-  tools: { conciseDescriptions: true, deferral: true },
-  memory: { reflection: { enabled: true }, repositoryFacts: true },
-};
-
-const RESOLVED_OFF = {
-  context: { adaptiveBudget: false, cachePrefix: false, loopGuidance: false, observedCapacity: false, outputFormatters: [], unboundedOutputReserve: false },
-  tools: { conciseDescriptions: false, deferral: false },
-  memory: { reflection: { enabled: false }, repositoryFacts: false },
-};
+const RESOLVED_ON = RESOLVED_ON_POLICY;
+const RESOLVED_OFF = RESOLVED_OFF_POLICY;
 
 const OVERLAY_KEYS = [
   'context.adaptiveBudget',

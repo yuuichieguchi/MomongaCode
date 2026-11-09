@@ -204,11 +204,11 @@ describe('the token gate on targets that do not report cache reads', () => {
 });
 
 describe('the context report format records the cache-read fact', () => {
-  it('is /6 and keeps a report with unreported calls through a round trip', () => {
+  it('is /7 and keeps a report with unreported calls through a round trip', () => {
     const report = reportOf(oneUnreported);
 
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/6');
-    expect(report.format).toBe('momonga-eval-context-report/6');
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
+    expect(report.format).toBe('momonga-eval-context-report/7');
     expect(parseContextReport(encodeContextReport(report), 'stored.json')).toEqual(report);
   });
 
@@ -216,7 +216,7 @@ describe('the context report format records the cache-read fact', () => {
     const previous = encodeContextReport({ ...reportOf(oneUnreported), format: 'momonga-eval-context-report/4' } as unknown as ContextReport);
 
     expect(() => parseContextReport(previous, 'previous.json')).toThrow(
-      'previous.json: momonga-eval-context-report/4 reports do not record which calls the upstream reported cache reads for (an unreported cache read was recorded as 0), so momonga-eval-context-report/4 is retired and cannot be compared as momonga-eval-context-report/6;',
+      'previous.json: momonga-eval-context-report/4 reports do not record which calls the upstream reported cache reads for (an unreported cache read was recorded as 0), so momonga-eval-context-report/4 is retired and cannot be compared as momonga-eval-context-report/7;',
     );
   });
 

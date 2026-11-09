@@ -1,12 +1,24 @@
 import { toPublicRunEvent } from '@momonga/protocol';
-import type { PublicRunEvent, RunEventPayload } from '@momonga/protocol';
+import type { OutputFormatterName, PublicRunEvent, RunEventPayload } from '@momonga/protocol';
 import { approvalWaitResumeRun, finalAnswerRun, materializeEvents, toolRoundTripRun } from '@momonga/testkit';
 import type { GoldenCase } from '@momonga/eval';
 import type { Transcript, TranscriptChild, TranscriptRun } from '@momonga/eval';
 
 export const RECORDED_CODE_DIGEST = 'c'.repeat(64);
 
-export const RECORDED_IDENTITY = { policy: {}, codeDigest: RECORDED_CODE_DIGEST } as const;
+export const RESOLVED_ON_POLICY = {
+  context: { adaptiveBudget: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
+  tools: { conciseDescriptions: true, deferral: true },
+  memory: { reflection: { enabled: true }, repositoryFacts: true },
+};
+
+export const RESOLVED_OFF_POLICY = {
+  context: { adaptiveBudget: false, cachePrefix: false, loopGuidance: false, observedCapacity: false, outputFormatters: [] as OutputFormatterName[], unboundedOutputReserve: false },
+  tools: { conciseDescriptions: false, deferral: false },
+  memory: { reflection: { enabled: false }, repositoryFacts: false },
+};
+
+export const RECORDED_IDENTITY = { policy: RESOLVED_ON_POLICY, codeDigest: RECORDED_CODE_DIGEST } as const;
 
 export const publicEventsOf = (payloads: readonly RunEventPayload[]): PublicRunEvent[] => materializeEvents(payloads).map(toPublicRunEvent);
 
