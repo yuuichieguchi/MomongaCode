@@ -15,7 +15,7 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
-export type UninspectableProcess = { pid: number; command: string; startTicks: string };
+export type UninspectableProcess = { pid: number; command: string; startedAt: number };
 
 export type ProbeOptions = { signal: AbortSignal };
 

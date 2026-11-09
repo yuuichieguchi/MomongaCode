@@ -75,6 +75,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.credentials;
   }
 
+  if (settings.mcp !== undefined) {
+    for (const key of Object.keys(settings.mcp)) warnings.push(`${source}: mcp.${key} is only honored in user settings; discarded`);
+    delete restricted.mcp;
+  }
+
   if (settings.mcpServers !== undefined) {
     warnings.push(`${source}: mcpServers is only honored in user settings; discarded (define project servers in .mcp.json)`);
     delete restricted.mcpServers;

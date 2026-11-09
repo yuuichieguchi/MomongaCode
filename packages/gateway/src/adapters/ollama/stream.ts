@@ -14,6 +14,8 @@ export type OllamaStreamOptions = {
   wraps?: ReadonlyMap<string, WrapRecord>;
   narrowings?: readonly SchemaNarrowing[];
   jsonReply?: JsonReplyPath | undefined;
+  onOutput?: () => void;
+  outputCeiling?: number | undefined;
 };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
@@ -53,7 +55,7 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }), ...(options.onOutput === undefined ? {} : { onOutput: options.onOutput }), outputCeiling: options.outputCeiling });
     this.toolsAllowed = !forbidsTools(options.request.tool_choice);
   }
 

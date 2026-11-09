@@ -10,6 +10,7 @@ import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, fixtureJson, startFakeOllama } from './ollama-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const RECORDED_SHOW = fixtureJson('api-show.json');
@@ -27,6 +28,8 @@ const probedTarget = async (showCapabilities: readonly string[], declared: Decla
     model: OLLAMA_MODEL,
     declared,
     record: record as never,
+    readRecord: async () => record as never,
+    startProbe: NO_PROBE_START,
     readDigest: async () => result.identity,
   });
 };
@@ -100,6 +103,8 @@ describe('one merge decides a declared against a probed prompt cache for every p
         model: 'm',
         declared,
         record: { identity: 'id', identityFields: [], report },
+        readRecord: async () => ({ identity: 'id', identityFields: [], report }),
+        startProbe: NO_PROBE_START,
         readIdentity: async () => 'id',
         saveRecord: async () => undefined,
       });

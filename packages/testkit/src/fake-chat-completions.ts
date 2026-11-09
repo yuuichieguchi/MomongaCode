@@ -74,6 +74,7 @@ export type FakeScriptedReply =
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
   | { kind: 'hang'; chunks?: FakeStreamChunk[] }
+  | { kind: 'keep-alive'; everyMs: number }
   | { kind: 'raw-sse'; events: string[] }
   | { kind: 'error-event'; body: unknown };
 
@@ -634,6 +635,15 @@ export const startFakeChatCompletions = async (
     if (reply.kind === 'hang') {
       writeScriptedChunks(response, reply.chunks ?? [], id);
       await new Promise<void>((resolve) => response.once('close', () => resolve()));
+      return;
+    }
+    if (reply.kind === 'keep-alive') {
+      response.flushHeaders();
+      const ping = setInterval(() => {
+        if (!response.destroyed) response.write(': keep-alive\n\n');
+      }, reply.everyMs);
+      await new Promise<void>((resolve) => response.once('close', () => resolve()));
+      clearInterval(ping);
       return;
     }
     if (reply.kind === 'raw-sse') {

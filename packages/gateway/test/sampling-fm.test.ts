@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { MINIMAL_PATH, PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 
 const servePidsIn = (dumpFile: string): number[] =>
   fs.existsSync(dumpFile)
@@ -24,6 +25,7 @@ describe('an fm target renders no sampling field', { timeout: DAEMON_PROCESS_TES
     registerCleanup(() => killGroupsForCleanup(servePidsIn(dumpFile)));
     const home = makeHome();
     writeSettings(home, { models: { aliases: { default: ['local-fm'] }, targets: { 'local-fm': { adapter: 'fm', toolCalling: 'native' } } } });
+    await saveFakeFmRecord(home, 'local-fm', fm.binaryPath);
     const handle = await launchGateway({ home, env: baseEnv(home, { PATH: MINIMAL_PATH }), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hello fm'), temperature: 0.2 }));
     expect(response.status).toBe(400);

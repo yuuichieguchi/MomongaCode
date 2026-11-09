@@ -10,6 +10,7 @@ import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup } from './gat
 import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { NO_PROBE_START } from './fm-record-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 type JsonMode = 'json_object' | 'none' | undefined;
@@ -72,6 +73,8 @@ describe('a probed endpoint target carries the measured JSON-only mode', () => {
       model: 'm',
       declared,
       record: { identity: 'id', identityFields: [], report },
+      readRecord: async () => ({ identity: 'id', identityFields: [], report }),
+      startProbe: NO_PROBE_START,
       readIdentity: async () => 'id',
       saveRecord: async () => undefined,
     }).capabilities();

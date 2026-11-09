@@ -137,9 +137,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
+        const callBounds = loaded.settings.mcp;
         const { credentials } = loaded.settings;
         const credentialNames = credentialEnvNames(loaded.settings);
-        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames }));
+        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
         const acquired = mcpPools.acquire(runId, {
           key,
           create: () =>
@@ -154,6 +155,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
               closeGraceMs: MCP_CLOSE_GRACE_MS,
+              ...(callBounds.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: callBounds.toolIdleTimeoutMs }),
+              ...(callBounds.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: callBounds.toolTotalTimeoutMs }),
             }),
         });
         acquiredHere = acquired.changed;

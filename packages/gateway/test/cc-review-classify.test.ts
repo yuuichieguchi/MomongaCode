@@ -6,6 +6,7 @@ import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { primed, recordKeyOptions } from './fm-record-support.ts';
 
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
 
@@ -19,17 +20,15 @@ const idleServe: FmServe = {
 
 const managedWith = async (guardrail: unknown | undefined) => {
   const dir = makeDir();
-  if (guardrail !== undefined) {
-    await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: { errorShape: guardrail } }, CURRENT_DIALECTS);
-  }
-  return createManagedFmTarget({
+  await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: guardrail === undefined ? {} : { errorShape: guardrail } }, CURRENT_DIALECTS);
+  return primed(createManagedFmTarget({
     fmServe: idleServe,
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '1\n', stderr: '' }),
     probeRecordDir: dir,
-    recordKey: RECORD_KEY,
+    ...recordKeyOptions(RECORD_KEY),
     toolCallingSetting: 'auto',
-  });
+  }), RECORD_KEY.target);
 };
 
 const blocked = (code: string | null, type = 'invalid_request_error') => ({
@@ -67,7 +66,7 @@ describe('guardrail detection', () => {
     expect(coded.error).toMatchObject({ type: 'model_error', code: 'guardrail_violation' });
   });
 
-  it('matches the guardrail_violation code by default without a probe record', async () => {
+  it('matches the guardrail_violation code by default when the probe record measured no guardrail shape', async () => {
     const managed = await managedWith(undefined);
     expect(managed.isGuardrail(TARGET, 400, FAKE_GUARDRAIL_ERROR)).toBe(true);
     expect(managed.isGuardrail(TARGET, 400, blocked('safety_blocked'))).toBe(false);
