@@ -3576,9 +3576,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1255970,
-      "measuredSeconds": 896.62,
-      "measuredCpuSeconds": 913.7,
-      "budgetCpuSeconds": 1831
+      "measuredSeconds": 215.26,
+      "measuredCpuSeconds": 865.69,
+      "budgetCpuSeconds": 1735
     },
     {
       "config": "UpdateSwitch.sessions",
@@ -3587,9 +3587,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 208253,
-      "measuredSeconds": 48.37,
-      "measuredCpuSeconds": 45.26,
-      "budgetCpuSeconds": 94
+      "measuredSeconds": 13.17,
+      "measuredCpuSeconds": 46.34,
+      "budgetCpuSeconds": 96
     },
     {
       "config": "UpdateSwitch.today",
@@ -3601,9 +3601,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 2733,
-      "measuredSeconds": 1.06,
-      "measuredCpuSeconds": 1.52,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 2.71,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "UpdateSwitch.pausePending",
@@ -3615,9 +3615,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 47,
-      "measuredSeconds": 0.9,
-      "measuredCpuSeconds": 1.0,
-      "budgetCpuSeconds": 5
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.59,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "UpdateSwitch.defer",
@@ -3629,9 +3629,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1194,
-      "measuredSeconds": 1.04,
-      "measuredCpuSeconds": 1.42,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 1.28,
+      "measuredCpuSeconds": 2.41,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "UpdateSwitch.claimRetiring",
@@ -3643,9 +3643,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1153,
-      "measuredSeconds": 1.04,
-      "measuredCpuSeconds": 1.41,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 2.35,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "UpdateSwitch.killJobs",
@@ -3657,9 +3657,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 20743,
-      "measuredSeconds": 1.35,
-      "measuredCpuSeconds": 2.25,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 3.63,
+      "budgetCpuSeconds": 11
     },
     {
       "config": "UpdateSwitch.noNotice",
@@ -3671,9 +3671,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 49,
-      "measuredSeconds": 0.9,
-      "measuredCpuSeconds": 0.99,
-      "budgetCpuSeconds": 5
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "UpdateSwitch.noRecord",
@@ -3685,9 +3685,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 490,
-      "measuredSeconds": 1.0,
-      "measuredCpuSeconds": 1.29,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.93,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "UpdateSwitch.refuseOld",
@@ -3713,9 +3713,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 489,
-      "measuredSeconds": 0.98,
-      "measuredCpuSeconds": 1.33,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.97,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "UpdateSwitch.pinPath",
@@ -3727,9 +3727,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 4037,
-      "measuredSeconds": 1.08,
-      "measuredCpuSeconds": 1.73,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 2.92,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "DerivedRepair",
