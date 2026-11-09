@@ -7,12 +7,13 @@ import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 const hooks = (event: keyof HooksSettings, command: string, matcher?: string): HooksSettings => ({
   [event]: [{ ...(matcher === undefined ? {} : { matcher }), hooks: [{ type: 'command', command }] }],
 });
 
-const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandbox: createUnsandboxed({ killGraceMs: 200 }) } });
+const workerWithProcesses = (env: Awaited<ReturnType<typeof makeEnv>>) => env.worker('worker-1', { tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
 
 describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('fails the run with a typed code when a UserPromptSubmit hook blocks the prompt, without calling the model', async () => {

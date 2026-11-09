@@ -1,5 +1,5 @@
-import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
+import type { Lease, ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -104,14 +104,18 @@ export type ToolPolicy = {
 
 export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: ToolEnv };
 
+export type SandboxBinding = { readonly sandbox: Sandbox; readonly ruleEnforcement: RuleEnforcement };
+
+export type SandboxBindings = { acquire(signal: AbortSignal): Promise<Lease<SandboxBinding>> };
+
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[] }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
-  sandbox: Sandbox;
+  sandboxes: SandboxBindings;
   ripgrepLocator(env: ToolEnv): RipgrepLocator;
   shellHost: ShellHost;
   markerDir: string;

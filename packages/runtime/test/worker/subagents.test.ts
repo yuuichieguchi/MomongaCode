@@ -9,6 +9,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, usageOf } from '@momonga/testkit';
 import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 const agentsPortOf = (env: Env, aliases: readonly string[] = ['fm']): AgentsPort =>
   createAgentsPort({
@@ -271,7 +272,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const counter = path.join(env.project, 'hook-runs.txt');
     const hook = (event: string) => [{ hooks: [{ type: 'command' as const, command: `echo ${event} >> ${counter}` }] }];
     env.settings.hooksValue = { SessionStart: hook('SessionStart'), UserPromptSubmit: hook('UserPromptSubmit'), Stop: hook('Stop') };
-    const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandbox: createUnsandboxed({ killGraceMs: 200 }) } });
+    const worker = env.worker('w1', { agents: agentsPortOf(env), tools: { sandboxes: fixedSandboxBindings(createUnsandboxed({ killGraceMs: 200 })) } });
     const parent = env.enqueue('Review');
     env.gateway.script.push(delegate('call-a'), textStep('child verdict'), textStep('parent done'));
 

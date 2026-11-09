@@ -30,6 +30,7 @@ export type Lease<T> = { readonly value: T; release(): void };
 export type PinnedDerivation<T> = {
   acquire(signal: AbortSignal): Promise<Lease<T>>;
   admit(signal: AbortSignal): Promise<Lease<T>>;
+  current(): T;
   retireAll(): Promise<void>;
 };
 
@@ -161,6 +162,10 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
   return {
     acquire: (signal) => take(false, signal),
     admit: (signal) => take(true, signal),
+    current: () => {
+      if (current === undefined) throw new Error('no settings object has been derived yet');
+      return current.value;
+    },
     retireAll: async () => {
       if (inFlight !== undefined) await inFlight.settled;
       current = undefined;

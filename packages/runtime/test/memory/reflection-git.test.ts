@@ -17,6 +17,7 @@ import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
 
@@ -63,7 +64,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
     ...bash('t1', 'npm test', 0, 'ok'),
   ]);
   expect(store.reflection.get(run.id)?.state).toBe('pending');
-  const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: HOST_RULE_ENFORCEMENT, sandbox: realSandbox(path.join(root, 'scratch')), env: { PATH: '/usr/bin:/bin' } });
+  const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } });
   const reflector = exported<(options: unknown) => Reflector>('createReflector')({ store, gateway, settings, clock, isIdle: () => true, evidenceRun, maxAttempts: 3, attemptTimeoutMs: 600_000, timers: createFakeTimers(clock), random: () => 0.5 });
   gateway.script.push(textStep(JSON.stringify({ candidates: [{ text: 'a.ts is the entry point', kind: 'fact', paths: ['a.ts'] }] })));
   expect(await reflector.runOne(SIGNAL)).toBe('ran');

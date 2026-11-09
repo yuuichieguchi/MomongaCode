@@ -25,6 +25,7 @@ import {
   writeUserSettings,
 } from './helpers.ts';
 import type { RuntimeFixture } from './helpers.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
@@ -408,7 +409,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
         timers: f.timers,
         logger: f.logger,
         report: f.reporter.report,
-        sandbox: inertSandbox,
+        sandboxes: fixedSandboxBindings(inertSandbox),
         shellHost: nodeShellHost(),
         settings: f.composition,
         reapTiming: f.reapTiming,

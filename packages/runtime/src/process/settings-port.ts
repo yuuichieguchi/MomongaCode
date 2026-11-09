@@ -28,6 +28,7 @@ export type SettingsComposition = {
   admitUserSnapshot(): UserSnapshot;
   loadSessionSettings(cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult>;
   trustOracle: TrustOracle;
+  admitted<T>(admit: () => Promise<T> | T): Promise<T>;
 };
 
 export const createSettingsComposition = ({ home, cache, store }: SettingsCompositionOptions): SettingsComposition => {
@@ -123,5 +124,5 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 
-  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle };
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle, admitted };
 };

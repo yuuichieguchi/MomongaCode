@@ -39,12 +39,12 @@ export type RunServiceOptions = {
   socketPath: string;
   pid: number;
   startedAt: string;
-  sandboxKind: SandboxKind;
+  sandboxKind: () => SandboxKind;
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
-  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;

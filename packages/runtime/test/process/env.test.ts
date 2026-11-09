@@ -123,7 +123,7 @@ describe('tool env at use time (system timers)', () => {
     const runId = createRun(f.store, session.id);
 
     const env = f.toolRuntime.port.envFor(session);
-    const policy = await f.toolRuntime.port.policyFor(session, { env, rules: [] });
+    const policy = await f.toolRuntime.port.policyFor(session, { env, rules: [], ruleEnforcement: 'exact-paths' });
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env });
 
     expect(Object.isFrozen(env)).toBe(true);

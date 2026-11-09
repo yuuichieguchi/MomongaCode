@@ -46,7 +46,9 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
   };
 };
 
-export const createPolicyFor = (options: PolicyForOptions): ToolRuntimePort['policyFor'] => {
+export type EnforcedPolicyFor = (session: Parameters<ToolRuntimePort['policyFor']>[0], options: Omit<Parameters<ToolRuntimePort['policyFor']>[1], 'ruleEnforcement'>) => ReturnType<ToolRuntimePort['policyFor']>;
+
+export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor => {
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
 

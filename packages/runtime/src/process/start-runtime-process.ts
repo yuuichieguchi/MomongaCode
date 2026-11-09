@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createPinnedDerivation, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
@@ -18,6 +18,7 @@ import {
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
+  startDeadlineSignal,
   systemClock,
   nodeFileSystem,
   nodeFileSystemSync,
@@ -84,6 +85,7 @@ import type { Periodic } from './periodic.ts';
 import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
+import type { SandboxBinding } from '../ports.ts';
 import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
 import { createEvidenceRunner } from './evidence-run.ts';
@@ -333,13 +335,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return { cache: created, settings: snapshot.settings, network: outbound };
     });
 
-    const kind: SandboxKind = settings.sandbox;
-    const sandbox: Sandbox = await step('sandbox', () => {
-      const platform = options.platform ?? process.platform;
-      const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
-      if (platform === 'linux') {
-        for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
-      }
+    const platform = options.platform ?? process.platform;
+    const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    if (platform === 'linux') {
+      for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+    }
+    const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
       if (kind === 'none') {
         const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
         logger.warn('sandbox is none: Bash asks before every command');
@@ -352,7 +353,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const launcherPath = sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
       const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
       try {
-        fs.accessSync(launcherPath, fs.constants.X_OK);
+        await fs.promises.access(launcherPath, fs.constants.X_OK);
       } catch (error) {
         throw new ConfigError(
           `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -367,7 +368,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           if (!(error instanceof ShellNotFoundError)) throw error;
           throw new ConfigError(error.message, { cause: error });
         }
-        const probe = probeBubblewrap(launcherPath, shell);
+        const probe = await probeBubblewrap(launcherPath, shell, { signal: deriveSignal });
         if (!probe.ok) {
           throw new ConfigError(
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -376,7 +377,21 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+    };
+    const sandboxes = createPinnedDerivation<SandboxBinding>({
+      cache,
+      inputsOf: derivedInputsOf('D3'),
+      derive: async (current, _previous, deriveSignal) => {
+        const sandbox = await sandboxOf(current.sandbox, deriveSignal);
+        return { sandbox, ruleEnforcement: ruleEnforcementOf(sandbox.kind) };
+      },
+      retire: (binding) => binding.sandbox.sweep?.(),
+      onWarning,
     });
+    await step('sandbox', async () => {
+      (await sandboxes.admit(startDeadlineSignal(signal))).release();
+    });
+    cleanups.push({ name: 'sandboxes', run: () => sandboxes.retireAll() });
 
     await step('mcp-markers', async () => {
       await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
@@ -483,7 +498,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         timers,
         logger,
         report,
-        sandbox,
+        sandboxes,
         shellHost,
         settings: composition,
         reapTiming,
@@ -500,15 +515,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         paths,
         home: canonicalHome,
         fs: createPolicyFilesystem(),
-        sandbox,
+        sandboxes,
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
-        enforcement: ruleEnforcementOf(sandbox.kind),
         reap: { timing: reapTiming, inspector: runtime.inspector },
         owners: runtime.owners,
         onWarning,
       });
       const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
-      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
+      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: () => sandboxes.current().ruleEnforcement });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
         home: canonicalHome,
@@ -563,12 +577,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
-        sandboxKind: kind,
+        sandboxKind: () => sandboxes.current().sandbox.kind,
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
-        sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        sessionCreateSettings: async (cwd, requestSignal) => {
+          const admittedSettings = await settingsComposition.sessionCreateSettings(cwd);
+          await settingsComposition.admitted(async () => (await sandboxes.admit(requestSignal)).release());
+          return admittedSettings;
+        },
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
@@ -716,7 +734,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           run: async () => {
             const failures: unknown[] = [];
             try {
-              sandbox.sweep?.();
+              sandboxes.current().sandbox.sweep?.();
             } catch (error) {
               failures.push(error);
             }
@@ -767,7 +785,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return fields;
     });
 
-    return { ready, sandbox: kind, close, abort, fatal };
+    return { ready, sandbox: settings.sandbox, close, abort, fatal };
   } catch (error) {
     phase = 'tearingDown';
     await teardown('startup.cleanup_failed');

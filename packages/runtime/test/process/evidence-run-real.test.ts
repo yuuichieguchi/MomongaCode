@@ -9,6 +9,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from 
 import type { TestContext } from 'vitest';
 import { createEvidencePorts, readGitHead } from '../../src/memory/evidence.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
 
@@ -61,7 +62,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
     git('commit', '-q', '-am', 'two');
     const head = git('rev-parse', 'HEAD');
     const unrelated = git('commit-tree', '-m', 'unrelated', `${head}^{tree}`);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: ruleEnforcementOf(HOST_SANDBOX_KIND),sandbox: realSandbox(path.join(root, 'scratch')), env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } })(project);
     const options = { project, trusted: true, run, signal: new AbortController().signal };
 
     await expect(readGitHead(options)).resolves.toBe(head);
@@ -83,7 +84,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
 
     const captured: string[] = [];
     const sandbox = teeingStderr(realSandbox(path.join(root, 'scratch')), captured);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: ruleEnforcementOf(HOST_SANDBOX_KIND),sandbox, env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin:/bin' } })(project);
     const result = await run(
       { argv: ['git', 'status'], cwd: project, env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' }, network: 'deny' },
       new AbortController().signal,
