@@ -37,15 +37,5 @@ export const PLAN_SESSION_DEFAULTS = {
 
 export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 } as const;
 
-export const FM_PROVIDER_NAME = 'apple';
 export const ANTHROPIC_PROVIDER_NAME = 'anthropic';
 export const OLLAMA_PROVIDER_NAME = 'ollama';
-
-export const FM_SERVE_DEFAULTS = {
-  healthTimeoutMs: 10_000,
-  restartBackoffMs: 1000,
-  stopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs,
-  maxRestarts: 5,
-  restartResetMs: 60_000,
-  preconditionTtlMs: 60_000,
-} as const;

@@ -25,6 +25,10 @@ export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
+export { aliasRoomVerdict } from './alias-room.ts';
+export type { AliasMember, AliasRoomVerdict } from './alias-room.ts';
+export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
+export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
 export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
@@ -63,8 +67,9 @@ export type {
   McpStdioServerConfig,
   AnthropicTarget,
   ChatCompletionsTarget,
-  FmTarget,
-  FmToolCalling,
+  ManagedDeclaredCapabilities,
+  ManagedTarget,
+  ToolCallingSetting,
   BillingChange,
   ModelAlias,
   ModelRole,
@@ -78,7 +83,7 @@ export type {
   RemoteTargetCapabilities,
   ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
-  ResolvedFmTarget,
+  ResolvedManagedTarget,
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,

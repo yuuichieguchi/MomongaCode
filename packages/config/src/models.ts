@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
+import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
+import type { ManagedServerDescription } from '@momonga/protocol';
+import { aliasRoomVerdict } from './alias-room.ts';
+import type { AliasMember } from './alias-room.ts';
+import { DEFAULT_ANTHROPIC_API_VERSION, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
 import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
@@ -9,7 +13,7 @@ import type {
   AnthropicTarget,
   BillingChange,
   ChatCompletionsTarget,
-  FmTarget,
+  ManagedTarget,
   ModelAlias,
   ModelRole,
   ModelRoles,
@@ -21,7 +25,7 @@ import type {
   PlanReference,
   ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
-  ResolvedFmTarget,
+  ResolvedManagedTarget,
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
@@ -43,22 +47,37 @@ export type ResolvedModels = {
 
 const FIVE_MINUTES_MS = 300_000;
 
-export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
+export type ResolveModelsOptions = { source: string; home: string; warnings: string[]; managedServers?: readonly ManagedServerDescription[] };
 
 const DEFAULT_ALIAS = 'default';
 
 const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const satisfies { billing: TargetBilling; maxConcurrency: number };
 
-const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
-  adapter: 'fm',
-  ...(target.model === undefined ? {} : { model: target.model }),
-  ...(target.outputBoundField === undefined ? {} : { outputBoundField: target.outputBoundField }),
-  toolCalling: target.toolCalling ?? 'auto',
-  ...(target.capabilities === undefined ? {} : { capabilities: target.capabilities }),
-  billing: LOCAL_SERVER_DEFAULTS.billing,
-  maxConcurrency: target.maxConcurrency ?? LOCAL_SERVER_DEFAULTS.maxConcurrency,
-  admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
-});
+const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
+
+const unknownServerMessage = (where: string, id: string, servers: readonly ManagedServerDescription[]): string =>
+  `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`;
+
+const resolveManaged = (target: ManagedTarget, where: string, servers: readonly ManagedServerDescription[]): ResolvedManagedTarget => {
+  const description = managedServerOf(servers, target.server);
+  if (description === undefined) throw new Error(unknownServerMessage(where, target.server, servers));
+  for (const field of Object.keys(target.capabilities ?? {})) {
+    if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${where}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a target declare; declarable: ${description.declarable.join(', ')}`);
+  }
+  return {
+    adapter: 'managed',
+    server: target.server,
+    binary: target.binary ?? description.binary.defaultPath,
+    readyTimeoutMs: target.readyTimeoutMs ?? description.ready.limitMs,
+    ...(target.model === undefined ? {} : { model: target.model }),
+    ...(target.outputBoundField === undefined ? {} : { outputBoundField: target.outputBoundField }),
+    toolCalling: target.toolCalling ?? 'auto',
+    ...(target.capabilities === undefined ? {} : { capabilities: target.capabilities }),
+    billing: LOCAL_SERVER_DEFAULTS.billing,
+    maxConcurrency: target.maxConcurrency ?? LOCAL_SERVER_DEFAULTS.maxConcurrency,
+    admissionTimeoutMs: target.admissionTimeoutMs ?? DEFAULT_ADMISSION_TIMEOUT_MS,
+  };
+};
 
 const checkBaseUrl = (baseUrl: string, where: string): void => {
   const problem = transportUrlProblem(baseUrl);
@@ -255,7 +274,7 @@ const resolveOllama = (target: OllamaTarget, home: string, where: string): Resol
   ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where, LOCAL_SERVER_DEFAULTS),
 });
 
-const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'fm'>, boolean> = {
+const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'managed'>, boolean> = {
   'chat-completions': true,
   'open-responses': true,
   ollama: true,
@@ -263,21 +282,21 @@ const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'fm'>, boole
 };
 
 const checkJsonMode = (name: string, target: ModelTarget, source: string): void => {
-  if (target.adapter === 'fm' || target.capabilities?.jsonMode !== 'json_object' || NATIVE_JSON_ONLY_FORM[target.adapter]) return;
+  if (target.adapter === 'managed' || target.capabilities?.jsonMode !== 'json_object' || NATIVE_JSON_ONLY_FORM[target.adapter]) return;
   throw new Error(
     `${source}: models.targets.${name}: target ${JSON.stringify(name)} declares capabilities.jsonMode json_object, but its adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`,
   );
 };
 
-const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => ({
-  ...resolveAdapter(target, home, where, warnings),
+const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[]): ResolvedModelTarget => ({
+  ...resolveAdapter(target, home, where, warnings, servers),
   ...(target.answers === undefined ? {} : { answers: target.answers }),
 });
 
-const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => {
+const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[]): ResolvedModelTarget => {
   switch (target.adapter) {
-    case 'fm':
-      return resolveFm(target);
+    case 'managed':
+      return resolveManaged(target, where, servers);
     case 'chat-completions':
       return resolveChatCompletions(target, home, where);
     case 'open-responses':
@@ -293,30 +312,28 @@ const membersOf = (alias: ModelAlias): string[] => [alias].flat();
 
 const billingOf = (target: ResolvedModelTarget): TargetBilling => target.billing;
 
+const declaredCapabilitiesOf = (target: ResolvedModelTarget): { contextWindow?: number | undefined; maxOutputTokens?: number | undefined } | undefined => target.capabilities;
+
+export const outputBoundFieldOf = (target: ResolvedModelTarget): string | undefined =>
+  target.adapter === 'managed' ? target.outputBoundField : 'outputBoundField' in target.capabilities ? target.capabilities.outputBoundField : undefined;
+
+const measuredLater = (target: ResolvedModelTarget): boolean => target.adapter === 'managed';
+
+const loadTimeMemberOf = (name: string, target: ResolvedModelTarget): AliasMember => {
+  const capabilities = declaredCapabilitiesOf(target);
+  return {
+    target: name,
+    outputBounded: outputBoundFieldOf(target) !== 'none',
+    contextWindow: capabilities?.contextWindow,
+    maxOutputTokens: capabilities?.maxOutputTokens,
+    measuring: measuredLater(target),
+  };
+};
+
 const checkUnboundedAliases = (aliases: Record<string, ModelAlias>, targets: Record<string, ResolvedModelTarget>, source: string): void => {
   for (const [name, alias] of Object.entries(aliases)) {
-    const members = membersOf(alias).map((member) => targets[member] as ResolvedModelTarget);
-    const unbounded = members.some((member) => member.adapter !== 'fm' && member.capabilities.outputBoundField === 'none');
-    if (!unbounded) continue;
-    const windows: number[] = [];
-    const outputs: number[] = [];
-    for (const member of members) {
-      const capabilities = member.adapter === 'fm' ? undefined : member.capabilities;
-      if (capabilities?.contextWindow === undefined || capabilities.maxOutputTokens === undefined) break;
-      windows.push(capabilities.contextWindow);
-      outputs.push(capabilities.maxOutputTokens);
-    }
-    if (windows.length !== members.length) continue;
-    const minWindow = Math.min(...windows);
-    const unboundedOutputTokens = Math.max(...outputs);
-    const margin = marginFloorFor(minWindow);
-    const required = ceilRatio(OUTPUT_RESERVE, minWindow);
-    const room = minWindow - unboundedOutputTokens - margin;
-    if (room < required) {
-      throw new Error(
-        `${source}: models.aliases.${name} holds a target that carries no output bound (outputBoundField none), so any member can emit up to ${unboundedOutputTokens} tokens; with the smallest context window ${minWindow} and a margin of ${margin}, ${room} tokens are left for input, which is below the ${required} (a quarter of the window) that input needs`,
-      );
-    }
+    const verdict = aliasRoomVerdict(name, membersOf(alias).map((member) => loadTimeMemberOf(member, targets[member] as ResolvedModelTarget)));
+    if (verdict.kind === 'refuse') throw new Error(`${source}: ${verdict.message}`);
   }
 };
 
@@ -353,7 +370,7 @@ const warnUnallowedBillingChanges = (
   }
 };
 
-export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings }: ResolveModelsOptions): ResolvedModels => {
+export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, managedServers = MANAGED_SERVERS }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
   const configured = Object.entries(models?.targets ?? {});
   const targets: Record<string, ResolvedModelTarget> = {};
@@ -361,7 +378,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     const where = `${source}: models.targets.${name}`;
     if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
     checkJsonMode(name, target, source);
-    targets[name] = resolveTarget(target, home, where, warnings);
+    targets[name] = resolveTarget(target, home, where, warnings, managedServers);
   }
   checkTargetDialects(targets, dialects, source);
 
@@ -408,7 +425,7 @@ type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> 
 export const credentialEnvNames = (settings: ResolvedTargets): string[] => {
   const names = new Set<string>();
   for (const target of Object.values(settings.models.targets)) {
-    if (target.adapter !== 'fm' && target.adapter !== 'ollama' && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
+    if ('apiKeyEnv' in target && target.apiKeyEnv !== undefined) names.add(target.apiKeyEnv);
   }
   return [...names].sort();
 };
@@ -416,7 +433,7 @@ export const credentialEnvNames = (settings: ResolvedTargets): string[] => {
 export const secretNames = (settings: ResolvedTargets): string[] => {
   const names = new Set<string>();
   for (const target of Object.values(settings.models.targets)) {
-    if (target.adapter !== 'fm' && target.adapter !== 'ollama' && target.apiKeySecret !== undefined) names.add(target.apiKeySecret);
+    if ('apiKeySecret' in target && target.apiKeySecret !== undefined) names.add(target.apiKeySecret);
   }
   return [...names].sort();
 };
@@ -424,7 +441,7 @@ export const secretNames = (settings: ResolvedTargets): string[] => {
 export const planAccountNames = (settings: ResolvedTargets): PlanReference[] => {
   const seen = new Map<string, PlanReference>();
   for (const target of Object.values(settings.models.targets)) {
-    if (target.adapter === 'fm' || !('plan' in target) || target.plan.account === undefined) continue;
+    if (!('plan' in target) || target.plan.account === undefined) continue;
     seen.set(JSON.stringify([target.plan.profile, target.plan.account]), target.plan);
   }
   return [...seen.values()].sort((a, b) => a.profile.localeCompare(b.profile) || (a.account as string).localeCompare(b.account as string));

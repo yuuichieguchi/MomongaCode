@@ -12,22 +12,11 @@ import { isProbeReport } from './report-schema.ts';
 export const recordForIdentity = <Stored>(stored: Stored, storedIdentity: Readonly<Record<string, unknown>>, currentIdentity: Readonly<Record<string, unknown>>): Stored | null =>
   canonicalJson(storedIdentity) === canonicalJson(currentIdentity) ? stored : null;
 
-export type ProbeRecordKey = {
-  target: string;
-  binarySha256: string;
-  osBuild: string;
-};
+export type ManagedRecordKey = { readonly canonical: string; readonly digest: string };
 
-const TARGET_PATTERN = /^[A-Za-z0-9._-]+$/;
+export type ManagedRecordCurrency = DialectCurrency & { descriptionDigest: string };
 
-export const probeTargetName = (target: string): string => {
-  if (!TARGET_PATTERN.test(target) || target === '.' || target === '..') {
-    throw new Error(`Invalid probe target name: ${target}`);
-  }
-  return target;
-};
-
-const recordPath = (dir: string, target: string): string => path.join(dir, `${probeTargetName(target)}.json`);
+export const managedRecordPath = (dir: string, key: ManagedRecordKey): string => path.join(dir, `${key.digest}.json`);
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
@@ -64,22 +53,15 @@ export const isCurrentRecord = (stored: Record<string, unknown>, currency: Diale
   return dialectsDigest({ selected }, currency) === stored['dialectsDigest'];
 };
 
-export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport, currency: DialectCurrency): Promise<void> => {
-  await writePrivateRecord(
-    dir,
-    recordPath(dir, key.target),
-    JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, ...currentStamp(report, currency), report }),
-  );
+export const saveProbeRecord = async (dir: string, key: ManagedRecordKey, report: ProbeReport, currency: ManagedRecordCurrency): Promise<void> => {
+  await writePrivateRecord(dir, managedRecordPath(dir, key), JSON.stringify({ key: key.canonical, descriptionDigest: currency.descriptionDigest, ...currentStamp(report, currency), report }));
 };
 
-const corruptRecord = (file: string, key: ProbeRecordKey, problem: string, cause: unknown): Error =>
-  new Error(
-    `Probe record ${file} is unusable (${problem}). Delete it or re-run \`momonga gateway probe ${key.target}\`.`,
-    { cause },
-  );
+const corruptRecord = (file: string, target: string, problem: string, cause: unknown): Error =>
+  new Error(`Probe record ${file} is unusable (${problem}). Delete it or run "/gateway probe ${target}" in MomongaCode.`, { cause });
 
-export const loadProbeRecord = async (dir: string, key: ProbeRecordKey, currency: DialectCurrency): Promise<ProbeReport | null> => {
-  const file = recordPath(dir, key.target);
+export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, currency: ManagedRecordCurrency, target: string): Promise<ProbeReport | null> => {
+  const file = managedRecordPath(dir, key);
   const raw = await fs.promises.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return undefined;
     throw error;
@@ -89,18 +71,16 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey, currency
   try {
     parsed = JSON.parse(raw);
   } catch (error) {
-    throw corruptRecord(file, key, 'not valid JSON', error);
+    throw corruptRecord(file, target, 'not valid JSON', error);
   }
-  if (!isRecord(parsed)) throw corruptRecord(file, key, 'not an object', new TypeError('record is not an object'));
-  if (typeof parsed['binarySha256'] !== 'string' || typeof parsed['osBuild'] !== 'string') {
-    throw corruptRecord(file, key, 'missing key fields', new TypeError('binarySha256 or osBuild is missing'));
+  if (!isRecord(parsed)) throw corruptRecord(file, target, 'not an object', new TypeError('record is not an object'));
+  if (typeof parsed['key'] !== 'string' || typeof parsed['descriptionDigest'] !== 'string') {
+    throw corruptRecord(file, target, 'missing key fields', new TypeError('key or descriptionDigest is missing'));
   }
-  const matching = recordForIdentity(parsed, { binarySha256: parsed['binarySha256'], osBuild: parsed['osBuild'] }, { binarySha256: key.binarySha256, osBuild: key.osBuild });
-  if (matching === null || !isCurrentRecord(matching, currency)) return null;
+  const matching = recordForIdentity(parsed, { key: parsed['key'] }, { key: key.canonical });
+  if (matching === null || matching['descriptionDigest'] !== currency.descriptionDigest || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];
-  if (!isProbeReport(report)) {
-    throw corruptRecord(file, key, 'invalid report', new TypeError('report does not match the probe report schema'));
-  }
+  if (!isProbeReport(report)) throw corruptRecord(file, target, 'invalid report', new TypeError('report does not match the probe report schema'));
   return report;
 };
 

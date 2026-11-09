@@ -1,13 +1,11 @@
 import { isRecord } from '@momonga/foundation';
 import { transportKindOf } from '../shared/vocabulary.ts';
 import type { ErrorVocabulary } from '../shared/vocabulary.ts';
+import type { ManagedServerDescription } from '@momonga/protocol';
 
 const HTTP_ERROR_FROM = 400;
 const CONTEXT_OVERFLOW_CODE = 'context_length_exceeded';
 export const CONTEXT_OVERFLOW_WORDING = /\bcontext (?:length|size|window)\b/i;
-const FM_CONTEXT_OVERFLOW_MESSAGE = "The session's transcript exceeded the model's context size.";
-const FM_GUARDRAIL_MESSAGE = "The model's safety guardrails were triggered.";
-const FM_UNSUPPORTED_GUIDE_MESSAGE = 'An unsupported generation guide was used.';
 
 export const errorObjectOf = (body: unknown): Record<string, unknown> | undefined => {
   const error = isRecord(body) ? body['error'] : undefined;
@@ -29,15 +27,14 @@ export const CHAT_COMPLETIONS_VOCABULARY: ErrorVocabulary = {
   },
 };
 
-export const FM_VOCABULARY: ErrorVocabulary = {
+export const vocabularyOf = (description: Pick<ManagedServerDescription, 'errors'>): ErrorVocabulary => ({
   kindOf: (status, body) => {
     const message = upstreamErrorText(body);
-    if (message === FM_GUARDRAIL_MESSAGE) return 'guardrail';
-    if (message === FM_CONTEXT_OVERFLOW_MESSAGE) return 'context_overflow';
-    if (message === FM_UNSUPPORTED_GUIDE_MESSAGE) return 'unsupported';
+    const known = description.errors.find((entry) => entry.message === message);
+    if (known !== undefined) return known.kind;
     return status >= HTTP_ERROR_FROM ? transportKindOf(status) : 'failure';
   },
-};
+});
 
 export const withGuardrailMatcher = (vocabulary: ErrorVocabulary, isGuardrail: (status: number, body: unknown) => boolean): ErrorVocabulary => ({
   kindOf: (status, body) => {

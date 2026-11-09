@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, fmServeStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, managedServerStopBoundMs, gatewayMaxCloseMs, managedServerReapBoundMs, markerReapClockBoundMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { prove } from '../../src/proofs/prove.ts';
@@ -36,7 +36,7 @@ describe('managed server bounds (design-managed-servers-2026-11-09.md, section 1
     expect(REAP_POLL_INTERVAL_MS).toBe(25);
     for (const grace of SAMPLED_GRACES_MS) {
       const values = { closeGraceMs: DEFAULT_CLOSE_GRACE_MS, managedServerStopGraceMs: grace };
-      expect(fmServeStopBoundMs(grace)).toBe(MANAGED_STOP_WINDOWS * grace);
+      expect(managedServerStopBoundMs(grace)).toBe(MANAGED_STOP_WINDOWS * grace);
       expect(managedServerReapBoundMs(values)).toBe(markerReapClockBoundMs(grace));
       expect(managedServerReapBoundMs(values)).toBe(MANAGED_REAP_WINDOWS * (grace + REAP_POLL_INTERVAL_MS));
       expect(gatewayMaxCloseMs(values)).toBe(DEFAULT_CLOSE_GRACE_MS + MANAGED_STOP_WINDOWS * grace);

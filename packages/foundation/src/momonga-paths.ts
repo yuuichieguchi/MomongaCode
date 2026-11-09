@@ -147,6 +147,33 @@ export const momongaLayout = (
   };
 };
 
+export type ManagedInstance = { owner: 'gateway' | 'cli'; purpose: 'serve' | 'probe'; target: string };
+
+export type ManagedInstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
+
+const MANAGED_INSTANCE_STEMS: Record<ManagedInstance['owner'], Record<ManagedInstance['purpose'], (target: string) => string>> = {
+  gateway: { serve: (target) => target, probe: (target) => `_probe-${target}` },
+  cli: { serve: (target) => `_cli-serve-${target}`, probe: (target) => `_cli-probe-${target}` },
+};
+
+const CLI_MARKER_DIRECTORY = 'cli';
+
+const MANAGED_MARKER_PARENTS: Record<ManagedInstance['owner'], (paths: MomongaPaths) => string> = {
+  gateway: (paths) => paths.markers.targets,
+  cli: (paths) => path.join(paths.markers.root, CLI_MARKER_DIRECTORY),
+};
+
+const MANAGED_LOCK_DIRECTORY = 'managed-locks';
+
+export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInstance): ManagedInstancePaths => {
+  const stem = MANAGED_INSTANCE_STEMS[instance.owner][instance.purpose](instance.target);
+  return {
+    socketPath: path.join(paths.run, `${stem}.sock`),
+    markerDirectory: path.join(MANAGED_MARKER_PARENTS[instance.owner](paths), instance.owner === 'gateway' ? stem : `${instance.purpose}-${instance.target}`),
+    lockPath: path.join(paths.run, MANAGED_LOCK_DIRECTORY, `${stem}.lock`),
+  };
+};
+
 export const rotatedLogPath = (file: string, generation: number): string => `${file}.${generation}`;
 
 export const momongaPaths = (

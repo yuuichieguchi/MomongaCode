@@ -79,7 +79,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const homes = createHomes(ports.effects, {
     credentialValues,
     reflection: ports.reflection,
-    fmTargets: settings.fmTargets,
+    managedTargets: settings.managedTargets,
     endpointProbes: settings.endpointProbes,
     ...(signal === undefined ? {} : { interrupt: signal }),
   });

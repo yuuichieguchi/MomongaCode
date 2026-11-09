@@ -111,8 +111,10 @@ export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-wi
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
-export { FIRST_GENERATION, GENERATION_ROLES, MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureGenerationDirs, ensureMomongaDirs, ensureSessionTmpDir, generationLayout, momongaLayout, momongaPaths, roleEndpoint, rotatedLogPath } from './momonga-paths.ts';
-export type { GenerationLayout, GenerationRole, GenerationSockets, RoleEndpoint } from './momonga-paths.ts';
+export { FIRST_GENERATION, GENERATION_ROLES, MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureGenerationDirs, ensureMomongaDirs, ensureSessionTmpDir, generationLayout, managedInstancePaths, momongaLayout, momongaPaths, roleEndpoint, rotatedLogPath } from './momonga-paths.ts';
+export type { GenerationLayout, GenerationRole, GenerationSockets, ManagedInstance, ManagedInstancePaths, RoleEndpoint } from './momonga-paths.ts';
+export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
+export type { BinaryHashCache, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';
 export { NoCurrentGenerationError, currentGenerationLock, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, startingSocketResolver } from './current-generation.ts';
 export type { CurrentGeneration } from './current-generation.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
@@ -204,7 +206,8 @@ export {
   minimalChildEnv,
   declaredChildEnv,
   parseReadyLine,
-  fmServeStopBoundMs,
+  managedServerStopBoundMs,
+  MANAGED_SERVER_TERMINATE_GRACE_WAITS,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';

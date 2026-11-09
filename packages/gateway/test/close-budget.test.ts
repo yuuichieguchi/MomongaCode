@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, fmServeStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, managedServerStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, createFmServe } from '@momonga/gateway';
 import type { FmChild, FmServeTimers } from '@momonga/gateway';
@@ -13,7 +13,7 @@ import { advanceToNextWait, bigTextEvents, createHangingAdapter, openUnreadStrea
 
 describe('gateway close budget', () => {
   it('the gateway close at the default stop values is the close grace plus the managed-server stop bound at the default stop grace', () => {
-    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + fmServeStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + managedServerStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
   });
 });
 

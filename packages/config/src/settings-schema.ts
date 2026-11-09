@@ -1,6 +1,6 @@
 import { SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
-import type { CallRole } from '@momonga/protocol';
+import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
+import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
 
@@ -72,10 +72,20 @@ const ROUTE_CARRIAGE_PROPERTIES = {
 
 const ANSWERS_SCHEMA = { enum: [...TARGET_ANSWERS] } as const;
 
-const FM_TARGET_SCHEMA = {
+export const READY_TIMEOUT_LIMITS = { min: 1, max: 300_000 } as const;
+
+const MANAGED_DECLARABLE_SCHEMAS: Record<ManagedDeclarableField, object> = {
+  contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
+  maxOutputTokens: POSITIVE_INTEGER,
+};
+
+const MANAGED_TARGET_SCHEMA = {
   type: 'object',
   properties: {
-    adapter: { const: 'fm' },
+    adapter: { const: 'managed' },
+    server: { type: 'string', minLength: 1 },
+    binary: { type: 'string', minLength: 1 },
+    readyTimeoutMs: { type: 'integer', minimum: READY_TIMEOUT_LIMITS.min, maximum: READY_TIMEOUT_LIMITS.max },
     answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     toolCalling: { enum: ['auto', 'native', 'constrained'] },
@@ -84,12 +94,12 @@ const FM_TARGET_SCHEMA = {
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
     capabilities: {
       type: 'object',
-      properties: { contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT }, maxOutputTokens: POSITIVE_INTEGER },
-      required: ['contextWindow', 'maxOutputTokens'],
+      properties: Object.fromEntries(MANAGED_DECLARABLE_FIELDS.map((field) => [field, MANAGED_DECLARABLE_SCHEMAS[field]])),
+      required: [...MANAGED_DECLARABLE_FIELDS],
       additionalProperties: false,
     },
   },
-  required: ['adapter'],
+  required: ['adapter', 'server'],
   additionalProperties: false,
 } as const;
 
@@ -355,7 +365,7 @@ const OLLAMA_TARGET_SCHEMA = {
 
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
-  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, PLAN_OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
+  oneOf: [MANAGED_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, PLAN_OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
 } as const;
 
 const HOOK_COMMAND_SCHEMA = {

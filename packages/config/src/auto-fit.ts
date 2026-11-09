@@ -72,8 +72,8 @@ export const autoFitViewOf = (alias: string, key: AutoFitKey, record: AutoFitRec
 };
 
 export const classifierIdentityOf = (target: ResolvedModelTarget): string =>
-  target.adapter === 'fm'
-    ? ['fm', target.model ?? ''].join('|')
+  target.adapter === 'managed'
+    ? [target.adapter, target.server, target.binary, target.model ?? ''].join('|')
     : [target.adapter, target.model, endpointKeyOf(upstreamEndpointOf(target))].join('|');
 
 export const classifierAliasIdentityOf = (models: ResolvedModels, alias: string): string => {
