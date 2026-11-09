@@ -209,8 +209,10 @@ export const wireUsageOf = (usage: Usage): { usage: WireUsage; cacheReadNotRepor
     ? { usage: { ...usage, input_tokens_details: { cached_tokens: 0 } }, cacheReadNotReported: true }
     : { usage: { ...usage, input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens } } };
 
-export const reportedCachedTokensOf = (usage: Usage, extension: { cacheReadNotReported?: true } | undefined): number | undefined =>
-  extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details.cached_tokens;
+export const reportedCachedTokensOf = (
+  usage: { input_tokens_details?: { cached_tokens?: number } },
+  extension: { cacheReadNotReported?: true } | undefined,
+): number | undefined => (extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details?.cached_tokens);
 
 export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
 

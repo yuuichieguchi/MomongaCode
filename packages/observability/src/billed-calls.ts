@@ -54,18 +54,22 @@ const billingOf = (span: SpanRecord): CallBilling => {
   return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
 };
 
-export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable): BilledCall => {
-  const provider = optionalString(span, A.ATTR_GEN_AI_PROVIDER_NAME) ?? '';
-  const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
-  const billing = billingOf(span);
+export const billedUsageOf = (span: SpanRecord): BilledCall['usage'] => {
   const cachedInputTokens = reportedNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS);
-  const usage = {
+  return {
     inputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS) ?? 0,
     ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
     cacheWriteInputTokens: reportedNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens) ?? 0,
     outputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS) ?? 0,
     reasoningTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS) ?? 0,
   };
+};
+
+export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable): BilledCall => {
+  const provider = optionalString(span, A.ATTR_GEN_AI_PROVIDER_NAME) ?? '';
+  const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
+  const billing = billingOf(span);
+  const usage = billedUsageOf(span);
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
   const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);

@@ -605,12 +605,13 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
   cacheReadNotReportedCalls: nonNegativeInteger,
+  cacheReadUnpricedCalls: nonNegativeInteger,
   planCalls: nonNegativeInteger,
   planInputTokens: nonNegativeInteger,
   planOutputTokens: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
-  cachedInputTokens: nonNegativeInteger,
+  cachedInputTokens: nullable(nonNegativeInteger),
   amount: { type: 'number', minimum: 0 },
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
@@ -705,13 +706,14 @@ const costBreakdownView = closed(
     billed: closed(
       {
         inputTokens: nonNegativeInteger,
-        uncachedInputTokens: nonNegativeInteger,
-        cacheReadTokens: nonNegativeInteger,
+        reportedInputTokens: nullable(nonNegativeInteger),
+        uncachedInputTokens: nullable(nonNegativeInteger),
+        cacheReadTokens: nullable(nonNegativeInteger),
         cacheWriteTokens: nonNegativeInteger,
         outputTokens: nonNegativeInteger,
         reasoningTokens: nonNegativeInteger,
       },
-      ['inputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
+      ['inputTokens', 'reportedInputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
     ),
     cacheHitRatio: nullable({ type: 'number' }),
     cacheBreaks: causeCounts,
@@ -929,7 +931,7 @@ export type RunTraceSummary = {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens: number | null;
   cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
@@ -995,12 +997,13 @@ export type RoleCostView = {
   unpricedCalls: number;
   unknownBillingCalls: number;
   cacheReadNotReportedCalls: number;
+  cacheReadUnpricedCalls: number;
   planCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens: number | null;
   amount: number;
   currency: 'USD';
   priceVersions: string[];
@@ -1283,7 +1286,7 @@ export const RUN_API_SCHEMAS = {
             toolCalls: nonNegativeInteger,
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
-            cachedInputTokens: nonNegativeInteger,
+            cachedInputTokens: nullable(nonNegativeInteger),
             cacheReadNotReportedCalls: nonNegativeInteger,
             errorCount: nonNegativeInteger,
             durationMs: nonNegativeInteger,

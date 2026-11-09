@@ -40,8 +40,9 @@ export type BilledDetail = { responseId?: string; cachedInputTokens?: number; ca
 
 export type BilledTokensView = {
   inputTokens: number;
-  uncachedInputTokens: number;
-  cacheReadTokens: number;
+  reportedInputTokens: number | null;
+  uncachedInputTokens: number | null;
+  cacheReadTokens: number | null;
   cacheWriteTokens: number;
   outputTokens: number;
   reasoningTokens: number;
