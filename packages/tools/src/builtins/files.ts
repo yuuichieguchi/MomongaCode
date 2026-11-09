@@ -1,8 +1,9 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
-import { sha256Hex } from '@momonga/foundation';
+import { nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically as writeFileAtomicallyThroughLock } from '@momonga/foundation';
+import type { AtomicWriteFileSystem } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
 import { shownPath } from './paths.ts';
@@ -124,40 +125,41 @@ const createMissingDirectories = async (scope: PathScope, directory: string, req
   }
 };
 
+const recordingDirectorySync = (directory: string, failures: unknown[]): AtomicWriteFileSystem => ({
+  ...nodeFileSystem,
+  open: async (file, flags, mode) => {
+    const handle = await nodeFileSystem.open(file, flags, mode);
+    if (file !== directory) return handle;
+    return {
+      ...handle,
+      sync: async () => {
+        try {
+          await handle.sync();
+        } catch (error) {
+          failures.push(error);
+        }
+      },
+    };
+  },
+});
+
 export const writeFileAtomically = async (write: AtomicWrite): Promise<string | undefined> => {
   const { target, content, mode } = write;
   const directory = path.dirname(target);
   await createMissingDirectories(write.scope, directory, write.requestedPath);
   await assertResolvesTo(write.scope, write.requestedPath, directory);
-  const temporary = path.join(directory, `.${path.basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
-  const handle = await fs.promises.open(temporary, 'wx', mode);
-  try {
-    try {
-      await handle.writeFile(content, 'utf8');
-      await handle.chmod(mode);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await assertResolvesTo(write.scope, write.requestedPath, directory);
-    await fs.promises.rename(temporary, target);
-  } catch (error) {
-    await fs.promises.rm(temporary, { force: true });
-    throw error;
-  }
-  const ledgerWarning = await write.onRenamed();
-  try {
-    const directoryHandle = await fs.promises.open(directory, 'r');
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
-  } catch (error) {
-    const syncWarning = `Warning: the change was written but the directory could not be synced (${describeFailure(error)}).`;
-    return ledgerWarning === undefined ? syncWarning : `${ledgerWarning}\n${syncWarning}`;
-  }
-  return ledgerWarning;
+  const directorySyncFailures: unknown[] = [];
+  let ledgerWarning: string | undefined;
+  await writeFileAtomicallyThroughLock(recordingDirectorySync(directory, directorySyncFailures), systemRandom, target, content, {
+    mode,
+    beforePublish: () => assertResolvesTo(write.scope, write.requestedPath, directory),
+    afterPublish: async () => {
+      ledgerWarning = await write.onRenamed();
+    },
+  });
+  if (directorySyncFailures.length === 0) return ledgerWarning;
+  const syncWarning = `Warning: the change was written but the directory could not be synced (${describeFailure(directorySyncFailures[0])}).`;
+  return ledgerWarning === undefined ? syncWarning : `${ledgerWarning}\n${syncWarning}`;
 };
 
 export const assertSameLocation = (scope: PathScope, requestedPath: string, approvedPath: string, currentPath: string): void => {

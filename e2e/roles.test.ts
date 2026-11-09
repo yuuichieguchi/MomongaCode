@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
@@ -13,6 +13,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const SUMMARY_TARGET = 'summarizer';
 const SUMMARY_MODEL = 'summary-model';
@@ -46,7 +47,7 @@ const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> =>
 };
 
 const getJson = async (home: E2eHome, target: string): Promise<{ status: number; json: Json; text: string }> => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   try {
     const response = await client.request({ method: 'GET', path: target });
     const text = await response.text();

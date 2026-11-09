@@ -1,52 +1,35 @@
-import { execFile, spawn as nodeSpawn } from 'node:child_process';
+import { spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
-import type { ExecResult, ExecFn, FmChild, SpawnFn } from './fm-serve.ts';
+import { createHostExec, groupRecordOutcome, recordMarkerGroup, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
+import type { ExecFn } from './preconditions.ts';
+import type { ManagedChild, SpawnFn } from './server.ts';
 
 export type ChildEnv = Readonly<Record<string, string>>;
 
+export const MANAGED_SERVER_LABEL = 'managed server';
+
 const envOption = (env: ChildEnv | undefined): { env?: Record<string, string> } => (env === undefined ? {} : { env: { ...env } });
 
-export const createExecFn =
-  (env: ChildEnv | undefined): ExecFn =>
-  (file, args, options) =>
-    new Promise((resolve, reject) => {
-      execFile(file, [...args], { ...envOption(env), ...(options === undefined ? {} : { signal: options.signal }) }, (error, stdout, stderr) => {
-        if (error === null) {
-          resolve({ exitCode: 0, stdout, stderr });
-          return;
-        }
-        if (typeof error.code === 'number') {
-          resolve({ exitCode: error.code, stdout, stderr });
-          return;
-        }
-        reject(error);
-      });
-    });
+export const createExecFn = (env: ChildEnv | undefined): ExecFn => createHostExec(env);
 
 export { createExecWithStdin } from '@momonga/foundation';
-
-export const createPlainSpawn =
-  (env: ChildEnv | undefined): SpawnFn =>
-  (file, args) => {
-    const child = nodeSpawn(file, [...args], { ...envOption(env), stdio: 'ignore' });
-    return {
-      kill: async (signal) => child.kill(signal),
-      once: child.once.bind(child) as FmChild['once'],
-    };
-  };
 
 const MARKER_FD_INDEX = 3;
 
 export type WarningSink = (message: string) => void;
 
-const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSink): FmChild => {
+const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSink): ManagedChild => {
   const removeMarker = (): void => fs.rmSync(marker, { force: true });
   child.once('error', removeMarker);
-  if (child.pid !== undefined) fs.writeFileSync(marker, `${child.pid}\n`);
+  const recorded =
+    child.pid === undefined
+      ? Promise.resolve()
+      : groupRecordOutcome(recordMarkerGroup(marker, child.pid), marker).then((notice) => {
+          if (notice !== undefined) onWarning(notice);
+        });
   return {
     kill: async (signal = 'SIGTERM', stop) => {
       if (child.pid === undefined) return false;
@@ -54,9 +37,10 @@ const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSin
       return true;
     },
     finalize: async (graceMs) => {
-      await reapMarkedProcesses({ marker, pgid: child.pid, killGraceMs: graceMs, label: 'fm', onWarning });
+      await recorded;
+      await reapMarkedProcesses({ marker, pgid: child.pid, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning });
     },
-    once: child.once.bind(child) as FmChild['once'],
+    once: child.once.bind(child) as ManagedChild['once'],
   };
 };
 
@@ -90,8 +74,8 @@ export const createGroupSpawn =
     return groupChildOf(child, marker, onWarning);
   };
 
-export type ReapStaleGroupsOptions = { markerDirectory: string; graceMs: number; onWarning: WarningSink };
+export type ReapStaleGroupsOptions = { markerDirectory: string; graceMs: number; onWarning: WarningSink; signal: AbortSignal };
 
-export const reapStaleFmGroups = async ({ markerDirectory, graceMs, onWarning }: ReapStaleGroupsOptions): Promise<void> => {
-  await reapMarkerDirectory({ dir: markerDirectory, killGraceMs: graceMs, label: 'fm', onWarning });
+export const reapStaleGroups = async ({ markerDirectory, graceMs, onWarning, signal }: ReapStaleGroupsOptions): Promise<void> => {
+  await reapMarkerDirectory({ dir: markerDirectory, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning, signal, occasion: 'startup' });
 };

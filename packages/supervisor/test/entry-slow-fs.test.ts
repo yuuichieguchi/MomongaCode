@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hostKernelLock, inspectProcessLock } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup } from '@momonga/testkit';
+import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { runSupervisorEntry } from '../src/entry.ts';
 import type { SupervisorEntryDeps } from '../src/entry.ts';
@@ -129,8 +129,8 @@ const cancelAndExit = async (context: CleanupContext, latencyMs: number, lockPat
   return { run, code, fakeMsAfterCancel: run.clock.now() - cancelledAt };
 };
 
-const supervisorLockOf = (paths: MomongaPaths): string => paths.locks.supervisor;
-const socketLockOf = (paths: MomongaPaths): string => `${paths.sockets.supervisor}.lock`;
+const supervisorLockOf = (paths: MomongaPaths): string => firstGeneration(paths).locks.supervisor;
+const socketLockOf = (paths: MomongaPaths): string => `${firstGeneration(paths).sockets.supervisor}.lock`;
 
 describe('supervisor entry under slow filesystem I/O', () => {
   afterEach(() => {
@@ -150,7 +150,7 @@ describe('supervisor entry under slow filesystem I/O', () => {
       code: 1,
     });
     expect(slow.run.io.stdoutLines()).toEqual([]);
-    expect(await inspectProcessLock(slow.run.paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix closes gracefully and removes the socket and both locks even when every fs operation is slow', async (context) => {
@@ -166,8 +166,8 @@ describe('supervisor entry under slow filesystem I/O', () => {
       trigger: 'sigterm',
       code: 0,
     });
-    expect(fs.existsSync(slow.run.paths.sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${slow.run.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(slow.run.paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(fs.existsSync(firstGeneration(slow.run.paths).sockets.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${firstGeneration(slow.run.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(slow.run.paths).locks.supervisor)).toEqual({ state: 'free' });
   });
 });

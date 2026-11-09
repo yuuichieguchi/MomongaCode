@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { createUdsClient, secretStoreEnvFor } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor, shortTempBase } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { killPidsForCleanup } from '@momonga/testkit';
@@ -17,7 +17,7 @@ export type GatewayProcessOptions = Parameters<typeof startGatewayProcess>[0];
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gh-'));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'gh-')));
   fs.chmodSync(home, 0o700);
   registerCleanup(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
@@ -25,13 +25,14 @@ export const makeHome = (): string => {
 
 export const homePaths = (home: string) => {
   const root = path.join(home, '.momonga');
+  const own = generationLayout(home, FIRST_GENERATION);
   return {
     root,
     settings: path.join(root, 'settings.json'),
-    socket: path.join(root, 'run', 'gateway.sock'),
-    lock: path.join(root, 'run', 'gateway.lock'),
-    fmSocket: path.join(root, 'run', 'fm.sock'),
-    fmMarkers: path.join(root, 'run', 'markers', 'targets', 'fm'),
+    socket: own.sockets.gateway,
+    lock: own.locks.gateway,
+    fmSocket: path.join(root, 'run', `g${FIRST_GENERATION}`, 'targets', 'fm.sock'),
+    fmMarkers: path.join(root, 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', 'fm'),
     db: path.join(root, 'state', 'gateway.db'),
     key: path.join(root, 'state', 'gateway.key'),
   };
@@ -91,7 +92,7 @@ export const launchGateway = async (options: GatewayProcessOptions): Promise<Gat
 };
 
 export const clientFor = (socketPath: string): UdsClient => {
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
   return client;
 };

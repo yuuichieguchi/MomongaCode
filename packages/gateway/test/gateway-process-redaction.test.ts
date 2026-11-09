@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -20,7 +20,7 @@ import {
   expectNoCredential,
   expectRedacted,
 } from './credential-support.ts';
-import { saveFakeFmRecord } from './fm-record-support.ts';
+import { placeFakeFm } from './fm-record-support.ts';
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const body = { model: 'fast', input: userInput('hi') };
@@ -68,6 +68,7 @@ const startKeyedStack = async (
   });
   const log = captureLog();
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
     version: PROCESS_VERSION,
@@ -82,7 +83,7 @@ const startKeyedStack = async (
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   const closeAndScan = async (scan: ScanOptions = {}): Promise<void> => {
     closed = true;
@@ -301,15 +302,15 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], keyed: ['cc'] },
-      targets: { fm: { adapter: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
+      targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
     },
   });
-  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
+  await placeFakeFm(home, fm.binaryPath);
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),
     version: PROCESS_VERSION,
-    fmBinary: fm.binaryPath,
     exec: options.exec,
     ...(options.execWithStdin === undefined ? {} : { execWithStdin: options.execWithStdin }),
     stdout: { write: () => true },
@@ -322,7 +323,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     },
     gatewayMaxCloseMs(DEFAULT_STOP_VALUES),
   );
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return { client };
 };
@@ -352,7 +353,7 @@ describe('T5: fm text with a configured key on another target', { timeout: DAEMO
     });
     const text = await response.text();
     expect(response.status).toBe(502);
-    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `fm count-tokens failed with exit code 2: bad ${REDACTED}` });
+    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `the target "fm": the token counter failed with exit code 2: bad ${REDACTED}` });
     expectRedacted(text, TEST_API_KEY);
   });
 });

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, acquireProcessLock, hostKernelLock, inspectProcessLock, isProcessAlive, listenUnix } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
 
 const FILE_LOCK = hostKernelLock().name === 'file-lock';
@@ -154,7 +154,7 @@ describe('ProcessLockHeldError', () => {
     const holder = await startHolder(context, `${socketPath}.lock`);
     const server = net.createServer();
     registerCleanup(context, () => void server.close());
-    const failure = await listenUnix(server, socketPath).then(
+    const failure = await listenUnix(server, socketPath, undefined, realProcessTestSignal()).then(
       () => undefined,
       (error: unknown) => error,
     );

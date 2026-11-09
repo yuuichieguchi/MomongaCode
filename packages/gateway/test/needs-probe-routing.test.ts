@@ -7,6 +7,7 @@ import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 type Kind = 'fm' | 'chat-completions' | 'ollama';
 
@@ -23,13 +24,13 @@ const servePidsOf = (dumpFile: string): number[] =>
         .map((record) => record.pid)
     : [];
 
-const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unknown>; fmBinary?: string }> => {
+const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unknown> }> => {
   if (kind === 'fm') {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
-    fm.configure({ envDumpFile: dumpFile });
+    fm.configure({ envDumpFile: dumpFile, serve: { stallNativeSamples: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], stallMs: 600_000 } });
     registerCleanup(() => killGroupsForCleanup(servePidsOf(dumpFile)));
-    return { target: { adapter: 'fm' }, fmBinary: fm.binaryPath };
+    return { target: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } };
   }
   if (kind === 'ollama') {
     const fake = await startFakeOllama({ chat: [] });
@@ -40,18 +41,17 @@ const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unkn
 };
 
 const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets: Record<string, unknown>) => {
-  const { target, fmBinary } = await unprobedTarget(kind);
+  const { target } = await unprobedTarget(kind);
   const home = makeHome();
   writeSettings(home, { models: { aliases: { fast: aliasTargets }, targets: { local: target, ...extraTargets } } });
   const handle = await launchGateway({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,
     exec: fakeExec,
-    measureFm: () => new Promise(() => undefined),
     measureEndpoint: () => new Promise(() => undefined),
     measureOllama: () => new Promise(() => undefined),
-    ...(fmBinary === undefined ? {} : { fmBinary }),
   });
   return clientFor(handle.socketPath);
 };

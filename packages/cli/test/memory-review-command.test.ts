@@ -3,7 +3,7 @@ import http from 'node:http';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { MemoryView } from '@momonga/protocol';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import * as commands from '../src/commands/memory.ts';
@@ -62,7 +62,7 @@ const setup = async (context: TestContext, answer: (seen: Seen) => Answer) => {
       response.writeHead(reply.status, { 'content-type': 'application/json' }).end(JSON.stringify(reply.body));
     });
   });
-  await new Promise<void>((resolve) => server.listen(paths.sockets.runtime, resolve));
+  await new Promise<void>((resolve) => server.listen(firstGeneration(paths).sockets.runtime, resolve));
   registerCleanup(context, async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

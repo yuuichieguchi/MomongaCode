@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import { corruptSchema, entriesNamed, isLockFree, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
@@ -16,7 +16,7 @@ describe('fatal errors under a running runtime (system timers, in-process gatewa
     expect(aborted).toEqual({ clean: false, fatal, abandoned: [], stragglers: [] });
     const closing = launched.handle.close();
     expect(await closing).toBe(aborted);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
   });
 
   it('fatal stays pending after a normal close', PROCESS_TIMEOUT, async () => {

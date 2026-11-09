@@ -3,7 +3,7 @@ import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { daemonStart } from '../src/commands/daemon.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 describe('momonga daemon start', () => {
@@ -11,13 +11,15 @@ describe('momonga daemon start', () => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     await ensureMomongaDirs(paths);
+    const work = createFakeWork();
     const started: FakeSupervisor[] = [];
     const start = async (version: string): Promise<FakeSupervisor> => {
-      const supervisor = await startFakeSupervisor({ paths, version });
+      const supervisor = await startFakeSupervisor({ paths, version, work });
       started.push(supervisor);
       return supervisor;
     };
     registerCleanup(context, async () => {
+      await work.settled();
       await Promise.all(started.map((supervisor) => supervisor.stop()));
     });
     const old = await start('1.0.0');
@@ -30,7 +32,7 @@ describe('momonga daemon start', () => {
       version: '2.0.0',
       env: { PATH: '/usr/bin' },
       home,
-      clock: virtualClock(),
+      clock: virtualClock(work),
       self: { kind: 'single-binary', execPath: '/opt/momonga' },
       spawnDetached: spawn,
       stdout: { write: (text: string) => void written.push(text) },

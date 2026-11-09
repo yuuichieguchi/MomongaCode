@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
@@ -11,6 +11,7 @@ import type { E2eStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 const RECALL_OPEN = '<recalled_memories>';
@@ -18,7 +19,7 @@ const RECALL_OPEN = '<recalled_memories>';
 type Json = Record<string, any>;
 
 const rawClient = (home: E2eHome) => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   const call = async (method: string, target: string, body?: unknown): Promise<{ status: number; json: Json }> => {
     const response = await client.request({
       method,

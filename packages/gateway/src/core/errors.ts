@@ -1,3 +1,4 @@
+import { TARGET_NOT_READY } from '@momonga/protocol';
 import type { ErrorBody, ErrorType } from '@momonga/protocol';
 
 export type GatewayErrorInit = {
@@ -38,6 +39,7 @@ const STATUS_BY_CODE: Record<string, number> = {
   missing_api_key: 401,
   secret_unavailable: 401,
   precondition_failed: 412,
+  [TARGET_NOT_READY]: 412,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>

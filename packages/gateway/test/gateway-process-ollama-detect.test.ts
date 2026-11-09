@@ -5,6 +5,7 @@ import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts'
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { RECORDED_SERVER_VERSION, startFakeOllama } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 
@@ -23,7 +24,7 @@ const startedWith = async (adapter: 'chat-completions' | 'open-responses', optio
   const fake = await startFakeOllama(options);
   const home = makeHome();
   writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target(adapter, fake.origin) } } });
-  const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return { fake, handle };
 };
 
@@ -64,7 +65,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target('chat-completions', server.origin) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await ask(handle.socketPath);
     await server.close();
@@ -121,7 +122,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     const clock = createFakeClock(Date.now());
     const timers = createFakeTimers(clock);
     const startedAt = clock.now();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
 
     const pending = ask(handle.socketPath);
     let settled = false;

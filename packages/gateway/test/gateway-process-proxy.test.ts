@@ -1,7 +1,7 @@
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
@@ -77,6 +77,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   writeSettings(home, settings);
   const log = captureLog();
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
     version: PROCESS_VERSION,
@@ -87,7 +88,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return { handle, client, log };
 };

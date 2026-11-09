@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { envelopeOf } from '@momonga/protocol';
 import { skipCase, titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
@@ -28,11 +28,12 @@ import {
   until,
 } from './support/wait.ts';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
+import { firstGeneration } from '@momonga/testkit';
 
 type Json = Record<string, any>;
 
 const rawGet = async (home: E2eHome, target: string): Promise<{ status: number; json: Json }> => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   try {
     const response = await client.request({ method: 'GET', path: target });
     const text = await response.text();
@@ -43,7 +44,7 @@ const rawGet = async (home: E2eHome, target: string): Promise<{ status: number; 
 };
 
 const trustProject = async (home: E2eHome): Promise<void> => {
-  const client = createUdsClient(home.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
   try {
     const response = await client.request({
       method: 'PUT',

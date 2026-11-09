@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, momongaPaths } from '@momonga/foundation';
-import { BUILT_BINARY_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir } from '@momonga/testkit';
+import { FIRST_GENERATION, createUdsClient, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { BUILT_BINARY_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../package.json' with { type: 'json' };
 import { MINIMAL_PATH, ccTarget, writeSettings } from './gateway-process-helpers.ts';
@@ -21,10 +21,10 @@ const prepare = (context: CleanupContext) => {
 describe('gateway bin (real process, §5.3)', () => {
   it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, gateway.log 0600 ending with entry.exit', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, [`--home=${home}`], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`], env);
 
     const ready = JSON.parse(await daemon.waitForReady()) as Record<string, unknown>;
-    expect(ready).toMatchObject({ event: 'ready', service: 'gateway', version: packageJson.version, pid: daemon.child.pid, socketPath: paths.sockets.gateway });
+    expect(ready).toMatchObject({ event: 'ready', service: 'gateway', version: packageJson.version, pid: daemon.child.pid, socketPath: firstGeneration(paths).sockets.gateway });
     daemon.child.kill('SIGTERM');
 
     expect(await daemon.waitForExit()).toBe(0);
@@ -38,9 +38,9 @@ describe('gateway bin (real process, §5.3)', () => {
 
   it('--log-target=file writes nothing to stderr and the gateway serves health until signalled', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, env } = prepare(context);
-    const daemon = startDaemonBin(context, BIN, [`--home=${home}`, '--log-target=file'], env);
+    const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();
-    const client = createUdsClient(paths.sockets.gateway);
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
     registerCleanup(context, () => client.close());
 
     const response = await client.request({ method: 'GET', path: '/v1/momonga/health' });

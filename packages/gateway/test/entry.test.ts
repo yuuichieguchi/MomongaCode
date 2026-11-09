@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createUdsClient, inspectProcessLock, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -27,7 +27,7 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
 };
 
 const runDir = (paths: MomongaPaths): void => {
-  fs.mkdirSync(path.dirname(paths.locks.gateway), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(firstGeneration(paths).locks.gateway), { recursive: true, mode: 0o700 });
 };
 
 type Launched = { io: FakeEntryIo; exit: Promise<number> };
@@ -54,8 +54,8 @@ const lastLine = (lines: readonly JsonLine[]): JsonLine | undefined => lines[lin
 describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)', () => {
   it('gateway: invalid settings give 78 and an entry.exit start-failed line', PROCESS_TIMEOUT, async (context) => {
     const home = withTempDir(context, { asHome: true });
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
-    const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
+    const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(78);
     expect(io.exits).toEqual([78]);
@@ -66,8 +66,8 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a held gateway.lock gives 75', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    await startLockHolder(context, paths.locks.gateway);
-    const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    await startLockHolder(context, firstGeneration(paths).locks.gateway);
+    const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(75);
     expect(io.stdoutText()).toBe('');
@@ -76,8 +76,8 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a held gateway.sock.lock gives 1', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    await startLockHolder(context, `${paths.sockets.gateway}.lock`);
-    const { io, exit } = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    await startLockHolder(context, `${firstGeneration(paths).sockets.gateway}.lock`);
+    const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(1);
     expect(io.stdoutText()).toBe('');
@@ -86,8 +86,8 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    fs.writeFileSync(paths.locks.gateway, '999999\n', { mode: 0o600 });
-    const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    fs.writeFileSync(firstGeneration(paths).locks.gateway, '999999\n', { mode: 0o600 });
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     await waitForReadyOrExit(launched);
     expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway' });
@@ -98,25 +98,25 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: a home given through a symlink still gives 75 (the entry canonicalises the home)', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
-    await startLockHolder(context, paths.locks.gateway);
+    await startLockHolder(context, firstGeneration(paths).locks.gateway);
     const link = path.join(withTempDir(context), 'h');
     fs.symlinkSync(home, link);
-    const { exit } = launch(context, link, [`--home=${link}`, '--log-target=stderr'], {}, link);
+    const { exit } = launch(context, link, [`--home=${link}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], {}, link);
 
     expect(await exit).toBe(75);
   });
 
   it('gateway: a clean close gives 0, one stdout line, no lock left, entry.exit close/sigterm in the role log', PROCESS_TIMEOUT, async (context) => {
     const { home, paths } = await validHome(context);
-    const launched = launch(context, home, [`--home=${home}`, '--log-target=file']);
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file']);
     await waitForReadyOrExit(launched);
 
     launched.io.signal('SIGTERM');
     expect(await launched.exit).toBe(0);
     expect(launched.io.exits).toEqual([0]);
     expect(launched.io.stdoutLines()).toHaveLength(1);
-    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: paths.sockets.gateway });
-    expect((await inspectProcessLock(paths.locks.gateway)).state).toBe('free');
+    expect(JSON.parse(launched.io.stdoutLines()[0] ?? '')).toMatchObject({ event: 'ready', service: 'gateway', version: VERSION, socketPath: firstGeneration(paths).sockets.gateway });
+    expect((await inspectProcessLock(firstGeneration(paths).locks.gateway)).state).toBe('free');
     expect(launched.io.logFilePaths).toEqual([paths.logFiles.gateway]);
     const log = parseJsonLines(launched.io.logLines(paths.logFiles.gateway));
     expect(log[0]).toMatchObject({ msg: 'entry.start', service: 'gateway' });
@@ -126,11 +126,11 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
 
   it('gateway: a second SIGTERM aborts and cuts the close grace', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, fake } = await validHome(context);
-    const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
     const hold = fake.hold();
     registerCleanup(context, () => hold.release());
-    const client = createUdsClient(paths.sockets.gateway);
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
     registerCleanup(context, () => client.close());
     const request = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hold me') }, { 'idempotency-key': 'entry-held' }).catch(() => undefined);
     await hold.waitForRequest();
@@ -156,7 +156,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
       return server;
     }) as typeof http.createServer);
     registerCleanup(context, () => spy.mockRestore());
-    const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr']);
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
     spy.mockRestore();
     const server = servers[0];
@@ -172,9 +172,9 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
 
   it('gateway: the env passed to startGatewayProcess is io.env as given (a declared apiKeyEnv reaches upstream)', PROCESS_TIMEOUT, async (context) => {
     const { home, paths, fake } = await validHome(context, { apiKeyEnv: 'MOMONGA_ENTRY_KEY' });
-    const launched = launch(context, home, [`--home=${home}`, '--log-target=stderr'], { MOMONGA_ENTRY_KEY: API_KEY_VALUE });
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], { MOMONGA_ENTRY_KEY: API_KEY_VALUE });
     await waitForReadyOrExit(launched);
-    const client = createUdsClient(paths.sockets.gateway);
+    const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
     registerCleanup(context, () => client.close());
 
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
@@ -187,7 +187,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
 
   it('gateway: an unknown flag gives 78 with one JSON line on stderr', PROCESS_TIMEOUT, async (context) => {
     const { home } = await validHome(context);
-    const { io, exit } = launch(context, home, [`--home=${home}`, '--no-such-flag']);
+    const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--no-such-flag']);
 
     expect(await exit).toBe(78);
     expect(io.stderrLines()).toHaveLength(1);

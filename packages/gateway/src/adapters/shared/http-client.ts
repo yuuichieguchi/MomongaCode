@@ -1,5 +1,5 @@
 import { request } from 'undici';
-import { createOutboundDispatcher, createUdsClient } from '@momonga/foundation';
+import { createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
 import type { GatewayTimers } from '../../types.ts';
 
@@ -45,7 +45,7 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
 };
 
 const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
+  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
     post: ({ subpath, streamed, ...options }) =>
       client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options, ...(streamed === undefined ? {} : { bodyTimeoutMs: STREAMED_BODY_TIMEOUT_MS }) }),

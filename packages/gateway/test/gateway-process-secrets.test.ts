@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -91,6 +91,7 @@ const startStack = async (
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets), store, host);
   const lines: string[] = [];
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { ...host.env, ...options.env }),
     version: PROCESS_VERSION,
@@ -101,7 +102,7 @@ const startStack = async (
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return { home, client, handle, anthropic, openResponses, security, programPath: host.programPath, logText: () => lines.join('') };
 };
@@ -211,6 +212,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     });
     await expect(
       startGatewayProcess({
+        generation: FIRST_GENERATION,
         home,
         env: baseEnv(home, fakeHostPath(context, store).env),
         version: PROCESS_VERSION,
@@ -230,7 +232,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
       models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
     });
     const security = createFakeSecurityPort(() => ({}));
-    const handle = await startGatewayProcess({ home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
+    const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
     registerCleanup(context, async () => {
       await handle.close();
     });

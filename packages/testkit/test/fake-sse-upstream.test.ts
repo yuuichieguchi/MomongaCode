@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createUdsClient, decodeSse } from '@momonga/foundation';
+import { createUdsClient, decodeSse, fixedSocket } from '@momonga/foundation';
 import { anthropicErrorReply, anthropicTextReply, startFakeAnthropic, startFakeOpenResponses, openResponsesTextReply, openResponsesToolCallReply, usageOf } from '../src/index.ts';
 import { canonicalJson } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
@@ -14,7 +14,7 @@ afterEach(async () => {
 const VALID_BODY = JSON.stringify({ model: 'm', max_tokens: 1, messages: [], input: [] });
 
 const post = async (server: FakeUpstreamServer, path: string, headers: Record<string, string>) => {
-  const client = createUdsClient(server.socketPath);
+  const client = createUdsClient(fixedSocket(server.socketPath));
   try {
     const response = await client.request({ method: 'POST', path, headers: { 'content-type': 'application/json', ...headers }, body: VALID_BODY });
     const frames: Array<{ event: string | undefined; data: string }> = [];
@@ -100,7 +100,7 @@ describe('fake Open Responses upstream', () => {
 });
 
 const postBody = async (server: FakeUpstreamServer, body: string): Promise<Array<{ event: string | undefined; data: string }>> => {
-  const client = createUdsClient(server.socketPath);
+  const client = createUdsClient(fixedSocket(server.socketPath));
   try {
     const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body });
     const frames: Array<{ event: string | undefined; data: string }> = [];

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
 import { autoFitDirectoryOf } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
+import { createFakeKernelLock } from '@momonga/testkit';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '@momonga/runtime';
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
@@ -109,6 +110,7 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
       close: async () => undefined,
     }) as unknown as ContextRuntime;
   state.effects = {
+    lock: createFakeKernelLock({ inheritable: false }),
     platform: 'darwin',
     env: { PATH: '/usr/bin', HOME: '/home/person' },
     sessionEnv: async () => ({ PATH: '/usr/bin' }),
@@ -157,7 +159,6 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
     copyEndpointProbeRecord: async () => undefined,
     listRoots: async () => [],
     readOwner: async () => undefined,
-    isAlive: () => false,
   };
   return state;
 };

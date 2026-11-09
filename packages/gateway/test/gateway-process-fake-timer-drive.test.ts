@@ -4,6 +4,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveF
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const RETRY_BUDGET_MS = GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs;
 
@@ -29,7 +30,7 @@ const launchAgainstClosedUpstream = async () => {
   const clock = createFakeClock(Date.now());
   const timers = createFakeTimers(clock);
   const startedAt = clock.now();
-  const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
   return { clock, timers, startedAt, handle };
 };
 

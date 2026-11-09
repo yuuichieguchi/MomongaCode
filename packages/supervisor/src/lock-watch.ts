@@ -1,4 +1,4 @@
-import { LOCAL_REQUEST_HEADERS_TIMEOUT_MS, createUdsClient, inspectProcessLock, isTransientFailure } from '@momonga/foundation';
+import { LOCAL_REQUEST_HEADERS_TIMEOUT_MS, createUdsClient, fixedSocket, inspectProcessLock, isTransientFailure } from '@momonga/foundation';
 import type { KernelLockMechanism, ProcessLockInspection } from '@momonga/foundation';
 import { LINE_MAX_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -70,7 +70,7 @@ const readBounded = async (body: AsyncIterable<Uint8Array>, maxBytes: number): P
 };
 
 export const createExternalHealthProbe = (timeoutMs: number): HealthProbe => async (role, socketPath) => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: timeoutMs, bodyTimeoutMs: timeoutMs });
+  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: timeoutMs, bodyTimeoutMs: timeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: HEALTH_PATHS[role] });
     const body = await readBounded(response.body, HEALTH_BODY_MAX_BYTES);

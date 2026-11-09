@@ -1,7 +1,8 @@
-import path from 'node:path';
 import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
+import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
+import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -9,23 +10,21 @@ import type { CliPorts } from '../ports.ts';
 import { processOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
-export const DEFAULT_FM_BINARY = '/usr/bin/fm';
-
-export const FM_PROBE_SOCKET_NAME = 'fm-probe.sock';
-
 type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
+
+type ManagedConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'managed' }>;
 
 type ChatCompletionsConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'chat-completions' }>;
 
 export class NotAProbeableTarget extends Error {
   constructor(target: string, known: Readonly<Record<string, { adapter: string }>>) {
     const described = Object.entries(known).map(([name, entry]) => `${name} (${entry.adapter})`);
-    super(`model target ${target} is not an fm or chat-completions target, nor an ollama target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
+    super(`the target "${target}" cannot be probed: it is not a managed server, chat-completions or ollama target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
     this.name = 'NotAProbeableTarget';
   }
 }
 
-export type ProbeOptions = { fmBinary: string; samples?: number; interrupt: AbortSignal };
+export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
 
 const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
   const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
@@ -39,7 +38,7 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const { settings } = await loadUserSettings({ home: ports.home });
   const targets = settings.models.targets;
   const configured = targets[target];
-  if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
+  if (configured?.adapter === 'managed') return probeFm(ports, paths, target, options);
   if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
   if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
   throw new NotAProbeableTarget(target, targets);
@@ -169,21 +168,28 @@ const probeOllama = async (
 export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
   const { settings } = await loadUserSettings({ home: ports.home });
   const targets = settings.models.targets;
-  const configured = targets[target];
-  if (configured?.adapter !== 'fm') throw new NotAProbeableTarget(target, targets);
-  const { probeManagedFm } = await import('@momonga/gateway');
-  const { report, toolCalling } = await probeManagedFm({
+  const configured: ManagedConfig | undefined = targets[target]?.adapter === 'managed' ? (targets[target] as ManagedConfig) : undefined;
+  if (configured === undefined) throw new NotAProbeableTarget(target, targets);
+  const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
+  const description = managedServerOf(MANAGED_SERVERS, configured.server);
+  if (description === undefined) throw new NotAProbeableTarget(target, targets);
+  const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
+    instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target }),
+    description,
     target,
-    binary: options.fmBinary,
-    socketPath: path.join(paths.run, FM_PROBE_SOCKET_NAME),
+    binary: configured.binary,
+    readyTimeoutMs: configured.readyTimeoutMs,
     env: ports.env,
     userDialects: settings.models.dialects,
     signal: options.interrupt,
+    hashes: createBinaryHashCache(),
+    isUsableBinary: systemProcessFiles.isUsableBinary,
+    readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
     ...(configured.model === undefined ? {} : { model: configured.model }),
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeFmText(target, paths.probe, report, toolCalling, configured.outputBoundField));
+  ports.stdout.write(probeFmText(target, recordFile, report, toolCalling, configured.outputBoundField));
   return 0;
 };

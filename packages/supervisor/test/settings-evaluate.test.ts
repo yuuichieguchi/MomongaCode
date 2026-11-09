@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, spawnTracked, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { KILL_CONFIRM_MS, SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import {
@@ -183,7 +183,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
       settings: validSettings({ sandbox: 'seatbelt' }),
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
@@ -325,7 +325,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
         if (!holdsLock) return;
         const holder = spawnTracked(context, 'sleep', ['30']);
         holderPid = holder.pid;
-        lock.holdExternally(paths.locks.gateway, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.gateway, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: state === 'external' ? 1000 : 3_600_000 },
     });
@@ -350,7 +350,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });
@@ -371,7 +371,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 1000 },
     });
@@ -414,7 +414,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const h = await watched(context, {
       prepare: (_home, paths) => {
         holder.pid = spawnTracked(context, 'sleep', ['30']).pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       overrides: { lockMechanism: lock, lockWaitMs: 3_600_000 },
     });

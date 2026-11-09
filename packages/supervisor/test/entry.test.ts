@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { runSupervisorEntry } from '../src/entry.ts';
@@ -143,7 +143,7 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const run = startEntry(context);
     await ready(run);
     const fields = parseReadyLine(run.io.stdoutLines()[0] ?? '');
-    expect(fields).toMatchObject({ service: 'supervisor', pid: process.pid, version: TEST_VERSION, socketPath: run.paths.sockets.supervisor });
+    expect(fields).toMatchObject({ service: 'supervisor', pid: process.pid, version: TEST_VERSION, socketPath: firstGeneration(run.paths).sockets.supervisor });
     expect(run.io.stderrLines()).toEqual([]);
   });
 
@@ -199,9 +199,9 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
     const run = startEntry(context);
     await childrenReady(run);
     run.fake.setBehaviour('runtime', { onTerm: 'ignore' });
-    expect((await httpOver(context, run.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(run.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => run.fake.latest('runtime').signals.length === 1);
-    expect((await httpOver(context, run.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(run.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => run.supervisorLog().filter((line) => line.msg === 'entry.shutdown_requested').length === 2);
     run.fake.latest('runtime').exit(0);
     expect(await exitOf(run)).toBe(0);
@@ -213,8 +213,8 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
 
   it('second supervisor on the same home exits 75', async (context) => {
     const prepared = prepareHome(context);
-    fs.mkdirSync(prepared.paths.run, { recursive: true, mode: 0o700 });
-    await startLockHolder(context, prepared.paths.locks.supervisor);
+    fs.mkdirSync(firstGeneration(prepared.paths).dir, { recursive: true, mode: 0o700 });
+    await startLockHolder(context, firstGeneration(prepared.paths).locks.supervisor);
     const run = startEntry(context, { prepared });
     expect(await exitOf(run, 5000)).toBe(75);
     expect(run.io.stdoutLines()).toEqual([]);
@@ -224,26 +224,26 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
   it('a cancel during the supervisor lock acquisition is a startup cancel', async (context) => {
     const prepared = prepareHome(context);
     let io: FakeEntryIo | undefined;
-    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(prepared.paths.locks.supervisor, () => io?.signal('SIGTERM')) });
+    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(firstGeneration(prepared.paths).locks.supervisor, () => io?.signal('SIGTERM')) });
     io = run.io;
     expect(await exitOf(run, 5000)).toBe(1);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'startup-cancelled', trigger: 'sigterm', code: 1 });
     expect(run.io.stdoutLines()).toEqual([]);
-    expect(await inspectProcessLock(prepared.paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(prepared.paths).locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('a cancel during listenUnix still announces ready and closes gracefully', async (context) => {
     const prepared = prepareHome(context);
     let io: FakeEntryIo | undefined;
-    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(`${prepared.paths.sockets.supervisor}.lock`, () => io?.signal('SIGTERM')) });
+    const run = startEntry(context, { prepared, lockMechanism: cancelOnClaim(`${firstGeneration(prepared.paths).sockets.supervisor}.lock`, () => io?.signal('SIGTERM')) });
     io = run.io;
     expect(await exitOf(run, 30_000)).toBe(0);
     expect(run.io.stdoutLines()).toHaveLength(1);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', trigger: 'sigterm', code: 0 });
     expect(run.fake.spawnCount()).toBe(0);
-    expect(fs.existsSync(run.paths.sockets.supervisor)).toBe(false);
-    expect(await inspectProcessLock(`${run.paths.sockets.supervisor}.lock`)).toEqual({ state: 'free' });
-    expect(await inspectProcessLock(run.paths.locks.supervisor)).toEqual({ state: 'free' });
+    expect(fs.existsSync(firstGeneration(run.paths).sockets.supervisor)).toBe(false);
+    expect(await inspectProcessLock(`${firstGeneration(run.paths).sockets.supervisor}.lock`)).toEqual({ state: 'free' });
+    expect(await inspectProcessLock(firstGeneration(run.paths).locks.supervisor)).toEqual({ state: 'free' });
   });
 
   it('fatal after ready: the engine aborts and the children are stopped', async (context) => {
@@ -268,13 +268,13 @@ describe('runSupervisorEntry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => 
   it('home comes canonicalised from io.home when --home is absent', async (context) => {
     const run = startEntry(context, { argvHome: false });
     await ready(run);
-    expect(parseReadyLine(run.io.stdoutLines()[0] ?? '')?.socketPath).toBe(run.paths.sockets.supervisor);
+    expect(parseReadyLine(run.io.stdoutLines()[0] ?? '')?.socketPath).toBe(firstGeneration(run.paths).sockets.supervisor);
   });
 
   it('health.logs.droppedLines follows the sink', async (context) => {
     const run = startEntry(context);
     await ready(run);
-    const health = async (): Promise<SupervisorHealth> => JSON.parse((await httpOver(context, run.paths.sockets.supervisor, 'GET', '/v1/health')).text) as SupervisorHealth;
+    const health = async (): Promise<SupervisorHealth> => JSON.parse((await httpOver(context, firstGeneration(run.paths).sockets.supervisor, 'GET', '/v1/health')).text) as SupervisorHealth;
     expect((await health()).logs.droppedLines).toBe(0);
     run.io.setDroppedLines(run.paths.logFiles.supervisor, 7);
     expect((await health()).logs.droppedLines).toBe(7);

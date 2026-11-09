@@ -1,16 +1,16 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
-import type { ExecResult, FmServe } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import type { ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
-import { primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
 import { makeReport } from './report-fixture.ts';
-import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import type { KnownProbeKey } from '@momonga/config';
 
 const FM_ROLE_CHUNK = {
   id: 'chatcmpl-fm',
@@ -37,7 +37,7 @@ const startFmStyleUpstream = async (errorBody: unknown): Promise<FakeUpstreamSer
 
 const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
   const endpoint = { kind: 'unix' as const, socketPath: upstream.socketPath };
-  const fmServe: FmServe = {
+  const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => endpoint,
     ensureRunning: async () => endpoint,
@@ -46,11 +46,12 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
   };
   const countTokens = async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' });
   const probeRecordDir = path.join(makeDir(), 'probe');
-  const key = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
-  await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), CURRENT_DIALECTS);
+  const key: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
+  await saveProbeRecord(probeRecordDir, key, makeReport(1, 1), FM_CURRENCY);
   const managed = await primed(
-    createManagedFmTarget({
-      fmServe,
+    createManagedTarget({
+      ...fmTargetBase(),
+      server: fmServe,
       binary: '/opt/fake/fm',
       exec: countTokens,
       probeRecordDir,
@@ -58,7 +59,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
       toolCallingSetting: 'native',
       declaredModel: 'system',
     }),
-    key.target,
+    'fm',
   );
   const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());

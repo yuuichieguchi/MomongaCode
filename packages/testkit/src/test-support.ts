@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { SOCKET_PATH_LIMIT, forceKillGroup, isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import { stopSupervisorHolder } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
@@ -15,6 +15,8 @@ export const DAEMON_PROCESS_TEST_TIMEOUT_MS = 2 * REAL_PROCESS_TEST_TIMEOUT_MS;
 export const BUILT_BINARY_TEST_TIMEOUT_MS = 3 * REAL_PROCESS_TEST_TIMEOUT_MS;
 
 const PROCESS_KILL_DEADLINE_MS = 5000;
+
+export const realProcessTestSignal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
 
 export const testRunToken = (): string => process.env[TEST_RUN_ENV] ?? 'x';
 
@@ -38,7 +40,7 @@ export const registerCleanup = (context: CleanupContext | undefined, cleanup: Cl
 };
 
 const longestSocketOf = (home: string): string => {
-  const sockets = Object.values(momongaLayout(home, 'darwin', {}).sockets);
+  const sockets = Object.values(generationLayout(home, FIRST_GENERATION, 'darwin').sockets);
   return sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
 };
 
@@ -71,10 +73,15 @@ const removeTempDir = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+
+export const isUnderTestTempBase = (dir: string): boolean =>
+  [tempDirBase(true), tempDirBase(false)].some((base) => dir.startsWith(`${fs.realpathSync(base)}${path.sep}`));
+
 export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
   assertTestContext(context, 'withTempDir');
-  const created = fs.mkdtempSync(path.join(os.tmpdir(), tempDirPrefixFor(testRunToken())));
   const asHome = options.asHome === true;
+  const created = fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken())));
   context.onTestFinished(async () => {
     if (asHome) await stopSupervisorHolder(created);
     removeTempDir(created);

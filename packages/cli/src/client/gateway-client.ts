@@ -1,4 +1,5 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
+import type { SocketResolver } from '@momonga/foundation';
 import { JSON_MODES, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, ProbingCapabilities, UsageReport } from '@momonga/protocol';
 
@@ -60,8 +61,8 @@ const isUsageReport = (value: unknown): value is UsageReport =>
   isCount(value['total']['output_tokens']) &&
   isCount(value['total']['total_tokens']);
 
-export const createGatewayClient = (options: { socketPath: string }): GatewayClient => {
-  const http = createUdsClient(options.socketPath);
+export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
+  const http = createUdsClient(options.resolveSocket);
 
   const getJson = async (path: string): Promise<unknown> => {
     const response = await http.request({ method: 'GET', path });

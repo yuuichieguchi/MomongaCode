@@ -29,6 +29,11 @@ export const COMMON_ENTRY_FLAGS = {
   'lifeline-fd': { kind: 'int' },
 } as const satisfies FlagSpec;
 
+export const CHILD_ENTRY_FLAGS = {
+  ...COMMON_ENTRY_FLAGS,
+  generation: { kind: 'int', required: true },
+} as const satisfies FlagSpec;
+
 const INTEGER_PATTERN = /^-?\d+$/;
 
 export const parseFlags = <S extends FlagSpec>(argv: readonly string[], spec: S): ParsedFlags<S> => {

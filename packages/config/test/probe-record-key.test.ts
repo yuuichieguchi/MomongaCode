@@ -19,8 +19,6 @@ const capabilities = {
 const remote = { billing: 'metered', capabilities, maxConcurrency: 4, admissionTimeoutMs: 30000 } as const;
 
 const configurations: ReadonlyArray<readonly [string, ResolvedModelTarget, ReturnType<typeof probeRecordKeyOf>]> = [
-  ['fm', { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { kind: 'target', target: 'x' }],
-  ['fm auto', { adapter: 'fm', model: 'system', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { kind: 'target', target: 'x' }],
   ['chat-completions auto over tcp', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1/', toolCalling: 'auto' }, { kind: 'endpoint', key: { endpoint: 'https://upstream.invalid/v1', model: 'm' } }],
   ['chat-completions auto over a socket', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', socketPath: '/s/up.sock', toolCalling: 'auto' }, { kind: 'endpoint', key: { endpoint: 'unix:/s/up.sock', model: 'm' } }],
   ['chat-completions native', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native' }, undefined],

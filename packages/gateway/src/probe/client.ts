@@ -1,6 +1,6 @@
 import { setTimeout as setTimeoutPromise } from 'node:timers/promises';
 import { request } from 'undici';
-import { Deadline, createOutboundDispatcher, createUdsClient } from '@momonga/foundation';
+import { Deadline, createOutboundDispatcher, createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { OutboundNetwork, UdsClient } from '@momonga/foundation';
 
 export interface HttpResult {
@@ -17,6 +17,8 @@ export type ProbeEndpoint =
   | { kind: 'tcp'; baseUrl: string; network: OutboundNetwork; headers?: Record<string, string> };
 
 export type ProbeRoute = 'health' | 'models' | 'chat';
+
+export type ManagedProbeRoutes = { readonly readyPath: string; readonly listPath: string; readonly idPath: readonly string[] };
 
 export interface ProbeClient {
   readonly hasHealthRoute: boolean;
@@ -35,7 +37,7 @@ const tcpPathsOf = (baseUrl: string): Record<ProbeRoute, string> => {
 };
 
 const transportOf = (endpoint: ProbeEndpoint, stepTimeoutMs: number): { uds: UdsClient; paths: Record<ProbeRoute, string>; headers: Record<string, string> } => {
-  if (endpoint.kind === 'unix') return { uds: createUdsClient(endpoint.socketPath), paths: UNIX_PATHS, headers: {} };
+  if (endpoint.kind === 'unix') return { uds: createUdsClient(fixedSocket(endpoint.socketPath)), paths: UNIX_PATHS, headers: {} };
   return { uds: createTcpClient(new URL(endpoint.baseUrl).origin, endpoint.network, stepTimeoutMs), paths: tcpPathsOf(endpoint.baseUrl), headers: endpoint.headers ?? {} };
 };
 
@@ -75,9 +77,12 @@ export const createProbeClient = (
   endpoint: ProbeEndpoint,
   signal: AbortSignal | undefined,
   stepTimeoutMs: number,
-  hasHealthRoute = false,
+  managedRoutes?: ManagedProbeRoutes,
 ): ProbeClient => {
-  const { uds, paths, headers: authHeaders } = transportOf(endpoint, stepTimeoutMs);
+  const transport = transportOf(endpoint, stepTimeoutMs);
+  const { uds, headers: authHeaders } = transport;
+  const paths: Record<ProbeRoute, string> = managedRoutes === undefined ? transport.paths : { ...transport.paths, health: managedRoutes.readyPath, models: managedRoutes.listPath };
+  const hasHealthRoute = managedRoutes !== undefined;
 
   const withTimeout = async <T>(
     method: string,

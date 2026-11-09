@@ -25,7 +25,6 @@ const directoriesOf = (paths: ReturnType<typeof momongaPaths>): string[] => [
   paths.markers.root,
   paths.markers.tools,
   paths.markers.mcp,
-  paths.markers.targets,
   paths.markers.daemons,
   paths.state,
   paths.traces.dir,
@@ -51,6 +50,12 @@ describe('ensureMomongaDirs', () => {
       expect(stat.mode & 0o777, dir).toBe(0o700);
     }
     expect(fs.existsSync(paths.settingsFile)).toBe(false);
+  });
+
+  it('creates no instance marker directory outside a generation, because instance markers live in markers/g<N>/targets/<stem>/ (18.2.1)', async () => {
+    const paths = momongaPaths(makeHome(), 'darwin', {});
+    await ensureMomongaDirs(paths);
+    expect(fs.existsSync(path.join(paths.markers.root, 'targets'))).toBe(false);
   });
 
   it('is idempotent', async () => {

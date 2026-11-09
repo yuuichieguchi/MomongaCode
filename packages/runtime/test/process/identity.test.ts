@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -18,6 +18,7 @@ import {
   stepsLogged,
 } from './run-helpers.ts';
 import type { Launched, RunHome } from './run-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
@@ -101,12 +102,12 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
       if (msg === 'startup.step' && step === 'timers') replaceFile(stack.temp.paths.databases.runtime);
     });
     const stdout = captureStream();
-    const error = await failureOf(startRuntimeProcess({ home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout }));
+    const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout }));
     expect(error).toBeInstanceOf(StoreIdentityError);
     expect(stepsLogged(logger).at(-1)).toBe('ready');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
     expect(stdout.chunks).toEqual([]);
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -121,7 +122,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     const closed = await launched.handle.close();
     expect(closed).toBe(aborted);
     expect(closed).toEqual({ clean: false, fatal, abandoned: [], stragglers: [] });
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -155,12 +156,12 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
       if (msg === 'startup.step' && step === 'ready') spy = injectStatFailure(stack.temp.paths.databases.runtime, injected);
     });
     try {
-      const error = await failureOf(startRuntimeProcess({ home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout: captureStream() }));
+      const error = await failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, clock, timers, logger, stdout: captureStream() }));
       expect(error).toBe(injected);
       expect(error).not.toBeInstanceOf(StoreIdentityError);
     } finally {
       spy?.mockRestore();
     }
-    expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+    expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
   });
 });

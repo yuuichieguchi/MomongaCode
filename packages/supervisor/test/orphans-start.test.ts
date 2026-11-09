@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
@@ -402,8 +402,8 @@ describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT
     const seenAtFirstCall: Array<{ lock: boolean; socket: boolean }> = [];
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
-        socketPath = paths.sockets.supervisor;
-        lockPath = paths.locks.supervisor;
+        socketPath = firstGeneration(paths).sockets.supervisor;
+        lockPath = firstGeneration(paths).locks.supervisor;
         writeMarker(paths, 'runtime-old');
       },
       markerPorts: {
@@ -464,7 +464,7 @@ describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT
         writeMarker(paths, 'runtime-old');
         const holder = spawnTracked(context, 'sleep', ['30']);
         holderPid = holder.pid;
-        lock.holdExternally(paths.locks.runtime, holder.pid);
+        lock.holdExternally(firstGeneration(paths).locks.runtime, holder.pid);
       },
       markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: async () => ({ reaped: 0, kept: 1 }) },
       overrides: { orphanGraceMs: 250, lockMechanism: lock, lockWaitMs: 3_600_000 },

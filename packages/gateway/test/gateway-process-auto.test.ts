@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { momongaPaths } from '@momonga/foundation';
+import { momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { PROBE_METHOD_VERSION, endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
@@ -46,7 +46,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
 describe('chat-completions target with toolCalling auto', () => {
   it('answers a call 503 target_probing and starts the probe when no record exists', async () => {
     const { home, fake } = await autoSetup();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
@@ -59,7 +59,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     const report = { ...makeReport(0.2, 1), parallelToolCalls: { accepted: true, multiCallRate: 1 }, reasoning: { control: 'none' as const, headroomTokens: 300 } };
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
 
     const response = await readJson(await postJson(client, '/v1/responses', request));
@@ -76,7 +76,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     const report = { ...makeReport(1, 1), reasoning: { control: 'none' as const, headroomTokens: 300 } };
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(
       await postJson(clientFor(handle.socketPath), '/v1/responses', {
@@ -96,6 +96,7 @@ describe('chat-completions target with toolCalling auto', () => {
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, 'identity-of-an-older-pull', identityFields, makeReport(1, 1), CURRENT_DIALECTS);
     const measured: unknown[] = [];
     const handle = await launchGateway({
+      generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
       version: PROCESS_VERSION,
@@ -120,7 +121,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('treats a record saved by an older probe method as no record: 503 target_probing and a new probe', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), { ...CURRENT_DIALECTS, probeMethod: PROBE_METHOD_VERSION - 1 });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
@@ -132,7 +133,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('keeps working after the server stamps a fresh creation time on every listing, because the probe dropped that field', async () => {
     let stamp = 1_700_000_000;
     const { home, fake } = await probedSetup(() => [{ id: 'qwen-fake', object: 'model', created: (stamp += 7), owned_by: 'vllm' }]);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
@@ -146,6 +147,7 @@ describe('chat-completions target with toolCalling auto', () => {
     created = 1_800_000_000;
     const measured: unknown[] = [];
     const handle = await launchGateway({
+      generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
       version: PROCESS_VERSION,
@@ -168,7 +170,7 @@ describe('chat-completions target with toolCalling auto', () => {
       { modelsReply: { kind: 'error', status: 403, body: { error: 'secret-token-sk-12345 is not allowed' } } },
     );
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
@@ -181,7 +183,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('stops the identity read as soon as the caller goes away', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup({ modelsReply: { kind: 'hang' } });
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const leaving = new AbortController();
     const pending = clientFor(handle.socketPath)
       .request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request), signal: leaving.signal })
@@ -204,7 +206,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup({ script: [reply(300), reply(60)] });
     const report = { ...makeReport(1, 1), reasoning: { control: 'none' as const, headroomTokens: 10 } };
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
     const compact = { model: 'fast', input: userInput('a long conversation') };
     const hidden = 300 - tokensForText(summary);
@@ -221,7 +223,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, fmServeStopBoundMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedSocket } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
@@ -18,7 +18,7 @@ export const validator = createOpenResponsesValidator();
 
 export const REAL_FM_STOP_GRACE_MS = 5000;
 
-const CLEANUP_HOOK_BOUND_MS = fmServeStopBoundMs(REAL_FM_STOP_GRACE_MS) + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + CLEANUP_KILL_DEADLINE_MS;
+const CLEANUP_HOOK_BOUND_MS = managedServerStopBoundMs(REAL_FM_STOP_GRACE_MS) + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + CLEANUP_KILL_DEADLINE_MS;
 
 const cleanups: Array<() => void | Promise<void>> = [];
 
@@ -152,7 +152,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
   registerCleanup(() => gateway.close());
-  const client = createUdsClient(socketPath);
+  const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
   return { gateway, client, clock, timers, dir, socketPath, dbPath };
 };

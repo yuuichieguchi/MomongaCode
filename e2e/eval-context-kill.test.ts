@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inspectProcessLock, isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, SHORT_TEMP_BASE, generationLayout, inspectProcessLock, isProcessAlive, momongaLayout } from '@momonga/foundation';
 import type { FakeRoute } from '@momonga/testkit';
 import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../packages/cli/src/eval/context-host.ts';
-import { SHORT_TEMP_BASE } from '../packages/cli/src/eval/context-effects.ts';
 import { titleOf } from './support/cases.ts';
 import { startCli, runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
@@ -69,7 +68,7 @@ describe('momonga eval context after SIGKILL', () => {
     const running = startCli(home, ['eval', 'context', hanging, '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     const root = await until(() => rootOwnedBy(running.pid), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case home to name its owner' });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case run to reach the upstream' });
-    const lock = await inspectProcessLock(momongaLayout(root).locks.supervisor);
+    const lock = await inspectProcessLock(generationLayout(root, FIRST_GENERATION).locks.supervisor);
     if (lock.state !== 'held') throw new Error(`the case daemon holds no supervisor lock (${lock.state})`);
     const daemon = lock.pid;
     expect(isProcessAlive(daemon)).toBe(true);

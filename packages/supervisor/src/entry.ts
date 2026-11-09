@@ -4,12 +4,13 @@ import {
   COMMON_ENTRY_FLAGS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   canonicalPath,
+  generationLayout,
   momongaPaths,
   runDaemonEntry,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { EntryIo, JsonLogger } from '@momonga/foundation';
-import { SUPERVISOR_SERVICE } from './constants.ts';
+import { SUPERVISOR_GENERATION, SUPERVISOR_SERVICE } from './constants.ts';
 import { startSupervisor } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
 
@@ -32,7 +33,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
     flags: COMMON_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, values),
     readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
-    ownLockPath: (home) => pathsOf(home).locks.supervisor,
+    ownLockPath: (home) => generationLayout(canonicalPath(home), SUPERVISOR_GENERATION).locks.supervisor,
     logPath: (home) => pathsOf(home).logFiles.supervisor,
     isConfigError: () => false,
     start: async (context) => {

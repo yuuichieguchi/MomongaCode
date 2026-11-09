@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { acquireProcessLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, stopSupervisorHolder, withTempDir } from '@momonga/testkit';
+import { FIRST_GENERATION, acquireProcessLock, ensureGenerationDirs, ensureMomongaDirs, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerCleanup, startLockHolder, stopSupervisorHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 
 const preparedHome = async (context: CleanupContext): Promise<{ home: string; lockPath: string }> => {
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
   await ensureMomongaDirs(paths);
-  return { home, lockPath: paths.locks.supervisor };
+  await ensureGenerationDirs(paths, FIRST_GENERATION);
+  return { home, lockPath: firstGeneration(paths).locks.supervisor };
 };
 
 describe('stopSupervisorHolder', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {

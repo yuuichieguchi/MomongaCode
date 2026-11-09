@@ -1,7 +1,6 @@
-import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { isRecord, isTransientErrno } from '@momonga/foundation';
-import type { Clock, CredentialEntry, CredentialStore, FileSystem } from '@momonga/foundation';
+import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, sweepLeftovers } from '@momonga/foundation';
+import type { Clock, CredentialEntry, CredentialStore, FileSystem, KernelLockMechanism } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import type { PlanAccountState } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
@@ -73,6 +72,7 @@ export type OpenPlanSessionsOptions = {
   sleep: PlanSleep;
   onSecret(value: string): void;
   warn(message: string): void;
+  lock?: KernelLockMechanism;
 };
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
@@ -224,17 +224,13 @@ const signingOutRecord = (record: PlanRecord): PlanRecord => ({ ...record, state
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const isStaleTemporary = (name: string): boolean => name.endsWith('.tmp');
-
-const sweepTemporaries = async (fileSystem: FileSystem, directory: string): Promise<void> => {
-  let names: string[];
-  try {
-    names = await fileSystem.readdir(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
-  }
-  await Promise.all(names.filter(isStaleTemporary).map((name) => fileSystem.rm(path.join(directory, name))));
+const sweepTemporaries = async (fileSystem: FileSystem, directory: string, lock: KernelLockMechanism, warn: (message: string) => void): Promise<void> => {
+  await sweepLeftovers({
+    directories: [{ directory, isLeftover: isAtomicWriteTemporary }],
+    lock,
+    warn,
+    files: { readdir: (entries) => fileSystem.readdir(entries), rm: (entry) => fileSystem.rm(entry, { recursive: true }) },
+  });
 };
 
 const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {
@@ -658,7 +654,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     };
   };
 
-  await sweepTemporaries(fileSystem, paths.sessions);
+  await sweepTemporaries(fileSystem, paths.sessions, options.lock ?? hostKernelLock(), options.warn);
   const startup = options.accounts.map((ref) => accountOf(ref.profile, ref.account));
   await Promise.all(startup.map(load));
   for (const account of startup) {

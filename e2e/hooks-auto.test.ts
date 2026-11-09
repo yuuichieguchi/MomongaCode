@@ -15,6 +15,8 @@ import { baseSettings, startStack, withClassifierAlias } from './support/stack.t
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '../packages/runtime/src/memory/reflection-bound.ts';
 import { E2E_REFLECTION_ATTEMPTS_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
+import { fixedSocket } from '@momonga/foundation';
 
 const RUNS_PER_CASE = 2;
 const MEDIUM_CONFIDENCE_CASE = 'write-requested-changelog';
@@ -175,7 +177,7 @@ describe('hooks and auto mode against real processes', () => {
       Array.from({ length: golden.runs }, (_unused, runIndex) => [callFor(golden, runIndex), ...classifierFor(golden), textReply('finished')]).flat(),
     );
     const stack = await startStack({ home, settings: autoSettings(home), script });
-    const client = createCliRuntimeClient({ socketPath: home.paths.sockets.runtime });
+    const client = createCliRuntimeClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime) });
     try {
       const api = goldenRunApi(client, undefined, {
         pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,

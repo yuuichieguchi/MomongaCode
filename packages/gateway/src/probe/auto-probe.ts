@@ -5,7 +5,7 @@ import type { ProcessLock } from '@momonga/foundation';
 import { TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
 import { GatewayError } from '../core/errors.ts';
-import { ensurePrivateProbeDirectory, probeTargetName } from './record.ts';
+import { ensurePrivateProbeDirectory } from './record.ts';
 import { DEFAULT_STEP_TIMEOUT_MS } from './run-probe.ts';
 
 const MS_PER_SECOND = 1000;
@@ -15,18 +15,18 @@ export const PROBE_RETRY_AFTER_MS = Math.ceil(DEFAULT_STEP_TIMEOUT_MS / MS_PER_S
 
 export const PROBE_RETRY_AFTER_SECONDS = PROBE_RETRY_AFTER_MS / MS_PER_SECOND;
 
-export type ProbeLockKey = { readonly target: string } & Readonly<Record<string, string>>;
+export type ProbeLockKey = Readonly<Record<string, string | null>>;
 
 export class ProbeInProgressError extends Error {
-  constructor(key: ProbeLockKey) {
-    super(`the target "${key.target}" is already being measured (once per model and OS build); run the command again when it finishes`);
+  constructor(target: string) {
+    super(`the target "${target}" is already being measured (once per probe key); run the command again when it finishes`);
     this.name = 'ProbeInProgressError';
   }
 }
 
 export class ProbeKeyChangedError extends Error {
-  constructor(before: ProbeLockKey, after: ProbeLockKey) {
-    super(`the identity of the target "${before.target}" changed while it was measured (from ${canonicalJson(before)} to ${canonicalJson(after)}), so the measurement was not recorded`);
+  constructor(target: string, before: ProbeLockKey, after: ProbeLockKey) {
+    super(`the identity of the target "${target}" changed while it was measured (from ${canonicalJson(before)} to ${canonicalJson(after)}), so the measurement was not recorded`);
     this.name = 'ProbeKeyChangedError';
   }
 }
@@ -35,15 +35,15 @@ const identityOf = (key: ProbeLockKey): string => canonicalJson(key);
 
 const keyDigest = (key: ProbeLockKey): string => createHash('sha256').update(identityOf(key)).digest('hex').slice(0, LOCK_DIGEST_CHARS);
 
-export const probeLockPath = (dir: string, key: ProbeLockKey): string => path.join(dir, `${probeTargetName(key.target)}.${keyDigest(key)}.lock`);
+export const probeLockPath = (dir: string, key: ProbeLockKey): string => path.join(dir, `${keyDigest(key)}.lock`);
 
-export const acquireProbeLock = async (dir: string, key: ProbeLockKey): Promise<ProcessLock> => {
+export const acquireProbeLock = async (dir: string, key: ProbeLockKey, target: string): Promise<ProcessLock> => {
   const lockPath = probeLockPath(dir, key);
   await ensurePrivateProbeDirectory(dir);
   try {
     return await acquireProcessLock(lockPath);
   } catch (error) {
-    if (error instanceof ProcessLockHeldError) throw new ProbeInProgressError(key);
+    if (error instanceof ProcessLockHeldError) throw new ProbeInProgressError(target);
     throw error;
   }
 };
@@ -79,7 +79,7 @@ const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: Probe
   try {
     const report = await untilAborted(subject.measure({ key, signal }), signal);
     const after = await subject.readKey();
-    if (!sameKey(key, after)) throw new ProbeKeyChangedError(key, after);
+    if (!sameKey(key, after)) throw new ProbeKeyChangedError(subject.target, key, after);
     await subject.save(key, report);
     return report;
   } finally {
@@ -89,7 +89,7 @@ const measureAndRecord = async <Key extends ProbeLockKey, Report>(subject: Probe
 
 export const recordProbe = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, dir: string, signal: AbortSignal): Promise<{ key: Key; report: Report }> => {
   const key = await subject.readKey();
-  const lock = await acquireProbeLock(dir, key);
+  const lock = await acquireProbeLock(dir, key, subject.target);
   return { key, report: await measureAndRecord(subject, key, lock, signal) };
 };
 
@@ -151,7 +151,7 @@ export const createAutoProbe = (options: AutoProbeOptions): AutoProbe => {
   };
 
   const startFlight = async <Key extends ProbeLockKey, Report>(subject: ProbeSubject<Key, Report>, key: Key, flight: string): Promise<void> => {
-    const lock = await acquireProbeLock(options.dir, key);
+    const lock = await acquireProbeLock(options.dir, key, subject.target);
     const recorded = measureAndRecord(subject, key, lock, stop.signal).then(
       () => undefined,
       (error: unknown) => {

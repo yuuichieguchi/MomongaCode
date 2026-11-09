@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUdsClient, createJsonLogger, systemClock } from '@momonga/foundation';
+import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -21,6 +21,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
     ...(pricing === undefined ? {} : { pricing }),
   });
   const handle = await startGatewayProcess({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,
@@ -30,7 +31,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
   registerCleanup(context, async () => {
     await handle.close();
   });
-  const client = createUdsClient(handle.socketPath);
+  const client = createUdsClient(fixedSocket(handle.socketPath));
   registerCleanup(context, () => client.close());
   return client;
 };

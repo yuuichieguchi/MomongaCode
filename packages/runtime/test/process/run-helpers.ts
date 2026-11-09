@@ -3,13 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { createUdsClient, inspectProcessLock, momongaPaths } from '@momonga/foundation';
+import { createUdsClient, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
@@ -63,6 +63,7 @@ export type RuntimeProcess = {
 
 export type StartRuntimeProcessOptions = {
   home: string;
+  generation: number;
   version: string;
   clock?: Clock;
   timers?: ServiceTimers;
@@ -171,6 +172,7 @@ export const startGateway = async (temp: RunHome, options: StartGatewayOptions =
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     const gateway = await startGatewayProcess({
+      generation: FIRST_GENERATION,
       home: temp.home,
       env: { ...sessionEnvFor(temp.home), ...options.env },
       version: GATEWAY_VERSION,
@@ -215,7 +217,7 @@ export type Launched = {
   stream(target: string): Promise<EventStream>;
 };
 
-export type LaunchOptions = Omit<StartRuntimeProcessOptions, 'home' | 'version' | 'logger' | 'stdout'> & {
+export type LaunchOptions = Omit<StartRuntimeProcessOptions, 'home' | 'generation' | 'version' | 'logger' | 'stdout'> & {
   logger?: RecordingLogger;
   stdout?: CapturedStdout;
   fakeTimers?: FakeTimers;
@@ -252,6 +254,7 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
   const stdout = givenStdout ?? captureStream();
   const handle = await startRuntimeProcess({
     home: temp.home,
+    generation: FIRST_GENERATION,
     version: RUNTIME_VERSION,
     logger,
     stdout,
@@ -268,7 +271,7 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
 };
 
 export const clientOf = (temp: RunHome) => {
-  const client = createUdsClient(temp.paths.sockets.runtime);
+  const client = createUdsClient(fixedSocket(firstGeneration(temp.paths).sockets.runtime));
   onCleanup(() => client.close());
   const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {

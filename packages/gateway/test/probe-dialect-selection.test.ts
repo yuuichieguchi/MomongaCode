@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
+import { vocabularyOf, runProbe } from '@momonga/gateway';
 import type { ProbeReport } from '@momonga/protocol';
 import { collectAllowedNames, generateInstance, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -20,7 +22,7 @@ const isRecord = (value: unknown): value is Json => typeof value === 'object' &&
 const probe = async (options: FakeChatCompletionsOptions, extra: Json = {}): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 2, ...extra });
+  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, samples: 2, ...extra });
   return { report, fake };
 };
 
@@ -140,7 +142,7 @@ describe('selection by measurement (rule 4)', () => {
   });
 
   it('tries the built-ins in their fixed order and selects explicit-keys on the fm decoder', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' }, { vocabulary: FM_VOCABULARY });
+    const { report } = await probe({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' }, { vocabulary: vocabularyOf(FM_SERVER) });
     expect(report.schemaDialect.selected).toBe('explicit-keys');
     expect(report.schemaDialect.shape).toBe('union');
     expect(triedOf(report)).toEqual([

@@ -26,7 +26,7 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   },
   { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>]', description: 'check the permission rules of this folder', longRunning: always },
   { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the model aliases with the capabilities their targets declare, or find the local model servers that are running', longRunning: (tokens) => tokens[0] === 'detect' },
-  { name: 'gateway', usage: 'probe <target> [--fm-binary <path>] [--samples <count>]', description: 'measure a model target and record the result for the gateway', longRunning: always },
+  { name: 'gateway', usage: 'probe <target> [--samples <count>]', description: 'measure a model target and record the result for the gateway', longRunning: always },
 ];
 
 export const runShellCommand = async (name: string, args: string, context: SlashContext, longRunning: boolean): Promise<void> => {

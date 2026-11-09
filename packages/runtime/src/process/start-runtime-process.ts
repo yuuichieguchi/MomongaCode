@@ -9,7 +9,9 @@ import {
   createJsonLogger,
   createRedactor,
   createLockCapability,
-  ensureMomongaDirs,
+  ensureGenerationDirs,
+  fixedSocket,
+  generationLayout,
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -99,6 +101,7 @@ import type { ToolRuntime } from './tool-runtime.ts';
 
 export type StartRuntimeProcessOptions = {
   home: string;
+  generation: number;
   version: string;
   clock?: Clock;
   timers?: ServiceTimers;
@@ -302,15 +305,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   try {
     const paths = await step('dirs', async () => {
       const resolved = momongaPaths(canonicalHome, process.platform, {});
-      await ensureMomongaDirs(resolved, { signal });
+      await ensureGenerationDirs(resolved, options.generation, { signal });
       return resolved;
     });
+    const own = generationLayout(canonicalHome, options.generation);
 
     const lock: ProcessLock = await step('lock', async () => {
       try {
-        return await (options.acquireLock ?? acquireProcessLock)(paths.locks.runtime);
+        return await (options.acquireLock ?? acquireProcessLock)(own.locks.runtime);
       } catch (error) {
-        if (error instanceof ProcessLockHeldError && error.lockPath === paths.locks.runtime) {
+        if (error instanceof ProcessLockHeldError && error.lockPath === own.locks.runtime) {
           throw new RuntimeAlreadyRunningError(error.message, error.lockPath, error.holderPid);
         }
         throw error;
@@ -454,7 +458,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const gatewayClient: GatewayClient = await step('gateway-client', () =>
       createGatewayClient({
-        socketPath: options.gatewaySocketPath ?? paths.sockets.gateway,
+        resolveSocket: fixedSocket(options.gatewaySocketPath ?? own.sockets.gateway),
         clock,
         timers,
         version,
@@ -550,12 +554,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const runService = await step('service', () =>
       createRunService({
+        ...(signal === undefined ? {} : { startSignal: signal }),
         store,
         clock,
         redactor,
         home: canonicalHome,
         version,
-        socketPath: paths.sockets.runtime,
+        socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
         sandboxKind: kind,
@@ -754,7 +759,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         latchFatal(asError(error));
       }
       if (fatalError !== undefined) throw fatalError;
-      const fields: ReadyFields = { service: 'runtime', pid: process.pid, version, socketPath: paths.sockets.runtime, startedAt };
+      const fields: ReadyFields = { service: 'runtime', pid: process.pid, version, socketPath: own.sockets.runtime, startedAt };
       announceReady(fields, stdout);
       logger.info('runtime ready');
       phase = 'running';

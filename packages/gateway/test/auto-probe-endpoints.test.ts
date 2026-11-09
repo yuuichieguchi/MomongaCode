@@ -8,6 +8,7 @@ import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const launchWith = async (target: Record<string, unknown>) => {
   const home = makeHome();
@@ -18,6 +19,7 @@ const launchWith = async (target: Record<string, unknown>) => {
     return new Promise<T>(() => undefined);
   };
   const handle = await launchGateway({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,
@@ -71,7 +73,7 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     const fake = await startFake({ scenario: 'tools-ok' });
     const probeRecordDir = path.join(makeHome(), 'probe');
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
-    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key));
+    const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system');
 
     const failure = await probeEndpointTarget({ probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).catch((error: unknown) => error);
 

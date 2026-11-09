@@ -37,7 +37,7 @@ const lantern = (dir: string) => {
       return new Promise((resolve, reject) => state.pending.push({ resolve, reject, signal }));
     },
     save: async (_key, report) => {
-      state.lockedDuringSave.push(await acquireProbeLock(dir, KEY).then((lock) => (lock.release(), false), (error: unknown) => error instanceof ProbeInProgressError));
+      state.lockedDuringSave.push(await acquireProbeLock(dir, KEY, KEY.target).then((lock) => (lock.release(), false), (error: unknown) => error instanceof ProbeInProgressError));
       state.saved.push(report);
     },
   };
