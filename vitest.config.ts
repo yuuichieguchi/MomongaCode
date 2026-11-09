@@ -1,5 +1,5 @@
 import { defineConfig } from 'vitest/config';
-import { E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
+import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
 
 export default defineConfig({
   test: {
@@ -22,7 +22,7 @@ export default defineConfig({
           globalSetup: ['test/support/journal-thread-module.ts', 'test/support/leak-guard.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
-          testTimeout: 60000,
+          testTimeout: DEFAULT_TEST_TIMEOUT_MS,
         },
       },
       {
@@ -33,7 +33,7 @@ export default defineConfig({
           globalSetup: ['test/support/journal-thread-module.ts', 'e2e/global-setup.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
-          testTimeout: 60000,
+          testTimeout: DEFAULT_TEST_TIMEOUT_MS,
         },
       },
     ],

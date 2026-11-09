@@ -2,7 +2,9 @@ import { execFile, execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { E2E_READY_DEADLINE_MS, until } from '../e2e/support/wait.ts';
+import { DEFAULT_TEST_TIMEOUT_MS, until } from '../e2e/support/wait.ts';
+import { CANDIDATE_CHECK_TIMEOUT_MS } from '../packages/cli/src/update/install.ts';
+import { TRANSFER_STALL_TIMEOUT_MS } from '../packages/cli/src/update/node-ports.ts';
 import { startFakeReleaseServer, checksumListing } from '../packages/cli/test/fake-release-server.ts';
 import type { FakeReleaseServer } from '../packages/cli/test/fake-release-server.ts';
 import { repoRoot } from './bundle.ts';
@@ -14,6 +16,9 @@ import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 const FIXTURE_REPO = 'acme/momonga';
 const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
 const ASSET = 'momonga-darwin-arm64';
+const BACKGROUND_INSTALL_REQUESTS = ['latest release', 'checksum listing', 'listing signature', 'release executable'] as const;
+const BACKGROUND_INSTALL_CHECKS = ['signature verification', 'known-answer signature control', 'codesign --verify', 'candidate --version'] as const;
+const BACKGROUND_INSTALL_BOUND_MS = BACKGROUND_INSTALL_REQUESTS.length * 2 * TRANSFER_STALL_TIMEOUT_MS + BACKGROUND_INSTALL_CHECKS.length * CANDIDATE_CHECK_TIMEOUT_MS;
 const MAIN_ENTRY = `${repoRoot}packages/cli/src/main.ts`;
 
 type Key = { privateKey: string; publicKey: string };
@@ -212,7 +217,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     expect(bytes(installation.bin).equals(bytes(v1))).toBe(true);
   });
 
-  it('installs a newer release in the background after an ordinary command and announces it once', async () => {
+  it('installs a newer release in the background after an ordinary command and announces it once', { timeout: BACKGROUND_INSTALL_BOUND_MS + DEFAULT_TEST_TIMEOUT_MS }, async () => {
     const installation = install();
     publishV2();
     const stateFile = path.join(installation.home, '.momonga', 'state', 'update.json');
@@ -221,7 +226,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     expect(first.stderr).toBe('');
 
     await until(() => fs.existsSync(stateFile) && (JSON.parse(fs.readFileSync(stateFile, 'utf8')) as { outcome: { kind: string } }).outcome.kind === 'installed', {
-      deadlineMs: E2E_READY_DEADLINE_MS,
+      deadlineMs: BACKGROUND_INSTALL_BOUND_MS,
       description: 'the background check to record the installed update',
     });
     expect(bytes(installation.bin).equals(bytes(v2))).toBe(true);

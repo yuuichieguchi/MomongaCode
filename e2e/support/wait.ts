@@ -26,6 +26,7 @@ export const E2E_DRAIN_TIMEOUT_MS = 1000;
 export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
 export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS } });
 export const E2E_HOOK_TIMEOUT_MS = 30_000;
+export const DEFAULT_TEST_TIMEOUT_MS = 60_000;
 export const E2E_DISPOSE_BOUND_MS = 25_000;
 export const E2E_RESTART_BACKOFF_MS = 200;
 export const E2E_RESTART_POLICY = { baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS } as const;
