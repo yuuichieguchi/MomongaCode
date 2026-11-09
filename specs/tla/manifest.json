@@ -3264,6 +3264,140 @@
       "measuredSeconds": 1286.24,
       "measuredCpuSeconds": 1492.52,
       "budgetCpuSeconds": 2989
+    },
+    {
+      "config": "UpdateSwitch",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 131918,
+      "measuredSeconds": 67.11,
+      "measuredCpuSeconds": 76.14,
+      "budgetCpuSeconds": 156
+    },
+    {
+      "config": "UpdateSwitch.sessions",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 21489,
+      "measuredSeconds": 9.91,
+      "measuredCpuSeconds": 7.7,
+      "budgetCpuSeconds": 19
+    },
+    {
+      "config": "UpdateSwitch.today",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoAbortRunning",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1571,
+      "measuredSeconds": 3.57,
+      "measuredCpuSeconds": 2.2,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.pausePending",
+      "role": "evidence",
+      "expect": {
+        "violates": "WorkNeverPaused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 104,
+      "measuredSeconds": 2.75,
+      "measuredCpuSeconds": 1.89,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.defer",
+      "role": "evidence",
+      "expect": {
+        "violates": "NewerClientNeverWaits",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 762,
+      "measuredSeconds": 2.88,
+      "measuredCpuSeconds": 2.3,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.claimRetiring",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetiringAddsNoWork",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 684,
+      "measuredSeconds": 2.85,
+      "measuredCpuSeconds": 2.23,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.killJobs",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoKilledJob",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9272,
+      "measuredSeconds": 4.38,
+      "measuredCpuSeconds": 3.15,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "UpdateSwitch.noNotice",
+      "role": "evidence",
+      "expect": {
+        "violates": "ClientsInformed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 60,
+      "measuredSeconds": 5.18,
+      "measuredCpuSeconds": 1.89,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.noRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "DraftKept",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 330,
+      "measuredSeconds": 3.67,
+      "measuredCpuSeconds": 2.0,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.refuseOld",
+      "role": "evidence",
+      "expect": {
+        "violates": "SessionMoves",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10019,
+      "measuredSeconds": 9.1,
+      "measuredCpuSeconds": 5.1,
+      "budgetCpuSeconds": 14
     }
   ]
 }
