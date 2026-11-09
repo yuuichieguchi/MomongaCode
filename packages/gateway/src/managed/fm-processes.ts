@@ -66,7 +66,16 @@ export const createGroupSpawn =
   ({ env, markerDirectory, onWarning }: GroupSpawnOptions): SpawnFn =>
   (file, args) => {
     const marker = path.join(markerDirectory, randomUUID());
-    const markerFd = fs.openSync(marker, 'w', 0o600);
+    const creator = fs.openSync(marker, 'w', 0o600);
+    let markerFd: number;
+    try {
+      markerFd = fs.openSync(marker, 'r');
+    } catch (error) {
+      fs.rmSync(marker, { force: true });
+      throw error;
+    } finally {
+      fs.closeSync(creator);
+    }
     const stdio: Array<'ignore' | number> = ['ignore', 'ignore', 'ignore'];
     stdio[MARKER_FD_INDEX] = markerFd;
     let child: ChildProcess;

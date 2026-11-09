@@ -61,9 +61,12 @@ export type ToolResume = {
   inputResponses: Record<string, unknown> | undefined;
 };
 
+export type SpawnMarker = { file: string; fd: number; settle: MarkerSettle };
+
 export type ToolContext = ReconcileContext & {
   markerFd?: number;
   markerSettle?: MarkerSettle;
+  spawnMarker?(): Promise<SpawnMarker>;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   ripgrep: RipgrepLocator;
@@ -105,7 +108,7 @@ export type ReconcileContext = SubjectContext & {
   clock: Clock;
   jobs?: BackgroundJobs;
   session: ToolSessionState;
-  attachProcess(process: { pgid: number; startedAt: number }): void;
+  attachProcess(process: { pgid: number; startedAt: number }): Promise<void>;
   update(content: ToolContent[]): void;
 };
 
@@ -153,6 +156,7 @@ export type ToolBody<Input> = {
   validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
   idleTimeoutMs?: number;
+  startsProcesses?: true;
   stopText?(stop: ToolStop): Promise<string>;
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
@@ -165,6 +169,8 @@ export type ToolBody<Input> = {
 export type AnyTool = ToolDefinition<unknown>;
 
 export const outputOriginOf = (tool: AnyTool): ToolOutputOrigin => (tool.server === undefined ? (tool.output ?? 'external') : 'external');
+
+export const startsProcesses = (tool: AnyTool): boolean => tool.sideEffect === 'exec' || tool.startsProcesses === true;
 
 export const harnessOutputToolsOf = (tools: readonly AnyTool[]): string[] => tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name);
 

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { GroupNotStoppedError, closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
-import type { ProbeTiming, ProcessGroupPort } from '@momonga/foundation';
+import { closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
+import type { ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export const SANDBOX_KILL_GRACE_MS = 1000;
@@ -101,17 +101,16 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     }).catch(reportStopFailure);
   };
 
-  const reapGroup = async (): Promise<void> => {
+  const reapGroup = async (): Promise<TerminateOutcome> => {
     graceCancelled = true;
     const stop = stopBound ?? deadlineSignal(timing, groupTerminationBoundMs(killGraceMs));
-    const outcome = await terminateGroup(pid, {
+    return terminateGroup(pid, {
       graceMs: killGraceMs,
       ...(termDeadline === undefined ? {} : { termDeadline }),
       ...(groupPort === undefined ? {} : { port: groupPort }),
       timing,
       signal: stop,
     });
-    if (outcome === 'unconfirmed') throw new GroupNotStoppedError(pid);
   };
 
   let afterExitRan = false;
@@ -121,10 +120,11 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     options.afterExit();
   };
 
-  const reapAndClean = async (): Promise<void> => {
+  const reapAndClean = async (): Promise<TerminateOutcome | undefined> => {
     const failures: unknown[] = [];
+    let outcome: TerminateOutcome | undefined;
     try {
-      await reapGroup();
+      outcome = await reapGroup();
     } catch (error) {
       failures.push(error);
     }
@@ -136,6 +136,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     if (stopFailure !== undefined) failures.push(stopFailure);
     if (failures.length === 1) throw failures[0];
     if (failures.length > 1) throw new AggregateError(failures, 'the process group could not be reaped and the cleanup after it failed');
+    return outcome;
   };
 
   let childError: Error | undefined;
@@ -150,7 +151,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
     child.once('exit', (code, exitSignal) => {
       leaderExited = true;
       signal.removeEventListener('abort', onAbort);
-      reapAndClean().then(() => {
+      reapAndClean().then((outcome) => {
         if (childError !== undefined) {
           reject(childError);
           return;
@@ -159,7 +160,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
           reject(stdinFailure);
           return;
         }
-        resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }) });
+        resolve({ code, signal: exitSignal, ...(killedBy === undefined ? {} : { killedBy }), ...(outcome === 'unconfirmed' ? { groupNotStopped: true as const } : {}) });
       }, reject);
     });
   });

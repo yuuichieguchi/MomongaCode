@@ -74,7 +74,7 @@ const answeringSandbox = (answer: (argv: string[]) => string) => {
     kind: 'none' as const,
     spawn: (command: { argv: string[] }, policy: unknown) => {
       spawned.push(command.argv);
-      return { pid: 0, pgid: 0, policy, stdout: textStream(answer(command.argv)), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+      return { pid: 999_990, pgid: 999_990, policy, stdout: textStream(answer(command.argv)), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
     },
   };
   return { sandbox, spawned };
@@ -87,7 +87,7 @@ describe('Grep reports the ripgrep it ran as its backend (design 6.4)', () => {
     const target = tools.write('a.ts', 'alpha\n');
     sandbox.spawn = ((command: { argv: string[] }, policy: unknown) => {
       spawned.push(command.argv);
-      return { pid: 0, pgid: 0, policy, stdout: textStream(`${target}\0`), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+      return { pid: 999_990, pgid: 999_990, policy, stdout: textStream(`${target}\0`), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
     }) as typeof sandbox.spawn;
     const locator = { locate: async () => ({ ok: true as const, path: '/bundled/rg', source: 'bundled' as const, version: '15.2.0', release: async () => undefined }) };
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
@@ -128,7 +128,7 @@ describe('Grep hands ripgrep its flags through an owner-only file that lives onl
       expect(policy.readAllowed).toContain(file);
       const answer = after(command.argv);
       if (answer instanceof Error) throw answer;
-      return { pid: 0, pgid: 0, stdout: textStream(answer), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+      return { pid: 999_990, pgid: 999_990, stdout: textStream(answer), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
     },
   });
 
