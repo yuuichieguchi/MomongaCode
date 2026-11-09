@@ -82,6 +82,12 @@ const FM_TARGET_SCHEMA = {
     outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    capabilities: {
+      type: 'object',
+      properties: { contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT }, maxOutputTokens: POSITIVE_INTEGER },
+      required: ['contextWindow', 'maxOutputTokens'],
+      additionalProperties: false,
+    },
   },
   required: ['adapter'],
   additionalProperties: false,
@@ -404,6 +410,11 @@ export const SETTINGS_SCHEMA = {
     disabledMcpjsonServers: STRING_ARRAY,
     enableAllProjectMcpServers: { type: 'boolean' },
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
+    mcp: {
+      type: 'object',
+      properties: { toolIdleTimeoutMs: NON_NEGATIVE_INTEGER, toolTotalTimeoutMs: POSITIVE_INTEGER },
+      additionalProperties: false,
+    },
     models: {
       type: 'object',
       properties: {

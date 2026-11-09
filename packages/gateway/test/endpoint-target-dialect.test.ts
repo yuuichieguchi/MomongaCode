@@ -4,6 +4,7 @@ import type { DeclaredCapabilities } from '../src/probe/decide.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
+import { NO_PROBE_START } from './fm-record-support.ts';
 
 const CONSTRUCTS: ConstructSupport = { ref: 'refused', typeArray: 'accepted', mixedEnum: 'accepted' };
 
@@ -22,6 +23,8 @@ const targetOf = (targetName: string, declared: DeclaredCapabilities, report: Pr
     model: 'm',
     declared,
     record: report === null ? null : { identity: 'id', identityFields: [], report },
+    readRecord: async () => report === null ? null : { identity: 'id', identityFields: [], report },
+    startProbe: NO_PROBE_START,
     readIdentity: async () => 'id',
     saveRecord: async () => undefined,
   });
@@ -55,8 +58,10 @@ describe('one resolution of the dialect id: declared, else the record, else json
     expect((await target.capabilities()).schemaDialect).toBe('strict-closed');
   });
 
-  it('resolves an unprobed target without a declaration to json-schema-2020-12', async () => {
-    expect((await targetOf('remote', UNDECLARED, null).capabilities()).schemaDialect).toBe('json-schema-2020-12');
+  it('resolves an unprobed target without a declaration to json-schema-2020-12, and its capabilities wait for the probe', async () => {
+    const target = targetOf('remote', UNDECLARED, null);
+    expect(target.schemaDialect()).toBe('json-schema-2020-12');
+    await expect(target.capabilities()).rejects.toThrow('this test keeps a probe record');
   });
 });
 

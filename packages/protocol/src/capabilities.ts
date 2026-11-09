@@ -4,7 +4,11 @@ export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
 export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: string; remedy: string };
 
-export type ToolCallingState = ToolCallingMode | NeedsProbe;
+export type Probing = { state: 'probing'; message: string; retryAfterSeconds: number };
+
+export type ToolCallingState = ToolCallingMode | NeedsProbe | Probing;
+
+export type ProbingCapabilities = { toolCalling: Probing; source: 'unprobed' };
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
 export const TARGET_BILLINGS = ['metered', 'local', 'plan'] as const;
@@ -235,6 +239,7 @@ export const isToolCallingState = (value: unknown): value is ToolCallingState =>
   if (typeof value === 'string') return TOOL_CALLING_MODES.some((mode) => mode === value);
   if (typeof value !== 'object' || value === null) return false;
   const record = value as Record<string, unknown>;
+  if (record['state'] === 'probing') return typeof record['message'] === 'string' && typeof record['retryAfterSeconds'] === 'number';
   return record['state'] === 'needs_probe' && typeof record['message'] === 'string' && typeof record['evidence'] === 'string' && typeof record['remedy'] === 'string';
 };
 
@@ -246,6 +251,7 @@ export type Readiness =
   | { state: 'ready' }
   | { state: 'no_tools'; message: string; remedy: string }
   | { state: 'needs_probe'; message: string; evidence: string; remedy: string }
+  | Probing
   | { state: 'unavailable'; message: string; remedy: string };
 
 export type ReadinessInput = ({ toolCalling: ToolCallingState; unavailable?: undefined } & Partial<Omit<CapabilitiesCore, 'toolCalling'>>) | { unavailable: string };
@@ -262,11 +268,14 @@ export function agentReadiness(input: ReadinessInput): Readiness {
   if (input.unavailable !== undefined) return { state: 'unavailable', message: input.unavailable, remedy: UNAVAILABLE_REMEDY };
   const { toolCalling } = input;
   if (typeof toolCalling !== 'string') {
+    if (toolCalling.state === 'probing') return { state: 'probing', message: toolCalling.message, retryAfterSeconds: toolCalling.retryAfterSeconds };
     return { state: 'needs_probe', message: toolCalling.message, evidence: toolCalling.evidence, remedy: toolCalling.remedy };
   }
   return toolCalling === 'none' ? { state: 'no_tools', message: NO_TOOLS_MESSAGE, remedy: NO_TOOLS_REMEDY } : { state: 'ready' };
 }
 
-export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => [readiness.message, readiness.remedy].join('\n');
+export const isProbingCapabilities = (capabilities: { toolCalling: ToolCallingState }): capabilities is ProbingCapabilities => agentReadiness({ toolCalling: capabilities.toolCalling }).state === 'probing';
+
+export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => ('remedy' in readiness ? [readiness.message, readiness.remedy].join('\n') : readiness.message);
 
 export const readinessRemedyOf = (text: string): string => text.split('\n').at(-1) ?? text;

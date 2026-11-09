@@ -16,6 +16,13 @@ export class StreamFailure extends Error {
   }
 }
 
+export class UpstreamStall extends StreamFailure {
+  constructor(code: string, message: string) {
+    super(code, 'server_error', message);
+    this.name = 'UpstreamStall';
+  }
+}
+
 export class UpstreamProtocolError extends StreamFailure {
   constructor(message: string) {
     super('upstream_protocol_error', 'model_error', message);

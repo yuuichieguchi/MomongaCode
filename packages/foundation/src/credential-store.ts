@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import { systemRandom } from './system-random.ts';
 import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
-import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
 export interface CredentialEntry {
   read(): Promise<string | undefined>;
@@ -56,26 +54,10 @@ export const createMemoryCredentialStore = (): CredentialStore => {
 };
 
 const FILE_MODE = 0o600;
-const DIRECTORY_MODE = 0o700;
 
 const fileFor = (directory: string, key: string): string => path.join(directory, `${createHash('sha256').update(key).digest('hex')}.json`);
 
-const readOwnerOnly = async (file: string): Promise<string | undefined> => {
-  let handle: fs.promises.FileHandle;
-  try {
-    handle = await fs.promises.open(file, fs.constants.O_RDONLY | noFollowFlag());
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  try {
-    const stat = await handle.stat();
-    assertPrivateRegularFile(stat, `credential file ${file}`);
-    return await handle.readFile('utf8');
-  } finally {
-    await handle.close();
-  }
-};
+const readOwnerOnly = (file: string): Promise<string | undefined> => nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`);
 
 export type FileCredentialStoreOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
 
@@ -83,20 +65,15 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
   const ports = options.ports ?? systemFileLockPorts;
   const serialized = createKeyedSerializer();
 
-  const ensureDirectory = async (): Promise<void> => {
-    await fs.promises.mkdir(directory, { recursive: true, mode: DIRECTORY_MODE });
-    await fs.promises.chmod(directory, DIRECTORY_MODE);
-  };
-
   const writeAtomically = async (key: string, value: string): Promise<void> => {
-    await ensureDirectory();
+    await nodeFileSystem.mkdirPrivate(directory);
     await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, fileFor(directory, key), value, { mode: FILE_MODE });
   };
 
   const locked = <T>(key: string, action: () => Promise<T>): Promise<T> =>
     serialized(key, async () => {
       const lockDirectory = `${directory}.locks`;
-      await fs.promises.mkdir(lockDirectory, { recursive: true, mode: DIRECTORY_MODE });
+      await nodeFileSystem.mkdirPrivate(lockDirectory);
       const lockPath = path.join(lockDirectory, `${path.basename(fileFor(directory, key))}.lock`);
       return withFileLock(lockPath, action, { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
     });
@@ -104,7 +81,7 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
   const entryOf = (key: string): CredentialEntry => ({
     read: () => readOwnerOnly(fileFor(directory, key)),
     write: (value) => writeAtomically(key, value),
-    remove: () => fs.promises.rm(fileFor(directory, key), { force: true }),
+    remove: () => nodeFileSystem.rm(fileFor(directory, key)),
   });
 
   return storeThroughScope({

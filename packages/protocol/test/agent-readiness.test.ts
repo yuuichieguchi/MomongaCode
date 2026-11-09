@@ -55,7 +55,7 @@ describe('agentReadiness decides whether a target can run a task from its report
     const verdicts = [agentReadiness({ toolCalling: 'none' }), agentReadiness({ toolCalling: NEEDS_PROBE }), agentReadiness({ unavailable: 'down' })];
     for (const verdict of verdicts) {
       expect(verdict.state).not.toBe('ready');
-      if (verdict.state === 'ready') continue;
+      if (verdict.state === 'ready' || verdict.state === 'probing') continue;
       expect(verdict.remedy.length).toBeGreaterThan(0);
     }
   });

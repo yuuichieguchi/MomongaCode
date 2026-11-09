@@ -214,6 +214,17 @@ const requeueOrStop = async (
     await terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
+  if (disposition.kind === 'wait') {
+    const availableAt = options.clock.now() + disposition.retryAfterMs;
+    const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
+    if (deadlineAt !== undefined && availableAt >= deadlineAt) {
+      await terminals.finish('STOPPED', { stopReason: 'timeout' });
+      return;
+    }
+    journal.append([{ type: 'notice', level: 'info', message: disposition.message, code: disposition.code }]);
+    terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
+    return;
+  }
   const refund = disposition.kind === 'requeue' && disposition.refund;
   const unhonoured = async (otherwise: () => Promise<void>): Promise<void> => {
     if (disposition.kind === 'defer') await terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });

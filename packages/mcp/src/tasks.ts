@@ -21,7 +21,7 @@ export type TaskParams = { taskId: string; inputResponses?: Record<string, Elici
 
 export type TaskRequester = (method: TaskMethod, params: TaskParams, signal: AbortSignal | undefined) => Promise<unknown>;
 
-type TaskBase = { taskId: string; pollIntervalMs: number | undefined; serverAgeMs: number | undefined; ttlMs: number | undefined };
+type TaskBase = { taskId: string; pollIntervalMs: number | undefined; serverAgeMs: number | undefined; ttlMs: number | undefined; statusMessage: string | undefined };
 
 type TaskView =
   | (TaskBase & { status: 'working' })
@@ -40,20 +40,26 @@ export const parseTask = (value: unknown): TaskView => {
   const createdAt = typeof value['createdAt'] === 'string' ? Date.parse(value['createdAt']) : Number.NaN;
   const lastUpdatedAt = typeof value['lastUpdatedAt'] === 'string' ? Date.parse(value['lastUpdatedAt']) : Number.NaN;
   const serverAgeMs = Number.isNaN(createdAt) || Number.isNaN(lastUpdatedAt) || lastUpdatedAt < createdAt ? undefined : lastUpdatedAt - createdAt;
-  const base: TaskBase = { taskId, pollIntervalMs, ttlMs, serverAgeMs };
+  const statusMessage = typeof value['statusMessage'] === 'string' ? value['statusMessage'] : undefined;
+  const base: TaskBase = { taskId, pollIntervalMs, ttlMs, serverAgeMs, statusMessage };
   const status = value['status'];
   if (status === 'working') return { ...base, status };
   if (status === 'input_required') return { ...base, status, inputRequests: value['inputRequests'] };
   if (status === 'completed') return { ...base, status, result: value['result'] };
   if (status === 'failed') return { ...base, status, error: value['error'] };
-  if (status === 'cancelled') {
-    const message = value['statusMessage'];
-    return { ...base, status, message: typeof message === 'string' ? message : undefined };
-  }
+  if (status === 'cancelled') return { ...base, status, message: statusMessage };
   throw new McpTaskError(taskId, `the server returned task ${taskId} with an unknown status`);
 };
 
-export const pollDelayMs = (hint: number | undefined): number => Math.max(MIN_TASK_POLL_MS, hint ?? DEFAULT_TASK_POLL_MS);
+export const pollDelayMs = (hint: number | undefined, ceilingMs: number | undefined): number => {
+  const wanted = hint ?? DEFAULT_TASK_POLL_MS;
+  return Math.max(MIN_TASK_POLL_MS, ceilingMs === undefined ? wanted : Math.min(wanted, ceilingMs));
+};
+
+export const pollCeilingMs = (idleMs: number | undefined, totalMs: number): number => Math.floor(Math.min(idleMs ?? totalMs, totalMs) / 2);
+
+const progressed = (previous: TaskView | undefined, next: TaskView): boolean =>
+  previous === undefined || previous.status !== next.status || previous.statusMessage !== next.statusMessage;
 
 const describeJsonRpcError = (error: unknown): string => {
   if (!isRecord(error)) return 'unknown error';
@@ -70,10 +76,12 @@ export type SettleTaskOptions = {
   signal: AbortSignal;
   onCheckpoint(checkpoint: McpCheckpoint): void;
   accept(taskId: string, result: unknown): Promise<CallToolResult>;
-  trackCancel(outcome: Promise<void>): void;
+  trackCancel(outcome: Promise<void>, taskId: string): void;
+  onProgress?(): void;
+  pollCeilingMs?: number;
 };
 
-export const settleTask = async ({ start, answers, request, timers, clock, signal, onCheckpoint, accept, trackCancel }: SettleTaskOptions): Promise<CallToolResult> => {
+export const settleTask = async ({ start, answers, request, timers, clock, signal, onCheckpoint, accept, trackCancel, onProgress, pollCeilingMs: ceilingMs }: SettleTaskOptions): Promise<CallToolResult> => {
   const answered = new Set<string>('answered' in start ? start.answered : []);
   const checkpoint = (taskId: string): McpCheckpoint => ({ kind: 'task', taskId, answered: [...answered] });
   const cancelThenFail = async (taskId: string, failure: McpTaskError | McpInputProtocolError): Promise<never> => {
@@ -85,12 +93,15 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
     throw failure;
   };
   const cancelThenAbort = (taskId: string): never => {
-    trackCancel(request('tasks/cancel', { taskId }, undefined).then(() => undefined));
+    trackCancel(request('tasks/cancel', { taskId }, undefined).then(() => undefined), taskId);
     throw signal.reason;
   };
   let ageOffsetMs = Number.NEGATIVE_INFINITY;
+  let previous: TaskView | undefined;
   const receive = (raw: unknown): { view: TaskView; ageMs: number } => {
     const view = parseTask(raw);
+    if (progressed(previous, view)) onProgress?.();
+    previous = view;
     const now = clock.now();
     ageOffsetMs = Math.max(ageOffsetMs, (view.serverAgeMs ?? 0) - now);
     return { view, ageMs: now + ageOffsetMs };
@@ -135,7 +146,7 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
       case 'working':
         break;
     }
-    await pause(timers, pollDelayMs(view.pollIntervalMs), signal);
+    await pause(timers, pollDelayMs(view.pollIntervalMs, ceilingMs), signal);
     if (signal.aborted) return cancelThenAbort(taskId);
     try {
       received = receive(await request('tasks/get', { taskId }, signal));

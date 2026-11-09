@@ -1,9 +1,12 @@
 --------------------------- MODULE ProcessStop ---------------------------
+\* Limits the code inherits from the platforms, checked by test/process-stop-conformance.test.ts:
+\* - darwin reads a start time with ps -o lstart, whose resolution is one second, so a pid reused within the same second reads the same start time.
+\* - Begin and TermWaitEnds prove a target and signal it in one step. The code reads a start time only after holdersOf has listed the pid, so the window between holdersOf and the first startTimeOf cannot be closed where the listing carries no start time.
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
@@ -72,14 +75,18 @@ ListedHolderInGroup == \E m \in Members : listed[m] /\ inGroup[m] /\ state[m] # 
 
 Proved == mode = "live" \/ ListedHolderInGroup
 
+ReusedHolderInGroup == \E m \in Members : listed[m] /\ inGroup[m] /\ swapped[m]
+
 GateTerm ==
     CASE Variant \in {"noIdentityCheck", "termToReused"} -> TRUE
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
+      [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
 
 GateKill ==
     CASE Variant = "noIdentityCheck" -> TRUE
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
+      [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
 
 KeepOnUnconfirmed == Variant # "dropMarkerOnUnconfirmed"
