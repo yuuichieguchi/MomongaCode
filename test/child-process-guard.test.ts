@@ -8,10 +8,12 @@ import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, minimalChildEnv } from '@momong
 import { productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
-import { INTERNAL_COMMANDS } from '../packages/cli/src/daemon/launcher.ts';
+import { INTERNAL_COMMANDS, SUPERVISED_ROLE_COMMANDS, selfInvocation } from '../packages/cli/src/daemon/launcher.ts';
+import { UPDATE_CHECK_COMMAND } from '../packages/cli/src/update/background.ts';
 import { nodeSpawnDetached } from '../packages/cli/src/node-ports.ts';
 import { secretStoreLaunchRefusal } from './support/child-process-guard.ts';
 
+const ROOT = path.resolve(import.meta.dirname, '..');
 const require = createRequire(import.meta.url);
 const nodeChildProcess = require('node:child_process') as typeof childProcessDefault;
 
@@ -94,24 +96,53 @@ describe('the worker guard refuses a given MOMONGA_SECRET_PROGRAM outside the fa
   });
 });
 
-describe('the worker guard refuses the product start of the supervisor on a leaking PATH (iii)', () => {
-  const superviseArgs = (marker: string): string[] => ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`, INTERNAL_COMMANDS.supervise];
+const GIVEN_STORE_COMMANDS: ReadonlySet<string> = new Set(Object.values(SUPERVISED_ROLE_COMMANDS));
+const STORE_CHOOSING_SELF_LAUNCHES = Object.values(INTERNAL_COMMANDS).filter((command) => !GIVEN_STORE_COMMANDS.has(command));
+const SELF_KINDS = ['single-binary', 'script'] as const;
 
-  it('nodeSpawnDetached with a hand-built PATH of /usr/bin is refused before exec', async () => {
-    await expectRefusedBeforeLaunch(/\(iii\) it starts the supervisor \(__supervise\), which would choose the secret store \/usr\/bin\/security/, (d) =>
-      nodeSpawnDetached({ command: process.execPath, args: superviseArgs(d.marker), env: { PATH: '/usr/bin:/bin', HOME: d.dir }, cwd: d.dir }),
-    );
+describe('the worker guard refuses a product self-launch that would choose its store from a leaking PATH (iii)', () => {
+  const markerWriter = (marker: string): string => `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`;
+  const selfLaunchOf = (kind: (typeof SELF_KINDS)[number], subcommand: string, decoy: Decoy): { command: string; args: readonly string[] } => {
+    const invocation = selfInvocation(kind === 'script' ? { kind, execPath: process.execPath, script: path.join(decoy.dir, 'main.js') } : { kind, execPath: process.execPath }, subcommand);
+    if (kind === 'script') fs.writeFileSync(path.join(decoy.dir, 'main.js'), markerWriter(decoy.marker));
+    return kind === 'script' ? invocation : { command: invocation.command, args: ['-e', markerWriter(decoy.marker), ...invocation.args] };
+  };
+
+  it('the store-choosing self-launches are the supervisor start and the update check', () => {
+    expect([...STORE_CHOOSING_SELF_LAUNCHES].sort()).toEqual([INTERNAL_COMMANDS.supervise, UPDATE_CHECK_COMMAND].sort());
   });
 
-  it('nodeSpawnDetached with productTestEnv starts', async () => {
-    const decoy = decoySecurity();
-    try {
-      const child = nodeSpawnDetached({ command: process.execPath, args: superviseArgs(decoy.marker), env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: decoy.dir }), cwd: decoy.dir });
-      await child.exit;
-      expect(fs.existsSync(decoy.marker)).toBe(true);
-    } finally {
-      fs.rmSync(decoy.dir, { recursive: true, force: true });
-    }
+  it('every product call of selfInvocation names its subcommand through INTERNAL_COMMANDS or SUPERVISED_ROLE_COMMANDS', () => {
+    const cliSources = fs.readdirSync(path.join(ROOT, 'packages/cli/src'), { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.ts') || name.endsWith('.tsx'));
+    const unnamed = cliSources.flatMap((name) =>
+      [...fs.readFileSync(path.join(ROOT, 'packages/cli/src', name), 'utf8').matchAll(/(?<!const )selfInvocation\(\s*[^,]+,\s*([^,)]+)/g)]
+        .map((match) => (match[1] as string).trim())
+        .filter((subcommand) => !/^(INTERNAL_COMMANDS|SUPERVISED_ROLE_COMMANDS)[.[]/.test(subcommand) && subcommand !== 'UPDATE_CHECK_COMMAND')
+        .map((subcommand) => `${name}: ${subcommand}`),
+    );
+    expect(unnamed).toEqual([]);
+  });
+
+  describe.each(STORE_CHOOSING_SELF_LAUNCHES)('%s', (subcommand) => {
+    it.each(SELF_KINDS)('through the real spawn port as a %s with a hand-built PATH of /usr/bin is refused before exec', async (kind) => {
+      await expectRefusedBeforeLaunch(new RegExp(`\\(iii\\) it is the product self-launch ${subcommand}, which would choose the secret store /usr/bin/security`), (d) =>
+        nodeSpawnDetached({ ...selfLaunchOf(kind, subcommand, d), env: { PATH: '/usr/bin:/bin', HOME: d.dir }, cwd: d.dir }),
+      );
+    });
+
+    it.each(SELF_KINDS)('through the real spawn port as a %s with productTestEnv starts', async (kind) => {
+      const decoy = decoySecurity();
+      try {
+        await nodeSpawnDetached({ ...selfLaunchOf(kind, subcommand, decoy), env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: decoy.dir }), cwd: decoy.dir }).exit;
+        expect(fs.existsSync(decoy.marker)).toBe(true);
+      } finally {
+        fs.rmSync(decoy.dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it.each(Object.values(SUPERVISED_ROLE_COMMANDS))('the supervised role %s, which uses the store it is given, is not judged by its PATH', (subcommand) => {
+    expect(secretStoreLaunchRefusal('spawn', [process.execPath, [subcommand], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 });
 
@@ -152,7 +183,6 @@ describe('the child_process facade puts the fake secret programs first on every 
 });
 
 const IMPORT_OF_CHILD_PROCESS = /(?:from\s*|import\s*\(\s*|require\s*\(\s*)['"](?:node:)?child_process['"]|['"]node-pty['"]/;
-const ROOT = path.resolve(import.meta.dirname, '..');
 const ALLOWED_IMPORTERS: ReadonlySet<string> = new Set(['packages/testkit/src/child-process.ts', 'test/support/child-process-guard.ts', 'test/child-process-guard.test.ts']);
 
 const testSources = (): string[] => {
