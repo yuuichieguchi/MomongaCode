@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
+import { PAUSE_CODE, PROFILE_ID, START_MS, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
 import type { FakeSignIn, Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -138,7 +138,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   it('a new install of a paused account ends the pause', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({});
+    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({ code: PAUSE_CODE });
     const again = await signInAtFake(h, { clientId: signIn.clientId });
     await installOf(h, 'work', again);
     expect((await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal)).bearer).toBe(again.tokens.access_token);
@@ -154,7 +154,7 @@ describe('two accounts are isolated (AccountsIsolated, OtherAccountsUntouched)',
     const homeBefore = await rawRecord(h, 'home');
     toRefreshWindow(h, START_MS);
     await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
-    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect(await rawRecord(h, 'home')).toBe(homeBefore);
     expect(await readRecord(h, 'home')).toMatchObject({ client_id: home.clientId, subject: 'sub-second-user', refresh_token: home.tokens.refresh_token });
   });

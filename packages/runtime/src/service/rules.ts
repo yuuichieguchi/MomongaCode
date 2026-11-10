@@ -4,7 +4,7 @@ import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGovern
 import { enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
 import type { AddRuleRequest, Capabilities, GoverningFactView, PolicyGovernanceResponse, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
-import { GatewayRequestError } from '../gateway-client.ts';
+import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { ruleParses } from '../governance/rules.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -42,17 +42,28 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     return fact;
   };
 
-  const sizeOf = async (tokens: number) => {
-    const aliases = await deps.modelAliases();
-    const targets = await Promise.all(
-      aliases.map(async (alias) => ({ target: alias, contextWindow: (await deps.modelCapabilities(alias, deps.closeSignal)).contextWindow })),
-    );
-    return ruleSizeReport(tokens, targets);
+  type AliasWindow = { measured: true; target: string; contextWindow: number } | { measured: false; warning: string };
+
+  const windowOf = async (alias: string): Promise<AliasWindow> => {
+    try {
+      return { measured: true, target: alias, contextWindow: (await deps.modelCapabilities(alias, deps.closeSignal)).contextWindow };
+    } catch (error) {
+      if (!(error instanceof ModelUnlistedError)) throw error;
+      return { measured: false, warning: `the size of this rule was not measured against the model alias ${alias}: ${error.message}` };
+    }
+  };
+
+  const sizeOf = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
+    const windows = await Promise.all((await deps.modelAliases()).map(windowOf));
+    return {
+      size: ruleSizeReport(tokens, windows.flatMap((window) => (window.measured ? [{ target: window.target, contextWindow: window.contextWindow }] : []))),
+      warnings: windows.flatMap((window) => (window.measured ? [] : [window.warning])),
+    };
   };
 
   const sizeOrWarning = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
     try {
-      return { size: await sizeOf(tokens), warnings: [] };
+      return await sizeOf(tokens);
     } catch (error) {
       if (!(error instanceof GatewayRequestError)) throw error;
       return { size: [], warnings: [`the size of this rule could not be measured because the gateway did not answer: ${error.message}`] };

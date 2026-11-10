@@ -1,10 +1,21 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING, agentReadiness, isToolCallingState } from '@momonga/protocol';
-import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
-
-const MS_PER_SECOND = 1000;
+import {
+  COMPACTION_RESULT_EVENT,
+  DEFERRED_HEADER,
+  ERROR_TYPES,
+  ROLE_HEADER,
+  RUN_ID_HEADER,
+  STREAM_IDLE_HEADER,
+  TARGET_PROBING,
+  isProbingCapabilities,
+  isToolCallingState,
+  isUnavailableCapabilities,
+  planAccountRefOf,
+} from '@momonga/protocol';
 import type {
+  BilledCallsCursorView,
+  BilledCallsPageView,
   Capabilities,
   CompactRequest,
   CompactResource,
@@ -12,12 +23,17 @@ import type {
   CountTokensResult,
   CreateResponseBody,
   ErrorType,
+  GatewayCostReportView,
   GatewayHealth,
+  HeaderRole,
+  PlanAccountRef,
   StreamEvent,
 } from '@momonga/protocol';
 import type { Clock, GatewayCallOptions, GatewayPort } from './ports.ts';
 import { systemTimers } from './service/timers.ts';
 import type { ServiceTimers } from './service/timers.ts';
+
+const MS_PER_SECOND = 1000;
 
 export type GatewayRequestErrorFields = {
   status: number;
@@ -28,6 +44,7 @@ export type GatewayRequestErrorFields = {
   retryAfterMs?: number;
   provenNotSent?: boolean;
   deferred?: boolean;
+  plan?: PlanAccountRef;
 };
 
 export class GatewayRequestError extends Error {
@@ -38,6 +55,7 @@ export class GatewayRequestError extends Error {
   readonly retryAfterMs?: number;
   readonly provenNotSent?: boolean;
   readonly deferred?: boolean;
+  declare readonly plan?: PlanAccountRef;
 
   constructor(fields: GatewayRequestErrorFields) {
     super(fields.message);
@@ -49,8 +67,20 @@ export class GatewayRequestError extends Error {
     if (fields.retryAfterMs !== undefined) this.retryAfterMs = fields.retryAfterMs;
     if (fields.provenNotSent !== undefined) this.provenNotSent = fields.provenNotSent;
     if (fields.deferred !== undefined) this.deferred = fields.deferred;
+    if (fields.plan !== undefined) this.plan = fields.plan;
   }
 }
+
+export class ModelUnlistedError extends GatewayRequestError {
+  constructor(fields: GatewayRequestErrorFields) {
+    super(fields);
+    this.name = 'ModelUnlistedError';
+  }
+}
+
+const SERVICE_UNAVAILABLE_STATUS = 503;
+
+export const isTargetProbing = (error: GatewayRequestError): boolean => error.status === SERVICE_UNAVAILABLE_STATUS && error.code === TARGET_PROBING;
 
 export type GatewayClientOptions = {
   resolveSocket: SocketResolver;
@@ -147,6 +177,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
   }
   const body = isRecord(parsed) ? parsed['error'] : undefined;
   if (!isRecord(body) || typeof body['message'] !== 'string' || typeof body['code'] !== 'string' || !isErrorType(body['type'])) return fallback();
+  const plan = planAccountRefOf(body['plan']);
   return new GatewayRequestError({
     status: response.status,
     type: body['type'],
@@ -154,6 +185,7 @@ const errorFromBody = (response: UdsResponse, text: string, nowMs: number): Gate
     message: body['message'],
     ...(typeof body['param'] === 'string' ? { param: body['param'] } : {}),
     ...retry,
+    ...(plan === undefined ? {} : { plan }),
   });
 };
 
@@ -162,6 +194,7 @@ const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): Gateway
   if (event.status === undefined || !isRecord(error) || typeof error.message !== 'string' || typeof error.code !== 'string' || !isErrorType(error.type)) {
     throw invalidResponse('an error event does not carry a status, a typed error and a code');
   }
+  const plan = planAccountRefOf(error.plan);
   return new GatewayRequestError({
     status: event.status,
     type: error.type,
@@ -170,7 +203,32 @@ const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): Gateway
     ...(typeof error.param === 'string' ? { param: error.param } : {}),
     ...(event.retry_after_ms === undefined ? {} : { retryAfterMs: event.retry_after_ms }),
     ...(event.deferred === true ? { deferred: true } : {}),
+    ...(plan === undefined ? {} : { plan }),
   });
+};
+
+const holdsMalformedUnavailable = (capabilities: unknown): boolean => {
+  if (!isRecord(capabilities)) return false;
+  const toolCalling = capabilities['toolCalling'];
+  return isRecord(toolCalling) && toolCalling['state'] === 'unavailable' && !isToolCallingState(toolCalling);
+};
+
+const unlistedErrorOf = (capabilities: Record<string, unknown>): ModelUnlistedError | undefined => {
+  const { toolCalling } = capabilities;
+  if (!isToolCallingState(toolCalling)) return undefined;
+  const listed = { toolCalling };
+  if (isProbingCapabilities(listed)) {
+    return new ModelUnlistedError({
+      status: 503,
+      type: 'server_error',
+      code: TARGET_PROBING,
+      message: listed.toolCalling.message,
+      retryAfterMs: listed.toolCalling.retryAfterSeconds * MS_PER_SECOND,
+    });
+  }
+  if (!isUnavailableCapabilities(listed)) return undefined;
+  const { status, type, code, message, param } = listed.toolCalling;
+  return new ModelUnlistedError({ status, type, code, message, ...(param === undefined ? {} : { param }) });
 };
 
 export const createGatewayClient = (options: GatewayClientOptions): GatewayClient => {
@@ -294,6 +352,9 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         throw invalidResponse('the model list holds an entry without its targets and their counters');
       }
       if (!isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) throw invalidResponse('the model list holds a malformed entry');
+      if ([entry['capabilities'], ...Object.values(entry['targetCapabilities'])].some(holdsMalformedUnavailable)) {
+        throw invalidResponse('the model list holds a malformed unavailable entry');
+      }
       return {
         id: entry['id'],
         targets,
@@ -309,13 +370,8 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     if (found === undefined) {
       throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
     }
-    const { toolCalling } = found.capabilities;
-    if (isToolCallingState(toolCalling)) {
-      const readiness = agentReadiness({ toolCalling });
-      if (readiness.state === 'probing') {
-        throw new GatewayRequestError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: readiness.message, retryAfterMs: readiness.retryAfterSeconds * MS_PER_SECOND });
-      }
-    }
+    const unlisted = unlistedErrorOf(found.capabilities);
+    if (unlisted !== undefined) throw unlisted;
     return { ...found, capabilities: found.capabilities as Capabilities, targetCapabilities: found.targetCapabilities as Record<string, Capabilities> };
   };
 
@@ -463,6 +519,8 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       if (own === undefined) {
         throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'invalid_target', message: `the gateway lists no target "${callOptions.target}" for the model "${alias}"`, param: 'target' });
       }
+      const unlisted = unlistedErrorOf(own);
+      if (unlisted !== undefined) throw unlisted;
       return own;
     },
 

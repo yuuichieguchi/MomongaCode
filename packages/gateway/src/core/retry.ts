@@ -1,7 +1,7 @@
 import { computeBackoff } from '@momonga/foundation';
-import type { Clock, FallbackCause } from '@momonga/foundation';
-import type { ClassifiedError } from '@momonga/protocol';
-import { DEFERRED_HEADER } from '@momonga/protocol';
+import type { Clock } from '@momonga/foundation';
+import type { ClassifiedError, FallbackCause, PlanAccountRef, TargetBilling } from '@momonga/protocol';
+import { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, DEFERRED_HEADER } from '@momonga/protocol';
 import { CandidateRefused, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
@@ -10,6 +10,7 @@ import { GatewayError, SKIPPABLE_CODES, deadlineExceededError, gatewayErrorFromB
 import type { GuardedAdapter } from './guarded-adapter.ts';
 import type { BreakerOutcome, RequestToken } from './request-breaker.ts';
 import type { TargetRuntime } from './router.ts';
+import type { BillingWalk } from './billing-walk.ts';
 import type { GatewayTimers } from '../types.ts';
 
 export class UpstreamFailure extends Error {
@@ -60,6 +61,7 @@ export type RetryRequest<T> = {
   deadlineAt: number | undefined;
   attempt: (target: TargetRuntime, attemptNumber: number) => Promise<T>;
   refusals?: readonly Refusal[];
+  billing: BillingWalk;
 };
 
 export type WaitPolicy = { totalWaitMs: number; baseMs: number; maxMs: number; random: () => number };
@@ -111,10 +113,42 @@ const openBreakerCause = (target: TargetRuntime): FallbackCause => ({
 
 const isSkipCode = (code: string | null): boolean => code !== null && SKIPPABLE_CODES.has(code);
 
-type LastFailure = { kind: 'upstream'; classified: ClassifiedError } | { kind: 'skip'; error: unknown };
+const skipsNow = (classified: ClassifiedError): boolean =>
+  classified.fallback === undefined ? isSkipCode(classified.error.code) : classified.fallback === 'next' && !classified.retryable;
+
+const billingRefusalOf = (target: TargetRuntime, from: TargetBilling): FallbackCause => ({
+  target: target.name,
+  code: BILLING_CHANGE_REFUSED,
+  message: `changing from ${from} to ${target.billing} billing is not allowed (models.billingChanges)`,
+  fromBilling: from,
+  toBilling: target.billing,
+  reason: BILLING_CHANGE_REFUSED,
+});
+
+const notTriedSentence = (refusal: FallbackCause): string => `Model target "${refusal.target}" was not tried: ${refusal.message}.`;
+
+const withNotTried = (error: GatewayError, refusals: readonly FallbackCause[]): GatewayError => {
+  if (refusals.length === 0) return error;
+  return new GatewayError({
+    status: error.status,
+    type: error.body.type,
+    code: error.body.code,
+    message: [error.body.message, ...refusals.map(notTriedSentence)].join(' '),
+    param: error.body.param,
+    headers: { ...error.headers },
+    ...(error.body.plan === undefined ? {} : { plan: error.body.plan }),
+  });
+};
+
+const withPlan = (error: GatewayError, plan: PlanAccountRef | undefined): GatewayError => {
+  if (plan === undefined) return error;
+  return new GatewayError({ status: error.status, type: error.body.type, code: error.body.code, message: error.body.message, param: error.body.param, headers: { ...error.headers }, plan });
+};
+
+type LastFailure = { kind: 'upstream'; classified: ClassifiedError; plan: PlanAccountRef | undefined } | { kind: 'skip'; error: GatewayError; plan: PlanAccountRef | undefined };
 
 export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOutcome<T>> => {
-  const { candidates, policy, signal, deadlineAt } = request;
+  const { candidates, policy, signal, deadlineAt, billing } = request;
   const holder: RequestToken = Symbol('request');
   const fallbackFrom: string[] = [];
   const fallbackCauses: FallbackCause[] = [];
@@ -123,15 +157,35 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
   let lastFailure: LastFailure | undefined;
   const refusals: Refusal[] = [...(request.refusals ?? [])];
   const elapsedMs = (): number => (firstSendAt === undefined ? 0 : policy.clock.now() - firstSendAt);
-  const exhausted = (): never => {
-    if (lastFailure === undefined && refusals.length > 0) throw refusalErrorOf(refusals);
+  let kind = billing.initial;
+  let leftCause: number | undefined;
+  const billingRefusals: FallbackCause[] = [];
+  const sentTo = (target: TargetRuntime): void => {
+    if (target.billing === kind) return;
+    const left = leftCause === undefined ? undefined : { at: leftCause, cause: fallbackCauses[leftCause] };
+    if (left?.cause !== undefined) {
+      const { target: leftTarget, code, message } = left.cause;
+      fallbackCauses[left.at] = { target: leftTarget, code, message, fromBilling: kind, toBilling: target.billing, reason: BILLING_CHANGE_ALLOWED };
+    }
+    kind = target.billing;
+  };
+  const eligible = (target: TargetRuntime): boolean => target.billing === kind || billing.allows(kind, target.billing);
+  const exhausted = (from: number): never => {
+    const notTried = [...billingRefusals, ...candidates.slice(from).filter((target) => !eligible(target)).map((target) => billingRefusalOf(target, kind))];
+    if (lastFailure === undefined && refusals.length > 0) throw withNotTried(refusalErrorOf(refusals), notTried);
     if (lastFailure === undefined) throw new Error('runWithRetry ended without trying any candidate');
-    if (lastFailure.kind === 'skip') throw lastFailure.error;
-    throw finalError(lastFailure.classified, policy.totalWaitMs);
+    if (lastFailure.kind === 'skip') throw withNotTried(withPlan(lastFailure.error, lastFailure.plan), notTried);
+    throw withNotTried(withPlan(finalError(lastFailure.classified, policy.totalWaitMs), lastFailure.plan), notTried);
   };
 
   for (const [index, target] of candidates.entries()) {
-    const next = candidates[index + 1];
+    if (!eligible(target)) {
+      const refusal = billingRefusalOf(target, kind);
+      fallbackCauses.push(refusal);
+      billingRefusals.push(refusal);
+      continue;
+    }
+    const nextEligible = (): TargetRuntime | undefined => candidates.slice(index + 1).find(eligible);
     let sends = 0;
     let verdict: BreakerVerdict = 'neutral';
     let causeHere: FallbackCause | undefined;
@@ -141,6 +195,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     try {
       for (;;) {
         if (signal.aborted) throw signal.reason;
+        const next = nextEligible();
         if (next !== undefined && !target.breaker.canPass(holder) && next.breaker.canPass(holder)) break;
         target.breaker.admit(holder);
         firstSendAt ??= policy.clock.now();
@@ -148,6 +203,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
         sends += 1;
         try {
           const value = await request.attempt(target, sends);
+          sentTo(target);
           committed = true;
           let settled = false;
           return {
@@ -171,34 +227,38 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             lastFailure = lastBefore;
             break;
           }
+          sentTo(target);
+          const plan = target.servedAccount();
           if (error instanceof GatewayError && isSkipCode(error.body.code)) {
             verdict = 'neutral';
             target.lastFailure = { code: error.body.code, message: error.message };
             causeHere = { target: target.name, ...target.lastFailure };
-            lastFailure = { kind: 'skip', error };
+            lastFailure = { kind: 'skip', error, plan };
             break;
           }
+          if (error instanceof GatewayError) throw withPlan(error, plan);
           if (!(error instanceof UpstreamFailure)) throw error;
           const { classified } = error;
           target.lastFailure = { code: classified.error.code, message: classified.error.message };
           causeHere = { target: target.name, ...target.lastFailure };
-          if (isSkipCode(classified.error.code)) {
-            verdict = 'neutral';
-            lastFailure = { kind: 'skip', error: plainError(classified) };
+          if (skipsNow(classified)) {
+            verdict = classified.verdict ?? 'neutral';
+            lastFailure = { kind: 'skip', error: plainError(classified), plan };
             break;
           }
-          verdict = breakerVerdictOf(classified.error.type, classified.error.code);
-          if (!classified.retryable || classified.stalled === true) throw plainError(classified);
-          lastFailure = { kind: 'upstream', classified };
+          verdict = classified.verdict ?? breakerVerdictOf(classified.error.type, classified.error.code);
+          if (!classified.retryable || classified.stalled === true) throw withPlan(plainError(classified), plan);
+          lastFailure = { kind: 'upstream', classified, plan };
+          const movesOn = nextEligible() !== undefined && classified.fallback !== 'stop';
           const decision = nextWait({
             attempt: sends - 1,
             ...(classified.retryAfterMs === undefined ? {} : { retryAfterMs: classified.retryAfterMs }),
             elapsedMs: elapsedMs(),
             policy,
-            lastCandidate: next === undefined,
+            lastCandidate: !movesOn,
           });
-          if (next !== undefined && (sends >= policy.maxAttempts || decision.kind === 'leave')) break;
-          if (decision.kind === 'leave') exhausted();
+          if (movesOn && (sends >= policy.maxAttempts || decision.kind === 'leave')) break;
+          if (decision.kind === 'leave') exhausted(index + 1);
           const waitMs = decision.kind === 'wait' ? decision.ms : 0;
           if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
             throw deadlineExceededError(`the next retry of target "${target.name}" would start after the request deadline`);
@@ -211,7 +271,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     }
     if (refused) continue;
     fallbackFrom.push(target.name);
-    fallbackCauses.push(causeHere ?? openBreakerCause(target));
+    leftCause = fallbackCauses.push(causeHere ?? openBreakerCause(target)) - 1;
   }
-  return exhausted();
+  return exhausted(candidates.length);
 };

@@ -1,3 +1,4 @@
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -87,7 +88,7 @@ const drive = async (adapter: ProviderAdapter, ctx: AdapterContext, request: Ada
 };
 
 const chatAdapter = (socketPath: string, capabilities: Capabilities = CC_CAPABILITIES) => {
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath }),
     capabilities: async () => capabilities,
     schemaDialect: () => capabilities.schemaDialect,
@@ -99,7 +100,7 @@ const chatAdapter = (socketPath: string, capabilities: Capabilities = CC_CAPABIL
 };
 
 const responsesAdapter = (socketPath: string, capabilities: Capabilities = REMOTE_CAPABILITIES) => {
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath }),
     capabilities: async () => capabilities,
     clock: createFakeClock(START_MS),
@@ -128,7 +129,7 @@ describe('G1: the upstream idle bound restarts only when content arrives (audit-
       });
       const adapter = createAnthropicAdapter({
         resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
-        apiKey: async () => 'sk-test-key',
+        authSource: keyAuthSource(async () => 'sk-test-key'),
         capabilities: async () => REMOTE_CAPABILITIES,
         clock: createFakeClock(START_MS),
         apiVersion: '2026-10-21',

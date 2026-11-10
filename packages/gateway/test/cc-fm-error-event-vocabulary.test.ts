@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { vocabularyOf, createChatCompletionsAdapter, createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import { vocabularyOf, createChatCompletionsAdapter, createManagedTarget, saveProbeRecord, unauthenticatedSource } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult, ProbeReport } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
@@ -42,7 +42,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
   }), 'fm');
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };

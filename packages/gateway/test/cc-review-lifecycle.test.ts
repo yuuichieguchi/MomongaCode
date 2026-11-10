@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer, ManagedServerTimers, ProviderAdapter } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -100,7 +100,7 @@ const managedFm = async () => {
     toolCallingSetting: 'native',
   });
   const clock = createFakeClock(START_MS);
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   return { managed, adapter, children, fmServe };
 };
 
@@ -233,7 +233,7 @@ describe('count-tokens', () => {
 describe('closed adapter', () => {
   it('rejects create after close without resolving an endpoint', async () => {
     const resolveEndpoint = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/never.sock' }));
-    const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
+    const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint,
       capabilities: async () => {
         throw new Error('unused');

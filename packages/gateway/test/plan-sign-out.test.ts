@@ -21,7 +21,7 @@ const harness = async (options: Parameters<typeof startHarness>[0] = {}): Promis
 
 const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'generation', 'profile', 'state', 'subject', 'version', 'welcomeShown'];
 
-const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
+const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
 
 const discoveryServer = async (document: (issuer: string) => Record<string, unknown>): Promise<string> => {
   let origin = '';

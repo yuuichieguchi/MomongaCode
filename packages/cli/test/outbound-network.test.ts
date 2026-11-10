@@ -26,7 +26,10 @@ const portsWith = (written: string[]): CliPorts => {
   return {
     home,
     env: {},
-    files: nodeFiles,
+    files: { ...nodeFiles, exists: async () => false },
+    exec: async (file: string) => {
+      throw new Error(`this test runs no host program; asked to run ${file}`);
+    },
     stdout: { write: (text: string) => void written.push(text) },
     stderr: { write: (text: string) => void written.push(text) },
   } as unknown as CliPorts;
@@ -60,7 +63,7 @@ describe('the CLI network', () => {
 
     const interrupt = new AbortController().signal;
     const code = await withIdentityReadFetch(ports, interrupt, (fetch) =>
-      detectModels(ports, { settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
+      detectModels(ports, { home: ports.home, settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
     );
 
     expect(code).toBe(0);

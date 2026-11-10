@@ -1,12 +1,14 @@
 import path from 'node:path';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE, escapeTerminalLine, isProbingCapabilities, isUnavailableCapabilities, notListedMessage } from '@momonga/protocol';
+import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { probeRecordKeyOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
-import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
+import type { ModelsSettings, OpenResponsesTarget, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, SecretEmptyError, SecretUnavailableError, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretEmptyError, SecretUnavailableError, claimPathOf, fixedSocket, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
+import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { commandStoreFailureOf, withinCommandLimit } from '../command-limit.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
@@ -94,7 +96,103 @@ const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
 export type ManagedRecordSource = { target: string; server: string; binary: string; model: string | undefined };
 
-export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): LiveSettings => {
+export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | UnavailableCapabilities;
+
+export type PlanRelay = { planRelaySocket: string; listed: Readonly<Record<string, ListedTargetCapabilities>> };
+
+export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal | undefined): Promise<PlanRelay> => {
+  const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
+  try {
+    const entries = await gateway.models(signal);
+    return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => Object.entries(entry.targetCapabilities))) };
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    await gateway.close();
+  }
+};
+
+export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): boolean =>
+  aliases.some((alias) => membersOf(user.resolved, alias).some((name) => {
+    const target = user.resolved.targets[name];
+    return target !== undefined && 'plan' in target;
+  }));
+
+type ImagePairField = 'imageInput' | 'imageTokens';
+
+type ListedField = Exclude<keyof ResolvedPlanTarget['capabilities'] & keyof Capabilities, 'contextWindow' | 'maxOutputTokens' | 'maxConcurrency' | ImagePairField>;
+
+type ImagePair = Pick<OpenResponsesTarget['capabilities'], ImagePairField>;
+
+const LISTED_FIELDS: Record<ListedField | 'imagePair', true> = {
+  promptCache: true,
+  sampling: true,
+  reasoning: true,
+  structuredOutput: true,
+  jsonMode: true,
+  streaming: true,
+  stopSequences: true,
+  outputBoundField: true,
+  systemRole: true,
+  toolPlacement: true,
+  inputKinds: true,
+  parallelToolCalls: true,
+  allowedTools: true,
+  schemaDialect: true,
+  tokenCounting: true,
+  tokenErrorRatio: true,
+  usageReported: true,
+  source: true,
+  imagePair: true,
+};
+
+const isListedField = (key: string): key is ListedField => key !== 'imagePair' && Object.hasOwn(LISTED_FIELDS, key);
+
+const imagePairOf = (side: { imageInput: boolean | undefined; imageTokens: ImagePair['imageTokens'] | undefined }): ImagePair => ({
+  ...(side.imageInput === undefined ? {} : { imageInput: side.imageInput }),
+  ...(side.imageTokens === undefined ? {} : { imageTokens: side.imageTokens }),
+});
+
+const putField = <Holder, Field extends keyof Holder>(holder: Holder, field: Field, value: Holder[Field]): void => {
+  holder[field] = value;
+};
+
+const describedEntryOf = (name: string, relay: PlanRelay): Capabilities => {
+  const entry = Object.hasOwn(relay.listed, name) ? relay.listed[name] : undefined;
+  if (entry === undefined) throw new ContextHostError(`the target ${name} is not in the model list of the running gateway`);
+  if (isUnavailableCapabilities(entry)) throw new ContextHostError(notListedMessage(entry));
+  if (isProbingCapabilities(entry)) throw new ContextHostError(TARGET_PROBING_MESSAGE);
+  return entry;
+};
+
+const relayTargetOf = (name: string, resolved: ResolvedPlanTarget, relay: PlanRelay): OpenResponsesTarget => {
+  const entry = describedEntryOf(name, relay);
+  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
+  const capabilities: OpenResponsesTarget['capabilities'] = {
+    ...core,
+    contextWindow: entry.contextWindow,
+    maxOutputTokens: entry.maxOutputTokens,
+    ...imagePairOf(entry.imageInput === undefined ? { imageInput, imageTokens } : { imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
+  };
+  const listed: Partial<Pick<OpenResponsesTarget['capabilities'], ListedField>> = entry;
+  for (const field of Object.keys(LISTED_FIELDS).filter(isListedField)) {
+    if (capabilities[field] !== undefined && listed[field] !== undefined) putField(capabilities, field, listed[field]);
+  }
+  return {
+    adapter: 'open-responses',
+    model: resolved.model,
+    provider: resolved.provider,
+    toolCalling: resolved.toolCalling,
+    socketPath: relay.planRelaySocket,
+    billing: resolved.billing,
+    capabilities,
+    maxConcurrency: resolved.maxConcurrency,
+    admissionTimeoutMs: resolved.admissionTimeoutMs,
+  };
+};
+
+export const liveSettingsFor = (user: UserModels, aliases: readonly string[], relay?: PlanRelay): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const servers: NonNullable<ModelsSettings['servers']> = {};
   const aliasMembers: Record<string, string[]> = {};
@@ -109,6 +207,11 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
     const declared = user.declared.targets?.[name];
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
+    if ('plan' in resolved) {
+      if (relay === undefined) throw new ContextHostError(`the target ${name} uses a ${resolved.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
+      targets[name] = relayTargetOf(name, resolved, relay);
+      return;
+    }
     const recordKey = probeRecordKeyOf(name, resolved);
     if (resolved.adapter === 'managed') {
       managedTargets.push({ target: name, server: resolved.server, binary: resolved.binary, model: resolved.model });
@@ -429,12 +532,14 @@ export type ContextLiveInput = {
   onTranscript?(transcript: Transcript): Promise<void>;
   onUnreadableHomes?(count: number): void;
   onUnownedHomes?(roots: readonly string[]): void;
+  planRelaySocket?(): Promise<string>;
 };
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt.throwIfAborted();
-  const settings = liveSettingsFor(input.models, [input.alias]);
+  const relay = needsPlanRelay(input.models, [input.alias]) && input.planRelaySocket !== undefined ? await readPlanRelay(await input.planRelaySocket(), interrupt) : undefined;
+  const settings = liveSettingsFor(input.models, [input.alias], relay);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);

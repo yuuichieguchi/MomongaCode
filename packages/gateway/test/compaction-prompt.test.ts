@@ -1,3 +1,4 @@
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
@@ -74,8 +75,8 @@ describe('every adapter renders the same prompt', () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [] });
     const adapters = {
       chat: ccAdapterFor(fake),
-      anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', apiKey: async () => 'unused' }),
-      responses: createOpenResponsesAdapter(shared),
+      anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', authSource: keyAuthSource(async () => 'unused') }),
+      responses: createOpenResponsesAdapter({ ...shared, authSource: unauthenticatedSource }),
     };
     return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN, REMOTE_CAPABILITIES))]);
   };

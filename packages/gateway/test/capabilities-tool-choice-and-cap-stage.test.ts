@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import { createTelemetry } from '@momonga/observability';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { ProviderAdapter } from '@momonga/gateway';
 import type { Capabilities } from '@momonga/protocol';
 import { createFakeClock, openResponsesTextReply, startFakeOpenResponses } from '@momonga/testkit';
@@ -69,7 +69,7 @@ const breakerOf = async (harness: Harness, name: string) => (await getJson(harne
 const openResponsesTarget = async () => {
   const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['from remote']), openResponsesTextReply(['from remote'])] });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

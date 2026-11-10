@@ -15,6 +15,7 @@ import { openGatewayStore } from '../core/store.ts';
 import { createUnaryService } from '../core/unary.ts';
 import { createRequestValidator, createStoredDataChecks } from '../core/validation.ts';
 import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
+import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
 import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
@@ -90,6 +91,7 @@ const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' 
     router: createRouter({ config: options.config, adapters: options.adapters, clock: options.clock, timers: options.timers, ...shared }),
     priceTable: options.priceTable,
     telemetry: options.telemetry,
+    planTargets: Object.entries(options.config.models.targets).flatMap(([name, target]) => (target.plan === undefined ? [] : [{ name, ...target.plan }])),
   };
   return {
     epochs: { acquire: async () => ({ value: epoch, release: () => undefined }), close: async () => undefined },
@@ -132,7 +134,9 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       reasoningOrigin,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,
+      redactor,
     };
+    const errors = createErrorExit(redactor, options.onError);
     const responses = createResponsesService(services, validator);
     const unary = createUnaryService(services, validator);
     const tracker = createRequestTracker();
@@ -148,7 +152,8 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       billedCalls: options.billedCalls,
       startedAt,
       version: options.version,
-      onError: options.onError,
+      errors,
+      plan: options.plan,
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 
@@ -157,7 +162,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       responses,
       tracker,
       connectionLimitMs: limits.websocketConnectionMs,
-      ...(options.onError === undefined ? {} : { onError: options.onError }),
+      errors,
     });
     transports.push(webSocket);
     const unixServer = http.createServer(getRequestListener(handler));
@@ -176,7 +181,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         tracker,
         connectionLimitMs: limits.websocketConnectionMs,
         authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
-        ...(options.onError === undefined ? {} : { onError: options.onError }),
+        errors,
       });
       transports.push(tcpSockets);
       tcpServer = http.createServer(getRequestListener(requireToken(token, handler)));

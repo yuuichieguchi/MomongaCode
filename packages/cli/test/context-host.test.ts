@@ -10,6 +10,7 @@ import { FM_SERVER } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
 
 vi.mock('@momonga/runtime', () => {
   throw new Error('the eval host loaded the runtime; the command supplies what the host needs from it');
@@ -618,5 +619,58 @@ describe('the identity a live run stamps on its transcripts', () => {
       [{}, HEAD_CODE],
       [{}, HEAD_CODE],
     ]);
+  });
+});
+
+describe('a live context run on a plan alias reads the model list of the relaying gateway (K4)', () => {
+  const settled = (running: Promise<unknown>): Promise<'settled'> =>
+    running.then(
+      () => 'settled' as const,
+      () => 'settled' as const,
+    );
+
+  it('reads the listing once on the relay socket and gives every case home the context window and output limit of the listing', async (testContext) => {
+    const gateway = await serveModelsListing(testContext, [listingEntry('default', { [PLAN_TARGET]: LISTED_PLAN })]);
+    const context = harness();
+    await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath }));
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
+    const targets = [...context.roots.values()].map((state) => (JSON.parse(state.settings ?? '{}') as { models?: { targets?: Record<string, { socketPath?: string; capabilities?: Record<string, unknown> }> } }).models?.targets?.[PLAN_TARGET]);
+    expect(targets.map((target) => ({ socketPath: target?.socketPath, contextWindow: target?.capabilities?.['contextWindow'], maxOutputTokens: target?.capabilities?.['maxOutputTokens'] }))).toEqual([
+      { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
+      { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
+    ]);
+  });
+
+  it('waits for the listing under the interrupt of the command and opens no home when it is interrupted', async (testContext) => {
+    const gateway = await serveModelsListing(testContext, 'never');
+    const context = harness();
+    const interrupt = new AbortController();
+    const running = runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath, interrupt: interrupt.signal }));
+    expect(await Promise.race([gateway.firstRequest, settled(running)])).toBe('requested');
+    const reason = new Error('interrupted');
+    interrupt.abort(reason);
+    expect(await running.catch((error: unknown) => error)).toBe(reason);
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
+    expect(context.roots.size).toBe(0);
+  });
+
+  it('rejects with the error of the gateway client and opens no home when the relaying gateway is not running', async (testContext) => {
+    const absent = absentGatewaySocket(testContext);
+    const expected = await modelsFailureOn(absent);
+    const context = harness();
+    const failure = await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => absent })).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(expected.constructor);
+    expect((failure as Error).message).toBe(expected.message);
+    expect(context.roots.size).toBe(0);
+  });
+
+  it('asks for no relay socket and no listing when the alias has no plan target', async () => {
+    const context = harness();
+    let asked = 0;
+    await runContextLive(context.effects, input({ planRelaySocket: async () => {
+      asked += 1;
+      throw new Error('a run without a plan target asked for the relay socket');
+    } }));
+    expect(asked).toBe(0);
   });
 });

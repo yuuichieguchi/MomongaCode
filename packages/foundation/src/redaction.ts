@@ -9,6 +9,7 @@ export type Redactor = {
   text(input: string): string;
   whole(input: string): string;
   add(credential: string): void;
+  set(key: string, values: readonly string[]): void;
 };
 
 export type RedactorOptions = {
@@ -42,11 +43,24 @@ const capped = (input: string): string => {
 };
 
 export const createRedactor = (options: RedactorOptions): Redactor => {
-  const credentials = [...options.credentials];
-  let exactValues = exactValuesOf(credentials);
+  const fixed = new Set<string>(options.credentials);
+  const keyed = new Map<string, readonly string[]>();
+  const heldValues = (): string[] => [...fixed, ...[...keyed.values()].flat()];
+  let exactValues = exactValuesOf(heldValues());
+  const rebuild = (): void => {
+    exactValues = exactValuesOf(heldValues());
+  };
   const add = (credential: string): void => {
-    credentials.push(credential);
-    exactValues = exactValuesOf(credentials);
+    if (fixed.has(credential)) return;
+    fixed.add(credential);
+    rebuild();
+  };
+  const sameList = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length && left.every((value, index) => value === right[index]);
+  const set = (key: string, values: readonly string[]): void => {
+    if (sameList(keyed.get(key) ?? [], values)) return;
+    if (values.length === 0) keyed.delete(key);
+    else keyed.set(key, [...values]);
+    rebuild();
   };
   const whole = (input: string): string => {
     let output = input;
@@ -64,5 +78,5 @@ export const createRedactor = (options: RedactorOptions): Redactor => {
     return output;
   };
   const text = (input: string): string => capped(whole(input));
-  return { text, whole, add };
+  return { text, whole, add, set };
 };

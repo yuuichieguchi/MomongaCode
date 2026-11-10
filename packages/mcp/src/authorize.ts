@@ -11,6 +11,8 @@ import type { McpTimers } from './timers.ts';
 
 const MAX_ERROR_CHARS = 200;
 
+export const MCP_CALLBACK_PATH = '/callback';
+
 export type McpOAuthSettings = { clientId?: string; scope?: string; callbackPort?: number };
 
 export type McpAuthorizationPorts = {
@@ -48,7 +50,7 @@ const challengeOf = async (fetch: FetchLike, url: string, signal: AbortSignal): 
 
 export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Promise<void> => {
   const { ports, oauth, signal } = options;
-  const redirect = await startLoopbackRedirect({ port: oauth?.callbackPort ?? 0, timers: ports.timers });
+  const redirect = await startLoopbackRedirect({ port: oauth?.callbackPort ?? 0, path: MCP_CALLBACK_PATH, timers: ports.timers });
   const phase = { signal };
   const inStorePhase = async <T>(step: () => Promise<T>): Promise<T> => {
     const limit = operationLimit(signal, options.storeLimitMs, CONNECT_LIMIT_LABEL, ports.timers);

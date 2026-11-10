@@ -1,5 +1,5 @@
-import { DEFAULT_DIALECT_ID, compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin } from '@momonga/protocol';
+import { DEFAULT_DIALECT_ID, DEFAULT_SYSTEM_ROLE, DEFAULT_TOOL_PLACEMENT, compactionSummaryMessage } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, Capabilities, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin, SystemRole, ToolPlacement } from '@momonga/protocol';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
@@ -13,10 +13,12 @@ import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 
+export type AdditionalToolsItem = { type: 'additional_tools'; role: 'developer'; tools: FunctionTool[] };
+
 export type OpenResponsesRequestBody = {
   [unknownField: string]: unknown;
   model: string;
-  input: InputItem[];
+  input: Array<InputItem | AdditionalToolsItem>;
   stream: true;
   store: false;
   include: ['reasoning.encrypted_content'];
@@ -47,7 +49,7 @@ const relayable = (content: string | ContentPart[], allowed: ReadonlySet<Content
 
 const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_TYPES, 'input_image']);
 
-const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | undefined => {
+const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin, systemRole: SystemRole): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -62,7 +64,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary, 'model');
     case 'message':
-      return { type: 'message', role: item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
+      return { type: 'message', role: item.role === 'system' ? systemRole : item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':
       return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: callArgumentsText(item.arguments) };
     case 'function_call_output':
@@ -70,7 +72,15 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
   }
 };
 
-export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined; carriesOutputBound?: boolean };
+export type ResponsesRendering = {
+  schemaDialect?: DialectId;
+  userDialects?: UserDialects;
+  ledger?: RenderLedger;
+  jsonReply?: JsonReplyPlan | undefined;
+  carriesOutputBound?: boolean;
+  systemRole?: SystemRole;
+  toolPlacement?: ToolPlacement;
+};
 
 export const carriesResponsesOutputBound = (capabilities: Pick<Capabilities, 'outputBoundField'>): boolean => capabilities.outputBoundField !== 'none';
 
@@ -87,15 +97,18 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     const { schema } = renderToolParameters(tool, dialect, rendering.ledger);
     return schema === undefined ? rest : { ...rest, parameters: schema as NonNullable<FunctionTool['parameters']> };
   });
+  const systemRole = rendering.systemRole ?? DEFAULT_SYSTEM_ROLE;
+  const input = request.input.flatMap((item) => itemOf(item, origin, systemRole) ?? []);
+  const additional = tools.length > 0 && (rendering.toolPlacement ?? DEFAULT_TOOL_PLACEMENT) === 'additional_tools';
   return {
     ...request.unknownFields,
     model: request.model,
-    input: request.input.flatMap((item) => itemOf(item, origin) ?? []),
+    input: additional ? [{ type: 'additional_tools', role: 'developer', tools }, ...input] : input,
     stream: true,
     store: false,
     include: ['reasoning.encrypted_content'],
     ...(request.instructions === undefined || request.instructions === null || request.instructions === '' ? {} : { instructions: request.instructions }),
-    ...(tools.length === 0 ? {} : { tools }),
+    ...(tools.length === 0 || additional ? {} : { tools }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
     ...(tools.length === 0 || request.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: request.parallel_tool_calls }),
     ...(rendering.carriesOutputBound === false || request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),

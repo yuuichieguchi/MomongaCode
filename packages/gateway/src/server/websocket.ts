@@ -3,8 +3,9 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { RawData, WebSocket } from 'ws';
 import { RUN_ROLE } from '@momonga/protocol';
-import type { StreamEvent } from '@momonga/protocol';
+import type { PlanAccountRef, StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import type { ErrorExit } from './error-exit.ts';
 import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
 import type { ResponsesService, Submission } from '../core/responses-service.ts';
@@ -30,7 +31,7 @@ export type WebSocketTransportOptions = {
   tracker: RequestTracker;
   connectionLimitMs: number;
   authorize?: (request: http.IncomingMessage) => boolean;
-  onError?: (error: unknown) => void;
+  errors: ErrorExit;
 };
 
 export type WebSocketTransport = {
@@ -39,12 +40,12 @@ export type WebSocketTransport = {
   terminateAll(): void;
 };
 
-type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null } };
+type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null; plan?: PlanAccountRef } };
 
 const envelopeOf = (error: GatewayError): ErrorEnvelope => ({
   type: 'error',
   status: error.status,
-  error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param },
+  error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) },
   ...errorHintsOf(error),
 });
 
@@ -101,14 +102,14 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       connections.add(this);
       this.limitTimer = services.timers.setTimeout(() => {
         this.expire().catch((error: unknown) => {
-          options.onError?.(error);
+          options.errors.report(error);
           this.socket.terminate();
         });
       }, options.connectionLimitMs);
       socket.on('message', (data) => this.receive(data));
       socket.on('error', (error) => {
         this.lifetime.abort(new ClientDisconnectedError());
-        options.onError?.(error);
+        options.errors.report(error);
       });
       socket.once('close', () => {
         services.timers.clearTimeout(this.limitTimer);
@@ -166,7 +167,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           await this.turn(text);
         }
       } catch (error) {
-        options.onError?.(error);
+        options.errors.report(error);
         this.socket.terminate();
       } finally {
         this.draining = false;
@@ -191,17 +192,13 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
         for (;;) {
           const step = await submission.events.next();
           if (step.done === true) break;
-          await this.send(step.value satisfies StreamEvent);
+          await this.send(options.errors.shownEvent(step.value));
           if (step.value.type === 'response.failed') failed = true;
         }
       } catch (error) {
         if (error instanceof ClientDisconnectedError) return;
         failed = true;
-        if (!(error instanceof GatewayError)) options.onError?.(error);
-        const reported =
-          error instanceof GatewayError
-            ? error
-            : new GatewayError({ status: 500, type: 'server_error', code: 'internal_error', message: error instanceof Error ? error.message : String(error) });
+        const reported = options.errors.answer(error);
         if (this.socket.readyState === this.socket.OPEN) await this.send(envelopeOf(reported));
       } finally {
         if (failed && previousId !== undefined) this.state.evict(previousId);

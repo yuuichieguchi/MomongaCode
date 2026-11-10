@@ -4,13 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { CredentialStore, KernelLockMechanism } from '@momonga/foundation';
-import { createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
+import { CredentialStoreError, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
+import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
-import { openPlanSessions } from '../src/plan/session.ts';
-import type { PlanSessions, PlanTokenResponse } from '../src/plan/session.ts';
+import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
+import type { PlanSessions, PlanSleep, PlanTokenResponse } from '../src/plan/session.ts';
+import type { PlanFetch } from '../src/plan/refresh.ts';
+import { createSerial } from '../src/plan/serial.ts';
+import type { Serial } from '../src/plan/serial.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const PROFILE_ID = 'chatgpt';
@@ -19,10 +22,132 @@ export const ACCESS_LIFETIME_MS = 3600 * SECOND;
 export const SKEW_MS = 60 * SECOND;
 export const MARGIN_MS = 121 * SECOND;
 export const CONDITION_WAIT = { timeout: 30_000, interval: 5 } as const;
+export const PAUSE_CODE = 'plan_usage_limit';
+
+export const realSleep: PlanSleep = (ms, signal) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+
+export type RecordedPlanEvent = { name: string; data: Record<string, unknown> };
 
 export type TokenFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export type Gate = { held: Promise<void>; release(): void };
+
+export type ReachedGate = Gate & { reached: Promise<void> };
+
+export type FsGate = { reached: Promise<void>; release(): void; fail(error: Error): void };
+
+export type GatedMethod = 'readTextFile' | 'readOwnerOnlyTextFile' | 'mkdirPrivate' | 'rename';
+
+export type GatedFileSystem = { fileSystem: FileSystem; recorded: ReadonlyArray<{ method: GatedMethod; path: string }>; gate(method: GatedMethod, match: (path: string) => boolean): FsGate };
+
+type ArmedGate = { method: GatedMethod; match: (path: string) => boolean; arrive(): void; parked: Promise<void> };
+
+export const createGatedFileSystem = (base: FileSystem): GatedFileSystem => {
+  const armed: ArmedGate[] = [];
+  const recorded: Array<{ method: GatedMethod; path: string }> = [];
+  const parkIfArmed = async (method: GatedMethod, file: string): Promise<void> => {
+    recorded.push({ method, path: file });
+    const index = armed.findIndex((entry) => entry.method === method && entry.match(file));
+    if (index === -1) return;
+    const [entry] = armed.splice(index, 1);
+    entry?.arrive();
+    await entry?.parked;
+  };
+  const fileSystem: FileSystem = {
+    ...base,
+    readTextFile: async (file) => {
+      await parkIfArmed('readTextFile', file);
+      return base.readTextFile(file);
+    },
+    readOwnerOnlyTextFile: async (file, description, maxBytes) => {
+      await parkIfArmed('readOwnerOnlyTextFile', file);
+      return base.readOwnerOnlyTextFile(file, description, maxBytes);
+    },
+    mkdirPrivate: async (directory) => {
+      await parkIfArmed('mkdirPrivate', directory);
+      return base.mkdirPrivate(directory);
+    },
+    rename: async (from, to) => {
+      await parkIfArmed('rename', to);
+      return base.rename(from, to);
+    },
+  };
+  return {
+    fileSystem,
+    recorded,
+    gate: (method, match) => {
+      let arrive = (): void => undefined;
+      let release = (): void => undefined;
+      let fail = (_error: Error): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const parked = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      armed.push({ method, match, arrive, parked });
+      return { reached, release, fail };
+    },
+  };
+};
+
+export type RecordingSerial = Serial & { runs: number; active: number; maxActive: number; started: number[]; finished: number[] };
+
+export const recordingSerial = (): RecordingSerial => {
+  const inner = createSerial();
+  const serial: RecordingSerial = {
+    runs: 0,
+    active: 0,
+    maxActive: 0,
+    started: [],
+    finished: [],
+    run: (work) => {
+      serial.runs += 1;
+      const index = serial.runs;
+      return inner.run(async () => {
+        serial.active += 1;
+        serial.maxActive = Math.max(serial.maxActive, serial.active);
+        serial.started.push(index);
+        try {
+          return await work();
+        } finally {
+          serial.active -= 1;
+          serial.finished.push(index);
+        }
+      });
+    },
+  };
+  return serial;
+};
+
+export type RecordingSignal = { signal: AbortSignal; listeners(): number };
+
+export const recordingSignal = (): RecordingSignal => {
+  const signal = new AbortController().signal;
+  const register = signal.addEventListener.bind(signal);
+  let registered = 0;
+  signal.addEventListener = (...registration: Parameters<AbortSignal['addEventListener']>): void => {
+    if (registration[0] === 'abort') registered += 1;
+    register(...registration);
+  };
+  return { signal, listeners: () => registered };
+};
+
+export const resettingFetch = (): PlanFetch => async () => {
+  throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+};
 
 export const TOKEN_ATTEMPT_BOUND_MS = 15_000;
 export const REVOCATION_ATTEMPT_BOUND_MS = 10_000;
@@ -35,18 +160,23 @@ export type Harness = {
   clock: FakeClock;
   auth: SiwcAuth;
   profile: PlanProfile;
-  store: CredentialStore;
+  store: ListableCredentialStore;
   sessions: PlanSessions;
   sleeps: number[];
+  fileSystem: FileSystem;
   secrets: string[];
+  fed: Map<string, string[]>;
   warnings: string[];
   fetchUrls: string[];
+  events: RecordedPlanEvent[];
   holdNextRefresh(): Gate;
   holdNextRevoke(): Gate;
+  holdNextBackoff(): ReachedGate;
+  failNextOutbound(error: Error): void;
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
-  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: CredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
+  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: ListableCredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
   close(): Promise<void>;
 };
 
@@ -63,18 +193,30 @@ export const profileFor = (auth: SiwcAuth): PlanProfile => {
 const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolean =>
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
-export const startHarness = async (options: { profile?: (auth: SiwcAuth) => PlanProfile } = {}): Promise<Harness> => {
+export const startHarness = async (options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial } = {}): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
   const clock = createFakeClock(START_MS);
   const auth = await startFakeSiwcAuth({ now: clock.now });
   const profile = (options.profile ?? profileFor)(auth);
-  const store = createFileCredentialStore(paths.sessions);
+  const store = createEncryptedCredentialStore({
+    directory: paths.sessions,
+    stateDirectory: layout.state,
+    secretStore: { kind: 'none', reason: 'the harness keeps plaintext records' },
+    plaintextTokenFiles: () => true,
+    keyOfPlaintext: planRecordKeyOfPlaintext,
+  });
   const sleeps: number[] = [];
   const secrets: string[] = [];
+  const fed = new Map<string, string[]>();
+  const fileSystem = (options.wrapFileSystem ?? ((base: FileSystem) => base))(nodeFileSystem);
+  const backoffGates: ReachedGate[] = [];
+  const backoffArrivals: Array<() => void> = [];
+  const outboundFailures: Error[] = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
+  const events: RecordedPlanEvent[] = [];
   const gates: Gate[] = [];
   const revokeGates: Gate[] = [];
   const bounds: PendingBound[] = [];
@@ -109,20 +251,32 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     });
     return { held, release };
   };
-  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: CredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
+  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: ListableCredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
     openPlanSessions({
       ...(lock === undefined ? {} : { lock }),
+      ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
       profiles: { [PROFILE_ID]: profile },
       paths,
       store: chosenStore,
-      fileSystem: nodeFileSystem,
+      fileSystem,
       accounts,
       clock,
-      fetch: fetchPort,
+      outbound: (signal, use) => {
+        const failure = outboundFailures.shift();
+        if (failure !== undefined) return Promise.reject(failure);
+        signal.throwIfAborted();
+        return use(fetchPort);
+      },
       sleep: (ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
           sleeps.push(ms);
-          return Promise.resolve();
+          const backoff = backoffGates.shift();
+          if (backoff === undefined) return Promise.resolve();
+          backoffArrivals.shift()?.();
+          return new Promise<void>((resolve, reject) => {
+            void backoff.held.then(resolve);
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
         }
         return new Promise<void>((resolve, reject) => {
           const entry: PendingBound = { ms, resolve };
@@ -137,11 +291,15 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
           );
         });
       },
-      onSecret: (value) => {
-        secrets.push(value);
+      redact: (key, values) => {
+        fed.set(key, [...values]);
+        secrets.push(...values);
       },
       warn: (message) => {
         warnings.push(message);
+      },
+      events: (name, data) => {
+        events.push({ name, data: data as Record<string, unknown> });
       },
     });
   const harness: Harness = {
@@ -152,10 +310,13 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     profile,
     store,
     sessions: await open(),
+    fileSystem,
     sleeps,
     secrets,
+    fed,
     warnings,
     fetchUrls,
+    events,
     holdNextRefresh: () => {
       const gate = newGate();
       gates.push(gate);
@@ -165,6 +326,20 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       const gate = newGate();
       revokeGates.push(gate);
       return gate;
+    },
+    holdNextBackoff: () => {
+      const gate = newGate();
+      let arrive = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const held = { ...gate, reached };
+      backoffGates.push(held);
+      backoffArrivals.push(arrive);
+      return held;
+    },
+    failNextOutbound: (error) => {
+      outboundFailures.push(error);
     },
     pendingBounds: () => bounds.map((bound) => bound.ms),
     fireLatestBound: (ms) => {
@@ -197,17 +372,18 @@ const pkce = (): { verifier: string; challenge: string } => {
 
 export type FakeSignIn = { clientId: string; hostId: string; idToken: string; subject: string; email: string; tokens: PlanTokenResponse };
 
-export const signInAtFake = async (h: Harness, options: { clientId?: string } = {}): Promise<FakeSignIn> => {
+export const signInAtFake = async (h: Harness, options: { clientId?: string; resource?: string } = {}): Promise<FakeSignIn> => {
   const host = await ensureHostIdentity(nodeFileSystem, h.paths.host, { accountsExist: false });
   const { verifier, challenge } = pkce();
   const redirectUri = 'http://127.0.0.1:49152/auth/callback';
+  const resource = options.resource ?? SIWC_RESOURCE;
   const url = new URL(h.auth.authorizeUrl);
   const query: Record<string, string> = {
     client_id: options.clientId ?? 'dynamic_agent_client',
     response_type: 'code',
     redirect_uri: redirectUri,
     scope: 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct',
-    resource: 'https://api.openai.com/v1',
+    resource,
     state: randomBytes(16).toString('hex'),
     nonce: randomBytes(16).toString('hex'),
     code_challenge_method: 'S256',
@@ -229,7 +405,7 @@ export const signInAtFake = async (h: Harness, options: { clientId?: string } = 
       code: callback.searchParams.get('code') ?? '',
       code_verifier: verifier,
       redirect_uri: redirectUri,
-      resource: 'https://api.openai.com/v1',
+      resource,
     }).toString(),
   });
   const tokens = (await response.json()) as PlanTokenResponse & { id_token: string };
@@ -259,6 +435,12 @@ export const readRecord = async (h: Harness, account: string): Promise<Record<st
   return raw === undefined ? undefined : (JSON.parse(raw) as Record<string, unknown>);
 };
 
+export const writeSigningOut = async (h: Harness, account: string): Promise<void> => {
+  const current = await readRecord(h, account);
+  if (current === undefined) throw new Error(`no record for ${account}`);
+  await h.store.write(recordKey(account), JSON.stringify({ ...current, state: 'signing_out' }));
+};
+
 export const rawRecord = (h: Harness, account: string): Promise<string | undefined> => h.store.read(recordKey(account));
 
 export const editRecord = async (h: Harness, account: string, change: (record: Record<string, unknown>) => Record<string, unknown>): Promise<void> => {
@@ -283,7 +465,7 @@ export const rotateAtFake = async (h: Harness, clientId: string, refreshToken: s
   if (response.status !== 200) throw new Error(`the fake refused the rotation: ${response.status}`);
 };
 
-export const failingWrites = (inner: CredentialStore, fails: (value: string) => NodeJS.ErrnoException | undefined): CredentialStore => ({
+export const failingWrites = (inner: ListableCredentialStore, fails: (value: string) => Error | undefined): ListableCredentialStore => ({
   read: (key) => inner.read(key),
   remove: (key) => inner.remove(key),
   write: (key, value) => {
@@ -308,9 +490,63 @@ export const failingWrites = (inner: CredentialStore, fails: (value: string) => 
       if (error !== undefined) throw error;
       return next;
     }),
+  listKeys: () => inner.listKeys(),
 });
 
+export const refusingLocks = (inner: ListableCredentialStore, refuses: () => Error | undefined): ListableCredentialStore => ({
+  read: (key) => inner.read(key),
+  remove: (key) => inner.remove(key),
+  write: (key, value) => inner.write(key, value),
+  update: (key, change) => inner.update(key, change),
+  withKey: (key, action) => {
+    const error = refuses();
+    return error === undefined ? inner.withKey(key, action) : Promise.reject(error);
+  },
+  listKeys: () => inner.listKeys(),
+});
+
+export type HeldWrite = { store: ListableCredentialStore; lockRequests(): number; reached: Promise<void>; fail(error: Error): void };
+
+export const holdingOneWrite = (inner: ListableCredentialStore, matches: (value: string) => boolean): HeldWrite => {
+  let armed = true;
+  let requests = 0;
+  let arrive = (): void => undefined;
+  let fail = (_error: Error): void => undefined;
+  const reached = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  const parked = new Promise<void>((_resolve, reject) => {
+    fail = reject;
+  });
+  const store: ListableCredentialStore = {
+    read: (key) => inner.read(key),
+    remove: (key) => inner.remove(key),
+    write: (key, value) => inner.write(key, value),
+    update: (key, change) => inner.update(key, change),
+    withKey: (key, action) => {
+      requests += 1;
+      return inner.withKey(key, (entry) =>
+        action({
+          read: () => entry.read(),
+          remove: () => entry.remove(),
+          write: (value) => {
+            if (!armed || !matches(value)) return entry.write(value);
+            armed = false;
+            arrive();
+            return parked;
+          },
+        }),
+      );
+    },
+    listKeys: () => inner.listKeys(),
+  };
+  return { store, lockRequests: () => requests, reached, fail: (error) => fail(error) };
+};
+
 export const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: simulated`), { code });
+
+export const storeKeyFailure = (): CredentialStoreError =>
+  new CredentialStoreError('store_unwritable', 'the credential key could not be read or created: simulated', { cause: new Error('simulated') });
 
 export const planError = async (promise: Promise<unknown>): Promise<{ code: string; retryable: boolean; message: string }> => {
   try {

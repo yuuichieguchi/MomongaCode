@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
-import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, lazyRefreshMarginMs } from '@momonga/gateway';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
@@ -188,50 +188,110 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
+  const spacingArith = (name: string) => {
+    const arith = proofArith(z3.engine().api, name);
+    const skew = constant(arith, 'S', PLAN.skewMs);
+    const margin = constant(arith, 'M', PLAN.marginMs);
+    const longest = constant(arith, 'L', PLAN.accessLifetimeMs);
+    const lifetime = arith.int('lifetime');
+    arith.given(lifetime.ge(1), lifetime.le(longest));
+    const lazyMargin = arith.min(margin, arith.max(skew, arith.floorDiv(lifetime, 2n)));
+    return { arith, skew, margin, longest, lifetime, lazyMargin };
+  };
+
   it(
-    'P4w refutes the spacing for an adopted response with expires_in <= M (every 200 is adopted): the next lazy refresh can start at once, so the bound for that case is per read (P4s)',
+    'R1 proves that for every lifetime in [1, L] the lazy margin min(M, max(S, floor(lifetime / 2))) lies in [S, M], and equals M for the lifetime L',
     async () => {
-      const arith = proofArith(z3.engine().api, 'P4w');
-      const margin = constant(arith, 'M', PLAN.marginMs);
-      const expiresIn = arith.int('expiresIn');
-      const firstEnd = arith.int('firstEnd');
-      const expiresAt = arith.int('expiresAt');
-      const secondStart = arith.int('secondStart');
-      arith.given(expiresIn.gt(0), expiresIn.le(margin), expiresAt.eq(firstEnd.add(expiresIn)));
-      arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
+      const { arith, skew, margin, longest, lifetime, lazyMargin } = spacingArith('R1');
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, secondStart.sub(firstEnd).ge(1));
+      expect(await prove(arith, arith.ctx.And(lazyMargin.ge(skew), lazyMargin.le(margin)))).toEqual({ status: 'proved' });
+      arith.given(lifetime.eq(longest));
+      expect(await prove(arith, lazyMargin.eq(margin))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
-  it(
-    'P4s proves that when expires_in <= M there is at most one refresh per read: a read joins the refresh in flight (single flight) or starts one, and the adopted token starts no refresh by itself',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'P4s');
-      const reads = arith.int('reads');
-      const started = arith.int('started');
-      const joined = arith.int('joined');
-      arith.given(reads.ge(0), started.ge(0), joined.ge(0), started.add(joined).eq(reads));
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, started.le(reads))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
+  it("the product's lazy margin is the proven formula", () => {
+    const skew = PLAN.skewMs;
+    const margin = PLAN.marginMs;
+    const lifetimes = [1, skew - 1, skew, 2 * skew - 1, 2 * skew, 2 * skew + 1, 2 * margin - 1, 2 * margin, 2 * margin + 1, PLAN.accessLifetimeMs];
+    const proven = (lifetime: number): number => Math.min(margin, Math.max(skew, Math.floor(lifetime / 2)));
+    expect(lifetimes.map((lifetime) => [lifetime, lazyRefreshMarginMs(lifetime)])).toEqual(lifetimes.map((lifetime) => [lifetime, proven(lifetime)]));
+  });
 
   it(
-    'P4f refutes the same spacing for a forced refresh: it starts on a 401 whatever remains, so only the per-generation coalescing of the model PlanCredential bounds it',
+    'R2 proves that two lazy refreshes of one account start at least S apart whatever lifetime the endpoint issues: the second starts only when at most the lazy margin remains and the token adopted by the first is at least S old',
     async () => {
-      const arith = proofArith(z3.engine().api, 'P4f');
-      const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
+      const { arith, skew, lifetime, lazyMargin } = spacingArith('R2');
       const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      const margin = constant(arith, 'M', PLAN.marginMs);
       const firstStart = arith.int('firstStart');
-      const firstEnd = arith.int('firstEnd');
+      const issuedAt = arith.int('issuedAt');
       const secondStart = arith.int('secondStart');
-      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), secondStart.ge(firstEnd));
+      arith.given(issuedAt.ge(firstStart), issuedAt.le(firstStart.add(budget)));
+      arith.given(secondStart.ge(issuedAt), issuedAt.add(lifetime).sub(secondStart).le(lazyMargin), secondStart.sub(issuedAt).ge(skew));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, secondStart.sub(firstStart).ge(lifetime.sub(margin)));
+      expect(await prove(arith, secondStart.sub(firstStart).ge(skew))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'R2m proves that for a lifetime of at least 2S the margin alone already makes the token S old when a lazy refresh starts, so the age condition changes nothing there',
+    async () => {
+      const { arith, skew, lifetime, lazyMargin } = spacingArith('R2m');
+      const issuedAt = arith.int('issuedAt');
+      const start = arith.int('start');
+      arith.given(lifetime.ge(skew.mul(2)), start.ge(issuedAt), issuedAt.add(lifetime).sub(start).le(lazyMargin));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, start.sub(issuedAt).ge(skew))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'R2w refutes the spacing without the age condition: with a lifetime of at most M and the margin M, the next lazy refresh can start at once',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'R2w');
+      const skew = constant(arith, 'S', PLAN.skewMs);
+      const margin = constant(arith, 'M', PLAN.marginMs);
+      const lifetime = arith.int('lifetime');
+      const issuedAt = arith.int('issuedAt');
+      const secondStart = arith.int('secondStart');
+      arith.given(lifetime.ge(1), lifetime.le(margin), secondStart.ge(issuedAt), issuedAt.add(lifetime).sub(secondStart).le(margin));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, secondStart.sub(issuedAt).ge(skew));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'R3 proves that two forced refreshes of one account start at least S apart: a 401 starts one only when the rejected token is at least S old',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'R3');
+      const skew = constant(arith, 'S', PLAN.skewMs);
+      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
+      const firstStart = arith.int('firstStart');
+      const issuedAt = arith.int('issuedAt');
+      const secondStart = arith.int('secondStart');
+      arith.given(issuedAt.ge(firstStart), issuedAt.le(firstStart.add(budget)), secondStart.sub(issuedAt).ge(skew));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, secondStart.sub(firstStart).ge(skew))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'R3w refutes it for a forced refresh without the age condition: it can start on a 401 at once',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'R3w');
+      const skew = constant(arith, 'S', PLAN.skewMs);
+      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
+      const firstStart = arith.int('firstStart');
+      const issuedAt = arith.int('issuedAt');
+      const secondStart = arith.int('secondStart');
+      arith.given(issuedAt.ge(firstStart), issuedAt.le(firstStart.add(budget)), secondStart.ge(issuedAt));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, secondStart.sub(firstStart).ge(skew));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

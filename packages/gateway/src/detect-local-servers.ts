@@ -1,5 +1,9 @@
 import { findOutboundError, isLoopbackHost, isRecord } from '@momonga/foundation';
-import type { DetectedLocalServer, LocalServerToolSupport } from '@momonga/protocol';
+import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerToolSupport, ManagedServerDescription } from '@momonga/protocol';
+import { runPreconditions } from './managed/preconditions.ts';
+import type { ExecFn } from './managed/preconditions.ts';
+import { trainedContextOf } from './probe/ollama.ts';
+import { reportedContextValue } from './probe/run-probe.ts';
 
 export type DetectFetch = (
   url: string,
@@ -11,6 +15,9 @@ export type DetectLocalServersOptions = {
   typed: readonly string[];
   signal: AbortSignal;
   fetch: DetectFetch;
+  servers: readonly ManagedServerDescription[];
+  exec: ExecFn;
+  exists(path: string): Promise<boolean>;
 };
 
 type Ask = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<unknown>;
@@ -48,6 +55,15 @@ const toolSupportOf = (show: unknown): LocalServerToolSupport => {
   return capabilities.includes('tools') ? 'yes' : 'no';
 };
 
+const trainedContextField = (show: unknown, model: string): { trainedContext?: number } => {
+  try {
+    return { trainedContext: trainedContextOf(show, model) };
+  } catch (error) {
+    if (error instanceof Error) return {};
+    throw error;
+  }
+};
+
 const ollamaShape: ShapeReader = async (ask) => {
   const version = await ask('GET', '/api/version');
   if (!isRecord(version) || typeof version['version'] !== 'string') return undefined;
@@ -55,7 +71,12 @@ const ollamaShape: ShapeReader = async (ask) => {
   const listed = isRecord(tags) ? tags['models'] : undefined;
   if (!Array.isArray(listed)) return undefined;
   const names = listed.flatMap((entry: unknown) => (isRecord(entry) && typeof entry['name'] === 'string' ? [entry['name']] : []));
-  const models = await Promise.all(names.map(async (id) => ({ id, tools: toolSupportOf(await ask('POST', '/api/show', { model: id })) })));
+  const models = await Promise.all(
+    names.map(async (id): Promise<DetectedModel> => {
+      const show = await ask('POST', '/api/show', { model: id });
+      return { id, tools: toolSupportOf(show), ...trainedContextField(show, id) };
+    }),
+  );
   return { models };
 };
 
@@ -63,8 +84,12 @@ const openAiShape: ShapeReader = async (ask) => {
   const listing = await ask('GET', '/v1/models');
   const data = isRecord(listing) ? listing['data'] : undefined;
   if (!Array.isArray(data)) return undefined;
-  const ids = data.flatMap((entry: unknown) => (isRecord(entry) && typeof entry['id'] === 'string' ? [entry['id']] : []));
-  return { models: ids.map((id) => ({ id, tools: 'unknown' as const })) };
+  const models = data.flatMap((entry: unknown): DetectedModel[] => {
+    if (!isRecord(entry) || typeof entry['id'] !== 'string') return [];
+    const contextWindow = reportedContextValue(entry);
+    return [{ id: entry['id'], tools: 'unknown', ...(contextWindow === undefined ? {} : { contextWindow }) }];
+  });
+  return { models };
 };
 
 const SHAPES = [
@@ -81,7 +106,34 @@ const detectOne = async (baseUrl: string, fetchFn: DetectFetch, signal: AbortSig
   return undefined;
 };
 
-export const detectLocalServers = async (options: DetectLocalServersOptions): Promise<DetectedLocalServer[]> => {
+class PreconditionUnrunnable extends Error {}
+
+const unrunnableExec =
+  (exec: ExecFn): ExecFn =>
+  async (file, args, execOptions) => {
+    try {
+      return await exec(file, args, execOptions);
+    } catch (error) {
+      if (execOptions.signal.aborted) throw error;
+      throw new PreconditionUnrunnable(`the precondition "${args.join(' ')}" could not run: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  };
+
+const detectManaged = async (description: ManagedServerDescription, options: DetectLocalServersOptions): Promise<DetectedManagedServer | undefined> => {
+  const binary = description.binary.defaultPath;
+  if (!(await options.exists(binary))) return undefined;
+  const listed: DetectedManagedServer = { shape: 'managed', id: description.id, provider: description.provider, binary };
+  try {
+    const verdict = await runPreconditions(description, binary, unrunnableExec(options.exec), options.signal);
+    if (verdict.kind === 'met') return listed;
+    return { ...listed, refused: { message: verdict.message, ...(verdict.remedy === undefined ? {} : { remedy: verdict.remedy }) } };
+  } catch (error) {
+    if (error instanceof PreconditionUnrunnable) return { ...listed, refused: { message: error.message } };
+    throw error;
+  }
+};
+
+export const detectLocalServers = async (options: DetectLocalServersOptions): Promise<LocalServerDetection[]> => {
   const fetchFn = options.fetch;
   const loopback = options.candidates.filter((candidate) => isLoopbackHost(new URL(candidate).hostname));
   const addresses = [...new Set([...loopback, ...options.typed])];
@@ -91,5 +143,10 @@ export const detectLocalServers = async (options: DetectLocalServersOptions): Pr
     const server = await detectOne(address, fetchFn, options.signal);
     if (server !== undefined) found.push(server);
   }
-  return found;
+  const managed: DetectedManagedServer[] = [];
+  for (const description of options.servers) {
+    const server = await detectManaged(description, options);
+    if (server !== undefined) managed.push(server);
+  }
+  return [...found, ...managed];
 };

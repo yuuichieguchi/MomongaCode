@@ -6,7 +6,7 @@ import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { EvalError } from './runner.ts';
 
 export type PolicyOverlay = {
-  context?: { cachePrefix?: boolean; outputFormatters?: OutputFormatterName[]; loopGuidance?: boolean; observedCapacity?: boolean };
+  context?: { cachePrefix?: boolean; outputFormatters?: OutputFormatterName[]; loopGuidance?: boolean; observedCapacity?: boolean; unboundedOutputReserve?: boolean };
   tools?: { deferral?: boolean; conciseDescriptions?: boolean };
   memory?: { repositoryFacts?: boolean };
 };
@@ -24,6 +24,7 @@ export const POLICY_OVERLAY_SCHEMA = {
         outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] } },
         loopGuidance: bool,
         observedCapacity: bool,
+        unboundedOutputReserve: bool,
       },
       additionalProperties: false,
     },

@@ -65,3 +65,48 @@ describe('masked credentials versus ordinary text', () => {
     expect(redactor.whole(input)).toBe(expected);
   });
 });
+
+describe('keyed values of the redactor', () => {
+  const FIRST = 'rotating-aa1';
+  const SECOND = 'rotating-bb2';
+
+  it('set replaces the values of its key: the old value is no longer redacted, the new one is', () => {
+    const keyed = createRedactor({ credentials: [] });
+    keyed.set('plan/chatgpt/work', [FIRST]);
+    expect(keyed.text(`a ${FIRST} b`)).toBe(`a ${REDACTED_MARKER} b`);
+    keyed.set('plan/chatgpt/work', [SECOND]);
+    expect(keyed.text(`a ${FIRST} b`)).toBe(`a ${FIRST} b`);
+    expect(keyed.text(`a ${SECOND} b`)).toBe(`a ${REDACTED_MARKER} b`);
+  });
+
+  it('a value held by add stays redacted when a key drops it', () => {
+    const keyed = createRedactor({ credentials: [] });
+    keyed.add(FIRST);
+    keyed.set('plan/chatgpt/work', [FIRST]);
+    keyed.set('plan/chatgpt/work', [SECOND]);
+    expect(keyed.text(`a ${FIRST} b`)).toBe(`a ${REDACTED_MARKER} b`);
+  });
+
+  it('set with an empty list removes the key', () => {
+    const keyed = createRedactor({ credentials: [] });
+    keyed.set('plan/chatgpt/work', [FIRST]);
+    keyed.set('plan/chatgpt/work', []);
+    expect(keyed.text(`a ${FIRST} b`)).toBe(`a ${FIRST} b`);
+  });
+
+  it('2000 rotations through one key leave only the last list redacted', () => {
+    const keyed = createRedactor({ credentials: [] });
+    const tokenOf = (index: number): string => `rotation-${String(index).padStart(6, '0')}`;
+    for (let index = 0; index < 2000; index += 1) keyed.set('k', [tokenOf(index)]);
+    expect(keyed.text(`x ${tokenOf(0)} y`)).toBe(`x ${tokenOf(0)} y`);
+    expect(keyed.text(`x ${tokenOf(1999)} y`)).toBe(`x ${REDACTED_MARKER} y`);
+  });
+
+  it('add of an already held value changes nothing', () => {
+    const keyed = createRedactor({ credentials: [] });
+    for (let index = 0; index < 5000; index += 1) keyed.add(FIRST);
+    const filler = 'z'.repeat(1024 * 1024);
+    const output = keyed.whole(`${filler}${FIRST}${filler}`);
+    expect(output).toBe(`${filler}${REDACTED_MARKER}${filler}`);
+  });
+});

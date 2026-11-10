@@ -1,11 +1,13 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
+import { responseFailureDisposition, terminalOf } from './gateway-policy.ts';
+import { outputBoundOf } from './output-bound.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { loopSignatureOf } from './loop-detection.ts';
@@ -151,7 +153,8 @@ const handleResult = async (
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
-    return terminals.finish('FAILED', { error: { code: result.code, message: result.message } });
+    const terminal = terminalOf(responseFailureDisposition(result));
+    return terminals.finish(terminal.to, terminal.patch);
   }
   const { response, incomplete } = result;
   const usage = response.usage;
@@ -241,7 +244,7 @@ const handleResult = async (
     },
   ];
   if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
-    const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
+    const failed = fallback.fallbackCauses.map(describeFallbackCause);
     recorded.push({
       type: 'notice',
       level: 'warning',
@@ -377,7 +380,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     ...(summarising ? { tool_choice: 'none' as const } : ctx.toolLess ? {} : { tool_choice: 'auto' as const }),
     ...(ctx.capabilities.parallelToolCalls === undefined || ctx.toolLess ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
     ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
-    max_output_tokens: built.maxOutputTokens,
+    ...outputBoundOf(ctx.capabilities, built.maxOutputTokens),
     store: false,
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },

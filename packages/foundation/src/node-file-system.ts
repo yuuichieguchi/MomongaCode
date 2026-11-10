@@ -24,9 +24,9 @@ export interface FileSystem extends AtomicWriteFileSystem {
   readdirEntries(directory: string): Promise<fs.Dirent[]>;
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
-  mkdir(directory: string): Promise<void>;
+  mkdir(directory: string, mode?: number): Promise<void>;
   mkdirPrivate(directory: string): Promise<void>;
-  readOwnerOnlyTextFile(file: string, description: string): Promise<string | undefined>;
+  readOwnerOnlyTextFile(file: string, description: string, maxBytes?: number): Promise<string | undefined>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string): Promise<void>;
   cp(from: string, to: string): Promise<void>;
@@ -100,12 +100,12 @@ export const nodeFileSystem: FileSystem = {
   readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
-  mkdir: async (directory) => void (await fs.promises.mkdir(directory, { recursive: true })),
+  mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, { recursive: true, ...(mode === undefined ? {} : { mode }) })),
   mkdirPrivate: async (directory) => {
     await fs.promises.mkdir(directory, { recursive: true, mode: PRIVATE_MODE.directory });
     await fs.promises.chmod(directory, PRIVATE_MODE.directory);
   },
-  readOwnerOnlyTextFile: async (file, description) => {
+  readOwnerOnlyTextFile: async (file, description, maxBytes) => {
     let handle: fs.promises.FileHandle;
     try {
       handle = await fs.promises.open(file, fs.constants.O_RDONLY | noFollowFlag());
@@ -114,7 +114,9 @@ export const nodeFileSystem: FileSystem = {
       throw error;
     }
     try {
-      assertPrivateRegularFile(await handle.stat(), description);
+      const stat = await handle.stat();
+      assertPrivateRegularFile(stat, description);
+      if (maxBytes !== undefined && stat.size > maxBytes) throw new Error(`${description} is larger than ${maxBytes} bytes`);
       return await handle.readFile('utf8');
     } finally {
       await handle.close();

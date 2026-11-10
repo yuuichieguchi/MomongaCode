@@ -10,7 +10,7 @@ import type { CredentialStore } from './credential-store.ts';
 import { isRecord } from './json.ts';
 import { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 
-const CLIENT_NAME = 'MomongaCode';
+export const CLIENT_NAME = 'MomongaCode';
 const STORE_VERSION = 1;
 const PASSIVE_REDIRECT_URL = 'http://127.0.0.1/callback';
 

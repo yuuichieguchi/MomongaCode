@@ -2,27 +2,37 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { UserSettingsCache } from './user-settings.ts';
 
-export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox';
+export type SettingsKeyPath = 'context.unboundedOutputReserve' | 'credentials.plaintextTokenFiles';
+
+export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox' | SettingsKeyPath;
 
 export type DerivedObjectDeclaration = { readonly id: DerivedObjectId; readonly inputs: readonly SettingsSection[] };
 
 export const DERIVED_OBJECTS = [
-  { id: 'D1', inputs: ['models', 'network', 'pricing'] },
+  { id: 'D1', inputs: ['models', 'network', 'pricing', 'context.unboundedOutputReserve'] },
   { id: 'D2', inputs: ['network', 'telemetry'] },
   { id: 'D3', inputs: ['sandbox'] },
   { id: 'D4', inputs: ['network'] },
+  { id: 'D5', inputs: ['network', 'credentials.plaintextTokenFiles'] },
 ] as const satisfies readonly { id: string; inputs: readonly SettingsSection[] }[];
 
 export type DerivedObjectId = (typeof DERIVED_OBJECTS)[number]['id'];
 
 export const settingsInputsDigest = (inputs: unknown): string => sha256Hex(canonicalJson(inputs));
 
+const inputValueOf = (settings: ResolvedSettings, input: SettingsSection): unknown => {
+  const [section, key] = input.split('.');
+  const value = (settings as Record<string, unknown>)[section as string];
+  if (key === undefined) return value ?? null;
+  return (value as Record<string, unknown> | undefined)?.[key] ?? null;
+};
+
 export const derivedInputsOf =
   (id: DerivedObjectId) =>
   (settings: ResolvedSettings): Record<string, unknown> => {
     const declaration = DERIVED_OBJECTS.find((object) => object.id === id);
     if (declaration === undefined) throw new Error(`unknown derived object ${id}`);
-    return Object.fromEntries(declaration.inputs.map((section) => [section, (settings as Record<string, unknown>)[section] ?? null]));
+    return Object.fromEntries(declaration.inputs.map((input) => [input, inputValueOf(settings, input)]));
   };
 
 export type Lease<T> = { readonly value: T; release(): void };
@@ -38,7 +48,8 @@ export type PinnedDerivationOptions<T> = {
   cache: Pick<UserSettingsCache, 'read'>;
   signal: AbortSignal;
   inputsOf(settings: ResolvedSettings): unknown;
-  derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal): T | Promise<T>;
+  prepare?(settings: ResolvedSettings, signal: AbortSignal): Promise<void> | undefined;
+  derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal, inputs: unknown): T | Promise<T>;
   retire(object: T): void | Promise<void>;
   onWarning(message: string): void;
 };
@@ -53,10 +64,13 @@ export const derivationFailureText = (reason: string): string => `the settings c
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
+type Prepared = { failed: false } | { failed: true; error: unknown };
+
+export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, prepare, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
   let current: Entry<T> | undefined;
   let inFlight: InFlight<T> | undefined;
   const warned = new Set<string>();
+  const warnedPrepareReasons = new Set<string>();
   const live = new Set<Entry<T>>();
   const retirements = new Set<Promise<void>>();
 
@@ -98,13 +112,13 @@ export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, deri
     flight.waiters.clear();
   };
 
-  const start = (digest: string, settings: ResolvedSettings): InFlight<T> => {
+  const start = (digest: string, settings: ResolvedSettings, inputs: unknown): InFlight<T> => {
     const previous = current;
     const flight: InFlight<T> = { digest, waiters: new Set<Waiter<T>>(), settled: Promise.resolve() };
     flight.settled = (async () => {
       await Promise.resolve();
       try {
-        const value = await derive(settings, previous?.value, owner);
+        const value = await derive(settings, previous?.value, owner, inputs);
         const entry: Entry<T> = { digest, value, leases: 0, retired: false };
         live.add(entry);
         current = entry;
@@ -145,18 +159,54 @@ export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, deri
       });
     });
 
-  const take = async (admitting: boolean, signal: AbortSignal): Promise<Lease<T>> => {
-    signal.throwIfAborted();
-    const { settings } = cache.read();
-    const digest = settingsInputsDigest(inputsOf(settings));
+  const awaitPrepared = (pending: Promise<void>, signal: AbortSignal): Promise<Prepared> =>
+    new Promise<Prepared>((resolve, reject) => {
+      const onAbort = (): void => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      const settled = (outcome: Prepared): void => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(outcome);
+      };
+      pending.then(
+        () => settled({ failed: false }),
+        (error: unknown) => settled({ failed: true, error }),
+      );
+    });
+
+  const warnPrepareFailure = (error: unknown): void => {
+    const reason = reasonOf(error);
+    if (owner.aborted || warnedPrepareReasons.has(reason)) return;
+    warnedPrepareReasons.add(reason);
+    onWarning(derivationFailureText(reason));
+  };
+
+  const takeFor = async (settings: ResolvedSettings, admitting: boolean, signal: AbortSignal): Promise<Lease<T>> => {
+    const inputs = inputsOf(settings);
+    const digest = settingsInputsDigest(inputs);
     for (;;) {
       if (current !== undefined && current.digest === digest) return leaseOf(current);
       if (inFlight === undefined) {
-        inFlight = start(digest, settings);
+        inFlight = start(digest, settings, inputs);
         return join(inFlight, admitting, signal);
       }
       if (inFlight.digest === digest) return join(inFlight, admitting, signal);
       await awaitSettled(inFlight, signal);
+    }
+  };
+
+  const take = async (admitting: boolean, signal: AbortSignal): Promise<Lease<T>> => {
+    for (;;) {
+      signal.throwIfAborted();
+      const { settings } = cache.read();
+      const pending = prepare?.(settings, signal);
+      if (pending === undefined) return takeFor(settings, admitting, signal);
+      const prepared = await awaitPrepared(pending, signal);
+      if (prepared.failed) {
+        warnPrepareFailure(prepared.error);
+        if (admitting || current === undefined) throw prepared.error;
+        return leaseOf(current);
+      }
+      warnedPrepareReasons.clear();
     }
   };
 

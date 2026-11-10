@@ -66,7 +66,7 @@ describe('what the route cannot carry, as data', () => {
         outputBoundField: 'none',
         systemRole: 'developer',
         toolPlacement: 'additional_tools',
-        inputKinds: { content: ['text', 'image'], tools: ['function', 'custom'] },
+        inputKinds: { content: ['file'], tools: ['function', 'custom'] },
       },
     });
   });

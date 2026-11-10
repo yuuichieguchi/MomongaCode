@@ -1,6 +1,6 @@
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { Context, Span, Tracer } from '@opentelemetry/api';
-import type { FallbackCause } from '@momonga/foundation';
+import type { FallbackCause } from '@momonga/protocol';
 import type { UsageSource } from '@momonga/protocol';
 import { EXCEPTION_EVENT, GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS } from './semconv.ts';
 

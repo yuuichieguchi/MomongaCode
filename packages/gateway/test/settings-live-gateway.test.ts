@@ -364,15 +364,15 @@ describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)
   });
 });
 
-describe('S1 gateway: a plan target added by a change is applied and served as unserved (design-settings-live 15.3)', () => {
-  it('a change that adds a plan target is applied: its alias fails each call with the unserved text, other targets serve', async (context) => {
+describe('S1 gateway: a plan target added by a change is applied and served through the plan sessions (design-settings-live 15.3, design-chatgpt-plan P6.8)', () => {
+  it('a change that adds a plan target is applied: with no account signed in its alias answers sign_in_required, other targets serve', async (context) => {
     const a = await fakeUpstream(context);
     const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } });
     replaceSettings(stack.home, {
-      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', plan: { profile: 'chatgpt' } } } },
+      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt' } } } },
     });
     const refused = await post(stack.client, ask('plan'));
-    expect(refused.text).toContain('target gpt uses plan profile chatgpt, which this gateway does not serve yet');
+    expect(refused.text).toContain('sign_in_required');
     expect((await post(stack.client, ask())).status).toBe(200);
   });
 });

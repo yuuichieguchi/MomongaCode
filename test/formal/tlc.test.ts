@@ -7,6 +7,8 @@ import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
 import { groupKiller, killGroup } from './runner.ts';
+import { LIVENESS_ARGS, actionPropertyViolationOutput, cfgFor, completedOutput, endlessSpec, holdsEntry, invariantEntry, invariantViolationOutput, runOf, temporalEntry, temporalViolationOutput, tinySpec, writeFile } from './fixtures.ts';
+import { describeTier } from './tier.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const specDir = path.join(repoRoot, 'specs', 'tla');
@@ -15,14 +17,13 @@ const tlcScript = path.join(repoRoot, 'scripts', 'tlc.sh');
 const jarPath = path.join(repoRoot, '.cache', 'tla', 'tla2tools.jar');
 const REAP_SLACK_MS = 5000;
 const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
-const LIVENESS_ARGS = ['-lncheck', 'final'];
 const ENDLESS_BUDGET_CPU_SECONDS = 8;
 
-const loadManifest = (): { manifest: Manifest } | { error: unknown } => {
+const loadManifest = (): { manifest: Manifest } | { error: Error } => {
   try {
     return { manifest: readManifest(manifestPath) };
   } catch (error) {
-    return { error };
+    return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 };
 
@@ -33,63 +34,8 @@ const manifestOrThrow = (): Manifest => {
 };
 
 const selectedTier = process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run';
-const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : [];
-
-const holdsEntry: ManifestEntry = {
-  config: 'Tiny',
-  role: 'check',
-  expect: 'holds',
-  args: [],
-  tier: 'every-run',
-  distinctStates: 3,
-  measuredSeconds: 1,
-  measuredCpuSeconds: 1,
-  budgetCpuSeconds: 5,
-};
-
-const invariantEntry: ManifestEntry = {
-  ...holdsEntry,
-  config: 'Tiny.broken',
-  role: 'evidence',
-  expect: { violates: 'Small', exitCode: 12 },
-};
-
-const temporalEntry: ManifestEntry = {
-  ...holdsEntry,
-  config: 'Tiny.live',
-  role: 'evidence',
-  expect: { violates: 'Settles', exitCode: 13 },
-  args: LIVENESS_ARGS,
-};
-
-const completedOutput = (distinct: number): string =>
-  [
-    'TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)',
-    'Model checking completed. No error has been found.',
-    `${distinct} states generated, ${distinct} distinct states found, 0 states left on queue.`,
-    'Finished in 01s at (2026-11-03 10:00:00)',
-  ].join('\n');
-
-const invariantViolationOutput = (invariant: string): string =>
-  ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', `Error: Invariant ${invariant} is violated.`, 'Error: The behavior up to this point is:'].join('\n');
-
-const actionPropertyViolationOutput = (property: string): string =>
-  ['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', `Error: Action property ${property} is violated.`, 'Error: The behavior up to this point is:'].join('\n');
-
-const temporalViolationOutput =['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
-
-const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtCpuBudget: false, stdout, stderr });
-
-const writeFile = (file: string, text: string): void => {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, text);
-};
-
-const tinySpec = ['---- MODULE Tiny ----', 'EXTENDS Naturals', 'VARIABLE x', 'Init == x = 0', "Next == (x < 2 /\\ x' = x + 1) \\/ (x = 2 /\\ x' = x)", 'Spec == Init /\\ [][Next]_x', 'Small == x <= 2', '===='].join('\n');
-
-const endlessSpec = ['---- MODULE Endless ----', 'EXTENDS Naturals', 'VARIABLE x', 'Init == x = 0', 'Next == x\' = x + 1', 'Spec == Init /\\ [][Next]_x', 'Fine == x >= 0', '===='].join('\n');
-
-const cfgFor = (invariant: string): string => ['SPECIFICATION Spec', '', 'INVARIANTS', `    ${invariant}`, ''].join('\n');
+const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : loaded.error;
+const manifestConfigs = 'manifest' in loaded ? loaded.manifest.entries.map((entry) => entry.config) : [];
 
 const discoveryManifest = (configs: readonly string[]): Manifest => ({
   format: MANIFEST_FORMAT,
@@ -113,11 +59,6 @@ const groupGoneWithin = async (pgid: number, deadlineMs: number): Promise<number
     members = groupMembers(pgid);
   }
   return members;
-};
-
-const tlcMetadirsLeft = (): string[] => {
-  const token = process.env['MOMONGA_TEST_RUN'] as string;
-  return fs.readdirSync(os.tmpdir()).filter((entry) => entry.startsWith(`mmt-${token}-tlc-`));
 };
 
 const sandboxWithScript = (root: string, specs: Readonly<Record<string, string>>, withJar: boolean): string => {
@@ -354,11 +295,11 @@ describe('running tlc.sh under the harness', () => {
     expect(argv.slice(1).join(' ')).toContain('-lncheck final');
     expect(argv.slice(1).join(' ')).toContain(`-workers ${TLC_WORKERS}`);
     const metadir = (run.stdout.split('\n').find((line) => line.startsWith('METADIR ')) ?? '').slice('METADIR '.length);
-    expect(path.dirname(metadir)).toBe(os.tmpdir());
-    expect(path.basename(metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
+    expect(metadir).toBe(run.metadir);
+    expect(path.dirname(run.metadir)).toBe(os.tmpdir());
+    expect(path.basename(run.metadir).startsWith(`mmt-${process.env['MOMONGA_TEST_RUN']}-tlc-`)).toBe(true);
     expect(run.stdout).toContain('METADIR_EXISTS');
-    expect(fs.existsSync(metadir)).toBe(false);
-    expect(tlcMetadirsLeft()).toEqual([]);
+    expect(fs.existsSync(run.metadir)).toBe(false);
   });
 
   it(
@@ -460,7 +401,7 @@ describe('running tlc.sh under the harness', () => {
       expect(run.signal).toBe('SIGKILL');
       expect(run.stdout).toContain('TLC2 Version');
       expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
-      expect(tlcMetadirsLeft()).toEqual([]);
+      expect(fs.existsSync(run.metadir)).toBe(false);
       expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS }, run)).not.toEqual([]);
     },
     ENDLESS_BUDGET_CPU_SECONDS * TLC_WORKERS * 1000 + 2 * REAP_SLACK_MS,
@@ -586,21 +527,4 @@ describe('killing a process group', () => {
   });
 });
 
-describe(`TLC over every ${selectedTier} configuration in the manifest`, () => {
-  it('has configurations in this tier', () => {
-    manifestOrThrow();
-    expect(tierEntries.length).toBeGreaterThan(0);
-  });
-
-  for (const entry of tierEntries) {
-    it(
-      `${entry.config} ${entry.expect === 'holds' ? 'holds' : `violates ${entry.expect.violates}`}`,
-      async () => {
-        const run = await runTlc({ script: tlcScript, config: entry.config, args: entry.args, budgetCpuSeconds: entry.budgetCpuSeconds });
-        expect(verdictProblems(entry, run)).toEqual([]);
-        expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
-      },
-      entry.budgetCpuSeconds * TLC_WORKERS * 1000,
-    );
-  }
-});
+describeTier({ tier: selectedTier, entries: tierEntries, manifestConfigs, script: tlcScript, repoRoot, env: process.env });

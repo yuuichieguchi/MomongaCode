@@ -37,6 +37,7 @@ const CLOSURE_TEXT = {
   approvalTimeout: 'Not run: approval for this tool call was not given in time.',
   loop: 'Not run: the previous request was stopped because the same tool call kept repeating.',
   timeout: 'Not run: the previous request ran out of time before this tool call ran.',
+  usageLimit: 'Not run: the previous request stopped because the usage allowance was reached before this tool call ran.',
   failed: 'Not run: the previous request ended with an error before this tool call ran.',
   other: 'Not run: the previous request was stopped before this tool call ran.',
 } as const;
@@ -71,6 +72,8 @@ const notExecutedText = (outcome: InheritanceOutcome): string => {
       return CLOSURE_TEXT.loop;
     case 'timeout':
       return CLOSURE_TEXT.timeout;
+    case 'usage_limit':
+      return CLOSURE_TEXT.usageLimit;
     default:
       return CLOSURE_TEXT.other;
   }

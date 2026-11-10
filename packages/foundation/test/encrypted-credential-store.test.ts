@@ -19,7 +19,7 @@ import {
   createMemoryCredentialStore,
   inspectProcessLock,
 } from '@momonga/foundation';
-import type { CredentialEntry, CredentialStore, SecretStore } from '@momonga/foundation';
+import type { CredentialEntry, CredentialStore, Random, SecretStore } from '@momonga/foundation';
 import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import type { SecretBackend } from '@momonga/foundation/secret-store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretFiles, createFakeSecurityPort, startLockHolder, waitFor } from '@momonga/testkit';
@@ -557,5 +557,35 @@ describe('encrypted credential store: every call carries the signal of its opera
       const offending = text.split('\n').filter((line) => line.includes('NEVER_ABORTED') || /signal\s*\?\?/.test(line));
       expect(offending, file).toEqual([]);
     }
+  });
+});
+
+describe('O-R5-6 L8: the store takes its random bytes from the injected port', () => {
+  it('nonce and key bytes come from the injected random', async () => {
+    const given = setup();
+    const fill = (length: number): number => ({ 12: 0x11, 32: 0x22, 8: 0x33 })[length] ?? 0x44;
+    const requested: number[] = [];
+    const random: Random = {
+      float: () => 0.5,
+      bytes: (length) => {
+        requested.push(length);
+        return new Uint8Array(length).fill(fill(length));
+      },
+      hex: (byteLength) => '55'.repeat(byteLength),
+      uuid: () => '00000000-0000-4000-8000-000000000000',
+    };
+    const store = createEncryptedCredentialStore({
+      directory: given.directory,
+      stateDirectory: given.stateDirectory,
+      secretStore: { kind: 'available', store: given.keys },
+      plaintextTokenFiles: () => false,
+      random,
+    } as Parameters<typeof createEncryptedCredentialStore>[0]);
+    await store.write('plan/chatgpt/work', 'the record', SIGNAL);
+    const envelope = JSON.parse(fs.readFileSync(recordFileOf(given.directory, 'plan/chatgpt/work'), 'utf8')) as Record<string, string>;
+    expect(envelope['nonce']).toBe('11'.repeat(12));
+    expect(createdKeyNames(given.keys)).toEqual([`${CREDENTIAL_KEY_PREFIX}${'33'.repeat(8)}`]);
+    expect(decrypt(envelope, '22'.repeat(32), 'plan/chatgpt/work')).toBe('the record');
+    expect([...requested].sort((a, b) => a - b)).toEqual([8, 12, 32]);
   });
 });

@@ -525,7 +525,7 @@ const calibrate = async (
   return { ratio, errorBound };
 };
 
-const findContextValue = (source: unknown): number | undefined => {
+export const reportedContextValue = (source: unknown): number | undefined => {
   const queue: unknown[] = [source];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const node = queue[cursor];
@@ -536,7 +536,7 @@ const findContextValue = (source: unknown): number | undefined => {
     if (!isRecord(node)) continue;
     for (const name of CONTEXT_FIELDS) {
       const value = node[name];
-      if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
     }
     queue.push(...Object.values(node));
   }
@@ -545,7 +545,7 @@ const findContextValue = (source: unknown): number | undefined => {
 
 const reportedContextWindow = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
   for (const source of [listedEntryOf(modelsBody, model), parseJson(healthText)]) {
-    const value = findContextValue(source);
+    const value = reportedContextValue(source);
     if (value !== undefined) return { value, method: 'reported' };
   }
   return undefined;

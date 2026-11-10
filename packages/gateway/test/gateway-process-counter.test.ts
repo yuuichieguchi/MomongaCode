@@ -24,12 +24,15 @@ const listedCounters = async (socketPath: string): Promise<Record<string, string
   return entry.targetCounters;
 };
 
+const resolvedSettings = async (home: string) => (await loadUserSettings({ home })).settings;
+
 const resolvedPrimary = async (home: string) => {
-  const { settings } = await loadUserSettings({ home });
-  const target = settings.models.targets['primary'];
+  const target = (await resolvedSettings(home)).models.targets['primary'];
   if (target === undefined) throw new Error('the settings resolved no primary target');
   return target;
 };
+
+const resolvedOutputPolicy = async (home: string) => ({ unboundedOutputReserve: (await resolvedSettings(home)).context.unboundedOutputReserve });
 
 describe('the counters a started gateway lists', () => {
   it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
@@ -95,15 +98,15 @@ describe('the counters a started gateway lists', () => {
       const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
-      return { counters, target: await resolvedPrimary(home) };
+      return { counters, target: await resolvedPrimary(home), outputPolicy: await resolvedOutputPolicy(home) };
     };
 
     const one = await launchWithRecord('identity-one');
     const two = await launchWithRecord('identity-two');
 
     const codeDigest = await codeDigestOfRunningProcess();
-    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one' }) });
-    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two' }) });
+    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
+    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
     expect(two.counters['primary']).not.toBe(one.counters['primary']);
   });
 });

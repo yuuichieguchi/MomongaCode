@@ -102,7 +102,7 @@ const digestIn = (tags: unknown, model: string): string | undefined => {
 export const readOllamaDigest = (upstream: UpstreamEndpoint, model: string, signal: AbortSignal): Promise<string | undefined> =>
   withClient(upstream, signal, async (client) => digestIn(await jsonOf(client, 'GET', TAGS_PATH), model));
 
-const trainedContextOf = (show: unknown, model: string): number => {
+export const trainedContextOf = (show: unknown, model: string): number => {
   const info = isRecord(show) ? show['model_info'] : undefined;
   if (!isRecord(info)) throw new Error(`/api/show for model ${model} carries no model_info`);
   const architecture = info['general.architecture'];

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_JSON_DEPTH } from '@momonga/foundation';
-import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
+import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -122,6 +122,19 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_invalidated' });
   });
 
+  it('a terminal answer with no earlier unanswered send writes interrupted false', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    const installed = await readRecord(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'error', code: 'invalid_grant' }]);
+    const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
+    h.clock.advance(SKEW_MS);
+    await source.rejected(installed?.['generation'] as number, new AbortController().signal);
+    const refreshes = h.events.filter((event) => event.name === 'plan.refresh');
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]?.data).toMatchObject({ outcome: 'terminal', code: 'invalid_grant', interrupted: false });
+  });
+
   it('a terminal answer to a refresh whose intent survived a restart keeps the server code as cause and sets interrupted', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
@@ -200,7 +213,7 @@ describe('transient refresh answers keep everything (I-C6) and are retried at mo
     });
   });
 
-  it('a 200 with expires_in equal to M is adopted, its replacement stored in the same write', async () => {
+  it('a 200 with expires_in equal to M is adopted, its replacement stored in the same write, and the next read refreshes only once the token is 60 s old (P-R)', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     h.auth.scriptToken('refresh_token', [{ kind: 'expires_in', seconds: 121 }]);
@@ -213,6 +226,14 @@ describe('transient refresh answers keep everything (I-C6) and are retried at mo
     expect(after?.['refresh_token']).not.toBe(signIn.tokens.refresh_token);
     expect(h.auth.issuedSecrets()).toContain(after?.['refresh_token']);
     expect(await rawRecord(h, 'work')).not.toContain(signIn.tokens.refresh_token);
+    const served = await readWork(h);
+    expect(h.auth.calls.tokenRefreshToken).toBe(1);
+    expect(served.bearer).toBe(read.bearer);
+    h.clock.advance(61_000);
+    const next = await readWork(h);
+    expect(h.auth.calls.tokenRefreshToken).toBe(2);
+    expect(next.bearer).not.toBe(read.bearer);
+    expect((await readRecord(h, 'work'))?.['state']).toBe('active');
   });
 
   it('never sends a refresh token again once a 200 carried its replacement (SingleUseServer)', async () => {
@@ -221,6 +242,7 @@ describe('transient refresh answers keep everything (I-C6) and are retried at mo
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     toRefreshWindow(h, START_MS);
     const first = await source.read(new AbortController().signal);
+    h.clock.advance(SKEW_MS);
     expect(await source.rejected(first.generation, new AbortController().signal)).toBe('renewed');
     const sent = h.auth.records.filter((record) => record.form['grant_type'] === 'refresh_token').map((record) => record.form['refresh_token']);
     expect(sent).toHaveLength(2);

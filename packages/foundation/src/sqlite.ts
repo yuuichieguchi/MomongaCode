@@ -10,7 +10,7 @@ const PRIVATE_FILE_MODE = 0o600;
 
 export type OpenDatabaseOptions = { busyTimeoutMs?: number; createDirectory?: boolean };
 
-export type Migration = { version: number; name: string; sql: string };
+export type Migration = { version: number; name: string; sql: string; rebuildsReferencedTable?: true };
 
 export type MigrateResult = { applied: number[]; unknownApplied: number[] };
 
@@ -206,22 +206,43 @@ export const migrate = (db: DatabaseSync, migrations: readonly Migration[]): Mig
   const selectChecksum = db.prepare('SELECT checksum FROM schema_migrations WHERE version = ?');
   const insert = db.prepare('INSERT INTO schema_migrations (version, name, checksum) VALUES (?, ?, ?)');
   for (const migration of sorted) {
-    const checksum = sha256Hex(migration.sql);
-    const didApply = immediateTx(db, () => {
-      const existing = selectChecksum.get(migration.version);
-      if (existing !== undefined) {
-        if (existing['checksum'] !== checksum) throw checksumMismatch(migration.version, migration.name);
-        return false;
-      }
-      try {
-        db.exec(migration.sql);
-      } catch (error) {
-        throw new Error(`migration version ${migration.version} (${migration.name}) failed: ${(error as Error).message}`, { cause: error });
-      }
-      insert.run(migration.version, migration.name, checksum);
-      return true;
-    });
-    if (didApply) applied.push(migration.version);
+    const rebuilds = migration.rebuildsReferencedTable === true;
+    if (rebuilds) db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      if (applyMigration(db, migration, selectChecksum, insert, rebuilds)) applied.push(migration.version);
+    } finally {
+      if (rebuilds) db.exec('PRAGMA foreign_keys = ON');
+    }
   }
   return { applied, unknownApplied };
+};
+
+const applyMigration = (
+  db: DatabaseSync,
+  migration: Migration,
+  selectChecksum: ReturnType<DatabaseSync['prepare']>,
+  insert: ReturnType<DatabaseSync['prepare']>,
+  rebuilds: boolean,
+): boolean => {
+  const checksum = sha256Hex(migration.sql);
+  return immediateTx(db, () => {
+    const existing = selectChecksum.get(migration.version);
+    if (existing !== undefined) {
+      if (existing['checksum'] !== checksum) throw checksumMismatch(migration.version, migration.name);
+      return false;
+    }
+    try {
+      db.exec(migration.sql);
+    } catch (error) {
+      throw new Error(`migration version ${migration.version} (${migration.name}) failed: ${(error as Error).message}`, { cause: error });
+    }
+    if (rebuilds) assertNoForeignKeyViolation(db, migration);
+    insert.run(migration.version, migration.name, checksum);
+    return true;
+  });
+};
+
+const assertNoForeignKeyViolation = (db: DatabaseSync, migration: Migration): void => {
+  const violations = db.prepare('PRAGMA foreign_key_check').all();
+  if (violations.length > 0) throw new Error(`migration version ${migration.version} (${migration.name}) left ${violations.length} foreign key violations`);
 };

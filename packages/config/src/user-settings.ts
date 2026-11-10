@@ -13,18 +13,18 @@ import { readUserJsonFile, readUserLayer, userLayerFrom, userSettingsFile } from
 import type { UserLayer } from './layers.ts';
 import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
-import type { ResolvedModels } from './models.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
 import type { ModelsSettings, SandboxSetting } from './settings.ts';
 
-export type LoadUserSettingsOptions = { home: string };
+export type LoadUserSettingsOptions = { home: string; planProfiles?: PlanProfiles };
 
 export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: string[]; files: string[] };
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-const userSettingsFrom = (home: string, read: JsonFile): UserSettingsLoad => {
+const userSettingsFrom = (home: string, read: JsonFile, planProfiles?: PlanProfiles): UserSettingsLoad => {
   try {
-    const user = userLayerFrom(home, read);
+    const user = userLayerFrom(home, read, planProfiles);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
@@ -36,8 +36,8 @@ const userSettingsFrom = (home: string, read: JsonFile): UserSettingsLoad => {
   }
 };
 
-const loadUserSettingsSync = (home: string): LoadUserSettingsResult => {
-  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home));
+const loadUserSettingsSync = (home: string, planProfiles?: PlanProfiles): LoadUserSettingsResult => {
+  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), planProfiles);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
@@ -107,9 +107,9 @@ export const writeAppliedRecord = (home: string, record: string, lastWrittenSeq?
 
 const APPLIED_RECORD_MODE = 0o600;
 
-export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
+export const loadUserSettings = async ({ home, planProfiles }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, planProfiles);
 
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; appliedRecord?: string };
+export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; appliedRecord?: string; planProfiles?: PlanProfiles };
 
 export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
 
@@ -134,7 +134,7 @@ const changeKeyOf = (file: string): string => {
 
 export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
 
-export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedRecord }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedRecord, planProfiles }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
   const kept = createKeptSettings({ records: keptRecords, onWarning });
   let latest: UserSettingsSnapshot | undefined;
@@ -172,7 +172,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
     if (recorded === undefined || (notedSeq !== undefined && recorded.seq <= notedSeq)) return undefined;
     let rebuilt: UserSettingsLoad;
     try {
-      rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings });
+      rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings }, planProfiles);
     } catch (error) {
       if (!(error instanceof ConfigError)) throw error;
       reportUnreadable(appliedRecord, changeKeyOf(appliedRecord), error.message);
@@ -189,7 +189,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
     if (lastGood !== undefined) return lastGood;
     const recalled = kept.recall(file);
     if (recalled === undefined) return undefined;
-    const rebuilt = userSettingsFrom(home, recalled.value);
+    const rebuilt = userSettingsFrom(home, recalled.value, planProfiles);
     lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
     return lastGood;
   };
@@ -214,7 +214,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, appliedR
     seenKey = key;
     try {
       const read = readUserJsonFile(home);
-      const loaded = userSettingsFrom(home, read);
+      const loaded = userSettingsFrom(home, read, planProfiles);
       for (const warning of loaded.warnings) onWarning(warning);
       kept.remember(file, read);
       noteRecordSeq();

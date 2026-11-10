@@ -1,0 +1,42 @@
+import { describe, expect, it, vi } from 'vitest';
+import { runView } from './fake-backend.ts';
+import { untilFrame, untilOutput } from './ink-helpers.ts';
+import { runStarted } from './tui-harness.tsx';
+import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, account, choose, startPlan, submitLine } from './fake-plan-gateway.tsx';
+
+vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
+
+describe('the TUI starts the browser through the opener port and hears of a failed launch (P-C7)', () => {
+  it('a reported launch failure adds the copy-manually line to the waiting screen', async () => {
+    const { app } = await startPlan({ accounts: [], callbackArrives: false, openUrlFailure: new Error('no opener') });
+    await untilFrame(app, 'mode: default');
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'Continue with ChatGPT');
+    const screen = await untilFrame(app, 'Could not open the browser (no opener). Copy the URL and continue manually.');
+    expect(screen.replace(/\s+/g, '')).toContain(AUTHORIZATION_URL);
+    app.unmount();
+  });
+
+  it('Manage usage reports a failed launch as an info line', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ paused: {} })], openUrlFailure: new Error('no opener') });
+    await untilFrame(app, 'mode: default');
+    await runStarted(backend, app, 'go');
+    backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
+    await choose(app, 'Manage usage');
+    await untilOutput(app, 'Could not open the browser (no opener). Manage usage: https://chatgpt.com/settings/usage');
+    expect(backend.openUrlCalls).toHaveLength(1);
+    expect(backend.openUrlCalls[0]?.watch).toBeUndefined();
+    app.unmount();
+  });
+
+  it('the watch signal handed by the sign-in flow aborts when the flow ends', async () => {
+    const { app, backend } = await startPlan({ accounts: [], callbackArrives: true });
+    await untilFrame(app, 'mode: default');
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'Continue with ChatGPT');
+    await untilOutput(app, 'Signed in as chatgpt (ada@example.com)');
+    expect(backend.openUrlCalls).toHaveLength(1);
+    expect(backend.openUrlCalls[0]?.watch?.aborted).toBe(true);
+    app.unmount();
+  });
+});

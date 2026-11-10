@@ -31,6 +31,7 @@ const stoppedReasonOf = (run: RunView): StopReason => {
     case 'timeout':
     case 'loop':
     case 'approval_timeout':
+    case 'usage_limit':
       throw stopped(run, `stopped: ${reason}`);
   }
 };

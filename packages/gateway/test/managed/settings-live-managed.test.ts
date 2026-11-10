@@ -5,7 +5,7 @@ import { FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/f
 import type { ManagedInstance } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
-import { makeDir, postJson, registerCleanup, userInput } from '../gateway-helpers.ts';
+import { getJson, makeDir, postJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
 import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome } from '../gateway-process-helpers.ts';
 
@@ -141,5 +141,30 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     } finally {
       release();
     }
+  });
+  it('toggling context.unboundedOutputReserve gives a managed target a new counter and keeps its serving instance', async () => {
+    const { fm, dumpFile, home } = await setup();
+    fm.configure({ envDumpFile: dumpFile, serve: {} });
+    const settingsWith = (unboundedOutputReserve: boolean) => ({
+      context: { unboundedOutputReserve },
+      models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(512) } }, aliases: { default: ['apple'] } },
+    });
+    const counterOf = async (client: ReturnType<typeof clientFor>): Promise<string> => {
+      const listed = await getJson(client, '/v1/momonga/models');
+      expect(listed.status).toBe(200);
+      const entry = (listed.body.data as Array<{ id: string; targetCounters: Record<string, string> }>).find((model) => model.id === 'default');
+      return String(entry?.targetCounters['apple']);
+    };
+    replaceSettings(home, settingsWith(false));
+    const handle = await launch(home);
+    const client = clientFor(handle.socketPath);
+    expect((await postJson(client, '/v1/responses', ask('default'))).status).toBe(200);
+    const before = await counterOf(client);
+    replaceSettings(home, settingsWith(true));
+    expect((await postJson(client, '/v1/responses', ask('default'))).status).toBe(200);
+    const after = await counterOf(client);
+    expect(after).not.toBe(before);
+    expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock')]);
+    expect(isAlive((serves(dumpFile)[0] as DumpRecord).pid)).toBe(true);
   });
 });

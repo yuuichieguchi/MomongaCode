@@ -1,4 +1,6 @@
-import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
+import { MAX_BUDGET_COUNT, imageCapability, maxOutputTokensFor } from '@momonga/protocol';
+
+export { maxOutputTokensFor };
 import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { jsonModeCapabilityOf } from './json-mode.ts';
@@ -46,9 +48,23 @@ const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds
   return { parallelToolCalls: atLeast(parallel.multiCallRate, thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE) };
 };
 
-export const maxOutputTokensFor = (contextWindow: number): number => Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4)));
 
-export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision, thresholds: DecideThresholds = {}): Capabilities => {
+export type ProbeOutputPolicy = { unboundedOutputReserve: boolean };
+
+const OUTPUT_POLICY_OFF: ProbeOutputPolicy = { unboundedOutputReserve: false };
+
+const probedOutputBound = (report: ProbeReport, policy: ProbeOutputPolicy): Pick<Capabilities, 'outputBoundField'> => {
+  if (report.outputBoundField === undefined) return {};
+  if (report.outputBoundField === 'none' && !policy.unboundedOutputReserve) return {};
+  return { outputBoundField: report.outputBoundField };
+};
+
+export const capabilitiesFromProbe = (
+  report: ProbeReport,
+  decision: ToolCallingDecision,
+  thresholds: DecideThresholds = {},
+  policy: ProbeOutputPolicy = OUTPUT_POLICY_OFF,
+): Capabilities => {
   const contextWindow = report.contextWindow.value;
   if (contextWindow > MAX_BUDGET_COUNT) {
     throw new RangeError(`probed context window ${contextWindow} is above the exact budget domain of ${MAX_BUDGET_COUNT}`);
@@ -61,7 +77,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     ...jsonModeCapabilityOf(report.jsonMode),
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
-    ...(report.outputBoundField === undefined || report.outputBoundField === 'none' ? {} : { outputBoundField: report.outputBoundField }),
+    ...probedOutputBound(report, policy),
     ...probedImageCapability(report),
     ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),

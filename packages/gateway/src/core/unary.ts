@@ -65,7 +65,7 @@ const identifier = (services: Services, prefix: string): string => `${prefix}_${
 const callTargets = <T>(
   services: Services,
   candidates: readonly TargetRuntime[],
-  refusals: readonly Refusal[],
+  narrowed: Pick<Narrowed, 'refusals' | 'billing'>,
   signal: AbortSignal,
   deadlineAt: number | undefined,
   call: (target: TargetRuntime, attemptNumber: number, signal: AbortSignal) => Promise<T>,
@@ -73,7 +73,8 @@ const callTargets = <T>(
   withDeadline(services, deadlineAt, signal, (guarded) =>
     runWithRetry({
       candidates,
-      refusals,
+      refusals: narrowed.refusals,
+      billing: narrowed.billing,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal: guarded,
       deadlineAt,
@@ -215,7 +216,7 @@ const countTokens = async (
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
     unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
   });
-  const outcome = await callTargets(services, narrowed.targets, narrowed.refusals, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+  const outcome = await callTargets(services, narrowed.targets, narrowed, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber),
   );
   return settleCounted(outcome);
@@ -291,7 +292,7 @@ const compactOnce = async (
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
   const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, messageOf(failure));
-  const outcome = await callTargets(services, supporting, narrowed.refusals, signal, deadlineAt, async (target, attemptNumber, guarded) => {
+  const outcome = await callTargets(services, supporting, narrowed, signal, deadlineAt, async (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
     if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
     let capabilities: Capabilities;

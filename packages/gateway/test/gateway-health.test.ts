@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProviderAdapter } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
-import { START_MS, TEST_VERSION, expectErrorBody, getJson, startGateway } from './gateway-helpers.ts';
+import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
+import { START_MS, TEST_VERSION, expectErrorBody, getJson, postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 describe('GET /v1/momonga/health', () => {
   it('reports ok, targets, version, apiVersion, pid, startedAt and state running', async () => {
@@ -35,17 +36,31 @@ describe('GET /v1/momonga/health', () => {
 });
 
 describe('GatewayOptions.onError', () => {
-  it('receives an unknown error before the gateway answers 500', async () => {
+  it('a plain error from capabilities() is listed unavailable and answered 200', async () => {
     const failure = new TypeError('capabilities exploded');
-    const broken: ProviderAdapter = {
-      ...createScriptedAdapter({ calls: [] }),
-      capabilities: async () => {
-        throw failure;
-      },
-    };
+    const broken = capabilityFailingAdapter({ inner: createScriptedAdapter({ calls: [] }), fails: () => failure });
     const onError = vi.fn();
     const { client } = await startGateway({ adapters: { primary: broken }, onError });
     const response = await getJson(client, '/v1/momonga/models');
+    expect(response.status).toBe(200);
+    const listed = { toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: 'adapter_error', message: 'capabilities exploded' }, source: 'unprobed' };
+    const entry = (response.body.data as Array<{ targets: string[]; capabilities: unknown; targetCapabilities: Record<string, unknown> }>).find((candidate) => candidate.targets.includes('primary'));
+    expect(entry?.capabilities).toEqual(listed);
+    expect(entry?.targetCapabilities['primary']).toEqual(listed);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('receives an unknown error before the gateway answers 500', async () => {
+    const failure = new TypeError('capabilities exploded');
+    const onError = vi.fn();
+    const { client } = await startGateway({
+      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      onError,
+      costReport: async () => {
+        throw failure;
+      },
+    });
+    const response = await readJson(await postJson(client, '/v1/momonga/cost', { runs: [], includeRunless: false }));
     expect(response.status).toBe(500);
     expectErrorBody(response.body, { type: 'server_error', code: 'internal_error' });
     expect(onError).toHaveBeenCalledTimes(1);

@@ -35,6 +35,10 @@ export type {
   NeedsProbe,
   Probing,
   ProbingCapabilities,
+  NotListedCapabilities,
+  TargetHealthReason,
+  Unavailable,
+  UnavailableCapabilities,
   ToolCallingMode,
   ToolCallingState,
   ToolCallingSetting,
@@ -122,32 +126,57 @@ export {
   acceptedReasoningEfforts,
   clampReasoningEffort,
   outputTokensFor,
+  maxOutputTokensFor,
   thinkingBudgetFor,
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
+  isNotListedCapabilities,
   isProbingCapabilities,
   isToolCallingState,
+  isUnavailableCapabilities,
+  notListedMessage,
   readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
 export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
-export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
+export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
   BREAKER_VERDICTS,
+  USAGE_LIMIT_CODES,
+  USAGE_LIMIT_CODE,
+  WORKSPACE_USAGE_LIMIT_CODE,
+  USAGE_PAUSED_CODE,
+  PLAN_STORE_UNREADABLE_CODE,
+  PLAN_STORE_UNWRITABLE_CODE,
+  PLAN_HOST_IDENTITY_UNAVAILABLE_CODE,
+  PLAN_CREDENTIAL_UNAVAILABLE_CODE,
+  PLAN_ACCOUNT_NOT_SELECTABLE_CODE,
+  PLAN_SIGN_IN_PENDING_CODE,
+  PLAN_SIGN_OUT_IN_PROGRESS_CODE,
+  CAPABILITIES_UNKNOWN_CODE,
+  PLAN_CODES,
+  PLAN_HEALTH_REASONS,
+  PLAN_REVOCATIONS,
   CREDENTIAL_EFFECTS,
   ERROR_FALLBACKS,
   PLAN_ACCOUNT_STATES,
   PLAN_API_PREFIX,
   PLAN_ROUTES,
   PLAN_SIGN_IN_FAILURES,
+  PLAN_SIGN_IN_FAILURE_RULES,
+  ID_TOKEN_CHECKS,
+  SIGN_IN_REQUIRED_CODE,
+  PLAN_USE_NOT_ENABLED_CODE,
+  PLAN_NOT_ELIGIBLE_CODE,
 } from './plan-api.ts';
 export type {
   BreakerVerdict,
@@ -157,9 +186,11 @@ export type {
   ErrorRule,
   ErrorRules,
   PlanAccountRef,
+  PlanHealthReason,
   PlanAccountState,
   PlanAccountView,
   PlanAccountsResponse,
+  PlanListProblem,
   PlanActiveRequest,
   PlanActiveResponse,
   PlanCatalogEntry,
@@ -170,11 +201,18 @@ export type {
   PlanSignInBeginRequest,
   PlanSignInBeginResponse,
   PlanSignInCancelRequest,
+  PlanSignInCancelResponse,
+  PlanSignInFailureRule,
+  PlanResumeResponse,
+  PlanHostResetResponse,
+  PlanModelsRequest,
+  IdTokenCheck,
   PlanSignInCompleteRequest,
   PlanSignInCompleteResponse,
   PlanSignInFailure,
   PlanSignOutRequest,
   PlanSignOutResponse,
+  PlanRevocation,
   PlanTargetRequest,
   PlanTargetResponse,
 } from './plan-api.ts';
@@ -301,7 +339,6 @@ export type {
   CostFallbackView,
   CostTotalsView,
   RoleCostView,
-  FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
   McpAuthState,
@@ -567,6 +604,7 @@ export type {
   ReasoningOrigin,
   RenderWireOptions,
   ToolChoiceWire,
+  UpstreamFailureFacts,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
@@ -581,3 +619,6 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
+export { planAccountRefOf } from './plan-account.ts';

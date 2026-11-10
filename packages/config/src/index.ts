@@ -1,3 +1,5 @@
+export { addModelConnection, connectionTargetName, editUserSettings } from './add-model-connection.ts';
+export type { ModelConnection, WrittenConnection } from './add-model-connection.ts';
 export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { systemFileLockPorts } from '@momonga/foundation';
@@ -34,8 +36,8 @@ export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './
 export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
-export type { ResolvedModels } from './models.ts';
-export { registeredIds, registeredServer } from './server-registry.ts';
+export type { PlanProfiles, ResolvedModels } from './models.ts';
+export { registeredIds, registeredServer, registeredServers } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
@@ -109,4 +111,4 @@ export type {
   NetworkSettings,
 } from './settings.ts';
 export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';
-export type { DerivedObjectDeclaration, DerivedObjectId, Lease, PinnedDerivation, PinnedDerivationOptions, SettingsSection } from './derived.ts';
+export type { DerivedObjectDeclaration, DerivedObjectId, Lease, PinnedDerivation, PinnedDerivationOptions, SettingsKeyPath, SettingsSection } from './derived.ts';

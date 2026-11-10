@@ -1,7 +1,9 @@
 import { applyCapabilityOverride } from '@momonga/protocol';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
+import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
 
 export const SESSION: SessionView = {
@@ -44,6 +46,7 @@ export type FakeBackend = TuiBackend & {
   readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
+  readonly openUrlCalls: { url: URL; watch: AbortSignal | undefined; onFailure(message: string): void }[];
   readonly recorded: string[];
   emit(frame: RunEventFrame): void;
   finish(run: RunView): void;
@@ -90,11 +93,29 @@ export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities
     overrides,
   );
 
+const noPlanRoute = (route: string) => async (): Promise<never> => {
+  throw new Error(`the fake backend serves no plan route ${route}`);
+};
+
+const NO_PLAN: PlanGatewayClient = {
+  accounts: async () => ({ profiles: [], accounts: [] }),
+  signInBegin: noPlanRoute('sign-in/begin'),
+  signInComplete: noPlanRoute('sign-in/complete'),
+  signInCancel: noPlanRoute('sign-in/cancel'),
+  signOut: noPlanRoute('sign-out'),
+  setActive: noPlanRoute('accounts/active'),
+  resume: noPlanRoute('accounts/resume'),
+  resetHost: noPlanRoute('host/reset'),
+  accountModels: noPlanRoute('accounts/models'),
+  addTarget: noPlanRoute('accounts/targets'),
+};
+
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const calls: string[] = [];
   const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
+  const openUrlCalls: FakeBackend['openUrlCalls'] = [];
   let memories: MemoryView[] = [...(options.memories ?? [])];
   let rules: GoverningFactView[] = [...(options.rules ?? [])];
   const recorded: string[] = [];
@@ -126,6 +147,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     started,
     elicitationAnswers,
     openedUrls,
+    openUrlCalls,
     recorded,
     called: (call) =>
       new Promise<void>((resolve) => {
@@ -187,9 +209,15 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`elicit:${inputId}`);
       elicitationAnswers.push({ inputId, responses });
     },
-    openUrl: async (url) => {
-      if (options.openUrlFailure !== undefined) throw options.openUrlFailure;
+    openUrl: (url, watch, onFailure) => {
       openedUrls.push(url.href);
+      openUrlCalls.push({ url, watch, onFailure });
+      const failure = options.openUrlFailure;
+      if (failure !== undefined) queueMicrotask(() => onFailure(failure.message));
+      return Promise.resolve();
+    },
+    copyToClipboard: (text) => {
+      record(`copy:${text}`);
     },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
     memories: async () => memories,
@@ -260,6 +288,27 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     recordHistory: async (text) => {
       recorded.push(text);
     },
+    plan: NO_PLAN,
+    health: async () => ({
+      ok: true,
+      targets: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, { ok: true, breaker: 'closed' as const }])),
+      version: '0.0.0',
+      apiVersion: 1,
+      pid: 1,
+      startedAt: '2026-11-10T00:00:00.000Z',
+      state: 'running',
+    }),
+    sandbox: async () => 'seatbelt',
+    startSignInListener: async () => {
+      throw new Error('the fake backend opens no sign-in listener');
+    },
+    signInTimers: createFakeTimers(createFakeClock(0)),
+    detectLocalServers: async () => [],
+    addModelConnection: async () => {
+      throw new Error('the fake backend writes no model connection');
+    },
+    dismissedNotices: async () => ({}),
+    dismissNotice: async () => undefined,
     close: async () => {
       record('close');
     },

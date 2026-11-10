@@ -433,6 +433,7 @@ export type ServiceOverrides = {
   runTrace?: (runId: string) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
+  capabilitiesOf?: (alias: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -471,6 +472,22 @@ export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: 
   return store;
 };
 
+export const defaultModelCapabilities = (imageInput = false) => ({
+  contextWindow: 8192,
+  maxOutputTokens: 2048,
+  toolCalling: 'native',
+  structuredOutput: 'none',
+  streaming: true,
+  stopSequences: true,
+  ...protocol.imageCapability(imageInput, imageInput ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
+  parallelToolCalls: false,
+  schemaDialect: 'json-schema-2020-12',
+  tokenCounting: 'estimated',
+  usageReported: true,
+  maxConcurrency: 1,
+  source: 'declared',
+});
+
 export const serviceOptions = (
   base: { store: RuntimeStore; clock: FakeClock; home: string; socketPath: string; ports: FakePorts; notifier: Notifier; errors: unknown[]; fatals?: Error[] },
   overrides: ServiceOverrides = {},
@@ -486,23 +503,10 @@ export const serviceOptions = (
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
-  modelCapabilities: async () => {
+  modelCapabilities: async (alias: string) => {
     await overrides.beforeCapabilities?.();
-    return {
-      contextWindow: 8192,
-      maxOutputTokens: 2048,
-      toolCalling: 'native',
-      structuredOutput: 'none',
-      streaming: true,
-      stopSequences: true,
-      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
-      parallelToolCalls: false,
-      schemaDialect: 'json-schema-2020-12',
-      tokenCounting: 'estimated',
-      usageReported: true,
-      maxConcurrency: 1,
-      source: 'declared',
-    };
+    if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(alias);
+    return defaultModelCapabilities(overrides.imageInput === true);
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
   sessionReadSettings: base.ports.sessionReadSettings,

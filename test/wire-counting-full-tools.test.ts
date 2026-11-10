@@ -1,6 +1,6 @@
 const NO_REASONING_IS_OWN = { own: () => undefined };
 import { afterEach, describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, estimateInputTokens, wireTokensOf } from '@momonga/gateway';
+import { createChatCompletionsAdapter, estimateInputTokens, wireTokensOf, unauthenticatedSource } from '@momonga/gateway';
 import type { AdapterRequest, Capabilities, FunctionTool, ToolCallingMode } from '@momonga/protocol';
 import { buildSystemPrompt } from '@momonga/runtime';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 const adapterIn = (mode: ToolCallingMode) => {
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: '/nonexistent/never-used.sock' }),
     capabilities: async () => ({ ...CAPABILITIES, toolCalling: mode }),

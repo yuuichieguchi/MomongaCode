@@ -24,7 +24,7 @@ import {
 import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { decodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
-import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths, OwnedDirectory } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -124,6 +124,7 @@ const runContextLiveCommand = async (
     policy: options.policy,
     codeDigest: await codeDigestOfRunningProcess(),
     models: loadUserModels({ home: ports.home }),
+    planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),

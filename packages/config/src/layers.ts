@@ -12,8 +12,9 @@ import type { SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
+import { PLAN_PROFILES } from './plan-profiles.ts';
 import { serverRegistryOf } from './server-registry.ts';
-import type { ResolvedModels } from './models.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
@@ -208,13 +209,13 @@ export const readUserJsonFile = (home: string): JsonFile => {
 
 export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
 
-export const userLayerFrom = (home: string, read: JsonFile): UserLayer => {
+export const userLayerFrom = (home: string, read: JsonFile, planProfiles: PlanProfiles = PLAN_PROFILES): UserLayer => {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
     const declared = layer?.settings.models;
-    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file) });
+    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles });
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);

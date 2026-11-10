@@ -11,8 +11,6 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
-export { describeFallbackCause } from './fallback-cause.ts';
-export type { FallbackCause } from './fallback-cause.ts';
 export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
 export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
@@ -27,7 +25,7 @@ export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, 
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';
-export type { BrowserOpenerPorts, BrowserRunPort, OpenCommand } from './open-browser.ts';
+export type { BrowserOpenerPorts, LaunchProgram, OpenCommand, OpenUrl, ProgramEnd } from './open-browser.ts';
 export { findProgramOnPath } from './program-search.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, fixedSocket, isUnixSocketLive, listenUnix } from './uds.ts';
@@ -35,8 +33,8 @@ export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, Ud
 export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
-export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
-export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions, ScopedOperations } from './credential-store.ts';
+export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
+export type { CredentialEntry, CredentialKeyListing, CredentialStore, FileCredentialStoreOptions, ListableCredentialStore, ScopedOperations } from './credential-store.ts';
 export {
   CREDENTIAL_ENVELOPE_FORMAT,
   CREDENTIAL_KEY_CREATION_STEPS,
@@ -52,9 +50,11 @@ export type { CredentialSecretStore, CredentialStoreErrorCode, EncryptedCredenti
 export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
-export { createOAuthProvider } from './oauth-provider.ts';
+export { CLIENT_NAME, createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
+export { parseJwt, verifyRs256 } from './oidc.ts';
+export type { ParsedJwt } from './oidc.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
 export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, ClaimedEntryReplacedError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {
@@ -229,6 +229,9 @@ export {
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
+  LOG_ITEM_MAX_CHARS,
+  LOG_LIST_MAX_ITEMS,
+  RESERVED_LOG_KEYS,
   gatewayStopBudgetMs,
   killedChildSettleMs,
   runtimeStopBudgetMs,
@@ -243,7 +246,7 @@ export {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
-export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
+export type { EventPayload, JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, LogValue, ReadyFields, ReservedLogKey, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
 export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';

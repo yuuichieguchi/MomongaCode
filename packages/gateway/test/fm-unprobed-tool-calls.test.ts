@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createChatCompletionsAdapter, createManagedTarget } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
 import { TARGET_PROBING } from '@momonga/protocol';
@@ -40,7 +40,7 @@ const unprobedFm = async (toolCallingSetting: 'auto' | 'native') => {
     }),
     toolCallingSetting,
   });
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return { fake, managed, starts };
 };

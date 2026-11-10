@@ -1,20 +1,10 @@
-import type { ErrorType } from '@momonga/protocol';
+import { StreamFailure } from '../../core/stream-failure.ts';
+
+export { StreamFailure };
 
 export const CONTEXT_WINDOW_EXCEEDED = 'context_window_exceeded';
 export const GUARDRAIL_VIOLATION = 'guardrail_violation';
 export const UNSUPPORTED_REQUEST = 'unsupported_request';
-
-export class StreamFailure extends Error {
-  readonly code: string;
-  readonly errorType: ErrorType;
-
-  constructor(code: string, errorType: ErrorType, message: string) {
-    super(message);
-    this.name = 'StreamFailure';
-    this.code = code;
-    this.errorType = errorType;
-  }
-}
 
 export class UpstreamStall extends StreamFailure {
   constructor(code: string, message: string) {
@@ -39,8 +29,11 @@ export class MalformedOutputError extends StreamFailure {
 
 export { UnsupportedInputError } from '../../core/unsupported-input.ts';
 
+export type UpstreamResponseShape = { bodyKeys: string[]; requestIds: Record<string, string>; param: string | null };
+
 export class UpstreamHttpError extends Error {
   readonly status: number;
+  readonly shape: UpstreamResponseShape | undefined;
   readonly upstreamCode: string | null;
   readonly upstreamMessage: string;
   readonly retryAfterMs: number | undefined;
@@ -58,6 +51,7 @@ export class UpstreamHttpError extends Error {
     retryHint?: boolean,
     contextOverflow = false,
     unsupported = false,
+    shape?: UpstreamResponseShape,
   ) {
     super(`the upstream responded with HTTP ${status}: ${upstreamMessage}`);
     this.name = 'UpstreamHttpError';
@@ -69,6 +63,7 @@ export class UpstreamHttpError extends Error {
     this.contextOverflow = contextOverflow;
     this.unsupported = unsupported;
     this.retryHint = retryHint;
+    this.shape = shape;
   }
 }
 
