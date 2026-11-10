@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains, lexicallyWithin } from '@momonga/foundation';
-import type { StopValues } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains, lexicallyWithin } from '@momonga/foundation';
+import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
 export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
@@ -53,6 +53,7 @@ export type ResolvedSettings = {
   gateway: GatewayStopValues;
   runtime: RuntimeSettings;
   sandbox: SandboxSetting;
+  sandboxNetwork: SandboxNetworkSetting;
   sandboxUnixSockets: ResolvedSandboxUnixSockets;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -172,6 +173,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
     runtime: {},
     sandbox: defaultSandboxSetting(),
+    sandboxNetwork: DEFAULT_SANDBOX_NETWORK,
     sandboxUnixSockets: { allow: [] },
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
@@ -196,6 +198,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       gateway,
       runtime,
       sandbox,
+      sandboxNetwork,
       sandboxUnixSockets,
       telemetry,
       network,
@@ -243,6 +246,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };
     if (sandbox !== undefined) merged.sandbox = sandbox;
+    if (sandboxNetwork !== undefined) merged.sandboxNetwork = sandboxNetwork;
     if (sandboxUnixSockets !== undefined) unixSockets = { source: layer.source, allow: sandboxUnixSockets.allow ?? [] };
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (network !== undefined) merged.network = network;

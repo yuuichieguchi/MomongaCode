@@ -32,7 +32,7 @@ export const suggestAllowRule = (
 ): string | undefined => {
   switch (subject.kind) {
     case 'command':
-      return suggestForCommand(subject.command);
+      return subject.network === undefined ? suggestForCommand(subject.command) : undefined;
     case 'path':
       return suggestForPath(tool, subject, cwd, canonicalise);
     case 'mcp':

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { groupRecordOutcome, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
+import type { NetworkRequest } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
 import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
@@ -13,7 +14,7 @@ import { describeJobStatus } from './jobs.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
-type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean };
+type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean; network?: NetworkRequest };
 
 export const DEFAULT_TIMEOUT_MS = 120_000;
 export const MAX_TIMEOUT_MS = 600_000;
@@ -73,13 +74,14 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
-  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`,
-  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}.`,
+  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops. The sandbox has no network: a command that needs it sets network to "open", which asks the person before the command runs.`,
+  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}. The sandbox has no network; set network to "open" when the command needs it, which asks the person.`,
   conciseParameterDescriptions: {
     command: 'Command to run',
     timeout: 'Timeout in milliseconds',
     description: 'What the command does',
     run_in_background: 'Run as a background job and return its job id',
+    network: 'Network the command needs; absent means none',
   },
   kind: 'execute',
   sideEffect: 'exec',
@@ -96,6 +98,7 @@ export const bashTool = defineTool<BashInput>({
       },
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
+      network: { enum: ['open'], description: 'Network access the command needs. Absent: none. "open": unrestricted network access, which the person is asked to approve' },
     },
     required: ['command'],
     additionalProperties: false,
@@ -108,7 +111,7 @@ export const bashTool = defineTool<BashInput>({
     return {};
   },
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
-  subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
+  subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command, ...(input.network === undefined ? {} : { network: input.network }) }),
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);

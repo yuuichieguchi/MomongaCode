@@ -1,4 +1,4 @@
-import { MCP_CONNECT_TIMEOUT_LIMITS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { MCP_CONNECT_TIMEOUT_LIMITS, SANDBOX_NETWORK_SETTINGS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
@@ -564,6 +564,7 @@ export const SETTINGS_SCHEMA = {
       },
     },
     sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
+    sandboxNetwork: { enum: [...SANDBOX_NETWORK_SETTINGS] },
     sandboxUnixSockets: { type: 'object', properties: { allow: { type: 'array', items: { type: 'string', minLength: 1 } } }, additionalProperties: false },
     telemetry: {
       type: 'object',

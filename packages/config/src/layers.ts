@@ -100,6 +100,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.sandbox;
   }
 
+  if (settings.sandboxNetwork !== undefined) {
+    warnings.push(`${source}: sandboxNetwork is only honored in user settings and on the command line; discarded`);
+    delete restricted.sandboxNetwork;
+  }
+
   if (settings.sandboxUnixSockets !== undefined) {
     warnings.push(`${source}: sandboxUnixSockets is only honored in user settings; discarded`);
     delete restricted.sandboxUnixSockets;

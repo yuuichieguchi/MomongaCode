@@ -1,5 +1,5 @@
 import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement } from '@momonga/foundation';
+import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement, SandboxNetworkSetting } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -107,6 +107,7 @@ export type ToolEnv = Readonly<Record<string, string>>;
 export type ToolPolicy = {
   roots: readonly string[];
   sandboxPolicy: SandboxPolicy;
+  sandboxNetwork?: SandboxNetworkSetting;
   tmpDir: string;
   env: ToolEnv;
 };

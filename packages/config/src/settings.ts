@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { ProductValidator, StopValueName } from '@momonga/foundation';
+import type { ProductValidator, SandboxNetworkSetting, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
@@ -360,6 +360,7 @@ export type Settings = {
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;
   sandbox?: SandboxSetting;
+  sandboxNetwork?: SandboxNetworkSetting;
   sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;

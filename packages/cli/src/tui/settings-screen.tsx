@@ -88,6 +88,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'network.extraCaFiles': { label: 'Extra CA files', section: 'Network', appliesNow: false },
   'network.environment': { label: 'Proxy from the environment', section: 'Network', appliesNow: false },
   sandbox: { label: 'Sandbox', section: 'Sandbox', appliesNow: false, confirm: { value: 'none', question: 'Run commands without a sandbox?' } },
+  sandboxNetwork: { label: 'Network of a sandboxed command', section: 'Sandbox', appliesNow: false, confirm: { value: 'allow', question: 'Let every command that requests the network use it without asking you?' } },
   'sandboxUnixSockets.allow': { label: 'Unix sockets a command may connect to', section: 'Sandbox', appliesNow: false },
   'telemetry.otlp.endpoint': { label: 'OTLP endpoint', section: 'Telemetry', appliesNow: false },
   'telemetry.otlp.headers': { label: 'OTLP headers', section: 'Telemetry', appliesNow: false },

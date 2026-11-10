@@ -45,6 +45,7 @@ describe('Grep through the ripgrep locator on the tool context', () => {
   it('spawns the executable the locator names, by absolute path, and releases it when the call ends', async () => {
     const spawned: string[][] = [];
     const sandbox = {
+      kind: 'none' as const,
       spawn: (command: { argv: string[] }) => {
         spawned.push(command.argv);
         throw new Error('spawn stopped by the test');

@@ -260,10 +260,17 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
   }
   const unixSocketAllow = unique((policy.unixSocketAllow ?? []).map(canonicalizePath));
   if (policy.network === 'allow') lines.push('(allow network*)');
+  if (typeof policy.network === 'object') {
+    const { loopbackPort } = policy.network;
+    if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535) {
+      throw new SandboxPolicyError('network_port_invalid', `network.loopbackPort must be a port number: ${String(loopbackPort)}`);
+    }
+    lines.push(`(allow network-outbound (remote ip "localhost:${loopbackPort}"))`);
+  }
   for (const name of define('UNIX_SOCKET_ALLOW', unixSocketAllow)) {
     lines.push(`(allow network-outbound (remote unix-socket (subpath (param "${name}"))))`);
   }
-  if (policy.network === 'allow' || unixSocketAllow.length > 0) {
+  if (policy.network !== 'deny' || unixSocketAllow.length > 0) {
     for (const name of readDeniedNames) {
       lines.push(`(deny network-outbound (remote unix-socket (subpath (param "${name}"))))`);
     }
