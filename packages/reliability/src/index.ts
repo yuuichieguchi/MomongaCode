@@ -4,7 +4,7 @@ export { decodeReliabilityReport, encodeReliabilityReport } from './codec.ts';
 export { createCallsFold, foldCalls, foldRunRecord } from './fold-calls.ts';
 export { FACTS_EVENT_TYPES, createFactsFold, foldFacts } from './fold-facts.ts';
 export type { CallsFold } from './fold-calls.ts';
-export type { FactsFold } from './fold-facts.ts';
+export type { FactsEvent, FactsFold } from './fold-facts.ts';
 export { REPORT_KINDS, buildReliabilityReport, describeRate, formatReliabilityReport } from './report.ts';
 export type { Harness, NotRun, ReliabilityReport, ReportInput, ReportKind, ScenarioRow, TaskRow } from './report.ts';
 export { GROUP_KEYS } from './types.ts';

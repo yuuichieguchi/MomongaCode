@@ -76,3 +76,61 @@ export type RunFactsRecord = { facts: RunFactsView; calls: RunCallView[] };
 export type UnavailableRunView = { runId: string; rootRunId: string };
 
 export type ReportPage = { rows: RunFactsView[]; unavailable: UnavailableRunView[]; nextCursor: string | null };
+
+export const REVIEW_LABELS = ['correct', 'unneeded_ask', 'missed_ask'] as const;
+export type ReviewLabel = (typeof REVIEW_LABELS)[number];
+
+export type PermissionReviewView = { runId: string; callId: string; label: Stored<ReviewLabel>; reviewedAt: number };
+
+export type ReviewPage = { calls: RunCallView[]; reviews: PermissionReviewView[]; nextCursor: string | null };
+
+export type StoreReviewRequest = { runId: string; callId: string; label: ReviewLabel };
+
+export type StoreReviewResponse = { review: PermissionReviewView };
+
+export const COST_CURRENCY = 'USD';
+
+export type RunCostView = { runId: string; calls: number; notPriced: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
+
+export type ReportCostRequest = { runIds: string[] };
+
+export type ReportCostPage = { costs: RunCostView[] };
+
+export const MAX_TRACE_CONTENT_PAGE = 50;
+
+export type TraceContentView = { id: number; spanId: string; kind: string; content: string; createdAtMs: number; expiresAtMs: number };
+
+export type TraceContentPage = { bodies: TraceContentView[]; next: number | null };
+
+const text = { type: 'string', minLength: 1 } as const;
+const count = { type: 'integer', minimum: 0 } as const;
+const nullable = (schema: Record<string, unknown>): Record<string, unknown> => ({ anyOf: [schema, { type: 'null' }] });
+const closed = (properties: Record<string, unknown>): Record<string, unknown> => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
+
+const review = closed({ runId: text, callId: text, label: text, reviewedAt: count });
+
+export const REPORT_SCHEMAS = {
+  ReviewPage: closed({
+    calls: { type: 'array', items: closed({ runId: text, callId: text, basis: nullable(text), sideEffect: nullable(text), asked: { type: 'boolean' } }) },
+    reviews: { type: 'array', items: review },
+    nextCursor: nullable(text),
+  }),
+  StoreReviewRequest: closed({ runId: text, callId: text, label: { enum: [...REVIEW_LABELS] } }),
+  StoreReviewResponse: closed({ review }),
+  ReportCostRequest: closed({ runIds: { type: 'array', maxItems: REPORT_PAGE_ROWS, uniqueItems: true, items: text } }),
+  ReportCostPage: closed({
+    costs: {
+      type: 'array',
+      items: closed({
+        runId: text,
+        calls: count,
+        notPriced: count,
+        priced: { type: 'array', items: closed({ currency: { const: COST_CURRENCY }, priceVersion: text, units: { type: 'string', pattern: '^[0-9]+$' } }) },
+      }),
+    },
+  }),
+  TraceContentPage: closed({
+    bodies: { type: 'array', items: closed({ id: count, spanId: text, kind: text, content: { type: 'string' }, createdAtMs: count, expiresAtMs: count }) },
+    next: nullable(count),
+  }),
+} as const satisfies Record<string, Record<string, unknown>>;

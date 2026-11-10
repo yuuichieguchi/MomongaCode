@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
-import { DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
+import { DEFAULT_DATASET_SEED, GATE_NAMES, MAX_DATASET_SEED } from '@momonga/eval';
 import { GROUP_KEYS } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
-import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
+import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES, REVIEW_LABELS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
@@ -21,6 +21,9 @@ import { checkModels, detectModels, listModels, modelsShellOf, runModelsForm } f
 import type { FormOption, ModelsForm, ModelsShell } from './models.ts';
 import { policyVerify } from './policy.ts';
 import { showReliability } from './reliability.ts';
+import { evaluateBench } from './bench.ts';
+import { reviewPermissions } from './review.ts';
+import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
 
@@ -355,9 +358,59 @@ const registerEvaluate: CommandGroup = (program, deps) => {
   evaluation
     .command('compare <baseline> <candidate>')
     .description('print the paired differences of two context reports and pass or fail the candidate against the gate')
-    .option('--gate <name>', 'the terms the candidate is judged on: context (the default) or token', 'context')
+    .option('--gate <name>', `the terms the candidate is judged on, one of ${GATE_NAMES.join(', ')}: context (the default) and token compare two context reports, reliability compares two reliability reports of one kind (two benchmark reports of eval bench, or two injection reports)`, 'context')
     .action(async (baseline: string, candidate: string, options: { gate: string }) => {
       deps.complete(await compareContext(deps.ports, baseline, candidate, options.gate));
+    });
+  evaluation
+    .command('bench <directory>')
+    .description('run every task of the benchmark in the directory on one model, each trial in a fresh copy of its repository, check each with the oracle of its task, and print the reliability report; with --validate, check the benchmark itself without a model')
+    .option('--validate', 'check that every task fails on its repository, passes with its reference solution, keeps its grader files out of the repository and names the digest of its repository')
+    .option('--model <model>', 'the model every task runs on')
+    .option('--report <file>', 'store the report as JSON for eval compare --gate reliability')
+    .action(async (directory: string, options: { validate?: true; model?: string; report?: string }) => {
+      deps.complete(
+        await evaluateBench(deps.ports, await pathsOf(deps.ports), directory, {
+          validate: options.validate === true,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.report === undefined ? {} : { report: options.report }),
+        }),
+      );
+    });
+};
+
+type ReviewFlags = { sample?: string | true; seed?: string; call?: string; label?: string };
+
+const sampleSizeOf = (sample: string | true): number => {
+  if (sample === true) return REVIEW_SAMPLE_SIZE;
+  const size = Number(sample);
+  if (!Number.isInteger(size) || size < 1) throw new InvalidArgumentError(`--sample ${JSON.stringify(sample)} is not an integer of at least 1`);
+  return size;
+};
+
+const reviewOptionsOf = (run: string | undefined, flags: ReviewFlags): ReviewOptions => {
+  if (flags.sample !== undefined) {
+    if (run !== undefined || flags.call !== undefined || flags.label !== undefined) throw new InvalidArgumentError('--sample lists calls to review and takes no run, --call or --label');
+    if (flags.seed === undefined) throw new InvalidArgumentError('--sample needs --seed <seed>: the same seed lists the same sample again');
+    return { kind: 'sample', size: sampleSizeOf(flags.sample), seed: flags.seed };
+  }
+  if (run === undefined || flags.call === undefined || flags.label === undefined) {
+    throw new InvalidArgumentError('give --sample with --seed <seed> to list calls to review, or a run with --call <id> and --label <label> to store the review of one call');
+  }
+  return { kind: 'label', runId: run, callId: flags.call, label: flags.label };
+};
+
+const registerPermissions: CommandGroup = (program, deps) => {
+  const permissions = program.command('permissions').description('review the permission decisions of recorded tool calls');
+  permissions
+    .command('review [run]')
+    .description('list a sample of recorded tool calls to review with the rates of the reviews stored so far, or store the review of one call')
+    .option('--sample [n]', `list n calls allowed without a person that have a side effect and n asks; ${REVIEW_SAMPLE_SIZE} when no number is given`)
+    .option('--seed <seed>', 'the seed of the sample order')
+    .option('--call <id>', 'the call of the run the label is for')
+    .option('--label <label>', `the review of the call: ${REVIEW_LABELS.join(', ')}`)
+    .action(async (run: string | undefined, flags: ReviewFlags) => {
+      deps.complete(await reviewPermissions(deps.ports, await pathsOf(deps.ports), reviewOptionsOf(run, flags)));
     });
 };
 
@@ -610,7 +663,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

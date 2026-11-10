@@ -82,7 +82,7 @@ export type BenchProblem = (typeof BENCH_PROBLEMS)[number];
 
 export type TaskValidation = { id: string; problems: BenchProblem[] };
 
-export type Validation = { tasks: TaskValidation[] };
+export type Validation = { name: string; tasks: TaskValidation[] };
 
 const exists = (file: string): Promise<boolean> =>
   nodeFileSystem.access(file).then(
@@ -137,7 +137,7 @@ export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceP
       if (repository === undefined) throw new Error(`task ${task.id} names the repository ${task.repository}, which the file does not declare`);
       tasks.push(await validateTask(task, root, repository, probe, scratch));
     }
-    return { tasks };
+    return { name: benchmark.name, tasks };
   } finally {
     await owned.dispose();
   }

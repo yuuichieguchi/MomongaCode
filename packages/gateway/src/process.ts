@@ -92,6 +92,7 @@ import {
   exportersFor,
   openTraceStore,
   pageBilledCalls,
+  pageRunBodies,
   startBodyPurge,
 } from '@momonga/observability';
 import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
@@ -1479,6 +1480,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           await flushTelemetry(requestSignal);
           return pageBilledCalls(traceStore, runIds, table, cursor, limit, includeRunless);
         }),
+      traceContent: async (runId, after, limit, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        return pageRunBodies(traceStore, runId, after, limit);
+      },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,

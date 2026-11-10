@@ -130,3 +130,5 @@ export { buildInjectionReport } from './inject-report.ts';
 export type { BuildInjectionReportInput, InjectionTrial } from './inject-report.ts';
 export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
 export type { ReliabilityComparison } from './reliability-compare.ts';
+export { runBenchmark } from './bench-run.ts';
+export type { BenchRunApi, BenchRunPorts, BenchRunResult, BenchRunView, InvalidSetup } from './bench-run.ts';

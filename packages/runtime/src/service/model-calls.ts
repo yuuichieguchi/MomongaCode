@@ -1,7 +1,7 @@
-import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
+import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, formatCostBreakdown, runCostsOf } from '@momonga/observability';
 import type { BreakdownCall, BreakdownPrefix, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
 import { RUN_ROLE } from '@momonga/protocol';
-import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunEvent, RunEventPayload, RunTraceCall, RunTraceEvent, RunTracePrefix } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunCostView, RunEvent, RunEventPayload, RunTraceCall, RunTraceEvent, RunTracePrefix } from '@momonga/protocol';
 import type { ModelCallRecord, RuntimeStore } from '@momonga/store';
 import { gatewayProtocolError } from '../gateway-client.ts';
 
@@ -147,12 +147,13 @@ export type CostBreakdownSources = {
   pageSize?: number;
 };
 
-export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ breakdown: CostBreakdown; text: string }> => {
-  const { runIds } = sources;
+export type BilledCallsSource = Pick<CostBreakdownSources, 'runIds' | 'fetchPage' | 'pageSize'>;
+
+export const billedCallsOf = async (sources: BilledCallsSource): Promise<BilledCallView[]> => {
   const billed: BilledCallView[] = [];
   let cursor: BilledCallsCursorView | undefined = { run: 0, after: 0 };
   while (cursor !== undefined) {
-    const page: BilledCallsPageView = await sources.fetchPage(runIds, cursor, sources.pageSize ?? MAX_BILLED_CALLS_PAGE);
+    const page: BilledCallsPageView = await sources.fetchPage(sources.runIds, cursor, sources.pageSize ?? MAX_BILLED_CALLS_PAGE);
     billed.push(...page.calls);
     const { next } = page;
     if (next !== undefined) {
@@ -166,6 +167,14 @@ export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ 
     }
     cursor = next;
   }
+  return billed;
+};
+
+export const reportCostOf = async (sources: BilledCallsSource): Promise<RunCostView[]> => runCostsOf(sources.runIds, await billedCallsOf(sources));
+
+export const costBreakdownOf = async (sources: CostBreakdownSources): Promise<{ breakdown: CostBreakdown; text: string }> => {
+  const { runIds } = sources;
+  const billed = await billedCallsOf(sources);
   const joined: ReturnType<typeof joinRunCalls>[] = [];
   for (const runId of runIds) {
     joined.push(joinRunCalls(runId, billed.filter((call) => call.runId === runId), await sources.recordsOf(runId), sources.sideTimingsOf === undefined ? [] : sources.sideTimingsOf(runId)));

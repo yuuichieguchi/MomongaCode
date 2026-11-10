@@ -60,6 +60,8 @@ export type BodyRecord = {
   expiresAtMs: number;
 };
 
+export type StoredBody = { id: number; body: BodyRecord };
+
 export type TraceStore = {
   writeSpans(records: readonly SpanRecord[], bodies?: readonly BodyRecord[]): void;
   spansForRun(runId: string): SpanRecord[];
@@ -67,6 +69,7 @@ export type TraceStore = {
   billedChatSpansAfter(runId: string | null, afterSeq: number, limit: number): IngestedSpan[];
   spansForTrace(traceId: string): SpanRecord[];
   bodiesForSpan(spanId: string): BodyRecord[];
+  bodiesOfRunAfter(runId: string, afterId: number, limit: number): StoredBody[];
   purgeBodies(nowMs: number): number;
   moveLegacyContent(options: { retentionMs: number }): number;
   purgeExpired(): number;
@@ -314,6 +317,12 @@ const prepareStatements = (db: DatabaseSync) => ({
   spansWithoutRun: db.prepare('SELECT * FROM spans WHERE run_id IS NULL ORDER BY start_ms, end_ms DESC, rowid'),
   spansForTrace: db.prepare('SELECT * FROM spans WHERE trace_id = ? ORDER BY start_ms, end_ms DESC, rowid'),
   bodiesForSpan: db.prepare('SELECT * FROM bodies WHERE span_id = ? AND expires_at_ms > ? ORDER BY id'),
+  bodiesOfRunAfter: db.prepare(
+    `SELECT b.* FROM bodies b
+     WHERE b.id > ? AND b.expires_at_ms > ?
+       AND EXISTS (SELECT 1 FROM spans s WHERE s.trace_id = b.trace_id AND s.span_id = b.span_id AND s.run_id = ?)
+     ORDER BY b.id LIMIT ?`,
+  ),
   purgeBodies: db.prepare('DELETE FROM bodies WHERE expires_at_ms <= ?'),
   checkpointPassive: db.prepare('PRAGMA wal_checkpoint(PASSIVE)'),
   checkpointTruncate: db.prepare('PRAGMA wal_checkpoint(TRUNCATE)'),
@@ -424,6 +433,8 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
     },
     spansForTrace: (traceId) => all(statements.spansForTrace, traceId).map(decodeSpan),
     bodiesForSpan: (spanId) => all(statements.bodiesForSpan, spanId, clock.now()).map(decodeBody),
+    bodiesOfRunAfter: (runId, afterId, limit) =>
+      all(statements.bodiesOfRunAfter, afterId, clock.now(), runId, limit).map((row) => ({ id: readInteger('bodies', String(row['id']), row, 'id'), body: decodeBody(row) })),
     purgeBodies,
     moveLegacyContent,
     purgeExpired: () => purgeBodies(clock.now()),

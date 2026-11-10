@@ -1,6 +1,7 @@
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
+import { REPORT_SCHEMAS, RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
+import type { ReportCostPage, ReviewPage, StoreReviewResponse, TraceContentPage } from '@momonga/protocol';
 import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse, UserShellFrame, UserShellPendingResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
@@ -43,6 +44,20 @@ export const checkRule = guard<RuleResponse>(RUN_API_SCHEMAS.RuleResponse);
 export const checkRules = guard<RulesResponse>(RUN_API_SCHEMAS.RulesResponse);
 export const checkPolicyGovernance = guard<PolicyGovernanceResponse>(RUN_API_SCHEMAS.PolicyGovernanceResponse);
 export const checkReportPage = guard<ReportPage>(RUN_API_SCHEMAS.ReportPage);
+
+const reportGuard = <T>(name: keyof typeof REPORT_SCHEMAS): ((value: unknown, description: string) => T) => {
+  const validate: ProductValidator<T> = defineProductSchema(`report/${name}`, REPORT_SCHEMAS[name]);
+  return (value, description) => {
+    const verdict = validate(value);
+    if (!verdict.valid) throw new ContractViolation(description, productErrorsText(verdict.errors, 'body'));
+    return verdict.value;
+  };
+};
+
+export const checkReviewPage = reportGuard<ReviewPage>('ReviewPage');
+export const checkStoreReview = reportGuard<StoreReviewResponse>('StoreReviewResponse');
+export const checkReportCost = reportGuard<ReportCostPage>('ReportCostPage');
+export const checkTraceContent = reportGuard<TraceContentPage>('TraceContentPage');
 export const checkCostReport = guard<CostReportView>(RUN_API_SCHEMAS.CostReport);
 export const checkRunAnsweredBy = guard<RunAnsweredByView>(RUN_API_SCHEMAS.RunAnsweredBy);
 export const checkRunReflection = guard<RunReflectionView>(RUN_API_SCHEMAS.RunReflection);

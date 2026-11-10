@@ -37,7 +37,7 @@ import {
   nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, TextStream } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -63,7 +63,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { TRACE_EVENT_TYPES, costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
+import { TRACE_EVENT_TYPES, costBreakdownOf, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -725,6 +725,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
+        reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
+        runTraceContent: async (runId, after, limit) => {
+          await telemetries.current().telemetry.forceFlush();
+          return pageRunBodies(traceStore, runId, after, limit);
+        },
         mcp: toolRuntime.mcpAdmin,
         markerOwners: toolRuntime.owners,
         role: rolePort,

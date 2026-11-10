@@ -172,3 +172,4 @@ export type {
 } from './types.ts';
 export { inboxRowView } from './inbox.ts';
 export { UNKNOWN_ANSWERER } from '@momonga/protocol';
+export type { PermissionReviewsStore } from './permission-reviews.ts';

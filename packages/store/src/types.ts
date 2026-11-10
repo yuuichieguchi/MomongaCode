@@ -1,6 +1,7 @@
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
+import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type {
   BilledDetail,
@@ -695,6 +696,7 @@ export type RuntimeStore = {
   governing: GoverningFactStore;
   search: SearchStore;
   runFacts: RunFactsStore;
+  permissionReviews: PermissionReviewsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
 };

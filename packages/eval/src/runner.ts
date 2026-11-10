@@ -43,7 +43,7 @@ const optionIdFor = (event: Extract<PublicRunEvent, { type: 'tool.permission.req
 
 export type Driven = { events: PublicRunEvent[]; children: TranscriptChild[] };
 
-export const driveRun = async (api: EvalRunApi, golden: Pick<GoldenCase, 'id' | 'onAsk'>, rootRunId: string): Promise<Driven> => {
+export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval' | 'cancelRun'>, golden: Pick<GoldenCase, 'id' | 'onAsk'>, rootRunId: string): Promise<Driven> => {
   const events: PublicRunEvent[] = [];
   const children: TranscriptChild[] = [];
   const followed = new Set<string>([rootRunId]);

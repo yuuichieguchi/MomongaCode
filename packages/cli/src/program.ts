@@ -163,8 +163,9 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .command('trace [run-id]')
     .description('show the model and tool spans of a run; the latest run of this directory when no id is given')
     .option('--json', 'print the trace as JSON')
-    .action(async (runId: string | undefined, options: { json?: true }) => {
-      deps.complete(await showTrace(ports, await pathsOf(ports), runId, options.json === true));
+    .option('--content', 'print the stored message content of the run that has not expired, instead of the trace; with --json one JSON object per line')
+    .action(async (runId: string | undefined, options: { json?: true; content?: true }) => {
+      deps.complete(await showTrace(ports, await pathsOf(ports), runId, { json: options.json === true, content: options.content === true }));
     });
 
   program
