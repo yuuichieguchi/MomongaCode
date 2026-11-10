@@ -54,6 +54,9 @@ export type FakePlanOptions = FakeBackendOptions & {
   detected?: readonly DetectedServer[];
   dismissed?: Readonly<Record<string, string>>;
   callbackArrives?: boolean;
+  completeHeld?: Promise<void>;
+  listProblems?: readonly { file: string; cause: string }[];
+  listenerFails?: Error;
 };
 
 export type FakePlanBackend = FakeBackend & {
@@ -63,6 +66,7 @@ export type FakePlanBackend = FakeBackend & {
   readonly dismissals: string[];
   readonly listenerPaths: string[];
   readonly detections: (readonly string[])[];
+  readonly clipboard: string[];
 };
 
 export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend => {
@@ -72,6 +76,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
   const detections: (readonly string[])[] = [];
+  const clipboard: string[] = [];
   let aliases: string[] = [...(options.aliases ?? ['default'])];
   let accounts: PlanAccountView[] = [...(options.accounts ?? [])];
   const targets = [...(options.targets ?? ['primary'])];
@@ -87,7 +92,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const plan: PlanGatewayClient = {
     accounts: async () => {
       called('accounts');
-      return { profiles: [...(options.profiles ?? [CHATGPT])], accounts: [...accounts] };
+      return { profiles: [...(options.profiles ?? [CHATGPT])], accounts: [...accounts], ...(options.listProblems === undefined ? {} : { listProblems: [...options.listProblems] }) };
     },
     signInBegin: async (request) => {
       called('sign-in/begin', request);
@@ -95,6 +100,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     },
     signInComplete: async (request) => {
       called('sign-in/complete', request);
+      await options.completeHeld;
       const begun = planCalls.find((call) => call.route === 'sign-in/begin')?.body as { account: string } | undefined;
       const answer: PlanSignInCompleteResponse = options.complete ?? { outcome: 'signed_in', account: account({ label: begun?.account ?? 'chatgpt' }), firstSignIn: false };
       if (answer.outcome !== 'retry') accounts = [...accounts.filter((existing) => existing.label !== answer.account.label).map((existing) => ({ ...existing, active: false })), answer.account];
@@ -139,6 +145,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   };
   const listener = async (path: string): Promise<SignInListener> => {
     listenerPaths.push(path);
+    if (options.listenerFails !== undefined) throw options.listenerFails;
     const redirectUrl = `http://127.0.0.1:${LISTENER_PORT}${path}`;
     return {
       port: LISTENER_PORT,
@@ -160,6 +167,10 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     dismissals,
     listenerPaths,
     detections,
+    clipboard,
+    copyToClipboard: (text: string) => {
+      clipboard.push(text);
+    },
     models: async () => (await fakeBackend({ ...options, aliases }).models()).map(withBilling),
     model: async () => withBilling(await fakeBackend(options).model()),
     health: async (): Promise<GatewayHealth> => ({

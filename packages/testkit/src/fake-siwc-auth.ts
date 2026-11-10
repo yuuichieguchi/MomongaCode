@@ -54,7 +54,7 @@ export type SiwcTokenStep =
 
 export type SiwcJwksStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
 
-export type SiwcRevokeStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
+export type SiwcRevokeStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' } | { kind: 'hold'; reached: () => void; released: Promise<void> };
 
 export type SiwcGrant = 'authorization_code' | 'refresh_token';
 
@@ -98,7 +98,9 @@ export type SiwcAuth = {
   close(): Promise<void>;
 };
 
-export type SiwcAuthOptions = { now?: () => number; resource?: string };
+export type SiwcAccessTokenForm = 'jwt' | 'opaque';
+
+export type SiwcAuthOptions = { now?: () => number; resource?: string; accessTokenForm?: SiwcAccessTokenForm };
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
 
@@ -154,6 +156,7 @@ const isLoopbackCallback = (redirectUri: string): boolean => {
 export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<SiwcAuth> => {
   const now = options.now ?? Date.now;
   const resource = options.resource ?? SIWC_RESOURCE;
+  const accessTokenForm = options.accessTokenForm ?? 'jwt';
   const keys = await sharedKeyPair();
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
@@ -267,23 +270,25 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const issueAccess = (family: Family, clientId: string, resource: string, scope: string, expiresIn: number): string => {
     const seconds = Math.floor(now() / 1000);
     const token = remember(
-      signRs256(
-        {},
-        {
-          sub: registrationsById.get(clientId)?.sub ?? fixture.identity.sub,
-          aud: resource,
-          client_id: clientId,
-          scope,
-          'https://api.openai.com/auth': { per_user_salt: createCanary('salt'), encrypted_auth_metadata: createCanary('meta') },
-          iss: fixture.issuer,
-          iat: seconds,
-          exp: seconds + expiresIn,
-          jti: createCanary('access'),
-          nbf: seconds,
-        },
-        signing,
-        signing.kid,
-      ),
+      accessTokenForm === 'opaque'
+        ? randomBytes(32).toString('base64url')
+        : signRs256(
+            {},
+            {
+              sub: registrationsById.get(clientId)?.sub ?? fixture.identity.sub,
+              aud: resource,
+              client_id: clientId,
+              scope,
+              'https://api.openai.com/auth': { per_user_salt: createCanary('salt'), encrypted_auth_metadata: createCanary('meta') },
+              iss: fixture.issuer,
+              iat: seconds,
+              exp: seconds + expiresIn,
+              jti: createCanary('access'),
+              nbf: seconds,
+            },
+            signing,
+            signing.kid,
+          ),
     );
     accessGrants.set(token, { family, resource, expiresAtMs: now() + expiresIn * 1000, expired: false });
     return token;
@@ -405,6 +410,10 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     records.push({ method: 'POST', path: REVOKE_PATH, form });
     calls.revoke += 1;
     const step = revokeScript.shift();
+    if (step?.kind === 'hold') {
+      step.reached();
+      await step.released;
+    }
     if (step?.kind === 'drop') {
       res.socket?.destroy();
       return;

@@ -206,6 +206,7 @@ export {
   startFakeSiwcAuth,
 } from './fake-siwc-auth.ts';
 export type {
+  SiwcAccessTokenForm,
   SiwcAuth,
   SiwcAuthOptions,
   SiwcAuthorizeMode,

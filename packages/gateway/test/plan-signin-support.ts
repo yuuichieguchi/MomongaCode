@@ -2,7 +2,7 @@ import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, momongaLayout } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
-import type { FakeClock, FakePlanResponses, FakeSecretStore, SiwcAuth } from '@momonga/testkit';
+import type { FakeClock, FakePlanResponses, FakeSecretStore, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { PROFILE_ID, profileFor } from './plan-support.ts';
@@ -25,7 +25,7 @@ export type PlanGateway = {
 
 export const accountRoute = (route: string, account: string = ACCOUNT): string => route.replace(':account', encodeURIComponent(account));
 
-export type PlanGatewayOptions = { models?: readonly unknown[]; declaredCapabilities?: boolean; clock?: FakeClock };
+export type PlanGatewayOptions = { models?: readonly unknown[]; declaredCapabilities?: boolean; clock?: FakeClock; accessTokenForm?: SiwcAccessTokenForm; plaintextTokenFiles?: boolean };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
   let reach = (): void => undefined;
@@ -45,12 +45,13 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
   const upstream = await startFakePlanResponses({ verifyBearer: () => 'valid', models: options.models ?? [] });
   registerCleanup(() => upstream.close());
   const loopback = `${upstream.origin}/v1`;
-  const auth = await startFakeSiwcAuth({ resource: loopback });
+  const auth = await startFakeSiwcAuth({ resource: loopback, ...(options.accessTokenForm === undefined ? {} : { accessTokenForm: options.accessTokenForm }) });
   registerCleanup(() => auth.close());
   const shipped = profileFor(auth);
   const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
   const secretStore = createFakeSecretStore({});
   writeSettings(home, {
+    ...(options.plaintextTokenFiles === true ? { credentials: { plaintextTokenFiles: true } } : {}),
     models: {
       aliases: { default: 'gpt' },
       targets: {

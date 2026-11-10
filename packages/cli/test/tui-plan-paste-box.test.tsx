@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KEYS, untilFrame } from './ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { AUTHORIZATION_URL, PLAN_TEST_TIMEOUT_MS, choose, eventually, quiet, startPlan, submitLine } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
@@ -16,8 +16,11 @@ const routesOf = (backend: FakePlanBackend): string[] => backend.planCalls.map((
 
 const bodiesOf = (backend: FakePlanBackend, route: string): unknown[] => backend.planCalls.filter((call) => call.route === route).map((call) => call.body);
 
-const waitingScreen = async () => {
-  const started = await startPlan({ accounts: [], callbackArrives: false });
+const HINT = 'enter submits the pasted URL · ctrl+y copies the sign-in URL · esc cancels';
+const CTRL_Y = '\u0019';
+
+const waitingScreen = async (options: { completeHeld?: Promise<void> } = {}) => {
+  const started = await startPlan({ accounts: [], callbackArrives: false, ...options });
   await untilFrame(started.app, 'mode: default');
   await submitLine(started.app, '/login chatgpt');
   await choose(started.app, 'Continue with ChatGPT');
@@ -78,4 +81,88 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     expect(routesOf(backend)).not.toContain('sign-in/cancel');
     app.unmount();
   });
+
+  it('shows the typed text in the input as > <text> and the hint line of the screen', async () => {
+    const { app } = await waitingScreen();
+    app.stdin.write('typed-text');
+    const frame = await untilFrame(app, '> typed-text');
+    expect(frame).toContain(HINT);
+    app.unmount();
+  });
+
+  it('does nothing on Enter with a blank input', async () => {
+    const { app, backend } = await waitingScreen();
+    app.stdin.write('   ');
+    await quiet();
+    app.stdin.write(KEYS.enter);
+    await expectStillWaiting(app, backend);
+    const frame = app.lastFrame() ?? '';
+    for (const sentence of [TOO_LONG, NOT_REDIRECT, OTHER_SIGN_IN]) expect(frame).not.toContain(sentence);
+    app.unmount();
+  });
+
+  it('clears the input when a value is refused', async () => {
+    const { app } = await waitingScreen();
+    await paste(app, 'refused-value');
+    const frame = await untilFrame(app, NOT_REDIRECT);
+    expect(frame).not.toContain('refused-value');
+    app.unmount();
+  });
+
+  it('refuses a paste of 8193 bytes as too long and a paste of 8192 bytes as not a redirect URL', async () => {
+    const { app, backend } = await waitingScreen();
+    await paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES + 1));
+    await untilFrame(app, TOO_LONG);
+    await expectStillWaiting(app, backend);
+    await paste(app, 'a'.repeat(PASTED_CALLBACK_CAP_BYTES));
+    await untilFrame(app, NOT_REDIRECT);
+    await expectStillWaiting(app, backend);
+    app.unmount();
+  });
+
+  it.each([
+    ['esc', KEYS.escape],
+    ['ctrl+c', KEYS.ctrlC],
+  ])('%s with text in the input cancels the sign-in once and says so', async (_name, key) => {
+    const { app, backend } = await waitingScreen();
+    app.stdin.write('half-typed');
+    await untilFrame(app, '> half-typed');
+    app.stdin.write(key);
+    await untilOutput(app, 'sign-in cancelled');
+    await quiet();
+    expect(bodiesOf(backend, 'sign-in/cancel')).toEqual([{ attemptId: 'attempt-1' }]);
+    expect(routesOf(backend)).not.toContain('sign-in/complete');
+    app.unmount();
+  });
+
+  it('after a valid paste shows Finishing the sign-in… and sends no cancel on esc', async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { app, backend } = await waitingScreen({ completeHeld: held });
+    await paste(app, 'https://localhost:1/anything?code=pasted-code&state=st-1');
+    const frame = await untilFrame(app, 'Finishing the sign-in…');
+    expect(frame).toContain('please wait');
+    expect(frame).not.toContain(PASTE_LABEL);
+    app.stdin.write(KEYS.escape);
+    await quiet();
+    app.stdin.write(KEYS.ctrlC);
+    await quiet();
+    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    release();
+    await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
+    await quiet();
+    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    app.unmount();
+  });
+
+  it('ctrl+y asks the terminal to copy the sign-in URL through copyToClipboard and says so', async () => {
+    const { app, backend } = await waitingScreen();
+    app.stdin.write(CTRL_Y);
+    await untilFrame(app, 'Asked the terminal to copy the sign-in URL.');
+    expect(backend.clipboard).toEqual([new URL(AUTHORIZATION_URL).href]);
+    app.unmount();
+  });
 });
+

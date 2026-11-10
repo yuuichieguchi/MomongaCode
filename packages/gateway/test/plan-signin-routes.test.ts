@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
-import { ACCOUNT, CALLBACK_PORT, begin, browse, holdNextExchange, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, holdNextExchange, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 
 const failureOf = (answer: { status: number; body: any }) => ({ status: answer.status, type: answer.body.error?.type, code: answer.body.error?.code, message: answer.body.error?.message });
@@ -382,6 +382,29 @@ describe('the {error} of authorization_failed and exchange_rejected is sanitised
     gateway.auth.scriptToken('authorization_code', [step]);
     const { completed } = await signIn(gateway);
     expect(failureOf(completed)).toEqual({ status: 400, type: 'invalid_request', code: 'exchange_rejected', message: `ChatGPT rejected the sign-in code (${shown}).` });
+    await gateway.close();
+  });
+});
+
+describe('nothing depends on the form of the access token (O-R5-6 F)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('signs in, sends a request and refreshes with an opaque access token', async () => {
+    const clock = createFakeClock(Date.now());
+    const gateway = await startPlanGateway({ accessTokenForm: 'opaque', clock, models: [{ slug: 'listed-model', display_name: 'Listed Model', visibility: 'list', context_window: 200000 }] });
+    const { completed } = await signIn(gateway);
+    expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: ACCOUNT } });
+    const modelsRoute = `${accountRoute(PLAN_ROUTES.accountModels)}?profile=chatgpt&refresh=1`;
+    const bearers = (): string[] => gateway.upstream.requests.map((request) => String(request.headers['authorization'] ?? ''));
+
+    expect((await gateway.get(modelsRoute)).status).toBe(200);
+    clock.advance(86_400_000);
+    const refreshesBefore = gateway.auth.calls.tokenRefreshToken;
+    expect((await gateway.get(modelsRoute)).status).toBe(200);
+
+    expect(gateway.auth.calls.tokenRefreshToken).toBe(refreshesBefore + 1);
+    const sent = bearers();
+    expect(sent).toHaveLength(2);
+    for (const bearer of sent) expect(bearer).toMatch(/^Bearer [A-Za-z0-9_-]+$/);
+    expect(sent[0]).not.toBe(sent[1]);
     await gateway.close();
   });
 });

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { systemTiming } from '@momonga/foundation';
 import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
 import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
@@ -155,6 +156,8 @@ describe('momonga auth login', () => {
         startListener: backend.startSignInListener,
         openUrl: async (url: URL) => void opened.push(url.href),
         sandbox: async () => 'seatbelt' as const,
+        signal: new AbortController().signal,
+        timers: systemTiming,
         isTerminal: false as const,
       },
     };
