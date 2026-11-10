@@ -23,6 +23,7 @@ const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord,
   const pgid = reader.nullableNumber('pgid');
   const startedAt = reader.nullableNumber('started_at');
   const leaseToken = reader.nullableNumber('lease_token');
+  const authorisedAt = reader.nullableNumber('authorised_at');
   return {
     key,
     state: storedOneOf(context, 'idempotency', key, 'state', OPEN_STATES, reader.string('state')),
@@ -30,6 +31,7 @@ const decodeRecord = (row: Row, context: DecodeContext): Omit<IdempotencyRecord,
     ...(pgid === null ? {} : { pgid }),
     ...(startedAt === null ? {} : { startedAt }),
     ...(leaseToken === null ? {} : { leaseToken }),
+    ...(authorisedAt === null ? {} : { authorisedAt }),
     createdAt: reader.number('created_at'),
     expiresAt: reader.number('expires_at'),
   };
@@ -45,7 +47,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
   const attach = db.prepare(
     "UPDATE idempotency SET pgid = :pgid, started_at = :startedAt WHERE key = :key AND state = 'PENDING'",
   );
-  const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
+  const adopt = db.prepare("UPDATE idempotency SET lease_token = :leaseToken, authorised_at = :authorisedAt WHERE key = :key AND state IN ('PENDING', 'UNKNOWN')");
   const setCheckpoint = db.prepare(
     "UPDATE idempotency SET meta_json = json_set(meta_json, '$.checkpoint', json(:state)) WHERE key = :key AND state = 'PENDING'",
   );
@@ -113,7 +115,7 @@ export const createIdempotencyStore = (db: DatabaseSync, clock: Clock, holdsLeas
         immediateTx<LeasedBegin>(db, () => (holdsLease(fence) ? beginRecord(key, options, fence.leaseToken) : { s: 'LEASE_LOST' })),
       authorise: (key) =>
         whileHolding(() => {
-          requireChange(adopt.run({ key, leaseToken: fence.leaseToken }).changes, key, 'authorise', 'PENDING or UNKNOWN');
+          requireChange(adopt.run({ key, leaseToken: fence.leaseToken, authorisedAt: clock.now() }).changes, key, 'authorise', 'PENDING or UNKNOWN');
         }),
       attachProcess: (key, process) => whileHolding(() => attachRecord(key, process)),
       checkpoint: (key, state) =>

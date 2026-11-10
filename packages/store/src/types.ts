@@ -224,6 +224,7 @@ export type IdempotencyRecord = {
   pgid?: number;
   startedAt?: number;
   leaseToken?: number;
+  authorisedAt?: number;
   createdAt: number;
   expiresAt: number;
 };

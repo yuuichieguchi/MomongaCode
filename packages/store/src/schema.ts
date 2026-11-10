@@ -273,6 +273,11 @@ ALTER TABLE jobs ADD COLUMN read_call TEXT;
 ALTER TABLE jobs ADD COLUMN read_before INTEGER;
 `;
 
+const AUTHORISED_MARK_AND_RUN_RETRY_BUDGET = `
+ALTER TABLE idempotency ADD COLUMN authorised_at INTEGER;
+ALTER TABLE runs ADD COLUMN max_failed_attempts INTEGER;
+`;
+
 const IDEMPOTENCY_LEASE_TOKEN = `
 ALTER TABLE idempotency ADD COLUMN lease_token INTEGER;
 `;
@@ -1215,5 +1220,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 34,
     name: 'let an approval ask a person about a tool call whose effect is unknown, by rebuilding approvals with the kind unknown_effect in its CHECK list, and store the verdict of a rule set under the fingerprint of its input in rule_verdicts',
     sql: UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS,
+  },
+  {
+    version: 35,
+    name: 'record when an idempotency record was authorised, so a recovery can tell an effect that never started from one that may have, and let a run carry its own bound of consecutive failed attempts',
+    sql: AUTHORISED_MARK_AND_RUN_RETRY_BUDGET,
   },
 ];

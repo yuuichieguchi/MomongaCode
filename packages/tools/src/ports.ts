@@ -8,6 +8,7 @@ export type ToolIdempotencyRecord = {
   pgid?: number;
   startedAt?: number;
   leaseToken?: number;
+  authorisedAt?: number;
   createdAt: number;
   expiresAt: number;
 };
