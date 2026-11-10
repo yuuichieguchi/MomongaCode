@@ -153,7 +153,7 @@ describe('E2E_CASES registry', () => {
 
   it('titleOf and caseOf look entries up by id', () => {
     expect(titleOf('b2-seatbelt')).toBe('b2 seatbelt is applied: a write outside the project is denied');
-    expect(caseOf('s4')).toEqual({ id: 's4', file: 'supervisor.test.ts', title: 'S4 irrelevant change restarts nothing', needsBash: false });
+    expect(caseOf('s4')).toEqual({ id: 's4', file: 'supervisor.test.ts', title: 'S4 a permissions change applies in place: no daemon is restarted', needsBash: false });
   });
 
   it('skipCase follows the published probe: only bash cases are skipped when the platform sandbox is unusable', () => {

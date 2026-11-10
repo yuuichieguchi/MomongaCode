@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BASE_ENTRY_FLAGS, nodeEntryIo, parseFlags } from '@momonga/foundation';
+import { nodeEntryIo, parseFlags } from '@momonga/foundation';
+import { SUPERVISE_ENTRY_FLAGS } from '@momonga/supervisor';
 import type { SupervisorEntryDeps } from '@momonga/supervisor';
 import { startGenerationForTest } from '@momonga/testkit/first-generation';
 import { runSupervise } from '../../packages/cli/src/daemon/supervise.ts';
@@ -65,7 +66,7 @@ export const guardSupervisorHome = (argv: readonly string[], input: SupervisorHo
   if (resolvedTmpdir instanceof Error) return `TMPDIR ${tmpdir} cannot be resolved: ${resolvedTmpdir.message}`;
   if (resolvedTmpdir !== resolvedHome) return `TMPDIR ${resolvedTmpdir} must equal HOME ${resolvedHome}`;
   if (resolvedHome === userHome) return `HOME ${resolvedHome} is the user home`;
-  const argvHome = parseFlags(argv, BASE_ENTRY_FLAGS).home;
+  const argvHome = parseFlags(argv, SUPERVISE_ENTRY_FLAGS).home;
   if (argvHome === undefined) return '--home is required and must resolve to HOME';
   const resolvedArgvHome = realpathOf(argvHome);
   if (resolvedArgvHome instanceof Error) return `--home ${argvHome} cannot be resolved: ${resolvedArgvHome.message}`;

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { firstGeneration } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
+import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { supervisorLog } from './support/log-reader.ts';
@@ -33,7 +34,7 @@ const completed = (runtime: RuntimeClient, runId: string): Promise<string> =>
   );
 
 describe('decision 76: a settings edit during a held run applies in place (design-settings-live section 10)', () => {
-  it('the held run completes, the next run uses the new settings, and the supervisor stops and spawns no child for the change', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('settings-live-held-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home });
     const runtime = createRuntimeClient(home);
@@ -66,7 +67,7 @@ describe('decision 76: a settings edit during a held run applies in place (desig
     }
   });
 
-  it('with the supervisor: a valid change it has seen, then a broken file, is served by the gateway even though no request read it (15.1)', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('settings-live-broken-file'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home });
     writeSettingsFile(home, withChangedModel(home));

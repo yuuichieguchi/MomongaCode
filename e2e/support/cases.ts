@@ -38,7 +38,10 @@ export type E2eCaseFile =
   | 'roles.test.ts'
   | 'first-run.test.ts'
   | 'core-on-defaults.test.ts'
-  | 'eval-yield.test.ts';
+  | 'eval-yield.test.ts'
+  | 'eval-context-model.test.ts'
+  | 'same-name-models.test.ts'
+  | 'settings-live.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -192,6 +195,11 @@ export const E2E_CASES = [
   { id: 'inject-not-run', file: 'inject.test.ts', title: 'reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', needsBash: false },
   { id: 'core-on-token-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no core setting declared, the first run pins every token key on and its request offers the concise tool descriptions', needsBash: false },
   { id: 'core-on-memory-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no memory setting declared, a verified run in a trusted folder is reflected on and its candidate waits for review', needsBash: false },
+  { id: 'same-name-two-servers', file: 'same-name-models.test.ts', title: 'same-name models: lists one entry per server with the same own name and a different provider, and a request by the full reference of each reaches only its server', needsBash: false },
+  { id: 'eval-context-own-name', file: 'eval-context-model.test.ts', title: 'own names: eval context runs every session on the model its own name names in a settings file of connections, and the report and the transcripts record its full reference', needsBash: false },
+  { id: 'context-improve-own-name', file: 'eval-context-model.test.ts', title: 'own names: context improve runs its benchmark on the named model in a settings file of connections, and its outcome records the model kind and the analysis model by its full reference', needsBash: false },
+  { id: 'settings-live-held-run', file: 'settings-live.test.ts', title: 'settings live: the held run completes, the next run uses the new settings, and the supervisor stops and spawns no child for the change', needsBash: false },
+  { id: 'settings-live-broken-file', file: 'settings-live.test.ts', title: 'settings live: with the supervisor: a valid change it has seen, then a broken file, is served by the gateway even though no request read it (15.1)', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

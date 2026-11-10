@@ -15,6 +15,7 @@ import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 const COMPLIANCE_DIR = path.join(import.meta.dirname, '..', 'compliance', 'open-responses');
 const BUN = path.join(COMPLIANCE_DIR, 'node_modules', '.bin', 'bun');
 const SUITE_ENTRY = path.join(COMPLIANCE_DIR, 'suite', 'bin', 'compliance-test.ts');
+const BUN_MISSING_REASON = `bun is not installed at ${BUN}; run: npm ci --prefix compliance/open-responses`;
 const EXPECTED_TESTS = 17;
 const DEBUG_TOKEN = 'fake-open-responses-debug-token';
 const MODEL = 'fake/system';
@@ -24,10 +25,6 @@ type SuiteOutput = { summary: { passed: number; failed: number; skipped: number;
 
 const runSuite = (baseUrl: string, cwd: string, env: Record<string, string>): Promise<{ output: SuiteOutput; exitCode: number | null }> =>
   new Promise((resolve, reject) => {
-    if (!fs.existsSync(BUN)) {
-      reject(new Error(`bun is not installed at ${BUN}; run: npm ci --prefix compliance/open-responses`));
-      return;
-    }
     const child = spawn(BUN, ['run', SUITE_ENTRY, '--base-url', baseUrl, '--api-key', DEBUG_TOKEN, '--model', MODEL, '--json'], {
       cwd,
       env,
@@ -55,7 +52,8 @@ const debugPortOf = (logFile: string): number => {
 };
 
 describe('Open Responses compliance suite against the supervised gateway debug listener', () => {
-  it(titleOf('open-responses-compliance'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('open-responses-compliance'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+    if (!fs.existsSync(BUN)) context.skip(BUN_MISSING_REASON);
     const home = await createE2eHome();
     const fake = await startFakeChatCompletions({
       scenario: 'tools-ok',

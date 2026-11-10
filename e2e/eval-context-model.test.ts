@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { titleOf } from './support/cases.ts';
 import type { FakeRoute } from '@momonga/testkit';
 import { CONTEXT_REPORT_FORMAT, GUIDELINE_OUTCOME_FORMAT } from '@momonga/eval';
 import { runCli } from './support/cli.ts';
@@ -49,7 +50,7 @@ const writeDataset = (home: E2eHome): string => {
 const writtenModelsOf = (home: E2eHome): Record<string, unknown> => (JSON.parse(fs.readFileSync(home.paths.settingsFile, 'utf8')) as { models: Record<string, unknown> }).models;
 
 describe('eval context and context improve with models by their own names', () => {
-  it('eval context runs every session on the model its own name names in a settings file of connections, and the report and the transcripts record its full reference', { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('eval-context-own-name'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fake = await startUpstream(home, { home, routes: ROUTES });
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
@@ -75,7 +76,7 @@ describe('eval context and context improve with models by their own names', () =
     expect(chatCompletions(fake).map((request) => (request.body as { model?: unknown }).model)).toEqual(CASES.map(() => UPSTREAM_MODEL));
   });
 
-  it('context improve runs its benchmark on the named model in a settings file of connections, and its outcome records the model kind and the analysis model by its full reference', { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('context-improve-own-name'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     await startUpstream(home, { home, routes: ROUTES });
     writeSettingsFile(home, withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_MODEL_ID));
