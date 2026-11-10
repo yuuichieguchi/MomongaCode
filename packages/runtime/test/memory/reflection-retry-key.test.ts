@@ -15,7 +15,7 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { textStep } from '../worker/scripts.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
-import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
 
 type Reflector = { runOne(signal: AbortSignal): Promise<'idle' | 'busy' | 'ran'> };
 type Job = { state: string; attempts: number; lastError: string | null };
@@ -110,7 +110,7 @@ const setup = () => {
     const run = enqueue(store, session.id, 'fix the bug');
     await finishClaimed(store, [
       ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
-      ...bash('t1', 'npm test', 0, 'ok'),
+      ...checked('npm test', 0, 'ok'),
     ]);
     return run;
   };

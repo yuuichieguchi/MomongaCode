@@ -1,3 +1,4 @@
+import type { RunReport } from '@momonga/protocol';
 import { defineTool, ToolExecutionError } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { AGENT_TOOL_NAME, SPAWN_TOOL_TIMEOUT_MS } from './constants.ts';
@@ -8,19 +9,44 @@ type AgentInput = { description: string; prompt: string; subagent_type: string }
 
 const oneLine = (value: string): string => value.replace(/\s+/g, ' ');
 
+const reportLinesOf = (report: RunReport | undefined): string => {
+  if (report === undefined) return '';
+  const conditions = report.conditions.map(
+    (condition) => `- ${condition.command}: ${condition.state}${condition.last?.exitCode === undefined ? '' : ` (exit ${condition.last.exitCode})`}`,
+  );
+  const risks = report.residualRisk.map((risk) => `- ${risk.code}: ${risk.count}`);
+  return [
+    ...(conditions.length === 0 ? [] : ['Completion conditions:', ...conditions]),
+    ...(risks.length === 0 ? [] : ['Residual risk:', ...risks]),
+  ].join('\n');
+};
+
+const withReport = (text: string, report: RunReport | undefined): string => {
+  const lines = reportLinesOf(report);
+  return lines === '' ? text : `${text}\n${lines}`;
+};
+
 export const childResultOf = (agent: string, outcome: Extract<ChildRunOutcome, { state: 'finished' }>): { status: 'completed' | 'failed'; output: string } => {
   const lastMessage = outcome.text === '' ? '' : `\nIts last message:\n${outcome.text}`;
   switch (outcome.status) {
     case 'COMPLETED':
-      return { status: 'completed', output: outcome.text === '' ? `Subagent ${agent} finished without a final message.` : outcome.text };
+      return { status: 'completed', output: withReport(outcome.text === '' ? `Subagent ${agent} finished without a final message.` : outcome.text, outcome.report) };
     case 'STOPPED':
-      return { status: 'failed', output: `Subagent ${agent} stopped before it finished (${outcome.stopReason ?? 'no reason recorded'}).${lastMessage}` };
+      return { status: 'failed', output: `${withReport(`Subagent ${agent} stopped before it finished (${outcome.stopReason ?? 'no reason recorded'}).`, outcome.report)}${lastMessage}` };
     case 'FAILED':
-      return { status: 'failed', output: `Subagent ${agent} failed${outcome.error === undefined ? '' : ` (${outcome.error.code}: ${outcome.error.message})`}.${lastMessage}` };
+      return { status: 'failed', output: `${withReport(`Subagent ${agent} failed${outcome.error === undefined ? '' : ` (${outcome.error.code}: ${outcome.error.message})`}.`, outcome.report)}${lastMessage}` };
     case 'CANCELLED':
-      return { status: 'failed', output: `Subagent ${agent} was cancelled.${lastMessage}` };
+      return { status: 'failed', output: `${withReport(`Subagent ${agent} was cancelled.`, outcome.report)}${lastMessage}` };
   }
 };
+
+export const childToolResultOf = (
+  agent: string,
+  outcome: Extract<ChildRunOutcome, { state: 'finished' }>,
+): { status: 'completed' | 'failed'; output: string; mutated?: true } => ({
+  ...childResultOf(agent, outcome),
+  ...(outcome.report !== undefined && outcome.report.changes.mutatingCalls > 0 ? { mutated: true as const } : {}),
+});
 
 export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildRunSpawner): AnyTool => {
   const byName = new Map(agents.map((agent) => [agent.name, agent]));
@@ -61,7 +87,7 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
       if (outcome.state === 'running') {
         return { status: 'pending', awaits: { kind: 'run', runId: outcome.runId, sessionId: outcome.sessionId, agent: agent.name }, wakeAt: ctx.deadlineAt };
       }
-      return childResultOf(agent.name, outcome);
+      return childToolResultOf(agent.name, outcome);
     },
     reconcile: async () => ({ outcome: 'not_applied', output: '' }),
   });

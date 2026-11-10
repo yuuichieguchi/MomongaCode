@@ -12,8 +12,8 @@ export { DAY_MS, archivableIds, duplicateMarks, isIdleBeyondWindow } from './upk
 export type { DuplicateKeepers, DuplicateMark, DuplicateNote, ForgetWindow, UpkeepNote } from './upkeep.ts';
 export { createCallRunTracker } from './call-ran.ts';
 export type { CallRunTracker } from './call-ran.ts';
-export { isVerifiedSuccess } from './verified-success.ts';
-export type { VerifiedSuccessInput } from './verified-success.ts';
+export { analyseVerifiedSuccess, isVerifiedSuccess } from './verified-success.ts';
+export type { PassingCheck, VerifiedSuccessAnalysis, VerifiedSuccessInput } from './verified-success.ts';
 export { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold, repositoryFactText, repositoryFactsOf } from './repository-facts.ts';
 export type { RepositoryFact, RepositoryFactsFold } from './repository-facts.ts';
 export { MIN_IDENTIFIER_BYTES, measureContribution } from './contribution.ts';

@@ -8,7 +8,7 @@ import { createMemoryPort, createReflector, isRunVerified } from '@momonga/runti
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { textStep } from '../worker/scripts.ts';
-import { bash, fileTool } from './reflection-fixture.ts';
+import { bash, fileTool, checked, conditionIdOf, verdictSeqOf } from './reflection-fixture.ts';
 import { HEAD, SHA, factsStore, seqOf } from './run-facts-fixture.ts';
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -18,7 +18,7 @@ const VERIFICATION = { commands: ['npm test'], manifests: ['package.json'] };
 
 const checkedRun = (project: string, steps: number): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
-  ...Array.from({ length: steps }, (_unused, index) => bash(`t${index}`, 'npm test', 0, 'y'.repeat(1_000))).flat(),
+  ...Array.from({ length: steps }, (_unused, index) => checked('npm test', 0, 'y'.repeat(1_000))).flat(),
   { type: 'tool.call', callId: 'call_m_1', providerCallId: 'call_m_1', name: 'MemorySave', kind: 'other', title: 'save', rawInput: {} },
 ];
 
@@ -89,7 +89,7 @@ describe('MemorySave binds its evidence through the journal thread (inventory ro
     expect(memory?.evidence).toEqual([
       { kind: 'file', project: env.project, path: 'src/a.ts', sha256: SHA },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: run.id, callId: `t${steps - 1}`, seq: seqOf(events, 'tool.completed', `t${steps - 1}`), command: 'npm test', exitCode: 0 },
+      { kind: 'check', runId: run.id, conditionId: conditionIdOf('npm test'), seq: verdictSeqOf(events, 'npm test'), command: 'npm test', exitCode: 0 },
     ]);
     expect(rows).toBe(0);
   });

@@ -11,7 +11,7 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
-import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, fileTool, finishClaimed, checked, conditionIdOf, verdictSeqOf } from './reflection-fixture.ts';
 
 type Dropped = { ordinal: number; text: string | null; cause: string; reason: string };
 
@@ -82,20 +82,16 @@ const setup = ({ enabled = false, facts = true, trusted = true }: Options = {}) 
 const VERIFIED_TWICE = (project: string): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SOURCE_SHA, access: 'write' }),
   ...fileTool('r1', 'Read', { path: path.join(project, 'package.json'), sha256: MANIFEST_SHA, access: 'read' }),
-  ...bash('t1', 'npm test', 0, 'ok'),
-  ...bash('t2', 'npm run lint', 0, 'ok'),
+  ...checked('npm test', 0, 'ok'),
+  ...checked('npm run lint', 0, 'ok'),
 ];
 
 const UNVERIFIED = (project: string): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SOURCE_SHA, access: 'write' }),
-  ...bash('t1', 'npm test', 1, 'failed'),
+  ...checked('npm test', 1, 'failed'),
 ];
 
-const seqOf = (store: RuntimeStore, runId: string, callId: string): number => {
-  const completed = store.readRunEvents(runId, 0, 1000).find((event) => event.type === 'tool.completed' && event.callId === callId);
-  if (completed === undefined) throw new Error(`no tool.completed for ${callId}`);
-  return completed.seq;
-};
+const seqOf = (store: RuntimeStore, runId: string, command: string): number => verdictSeqOf(store.readRunEvents(runId, 0, 1000), command);
 
 const candidatesOf = (env: ReturnType<typeof setup>, runId: string) =>
   env.api.memories
@@ -132,18 +128,18 @@ describe('repository facts with reflection off', () => {
     expect(evidence[NPM_TEST_FACT]).toEqual([
       { kind: 'file', project: env.project, path: 'package.json', sha256: MANIFEST_SHA },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: (await run).id, callId: 't1', seq: seqOf(env.store, (await run).id, 't1'), command: 'npm test', exitCode: 0 },
+      { kind: 'check', runId: (await run).id, conditionId: conditionIdOf('npm test'), seq: seqOf(env.store, (await run).id, 'npm test'), command: 'npm test', exitCode: 0 },
     ]);
     expect(evidence[LINT_FACT]).toEqual([
       { kind: 'file', project: env.project, path: 'package.json', sha256: MANIFEST_SHA },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: (await run).id, callId: 't2', seq: seqOf(env.store, (await run).id, 't2'), command: 'npm run lint', exitCode: 0 },
+      { kind: 'check', runId: (await run).id, conditionId: conditionIdOf('npm run lint'), seq: seqOf(env.store, (await run).id, 'npm run lint'), command: 'npm run lint', exitCode: 0 },
     ]);
   });
 
   it('drops a fact that is already a candidate with cause duplicate, and keeps the other', async () => {
     const env = setup({ enabled: false, facts: true });
-    await env.finishedRun([...fileTool('w0', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SOURCE_SHA, access: 'write' }), ...bash('t0', 'npm test', 0, 'ok')]);
+    await env.finishedRun([...fileTool('w0', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SOURCE_SHA, access: 'write' }), ...checked('npm test', 0, 'ok')]);
     await env.reflector().runOne(SIGNAL);
     const run = await env.finishedRun(VERIFIED_TWICE(env.project));
     await env.reflector().runOne(SIGNAL);

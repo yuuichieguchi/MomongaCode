@@ -16,7 +16,7 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
-import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -63,7 +63,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   const run = enqueue(store, session.id, 'change a');
   await finishClaimed(store, [
     ...fileTool('w1', 'Write', { path: path.join(project, 'a.ts'), sha256: 'a'.repeat(64), access: 'write' }),
-    ...bash('t1', 'npm test', 0, 'ok'),
+    ...checked('npm test', 0, 'ok'),
   ]);
   expect(store.reflection.get(run.id)?.state).toBe('pending');
   const evidenceRun = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } });

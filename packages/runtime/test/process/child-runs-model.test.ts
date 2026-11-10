@@ -34,7 +34,8 @@ const childRunsOver = (parentModel: string) => {
     },
     getRun: () => undefined,
     finalTextOf: async () => '',
-  } as unknown as Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes'>;
+    readRunEvents: () => [],
+  } as unknown as Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes' | 'readRunEvents'>;
   return { created, runs: createChildRuns({ store, modelViews: async () => S2 }) };
 };
 

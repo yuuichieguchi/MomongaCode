@@ -115,6 +115,7 @@ import { createUserInputPort } from './user-input.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
 import { createChildRuns } from './child-runs.ts';
+import { permissionRulesFor } from '../governance/rules.ts';
 import { createSkillsPort } from './skills-port.ts';
 import { runTeardown } from './teardown.ts';
 import type { TeardownStep } from './teardown.ts';
@@ -704,6 +705,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
+        permissionRules: (session) => permissionRulesFor({ store, settings: settingsComposition.settings, clock, home: canonicalHome }, session),
         userInput: createUserInputPort({
           tools: toolRuntime.port,
           policy: toolRuntime.userPolicy,

@@ -9,7 +9,7 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
-import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
 
 type Api = {
   memories: RuntimeStore['memories'] & { candidates(): MemoryRecord[] };
@@ -65,8 +65,8 @@ const setup = () => {
 const VERIFIED_TWICE = (project: string): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SOURCE_SHA, access: 'write' }),
   ...fileTool('r1', 'Read', { path: path.join(project, 'package.json'), sha256: MANIFEST_SHA, access: 'read' }),
-  ...bash('t1', 'npm test', 0, 'ok'),
-  ...bash('t2', 'npm run lint', 0, 'ok'),
+  ...checked('npm test', 0, 'ok'),
+  ...checked('npm run lint', 0, 'ok'),
 ];
 
 

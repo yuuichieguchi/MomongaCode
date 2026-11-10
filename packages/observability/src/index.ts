@@ -3,6 +3,7 @@ export { BODY_PURGE_INTERVAL_MS, startBodyPurge } from './body-purge.ts';
 export type { BodyPurge, BodyPurgeOptions, BodyPurgeTimers } from './body-purge.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
+export { buildRunReport } from './run-report.ts';
 export { buildCostBreakdown, formatCostBreakdown } from './cost-breakdown.ts';
 export type { BreakdownAnatomy, BreakdownCall, BreakdownPrefix, CauseCounts, CostBreakdown, CostBreakdownOptions, InconsistentUsage, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
 export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, billedUsageOf, pageBilledCalls } from './billed-calls.ts';

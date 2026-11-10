@@ -71,11 +71,14 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
   }
   return {
     createSession: async (input) => ({ id: (await client.createSession({ cwd: input.cwd, env, permissionMode: input.permissionMode, model: input.model })).session.id }),
-    createRun: async (sessionId, input) => ({ id: (await client.createRun(sessionId, input.input, { timeoutMs: input.timeoutMs, limits: input.limits })).run.id }),
+    createRun: async (sessionId, input) => ({
+      id: (await client.createRun(sessionId, input.input, { timeoutMs: input.timeoutMs, limits: input.limits, ...(input.mandate === undefined ? {} : { mandate: input.mandate }) })).run.id,
+    }),
     events,
     runOf: async (runId) => {
       const run = await client.getRun(runId);
       const session = await client.getSession(run.sessionId);
+      if (run.report === undefined) throw new Error(`the runtime returned run ${run.id} without its report`);
       return {
         sessionId: run.sessionId,
         status: run.status,
@@ -92,6 +95,7 @@ export const benchRunApi = (client: BenchClient, env: Readonly<Record<string, st
         agent: run.agent ?? MAIN_AGENT,
         mode: session.permissionMode,
         model: session.model,
+        declared: run.report.declaration !== null && run.report.declaration.conditions.length > 0,
       };
     },
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,

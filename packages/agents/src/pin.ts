@@ -1,4 +1,5 @@
 import { isRecord } from '@momonga/foundation';
+import { readMandate } from '@momonga/protocol';
 import type { AgentDefinition, AgentPin } from './types.ts';
 
 export const pinOf = (agent: AgentDefinition): AgentPin => ({
@@ -7,6 +8,7 @@ export const pinOf = (agent: AgentDefinition): AgentPin => ({
   prompt: agent.prompt,
   ...(agent.tools === undefined ? {} : { tools: [...agent.tools] }),
   ...(agent.model === undefined ? {} : { model: agent.model }),
+  ...(agent.mandate === undefined ? {} : { mandate: agent.mandate }),
 });
 
 export const readAgentPin = (pins: Record<string, unknown>): AgentPin | undefined => {
@@ -15,7 +17,7 @@ export const readAgentPin = (pins: Record<string, unknown>): AgentPin | undefine
   if (!isRecord(value) || typeof value['name'] !== 'string' || typeof value['description'] !== 'string' || typeof value['prompt'] !== 'string') {
     throw new TypeError('the agent pin of this run is malformed');
   }
-  const { tools, model } = value;
+  const { tools, model, mandate } = value;
   if (tools !== undefined && !(Array.isArray(tools) && tools.every((entry): entry is string => typeof entry === 'string'))) {
     throw new TypeError('the agent pin of this run holds a malformed tools list');
   }
@@ -26,6 +28,7 @@ export const readAgentPin = (pins: Record<string, unknown>): AgentPin | undefine
     prompt: value['prompt'],
     ...(tools === undefined ? {} : { tools: [...(tools as string[])] }),
     ...(model === undefined ? {} : { model }),
+    ...(mandate === undefined ? {} : { mandate: readMandate(mandate, `the agent ${value['name']}`) }),
   };
 };
 

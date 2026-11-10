@@ -8,7 +8,8 @@ import type { Clock, Redactor, RolePort } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
-import type { RuntimeStore } from '@momonga/store';
+import type { RuntimeStore, Session } from '@momonga/store';
+import type { PermissionRule } from '@momonga/config';
 import { asError } from '../process/as-error.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
@@ -50,6 +51,7 @@ export type RunServiceOptions = {
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
@@ -140,6 +142,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     sessionReadSettings: options.sessionReadSettings,
     skills: options.skills,
     agents: options.agents,
+    permissionRules: options.permissionRules,
     userInput: options.userInput,
     evidenceRun: options.evidenceRun,
     isDraining: () => draining,

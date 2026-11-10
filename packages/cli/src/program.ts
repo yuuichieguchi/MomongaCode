@@ -2,7 +2,7 @@ import { Command, CommanderError, InvalidArgumentError, Option } from 'commander
 import { currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
-import type { PermissionMode } from '@momonga/protocol';
+import type { Mandate, PermissionMode } from '@momonga/protocol';
 import { serveAcp } from './acp/serve.ts';
 import { daemonStart, daemonStatus, daemonStop } from './commands/daemon.ts';
 import { registerProductCommands } from './commands/register.ts';
@@ -12,6 +12,7 @@ import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgrou
 import { probeModel } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
+import { showReport } from './commands/report.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
@@ -34,6 +35,8 @@ type RootOptions = {
   dangerouslySkipPermissions?: true;
   skill?: string;
   image: string[];
+  until: string[];
+  require: string[];
   verbose?: true;
   resume?: string | true;
   continue?: true;
@@ -63,6 +66,18 @@ const integerArgument =
   };
 
 const collectValues = (value: string, previous: string[]): string[] => [...previous, value];
+
+const mandateOf = (options: Pick<RootOptions, 'until' | 'require'>): { mandate?: Mandate } =>
+  options.until.length === 0 && options.require.length === 0
+    ? {}
+    : {
+        mandate: {
+          completion: {
+            ...(options.until.length === 0 ? {} : { conditions: options.until.map((command) => ({ command })) }),
+            ...(options.require.length === 0 ? {} : { requirements: options.require }),
+          },
+        },
+      };
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
 
@@ -96,6 +111,8 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
+    .option('--until <command>', 'with --print: a shell command that must exit 0 before the run counts as complete; repeat for several. The runtime runs it after the model stops, never the model, so it must only check and change nothing', collectValues, [])
+    .option('--require <text>', 'with --print: a completion requirement that has no mechanical check; the report lists it as not run; repeat for several', collectValues, [])
     .option('--verbose', 'print tool activity to stderr')
     .addOption(new Option('--resume [session-id]', 'reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list').conflicts('continue'))
     .option('--continue', 'reopen the newest conversation of this folder')
@@ -119,7 +136,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
             await gateway.close();
           }
         };
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...mandateOf(options), ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
@@ -157,6 +174,14 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .description('cancel a run; the running run of this directory when no id is given')
     .action(async (runId: string | undefined) => {
       deps.complete(await cancelRun(ports, await pathsOf(ports), runId));
+    });
+
+  program
+    .command('report [run-id]')
+    .description('show the verification report of a run: the declared completion conditions, what passed, failed or was not run, and the residual risk; the latest run of this directory when no id is given')
+    .option('--json', 'print the report as JSON')
+    .action(async (runId: string | undefined, options: { json?: true }) => {
+      deps.complete(await showReport(ports, await pathsOf(ports), runId, options.json === true));
     });
 
   program

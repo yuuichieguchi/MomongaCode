@@ -12,10 +12,11 @@ import { modelsCommand } from './models.ts';
 import { permissionsCommand } from './permissions.ts';
 import { markersCommand } from './markers.ts';
 import { memoryCommand } from './memory.ts';
+import { reportCommand } from './report.ts';
 import { resumeCommand } from './resume.ts';
 import { ruleCommand } from './rule.ts';
 import { shellSlashCommands } from './shell-commands.ts';
 import { themeCommand } from './theme.ts';
 import { tuiCommand } from './tui.ts';
 
-export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, ...shellSlashCommands];
+export const DEFAULT_SLASH_COMMANDS: readonly SlashCommand[] = [...BUILTIN_SLASH_COMMANDS, clearCommand, compactCommand, resumeCommand, autoModeCommand, markersCommand, memoryCommand, ruleCommand, tuiCommand, themeCommand, keybindingsCommand, configCommand, permissionsCommand, hooksCommand, mcpCommand, modelsCommand, initCommand, reportCommand, ...shellSlashCommands];

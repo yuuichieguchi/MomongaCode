@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { readinessShownText } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, ModelViews, Readiness } from '@momonga/protocol';
+import { readMandate, readinessShownText } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, Mandate, ModelViews, Readiness } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -83,6 +83,19 @@ const viaRunApi = async <T>(call: Promise<T>): Promise<T> => {
     return await call;
   } catch (error) {
     throw asRequestError(error);
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const mandateOfMeta = (meta: unknown): { mandate?: Mandate } => {
+  const own = isRecord(meta) ? meta['momonga'] : undefined;
+  const declared = isRecord(own) ? own['mandate'] : undefined;
+  if (declared === undefined) return {};
+  try {
+    return { mandate: readMandate(declared, 'the prompt') };
+  } catch (error) {
+    throw RequestError.invalidParams({ field: '_meta.momonga.mandate' }, error instanceof Error ? error.message : String(error));
   }
 };
 
@@ -478,6 +491,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     const session = sessionOf(params.sessionId);
     if (session.turn !== undefined) throw RequestError.invalidRequest({ sessionId: session.id }, `session ${session.id} is already working on a prompt`);
     const prompt = promptInputOf(params.prompt, session.skillNames);
+    const declared = mandateOfMeta(params._meta);
     const turn: Turn = { runId: undefined, cancelRequested: false };
     session.turn = turn;
     const cancelTurn = (): void => {
@@ -486,7 +500,7 @@ export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
     };
     signal.addEventListener('abort', cancelTurn, { once: true });
     try {
-      const { run } = await viaRunApi(deps.runtime.createRun(session.id, prompt.input, prompt.skill === undefined ? {} : { skill: prompt.skill }));
+      const { run } = await viaRunApi(deps.runtime.createRun(session.id, prompt.input, { ...(prompt.skill === undefined ? {} : { skill: prompt.skill }), ...declared }));
       turn.runId = run.id;
       if (turn.cancelRequested) await durably(session, () => deps.runtime.cancel(run.id));
       let finished: RunView;

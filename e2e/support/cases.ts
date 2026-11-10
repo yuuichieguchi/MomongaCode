@@ -9,6 +9,7 @@ export type E2eCaseFile =
   | 'mcp-orphan.test.ts'
   | 'multi-turn.test.ts'
   | 'supervisor.test.ts'
+  | 'verification-kill.test.ts'
   | 'logs.test.ts'
   | 'd-approvals.test.ts'
   | 'e-sse-reconnect.test.ts'
@@ -74,6 +75,7 @@ export const E2E_CASES = [
   { id: 's7', file: 'supervisor.test.ts', title: 'S7 exit 75 is not a loop', needsBash: false },
   { id: 's8', file: 'supervisor.test.ts', title: 'S8 ghost lock is taken over', needsBash: false },
   { id: 's9', file: 'supervisor.test.ts', title: 'S9 graceful shutdown order', needsBash: false },
+  { id: 'v-kill-during-check', file: 'verification-kill.test.ts', title: 'v: after a runtime SIGKILL during a completion check, recovery reaps the check, runs it once more, and completes on that second result', needsBash: true },
   { id: 's10', file: 'supervisor.test.ts', title: 'S10 a second supervisor for a generation that is held abandons its start and disturbs nothing', needsBash: false },
   { id: 'logs-layout', file: 'logs.test.ts', title: 'logs layout', needsBash: false },
   { id: 'logs-raw-output', file: 'logs.test.ts', title: 'raw child output goes to supervisor.log only', needsBash: false },

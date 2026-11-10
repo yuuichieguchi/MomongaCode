@@ -25,7 +25,7 @@ const fact = (runId: string, ordinal: number, command: string): SaveCandidateInp
   runId,
   ordinal,
   kind: 'procedure',
-  evidence: [{ kind: 'check', runId, callId: `t${ordinal}`, seq: 4 + ordinal, command, exitCode: 0 }],
+  evidence: [{ kind: 'check', runId, conditionId: `t${ordinal}`, seq: 4 + ordinal, command, exitCode: 0 }],
 });
 
 const started = () => {
@@ -49,7 +49,7 @@ describe('a failed reflection job keeps the candidates code produced', () => {
       ['Run `npm test` to verify a change in this repository.', 'procedure', 'candidate', { kind: 'reflection', sessionId: expect.any(String), runId: run.id, ordinal: 0 }],
       ['Run `npm run lint` to verify a change in this repository.', 'procedure', 'candidate', { kind: 'reflection', sessionId: expect.any(String), runId: run.id, ordinal: 1 }],
     ]);
-    expect(saved[0]?.evidence).toEqual([{ kind: 'check', runId: run.id, callId: 't0', seq: 4, command: 'npm test', exitCode: 0 }]);
+    expect(saved[0]?.evidence).toEqual([{ kind: 'check', runId: run.id, conditionId: 't0', seq: 4, command: 'npm test', exitCode: 0 }]);
   });
 
   it('stores the candidates of a failure that made no model charge', () => {

@@ -142,7 +142,7 @@ export const evidenceHandler = (reader: VisitingReader): JournalHandler => (requ
   const runId = textOf(request, 'runId', 'evidence');
   const { onlyCommand } = request;
   if (onlyCommand !== undefined && typeof onlyCommand !== 'string') throw new TypeError('an evidence request must carry onlyCommand as a string when it carries one');
-  const fold = createEvidenceFold({ paths: textsOf(request, 'paths', 'evidence'), verificationCommands: textsOf(request, 'verificationCommands', 'evidence'), onlyCommand });
+  const fold = createEvidenceFold({ paths: textsOf(request, 'paths', 'evidence'), onlyCommand });
   const run = reader.visitRun(runId, EVIDENCE_EVENT_TYPES, fold.add);
   return { lastSeq: run.lastSeq, ...fold.finish() };
 };

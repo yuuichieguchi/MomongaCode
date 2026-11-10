@@ -30,6 +30,7 @@ export type ToolResult = {
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
+  mutated?: true;
   command?: string;
   windowShared?: true;
   detached?: true;

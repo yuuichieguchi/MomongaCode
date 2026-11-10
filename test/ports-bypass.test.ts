@@ -89,6 +89,7 @@ const PRESENT_BYPASSES_REASON = 'a present bypass of the Timing, Random or FileS
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/context.ts': { 'randomUUID': 1 },
   'packages/cli/src/eval/context-effects.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
+  'packages/cli/src/eval/workspace-probe.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/config/src/append-rule.ts': { 'node:fs': 1 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 1 },

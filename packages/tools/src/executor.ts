@@ -624,6 +624,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.skill === undefined ? {} : { skill: result.skill }),
       ...(result.toolsLoaded === undefined ? {} : { toolsLoaded: result.toolsLoaded }),
       ...(result.files === undefined ? {} : { files: result.files }),
+      ...(result.mutated === undefined ? {} : { mutated: result.mutated }),
       ...(result.command === undefined ? {} : { command: result.command }),
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),

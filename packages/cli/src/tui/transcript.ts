@@ -5,7 +5,7 @@ import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
-import { classificationLevel, describeClassification, describeHook, hookLevel } from '../policy-messages.ts';
+import { classificationLevel, describeClassification, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import type { ElicitationFlow } from '../elicit/flow.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
@@ -61,7 +61,7 @@ export type Usage = { inputTokens: number; outputTokens: number; totalTokens: nu
 
 export const compactedText = (tokensBefore: number, tokensAfter: number): string => `Compacted: ${formatTokens(tokensBefore)} -> ${formatTokens(tokensAfter)} tokens`;
 
-export type PhaseKind = 'queued' | 'model' | 'thinking' | 'responding' | 'tool' | 'classifying' | 'hook' | 'compacting' | 'retry' | 'awaited';
+export type PhaseKind = 'queued' | 'model' | 'thinking' | 'responding' | 'tool' | 'classifying' | 'hook' | 'verifying' | 'compacting' | 'retry' | 'awaited';
 
 export type RunPhase = { kind: PhaseKind; text: string; startedAt: number };
 
@@ -309,6 +309,9 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'hook.completed':
       appendEntry(store, { kind: 'notice', level: hookLevel(event), text: describeHook(event).map(escapeTerminalLine).join('\n') });
       return;
+    case 'verification.completed':
+      appendEntry(store, { kind: 'notice', level: verificationLevel(event), text: escapeTerminalLine(describeVerification(event)) });
+      return;
     case 'tool.permission.classified':
       appendEntry(store, { kind: 'notice', level: classificationLevel(event), text: escapeTerminalLine(describeClassification(event, toolOf(store, event.callId)?.title ?? event.callId)) });
       return;
@@ -410,6 +413,9 @@ const foldPhase = (store: TranscriptStore, event: PublicRunEvent): void => {
     case 'hook.started':
       begin('hook', `running hook ${event.event}`);
       return;
+    case 'verification.started':
+      begin('verifying', `checking the completion condition ${escapeTerminalLine(event.command)}`);
+      return;
     case 'context.compacting':
       begin('compacting', 'compacting the conversation');
       return;
@@ -418,6 +424,7 @@ const foldPhase = (store: TranscriptStore, event: PublicRunEvent): void => {
       return;
     case 'tool.permission.classified':
     case 'hook.completed':
+    case 'verification.completed':
     case 'context.compacted':
     case 'context.compaction_rejected':
     case 'model.responded':

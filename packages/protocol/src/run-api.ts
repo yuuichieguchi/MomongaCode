@@ -1,5 +1,6 @@
 import type { Stored } from './stored-value.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
+import { CONDITION_SOURCES, CONDITION_STATES, CONDITION_WHENS, NOT_RUN_REASONS, RESIDUAL_RISK_CODES, VERIFICATION_OUTCOMES } from './completion.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
@@ -145,6 +146,71 @@ const usage = closed({ inputTokens: nonNegativeInteger, outputTokens: nonNegativ
   'outputTokens',
   'totalTokens',
 ]);
+
+const conditionDeclaration = closed(
+  {
+    id: { type: 'string', minLength: 1 },
+    command: { type: 'string', minLength: 1 },
+    timeoutMs: { type: 'integer', minimum: 1 },
+    when: enumOf(CONDITION_WHENS),
+  },
+  ['command'],
+);
+
+export const COMPLETION_DECLARATION_SCHEMA: JsonSchema = closed(
+  {
+    conditions: { type: 'array', items: conditionDeclaration },
+    requirements: { type: 'array', items: { type: 'string', minLength: 1 } },
+    inherit: boolean,
+  },
+  [],
+);
+
+const mandate = closed({ completion: COMPLETION_DECLARATION_SCHEMA }, []);
+
+const pinnedCondition = closed(
+  { id: string, command: string, when: enumOf(CONDITION_WHENS), source: enumOf(CONDITION_SOURCES), timeoutMs: nonNegativeInteger },
+  ['id', 'command', 'when', 'source'],
+);
+
+const runReport = closed(
+  {
+    runId: string,
+    status: enumOf(RUN_STATUSES),
+    stopReason: enumOf(STOP_REASONS),
+    durationMs: nonNegativeInteger,
+    declaration: nullable(
+      closed({ conditions: { type: 'array', items: pinnedCondition }, requirements: { type: 'array', items: string } }, ['conditions', 'requirements']),
+    ),
+    changes: closed(
+      {
+        files: { type: 'array', items: closed({ path: string, sha256: string, lastSeq: nonNegativeInteger }, ['path', 'lastSeq']) },
+        mutatingCalls: nonNegativeInteger,
+      },
+      ['files', 'mutatingCalls'],
+    ),
+    conditions: {
+      type: 'array',
+      items: closed(
+        {
+          id: string,
+          command: string,
+          state: enumOf(CONDITION_STATES),
+          rounds: nonNegativeInteger,
+          last: closed(
+            { seq: nonNegativeInteger, exitCode: integer, durationMs: nonNegativeInteger, mutationSeq: nonNegativeInteger, handle: string },
+            ['seq', 'durationMs', 'mutationSeq'],
+          ),
+        },
+        ['id', 'command', 'state', 'rounds'],
+      ),
+    },
+    notRun: { type: 'array', items: closed({ what: string, reason: enumOf(NOT_RUN_REASONS) }, ['what', 'reason']) },
+    residualRisk: { type: 'array', items: closed({ code: enumOf(RESIDUAL_RISK_CODES), count: nonNegativeInteger }, ['code', 'count']) },
+    modelChecks: { type: 'array', items: closed({ command: string, exitCode: integer, seq: nonNegativeInteger }, ['command', 'exitCode', 'seq']) },
+  },
+  ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
+);
 
 const runLimits = closed(
   {
@@ -477,6 +543,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       handle: string,
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
       files: toolFiles,
+      mutated: { type: 'boolean', const: true },
       command: string,
       windowShared: { type: 'boolean', const: true },
       memories: { type: 'array', items: string },
@@ -488,6 +555,25 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       diffOmitted: string,
     },
     required: ['callId', 'status', 'output'],
+  },
+  'verification.started': {
+    properties: { round: nonNegativeInteger, conditionId: string, command: string, mutationSeq: nonNegativeInteger, attempt: integer },
+    required: ['round', 'conditionId', 'command', 'mutationSeq', 'attempt'],
+  },
+  'verification.completed': {
+    properties: {
+      round: nonNegativeInteger,
+      conditionId: string,
+      command: string,
+      outcome: enumOf(VERIFICATION_OUTCOMES),
+      exitCode: integer,
+      durationMs: nonNegativeInteger,
+      output: string,
+      truncated: boolean,
+      handle: string,
+      mutationSeq: nonNegativeInteger,
+    },
+    required: ['round', 'conditionId', 'command', 'outcome', 'durationMs', 'output', 'mutationSeq'],
   },
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
@@ -864,12 +950,12 @@ const memoryEvidence: JsonSchema = {
       {
         kind: constant('check'),
         runId: string,
-        callId: string,
+        conditionId: string,
         seq: nonNegativeInteger,
         command: string,
         exitCode: integer,
       },
-      ['kind', 'runId', 'callId', 'seq', 'command', 'exitCode'],
+      ['kind', 'runId', 'conditionId', 'seq', 'command', 'exitCode'],
     ),
     unknownKind,
   ],
@@ -1208,6 +1294,7 @@ const runView = closed(
     parentCallId: nullable(string),
     origin: storedEnumOf(MEMORY_ORIGINS),
     agent: string,
+    report: runReport,
   },
   [
     'id',
@@ -1272,6 +1359,7 @@ export const RUN_API_SCHEMAS = {
         skill: { type: 'string', minLength: 1 },
         images: { type: 'array', items: imageAttachment },
         attachMentions: boolean,
+        mandate,
       },
       ['input'],
     ),

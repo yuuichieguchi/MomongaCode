@@ -3,14 +3,19 @@ import {
   LOOP_GROUPS_KEPT,
   STOP_HOOK_FEEDBACK_PREFIX,
   STOP_REASONS,
+  completionMutates,
   emptyWorkingFacts,
   findDanglingOutput,
+  initialVerificationState,
+  reconciliationMutates,
   userMessageContent,
   withCommand,
   withItemEvents,
   withMessage,
   withReplacedThrough,
   withTaskText,
+  withVerificationCompleted,
+  withVerificationStarted,
   withWritten,
 } from '@momonga/protocol';
 import type { InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
@@ -43,6 +48,8 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   lastCompactionSeq: 0,
   callResults: {},
   unknownEffects: {},
+  lastMutationSeq: 0,
+  verification: initialVerificationState(),
   formsSinceCompaction: {},
   activatedSkills: [],
   loadedTools: [],
@@ -89,6 +96,12 @@ const requireCall = (state: RunState, callId: string, eventType: string): Pendin
 const withCall = (state: RunState, callId: string, eventType: string, update: (call: PendingCall) => PendingCall): RunState => ({
   ...state,
   pendingCalls: { ...state.pendingCalls, [callId]: update(requireCall(state, callId, eventType)) },
+});
+
+const mutationFactsOf = (call: PendingCall) => ({
+  ...(call.sideEffect === undefined ? {} : { sideEffect: call.sideEffect }),
+  ...(call.basis === undefined ? {} : { basis: call.basis }),
+  rejected: call.resolution?.kind === 'reject_once' || call.resolution?.kind === 'reject_always',
 });
 
 const outputTextOf = (output: unknown): string => (typeof output === 'string' ? output : canonicalJson(output));
@@ -204,11 +217,13 @@ const withReconciledFacts = (facts: WorkingFacts, event: Extract<RunEvent, { typ
 };
 
 const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
+  const call = requireCall(state, event.callId, event.type);
   const finished = finishCall(state, event.callId, event.type, 'reconciled', event.output, event.seq);
   const asks = event.outcome === 'unknown' && event.interrupted === undefined;
   return {
     ...finished,
     workingFacts: withReconciledFacts(finished.workingFacts, event),
+    lastMutationSeq: reconciliationMutates(mutationFactsOf(call), event.outcome) ? event.seq : finished.lastMutationSeq,
     ...(asks ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
   };
 };
@@ -223,7 +238,11 @@ const withUnknownAsk = (state: RunState, approvalId: string, change: (effect: Un
 const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.completed' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
   const finished = finishCall(state, event.callId, event.type, 'completed', event.output, event.seq, event.handle);
-  return { ...finished, workingFacts: withToolFacts(finished.workingFacts, call, event) };
+  return {
+    ...finished,
+    workingFacts: withToolFacts(finished.workingFacts, call, event),
+    lastMutationSeq: completionMutates(mutationFactsOf(call), event) ? event.seq : finished.lastMutationSeq,
+  };
 };
 
 const withoutInFlight = (state: RunState): RunState => {
@@ -434,7 +453,13 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         ...state,
         pendingCalls: {
           ...state.pendingCalls,
-          [event.callId]: { name: event.name, providerCallId: event.providerCallId, arguments: event.rawInput, status: 'requested' },
+          [event.callId]: {
+            name: event.name,
+            providerCallId: event.providerCallId,
+            arguments: event.rawInput,
+            status: 'requested',
+            ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
+          },
         },
         toolCallCounts: { ...state.toolCallCounts, [key]: (state.toolCallCounts[key] ?? 0) + 1 },
       };
@@ -510,7 +535,11 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'mcp.authorization.required':
       return state;
     case 'tool.started':
-      return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey }));
+      return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey, ...(event.basis === undefined ? {} : { basis: event.basis }) }));
+    case 'verification.started':
+      return { ...state, verification: withVerificationStarted(state.verification, event) };
+    case 'verification.completed':
+      return { ...state, verification: withVerificationCompleted(state.verification, event) };
     case 'tool.completed': {
       const completed = completeCall(state, event);
       return { ...completed, callResults: { ...completed.callResults, [event.callId]: event.status } };

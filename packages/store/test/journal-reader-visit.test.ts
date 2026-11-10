@@ -94,7 +94,7 @@ describe('visitRun: the reader the new request kinds fold through', () => {
 
 type JournalFacts = {
   verdict(request: { runId: string; commands: readonly string[]; manifests: readonly string[] }): Promise<unknown>;
-  evidence(request: { runId: string; paths: readonly string[]; verificationCommands: readonly string[] }): Promise<unknown>;
+  evidence(request: { runId: string; paths: readonly string[] }): Promise<unknown>;
   reflectionInput(request: { runId: string; project: string; capabilities: unknown }): Promise<unknown>;
 };
 
@@ -144,7 +144,7 @@ describe('store.journalFacts: the main thread reaches the new kinds only through
     const facts = journalFactsOf(h.store);
     const requests = {
       verdict: () => facts.verdict({ runId: run.id, commands: [], manifests: [] }),
-      evidence: () => facts.evidence({ runId: run.id, paths: [], verificationCommands: [] }),
+      evidence: () => facts.evidence({ runId: run.id, paths: [] }),
       reflectionInput: () => facts.reflectionInput({ runId: run.id, project: '/work/a', capabilities: {} }),
     };
 

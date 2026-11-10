@@ -335,7 +335,7 @@ export type AutoModeSettings = { classifier?: string };
 
 export type MemorySettings = { reflection?: { enabled?: boolean; maxTokens?: number }; forgetAfterDays?: number; repositoryFacts?: boolean };
 
-export type VerificationSettings = { commands?: string[]; manifests?: string[] };
+export type VerificationSettings = { commands?: string[]; manifests?: string[]; required?: boolean };
 
 export type ContextSettings = {
   adaptiveBudget?: boolean;

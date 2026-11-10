@@ -246,6 +246,20 @@ describe('session/prompt', () => {
     await harness.peer.close();
   });
 
+  it('sends the completion declaration a prompt carries in _meta.momonga.mandate with the run, and refuses a malformed one', async () => {
+    const harness = startAgent();
+    const sessionId = await open(harness);
+    harness.scripts.set('run-1', async () => finishedRun());
+    const mandate = { completion: { conditions: [{ command: 'npm test' }], requirements: ['the docs mention it'] } };
+
+    await harness.peer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'fix it' }], _meta: { momonga: { mandate } } });
+    const refused = await harness.peer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'fix it' }], _meta: { momonga: { mandate: { completion: { conditions: [{ judge: 'model' }] } } } } });
+
+    expect(errorOf(refused).code).toBe(-32602);
+    expect(harness.runtime.calls.filter((call) => call.startsWith('createRun'))).toEqual([`createRun ${sessionId} ${JSON.stringify({ input: 'fix it', mandate })}`]);
+    await harness.peer.close();
+  });
+
   it('runs a slash prompt that names a skill of the session with that skill', async () => {
     const harness = startAgent();
     harness.runtime.skillList = { skills: [{ name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/w/SKILL.md' }], warnings: [] };

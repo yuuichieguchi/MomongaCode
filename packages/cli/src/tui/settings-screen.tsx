@@ -72,6 +72,7 @@ export const SETTING_ROWS: Readonly<Record<string, SettingPresentation>> = {
   'memory.repositoryFacts': { label: 'Repository facts', section: 'Memory', appliesNow: false },
   'verification.commands': { label: 'Verification commands', section: 'Verification', appliesNow: false },
   'verification.manifests': { label: 'Verification manifests', section: 'Verification', appliesNow: false },
+  'verification.required': { label: 'Require a completion condition', section: 'Verification', appliesNow: false },
   enableAllProjectMcpServers: { label: 'Enable every server of .mcp.json', section: 'MCP', appliesNow: false },
   'mcp.toolIdleTimeoutMs': { label: 'Tool idle timeout (ms)', section: 'MCP', appliesNow: false },
   'mcp.toolTotalTimeoutMs': { label: 'Tool total timeout (ms)', section: 'MCP', appliesNow: false },

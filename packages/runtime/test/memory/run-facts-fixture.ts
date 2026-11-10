@@ -17,7 +17,7 @@ export const HEAD = '0123456789abcdef0123456789abcdef01234567';
 
 export type RunFactsClient = JournalThreadClient & {
   verdict(request: { runId: string; commands: readonly string[]; manifests: readonly string[] }): Promise<Readonly<Record<string, unknown>>>;
-  evidence(request: { runId: string; paths: readonly string[]; verificationCommands: readonly string[]; onlyCommand?: string }): Promise<Readonly<Record<string, unknown>>>;
+  evidence(request: { runId: string; paths: readonly string[]; onlyCommand?: string }): Promise<Readonly<Record<string, unknown>>>;
   reflectionInput(request: { runId: string; project: string; capabilities: unknown }): Promise<Readonly<Record<string, unknown>>>;
   inheritPlan(request: { runId: string; mode: string }): Promise<Readonly<Record<string, unknown>>>;
   inheritedWindow(request: { runId: string; windowTokens: number; floorTokens: number }): Promise<Readonly<Record<string, unknown>>>;

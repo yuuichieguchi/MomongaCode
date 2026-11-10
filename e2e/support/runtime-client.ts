@@ -1,6 +1,6 @@
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
-import type { AnsweredByView, PermissionMode, ReportPage, RunHealth } from '@momonga/protocol';
+import type { AnsweredByView, PermissionMode, ReportPage, RunHealth, Mandate } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
@@ -31,7 +31,7 @@ export type CreateSessionOptions = { permissionMode?: PermissionMode };
 
 export type RawResponse = { readonly status: number; readonly body: unknown };
 
-export type CreateRunOptions = { history?: 'inherit' | 'fresh' };
+export type CreateRunOptions = { history?: 'inherit' | 'fresh'; mandate?: Mandate };
 
 export type RuntimeClient = {
   createSession(options?: CreateSessionOptions): Promise<{ session: SessionView }>;

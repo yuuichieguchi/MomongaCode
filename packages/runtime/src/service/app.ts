@@ -3,15 +3,19 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
-import type { AutoFitKey, CredentialRules } from '@momonga/config';
+import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
+import { denyingRuleFor } from '@momonga/policy';
+import { buildRunReport } from '@momonga/observability';
+import { shellCommandSubject } from '@momonga/tools';
+import { readAllRunEvents } from '../process/run-events.ts';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
-import type { Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
+import type { Mandate, Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
+import { JournalThreadError, inboxRowView, knownValue, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
 import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
@@ -89,6 +93,7 @@ export type RunAppDeps = {
   sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
   userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
@@ -394,6 +399,20 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return deps.userInput.attach(session, body.input, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
   };
 
+  const refuseDeniedConditions = async (session: Session, mandate: Mandate | undefined): Promise<void> => {
+    const conditions = mandate?.completion?.conditions ?? [];
+    if (conditions.length === 0) return;
+    const rules = await deps.permissionRules(session);
+    for (const condition of conditions) {
+      const rule = denyingRuleFor(rules, knownValue(session.permissionMode, `the permission mode of session ${session.id}`), shellCommandSubject(condition.command));
+      if (rule !== undefined) {
+        throw invalidRequest(`the completion condition ${JSON.stringify(condition.command)} is denied by the permission rule ${rule.text} (${rule.origin}: ${rule.source})`, 'mandate');
+      }
+    }
+  };
+
+  const reportedView = (run: Run) => ({ ...toRunView(run), report: buildRunReport(readAllRunEvents(store, run.id)) });
+
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
@@ -405,7 +424,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
       if (idempotency === undefined || found === undefined) return undefined;
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
-      return json({ run: toRunView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
+      return json({ run: reportedView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
     const replayWhileRefusing = (): Response | undefined => {
       const refusal = newWorkRefusal();
@@ -425,6 +444,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
     const images = [...(body.images ?? []), ...attached.images];
+    await refuseDeniedConditions(session, body.mandate);
     const refusedDuringChecks = replayWhileRefusing();
     if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
@@ -437,10 +457,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       ...(skill === undefined ? {} : { skill }),
       ...(images.length === 0 ? {} : { images }),
       ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
+      ...(body.mandate === undefined ? {} : { mandate: body.mandate }),
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
-    return json({ run: toRunView(result.run) }, 202, {
+    return json({ run: reportedView(result.run) }, 202, {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
@@ -519,7 +540,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
 
-  const getRun: Handler = (context) => json({ run: toRunView(requireRun(context.req.param('id') ?? '')) });
+  const getRun: Handler = (context) => json({ run: reportedView(requireRun(context.req.param('id') ?? '')) });
 
   const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
@@ -527,7 +548,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
     if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
-    return json({ run: toRunView(result.run) }, settled ? 200 : 202);
+    return json({ run: reportedView(result.run) }, settled ? 200 : 202);
   };
 
   const runTrace: Handler = async (context) => {
