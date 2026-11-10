@@ -161,6 +161,7 @@ const unexpected = (name: string) => (): never => {
 
 export const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
   id: 'approval-1',
+  kind: 'permission',
   runId: 'run-1',
   callId: 'call-1',
   status: 'pending',
@@ -342,6 +343,7 @@ export const fakeRuntime = (): FakeRuntime => {
     ignoreMarker: unexpected('ignoreMarker'),
     ruleHistory: unexpected('ruleHistory'),
     policyGovernance: unexpected('policyGovernance'),
+    putRuleVerdict: unexpected('putRuleVerdict'),
     guidelines: unexpected('guidelines'),
     adoptGuideline: unexpected('adoptGuideline'),
     rollbackGuideline: unexpected('rollbackGuideline'),

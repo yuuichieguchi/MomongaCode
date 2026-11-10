@@ -1,3 +1,4 @@
+import type { RuleVerdictStore } from './rule-verdicts.ts';
 import type { Stored, UNKNOWN_VALUE } from './rows.ts';
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
@@ -276,12 +277,13 @@ type ApprovalRecord = {
 };
 
 export type Approval =
-  | (ApprovalRecord & { kind: 'permission' })
+  | (ApprovalRecord & { kind: 'permission' | 'unknown_effect' })
   | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number })
   | (ApprovalRecord & { kind: typeof UNKNOWN_VALUE; expiresAt?: number });
 
 export type ApprovalView = {
   id: string;
+  kind: 'permission' | 'unknown_effect';
   runId: string;
   callId: string;
   status: Approval['status'];
@@ -659,6 +661,7 @@ export type RuntimeStore = {
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
   ): Promise<RequestApprovalResult>;
+  requestUnknownAck(claim: Claim, input: { callIds: string[] }): Promise<RequestApprovalResult>;
   resolveApproval(approvalId: string, optionId: string): Promise<ResolveApprovalResult>;
   requestElicitation(
     claim: Claim,
@@ -686,6 +689,7 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
+  ruleVerdicts: RuleVerdictStore;
   inbox: InboxStore;
   userShell: UserShellStore;
   memories: RuntimeMemoryStore;

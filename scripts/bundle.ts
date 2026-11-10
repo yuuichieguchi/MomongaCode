@@ -14,6 +14,9 @@ export const defaultOutfile = `${repoRoot}packages/cli/dist/main.js`;
 export const journalThreadEntry = `${repoRoot}packages/runtime/src/memory/journal-thread.ts`;
 export const journalThreadModule = `${repoRoot}packages/runtime/src/memory/journal-thread-code.generated.ts`;
 
+export const ruleVerifierThreadEntry = `${repoRoot}packages/runtime/src/process/rule-verifier-thread.ts`;
+export const ruleVerifierThreadModule = `${repoRoot}packages/runtime/src/process/rule-verifier-thread-code.generated.ts`;
+
 export type UpdateSourceInputs = {
   readonly releaseRepo?: string;
   readonly teamId?: string;
@@ -24,6 +27,7 @@ export type BundleOptions = UpdateSourceInputs & {
   readonly entry: string;
   readonly outfile: string;
   readonly journalThreadModule?: string;
+  readonly ruleVerifierThreadModule?: string;
 };
 
 export const updateSourceDefines = ({ releaseRepo, teamId, releasePublicKey }: UpdateSourceInputs): Record<string, string> => {
@@ -61,12 +65,12 @@ const bundlePlugins: Plugin[] = [
   },
 ];
 
-export const bundleJournalThread = async (): Promise<string> => {
+const bundleThread = async (name: string, entry: string): Promise<string> => {
   const result = await build({
-    entryPoints: [journalThreadEntry],
+    entryPoints: [entry],
     absWorkingDir: repoRoot,
     write: false,
-    outdir: `${repoRoot}.cache/journal-thread-out`,
+    outdir: `${repoRoot}.cache/${name}-out`,
     platform: 'node',
     format: 'cjs',
     target: 'node24',
@@ -76,15 +80,14 @@ export const bundleJournalThread = async (): Promise<string> => {
     logLevel: 'error',
   });
   const [output, ...rest] = result.outputFiles;
-  if (output === undefined || rest.length > 0) throw new Error(`journal thread bundle produced ${result.outputFiles.length} files, expected 1`);
+  if (output === undefined || rest.length > 0) throw new Error(`${name.replaceAll('-', ' ')} bundle produced ${result.outputFiles.length} files, expected 1`);
   return output.text;
 };
 
-export const writeJournalThreadModule = async (modulePath: string = journalThreadModule): Promise<void> => {
-  const code = await bundleJournalThread();
+const writeThreadModule = (modulePath: string, constant: string, code: string): void => {
   const temporary = path.join(path.dirname(modulePath), `.${path.basename(modulePath)}.${randomUUID()}.tmp`);
   try {
-    fs.writeFileSync(temporary, `export const JOURNAL_THREAD_CODE = ${JSON.stringify(code)};\n`);
+    fs.writeFileSync(temporary, `export const ${constant} = ${JSON.stringify(code)};\n`);
     fs.renameSync(temporary, modulePath);
   } catch (error) {
     fs.rmSync(temporary, { force: true });
@@ -92,8 +95,34 @@ export const writeJournalThreadModule = async (modulePath: string = journalThrea
   }
 };
 
-export const bundle = async ({ entry, outfile, releaseRepo, teamId, releasePublicKey, journalThreadModule: generatedModule = journalThreadModule }: BundleOptions): Promise<void> => {
+export const bundleJournalThread = (): Promise<string> => bundleThread('journal-thread', journalThreadEntry);
+
+export const writeJournalThreadModule = async (modulePath: string = journalThreadModule): Promise<void> => {
+  writeThreadModule(modulePath, 'JOURNAL_THREAD_CODE', await bundleJournalThread());
+};
+
+export const bundleRuleVerifierThread = (): Promise<string> => bundleThread('rule-verifier-thread', ruleVerifierThreadEntry);
+
+export const writeRuleVerifierThreadModule = async (modulePath: string = ruleVerifierThreadModule): Promise<void> => {
+  writeThreadModule(modulePath, 'RULE_VERIFIER_THREAD_CODE', await bundleRuleVerifierThread());
+};
+
+export const writeThreadModules = async (): Promise<void> => {
+  await writeJournalThreadModule();
+  await writeRuleVerifierThreadModule();
+};
+
+export const bundle = async ({
+  entry,
+  outfile,
+  releaseRepo,
+  teamId,
+  releasePublicKey,
+  journalThreadModule: generatedModule = journalThreadModule,
+  ruleVerifierThreadModule: generatedVerifierModule = ruleVerifierThreadModule,
+}: BundleOptions): Promise<void> => {
   await writeJournalThreadModule(generatedModule);
+  await writeRuleVerifierThreadModule(generatedVerifierModule);
   await build({
     entryPoints: [entry],
     outfile,
@@ -113,6 +142,7 @@ export const bundle = async ({ entry, outfile, releaseRepo, teamId, releasePubli
         name: 'journal-thread-generated-module',
         setup: (build) => {
           build.onResolve({ filter: /(^|\/)journal-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedModule }));
+          build.onResolve({ filter: /(^|\/)rule-verifier-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedVerifierModule }));
         },
       },
     ],
@@ -133,10 +163,10 @@ if (import.meta.main) {
       repo: { type: 'string' },
       'team-id': { type: 'string' },
       'release-public-key': { type: 'string' },
-      'journal-thread': { type: 'boolean', default: false },
+      threads: { type: 'boolean', default: false },
     },
   });
-  if (values['journal-thread']) await writeJournalThreadModule();
+  if (values.threads) await writeThreadModules();
   else {
     await bundle({
       entry: values.entry,

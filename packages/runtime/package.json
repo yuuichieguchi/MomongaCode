@@ -24,6 +24,7 @@
     "@momonga/skills": "*",
     "@momonga/store": "*",
     "@momonga/tools": "*",
+    "@momonga/verify": "*",
     "hono": "4.13.16"
   },
   "devDependencies": {

@@ -59,7 +59,7 @@ const MATRIX: Record<string, PackageRule> = {
   memory: rule(['protocol', 'foundation']),
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
   agents: rule(['protocol', 'foundation', 'skills', 'tools']),
-  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents', 'reliability']),
+  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents', 'reliability'], ['verify']),
   supervisor: rule(['protocol', 'foundation', 'config']),
   cli: rule(['protocol', 'foundation', 'config', 'eval', 'reliability'], ['runtime', 'gateway', 'supervisor', 'verify']),
   eval: rule(['protocol', 'foundation', 'config', 'memory', 'reliability']),
@@ -335,10 +335,11 @@ describe('architecture: checker self-test', () => {
     expect(checkFile('gateway', fileIn('gateway'), "import { e } from '@momonga/eval';")).toHaveLength(1);
   });
 
-  it('allows cli to import verify only dynamically, and verify to import protocol, foundation, config and policy only', () => {
+  it('allows cli and runtime to import verify only dynamically, and verify to import protocol, foundation, config and policy only', () => {
     expect(checkFile('cli', fileIn('cli'), "const v = await import('@momonga/verify');")).toEqual([]);
     expect(checkFile('cli', fileIn('cli'), "import { verifyPermissions } from '@momonga/verify';")).toHaveLength(1);
-    expect(checkFile('runtime', fileIn('runtime'), "const v = await import('@momonga/verify');")).toHaveLength(1);
+    expect(checkFile('runtime', fileIn('runtime'), "const v = await import('@momonga/verify');")).toEqual([]);
+    expect(checkFile('runtime', fileIn('runtime'), "import { verifyPermissions } from '@momonga/verify';")).toHaveLength(1);
     expect(
       checkFile(
         'verify',
@@ -401,12 +402,12 @@ describe('architecture: the Z3 solver is loaded only through the verify engine',
     expect(importsZ3AsValue("import { openZ3 } from './engine.ts';")).toBe(false);
   });
 
-  it('only the explicit policy verify command reaches the verify package', () => {
+  it('only the policy verify command, the rule verifier of the runtime and its thread reach the verify package', () => {
     const importers = packageNames
       .flatMap((name) => listSourceFiles(path.join(packagesDir, name, 'src')))
       .filter((file) => /\bimport\s*\(\s*['"]@momonga\/verify['"]\s*\)/.test(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(root, file));
-    expect(importers).toEqual(['packages/cli/src/verify/host.ts']);
+    expect(importers).toEqual(['packages/cli/src/verify/host.ts', 'packages/runtime/src/process/rule-verifier-thread.ts', 'packages/runtime/src/process/rule-verifier.ts']);
   });
 });
 

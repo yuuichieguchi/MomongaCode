@@ -59,10 +59,17 @@ export const driveRun = async (api: Pick<EvalRunApi, 'events' | 'resolveApproval
     }
   };
 
+  const answerUnknownEffect = async (event: Extract<PublicRunEvent, { type: 'tool.unknown.requested' }>): Promise<void> => {
+    const option = event.options.find((candidate) => candidate.kind === golden.onAsk);
+    if (option === undefined) await api.cancelRun(rootRunId);
+    else await api.resolveApproval(event.approvalId, option.optionId);
+  };
+
   const follow = async (runId: string, sink: PublicRunEvent[]): Promise<void> => {
     for await (const event of api.events(runId)) {
       sink.push(event);
       if (event.type === 'tool.permission.requested') await api.resolveApproval(event.approvalId, optionIdFor(event, golden));
+      if (event.type === 'tool.unknown.requested') await answerUnknownEffect(event);
       if (event.type === 'tool.waiting' && event.awaits.kind === 'run' && !followed.has(event.awaits.runId)) {
         followed.add(event.awaits.runId);
         const child: TranscriptChild = { runId: event.awaits.runId, agent: event.awaits.agent, events: [] };

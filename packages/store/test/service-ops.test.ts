@@ -256,6 +256,7 @@ describe('approval views', () => {
 
     const expected: ApprovalView = {
       id: first.id,
+      kind: 'permission',
       runId,
       callId: 'call_1',
       status: 'pending',

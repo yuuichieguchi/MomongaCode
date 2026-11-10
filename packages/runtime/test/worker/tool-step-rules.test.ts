@@ -38,9 +38,9 @@ describe('tool step rules', () => {
     expect(await env.runOnce(worker)).toBe('yielded');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(given).toHaveLength(1);
+    expect(given).toHaveLength(2);
     expect(env.batches).toHaveLength(1);
-    expect(given[0]).toBe(env.batches[0]?.rules);
+    expect(given[1]).toBe(env.batches[0]?.rules);
     expect(env.batches[0]?.rules.map((rule) => rule.text)).toEqual(['Read(.env)']);
   });
 });

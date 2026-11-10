@@ -114,10 +114,10 @@ describe('worker recovery of a started call with an existing record', () => {
     await env.runOnce(env.worker());
 
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
-    expect(env.store.approvals.listPending(run.id)).toEqual([]);
+    expect(env.store.approvals.listPending(run.id).map((approval) => approval.kind)).toEqual(['unknown_effect']);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: 'call_w_1', outcome: 'unknown' })]);
     expect(env.toolbox.executions).toEqual([]);
-    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
   });
 });
 

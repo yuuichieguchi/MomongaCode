@@ -281,6 +281,16 @@ const createRunId = async (env: TrialEnv, fault: Fault): Promise<string> => {
   return (response.body as { run: { id: string } }).run.id;
 };
 
+const continueUnknownEffects = async (runtime: RuntimeClient, runId: string): Promise<void> => {
+  for (const approval of await runtime.approvals(runId)) {
+    if (approval.kind !== 'unknown_effect' || approval.status !== 'pending') continue;
+    const option = approval.options.find((candidate) => candidate.kind === 'allow_once');
+    if (option === undefined) throw new Error(`run ${runId}: the approval ${approval.id} about an unknown effect offers no allow_once option`);
+    const answered = await runtime.resolveApproval(approval.id, option.optionId);
+    if (answered.status !== 200) throw new Error(`run ${runId}: answering the approval ${approval.id} about an unknown effect answered ${answered.status}: ${JSON.stringify(answered.body)}`);
+  }
+};
+
 const factsOf = async (runtime: RuntimeClient, runId: string): Promise<RunFactsView> =>
   until(
     async () => {
@@ -382,10 +392,17 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     await fault.inject?.(env);
     const runtime = env.runtime;
     const runId = env.runId;
-    await until(async () => (TERMINAL_STATUSES as readonly string[]).includes((await runtime.getRun(runId)).run.status), {
-      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs?.(env) ?? 0),
-      description: `run ${runId} to end`,
-    });
+    await until(
+      async () => {
+        const { status } = (await runtime.getRun(runId)).run;
+        if (status === 'WAITING_HUMAN') await continueUnknownEffects(runtime, runId);
+        return (TERMINAL_STATUSES as readonly string[]).includes(status);
+      },
+      {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs?.(env) ?? 0),
+        description: `run ${runId} to end`,
+      },
+    );
     const replay = runtime.events(runId);
     const frames = await replay.toEnd(E2E_MARGIN_MS);
     await replay.close();

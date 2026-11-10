@@ -52,7 +52,7 @@ export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: str
 export const pendingLines = (approval: ApprovalView, agent?: string): string =>
   [
     `${approval.id}  ${escapeTerminalLine(approval.toolCall.title)}${agent === undefined ? '' : `  (subagent ${escapeTerminalLine(agent)})`}`,
-    `  ${escapeTerminalLine(approval.reason)}`,
+    ...approval.reason.split('\n').map((line) => `  ${escapeTerminalLine(line)}`),
     ...approval.options.map((option) => `    ${option.kind}${option.name === option.kind ? '' : `  (${escapeTerminalLine(option.name)})`}`),
   ].join('\n');
 

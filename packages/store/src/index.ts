@@ -173,3 +173,4 @@ export type {
 export { inboxRowView } from './inbox.ts';
 export { UNKNOWN_ANSWERER } from '@momonga/protocol';
 export type { PermissionReviewsStore } from './permission-reviews.ts';
+export type { RuleVerdictStore, StoredRuleVerdict } from './rule-verdicts.ts';

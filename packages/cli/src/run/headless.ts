@@ -1,7 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { TARGET_NOT_READY, agentReadiness, readinessShownText } from '@momonga/protocol';
-import type { MomongaModelEntry, PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
+import type { MomongaModelEntry, PermissionMode, PublicRunEvent, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -113,10 +113,17 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   let needsNewline = false;
   let lastFailure: AttemptFailed | undefined;
   const open = new Set<string>();
+  const found = new Map<string, string>();
+
+  const unknownCallsOf = (callIds: readonly string[]): UnknownEffectCall[] =>
+    callIds.map((callId) => {
+      const text = found.get(callId);
+      return { title: titles.get(callId) ?? callId, ...(text === undefined ? {} : { found: text }) };
+    });
 
   const track = (event: PublicRunEvent): void => {
-    if (event.type === 'tool.permission.requested') open.add(event.approvalId);
-    else if (event.type === 'tool.permission.resolved' || event.type === 'tool.permission.cancelled') open.delete(event.approvalId);
+    if (event.type === 'tool.permission.requested' || event.type === 'tool.unknown.requested') open.add(event.approvalId);
+    else if (event.type === 'tool.permission.resolved' || event.type === 'tool.permission.cancelled' || event.type === 'tool.unknown.resolved' || event.type === 'tool.unknown.cancelled') open.delete(event.approvalId);
     else if (event.type === 'tool.elicitation.requested') open.add(event.inputId);
     else if (event.type === 'tool.elicitation.resolved' || event.type === 'tool.elicitation.cancelled') open.delete(event.inputId);
   };
@@ -154,6 +161,18 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
           ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
         ]);
         break;
+      case 'tool.reconciled':
+        found.set(event.callId, event.output);
+        break;
+      case 'tool.unknown.requested': {
+        const calls = unknownCallsOf(event.callIds);
+        note([
+          `momonga: waiting for approval ${event.approvalId}${by}: ${unknownEffectTitle(calls)}`,
+          ...unknownEffectLines(calls).map((line) => `  ${line}`),
+          ...event.options.map((option) => `  momonga approve ${event.approvalId} ${option.kind}`),
+        ]);
+        break;
+      }
       case 'tool.elicitation.requested':
         note(leadWith(`momonga: waiting for input${by} `, describeElicitation(event.inputId, event.server, titles.get(event.callId) ?? event.callId, event.requests)));
         break;
@@ -184,6 +203,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
     const event = frame.data;
     track(event);
     if (event.type === 'tool.call') titles.set(event.callId, event.title);
+    if (event.type === 'tool.reconciled') found.set(event.callId, event.output);
     if (event.type === 'agent.message.delta') keep(event);
   };
 

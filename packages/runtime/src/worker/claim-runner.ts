@@ -42,6 +42,8 @@ import { createToolLoading } from './tool-admission.ts';
 import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
+import { unknownGate } from './unknown-gate.ts';
+import { laterVerdictNotice, policyRefusal, ruleVerdictAtStart } from './rule-verdict.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TracerPort, TraceSpan } from '../ports.ts';
 import { MODEL_ROLES } from '@momonga/config';
@@ -392,6 +394,12 @@ const drive = async (
     await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
     return;
   }
+  const startVerdict = await ruleVerdictAtStart({ options, control, env, readableDirectories: skills.readDirectories }, session);
+  const startRefusal = policyRefusal(startVerdict);
+  if (startRefusal !== undefined) {
+    await terminals.finish('FAILED', { error: startRefusal });
+    return;
+  }
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
@@ -401,6 +409,7 @@ const drive = async (
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities,
+          policyVerdict: startVerdict,
           roles: newRoles ?? {},
           targets: { ...listing.targets },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
@@ -418,6 +427,8 @@ const drive = async (
   ]);
   const [startedEvent] = store.readRunEvents(run.id, journal.state.lastSeq - (startOffered === undefined ? 1 : 2), 1);
   if (startedEvent === undefined) throw new Error(`run ${run.id} has no event at seq ${journal.state.lastSeq} after its run.started`);
+  const laterVerdict = laterVerdictNotice(journal.state, pins.policyVerdict?.fingerprint, startVerdict);
+  if (laterVerdict.length > 0) journal.append(laterVerdict);
   const modeWatch = watchMode(store, session.id, startedEvent.id);
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = [...skills.warnings, ...(agentSet?.warnings ?? []), ...toolSet.notices].filter((message) => !knownNotes.has(message));
@@ -555,6 +566,7 @@ const drive = async (
     verificationCommands: (await options.settings.verification(session)).commands,
     autoCompact: (await options.settings.context(session)).autoCompact,
     token,
+    policyFingerprint: pins.policyVerdict?.fingerprint,
   };
 
   const governingFailure = await governingFailureAtStart(ctx);
@@ -573,6 +585,7 @@ const drive = async (
   } else if ((await settleCalls(ctx)) === 'done') {
     return;
   }
+  if ((await unknownGate(ctx)) === 'done') return;
   if ((await resumeInFlight(ctx)) === 'done') return;
   for (let flow: Flow = 'continue'; flow === 'continue'; ) {
     if (control.shuttingDown()) {
@@ -587,6 +600,7 @@ const drive = async (
       await terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
+    if ((await unknownGate(ctx)) === 'done') return;
     journal.deliverSteering();
     flow = await runModelStep(ctx);
   }

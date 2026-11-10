@@ -129,6 +129,9 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'hook.completed': true,
   'tool.permission.resolved': true,
   'tool.permission.cancelled': true,
+  'tool.unknown.requested': true,
+  'tool.unknown.resolved': true,
+  'tool.unknown.cancelled': true,
   'tool.elicitation.requested': true,
   'tool.elicitation.resolved': true,
   'tool.elicitation.cancelled': true,
@@ -420,6 +423,12 @@ const isCountMap = (value: unknown): boolean => isRecord(value) && Object.values
 
 const isCallResults = (value: unknown): boolean => isRecord(value) && Object.values(value).every((status) => status === 'completed' || status === 'failed');
 
+const isUnknownEffects = (value: unknown): boolean =>
+  isRecord(value) &&
+  Object.values(value).every(
+    (entry) => isRecord(entry) && typeof entry['acknowledged'] === 'boolean' && (entry['approvalId'] === undefined || typeof entry['approvalId'] === 'string'),
+  );
+
 const isGoverningLoaded = (value: unknown): boolean =>
   isRecord(value) &&
   Array.isArray(value['active']) &&
@@ -492,7 +501,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 17;
+export const SNAPSHOT_STATE_VERSION = 18;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -540,6 +549,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Number.isInteger(state['compactions']) &&
     Number.isInteger(state['lastCompactionSeq']) &&
     isCallResults(state['callResults']) &&
+    isUnknownEffects(state['unknownEffects']) &&
     isCountMap(state['formsSinceCompaction']) &&
     (state['governingLoaded'] === undefined || isGoverningLoaded(state['governingLoaded'])) &&
     (state['memoriesLoaded'] === undefined || isArrayOf(state['memoriesLoaded'], isMemoryLoaded)) &&

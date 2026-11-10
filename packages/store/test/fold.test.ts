@@ -70,6 +70,7 @@ describe('initialRunState', () => {
       pendingCalls: {},
       notes: [],
       toolCallCounts: {},
+    unknownEffects: {},
       steps: {},
       loadedInstructions: [],
       hookCompletions: {},

@@ -24,7 +24,7 @@ import { regionAt } from './layout.ts';
 import type { RowAllocation } from './layout.ts';
 import { INVITATION_ACCEPT, invitationSpec } from './menu.tsx';
 import type { Invitation } from './menu.tsx';
-import { approvalLines, approvalSpec, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
+import { approvalSpec, approvalWording, decisionChoices, ElicitationFields, elicitationSpec, TRUST_CHOICES, trustSpec } from './prompt-panel.tsx';
 import type { TrustDecision } from './prompt-panel.tsx';
 import type { TranscriptState, TranscriptStore } from './store.ts';
 
@@ -300,8 +300,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const approvalTextOf = (approval: PendingApproval): { title: string; lines: SelectLine[] } => {
     const kept = approvalText.current;
     if (kept !== undefined && kept.approvalId === approval.approvalId) return kept;
-    const tool = toolOf(store, approval.callId);
-    const next = { approvalId: approval.approvalId, title: tool?.title ?? approval.callId, lines: approvalLines(approval, tool, backend.cwd) };
+    const next = { approvalId: approval.approvalId, ...approvalWording(approval, (callId) => toolOf(store, callId), backend.cwd) };
     approvalText.current = next;
     return next;
   };

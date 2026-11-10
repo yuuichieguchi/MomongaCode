@@ -18,6 +18,7 @@ import type { OfferedInBody } from './tool-offer.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
+import { laterVerdictNotice, policyRefusal, ruleVerdictFor } from './rule-verdict.ts';
 import type { HeldSandbox } from './held-sandbox.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -237,6 +238,11 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   const { options, journal, run } = ctx;
   const rules = await permissionRulesFor(options, session);
   const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
+  const verdict = await ruleVerdictFor(ctx, session, { rules, roots: policy.roots, enforcement: held.ruleEnforcement });
+  const laterVerdict = laterVerdictNotice(journal.state, ctx.policyFingerprint, verdict);
+  if (laterVerdict.length > 0) journal.append(laterVerdict);
+  const refusal = policyRefusal(verdict);
+  if (refusal !== undefined) return ctx.terminals.finish('FAILED', { error: refusal });
   const hookSettings = await options.settings.hooks(session);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks

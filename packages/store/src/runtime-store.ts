@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, unknownEffectLines, unknownEffectOptions } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
@@ -33,6 +33,7 @@ import { createPermissionReviewsStore } from './permission-reviews.ts';
 import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
+import { createRuleVerdictStore } from './rule-verdicts.ts';
 import { createInboxTable, inboxRowView } from './inbox.ts';
 import type {
   Approval,
@@ -453,6 +454,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home, decodeContext);
+  const ruleVerdicts = createRuleVerdictStore(db, clock);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
   const preparer = options.preparer;
@@ -547,12 +549,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const approvalAnnounced = (runId: string, approvalId: string): boolean =>
-    derivedView.permissionRequestOf(runId, approvalId) !== undefined || derivedView.elicitationRequested(runId, approvalId);
+    derivedView.permissionRequestOf(runId, approvalId) !== undefined || derivedView.elicitationRequested(runId, approvalId) || derivedView.unknownRequestOf(runId, approvalId) !== undefined;
 
   const cancelledEvent = (approval: Approval, reason: 'expired' | 'withdrawn' | 'superseded'): RunEventPayload =>
     approval.kind === 'elicitation'
       ? { type: 'tool.elicitation.cancelled', inputId: approval.id, reason }
-      : { type: 'tool.permission.cancelled', approvalId: approval.id, reason };
+      : approval.kind === 'unknown_effect'
+        ? { type: 'tool.unknown.cancelled', approvalId: approval.id, reason }
+        : { type: 'tool.permission.cancelled', approvalId: approval.id, reason };
 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
@@ -879,14 +883,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
-    if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
+    if (approval === undefined || (approval.kind !== 'permission' && approval.kind !== 'unknown_effect')) return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     if (!approval.options.some((option) => option.optionId === optionId)) return { kind: 'option_not_offered' };
     const resolved = approvalOps.markResolved(approval.id, optionId);
-    const event: RunEventPayload = { type: 'tool.permission.resolved', approvalId: approval.id, optionId };
+    const event: RunEventPayload = { type: approval.kind === 'unknown_effect' ? 'tool.unknown.resolved' : 'tool.permission.resolved', approvalId: approval.id, optionId };
     const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
     if (settled) {
       changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
@@ -939,10 +943,36 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { reason, ...(suggestedRule === undefined ? {} : { suggestedRule }) };
   };
 
+  const titleOf = (approval: Approval, callId: string): string => {
+    const row = derivedView.toolCallEventOf(approval.runId, callId);
+    if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.call event for call ${callId}`);
+    const { title } = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
+    if (typeof title !== 'string') throw corrupt('events', approval.id, 'tool.call payload must hold a string title');
+    return title;
+  };
+
+  const foundOf = (approval: Approval, callId: string): string => {
+    const row = derivedView.reconciledOf(approval.runId, callId);
+    if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.reconciled event for call ${callId}`);
+    const { output } = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
+    if (typeof output !== 'string') throw corrupt('events', approval.id, 'tool.reconciled payload must hold a string output');
+    return output;
+  };
+
+  const unknownReasonOf = (approval: Approval): string => {
+    const row = derivedView.unknownRequestOf(approval.runId, approval.id);
+    if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.unknown.requested event for approval ${approval.id}`);
+    const { callIds } = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
+    if (!Array.isArray(callIds) || !callIds.every((callId): callId is string => typeof callId === 'string')) throw corrupt('events', approval.id, 'callIds must be an array of strings');
+    return unknownEffectLines(callIds.map((callId) => ({ title: titleOf(approval, callId), found: foundOf(approval, callId) }))).join('\n');
+  };
+
   const viewOf = (approval: Approval): ApprovalView => {
-    const { reason, suggestedRule } = requestOf(approval);
+    if (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') throw corrupt('approvals', approval.id, `an approval of kind ${approval.kind} has no approval view`);
+    const { reason, suggestedRule } = approval.kind === 'unknown_effect' ? { reason: unknownReasonOf(approval), suggestedRule: undefined } : requestOf(approval);
     return {
       id: approval.id,
+      kind: approval.kind,
       runId: approval.runId,
       callId: approval.callId,
       status: approval.status,
@@ -1611,6 +1641,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           callId: input.callId,
           options: input.options,
           subjectDigest: input.event.subjectDigest,
+          kind: 'permission',
         });
         const events: RunEventPayload[] = [];
         if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
@@ -1631,6 +1662,27 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
+    requestUnknownAck: async (claim, input) => {
+      const [firstCallId] = input.callIds;
+      if (firstCallId === undefined) throw new Error(`an unknown effect of run ${claim.runId} names at least one call`);
+      return derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const options = unknownEffectOptions();
+        const subjectDigest = sha256Hex(canonicalJson({ unknownEffect: input.callIds }));
+        const requested = approvalOps.request({ runId: run.id, callId: firstCallId, options, subjectDigest, kind: 'unknown_effect' });
+        const events: RunEventPayload[] = [];
+        if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
+          events.push(cancelledEvent(requested.superseded, 'superseded'));
+        }
+        if (requested.created || !approvalAnnounced(run.id, requested.approval.id)) {
+          events.push({ type: 'tool.unknown.requested', approvalId: requested.approval.id, callIds: input.callIds, options, subjectDigest });
+        }
+        if (events.length > 0) writeRun(appendPayloads(run, events));
+        return { kind: 'ok', approval: requested.approval };
+      });
+    },
+
     resolveApproval: async (approvalId, optionId) => {
       const approval = approvalOps.store.get(approvalId);
       if (approval === undefined) return { kind: 'not_found' };
@@ -1646,6 +1698,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           callId: input.callId,
           options: [],
           subjectDigest: sha256Hex(canonicalJson({ server: input.server, requests: input.requests })),
+          kind: 'elicitation',
           elicitation: { server: input.server, requests: input.requests, expiresAt: input.expiresAt },
         });
         const events: RunEventPayload[] = [];
@@ -1754,10 +1807,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     approvalView: async (approvalId) => {
       const approval = approvalOps.store.get(approvalId);
-      return approval === undefined || approval.kind !== 'permission' ? undefined : derivedReads.read({ runId: approval.runId }, () => viewOf(approval));
+      return approval === undefined || (approval.kind !== 'permission' && approval.kind !== 'unknown_effect') ? undefined : derivedReads.read({ runId: approval.runId }, () => viewOf(approval));
     },
 
-    pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf)),
+    pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission' || approval.kind === 'unknown_effect').map(viewOf)),
 
     writeSnapshot: (claim, seq, state) =>
       transaction(() => {
@@ -1781,6 +1834,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
+    ruleVerdicts,
     inbox,
     userShell,
     memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },

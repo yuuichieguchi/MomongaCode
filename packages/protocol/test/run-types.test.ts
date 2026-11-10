@@ -101,6 +101,9 @@ describe('run event payloads', () => {
       | 'tool.waiting'
       | 'job.finished'
       | 'tool.permission.cancelled'
+      | 'tool.unknown.requested'
+      | 'tool.unknown.resolved'
+      | 'tool.unknown.cancelled'
       | 'tool.elicitation.requested'
       | 'tool.elicitation.resolved'
       | 'tool.elicitation.cancelled'
@@ -451,6 +454,7 @@ describe('RunState', () => {
       compactions: number;
       lastCompactionSeq: number;
       callResults: Record<string, 'completed' | 'failed'>;
+      unknownEffects: Record<string, { approvalId?: string; acknowledged: boolean }>;
       formsSinceCompaction: Record<string, number>;
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
       memoriesLoaded?: { id: string; status: MemoryStatus }[];

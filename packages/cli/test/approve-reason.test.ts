@@ -4,6 +4,7 @@ import type { ApprovalView } from '../src/client/views.ts';
 
 const outside: ApprovalView = {
   id: 'ap1',
+  kind: 'permission',
   runId: 'run-1',
   callId: 'c1',
   status: 'pending',

@@ -33,7 +33,7 @@ describe('policyFor failures at run level (system timers, in-process gateway)', 
       expect(await waitForStatus(stack.temp, run.id, ['COMPLETED', 'FAILED', 'CANCELLED'])).toBe('FAILED');
       const view = (await launched.http('GET', `/v1/runs/${run.id}`)).json.run;
       expect(view.error).toMatchObject({ code: 'config_error' });
-      expect(stack.completions()).toBe(1);
+      expect(stack.completions()).toBe(0);
     } finally {
       fs.chmodSync(stack.temp.paths.tmp.sessions, 0o700);
     }

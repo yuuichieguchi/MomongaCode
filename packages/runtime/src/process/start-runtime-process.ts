@@ -44,6 +44,8 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
+import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
+import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
@@ -139,6 +141,7 @@ export type StartRuntimeProcessOptions = {
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
+  ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
 };
@@ -743,6 +746,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
+    const ruleVerifier = createRuleVerifier({
+      host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
+      fs: createPolicyFilesystem(),
+      paths,
+      timers,
+    });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;
@@ -756,6 +765,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           governance: governancePort,
           agents: agentsPort,
           tools: toolRuntime.port,
+          ruleVerifier,
           tracers,
           clock,
           workerId: id,

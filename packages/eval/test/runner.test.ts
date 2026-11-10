@@ -82,6 +82,36 @@ describe('runDataset', () => {
     ).rejects.toThrow(EvalError);
   });
 
+  describe('a run that asks about a call whose effect is unknown', () => {
+    const asking = (): Transcript => {
+      const transcript = finalAnswerTranscript('answer', 0);
+      const ask = {
+        ...(transcript.events[0] as PublicRunEvent),
+        type: 'tool.unknown.requested',
+        approvalId: 'u1',
+        callIds: ['c1'],
+        options: [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }],
+        subjectDigest: 'd',
+      } as unknown as PublicRunEvent;
+      return { ...transcript, events: [ask, ...transcript.events] };
+    };
+
+    it('is continued when the case answers asks with allow_once', async () => {
+      const scripted = scriptedApi([asking()]);
+      await runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', onAsk: 'allow_once', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(scripted.api));
+      expect(scripted.resolved).toEqual([{ approvalId: 'u1', optionId: 'allow_once' }]);
+      expect(scripted.cancelled).toEqual([]);
+    });
+
+    it('is cancelled when the case answers asks with reject_once, and the trial is graded as it ended', async () => {
+      const scripted = scriptedApi([asking()]);
+      const report = await runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', onAsk: 'reject_once', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(scripted.api));
+      expect(scripted.resolved).toEqual([]);
+      expect(scripted.cancelled).toEqual(['run-answer-0']);
+      expect(report.cases).toHaveLength(1);
+    });
+  });
+
   it('follows a subagent run announced by tool.waiting and answers its approval requests', async () => {
     const parent = callsTranscript('delegate', [{ callId: 'agent1', name: 'Agent', kind: 'other', sideEffect: 'read_only', rawInput: {}, decision: 'allow' }]);
     const waiting = { ...(parent.events[0] as PublicRunEvent), type: 'tool.waiting', callId: 'agent1', awaits: { kind: 'run', runId: 'child-1', sessionId: 's-child', agent: 'writer' } } as unknown as PublicRunEvent;

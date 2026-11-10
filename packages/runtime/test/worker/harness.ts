@@ -36,6 +36,8 @@ import type { FakeTracer } from './fake-tracer.ts';
 import { MODEL_ID, resetResponseIds } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
+import { createFakeRuleVerifier } from './fake-rule-verifier.ts';
+
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
 export const DEADLINE_MS = START_MS + 3_600_000;
@@ -330,6 +332,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     },
   });
 
+  const ruleVerifier = createFakeRuleVerifier();
+
   const worker = (workerId = 'worker-1', overrides: WorkerOverrides = {}): Worker => {
     const { tools: toolOverrides, toolList, ...rest } = overrides;
     const created = createWorker({
@@ -341,6 +345,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
+      ruleVerifier,
       tracers: fixedTracers(tracer),
       clock,
       workerId,
@@ -505,6 +510,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     setModel,
     resolveApproval,
     snapshotTools,
+    ruleVerifier,
   };
 };
 

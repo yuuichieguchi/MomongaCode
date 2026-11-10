@@ -1,6 +1,7 @@
 import type { EntryIo } from '@momonga/foundation';
 import type { SelfExecutable, SpawnDetached } from '../ports.ts';
 import { embeddedRipgrepSource } from '../ripgrep/host.ts';
+import { embeddedRuleSolver } from '../verify/host.ts';
 import { selfLauncher } from './launcher.ts';
 import { runSupervise } from './supervise.ts';
 
@@ -20,6 +21,7 @@ export const daemonEntries = (self: SelfExecutable, version: string, spawnDetach
     const entry = await import('@momonga/runtime/entry');
     const { runRuntimeEntry } = entry;
     const bundledRipgrep = embeddedRipgrepSource(entry);
-    return runRuntimeEntry(io, { version, ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }) });
+    const ruleSolver = embeddedRuleSolver();
+    return runRuntimeEntry(io, { version, ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }), ...(ruleSolver === undefined ? {} : { ruleSolver }) });
   },
 });

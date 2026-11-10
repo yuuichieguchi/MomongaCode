@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { BuildOptions, Metafile } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { bundle, bundleJournalThread, journalThreadEntry, repoRoot } from './bundle.ts';
+import { bundle, bundleJournalThread, bundleRuleVerifierThread, journalThreadEntry, repoRoot, ruleVerifierThreadEntry } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
@@ -52,6 +52,22 @@ describe('the journal thread bundle contents', () => {
   );
 });
 
+describe('the rule verifier thread bundle contents', () => {
+  it(
+    'carries the thread and the verifier, and no file of the Z3 solver package, which is loaded from disk when the thread runs',
+    async () => {
+      metafiles.length = 0;
+      await bundleRuleVerifierThread();
+      expect(metafiles).toHaveLength(1);
+      const files = filesCarriedBy(metafiles[0] as Metafile);
+      expect(files).toContain(fs.realpathSync(ruleVerifierThreadEntry));
+      expect(files).toContain(fs.realpathSync(`${repoRoot}packages/verify/src/verify.ts`));
+      expect(files.filter((file) => file.startsWith(packageDirectoryOf('z3-solver')))).toEqual([]);
+    },
+    UNBOUNDED_BUILD_WAIT_MS,
+  );
+});
+
 describe('the plugins of the two builds', () => {
   let root = '';
 
@@ -64,17 +80,25 @@ describe('the plugins of the two builds', () => {
   });
 
   it(
-    'builds the thread with the same plugins as the main bundle, apart from the resolver of the generated module',
+    'builds each thread with the same plugins as the main bundle, apart from the resolver of the generated modules',
     async () => {
       recorded.length = 0;
-      await bundle({ entry: PING_FIXTURE, outfile: path.join(root, 'ping.mjs'), journalThreadModule: path.join(root, 'journal-thread-code.generated.ts') });
-      const thread = recorded.filter((options) => options.format === 'cjs');
+      await bundle({
+        entry: PING_FIXTURE,
+        outfile: path.join(root, 'ping.mjs'),
+        journalThreadModule: path.join(root, 'journal-thread-code.generated.ts'),
+        ruleVerifierThreadModule: path.join(root, 'rule-verifier-thread-code.generated.ts'),
+      });
+      const threads = recorded.filter((options) => options.format === 'cjs');
       const main = recorded.filter((options) => options.format === 'esm');
-      expect(thread).toHaveLength(1);
+      expect(threads.map((options) => options.entryPoints)).toEqual([[journalThreadEntry], [ruleVerifierThreadEntry]]);
       expect(main).toHaveLength(1);
-      const threadNames = pluginNamesOf(thread[0] as BuildOptions);
-      expect(threadNames).toContain('ata-validator-without-native-and-code-from-strings');
-      expect(pluginNamesOf(main[0] as BuildOptions)).toEqual([...threadNames, GENERATED_MODULE_RESOLVER].sort());
+      for (const thread of threads) {
+        const threadNames = pluginNamesOf(thread);
+        expect(threadNames).toContain('ata-validator-without-native-and-code-from-strings');
+        expect(pluginNamesOf(main[0] as BuildOptions)).toEqual([...threadNames, GENERATED_MODULE_RESOLVER].sort());
+      }
+      expect(fs.readFileSync(path.join(root, 'rule-verifier-thread-code.generated.ts'), 'utf8')).toMatch(/^export const RULE_VERIFIER_THREAD_CODE = "/);
     },
     UNBOUNDED_BUILD_WAIT_MS,
   );
