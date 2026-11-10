@@ -22,7 +22,7 @@ const save = async (store: RuntimeStore, runId: string, callId: string, text: st
 const EVIDENCE: MemoryEvidence[] = [
   { kind: 'file', project: '/work/a', path: 'src/a.ts', sha256: 'aa' },
   { kind: 'commit', sha: 'bb' },
-  { kind: 'check', runId: 'r1', callId: 'c1', seq: 3, command: 'npm test', exitCode: 0 },
+  { kind: 'check', runId: 'r1', conditionId: 'c1', seq: 3, command: 'npm test', exitCode: 0 },
 ];
 
 const VISIBLE = { trusted: true, project: '/work/a' } as const;

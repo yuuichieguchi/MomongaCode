@@ -25,6 +25,20 @@ const done = (seq: number, callId: string, extra: { status?: 'completed' | 'fail
   return { seq, type: 'tool.completed', callId, status, output, ...recorded } as unknown as RunEvent;
 };
 
+const verdict = (seq: number, command: string, exitCode: number | undefined, output = ''): RunEvent =>
+  ({
+    seq,
+    type: 'verification.completed',
+    round: 1,
+    conditionId: `condition:${command}`,
+    command,
+    outcome: exitCode === 0 ? 'passed' : exitCode === undefined ? 'timed_out' : 'failed',
+    ...(exitCode === undefined ? {} : { exitCode }),
+    durationMs: 1,
+    output,
+    mutationSeq: 0,
+  }) as unknown as RunEvent;
+
 const fileOf = (target: string, access: ToolFile['access'], sha256 = HASH): ToolFile => ({ path: target, sha256, access });
 
 const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boolean; head?: string | undefined } = {}) =>
@@ -34,7 +48,7 @@ const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boo
     project: PROJECT,
     trusted: overrides.trusted ?? true,
     facts: async (resolved) => {
-      const fold = createEvidenceFold({ paths: resolved, verificationCommands: ['npm test'] });
+      const fold = createEvidenceFold({ paths: resolved });
       for (const event of events) fold.add(event);
       return runFactsOf('r1', { lastSeq: events.length, ...fold.finish() });
     },
@@ -84,60 +98,40 @@ describe('bindMemoryEvidence', () => {
     await expect(binding(READ_A, [], { head: undefined })).resolves.toEqual([]);
   });
 
-  it('takes the latest matching check of the whole run for a note that names no path, even one that came before a write', async () => {
-    const events = [
-      call(1, 'c1', 'Bash', { command: 'npm test' }),
-      done(2, 'c1', { exitCode: 0 }),
-      call(3, 'c2', 'Write', { file_path: 'src/a.ts' }),
-      done(4, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
-    ];
-    await expect(binding(events, [])).resolves.toEqual([{ kind: 'commit', sha: HEAD }, { kind: 'check', runId: 'r1', callId: 'c1', seq: 2, command: 'npm test', exitCode: 0 }]);
+  it('takes the latest verdict of the whole run for a note that names no path, even one that came before a write', async () => {
+    const events = [verdict(1, 'npm test', 0), call(2, 'c2', 'Write', { file_path: 'src/a.ts' }), done(3, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] })];
+    await expect(binding(events, [])).resolves.toEqual([{ kind: 'commit', sha: HEAD }, { kind: 'check', runId: 'r1', conditionId: 'condition:npm test', seq: 1, command: 'npm test', exitCode: 0 }]);
   });
 
-  it('adds the latest matching verification command after the last write to a bound path', async () => {
+  it('adds the latest verdict after the last write to a bound path', async () => {
     const events = [
-      call(1, 'c1', 'Bash', { command: 'npm test' }),
-      done(2, 'c1', { exitCode: 0 }),
-      call(3, 'c2', 'Write', { file_path: 'src/a.ts' }),
-      done(4, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
-      call(5, 'c3', 'Bash', { command: 'npm test' }),
-      done(6, 'c3', { status: 'failed', output: 'broken\n[exit code 2]', exitCode: 2 }),
-      call(7, 'c4', 'Bash', { command: 'npm test' }),
-      done(8, 'c4', { exitCode: 0 }),
+      verdict(1, 'npm test', 0),
+      call(2, 'c2', 'Write', { file_path: 'src/a.ts' }),
+      done(3, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
+      verdict(4, 'npm test', 2),
+      verdict(5, 'npm test', 0),
     ];
-    await expect(binding(events, ['src/a.ts'])).resolves.toContainEqual({ kind: 'check', runId: 'r1', callId: 'c4', seq: 8, command: 'npm test', exitCode: 0 });
+    await expect(binding(events, ['src/a.ts'])).resolves.toContainEqual({ kind: 'check', runId: 'r1', conditionId: 'condition:npm test', seq: 5, command: 'npm test', exitCode: 0 });
   });
 
-  it('records a failing latest check with the exit code the tool recorded', async () => {
-    const events = [
-      call(1, 'c1', 'Write', { file_path: 'src/a.ts' }),
-      done(2, 'c1', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
-      call(3, 'c2', 'Bash', { command: 'npm test' }),
-      done(4, 'c2', { status: 'failed', output: 'broken\n[exit code 2]', exitCode: 2 }),
-    ];
-    await expect(binding(events, ['src/a.ts'])).resolves.toContainEqual({ kind: 'check', runId: 'r1', callId: 'c2', seq: 4, command: 'npm test', exitCode: 2 });
+  it('records a failing latest verdict with the exit code the runtime recorded', async () => {
+    const events = [call(1, 'c1', 'Write', { file_path: 'src/a.ts' }), done(2, 'c1', { files: [fileOf('/work/a/src/a.ts', 'write')] }), verdict(3, 'npm test', 2)];
+    await expect(binding(events, ['src/a.ts'])).resolves.toContainEqual({ kind: 'check', runId: 'r1', conditionId: 'condition:npm test', seq: 3, command: 'npm test', exitCode: 2 });
   });
 
-  it('never reads an exit code out of the tool text', async () => {
-    const events = [
-      ...READ_A,
-      call(3, 'c2', 'Bash', { command: 'npm test' }),
-      done(4, 'c2', { status: 'failed', output: 'broken\n[exit code 2]' }),
-    ];
+  it('never takes a command the model ran itself as a check, even one equal to a condition that exited 0', async () => {
+    const events = [...READ_A, call(3, 'c2', 'Bash', { command: 'npm test' }), done(4, 'c2', { exitCode: 0 })];
+    expect((await binding(events, ['src/a.ts'])).some((entry) => entry.kind === 'check')).toBe(false);
+  });
+
+  it('adds no check for a verdict without an exit code, and never reads one out of the output text', async () => {
+    const events = [...READ_A, verdict(3, 'npm test', undefined, 'broken\n[exit code 0]')];
     expect((await binding(events, ['src/a.ts'])).map((entry) => entry.kind)).toEqual(['file', 'commit']);
   });
 
-  it('adds no check when the only match came before the last write, or the command is not listed', async () => {
-    const before = [
-      call(1, 'c1', 'Bash', { command: 'npm test' }),
-      done(2, 'c1', { exitCode: 0 }),
-      call(3, 'c2', 'Write', { file_path: 'src/a.ts' }),
-      done(4, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] }),
-    ];
-    const unlisted = [...READ_A, call(3, 'c2', 'Bash', { command: 'npm test --watch' }), done(4, 'c2', { exitCode: 0 })];
-    for (const events of [before, unlisted]) {
-      expect((await binding(events, ['src/a.ts'])).map((entry) => entry.kind)).toEqual(['file', 'commit']);
-    }
+  it('adds no check when the only verdict came before the last write to the bound path', async () => {
+    const events = [verdict(1, 'npm test', 0), call(2, 'c2', 'Write', { file_path: 'src/a.ts' }), done(3, 'c2', { files: [fileOf('/work/a/src/a.ts', 'write')] })];
+    expect((await binding(events, ['src/a.ts'])).map((entry) => entry.kind)).toEqual(['file', 'commit']);
   });
 
   it('adds no commit in an untrusted folder, nor when there is no HEAD', async () => {

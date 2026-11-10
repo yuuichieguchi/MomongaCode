@@ -17,7 +17,7 @@ import { MEMORY_PAGE_ROWS } from './constants.ts';
 
 export type MemoryPortOptions = {
   store: Pick<RuntimeStore, 'memories' | 'journalFacts' | 'trust'>;
-  settings: Pick<SettingsPort, 'trusted' | 'verification'>;
+  settings: Pick<SettingsPort, 'trusted'>;
   evidenceRun: (project: string) => EvidenceRun;
   evidencePorts?: (options: EvidencePortsOptions) => EvidencePorts;
 };
@@ -75,13 +75,12 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
     const toolPort: MemoryStorePort = {
       save: async ({ scope, text, runId, step, callId, kind, paths, supersedes, signal: bound }) => {
         replaceable(supersedes ?? [], scope);
-        const { commands: verificationCommands } = await settings.verification(session);
         const evidence = await bindMemoryEvidence({
           scope,
           paths: paths ?? [],
           project: scope === 'project' ? session.cwd : null,
           trusted,
-          facts: async (resolved) => runFactsOf(runId, await store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound)),
+          facts: async (resolved) => runFactsOf(runId, await store.journalFacts.evidence({ runId, paths: resolved }, bound)),
           head: () => readGitHead(evidenceOptionsFor(bound)),
         });
         const saved = await store.memories.save({

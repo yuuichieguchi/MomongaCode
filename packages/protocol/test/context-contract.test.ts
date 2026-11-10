@@ -68,7 +68,7 @@ describe('context types', () => {
     expectTypeOf<MemoryEvidence>().toEqualTypeOf<
       | { kind: 'file'; project: string; path: string; sha256: string }
       | { kind: 'commit'; sha: string }
-      | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number }
+      | { kind: 'check'; runId: string; conditionId: string; seq: number; command: string; exitCode: number }
     >();
     expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<(MemoryEvidence | { kind: 'unknown' })[]>();
     expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState | 'unknown'>();
@@ -103,7 +103,7 @@ describe('MemoryView schema additions', () => {
   const evidence = [
     { kind: 'file', project: '/work/a', path: 'src/a.ts', sha256: 'abc' },
     { kind: 'commit', sha: 'd818eb5' },
-    { kind: 'check', runId: 'r1', callId: 'c1', seq: 5, command: 'npm test', exitCode: 0 },
+    { kind: 'check', runId: 'r1', conditionId: 'c1', seq: 5, command: 'npm test', exitCode: 0 },
   ];
   const stored = { ...view, kind: 'fact', state: 'active', duplicateOf: null, supersedes: ['m0'], supersededBy: [], retiredAt: null, evidence, contributedAt: null };
   const full = { ...stored, status: 'verified' };

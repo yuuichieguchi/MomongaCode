@@ -71,7 +71,7 @@ const savePaths = (paths: string[], overrides: Record<string, unknown> = {}) =>
 const inputText = (env: Env, index: number): string => (env.gateway.streams[index]?.body.input as unknown[]).map(textOf).join('\n');
 
 describe('MemorySave in a run', () => {
-  it('binds a file read in this run with the hash the tool recorded, the head commit and the latest check, and takes no hash from the model', async () => {
+  it('binds a file read in this run with the hash the tool recorded and the head commit, takes no hash from the model, and takes no command the model ran as a check', async () => {
     const env = await trustedEnv();
     const target = writeFile(env, 'abc');
     const commands: EvidenceCommand[] = [];
@@ -86,11 +86,9 @@ describe('MemorySave in a run', () => {
     await env.runOnce(workerFor(env, 'w-1', gitRun(commands)));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const [memory] = env.store.memories.list();
-    const bashCompleted = env.ofType(run.id, 'tool.completed').find((event) => event.exitCode !== undefined);
     expect(memory?.evidence).toEqual([
       { kind: 'file', project: env.session.cwd, path: FILE, sha256: sha256Hex('abc') },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: run.id, callId: env.gateway.callId('call_b_1'), seq: bashCompleted?.seq, command: 'npm test', exitCode: 1 },
     ]);
     expect(commands.map((command) => command.argv)).toEqual([['git', 'rev-parse', 'HEAD']]);
   });

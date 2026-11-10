@@ -6,7 +6,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError } from '@momonga/store';
 import { reflectionInputFor } from '../../src/memory/reflection-input.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
-import { bash, fileTool } from './reflection-fixture.ts';
+import { bash, fileTool, checked, conditionIdOf, verdictSeqOf } from './reflection-fixture.ts';
 import { SHA, factsStore, seqOf } from './run-facts-fixture.ts';
 
 vi.setConfig({ testTimeout: 120_000 });
@@ -16,16 +16,16 @@ const MANIFESTS = ['package.json'];
 
 const verifiedJournal = (project: string): RunEventPayload[] => [
   ...fileTool('r1', 'Read', { path: path.join(project, 'package.json'), sha256: SHA, access: 'read' }),
-  ...bash('t0', 'npm test', 1, 'one failure'),
+  ...checked('npm test', 1, 'one failure'),
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
-  ...bash('t1', 'npm test', 0, 'ok'),
+  ...checked('npm test', 0, 'ok'),
 ];
 
 const OUTPUT = 'x'.repeat(2_000);
 
 const stepsJournal = (project: string, steps: number): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
-  ...Array.from({ length: steps }, (_unused, index) => bash(`t${String(index).padStart(4, '0')}`, 'npm test', 0, OUTPUT)).flat(),
+  ...Array.from({ length: steps }, (_unused, index) => checked('npm test', 0, OUTPUT)).flat(),
 ];
 
 const serializedSize = (value: unknown): number => v8.serialize(value).length;
@@ -47,7 +47,7 @@ describe('the verdict request kind of the journal thread (inventory row 6)', () 
           command: 'npm test',
           text: 'Run `npm test` to verify a change in this repository.',
           kind: 'procedure',
-          check: { callId: 't1', seq: seqOf(events, 'tool.completed', 't1') },
+          check: { conditionId: conditionIdOf('npm test'), seq: verdictSeqOf(events, 'npm test') },
           manifestPaths: [path.join(env.project, 'package.json')],
         },
       ],
@@ -56,7 +56,7 @@ describe('the verdict request kind of the journal thread (inventory row 6)', () 
 
   it('answers a run whose last check failed as not verified, with no facts', async () => {
     const env = factsStore();
-    const run = await env.finished([...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...bash('t1', 'npm test', 1, 'failed')]);
+    const run = await env.finished([...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...checked('npm test', 1, 'failed')]);
     const client = await env.client();
 
     const reply = await client.verdict({ runId: run.id, commands: COMMANDS, manifests: MANIFESTS });
@@ -75,9 +75,9 @@ describe('the verdict request kind of the journal thread (inventory row 6)', () 
   it('gives the same facts as the main-thread path of today on a run with a manifest write between checks', async () => {
     const env = factsStore();
     const run = await env.finished([
-      ...bash('t1', 'npm test', 0, 'ok'),
+      ...checked('npm test', 0, 'ok'),
       ...fileTool('w1', 'Write', { path: path.join(env.project, 'package.json'), sha256: SHA, access: 'write' }),
-      ...bash('t2', 'npm test', 0, 'ok'),
+      ...checked('npm test', 0, 'ok'),
     ]);
     const today = { status: 'COMPLETED', events: env.allEvents(run.id), commands: COMMANDS, manifests: MANIFESTS };
     const client = await env.client();
@@ -98,35 +98,34 @@ describe('the evidence request kind of the journal thread (inventory row 6)', ()
     const reply = await client.evidence({
       runId: run.id,
       paths: [path.join(env.project, 'src/a.ts'), path.join(env.project, 'src/never.ts')],
-      verificationCommands: COMMANDS,
     });
 
     expect(reply).toEqual({
       lastSeq: env.store.getRun(run.id)?.lastSeq,
       recorded: [{ sha256: SHA, seq: seqOf(events, 'tool.completed', 'w1') }, null],
-      check: { callId: 't1', seq: seqOf(events, 'tool.completed', 't1'), command: 'npm test', exitCode: 0 },
+      check: { conditionId: conditionIdOf('npm test'), seq: verdictSeqOf(events, 'npm test'), command: 'npm test', exitCode: 0 },
     });
   });
 
   it('answers no check when a bound path was written after the last check', async () => {
     const env = factsStore();
-    const run = await env.finished([...bash('t1', 'npm test', 0, 'ok'), ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' })]);
+    const run = await env.finished([...checked('npm test', 0, 'ok'), ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' })]);
     const client = await env.client();
 
-    const reply = await client.evidence({ runId: run.id, paths: [path.join(env.project, 'src/a.ts')], verificationCommands: COMMANDS });
+    const reply = await client.evidence({ runId: run.id, paths: [path.join(env.project, 'src/a.ts')] });
 
     expect(reply).toMatchObject({ check: null });
   });
 
   it('keeps only the check of the one command asked for', async () => {
     const env = factsStore();
-    const run = await env.finished([...bash('t1', 'npm test', 0, 'ok'), ...bash('t2', 'npm run lint', 0, 'ok')]);
+    const run = await env.finished([...checked('npm test', 0, 'ok'), ...checked('npm run lint', 0, 'ok')]);
     const events = env.allEvents(run.id);
     const client = await env.client();
 
-    const reply = await client.evidence({ runId: run.id, paths: [], verificationCommands: ['npm test', 'npm run lint'], onlyCommand: 'npm test' });
+    const reply = await client.evidence({ runId: run.id, paths: [], onlyCommand: 'npm test' });
 
-    expect(reply).toMatchObject({ recorded: [], check: { callId: 't1', seq: seqOf(events, 'tool.completed', 't1'), command: 'npm test', exitCode: 0 } });
+    expect(reply).toMatchObject({ recorded: [], check: { conditionId: conditionIdOf('npm test'), seq: verdictSeqOf(events, 'npm test'), command: 'npm test', exitCode: 0 } });
   });
 });
 
@@ -151,7 +150,7 @@ describe('nothing proportional to journal bytes crosses the thread boundary (P10
     const journalBytes = env.allEvents(run.id).reduce((bytes, event) => bytes + JSON.stringify(event).length, 0);
     const client = await env.client();
     const verdict = await client.verdict({ runId: run.id, commands: COMMANDS, manifests: MANIFESTS });
-    const evidence = await client.evidence({ runId: run.id, paths: [path.join(env.project, 'src/a.ts')], verificationCommands: COMMANDS });
+    const evidence = await client.evidence({ runId: run.id, paths: [path.join(env.project, 'src/a.ts')] });
     const reflection = await client.reflectionInput({ runId: run.id, project: env.project, capabilities: capabilitiesFor(8_000) });
     return { journalBytes, verdict: serializedSize(verdict), evidence: serializedSize(evidence), reflection: serializedSize(reflection) };
   };
@@ -175,7 +174,7 @@ describe('request errors of the new kinds (O2, I1a reply rules)', () => {
     const client = await env.client();
     const requests = {
       verdict: () => client.verdict({ runId: 'run-unknown', commands: COMMANDS, manifests: MANIFESTS }),
-      evidence: () => client.evidence({ runId: 'run-unknown', paths: [], verificationCommands: COMMANDS }),
+      evidence: () => client.evidence({ runId: 'run-unknown', paths: [] }),
       reflectionInput: () => client.reflectionInput({ runId: 'run-unknown', project: env.project, capabilities: capabilitiesFor(100_000) }),
     };
 
@@ -188,7 +187,7 @@ describe('request errors of the new kinds (O2, I1a reply rules)', () => {
     const client = await env.client();
     const before = await client.ping();
 
-    const failure = await client.request({ kind, project: env.project, commands: [], manifests: [], paths: [], verificationCommands: [] }).then(
+    const failure = await client.request({ kind, project: env.project, commands: [], manifests: [], paths: [] }).then(
       () => undefined,
       (error: unknown) => error,
     );

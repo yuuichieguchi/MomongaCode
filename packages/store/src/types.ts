@@ -731,17 +731,17 @@ export type VerdictFact = {
   command: string;
   text: string;
   kind: 'procedure';
-  check: { callId: string; seq: number };
+  check: { conditionId: string; seq: number };
   manifestPaths: string[];
 };
 
 export type VerdictReply = { lastSeq: number; verified: boolean; facts: VerdictFact[] };
 
-export type EvidenceRequest = { runId: string; paths: readonly string[]; verificationCommands: readonly string[]; onlyCommand?: string };
+export type EvidenceRequest = { runId: string; paths: readonly string[]; onlyCommand?: string };
 
 export type RecordedHash = { sha256: string; seq: number };
 
-export type RecordedCheck = { callId: string; seq: number; command: string; exitCode: number };
+export type RecordedCheck = { conditionId: string; seq: number; command: string; exitCode: number };
 
 export type EvidenceReply = { lastSeq: number; recorded: (RecordedHash | null)[]; check: RecordedCheck | null };
 

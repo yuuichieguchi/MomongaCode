@@ -145,7 +145,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
             runFactsOf(
               runId,
               await store.journalFacts.evidence(
-              { runId, paths: resolved, verificationCommands: verification.commands, ...(onlyCommand === undefined ? {} : { onlyCommand }) },
+              { runId, paths: resolved, ...(onlyCommand === undefined ? {} : { onlyCommand }) },
                 signal,
               ),
             ),
