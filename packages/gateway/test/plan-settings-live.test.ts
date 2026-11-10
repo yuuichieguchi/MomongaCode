@@ -183,6 +183,7 @@ const keepsAndSwitches = async (context: CleanupContext, options: { profile: Pla
   try {
     await options.start(stack, ACCOUNT);
     await waitFor(() => before.connects().length === 1, { ...CHANGE_WAIT, description: 'the operation started before the change to reach the first proxy' });
+    expect(before.connects()).toEqual([connectLine(options.host)]);
     replaceSettings(stack.home, stack.settingsWith(proxied(after)));
     await options.start(stack, SPARE);
     await waitFor(() => after.connects().length > 0, CHANGE_WAIT).catch(() => undefined);

@@ -32,6 +32,15 @@ describe('O-R5-6 (K) 5: every read of settings in the gateway process goes throu
     expect(calls).toEqual([]);
   });
 
+  it('nothing in packages/gateway/src calls read() on the user settings cache', () => {
+    const calls = cacheBindings().flatMap(({ file, name }) =>
+      SOURCES.filter((source) => source.file === file).flatMap(({ text }) =>
+        text.split('\n').flatMap((line, index) => (new RegExp(`\\b${name.replace(/\$/g, '\\$')}\\.read\\(`).test(line) ? [`${file}:${index + 1}`] : [])),
+      ),
+    );
+    expect(calls).toEqual([]);
+  });
+
   it('nothing in packages/gateway/src reads a settings section from a get() result', () => {
     const reads = SOURCES.flatMap(({ file, text }) =>
       text.split('\n').flatMap((line, index) => (/\.get\(\)\.(?:models|network|pricing|context|credentials|telemetry|gateway|sandbox)\b/.test(line) ? [`${file}:${index + 1}`] : [])),

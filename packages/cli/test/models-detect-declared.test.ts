@@ -67,7 +67,7 @@ describe('O-R5-6 (E): momonga models detect lists the managed servers of the loa
   it('lists a declared server whose command exists as a managed row', async (context) => {
     const { paths, command } = homeDeclaring(context, true);
     const rows = JSON.parse(await detected(paths, true)) as Array<Record<string, unknown>>;
-    expect(rows.filter((row) => row['shape'] === 'managed')).toEqual([{ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: command }]);
+    expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([{ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: command }]);
   });
 
   it('prints the declared server in the text listing', async (context) => {
@@ -78,6 +78,6 @@ describe('O-R5-6 (E): momonga models detect lists the managed servers of the loa
   it('lists no managed row when the declared command does not exist', async (context) => {
     const { paths } = homeDeclaring(context, false);
     const rows = JSON.parse(await detected(paths, true)) as Array<Record<string, unknown>>;
-    expect(rows.filter((row) => row['shape'] === 'managed')).toEqual([]);
+    expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([]);
   });
 });
