@@ -296,6 +296,18 @@ describe('S0: the digest cases moved from the deleted supervisor plan tests (des
   });
 });
 
+describe('O-R5-6 (K) 3: context.unboundedOutputReserve is an input of the gateway object D1 (design-chatgpt-plan section 2 item 7)', () => {
+  const withReserve = (unboundedOutputReserve: boolean): Record<string, unknown> => ({ ...BASE_SETTINGS, context: { unboundedOutputReserve } });
+
+  it('turning the reserve on rebuilds exactly D1', () => {
+    expect(changedObjects(withReserve(false), withReserve(true))).toEqual(['D1']);
+  });
+
+  it('turning the reserve off rebuilds exactly D1', () => {
+    expect(changedObjects(withReserve(true), withReserve(false))).toEqual(['D1']);
+  });
+});
+
 describe('S0: a derivation runs under its owner signal; a caller abort detaches only that caller (design-settings-live 15.6, AbortIsolated)', () => {
   const ready = async () => {
     const h = ownedHarness();
