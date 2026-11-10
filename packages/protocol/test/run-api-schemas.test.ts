@@ -329,6 +329,7 @@ describe('response schemas', () => {
   it('describes an ApprovalView with its tool call', () => {
     const view = {
       id: 'appr-1',
+      kind: 'permission',
       runId: 'run-1',
       callId: 'call_1',
       status: 'pending',
@@ -349,6 +350,7 @@ describe('response schemas', () => {
   it('carries the reason the policy asked on an ApprovalView, and requires it as a string', () => {
     const view = {
       id: 'appr-1',
+      kind: 'permission',
       runId: 'run-1',
       callId: 'call_1',
       status: 'pending',

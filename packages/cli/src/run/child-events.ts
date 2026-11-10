@@ -16,6 +16,10 @@ export const asChildEvent = (event: PublicRunEvent, agent: string): PublicRunEve
     case 'tool.completed':
     case 'tool.reconciled':
       return { ...event, callId: qualified(event.runId, event.callId) };
+    case 'tool.unknown.requested':
+      return { ...event, callIds: event.callIds.map((callId) => qualified(event.runId, callId)) };
+    case 'tool.unknown.resolved':
+    case 'tool.unknown.cancelled':
     case 'tool.permission.resolved':
     case 'tool.permission.cancelled':
     case 'tool.elicitation.resolved':

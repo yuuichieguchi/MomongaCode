@@ -52,6 +52,7 @@ export type ApprovalToolCall = {
 
 export type ApprovalView = {
   readonly id: string;
+  readonly kind: 'permission' | 'unknown_effect';
   readonly runId: string;
   readonly callId: string;
   readonly status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';

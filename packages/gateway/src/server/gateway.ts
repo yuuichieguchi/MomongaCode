@@ -155,6 +155,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       startedAtSeconds: Math.floor(startedAtMs / 1000),
       costReport: options.costReport,
       billedCalls: options.billedCalls,
+      traceContent: options.traceContent,
       startedAt,
       version: options.version,
       errors,

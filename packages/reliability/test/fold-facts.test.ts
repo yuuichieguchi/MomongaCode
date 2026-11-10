@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
-import { aggregate, foldFacts, indicatorsOf } from '@momonga/reliability';
+import { FACTS_EVENT_TYPES, aggregate, foldCalls, foldFacts, indicatorsOf } from '@momonga/reliability';
 import type { RunFacts } from '@momonga/reliability';
 import {
   T0,
@@ -21,6 +21,7 @@ import {
   toolCall,
   toolCompleted,
   toolStarted,
+  unknownEffectRequested,
 } from './streams.ts';
 import type { Timed } from './streams.ts';
 
@@ -345,6 +346,42 @@ describe('X4 Human Intervention Rate', () => {
     expect(indicators.total.intervention).toEqual({ k: 3, n: 5 });
     expect(indicators.groups['manual']?.intervention).toEqual({ k: 1, n: 2 });
     expect(indicators.groups['bypassPermissions']?.intervention).toEqual({ k: 2, n: 3 });
+  });
+
+  it('an ask about a call whose effect is unknown needed a person: it is counted with the asks of the run, in every mode', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 10, toolCall('c1', 'write')],
+        [T0 + 20, toolStarted('c1')],
+        [T0 + 30, attemptLost(T0 + 25)],
+        [T0 + 40, started(2)],
+        [T0 + 50, reconciled('c1', 'unknown')],
+        [T0 + 60, unknownEffectRequested('c1')],
+        [T0 + 70, modelResponded(2)],
+        [T0 + 80, terminal('COMPLETED')],
+      ],
+      { mode: 'bypassPermissions' },
+    );
+    expect(facts.asked).toBe(1);
+    expect(totalOf([facts]).intervention).toEqual({ k: 1, n: 1 });
+    expect(FACTS_EVENT_TYPES).toContain('tool.unknown.requested');
+  });
+
+  it('an ask about an unknown effect is not a permission question about its call: the call row is not marked asked', () => {
+    const calls = foldCalls(
+      eventsOf('r1', [
+        [T0, started(1)],
+        [T0 + 10, toolCall('c1', 'write')],
+        [T0 + 20, toolStarted('c1')],
+        [T0 + 50, reconciled('c1', 'unknown')],
+        [T0 + 60, unknownEffectRequested('c1')],
+        [T0 + 80, terminal('COMPLETED')],
+      ]),
+      'r1',
+    );
+    expect(calls).toEqual([{ runId: 'r1', callId: 'c1', basis: null, sideEffect: 'write', asked: false }]);
   });
 
   it('counts a task once when only a child run asked', () => {

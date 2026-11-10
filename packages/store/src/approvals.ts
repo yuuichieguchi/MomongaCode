@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { APPROVAL_STATUSES } from '@momonga/protocol';
+import { APPROVAL_KINDS, APPROVAL_STATUSES } from '@momonga/protocol';
 import type { ElicitationAnswerRecord, ElicitationRequestView, PermissionOption } from '@momonga/protocol';
 import { corrupt, expectOneOf, isRecord, readerFor, storedOneOf } from './rows.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -33,8 +33,6 @@ const decodeResponses = (identity: string, value: unknown): Record<string, Elici
   if (!isRecord(value)) throw corrupt('approvals', identity, 'column responses_json must be a JSON object');
   return value as Record<string, ElicitationAnswerRecord>;
 };
-
-const APPROVAL_KINDS = ['permission', 'elicitation'] as const;
 
 const decodeApproval = (row: Row, context: DecodeContext): Approval => {
   const identity = String(row['id']);
@@ -75,8 +73,7 @@ export type ApprovalRequest = {
   callId: string;
   options: PermissionOption[];
   subjectDigest: string;
-  elicitation?: { server: string; requests: ElicitationRequestView[]; expiresAt: number };
-};
+} & ({ kind: 'permission' | 'unknown_effect'; elicitation?: undefined } | { kind: 'elicitation'; elicitation: { server: string; requests: ElicitationRequestView[]; expiresAt: number } });
 
 export type ApprovalOps = {
   store: ApprovalStore;
@@ -129,7 +126,7 @@ export const createApprovalStore = (db: DatabaseSync, clock: Clock, context: Dec
       expiresAt: input.elicitation === undefined ? null : input.elicitation.expiresAt,
       createdAt: clock.now(),
       subjectDigest: input.subjectDigest,
-      kind: input.elicitation === undefined ? 'permission' : 'elicitation',
+      kind: input.kind,
       server: input.elicitation?.server ?? null,
       requests: input.elicitation === undefined ? null : canonicalJson(input.elicitation.requests),
     });

@@ -148,7 +148,7 @@ describe('the journal thread build', () => {
       const target = path.join(root, 'for-bundle', 'journal-thread-code.generated.ts');
       fs.mkdirSync(path.dirname(target));
       const outfile = path.join(root, 'ping.mjs');
-      await bundle({ entry: PING_FIXTURE, outfile, journalThreadModule: target });
+      await bundle({ entry: PING_FIXTURE, outfile, journalThreadModule: target, ruleVerifierThreadModule: path.join(path.dirname(target), 'rule-verifier-thread-code.generated.ts') });
       expect(fs.existsSync(target)).toBe(true);
       expect(fs.existsSync(outfile)).toBe(true);
       expect(sourceModuleState()).toBe(sourceBefore);

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -7,6 +8,7 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
+import type { WorkspaceProbe } from '@momonga/eval';
 import {
   EntryLockHeldError,
   LIFELINE_FD,
@@ -29,6 +31,70 @@ import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
+
+const ABSENT_FILE = '\u0001absent';
+
+const probedContentOf = async (file: string): Promise<Buffer | null> => {
+  try {
+    return await fs.readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+};
+
+const probedFilesUnder = async (root: string, relative = ''): Promise<string[]> => {
+  const entries = await fs.readdir(path.join(root, relative), { withFileTypes: true });
+  const nested = await Promise.all(
+    entries.map((entry) => {
+      const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      return entry.isDirectory() ? probedFilesUnder(root, child) : Promise.resolve([child]);
+    }),
+  );
+  return nested.flat();
+};
+
+const sortedNames = (names: Iterable<string>): string[] => [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+
+export const createWorkspaceProbe = (env: Readonly<Record<string, string>>): WorkspaceProbe => ({
+  run: (command, timeoutMs, cwd) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(command, { shell: true, cwd, env: { ...env }, stdio: 'ignore', windowsHide: true });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, timeoutMs);
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('close', (exitCode) => {
+        clearTimeout(timer);
+        resolve({ exitCode, timedOut });
+      });
+    }),
+
+  digest: async (cwd, paths) => {
+    const hash = crypto.createHash('sha256');
+    for (const relative of sortedNames(paths)) {
+      const content = await probedContentOf(path.join(cwd, relative));
+      hash.update(`${relative}\0`);
+      hash.update(content ?? ABSENT_FILE);
+      hash.update('\0');
+    }
+    return hash.digest('hex');
+  },
+
+  changedPaths: async (cwd, baseDir) => {
+    const changed: string[] = [];
+    for (const relative of sortedNames(new Set([...(await probedFilesUnder(cwd)), ...(await probedFilesUnder(baseDir))]))) {
+      const [here, there] = await Promise.all([probedContentOf(path.join(cwd, relative)), probedContentOf(path.join(baseDir, relative))]);
+      if (here === null || there === null ? here !== there : !here.equals(there)) changed.push(relative);
+    }
+    return changed;
+  },
+});
 
 export const launchProgram: LaunchProgram = (file, args) =>
   new Promise((resolve, reject) => {
@@ -189,6 +255,7 @@ export const nodePorts = (version: string): CliPorts => {
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
     files: nodeFiles,
     exec: createHostExec(minimalChildEnv(process.env)),
+    probe: createWorkspaceProbe(minimalChildEnv(process.env)),
     openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
     secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
     acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),

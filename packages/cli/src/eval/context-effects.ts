@@ -12,6 +12,7 @@ import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
 import type { ContextHostEffects, EvalOwner, ManagedRecordSource } from './context-host.ts';
+import type { YieldHostEffects } from './yield-host.ts';
 
 export const MAX_TIMER_MS = 2_147_483_647;
 
@@ -156,3 +157,9 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
       }),
   };
 };
+
+export const nodeYieldEffects = (ports: CliPorts, lock: KernelLockMechanism = hostKernelLock()): YieldHostEffects => ({
+  ...nodeContextEffects(ports, lock),
+  connect: (paths) => connectRuntime(paths),
+  copyWorkspace: (from, to) => fs.cp(from, to, { recursive: true, verbatimSymlinks: true }),
+});

@@ -37,13 +37,15 @@ import {
   runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
 import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, StopValues, TextStream } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore, pageRunBodies, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
+import { createRuleVerifier, installedRuleSolver } from './rule-verifier.ts';
+import type { RuleSolverSource } from './rule-verifier.ts';
 import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
@@ -63,7 +65,7 @@ import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
 import { createRecordViews } from '../memory/views.ts';
-import { TRACE_EVENT_TYPES, costBreakdownOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
+import { TRACE_EVENT_TYPES, costBreakdownOf, reportCostOf, runlessTimingsOf, sideTimingsOfRun, traceCallsOf, traceEventsOf } from '../service/model-calls.ts';
 import { runTraceOf } from '../service/trace-view.ts';
 import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
@@ -138,6 +140,7 @@ export type StartRuntimeProcessOptions = {
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
+  ruleSolver?: RuleSolverSource;
   role?: RolePort;
   requestShutdown?: () => void;
 };
@@ -729,6 +732,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             runlessTimingsOf: () => runlessTimingsOf(store),
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
+        reportCost: (runIds, signal) => reportCostOf({ runIds, fetchPage: (ids, cursor, limit) => gatewayClient.billedCalls(ids, cursor, limit, false, signal) }),
+        runTraceContent: async (runId, after, limit) => {
+          await telemetries.current().telemetry.forceFlush();
+          return pageRunBodies(traceStore, runId, after, limit);
+        },
         mcp: toolRuntime.mcpAdmin,
         markerOwners: toolRuntime.owners,
         role: rolePort,
@@ -742,6 +750,12 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     service = runService;
     cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
+    const ruleVerifier = createRuleVerifier({
+      host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
+      fs: createPolicyFilesystem(),
+      paths,
+      timers,
+    });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
         const id = `runtime-${process.pid}-${startedAtMs}-${index}`;
@@ -755,6 +769,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           governance: governancePort,
           agents: agentsPort,
           tools: toolRuntime.port,
+          ruleVerifier,
           tracers,
           clock,
           workerId: id,

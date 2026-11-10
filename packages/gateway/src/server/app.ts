@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { MAX_TRACE_CONTENT_PAGE, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
-import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList, TraceContentPage } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, gatewayClosedError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
@@ -30,6 +30,7 @@ export type AppDependencies = {
   version: string;
   costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
+  traceContent: ((runId: string, after: number, limit: number, signal: AbortSignal) => Promise<TraceContentPage>) | undefined;
   errors: ErrorExit;
   plan: PlanApi | undefined;
 };
@@ -238,6 +239,17 @@ export const createApp = (dependencies: AppDependencies): Hono => {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
     return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless, requestSignalOf(context)));
+  });
+
+  app.get('/v1/momonga/content', async (context) => {
+    if (dependencies.traceContent === undefined) throw notFound('content_unavailable', 'this gateway keeps no trace store to read content from');
+    const runId = context.req.query('run_id');
+    if (runId === undefined || runId === '') throw invalidRequest('invalid_query', 'the run_id query parameter is required', 'run_id');
+    const after = Number(context.req.query('after') ?? '0');
+    if (!isCount(after)) throw invalidRequest('invalid_query', 'after must be a non-negative integer', 'after');
+    const limit = Number(context.req.query('limit') ?? String(MAX_TRACE_CONTENT_PAGE));
+    if (!isCount(limit) || limit < 1 || limit > MAX_TRACE_CONTENT_PAGE) throw invalidRequest('invalid_query', `limit must be an integer from 1 to ${MAX_TRACE_CONTENT_PAGE}`, 'limit');
+    return context.json(await dependencies.traceContent(runId, after, limit, requestSignalOf(context)));
   });
 
   const planRoute = (route: string): string => `${PLAN_API_PREFIX}${route}`;

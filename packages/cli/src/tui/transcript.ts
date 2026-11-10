@@ -1,4 +1,4 @@
-import { escapeTerminalLine } from '@momonga/protocol';
+import { UNKNOWN_EFFECT_REASON, escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, ToolKind, UserShellRecord } from '@momonga/protocol';
 import { attachedRow } from './attach.ts';
 import { startFlow } from '../elicit/flow.ts';
@@ -53,7 +53,7 @@ export type Entry =
 
 export type ToolEntry = Extract<Entry, { kind: 'tool' }>;
 
-export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string };
+export type PendingApproval = { approvalId: string; callId: string; options: readonly PermissionOption[]; reason: string; suggestedRule?: string; unknownCallIds?: readonly string[] };
 
 export type PendingElicitation = { inputId: string; callId: string; server: string; flow: ElicitationFlow; submitted: boolean };
 
@@ -254,6 +254,17 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       store.update({ approval: prompts.head, queuedApprovals: prompts.queued });
       return;
     }
+    case 'tool.unknown.requested': {
+      const [callId] = event.callIds;
+      if (callId === undefined) throw new Error(`approval ${event.approvalId} asks about no call`);
+      const pending: PendingApproval = { approvalId: event.approvalId, callId, options: event.options, reason: UNKNOWN_EFFECT_REASON, unknownCallIds: event.callIds };
+      const prompts = enqueue({ head: state.approval, queued: state.queuedApprovals }, pending, (other) => other.approvalId === event.approvalId);
+      store.name(approvalKey(event.approvalId), callKey(callId));
+      store.update({ approval: prompts.head, queuedApprovals: prompts.queued });
+      return;
+    }
+    case 'tool.unknown.resolved':
+    case 'tool.unknown.cancelled':
     case 'tool.permission.resolved':
     case 'tool.permission.cancelled': {
       const settled = dequeue({ head: state.approval, queued: state.queuedApprovals }, (other) => other.approvalId === event.approvalId);
@@ -493,8 +504,11 @@ const foldSubagent = (store: TranscriptStore, event: PublicRunEvent): void => {
       return;
     }
     case 'tool.permission.requested':
+    case 'tool.unknown.requested':
       withSubagent(store, event.runId, (subagent) => ({ ...subagent, awaitingApproval: true }));
       return;
+    case 'tool.unknown.resolved':
+    case 'tool.unknown.cancelled':
     case 'tool.permission.resolved':
     case 'tool.permission.cancelled':
       withSubagent(store, event.runId, (subagent) => ({ ...subagent, awaitingApproval: false }));

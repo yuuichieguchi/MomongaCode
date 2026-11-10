@@ -36,7 +36,8 @@ export type E2eCaseFile =
   | 'token-anatomy.test.ts'
   | 'roles.test.ts'
   | 'first-run.test.ts'
-  | 'core-on-defaults.test.ts';
+  | 'core-on-defaults.test.ts'
+  | 'eval-yield.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -94,6 +95,7 @@ export const E2E_CASES = [
   { id: 'eval-false-allow', file: 'eval-runner.test.ts', title: 'eval: momonga eval exits 1 and counts a write allowed by acceptEdits and labelled ask as a false allow, while a blocked read labelled deny is observed as deny', needsBash: false },
   { id: 'context-improve-adopt', file: 'context-improve.test.ts', title: 'context improve: a contrastive scenario, one improving candidate, a real improve that writes its outcome and stores nothing, a token cap whose last planned benchmark carries the spend past it, an adopt of that outcome file, a refused second adopt, and a following run whose compaction carries the guideline', needsBash: false },
   { id: 'eval-context-live', file: 'eval-context.test.ts', title: 'eval context: a live run through the real stack gives a Bash call the home of the case, compacts the on case only, loads the revised rule, sees the stale memory, reports the numbers and replays to the same report', needsBash: true },
+  { id: 'eval-yield-live', file: 'eval-yield.test.ts', title: 'eval yield: a live run through the real stack reflects on the verified learn session, seeds the candidate that holds the anchor in the with arm only, whose request carries the recalled memory, and reports both arms and the reflection charge', needsBash: true },
   { id: 'eval-context-kill', file: 'eval-context-kill.test.ts', title: 'eval context: a case daemon stops when the CLI that started it is killed with SIGKILL, and the next eval context removes the home it left', needsBash: false },
   { id: 'otlp-export', file: 'otlp-export.test.ts', title: 'otlp: a run exports GenAI spans from the gateway and the runtime to a loopback collector when settings opt in', needsBash: false },
   { id: 'cost-report', file: 'otlp-export.test.ts', title: 'cost: per-run and per-session cost comes from the usage the gateway recorded in its trace store', needsBash: false },

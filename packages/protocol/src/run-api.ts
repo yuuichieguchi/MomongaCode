@@ -1,6 +1,7 @@
 import type { Stored } from './stored-value.ts';
 import { UNKNOWN_VALUE } from './stored-value.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
+import { RULE_VERDICTS } from './rule-verdict.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
@@ -436,6 +437,18 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['approvalId', 'optionId'],
   },
   'tool.permission.cancelled': {
+    properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
+    required: ['approvalId', 'reason'],
+  },
+  'tool.unknown.requested': {
+    properties: { approvalId: string, callIds: { type: 'array', items: string }, options: { type: 'array', items: permissionOption }, subjectDigest: string },
+    required: ['approvalId', 'callIds', 'options', 'subjectDigest'],
+  },
+  'tool.unknown.resolved': {
+    properties: { approvalId: string, optionId: string },
+    required: ['approvalId', 'optionId'],
+  },
+  'tool.unknown.cancelled': {
     properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
     required: ['approvalId', 'reason'],
   },
@@ -1376,6 +1389,7 @@ export const RUN_API_SCHEMAS = {
     closed(
       {
         id: string,
+        kind: enumOf(['permission', 'unknown_effect']),
         runId: string,
         callId: string,
         status: storedEnumOf(APPROVAL_STATUSES),
@@ -1395,7 +1409,7 @@ export const RUN_API_SCHEMAS = {
           ['callId', 'name', 'title', 'kind', 'rawInput'],
         ),
       },
-      ['id', 'runId', 'callId', 'status', 'options', 'createdAt', 'reason', 'toolCall'],
+      ['id', 'kind', 'runId', 'callId', 'status', 'options', 'createdAt', 'reason', 'toolCall'],
     ),
   ),
   JobView: root(jobView),
@@ -1530,6 +1544,23 @@ export const RUN_API_SCHEMAS = {
   RuleAddResponse: root(closed({ fact: governingFactView, size: { type: 'array', items: ruleSize }, warnings: { type: 'array', items: string } }, ['fact', 'size', 'warnings'])),
   RuleResponse: root(closed({ fact: governingFactView }, ['fact'])),
   RulesResponse: root(closed({ facts: { type: 'array', items: governingFactView } }, ['facts'])),
+  PutRuleVerdictRequest: root(
+    closed(
+      {
+        verdict: closed(
+          {
+            verdict: enumOf(RULE_VERDICTS),
+            solver: string,
+            refuted: { type: 'array', items: closed({ property: string, subject: string, message: string, counterexample: string }, ['property', 'subject', 'message']) },
+            unknown: { type: 'array', items: closed({ property: string, reason: string }, ['property', 'reason']) },
+            notProved: { type: 'array', items: string },
+          },
+          ['verdict', 'solver', 'refuted', 'unknown', 'notProved'],
+        ),
+      },
+      ['verdict'],
+    ),
+  ),
   PolicyGovernanceResponse: root(
     closed(
       {

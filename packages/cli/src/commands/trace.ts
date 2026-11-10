@@ -1,7 +1,7 @@
 import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isFallbackCauseList } from '@momonga/protocol';
-import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
+import { ERROR_TYPE_ATTRIBUTE, MAX_TRACE_CONTENT_PAGE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isFallbackCauseList } from '@momonga/protocol';
+import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, TraceContentPage, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -76,15 +76,54 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
   ]);
 };
 
-export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
+export type ContentSource = { name: string; page(runId: string, after: number, limit: number): Promise<TraceContentPage> };
+
+export const writeTraceContent = async (sources: readonly ContentSource[], runId: string, json: boolean, write: (text: string) => void): Promise<void> => {
+  let shown = 0;
+  for (const source of sources) {
+    let after: number | null = 0;
+    while (after !== null) {
+      const page: TraceContentPage = await source.page(runId, after, MAX_TRACE_CONTENT_PAGE);
+      for (const body of page.bodies) {
+        shown += 1;
+        write(
+          json
+            ? `${JSON.stringify({ store: source.name, ...body })}\n`
+            : `${escapedLines([`${source.name} body ${body.id}  span ${body.spanId}  ${body.kind}  expires ${new Date(body.expiresAtMs).toISOString()}`, ...body.content.split('\n')])}\n`,
+        );
+      }
+      after = page.next;
+    }
+  }
+  if (shown === 0 && !json) {
+    write(`${escapedLines([`No stored content for run ${runId}: message content is stored only while telemetry.captureMessageContent is on, and each body is removed when it expires.`])}\n`);
+  }
+};
+
+export type TraceOptions = { json: boolean; content: boolean };
+
+export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, options: TraceOptions): Promise<number> => {
   await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
-    const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));
     const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
     try {
+      if (options.content) {
+        const id = runId ?? (await latestRunIdOf(client, ports.cwd));
+        await writeTraceContent(
+          [
+            { name: 'runtime', page: (run, after, limit) => client.traceContent(run, { after, limit }) },
+            { name: 'gateway', page: (run, after, limit) => gateway.contentOf(run, { after, limit }) },
+          ],
+          id,
+          options.json,
+          (text) => ports.stdout.write(text),
+        );
+        return 0;
+      }
+      const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));
       const usage = await gateway.usageOf(trace.runId);
-      ports.stdout.write(`${json ? JSON.stringify({ ...trace, usage }) : renderTrace(trace, usage)}\n`);
+      ports.stdout.write(`${options.json ? JSON.stringify({ ...trace, usage }) : renderTrace(trace, usage)}\n`);
     } finally {
       await gateway.close();
     }

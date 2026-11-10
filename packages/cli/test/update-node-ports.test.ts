@@ -34,6 +34,7 @@ const cliPortsFor = (home: string): CliPorts =>
     files: unusedPort('files'),
     openUrl: unusedPort('openUrl'),
     exec: unusedPort('exec'),
+    probe: unusedPort('probe'),
     secretStore: unusedPort('secretStore'),
   }) satisfies CliPorts;
 

@@ -1,5 +1,5 @@
 import { Box, Text } from 'ink';
-import { escapeTerminalBlock } from '@momonga/protocol';
+import { escapeTerminalBlock, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import { currentField, currentRequest } from '../../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts';
 import { diffOfToolInput } from '../diff.ts';
@@ -46,6 +46,18 @@ export const approvalLines = (approval: PendingApproval, tool: ToolEntry | undef
   return [approval.reason, ...(diff ?? []).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] }))];
 };
 
+export const approvalWording = (approval: PendingApproval, toolOf: (callId: string) => ToolEntry | undefined, workingDirectory: string): { title: string; lines: SelectLine[] } => {
+  if (approval.unknownCallIds === undefined) {
+    const tool = toolOf(approval.callId);
+    return { title: tool?.title ?? approval.callId, lines: approvalLines(approval, tool, workingDirectory) };
+  }
+  const calls = approval.unknownCallIds.map((callId) => {
+    const tool = toolOf(callId);
+    return { title: tool?.title ?? callId, ...(tool?.output === undefined ? {} : { found: tool.output }) };
+  });
+  return { title: unknownEffectTitle(calls), lines: unknownEffectLines(calls) };
+};
+
 export const waitingCounter = (waiting: number): string => (waiting > 1 ? ` (1 of ${waiting})` : '');
 
 const escapeOf = (approval: PendingApproval): SelectSpec['escape'] => {
@@ -55,7 +67,7 @@ const escapeOf = (approval: PendingApproval): SelectSpec['escape'] => {
 };
 
 export const approvalSpec = (approval: PendingApproval, title: string, lines: readonly SelectLine[], waiting: number): SelectSpec => ({
-  title: `Permission requested: ${title}${waitingCounter(waiting)}`,
+  title: `${approval.unknownCallIds === undefined ? `Permission requested: ${title}` : title}${waitingCounter(waiting)}`,
   lines,
   rows: approval.options.map((option) => ({ label: option.name })),
   initial: 0,

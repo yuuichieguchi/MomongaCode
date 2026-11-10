@@ -1,7 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isToolCallingState } from '@momonga/protocol';
-import type { Capabilities, OutputFormatterName, TargetAnswers } from '@momonga/protocol';
+import { OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -26,6 +26,7 @@ export type RunPins = {
   memoryShare?: number;
   guidelineVersion?: number;
   token?: TokenPin;
+  policyVerdict?: PinnedRuleVerdict;
 };
 
 export const readRoles = (value: unknown): ModelRoles => {
@@ -102,7 +103,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   isToolCallingState(value['toolCalling']);
 
 export const readPins = (value: Record<string, unknown>): RunPins => {
-  const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token } = value;
+  const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token, policyVerdict } = value;
   const model = decodeStoredModel(value, STORED_MODEL_KEYS.pin);
   if (
     model === undefined ||
@@ -110,6 +111,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     typeof toolSetDigest !== 'string' ||
     !isCapabilities(capabilities) ||
     (memoryShare !== undefined && typeof memoryShare !== 'number') ||
+    (policyVerdict !== undefined && !isPinnedRuleVerdict(policyVerdict)) ||
     (guidelineVersion !== undefined && (typeof guidelineVersion !== 'number' || !Number.isInteger(guidelineVersion) || guidelineVersion < 1))
   ) {
     throw new Error('the pins recorded for this run are malformed');
@@ -128,5 +130,6 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     ...(memoryShare === undefined ? {} : { memoryShare }),
     ...(guidelineVersion === undefined ? {} : { guidelineVersion }),
     ...(token === undefined ? {} : { token: readTokenPin(token) }),
+    ...(policyVerdict === undefined ? {} : { policyVerdict }),
   };
 };

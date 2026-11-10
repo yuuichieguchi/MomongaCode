@@ -15,6 +15,7 @@ describe('lines that show text a person did not write', () => {
     const options: PermissionOption[] = [{ optionId: 'o1', name: HOSTILE, kind: 'allow_once' }];
     const approval: ApprovalView = {
       id: 'ap1',
+      kind: 'permission',
       runId: 'run-1',
       callId: 'c1',
       status: 'pending',

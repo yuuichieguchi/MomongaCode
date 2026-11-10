@@ -3,7 +3,7 @@ import { setTimeout as sleepFor } from 'node:timers/promises';
 import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, PermissionReviewView, ReviewPage, RunCostView, StoreReviewRequest, TraceContentPage } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -30,7 +30,11 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkReportCost,
   checkReportPage,
+  checkReviewPage,
+  checkStoreReview,
+  checkTraceContent,
   checkRunAnsweredBy,
   checkRunReflection,
   checkRule,
@@ -110,6 +114,7 @@ export type CreateRunOptions = {
   idempotencyKey?: string;
   skill?: string;
   timeoutMs?: number;
+  limits?: { maxSteps?: number; maxTotalTokens?: number };
   images?: readonly ImageAttachment[];
   attachMentions?: boolean;
 };
@@ -180,11 +185,16 @@ export type RuntimeClient = {
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   ignoreMarker(name: string): Promise<void>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
+  putRuleVerdict(fingerprint: string, verdict: RuleVerdict): Promise<void>;
   guidelines(): Promise<GuidelinesResponse>;
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
   rollbackGuideline(version: number): Promise<GuidelineView>;
   recordContextCharge(request: RecordContextChargeRequest): Promise<ContextChargeView>;
   reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage>;
+  reportReviews(request: { cursor: string | null; limit: number }): Promise<ReviewPage>;
+  storeReview(request: StoreReviewRequest): Promise<PermissionReviewView>;
+  reportCost(runIds: readonly string[]): Promise<RunCostView[]>;
+  traceContent(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
   costBreakdown(filter?: CostFilter): Promise<CostBreakdownView>;
@@ -210,6 +220,7 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): Re
   ...(options.history === undefined ? {} : { history: options.history }),
   ...(options.skill === undefined ? {} : { skill: options.skill }),
   ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+  ...(options.limits === undefined ? {} : { limits: options.limits }),
   ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
   ...(options.attachMentions === true ? { attachMentions: true } : {}),
 });
@@ -609,6 +620,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkPolicyGovernance(body, `GET ${path}`);
   };
 
+  const putRuleVerdict = async (fingerprint: string, verdict: RuleVerdict): Promise<void> => {
+    await send('PUT', `/v1/policy/verdicts/${encodeURIComponent(fingerprint)}`, [204], { body: { verdict } satisfies PutRuleVerdictRequest });
+  };
+
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
 
   const guidelines = async (): Promise<GuidelinesResponse> => {
@@ -637,6 +652,29 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     const path = `/v1/report/facts?${query.toString()}`;
     const { body } = await send('GET', path, [200]);
     return checkReportPage(body, `GET ${path}`);
+  };
+
+  const reportReviews = async (request: { cursor: string | null; limit: number }): Promise<ReviewPage> => {
+    const query = new URLSearchParams({ limit: String(request.limit), ...(request.cursor === null ? {} : { cursor: request.cursor }) });
+    const path = `/v1/report/reviews?${query.toString()}`;
+    const { body } = await send('GET', path, [200]);
+    return checkReviewPage(body, `GET ${path}`);
+  };
+
+  const storeReview = async (request: StoreReviewRequest): Promise<PermissionReviewView> => {
+    const { body } = await send('POST', '/v1/report/reviews', [201], { body: request });
+    return checkStoreReview(body, 'POST /v1/report/reviews').review;
+  };
+
+  const reportCost = async (runIds: readonly string[]): Promise<RunCostView[]> => {
+    const { body } = await send('POST', '/v1/report/cost', [200], { body: { runIds } });
+    return checkReportCost(body, 'POST /v1/report/cost').costs;
+  };
+
+  const traceContent = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
+    const path = `/v1/runs/${runId}/trace/content?${new URLSearchParams({ after: String(request.after), limit: String(request.limit) }).toString()}`;
+    const { body } = await send('GET', path, [200]);
+    return checkTraceContent(body, `GET ${path}`);
   };
 
   const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
@@ -767,11 +805,16 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     ruleHistory,
     ignoreMarker,
     policyGovernance,
+    putRuleVerdict,
     guidelines,
     adoptGuideline,
     rollbackGuideline,
     recordContextCharge,
     reportFacts,
+    reportReviews,
+    storeReview,
+    reportCost,
+    traceContent,
     cost,
     costText,
     costBreakdown,

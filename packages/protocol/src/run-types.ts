@@ -43,6 +43,32 @@ export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 export type StopReason = (typeof STOP_REASONS)[number];
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+export const APPROVAL_KINDS = ['permission', 'elicitation', 'unknown_effect'] as const;
+
+export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
+
+export const unknownEffectOptions = (): PermissionOption[] => [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }];
+
+export const UNKNOWN_EFFECT_REASON = 'Its effect is unknown because the runtime stopped while it ran.';
+
+export const UNKNOWN_EFFECT_ADVICE = 'Inspect the current state, then continue. To stop instead, cancel the run.';
+
+export type UnknownEffectCall = { title: string; found?: string };
+
+export const unknownEffectTitle = (calls: readonly UnknownEffectCall[]): string => {
+  const [first, ...others] = calls;
+  if (first === undefined) throw new Error('an unknown effect names at least one call');
+  return `Effect unknown: ${first.title}${others.length === 0 ? '' : ` and ${others.length} more`}`;
+};
+
+export const unknownEffectLines = (calls: readonly UnknownEffectCall[]): string[] => [
+  ...calls.flatMap((call) => [
+    `${call.title}: ${UNKNOWN_EFFECT_REASON}`,
+    ...(call.found === undefined ? [] : [`What the recovery found: ${call.found}`]),
+  ]),
+  UNKNOWN_EFFECT_ADVICE,
+];
 export type ToolKind = (typeof TOOL_KINDS)[number];
 
 export const SIDE_EFFECTS = ['read_only', 'write', 'exec'] as const;
@@ -224,6 +250,9 @@ export type RunEventPayload =
   | ({ type: 'hook.completed' } & HookExecution)
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
+  | { type: 'tool.unknown.requested'; approvalId: string; callIds: string[]; options: PermissionOption[]; subjectDigest: string }
+  | { type: 'tool.unknown.resolved'; approvalId: string; optionId: string }
+  | { type: 'tool.unknown.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
   | { type: 'tool.elicitation.requested'; inputId: string; callId: string; server: string; requests: ElicitationRequestView[] }
   | { type: 'tool.elicitation.resolved'; inputId: string; responses: Record<string, ElicitationAnswerRecord> }
   | { type: 'tool.elicitation.cancelled'; inputId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
@@ -422,6 +451,7 @@ export type RunState = {
   compactions: number;
   lastCompactionSeq: number;
   callResults: Record<string, 'completed' | 'failed'>;
+  unknownEffects: Record<string, { approvalId?: string; acknowledged: boolean }>;
   formsSinceCompaction: Record<string, number>;
   governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
   memoriesLoaded?: { id: string; status: MemoryStatus }[];

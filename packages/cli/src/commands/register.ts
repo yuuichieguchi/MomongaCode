@@ -1,9 +1,9 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
-import { DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
+import { DEFAULT_DATASET_SEED, GATE_NAMES, MAX_DATASET_SEED } from '@momonga/eval';
 import { GROUP_KEYS } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
-import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
+import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES, REVIEW_LABELS, REVIEW_SAMPLE_SIZE } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
@@ -13,6 +13,7 @@ import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
 import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from './auto-mode.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
+import { evaluateYield } from './yield.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
@@ -20,7 +21,10 @@ import { listJobs } from './jobs.ts';
 import { checkModels, detectModels, listModels, modelsShellOf, runModelsForm } from './models.ts';
 import type { FormOption, ModelsForm, ModelsShell } from './models.ts';
 import { policyVerify } from './policy.ts';
-import { showReliability } from './reliability.ts';
+import { DEFAULT_REPORT_DAYS, showReliability } from './reliability.ts';
+import { evaluateBench } from './bench.ts';
+import { reviewPermissions } from './review.ts';
+import type { ReviewOptions } from './review.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
 
@@ -301,14 +305,21 @@ const registerCost: CommandGroup = (program, deps) => {
     });
 };
 
+const daysArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isSafeInteger(value) || value < 1) throw new InvalidArgumentError('expected a positive integer');
+  return value;
+};
+
 const registerReliability: CommandGroup = (program, deps) => {
   program
     .command('reliability')
-    .description('report the completion, recovery, duplicate, intervention, budget and time indicators of the terminal tasks in the record')
+    .description('report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the terminal tasks of the period')
     .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by').choices(GROUP_KEYS).default('model'))
+    .option('--days <n>', 'the period: the tasks whose root run ended in the last n days', daysArgument, DEFAULT_REPORT_DAYS)
     .option('--explain', 'list the run ids behind each count')
-    .action(async (options: { groupBy: GroupKey; explain?: true }) => {
-      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, explain: options.explain === true }));
+    .action(async (options: { groupBy: GroupKey; days: number; explain?: true }) => {
+      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, days: options.days, explain: options.explain === true }));
     });
 };
 
@@ -353,11 +364,71 @@ const registerEvaluate: CommandGroup = (program, deps) => {
       );
     });
   evaluation
+    .command('yield <dataset>')
+    .description(
+      'run a yield dataset live and judge whether reflection pays: each family runs a learn session and then a reuse session with and without the candidates of its reflection, counted as accepted when they hold an anchor of the dataset; exits non-zero when the gate fails',
+    )
+    .requiredOption('--model <model>', 'the model every session of the run uses')
+    .requiredOption('--report <file>', 'the file the report is stored in as JSON')
+    .action(async (dataset: string, options: { model: string; report: string }) => {
+      deps.complete(await evaluateYield(deps.ports, dataset, { model: options.model, report: options.report, interrupt: deps.interrupt }));
+    });
+  evaluation
     .command('compare <baseline> <candidate>')
     .description('print the paired differences of two context reports and pass or fail the candidate against the gate')
-    .option('--gate <name>', 'the terms the candidate is judged on: context (the default) or token', 'context')
+    .option('--gate <name>', `the terms the candidate is judged on, one of ${GATE_NAMES.join(', ')}: context (the default) and token compare two context reports, reliability compares two reliability reports of one kind (two benchmark reports of eval bench, or two injection reports)`, 'context')
     .action(async (baseline: string, candidate: string, options: { gate: string }) => {
       deps.complete(await compareContext(deps.ports, baseline, candidate, options.gate));
+    });
+  evaluation
+    .command('bench <directory>')
+    .description('run every task of the benchmark in the directory on one model, each trial in a fresh copy of its repository, check each with the oracle of its task, and print the reliability report; with --validate, check the benchmark itself without a model')
+    .option('--validate', 'check that every task fails on its repository, passes with its reference solution, keeps its grader files out of the repository and names the digest of its repository, and print beside the label of each task the files and lines its reference changes')
+    .option('--model <model>', 'the model every task runs on')
+    .option('--report <file>', 'store the report as JSON for eval compare --gate reliability')
+    .action(async (directory: string, options: { validate?: true; model?: string; report?: string }) => {
+      deps.complete(
+        await evaluateBench(deps.ports, await pathsOf(deps.ports), directory, {
+          validate: options.validate === true,
+          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(options.report === undefined ? {} : { report: options.report }),
+        }),
+      );
+    });
+};
+
+type ReviewFlags = { sample?: string | true; seed?: string; call?: string; label?: string };
+
+const sampleSizeOf = (sample: string | true): number => {
+  if (sample === true) return REVIEW_SAMPLE_SIZE;
+  const size = Number(sample);
+  if (!Number.isInteger(size) || size < 1) throw new InvalidArgumentError(`--sample ${JSON.stringify(sample)} is not an integer of at least 1`);
+  return size;
+};
+
+const reviewOptionsOf = (run: string | undefined, flags: ReviewFlags): ReviewOptions => {
+  if (flags.sample !== undefined) {
+    if (run !== undefined || flags.call !== undefined || flags.label !== undefined) throw new InvalidArgumentError('--sample lists calls to review and takes no run, --call or --label');
+    if (flags.seed === undefined) throw new InvalidArgumentError('--sample needs --seed <seed>: the same seed lists the same sample again');
+    return { kind: 'sample', size: sampleSizeOf(flags.sample), seed: flags.seed };
+  }
+  if (run === undefined || flags.call === undefined || flags.label === undefined) {
+    throw new InvalidArgumentError('give --sample with --seed <seed> to list calls to review, or a run with --call <id> and --label <label> to store the review of one call');
+  }
+  return { kind: 'label', runId: run, callId: flags.call, label: flags.label };
+};
+
+const registerPermissions: CommandGroup = (program, deps) => {
+  const permissions = program.command('permissions').description('review the permission decisions of recorded tool calls');
+  permissions
+    .command('review [run]')
+    .description('list a sample of recorded tool calls to review with the rates of the reviews stored so far, or store the review of one call')
+    .option('--sample [n]', `list n calls allowed without a person that have a side effect and n asks; ${REVIEW_SAMPLE_SIZE} when no number is given`)
+    .option('--seed <seed>', 'the seed of the sample order')
+    .option('--call <id>', 'the call of the run the label is for')
+    .option('--label <label>', `the review of the call: ${REVIEW_LABELS.join(', ')}`)
+    .action(async (run: string | undefined, flags: ReviewFlags) => {
+      deps.complete(await reviewPermissions(deps.ports, await pathsOf(deps.ports), reviewOptionsOf(run, flags)));
     });
 };
 
@@ -610,7 +681,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerPermissions, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

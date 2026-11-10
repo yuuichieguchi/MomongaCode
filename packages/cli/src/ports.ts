@@ -1,3 +1,4 @@
+import type { WorkspaceProbe } from '@momonga/eval';
 import type { FileSystem, HostExec, OpenUrl, SecretStore } from '@momonga/foundation';
 import type { HandoverHost } from './handover/host.ts';
 
@@ -56,6 +57,7 @@ export type CliPorts = {
   terminal: Terminal | undefined;
   files: CliFiles;
   exec: HostExec;
+  probe: WorkspaceProbe;
   openUrl: OpenUrl;
   secretStore(): SecretStore;
   acpStdio?: () => AcpStdio;

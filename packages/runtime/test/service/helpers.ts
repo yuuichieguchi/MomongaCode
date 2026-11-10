@@ -1,3 +1,4 @@
+import { createFakeRuleVerifier } from '../worker/fake-rule-verifier.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -455,6 +456,8 @@ export type ServiceOverrides = {
   beforeCapabilities?: () => Promise<void>;
   capabilitiesOf?: (model: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
+  reportCost?: (runIds: readonly string[], signal: AbortSignal) => Promise<unknown>;
+  runTraceContent?: (runId: string, after: number, limit: number) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
   protectedRootAreas?: readonly string[];
@@ -554,6 +557,8 @@ export const serviceOptions = (
   ...(overrides.cancelUpstream === undefined ? {} : { cancelUpstream: overrides.cancelUpstream }),
   releaseStopped: overrides.releaseStopped ?? (async () => undefined),
   runTrace: overrides.runTrace ?? (async () => undefined),
+  reportCost: overrides.reportCost ?? (async () => []),
+  runTraceContent: overrides.runTraceContent ?? (async () => ({ bodies: [], next: null })),
   runCost:
     overrides.runCost ??
     (async () => ({
@@ -803,6 +808,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools,
+      ruleVerifier: createFakeRuleVerifier(),
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,

@@ -1,7 +1,9 @@
 import { INDICATOR_DEFINITIONS_VERSION, MIN_RATE_POPULATION, RELIABILITY_FORMAT, modelKindOf } from '@momonga/protocol';
 import type { AnsweredByView } from '@momonga/protocol';
 import { indicatorsOf } from './aggregate.ts';
-import type { Aggregate } from './aggregate.ts';
+import type { Aggregate, Period } from './aggregate.ts';
+import { costLines } from './cost.ts';
+import type { CostGroups, CostIndicators } from './cost.ts';
 import type { GroupKey, Indicators, Rate } from './types.ts';
 import { wilsonInterval } from './wilson.ts';
 
@@ -34,12 +36,14 @@ export type ReliabilityReport = {
   scenarios?: ScenarioRow[];
   witnessed?: Rate;
   population?: { notRun: NotRun[] };
+  period?: Period;
+  cost?: CostGroups;
 };
 
 type Measured = { aggregate: Aggregate };
 
 export type ReportInput =
-  | (Measured & { kind: 'real'; harness?: null })
+  | (Measured & { kind: 'real'; harness?: null; period?: Period; cost?: CostGroups })
   | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[] })
   | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate; notRun?: NotRun[] });
 
@@ -48,7 +52,7 @@ export const buildReliabilityReport = (input: ReportInput): ReliabilityReport =>
   const base: Omit<ReliabilityReport, 'kind' | 'harness'> = { format: RELIABILITY_FORMAT, definitionsVersion: INDICATOR_DEFINITIONS_VERSION, groupBy: input.aggregate.groupBy, total, groups };
   switch (input.kind) {
     case 'real':
-      return { ...base, kind: 'real', harness: null };
+      return { ...base, kind: 'real', harness: null, ...(input.period === undefined ? {} : { period: input.period }), ...(input.cost === undefined ? {} : { cost: input.cost }) };
     case 'benchmark':
       return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }) };
     case 'injection':
@@ -73,7 +77,7 @@ export const describeRate = ({ k, n }: Rate): string => {
 
 const milliseconds = (value: number | null): string => (value === null ? 'n/a' : `${value} ms`);
 
-const indicatorLines = (indicators: Indicators): string[] => {
+const indicatorLines = (indicators: Indicators, cost?: CostIndicators): string[] => {
   const { completion, recovery, recoveryTime, duplicates, intervention, overrun, time } = indicators;
   return [
     completion.n === 0
@@ -85,6 +89,7 @@ const indicatorLines = (indicators: Indicators): string[] => {
     `Human Intervention Rate: ${describeRate(intervention)}`,
     `Budget Overrun Rate: ${describeRate(overrun)}; budget stops ${overrun.budgetStops}`,
     `Time per Successful Task: n=${time.n}, active mean ${milliseconds(time.meanActiveMs)}, elapsed mean ${milliseconds(time.meanElapsedMs)}`,
+    ...(cost === undefined ? [] : costLines(cost)),
   ];
 };
 
@@ -92,6 +97,9 @@ const populationLine = ({ buckets }: Indicators): string => {
   const roots = buckets.counted + buckets.cancelled + buckets.pendingFacts + buckets.factsUnavailable + buckets.unknownValues;
   return `Population: ${roots} terminal root tasks; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts unavailable ${buckets.factsUnavailable} (excluded); unknown values ${buckets.unknownValues} (excluded); facts coverage ${buckets.counted + buckets.cancelled + buckets.factsUnavailable + buckets.unknownValues}/${roots}`;
 };
+
+const periodLines = (period: Period | undefined): string[] =>
+  period === undefined ? [] : [`Period: tasks whose root run ended in the last ${period.days} ${period.days === 1 ? 'day' : 'days'} (${new Date(period.fromMs).toISOString()} to ${new Date(period.toMs).toISOString()})`];
 
 const harnessLines = (harness: Harness | null): string[] =>
   harness === null
@@ -112,11 +120,12 @@ export const formatReliabilityReport = (report: ReliabilityReport): string => {
   const lines = [
     `Reliability report (${report.format}), kind ${report.kind}, definitions version ${report.definitionsVersion}, grouped by ${report.groupBy}`,
     ...harnessLines(report.harness),
+    ...periodLines(report.period),
     populationLine(report.total),
-    ...indicatorLines(report.total),
+    ...indicatorLines(report.total, report.cost?.total),
   ];
   for (const [name, indicators] of Object.entries(report.groups)) {
-    lines.push('', `[${report.groupBy}=${name}]`, populationLine(indicators), ...indicatorLines(indicators));
+    lines.push('', `[${report.groupBy}=${name}]`, populationLine(indicators), ...indicatorLines(indicators, report.cost?.groups[name]));
   }
   const rows = rowLines(report);
   if (rows.length > 0) lines.push('', ...rows);
