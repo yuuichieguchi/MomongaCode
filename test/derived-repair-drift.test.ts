@@ -43,7 +43,7 @@ const headerEntries = (): { derivation: number; model: string; holds: string[]; 
   });
 };
 
-const DERIVED_TABLES = ['run_records', 'started_calls', 'meter_records', 'session_touched', 'run_answerers', 'derived_through'];
+const DERIVED_TABLES = ['run_records', 'started_calls', 'meter_records', 'session_touched', 'run_answerers', 'run_indexed_chars', 'search_draft_runs', 'search_draft_steps', 'search_draft_parts', 'search_draft_paths', 'derived_through'];
 const DERIVED_EVENT_COLUMNS = ['pinned_digest', 'call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json'];
 const DERIVATION_FILES = ['append-records.ts', 'derived-repair.ts', 'schema.ts'];
 

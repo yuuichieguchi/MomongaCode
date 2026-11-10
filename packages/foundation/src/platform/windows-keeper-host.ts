@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import { readFileBytesSync } from '../node-file-system.ts';
 import type { Random } from '../random.ts';
+import { systemRandom } from '../system-random.ts';
+import { checkedWindowsKeeper } from './windows-keeper-asset.ts';
 import type { KeeperConnection, KeeperHost, KeeperListener, KeeperRun } from './windows-keeper.ts';
 
 const connectionOf = (socket: net.Socket): KeeperConnection => {
@@ -26,45 +29,54 @@ const connectionOf = (socket: net.Socket): KeeperConnection => {
   };
 };
 
-export const listenForKeeper = (pipe: string, signal: AbortSignal): Promise<KeeperListener> =>
-  new Promise<KeeperListener>((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const server = net.createServer({ pauseOnConnect: false });
-    server.maxConnections = 1;
-    const stop = (): void => {
-      server.close();
-      reject(signal.reason);
-    };
-    signal.addEventListener('abort', stop, { once: true });
-    server.once('error', (error) => {
-      signal.removeEventListener('abort', stop);
-      reject(error);
-    });
-    server.listen(pipe, () => {
-      signal.removeEventListener('abort', stop);
-      resolve({
-        accept: (asker) =>
-          new Promise<KeeperConnection>((accepted, refused) => {
-            if (asker.aborted) {
-              refused(asker.reason);
-              return;
-            }
-            const leave = (): void => refused(asker.reason);
-            asker.addEventListener('abort', leave, { once: true });
-            server.once('connection', (socket) => {
-              asker.removeEventListener('abort', leave);
-              accepted(connectionOf(socket));
-            });
-          }),
-        close: () => {
-          server.close();
-        },
-      });
-    });
+export const listenForKeeper = (pipe: string): KeeperListener => {
+  const server = net.createServer({ pauseOnConnect: false });
+  server.maxConnections = 1;
+  let failure: Error | undefined;
+  let arrived: KeeperConnection | undefined;
+  let waiting: { accepted(connection: KeeperConnection): void; refused(reason: unknown): void } | undefined;
+  server.once('error', (error) => {
+    failure = error;
+    waiting?.refused(error);
   });
+  server.once('connection', (socket) => {
+    arrived = connectionOf(socket);
+    waiting?.accepted(arrived);
+  });
+  server.listen(pipe);
+  return {
+    accept: (asker) =>
+      new Promise<KeeperConnection>((accepted, refused) => {
+        if (failure !== undefined) {
+          refused(failure);
+          return;
+        }
+        if (arrived !== undefined) {
+          accepted(arrived);
+          return;
+        }
+        if (asker.aborted) {
+          refused(asker.reason);
+          return;
+        }
+        const leave = (): void => refused(asker.reason);
+        asker.addEventListener('abort', leave, { once: true });
+        waiting = {
+          accepted: (connection) => {
+            asker.removeEventListener('abort', leave);
+            accepted(connection);
+          },
+          refused: (reason) => {
+            asker.removeEventListener('abort', leave);
+            refused(reason);
+          },
+        };
+      }),
+    close: () => {
+      server.close();
+    },
+  };
+};
 
 export type KeeperSpawnEnv = Readonly<Record<string, string | undefined>>;
 
@@ -81,7 +93,7 @@ export const startDetachedKeeper =
   };
 
 export type NodeKeeperHostOptions = {
-  executable(signal: AbortSignal): Promise<string>;
+  executable(): string;
   random: Pick<Random, 'hex'>;
   env: KeeperSpawnEnv;
 };
@@ -92,3 +104,21 @@ export const createNodeKeeperHost = ({ executable, random, env }: NodeKeeperHost
   start: startDetachedKeeper(env),
   random,
 });
+
+let providedKeeper: (() => string) | undefined;
+
+export const provideWindowsKeeper = (executable: () => string): void => {
+  providedKeeper = executable;
+};
+
+export const hostKeeperHost = (): KeeperHost =>
+  createNodeKeeperHost({
+    executable: () => {
+      if (providedKeeper === undefined) throw new Error('no keeper executable was provided to this process, so no command can be started or found in a Job Object');
+      return providedKeeper();
+    },
+    random: systemRandom,
+    env: process.env,
+  });
+
+export const provideCheckedWindowsKeeper = (file: string, sha256: string): void => provideWindowsKeeper(checkedWindowsKeeper(file, sha256, readFileBytesSync));

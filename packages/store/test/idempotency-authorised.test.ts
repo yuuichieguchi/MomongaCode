@@ -16,8 +16,8 @@ const leased = () => {
 const hasAuthorisedAt = (lookup: IdempotencyLookup | undefined): boolean => lookup !== undefined && lookup.s !== 'COMPLETED' && 'authorisedAt' in lookup.rec;
 
 describe('the authorised mark of an idempotency record', () => {
-  it('is migration 36, which adds a nullable authorised_at column to the idempotency table', () => {
-    const migration = MIGRATIONS.find((entry) => entry.version === 36);
+  it('is migration 37, which adds a nullable authorised_at column to the idempotency table', () => {
+    const migration = MIGRATIONS.find((entry) => entry.version === 37);
     expect(migration?.sql).toMatch(/authorised_at/);
     const { dbPath } = harness();
     const columns = rawDb(dbPath).prepare("SELECT name, \"notnull\" AS \"notNull\" FROM pragma_table_info('idempotency')").all();

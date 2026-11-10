@@ -1,8 +1,5 @@
-import { BlockList, isIP } from 'node:net';
-
-const LOOPBACK_ADDRESSES = new BlockList();
-LOOPBACK_ADDRESSES.addSubnet('127.0.0.0', 8, 'ipv4');
-LOOPBACK_ADDRESSES.addAddress('::1', 'ipv6');
+import { isIP } from 'node:net';
+import { isLoopbackAddress } from './global-address.ts';
 
 export const normalizedHost = (host: string): string => {
   const unbracketed = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
@@ -12,8 +9,7 @@ export const normalizedHost = (host: string): string => {
 export const isLoopbackHost = (host: string): boolean => {
   const name = normalizedHost(host);
   if (name === 'localhost' || name.endsWith('.localhost')) return true;
-  const family = isIP(name);
-  return family !== 0 && LOOPBACK_ADDRESSES.check(name, family === 4 ? 'ipv4' : 'ipv6');
+  return isIP(name) !== 0 && isLoopbackAddress(name);
 };
 
 export type TransportUrlProblem = 'unparseable' | 'userinfo' | 'cleartext';

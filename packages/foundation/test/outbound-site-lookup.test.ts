@@ -119,7 +119,8 @@ describe("createOutboundDispatcher: the site's own lookup is asked on every rout
 
     expect(await response.text()).toBe('ok');
     expect(asked).toEqual(['allowed.example.test']);
-    expect(proxy.received()).toContain('GET http://allowed.example.test:8080/path');
+    expect(proxy.received()).toContain('GET http://93.184.216.34:8080/path');
+    expect(proxy.received().toLowerCase()).toContain('\r\nhost: allowed.example.test:8080');
   });
 
   it('asks again for every request through the proxy, so a name that stops verifying is refused on its next request', async () => {

@@ -16,6 +16,5 @@ export { FILESYSTEM_TIMESTAMP_GRANULARITY_MS, createPlaceholderJournal, heldMoun
 export type { PlaceholderIdentity, PlaceholderJournal, PlaceholderRecord, ProcPort, RecoveryPorts, RecoveryResult } from './placeholder-journal.ts';
 export type { BubblewrapProbe, BubblewrapProbeOptions, ProbeRunner } from './bubblewrap.ts';
 export type { BubblewrapOptions, BubblewrapPlan, BubblewrapSandboxOptions, FilesystemPort } from './bubblewrap.ts';
-export { isGuardedAddress } from './address-guard.ts';
 export { EGRESS_PROXY_HOST, describeEgressRefusal, nodeEgressPorts, startEgressProxy } from './egress-proxy.ts';
 export type { EgressPorts, EgressProxy, EgressRefusal } from './egress-proxy.ts';

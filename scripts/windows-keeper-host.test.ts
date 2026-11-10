@@ -2,9 +2,11 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { attachKept, confirmByAttach, createNodeKeeperHost, launchKept, nodeCommandRunner, stopKeptGroup, systemRandom, systemTiming } from '@momonga/foundation';
+import { GroupContainmentError, attachKept, confirmByAttach, createJobGroupPort, createKeptGroupControl, createNodeKeeperHost, launchKept, nodeCommandRunner, stopKeptGroup, systemRandom, systemTiming } from '@momonga/foundation';
 import type { KeeperHost, KeeperRun, KeptCommand, KeptGroup, KeptLaunch } from '@momonga/foundation';
 import { createWindowsInspector } from '../packages/foundation/src/platform/windows-inspector.ts';
+import { launch as launchCommand } from '../packages/sandbox/src/process.ts';
+import type { LaunchOptions } from '../packages/sandbox/src/process.ts';
 import { repoRoot } from './bundle.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
@@ -51,7 +53,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
   const groups: KeptGroup[] = [];
 
   const hostWith = (names: string[] = []): KeeperHost =>
-    createNodeKeeperHost({ executable: async () => keeper, random: { hex: (bytes) => names.shift() ?? systemRandom.hex(bytes) }, env: process.env });
+    createNodeKeeperHost({ executable: () => keeper, random: { hex: (bytes) => names.shift() ?? systemRandom.hex(bytes) }, env: process.env });
 
   const startThrough =
     (wrapper: string | undefined) =>
@@ -112,14 +114,43 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     await removeTempRoot(root);
   });
 
-  it('T-JO-1: terminate leaves no grandchild whose intermediate parent exited at once', async () => {
+  const productLaunch = (command: KeptCommand, signal: AbortSignal, extra: Partial<LaunchOptions> = {}) =>
+    launchCommand({
+      file: command.file,
+      args: command.args,
+      cwd: root,
+      env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+      signal,
+      killGraceMs: GRACE_MS,
+      afterExit: () => undefined,
+      groupPort: createJobGroupPort(createKeptGroupControl(hostWith())),
+      ...extra,
+    });
+
+  it('T-JO-1: a command starts an intermediate that starts a grandchild and exits at once; stopping the command leaves no grandchild', async () => {
     const pidFile = path.join(root, 'jo1.pid');
-    const { group, commandPid } = await started(node(treeScript(pidFile)));
+    const stopCommand = new AbortController();
+    const launched = productLaunch(node(treeScript(pidFile)), stopCommand.signal);
     const grandchild = await grandchildOf(pidFile);
-    const listed = await group.members(bounded());
-    expect(listed.kind === 'members' && listed.pids.includes(grandchild) && listed.pids.includes(commandPid)).toBe(true);
-    expect(await stop(group)).toBe('terminated');
-    await eventually(() => !isAlive(grandchild) && !isAlive(commandPid), 'the command and its grandchild are gone');
+    expect(isAlive(grandchild)).toBe(true);
+    stopCommand.abort();
+    const exit = await launched.exited;
+    expect(exit.killedBy).toBe('abort');
+    expect(exit.groupNotStopped).toBeUndefined();
+    await eventually(() => !isAlive(grandchild), 'the grandchild is gone');
+  });
+
+  it('T-JO-1: a grandchild that outlives a command which exited by itself is stopped before the launch reports the exit', async () => {
+    const pidFile = path.join(root, 'jo1b.pid');
+    const grandchildScript = `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); ${LONG_SLEEP}`;
+    const intermediate = `process.getBuiltinModule('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchildScript)}], { detached: true, stdio: 'ignore' }).unref(); process.exit(0);`;
+    const command = `process.getBuiltinModule('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(intermediate)}], { stdio: 'ignore' }); const fs = require('node:fs'); const wait = setInterval(() => { if (fs.existsSync(${JSON.stringify(pidFile)}) && fs.readFileSync(${JSON.stringify(pidFile)}, 'utf8') !== '') { clearInterval(wait); process.exit(7); } }, 20);`;
+    const launched = productLaunch(node(command), new AbortController().signal);
+    const exit = await launched.exited;
+    expect(exit.code).toBe(7);
+    expect(exit.groupNotStopped).toBeUndefined();
+    const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
+    await eventually(() => !isAlive(grandchild), 'the grandchild is gone');
   });
 
   it('T-JO-2: killing the keeper ends the whole tree', async () => {
@@ -180,7 +211,7 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     try {
       const listed = await group.members(bounded());
       expect(listed.kind === 'members' && !listed.pids.includes(outsider)).toBe(true);
-      const inspector = createWindowsInspector({ run: nodeCommandRunner, env: process.env });
+      const inspector = createWindowsInspector({ run: nodeCommandRunner, env: process.env, groups: createKeptGroupControl(hostWith()), alive: isAlive });
       const holders = await inspector.holdersOf(marker, { signal: bounded() });
       expect(holders.kind === 'value' && holders.value.includes(outsider)).toBe(true);
       expect(await stop(group)).toBe('terminated');
@@ -190,11 +221,17 @@ describe.runIf(process.platform === 'win32')('the keeper on a Windows host', () 
     }
   });
 
-  it('T-JO-7: inside an outer job that refuses nesting the keeper answers containment-unavailable and the command does not run', async () => {
+  it('T-JO-7: inside an outer job that refuses nesting the product reports containment-unavailable and the command does not run', async () => {
     const ran = path.join(root, 'jo7.ran');
-    const launched = await launch(node(`require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');`), { wrapper: uiLimitedRun });
-    expect(launched).toMatchObject({ kind: 'refused', reason: 'containment-unavailable' });
-    await launched.process.exited;
+    const launched = productLaunch(node(`require('node:fs').writeFileSync(${JSON.stringify(ran)}, 'ran');`), new AbortController().signal, {
+      spawnProcess: ((file: string, args: readonly string[], options: object) => spawn(uiLimitedRun, [file, ...args], options)) as unknown as NonNullable<LaunchOptions['spawnProcess']>,
+    });
+    const failure = await launched.exited.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(GroupContainmentError);
+    expect(failure).toMatchObject({ reason: 'containment-unavailable' });
     expect(fs.existsSync(ran)).toBe(false);
   });
 });

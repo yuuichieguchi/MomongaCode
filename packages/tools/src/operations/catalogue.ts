@@ -23,10 +23,8 @@ const PROGRAM_SCHEMA = {
       program: { type: 'string', minLength: 1 },
       flagOptions: { type: 'array', items: { type: 'string', minLength: 1 } },
       valueOptions: { type: 'array', items: { type: 'string', minLength: 1 } },
-      injecting: { type: 'array', items: { type: 'string', minLength: 1 } },
-      readOnly: { type: 'array', items: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } },
     },
-    required: ['program', 'flagOptions', 'valueOptions', 'injecting', 'readOnly'],
+    required: ['program', 'flagOptions', 'valueOptions'],
     additionalProperties: false,
   },
 } as const;

@@ -1,6 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import type { RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
+import { CONDITION_STATES, NOT_RUN_REASONS, RESIDUAL_RISK_CODES } from '@momonga/protocol';
+import type { RunCallView, RunFactsRecord, RunFactsView, RunReport } from '@momonga/protocol';
 import { FactsRefusedError, InheritanceError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type {
   ContributionMeasured,
@@ -12,6 +13,7 @@ import type {
   RecordedCheck,
   RecordedHash,
   ReflectionInputReply,
+  ReportReply,
   VerdictFact,
   VerdictReply,
 } from '@momonga/store';
@@ -185,6 +187,32 @@ const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsRecord =>
     throw new JournalThreadError(`journal thread runFacts reply carries malformed call rows for run ${runId}`);
   }
   return { facts: facts as RunFactsView, calls: calls as RunCallView[] };
+};
+
+const isListOf = (value: unknown, isEntry: (entry: Record<string, unknown>) => boolean): boolean => Array.isArray(value) && value.every((entry) => isRecord(entry) && isEntry(entry));
+
+const isReportOf = (report: unknown, runId: string): report is RunReport =>
+  isRecord(report) &&
+  report['runId'] === runId &&
+  typeof report['status'] === 'string' &&
+  (report['stopReason'] === undefined || typeof report['stopReason'] === 'string') &&
+  typeof report['durationMs'] === 'number' &&
+  (report['declaration'] === null || (isRecord(report['declaration']) && Array.isArray(report['declaration']['conditions']) && Array.isArray(report['declaration']['requirements']))) &&
+  isRecord(report['changes']) &&
+  typeof report['changes']['mutatingCalls'] === 'number' &&
+  isListOf(report['changes']['files'], (file) => typeof file['path'] === 'string' && typeof file['lastSeq'] === 'number') &&
+  isListOf(
+    report['conditions'],
+    (condition) => typeof condition['id'] === 'string' && typeof condition['command'] === 'string' && typeof condition['rounds'] === 'number' && CONDITION_STATES.some((state) => state === condition['state']),
+  ) &&
+  isListOf(report['notRun'], (entry) => typeof entry['what'] === 'string' && NOT_RUN_REASONS.some((reason) => reason === entry['reason'])) &&
+  isListOf(report['residualRisk'], (risk) => typeof risk['count'] === 'number' && RESIDUAL_RISK_CODES.some((code) => code === risk['code'])) &&
+  isListOf(report['modelChecks'], (check) => typeof check['command'] === 'string' && typeof check['exitCode'] === 'number' && typeof check['seq'] === 'number');
+
+const reportOf = (reply: JournalThreadReply, runId: string): ReportReply => {
+  const { report } = reply;
+  if (!isReportOf(report, runId)) throw new JournalThreadError(`journal thread report reply carries a malformed report for run ${runId}`);
+  return { lastSeq: lastSeqOf(reply, 'report'), report };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
@@ -394,6 +422,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
     fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
 
+  const report: JournalThreadClient['report'] = async ({ runId }) => reportOf(await request({ kind: 'report', runId }), runId);
+
   const runFacts: JournalThreadClient['runFacts'] = async (runId) => runFactsOf(await request({ kind: 'runFacts', runId }), runId);
 
   const close = (): Promise<void> => {
@@ -406,5 +436,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, inheritPlan, inheritedWindow, close };
+  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, report, inheritPlan, inheritedWindow, close };
 };

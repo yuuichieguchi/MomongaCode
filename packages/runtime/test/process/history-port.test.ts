@@ -35,7 +35,7 @@ describe('history tools over the real store', () => {
     store.trust.set(b, 'trusted');
     const mine = await finishedRun(store, a, `needleterm ${FAKE_KEY}`);
     const other = await finishedRun(store, b, 'needleterm other');
-    indexAll(store);
+    await indexAll(store);
     const session = store.getSession((await mine).sessionId) as Session;
     const result = await execute(toolsFor(store, session), 'HistorySearch', { query: 'needleterm' });
     expect(result.output).toContain((await mine).id);
@@ -51,7 +51,7 @@ describe('history tools over the real store', () => {
     store.trust.set(b, 'trusted');
     const mine = await finishedRun(store, a, 'needleterm');
     const other = await finishedRun(store, b, 'needleterm other');
-    indexAll(store);
+    await indexAll(store);
     const result = await execute(toolsFor(store, store.getSession((await mine).sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
     expect(result.output).toContain((await other).id);
   });
@@ -62,7 +62,7 @@ describe('history tools over the real store', () => {
     store.trust.set(b, 'trusted');
     const mine = await finishedRun(store, '/work/a', 'needleterm');
     const other = await finishedRun(store, b, 'needleterm other');
-    indexAll(store);
+    await indexAll(store);
     const result = await execute(toolsFor(store, store.getSession((await mine).sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
     expect(result.output).toContain((await mine).id);
     expect(result.output).not.toContain((await other).id);
@@ -85,7 +85,7 @@ describe('history tools over the real store', () => {
       { tool: { name: 'Read', path: secret, output: 'hiddenterm inside the secret file' } },
       { tool: { name: 'Read', path: open, output: 'hiddenterm inside the open file' } },
     ]);
-    indexAll(store);
+    await indexAll(store);
     const session = store.getSession((await mine).sessionId) as Session;
     const rule = parseRule('Read(./secret/**)', { effect: 'deny', origin: 'user', source: 'user-settings', settingsRoot: project, home: dir, cwd: project });
     const tools = toolsFor(store, session, [rule]);
@@ -108,7 +108,7 @@ describe('history tools over the real store', () => {
     const secret = path.join(b, 'secret', 'key.txt');
     const reader = await finishedRun(store, a, 'reader task');
     const owner = await finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'govterm inside the secret file' } }]);
-    indexAll(store);
+    await indexAll(store);
     store.governing.add({
       kind: 'constraint',
       target: 'secrets',
@@ -136,7 +136,7 @@ describe('history tools over the real store', () => {
     const secret = path.join(b, 'secret', 'key.txt');
     const reader = await finishedRun(store, a, 'reader task');
     const owner = await finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'crossterm inside the secret file' } }]);
-    indexAll(store);
+    await indexAll(store);
     const ruleOfB = parseRule('Read(./secret/**)', { effect: 'deny', origin: 'project', source: 'project-settings', settingsRoot: b, home: dir, cwd: b });
     const tools = toolsFor(store, store.getSession((await reader).sessionId) as Session, (cwd) => (cwd === b ? [ruleOfB] : []));
     const searched = await execute(tools, 'HistorySearch', { query: 'crossterm', scope: 'all' });
@@ -153,7 +153,7 @@ describe('history tools over the real store', () => {
     store.trust.set(b, 'trusted');
     const hidden = await finishedRun(store, b, 'hidden words');
     const mine = await finishedRun(store, '/work/a', 'mine');
-    indexAll(store);
+    await indexAll(store);
     const tools = toolsFor(store, store.getSession((await mine).sessionId) as Session);
     await expect(execute(tools, 'HistoryRead', { runId: (await hidden).id }, (await mine).id)).rejects.toThrow(`no recorded run ${(await hidden).id} is visible`);
   });

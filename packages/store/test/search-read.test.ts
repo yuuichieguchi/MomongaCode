@@ -26,7 +26,7 @@ describe('reading a recorded range', () => {
   it('returns the events of one seq range, in order', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
-    indexAll(store);
+    await indexAll(store);
     const page = okPage(await read(store, OWN, { runId: run.id, seqFrom: 2, seqTo: 4 }));
     expect(page.events.map((event) => event.seq)).toEqual([2, 3, 4]);
     expect(page.nextSeq).toBeNull();
@@ -35,7 +35,7 @@ describe('reading a recorded range', () => {
   it('returns the events of one step', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
-    indexAll(store);
+    await indexAll(store);
     const expected = store.readRunEvents(run.id, 0, 100).filter((event) => event.step === 1).map((event) => event.seq);
     expect(okPage(await read(store, OWN, { runId: run.id, step: 1 })).events.map((event) => event.seq)).toEqual(expected);
   });
@@ -43,7 +43,7 @@ describe('reading a recorded range', () => {
   it('pages by the next seq until the range is exhausted', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
-    indexAll(store);
+    await indexAll(store);
     const first = okPage(await read(store, OWN, { runId: run.id, seqFrom: 1, seqTo: 5, limit: 2 }));
     expect(first.events.map((event) => event.seq)).toEqual([1, 2]);
     expect(first.nextSeq).toBe(3);
@@ -107,11 +107,11 @@ describe('visibility on runId', () => {
     const { store, dir } = context;
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
     const untrustedOrigin = await finishedRun(store, b, 'made before trust');
-    indexAll(store);
+    await indexAll(store);
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
     const trustedB = await finishedRun(store, b, 'trusted run');
-    indexAll(store);
+    await indexAll(store);
     return { ...context, own: { trusted: true, project: a } as HistoryVisibility, b, untrustedOrigin, trustedB };
   };
 

@@ -1,26 +1,11 @@
+import { KEEPER_JOB_PREFIX, KEEPER_NAME_BYTES, KEEPER_PIPE_PREFIX, keeperExitName } from '../process-contract.ts';
+import type { KeeperExitName } from '../process-contract.ts';
 import type { Random } from '../random.ts';
 import type { Timing } from '../timing.ts';
 
-export const KEEPER_JOB_PREFIX = 'Local\\momonga-';
-export const KEEPER_PIPE_PREFIX = '\\\\.\\pipe\\momonga-keeper-';
-export const KEEPER_NAME_BYTES = 16;
 export const KEEPER_LINE_LIMIT = 1_048_576;
 export const KEEPER_NO_MARKER = '-';
 export const KEEPER_COMMAND_SEPARATOR = '--';
-
-export const KEEPER_EXIT_CODES = {
-  usage: 0x4d4b0001,
-  'pipe-unavailable': 0x4d4b0002,
-  'name-taken': 0x4d4b0003,
-  'containment-unavailable': 0x4d4b0004,
-  'marker-unavailable': 0x4d4b0005,
-  'launch-failed': 0x4d4b0006,
-  'job-absent': 0x4d4b0007,
-  'owner-lost': 0x4d4b0008,
-  terminated: 0x4d4b0009,
-} as const;
-
-export type KeeperExitName = keyof typeof KEEPER_EXIT_CODES;
 
 export const KEEPER_FAILURE_REASONS = ['name-taken', 'containment-unavailable', 'marker-unavailable', 'launch-failed', 'job-absent'] as const satisfies readonly KeeperExitName[];
 
@@ -54,8 +39,6 @@ export class KeeperLostError extends Error {
     this.exitCode = exitCode;
   }
 }
-
-export const keeperExitName = (code: number): KeeperExitName | undefined => (Object.keys(KEEPER_EXIT_CODES) as KeeperExitName[]).find((name) => KEEPER_EXIT_CODES[name] === code);
 
 const UINT32_MAX = 0xffff_ffff;
 
@@ -150,8 +133,8 @@ export type KeeperListener = {
 export type KeeperRun = { readonly exited: Promise<number | undefined> };
 
 export type KeeperHost = {
-  executable(signal: AbortSignal): Promise<string>;
-  listen(pipe: string, signal: AbortSignal): Promise<KeeperListener>;
+  executable(): string;
+  listen(pipe: string): KeeperListener;
   start(executable: string, args: readonly string[]): KeeperRun;
   random: NameSource;
 };
@@ -298,30 +281,42 @@ const createSession = (connection: KeeperConnection): Session => {
   };
 };
 
-const connectKeeper = async <P extends KeeperRun>(host: KeeperHost, wordsFor: (pipe: string) => string[], start: (executable: string, args: readonly string[]) => P, signal: AbortSignal): Promise<{ session: Session; first: FirstWord; process: P }> => {
-  const executable = await host.executable(signal);
+type Connected = { session: Session; first: FirstWord };
+
+type Connecting<P extends KeeperRun> = { process: P; connected: Promise<Connected> };
+
+const connectKeeper = <P extends KeeperRun>(host: KeeperHost, wordsFor: (pipe: string) => string[], start: (executable: string, args: readonly string[]) => P, signal: AbortSignal): Connecting<P> => {
+  const executable = host.executable();
   const pipe = keeperPipeName(host.random);
-  const listener = await host.listen(pipe, signal);
-  let connection: KeeperConnection;
+  const listener = host.listen(pipe);
   let process: P;
   try {
     process = start(executable, wordsFor(pipe));
-    connection = await Promise.race([
-      listener.accept(signal),
-      process.exited.then((code): never => {
-        throw new KeeperLostError(code);
-      }),
-    ]);
-  } finally {
-    listener.close();
-  }
-  const session = createSession(connection);
-  try {
-    return { session, first: await session.firstWord(signal), process };
   } catch (error) {
-    session.close();
+    listener.close();
     throw error;
   }
+  const connect = async (): Promise<Connected> => {
+    let connection: KeeperConnection;
+    try {
+      connection = await Promise.race([
+        listener.accept(signal),
+        process.exited.then((code): never => {
+          throw new KeeperLostError(code);
+        }),
+      ]);
+    } finally {
+      listener.close();
+    }
+    const session = createSession(connection);
+    try {
+      return { session, first: await session.firstWord(signal) };
+    } catch (error) {
+      session.close();
+      throw error;
+    }
+  };
+  return { process, connected: connect() };
 };
 
 export type KeptLaunchRequest<P extends KeeperRun> = {
@@ -336,24 +331,31 @@ export type KeptLaunch<P extends KeeperRun> =
   | { kind: 'started'; group: KeptGroup; commandPid: number; process: P }
   | { kind: 'refused'; reason: Exclude<KeeperFailureReason, 'job-absent'>; systemError: number; process: P };
 
-export const launchKept = async <P extends KeeperRun>(host: KeeperHost, request: KeptLaunchRequest<P>): Promise<KeptLaunch<P>> => {
+export type OpenedLaunch<P extends KeeperRun> = { job: string; process: P; launched: Promise<KeptLaunch<P>> };
+
+export const openKeptLaunch = <P extends KeeperRun>(host: KeeperHost, request: KeptLaunchRequest<P>): OpenedLaunch<P> => {
   const job = keeperJobName(host.random);
-  const { session, first, process } = await connectKeeper(
+  const { process, connected } = connectKeeper(
     host,
     (pipe) => keeperLaunchArguments({ pipe, job, onOwnerLoss: request.onOwnerLoss, marker: request.marker, command: request.command }),
     request.start,
     request.signal,
   );
-  if (first.kind === 'started') return { kind: 'started', group: session.group(job), commandPid: first.pid, process };
-  session.close();
-  if (first.kind === 'failed' && first.reason !== 'job-absent') return { kind: 'refused', reason: first.reason, systemError: first.systemError, process };
-  throw new KeeperProtocolError(`a launching keeper answered ${first.kind === 'failed' ? first.reason : first.kind}`);
+  const launched = connected.then(({ session, first }): KeptLaunch<P> => {
+    if (first.kind === 'started') return { kind: 'started', group: session.group(job), commandPid: first.pid, process };
+    session.close();
+    if (first.kind === 'failed' && first.reason !== 'job-absent') return { kind: 'refused', reason: first.reason, systemError: first.systemError, process };
+    throw new KeeperProtocolError(`a launching keeper answered ${first.kind === 'failed' ? first.reason : first.kind}`);
+  });
+  return { job, process, launched };
 };
+
+export const launchKept = async <P extends KeeperRun>(host: KeeperHost, request: KeptLaunchRequest<P>): Promise<KeptLaunch<P>> => openKeptLaunch(host, request).launched;
 
 export type KeptAttach = { kind: 'attached'; group: KeptGroup } | { kind: 'absent' };
 
 export const attachKept = async (host: KeeperHost, job: string, signal: AbortSignal): Promise<KeptAttach> => {
-  const { session, first } = await connectKeeper(host, (pipe) => keeperAttachArguments({ pipe, job }), host.start, signal);
+  const { session, first } = await connectKeeper(host, (pipe) => keeperAttachArguments({ pipe, job }), host.start, signal).connected;
   if (first.kind === 'attached') return { kind: 'attached', group: session.group(job) };
   session.close();
   if (first.kind === 'failed' && first.reason === 'job-absent') return { kind: 'absent' };

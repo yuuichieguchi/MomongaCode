@@ -10,20 +10,6 @@ export const powershellPath = (env: Readonly<Record<string, string | undefined>>
   return `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
 };
 
-export const taskkillPath = (env: Readonly<Record<string, string | undefined>>): string => {
-  const systemRoot = env['SystemRoot'];
-  if (systemRoot === undefined || systemRoot === '') throw new Error('SystemRoot is not set, so taskkill cannot be located');
-  return `${systemRoot}\\System32\\taskkill.exe`;
-};
-
-export const PROCESS_TABLE_SCRIPT = [
-  "$ErrorActionPreference = 'Stop'",
-  '$rows = @(Get-CimInstance -ClassName Win32_Process | Where-Object { $_.CreationDate } | ForEach-Object {',
-  '  [pscustomobject]@{ pid = [int64]$_.ProcessId; ppid = [int64]$_.ParentProcessId; startMs = [int64]([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() }',
-  '})',
-  'ConvertTo-Json -Compress -InputObject $rows',
-].join('\n');
-
 const PROCESS_TIMES_TYPES = String.raw`
 using System;
 using System.ComponentModel;

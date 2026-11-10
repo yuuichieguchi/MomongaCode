@@ -37,7 +37,7 @@ const SUPERSEDED = [
   { operation: 'PullRequestMerge', argv: ['gh', 'pr', 'merge'] },
 ];
 
-type Extra = { mandate?: true; supersededForms?: typeof SUPERSEDED; coveredPrograms?: Array<{ program: string; flagOptions: string[]; valueOptions: string[]; injecting: string[]; readOnly: string[][] }> };
+type Extra = { mandate?: true; supersededForms?: typeof SUPERSEDED; coveredPrograms?: Array<{ program: string; flagOptions: string[]; valueOptions: string[] }> };
 
 const decideWith = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mode: PermissionMode, rules: PermissionRule[], extra: Extra = {}) => {
   const roots = [layout.project];
@@ -254,8 +254,8 @@ describe('what a person is asked about names where the operation goes', () => {
 
 describe('a covered program is judged by what is known to be read-only, not by what is known to write', () => {
   const PROGRAMS = [
-    { program: 'git', flagOptions: ['--no-pager'], valueOptions: ['-C', '-c', '--exec-path', '--config-env'], injecting: ['-c', '--config-env', '--exec-path'], readOnly: [['status'], ['log'], ['diff']] },
-    { program: 'gh', flagOptions: [], valueOptions: ['-R', '--repo'], injecting: [], readOnly: [['pr', 'view'], ['pr', 'list'], ['status']] },
+    { program: 'git', flagOptions: ['--no-pager'], valueOptions: ['-C', '-c', '--exec-path', '--config-env'] },
+    { program: 'gh', flagOptions: [], valueOptions: ['-R', '--repo'] },
   ];
   const decideIn = (command: string, rules: Array<[('allow' | 'deny'), string]> = [], mandate = true) => {
     const layout = makeLayout();
@@ -270,8 +270,44 @@ describe('a covered program is judged by what is known to be read-only, not by w
     },
   );
 
-  it.each(['git status', 'git log --grep push', 'git -C sub diff', 'git --no-pager log -3', 'gh pr view 7', 'gh -R acme/widgets pr list', 'gh status'])('leaves a recognised read-only form to the ordinary decision: %s', (command) => {
+  it.each(['git status', 'git log --grep push', 'git diff', 'git --no-pager log -3'])('leaves an invocation the one read-only classifier accepts to the ordinary decision: %s', (command) => {
     expect(decideIn(command).source).not.toBe('operation');
+  });
+
+  it.each(['git log --output=x', 'GIT_DIR=/tmp/x git status', 'env GH_TOKEN=y gh pr list', "git -c core.pager='sh -c id' log", 'git status > f', 'gh pr view 7', 'gh status', 'gh -R acme/widgets pr list'])(
+    'needs a person when the one read-only classifier does not call the whole invocation read-only: %s',
+    (command) => {
+      expect(decideIn(command, [['allow', 'Bash(git:*)'], ['allow', 'Bash(gh:*)'], ['allow', 'Bash(env:*)']])).toMatchObject({ kind: 'ask', source: 'operation', humanOnly: true });
+    },
+  );
+
+  it('answers other for a covered program only where the read-only classifier answers read-only, over generated invocations', () => {
+    const layout = makeLayout();
+    const allowAll = [ruleIn(layout)('allow', 'Bash')];
+    const judged = (command: string, mandate: boolean) =>
+      decideWith(layout, BASH, { kind: 'command', tool: 'Bash', command }, 'manual', mandate ? allowAll : [], { ...(mandate ? { mandate: true as const } : {}), supersededForms: SUPERSEDED, coveredPrograms: PROGRAMS });
+    const prefixes = ['', 'GIT_DIR=/tmp/x ', 'env A=b '];
+    const programs = ['git', 'gh'];
+    const options = ['', '--no-pager', '-c a.b=c', '--exec-path=/x'];
+    const subcommands = ['status', 'log', 'diff', 'x', 'rebase main', 'pr list', 'branch -D main', 'config user.name x'];
+    const suffixes = ['', ' --output=f', ' > f', ' | sh', ' $X', ' --ext-diff'];
+    let others = 0;
+    for (const prefix of prefixes) {
+      for (const program of programs) {
+        for (const option of options) {
+          for (const subcommand of subcommands) {
+            for (const suffix of suffixes) {
+              const command = `${prefix}${program} ${option} ${subcommand}${suffix}`.replace(/ +/g, ' ');
+              const decision = judged(command, true);
+              if (decision.source === 'operation' || decision.reason.includes('replaced by a dedicated operation')) continue;
+              others += 1;
+              expect(judged(command, false), command).toMatchObject({ kind: 'allow', basis: 'read_only' });
+            }
+          }
+        }
+      }
+    }
+    expect(others).toBeGreaterThan(0);
   });
 
   it.each([

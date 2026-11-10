@@ -1900,6 +1900,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
       fidelity: async (request, signal) => journalPreparer(preparer, 'fidelity check').fidelity(request, signal),
+      report: async (request, signal) => journalPreparer(preparer, 'report').report(request, signal),
     },
 
     dataVersion: () => {

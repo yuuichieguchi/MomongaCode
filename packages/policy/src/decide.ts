@@ -349,6 +349,11 @@ const withinMandate = (input: DecideInput, decision: Decision): Decision => {
   return { kind: 'deny', source: 'mode', outside: true, reason: `Not run: outside the declared mandate (${decision.reason}). Continue with work inside it or report.` };
 };
 
+const onlyReads = (input: DecideInput): boolean => {
+  const unruled = decideWithoutNetwork({ ...input, rules: [], fileRules: EMPTY_FILE_RULES });
+  return unruled.kind === 'allow' && unruled.basis === 'read_only';
+};
+
 export const decide = (input: DecideInput): Decision => {
   const ordinary = (): Decision => withTarget(input, withinMandate(input, withNetworkRequest(input, decideWithoutNetwork(input))));
   if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return ordinary();
@@ -359,11 +364,12 @@ export const decide = (input: DecideInput): Decision => {
   }
   const decided = withNetworkRequest(input, decideWithoutNetwork(input));
   if (decided.kind === 'deny') return decided;
+  if (onlyReads(input)) return ordinary();
   return {
     kind: 'ask',
     source: 'operation',
     humanOnly: true,
-    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): it is not a form known to only read, so a person decides`,
+    reason: `this run has a mandate, and the command could be a form that a dedicated operation replaces (${programsOf(input.supersededForms)}): the whole command is not one that is known to only read, so a person decides`,
     ...(decided.network === true ? { network: true as const } : {}),
   };
 };

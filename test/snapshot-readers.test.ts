@@ -35,6 +35,13 @@ describe('who reads the snapshot of a run, which a terminal transition writes on
     expect(filesMatching(/\.writeSnapshot\(/)).toEqual(['runtime/src/worker/journal.ts']);
   });
 
+  it('is asked for by no terminal transition: the only journal.snapshot() of terminals.ts is in yieldTo, whose snapshot the next claim start reads (O14, I4b)', () => {
+    const source = fs.readFileSync(path.join(packagesDir, 'runtime', 'src', 'worker', 'terminals.ts'), 'utf8');
+    expect(source.match(/journal\.snapshot\(\)/g)).toHaveLength(1);
+    const yieldTo = source.slice(source.indexOf('yieldTo: async'), source.indexOf('cancel,'));
+    expect(yieldTo).toContain('journal.snapshot()');
+  });
+
   it('is read by the store itself only through load: inheritance plans on the journal thread and the loop only commits it (row 11, 13.4 inherit_plan)', () => {
     const source = fs.readFileSync(path.join(packagesDir, 'store', 'src', 'runtime-store.ts'), 'utf8');
     expect(source.match(/loadInReadTx\(/g)).toHaveLength(1);

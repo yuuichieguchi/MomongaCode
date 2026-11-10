@@ -26,9 +26,9 @@ const spawn = (store: RuntimeStore, parent: Run, callId: string) => {
   return result.run;
 };
 
-describe('migration 36 holds the reservation of a run', () => {
+describe('migration 37 holds the reservation of a run', () => {
   it('adds reserved_tokens and reserved_nano to runs, zero by default', () => {
-    expect(MIGRATIONS.find((entry) => entry.version === 36)?.sql).toMatch(/reserved_nano/);
+    expect(MIGRATIONS.find((entry) => entry.version === 37)?.sql).toMatch(/reserved_nano/);
     const { dbPath } = harness();
     const columns = rawDb(dbPath).prepare("SELECT name, dflt_value AS preset FROM pragma_table_info('runs') WHERE name LIKE 'reserved_%' ORDER BY name").all();
     expect(columns).toEqual([

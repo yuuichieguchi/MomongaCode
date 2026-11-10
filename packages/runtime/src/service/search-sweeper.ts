@@ -18,14 +18,17 @@ export const startSearchSweeper = (options: SearchSweeperOptions): { close(): Pr
   const { store, timers, intervalMs, batchSize, redactor, onError } = options;
   let closed = false;
   let handle: unknown;
+  let running: Promise<void> = Promise.resolve();
 
   const arm = (): void => {
-    handle = timers.setTimeout(sweep, intervalMs);
+    handle = timers.setTimeout(() => {
+      running = sweep();
+    }, intervalMs);
   };
 
-  function sweep(): void {
+  async function sweep(): Promise<void> {
     try {
-      store.search.indexBatch({ limit: batchSize, redactor, maxChars: HISTORY_INDEX_BATCH_CHARS });
+      await store.search.indexBatch({ limit: batchSize, redactor, maxChars: HISTORY_INDEX_BATCH_CHARS });
     } catch (error) {
       onError(error);
     }
@@ -37,6 +40,7 @@ export const startSearchSweeper = (options: SearchSweeperOptions): { close(): Pr
     close: async () => {
       closed = true;
       timers.clearTimeout(handle);
+      await running;
     },
   };
 };

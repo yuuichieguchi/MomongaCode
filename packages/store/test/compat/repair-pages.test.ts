@@ -3,7 +3,7 @@ import { REPAIR_PAGE_EVENTS } from '../../src/derived-repair.ts';
 import { LEASE_MS, enqueue, harness, mustClaim, newSession, rawDb } from '../helpers.ts';
 import { appendForeignRunEvent } from './fixtures.ts';
 
-const DERIVATIONS = [14, 20, 23, 24];
+const DERIVATIONS = [14, 20, 23, 24, 35, 36];
 
 const watermarks = (dbPath: string, runId: string): number[] =>
   rawDb(dbPath)

@@ -62,7 +62,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     return value;
   };
 
-  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, markerDir: options.paths.markers.tools, owners: options.owners, inspector: options.inspector });
+  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, outboundNetwork: options.network, markerDir: options.paths.markers.tools, owners: options.owners, inspector: options.inspector });
   const fetch = options.forgeFetch ?? outboundForgeFetch(options.network);
   const descriptors = loadForgeDescriptors();
 

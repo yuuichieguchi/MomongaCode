@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalJson, groupRecordOutcome, sha256Hex } from '@momonga/foundation';
-import type { NetworkScope, ProcessInspector } from '@momonga/foundation';
+import type { NetworkScope, OutboundNetwork, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openGrantedNetwork } from '../builtins/network-egress.ts';
 import type { ShellHost } from '../builtins/shell.ts';
@@ -31,6 +31,7 @@ export type ReconcileSandbox = { sandbox: Sandbox; sandboxPolicy: SandboxPolicy;
 export type SandboxedRunnerPorts = {
   reconcileSandbox(context: ReconcileContext): Promise<ReconcileSandbox>;
   shellHost: ShellHost;
+  outboundNetwork: OutboundNetwork;
   markerDir: string;
   owners?: MarkerOwners;
   inspector?: ProcessInspector;
@@ -63,7 +64,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
   const held: ReconcileSandbox = isToolContext(context) ? { sandbox: context.sandbox, sandboxPolicy: context.sandboxPolicy, release: () => undefined } : await ports.reconcileSandbox(context);
   let network: Awaited<ReturnType<typeof openGrantedNetwork>>;
   try {
-    network = await openGrantedNetwork({ network: scope, sandboxPolicy: held.sandboxPolicy, env: options.env });
+    network = await openGrantedNetwork({ network: scope, outboundNetwork: ports.outboundNetwork, sandboxPolicy: held.sandboxPolicy, env: options.env });
   } catch (error) {
     held.release();
     throw error;
@@ -96,7 +97,7 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
 
 const runEffect = async (argv: readonly string[], options: ArgvOptions, context: ToolContext): Promise<ArgvResult> => {
   const { file, fd, settle } = await requireSpawnMarker(context, programOf(argv));
-  const network = await openGrantedNetwork({ network: networkScopeOfDestinations(options.network === 'none' ? [] : options.network.destinations, programOf(argv)), sandboxPolicy: context.sandboxPolicy, env: options.env });
+  const network = await openGrantedNetwork({ network: networkScopeOfDestinations(options.network === 'none' ? [] : options.network.destinations, programOf(argv)), outboundNetwork: context.outboundNetwork, sandboxPolicy: context.sandboxPolicy, env: options.env });
   try {
     const child = context.sandbox.spawn(
       { argv: [...argv], cwd: options.cwd, env: { ...network.env }, markerFile: file, ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }) },

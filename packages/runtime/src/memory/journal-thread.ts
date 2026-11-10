@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
+import { RUN_REPORT_EVENT_TYPES, createRunReportFold } from '@momonga/observability/run-report';
 import { FactsRefusedError, createBlobStore, createJournalReader, knownValue } from '@momonga/store';
 import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, decodeStoredModel } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
@@ -154,6 +155,32 @@ export const reflectionInputHandler = (reader: VisitingReader): JournalHandler =
   const fold = createReflectionInputFold(textOf(request, 'project', 'reflection_input'), capabilities);
   const run = reader.visitRun(runId, REFLECTION_INPUT_EVENT_TYPES, fold.add);
   return { lastSeq: run.lastSeq, input: fold.finish() };
+};
+
+const FIRST_EVENT_AT = 'SELECT created_at FROM events WHERE run_id = :runId ORDER BY seq LIMIT 1';
+
+const LAST_EVENT_AT = 'SELECT created_at FROM events WHERE run_id = :runId AND seq <= :lastSeq ORDER BY seq DESC LIMIT 1';
+
+const createdAtOf = (row: Record<string, unknown> | undefined, runId: string): number => {
+  const createdAt = row?.['created_at'];
+  if (typeof createdAt !== 'number') throw new Error(`a run report needs at least one event of the run, and run ${runId} has none`);
+  return createdAt;
+};
+
+export const reportHandler = (db: DatabaseSync, reader: VisitingReader): JournalHandler => {
+  const firstEventAt = db.prepare(FIRST_EVENT_AT);
+  const lastEventAt = db.prepare(LAST_EVENT_AT);
+  return (request) => {
+    const runId = textOf(request, 'runId', 'report');
+    const fold = createRunReportFold();
+    const run = reader.visitRun(runId, RUN_REPORT_EVENT_TYPES, fold.add);
+    const report = fold.finish({
+      runId,
+      firstCreatedAt: createdAtOf(firstEventAt.get({ runId }), runId),
+      lastCreatedAt: createdAtOf(lastEventAt.get({ runId, lastSeq: run.lastSeq }), runId),
+    });
+    return { lastSeq: run.lastSeq, report };
+  };
 };
 
 const ROOT_RUN_ID = `WITH RECURSIVE up(id, parent) AS (
@@ -426,6 +453,7 @@ const serve = (data: JournalThreadData): void => {
       evidence: withProgress(current, evidenceHandler(reader)),
       reflection_input: withProgress(current, reflectionInputHandler(reader)),
       runFacts: withProgress(current, runFactsHandler(db, reader)),
+      report: withProgress(current, reportHandler(db, reader)),
       fidelity: fidelityHandler({ reader, blobs, current, gateFor: (post) => createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post }) }),
       inherit_plan: withProgress(current, inheritPlanHandler(reader)),
       inherited_window: withProgress(current, inheritedWindowHandler(reader)),

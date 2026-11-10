@@ -5,9 +5,7 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
-import { buildRunReport } from '@momonga/observability';
 import { shellCommandSubject } from '@momonga/tools';
-import { readAllRunEvents } from '../process/run-events.ts';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
@@ -414,7 +412,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const reportedView = (run: Run) => ({ ...toRunView(run), report: buildRunReport(readAllRunEvents(store, run.id)) });
+  const reportedView = async (run: Run, signal: AbortSignal) => ({ ...toRunView(run), report: (await store.journalFacts.report({ runId: run.id }, signal)).report });
 
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
@@ -423,22 +421,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const parsed = await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes);
     const body = validateBody<CreateRunBody>('CreateRunRequest', parsed);
     const idempotency = idempotencyKey === undefined ? undefined : { idempotencyKey, requestDigest: sha256Hex(canonicalJson(parsed)) };
-    const replay = (): Response | undefined => {
+    const replay = async (): Promise<Response | undefined> => {
       const found = idempotency === undefined ? undefined : store.findRunByIdempotencyKey(session.id, idempotency.idempotencyKey);
       if (idempotency === undefined || found === undefined) return undefined;
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
-      return json({ run: reportedView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
+      return json({ run: await reportedView(found.run, context.req.raw.signal) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
-    const replayWhileRefusing = (): Response | undefined => {
-      const refusal = newWorkRefusal();
-      if (refusal === undefined) return undefined;
-      const replayed = replay();
+    const replayOf = async (refusal: ApiError): Promise<Response> => {
+      const replayed = await replay();
       if (replayed === undefined) throw refusal;
       return replayed;
     };
+    const replayWhileRefusing = (): Promise<Response> | undefined => {
+      const refusal = newWorkRefusal();
+      return refusal === undefined ? undefined : replayOf(refusal);
+    };
     const refused = replayWhileRefusing();
     if (refused !== undefined) return refused;
-    const replayed = replay();
+    const replayed = await replay();
     if (replayed !== undefined) return replayed;
     await sessionSettingsOf(session.cwd, context.req.raw.signal);
     const { views } = await gatewayListing(context.req.raw.signal);
@@ -474,7 +474,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
-    return json({ run: reportedView(result.run) }, 202, {
+    return json({ run: await reportedView(result.run, context.req.raw.signal) }, 202, {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
@@ -553,7 +553,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const runAnsweredBy: Handler = async (context) => json({ answeredBy: await answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
 
-  const getRun: Handler = (context) => json({ run: reportedView(requireRun(context.req.param('id') ?? '')) });
+  const getRun: Handler = async (context) => json({ run: await reportedView(requireRun(context.req.param('id') ?? ''), context.req.raw.signal) });
 
   const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
@@ -561,7 +561,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
     if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
-    return json({ run: reportedView(result.run) }, settled ? 200 : 202);
+    return json({ run: await reportedView(result.run, context.req.raw.signal) }, settled ? 200 : 202);
   };
 
   const runTrace: Handler = async (context) => {

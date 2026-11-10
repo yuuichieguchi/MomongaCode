@@ -1,5 +1,5 @@
 import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
-import type { ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, RunEvent, RunReport } from '@momonga/protocol';
+import type { ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, RunEvent, RunEventPayload, RunReport } from '@momonga/protocol';
 
 type CallRecord = MutationFacts & { command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
 
@@ -22,10 +22,27 @@ const notRunReasonOf = (status: string, stopReason: string | undefined): NotRunR
   return 'unfinished';
 };
 
-export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
-  const [first] = events;
-  const last = events[events.length - 1];
-  if (first === undefined || last === undefined) throw new Error('a run report needs at least one event of the run');
+export const RUN_REPORT_EVENT_TYPES = [
+  'run.started',
+  'run.status',
+  'tool.call',
+  'tool.permission.requested',
+  'tool.permission.resolved',
+  'tool.started',
+  'tool.waiting',
+  'tool.completed',
+  'tool.reconciled',
+  'verification.completed',
+] as const satisfies readonly RunEventPayload['type'][];
+
+export type RunReportSpan = { runId: string; firstCreatedAt: number; lastCreatedAt: number };
+
+export type RunReportFold = {
+  add(event: RunEvent): void;
+  finish(span: RunReportSpan): RunReport;
+};
+
+export const createRunReportFold = (): RunReportFold => {
   let status = 'QUEUED';
   let stopReason: string | undefined;
   let pins: Record<string, unknown> | undefined;
@@ -52,7 +69,7 @@ export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
     return call;
   };
 
-  for (const event of events) {
+  const add = (event: RunEvent): void => {
     switch (event.type) {
       case 'run.started':
         pins ??= event.pins;
@@ -118,64 +135,77 @@ export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
       default:
         break;
     }
-  }
+  };
 
-  const completion: PinnedCompletion | undefined = pinnedCompletionOf(pins);
-  const declared = completion?.conditions ?? [];
-  const requirements = completion?.requirements ?? [];
-  const notRun: RunReport['notRun'] = [];
-  const conditions: RunReport['conditions'] = declared.map((condition) => {
-    const record = checks.get(condition.id);
-    const lastCheck = record?.last;
-    const result: ConditionResult | undefined =
-      lastCheck === undefined ? undefined : { seq: lastCheck.seq, outcome: lastCheck.outcome, mutationSeq: lastCheck.mutationSeq };
-    const state = conditionStateOf(condition.when, lastMutationSeq, result);
-    if (state === 'not_needed') notRun.push({ what: condition.id, reason: 'not_needed' });
-    if (state === 'not_run' || state === 'stale') notRun.push({ what: condition.id, reason: notRunReasonOf(status, stopReason) });
-    return {
-      id: condition.id,
-      command: condition.command,
-      state,
-      rounds: record?.rounds.size ?? 0,
-      ...(lastCheck === undefined
-        ? {}
-        : {
-            last: {
-              seq: lastCheck.seq,
-              ...(lastCheck.exitCode === undefined ? {} : { exitCode: lastCheck.exitCode }),
-              durationMs: lastCheck.durationMs,
-              mutationSeq: lastCheck.mutationSeq,
-              ...(lastCheck.handle === undefined ? {} : { handle: lastCheck.handle }),
-            },
-          }),
+  const finish = (span: RunReportSpan): RunReport => {
+    const completion: PinnedCompletion | undefined = pinnedCompletionOf(pins);
+    const declared = completion?.conditions ?? [];
+    const requirements = completion?.requirements ?? [];
+    const notRun: RunReport['notRun'] = [];
+    const conditions: RunReport['conditions'] = declared.map((condition) => {
+      const record = checks.get(condition.id);
+      const lastCheck = record?.last;
+      const result: ConditionResult | undefined =
+        lastCheck === undefined ? undefined : { seq: lastCheck.seq, outcome: lastCheck.outcome, mutationSeq: lastCheck.mutationSeq };
+      const state = conditionStateOf(condition.when, lastMutationSeq, result);
+      if (state === 'not_needed') notRun.push({ what: condition.id, reason: 'not_needed' });
+      if (state === 'not_run' || state === 'stale') notRun.push({ what: condition.id, reason: notRunReasonOf(status, stopReason) });
+      return {
+        id: condition.id,
+        command: condition.command,
+        state,
+        rounds: record?.rounds.size ?? 0,
+        ...(lastCheck === undefined
+          ? {}
+          : {
+              last: {
+                seq: lastCheck.seq,
+                ...(lastCheck.exitCode === undefined ? {} : { exitCode: lastCheck.exitCode }),
+                durationMs: lastCheck.durationMs,
+                mutationSeq: lastCheck.mutationSeq,
+                ...(lastCheck.handle === undefined ? {} : { handle: lastCheck.handle }),
+              },
+            }),
+      };
+    });
+    for (const requirement of requirements) notRun.push({ what: requirement, reason: 'no_mechanical_check' });
+
+    const declaredCommands = new Set(declared.map((condition) => condition.command));
+    const childRunsNotCompleted = [...calls.values()].filter((call) => call.waitsOnRun && call.completedStatus !== 'completed').length;
+    const counts: Record<ResidualRiskCode, number> = {
+      no_condition_declared_after_mutation: declared.length === 0 ? mutatingCalls : 0,
+      mutation_without_known_paths: unknownPathMutations,
+      unknown_effect_calls: unknownEffectCalls,
+      permission_denials: denials,
+      child_runs_not_completed: childRunsNotCompleted,
+      output_truncated: truncatedOutputs,
+      requirements_unchecked: requirements.length,
     };
-  });
-  for (const requirement of requirements) notRun.push({ what: requirement, reason: 'no_mechanical_check' });
 
-  const declaredCommands = new Set(declared.map((condition) => condition.command));
-  const childRunsNotCompleted = [...calls.values()].filter((call) => call.waitsOnRun && call.completedStatus !== 'completed').length;
-  const counts: Record<ResidualRiskCode, number> = {
-    no_condition_declared_after_mutation: declared.length === 0 ? mutatingCalls : 0,
-    mutation_without_known_paths: unknownPathMutations,
-    unknown_effect_calls: unknownEffectCalls,
-    permission_denials: denials,
-    child_runs_not_completed: childRunsNotCompleted,
-    output_truncated: truncatedOutputs,
-    requirements_unchecked: requirements.length,
+    return {
+      runId: span.runId,
+      status,
+      ...(stopReason === undefined ? {} : { stopReason }),
+      durationMs: Math.max(0, span.lastCreatedAt - span.firstCreatedAt),
+      declaration: completion === undefined ? null : { conditions: completion.conditions, requirements: completion.requirements },
+      changes: { files: [...written].map(([path, fact]) => ({ path, ...fact })), mutatingCalls },
+      conditions,
+      notRun,
+      residualRisk: RESIDUAL_RISK_CODES.filter((code) => counts[code] > 0).map((code) => ({ code, count: counts[code] })),
+      modelChecks: completedCommands.filter((entry) => declaredCommands.has(entry.command)),
+    };
   };
 
-  return {
-    runId: first.runId,
-    status,
-    ...(stopReason === undefined ? {} : { stopReason }),
-    durationMs: Math.max(0, last.createdAt - first.createdAt),
-    declaration: completion === undefined ? null : { conditions: completion.conditions, requirements: completion.requirements },
-    changes: { files: [...written].map(([path, fact]) => ({ path, ...fact })), mutatingCalls },
-    conditions,
-    notRun,
-    residualRisk: RESIDUAL_RISK_CODES.filter((code) => counts[code] > 0).map((code) => ({ code, count: counts[code] })),
-    modelChecks: completedCommands.filter((entry) => declaredCommands.has(entry.command)),
-  };
+  return { add, finish };
+};
+
+export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
+  const [first] = events;
+  const last = events[events.length - 1];
+  if (first === undefined || last === undefined) throw new Error('a run report needs at least one event of the run');
+  const fold = createRunReportFold();
+  for (const event of events) fold.add(event);
+  return fold.finish({ runId: first.runId, firstCreatedAt: first.createdAt, lastCreatedAt: last.createdAt });
 };
 
 const conditionStateOf = (when: 'always' | 'after_mutation', lastMutationSeq: number, result: ConditionResult | undefined): ConditionState => {

@@ -9,8 +9,8 @@ describe('managed server reaper delegation to foundation (design-managed-servers
     expect(source).not.toMatch(/\breapMarkedGroup\b/);
   });
 
-  it('finalize reaps through reapMarkedProcesses with the one managed server label and the child pid as pgid, never a label named for one server', () => {
-    expect(source).toMatch(/\breapMarkedProcesses\(\{[^}]*\bpgid:\s*child\.pid\b[^}]*\}\)/s);
+  it('finalize reaps through reapMarkedProcesses with the one managed server label and the group of the launch as pgid, never a label named for one server', () => {
+    expect(source).toMatch(/\breapMarkedProcesses\(\{ marker, pgid, [^}]*\}\)/s);
     expect(source).toMatch(/\breapMarkedProcesses\(\{[^}]*\blabel:\s*MANAGED_SERVER_LABEL\b[^}]*\}\)/s);
     expect(source).toMatch(/export const MANAGED_SERVER_LABEL = 'managed server';/);
     expect(source).not.toMatch(/label:\s*'fm'/);

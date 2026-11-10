@@ -31,29 +31,27 @@ const readingOf = (segment: Segment, form: SupersededForm): Reading => {
   return matched === form.argv.length ? 'superseded' : 'other';
 };
 
-export type CoveredProgram = { program: string; flagOptions: readonly string[]; valueOptions: readonly string[]; injecting: readonly string[]; readOnly: ReadonlyArray<readonly string[]> };
+export type CoveredProgram = { program: string; flagOptions: readonly string[]; valueOptions: readonly string[] };
 
 const MAX_OPEN_OPTIONS = 6;
 
 const optionNameOf = (word: string): string => (word.startsWith('--') && word.includes('=') ? word.slice(0, word.indexOf('=')) : word);
 
-type Shape = { subcommands: string[][]; injected: boolean; decidable: boolean };
+type Shape = { subcommands: string[][] };
 
 const shapeOf = (segment: Segment, covered: CoveredProgram): Shape => {
   const words = segment.words.slice(segment.effectiveIndex + 1);
   let readings: string[][] = [[]];
-  let injected = false;
   let open = 0;
   for (let index = 0; index < words.length; index += 1) {
     const word = words[index];
     if (word === undefined) break;
-    if (!word.literal) return { subcommands: readings, injected, decidable: false };
+    if (!word.literal) return { subcommands: readings };
     if (!word.value.startsWith('-')) {
       readings = readings.map((reading) => [...reading, word.value]);
       continue;
     }
     const name = optionNameOf(word.value);
-    if (covered.injecting.includes(name)) injected = true;
     if (word.value.includes('=') && word.value.startsWith('--')) continue;
     const next = words[index + 1];
     if (covered.flagOptions.includes(name) || next === undefined || !next.literal || next.value.startsWith('-')) continue;
@@ -62,24 +60,21 @@ const shapeOf = (segment: Segment, covered: CoveredProgram): Shape => {
       continue;
     }
     open += 1;
-    if (open > MAX_OPEN_OPTIONS) return { subcommands: readings, injected, decidable: false };
+    if (open > MAX_OPEN_OPTIONS) return { subcommands: readings };
     readings = [...readings.map((reading) => [...reading, next.value]), ...readings];
     index += 1;
   }
-  return { subcommands: readings, injected, decidable: true };
+  return { subcommands: readings };
 };
 
 const startsWithAll = (reading: readonly string[], prefix: readonly string[]): boolean => prefix.every((word, index) => reading[index] === word);
 
-const coveredVerdict = (segment: Segment, covered: CoveredProgram, forms: readonly SupersededForm[]): SupersededVerdict | undefined => {
+const coveredVerdict = (segment: Segment, covered: CoveredProgram, forms: readonly SupersededForm[]): SupersededVerdict => {
   const own = forms.filter((form) => form.argv[0] === covered.program);
-  const fallback: SupersededForm = own[0] ?? { operation: covered.program, argv: [covered.program] };
   const shape = shapeOf(segment, covered);
   const matched = own.find((form) => shape.subcommands.some((reading) => startsWithAll(reading, form.argv.slice(1))));
   if (matched !== undefined) return { kind: 'superseded', form: matched };
-  if (!shape.decidable || shape.injected) return { kind: 'undecided', form: fallback };
-  const readOnly = shape.subcommands.every((reading) => covered.readOnly.some((known) => startsWithAll(reading, known)));
-  return readOnly ? undefined : { kind: 'undecided', form: fallback };
+  return { kind: 'undecided', form: own[0] ?? { operation: covered.program, argv: [covered.program] } };
 };
 
 const segmentVerdict = (segment: Segment, forms: readonly SupersededForm[], programs: readonly CoveredProgram[]): SupersededVerdict | undefined => {

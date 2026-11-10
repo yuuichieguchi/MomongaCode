@@ -44,7 +44,7 @@ export type StoreOptions = {
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
 
-export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised };
+export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised, report: unexercised };
 
 const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => T): T => {
   const db = openDatabase(dbPath);

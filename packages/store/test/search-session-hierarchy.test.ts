@@ -32,7 +32,7 @@ describe('the history search hierarchy: session, run, step', () => {
   it('two runs of one session are returned under one session entry', async () => {
     const { store, clock } = harness();
     const { sessionId, runs } = await sessionWithRuns(store, clock, [{ task: 'fix the quokka parser' }, { task: 'test the quokka parser' }]);
-    indexAll(store);
+    await indexAll(store);
     const result = store.search.query(OWN, { query: 'quokka', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]?.sessionId).toBe(sessionId);
@@ -45,7 +45,7 @@ describe('the history search hierarchy: session, run, step', () => {
     const failing = await sessionWithRuns(store, clock, [{ task: 'wombat migration', outcome: 'FAILED' }]);
     const passing = await sessionWithRuns(store, clock, [{ task: 'unrelated work' }, { task: 'wombat migration' }]);
     clock.advance(1000);
-    indexAll(store);
+    await indexAll(store);
     const result = store.search.query(OWN, { query: 'wombat', scope: 'project' });
     expect(result.sessions.map((session) => session.sessionId)).toEqual([passing.sessionId, failing.sessionId]);
   });
@@ -53,7 +53,7 @@ describe('the history search hierarchy: session, run, step', () => {
   it('the session entry carries the span of the runs shown and no total count', async () => {
     const { store, clock } = harness();
     const { runs } = await sessionWithRuns(store, clock, [{ task: 'numbat one' }, { task: 'something else' }, { task: 'numbat two' }]);
-    indexAll(store);
+    await indexAll(store);
     const [session] = store.search.query(OWN, { query: 'numbat', scope: 'project' }).sessions;
     const shown = session?.runs ?? [];
     expect(shown.map((anchor) => anchor.runId).sort()).toEqual([runs[0]?.id, runs[2]?.id].sort());
@@ -68,7 +68,7 @@ describe('the history search hierarchy: session, run, step', () => {
       { task: 'first', steps: [{ tool: { name: 'Read', path: '/work/a/secret/key.txt', output: 'bilby inside the secret file' } }] },
       { task: 'second', steps: [{ tool: { name: 'Read', path: '/work/a/open.txt', output: 'bilby inside the open file' } }] },
     ]);
-    indexAll(store);
+    await indexAll(store);
     const result = store.search.query(OWN, { query: 'bilby', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
     const [session] = result.sessions;
     expect(session?.runs.map((anchor) => anchor.runId)).toEqual([runs[1]?.id]);
@@ -84,7 +84,7 @@ describe('the history search hierarchy: session, run, step', () => {
       clock,
       Array.from({ length: HISTORY_SEARCH_ANCHOR_LIMIT + 2 }, (_unused, index) => ({ task: `dingo task ${index}` })),
     );
-    indexAll(store);
+    await indexAll(store);
     const result = store.search.query(OWN, { query: 'dingo', scope: 'project' });
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions.flatMap((session) => session.runs)).toHaveLength(HISTORY_SEARCH_ANCHOR_LIMIT);

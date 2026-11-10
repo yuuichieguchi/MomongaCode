@@ -17,9 +17,9 @@ const proxyEnvironment = (port: number): Record<string, string> => {
   return { ...Object.fromEntries(PROXY_VARIABLES.map((name) => [name, url])), ...Object.fromEntries(NO_PROXY_VARIABLES.map((name) => [name, ''])) };
 };
 
-export const openGrantedNetwork = async (ctx: Pick<ToolContext, 'network' | 'sandboxPolicy' | 'env'>): Promise<GrantedNetwork> => {
+export const openGrantedNetwork = async (ctx: Pick<ToolContext, 'network' | 'outboundNetwork' | 'sandboxPolicy' | 'env'>): Promise<GrantedNetwork> => {
   if (ctx.network?.kind !== 'hosts') return { sandboxPolicy: ctx.sandboxPolicy, env: ctx.env, settle: async () => [] };
-  const proxy = await startEgressProxy({ hosts: ctx.network.hosts });
+  const proxy = await startEgressProxy({ hosts: ctx.network.hosts, network: ctx.outboundNetwork });
   return {
     sandboxPolicy: withNetwork(ctx.sandboxPolicy, { loopbackPort: proxy.port }),
     env: { ...ctx.env, ...proxyEnvironment(proxy.port) },

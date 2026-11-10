@@ -1,6 +1,8 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
 import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
+
+const CALIBRATION_TESTS = 'packages/*/test/calibration/**/*.test.ts';
 
 export default defineConfig({
   test: {
@@ -15,6 +17,18 @@ export default defineConfig({
           setupFiles: ['test/support/child-process-guard.ts'],
           globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, CALIBRATION_TESTS],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'calibration',
+          provide: { [RUN_CLASS_KEY]: 'heavy' },
+          include: [CALIBRATION_TESTS],
+          setupFiles: ['test/support/child-process-guard.ts'],
+          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/thread-modules.ts', 'test/support/leak-guard.ts'],
+          fileParallelism: false,
         },
       },
       {

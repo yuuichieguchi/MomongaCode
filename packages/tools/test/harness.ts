@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
-import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
@@ -102,6 +102,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   const kernelLock = createFakeKernelLock({ inheritable: false });
   const warnings: string[] = [];
   const executor = createToolExecutor({
+    outboundNetwork: UNCONFIGURED_NETWORK,
     idempotency: idempotency.port,
     blobs: blobs.port,
     clock,

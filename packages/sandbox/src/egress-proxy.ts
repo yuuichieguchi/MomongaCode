@@ -1,11 +1,10 @@
 import dns from 'node:dns';
 import http from 'node:http';
 import net from 'node:net';
-import type { AddressInfo } from 'node:net';
+import type { AddressInfo, LookupFunction } from 'node:net';
 import type { Duplex } from 'node:stream';
-import { formatHostEntry, hostEntryCovers, normalizedHosts, parseHostEntry } from '@momonga/foundation';
-import type { HostEntry } from '@momonga/foundation';
-import { isGuardedAddress } from './address-guard.ts';
+import { createOutboundDispatcher, findOutboundError, formatHostEntry, hostEntryCovers, isAcceptableAddress, normalizedHosts, openOutboundTunnel, parseHostEntry } from '@momonga/foundation';
+import type { HostEntry, OutboundNetwork } from '@momonga/foundation';
 
 export type EgressRefusal =
   | { readonly kind: 'not_granted'; readonly host: string; readonly port: number }
@@ -14,7 +13,6 @@ export type EgressRefusal =
 
 export type EgressPorts = {
   resolve(host: string): Promise<readonly string[]>;
-  dial(address: string, port: number): net.Socket;
 };
 
 export type EgressProxy = {
@@ -28,7 +26,6 @@ export const EGRESS_PROXY_HOST = '127.0.0.1';
 
 export const nodeEgressPorts: EgressPorts = {
   resolve: async (host) => (await dns.promises.lookup(host, { all: true })).map((found) => found.address),
-  dial: (address, port) => net.connect({ host: address, port }),
 };
 
 export const describeEgressRefusal = (refusal: EgressRefusal, hosts: readonly string[]): string => {
@@ -37,29 +34,28 @@ export const describeEgressRefusal = (refusal: EgressRefusal, hosts: readonly st
     case 'not_granted':
       return `the sandbox proxy refused ${target}: it is not among the hosts this command was granted (${hosts.join(', ')})`;
     case 'guarded_address':
-      return `the sandbox proxy refused ${target}: the name resolves to ${refusal.address}, a loopback, link-local or private address; a command reaches such an address only when the address itself is granted`;
+      return `the sandbox proxy refused ${target}: the name resolves to ${refusal.address}, which is not a public address; a command reaches such an address only when the address itself is granted`;
     case 'unresolvable':
       return `the sandbox proxy could not reach ${target}: the name could not be resolved (${refusal.cause})`;
   }
 };
 
-class DialingAgent extends http.Agent {
-  readonly #dial: () => net.Socket;
+const NOT_FORWARDED: ReadonlySet<string> = new Set(['connection', 'expect', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
 
-  constructor(dial: () => net.Socket) {
-    super({ keepAlive: false });
-    this.#dial = dial;
-  }
+const UNTIL_THE_COMMAND_ENDS = 0;
 
-  override createConnection(): net.Socket {
-    return this.#dial();
-  }
-}
+const answering = (address: string): LookupFunction => {
+  const family = net.isIP(address);
+  return (_hostname, options, callback) => {
+    if (options.all === true) callback(null, [{ address, family }]);
+    else callback(null, address, family);
+  };
+};
 
-const HOP_BY_HOP: ReadonlySet<string> = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'proxy-connection', 'te', 'trailer', 'transfer-encoding', 'upgrade']);
+const carriesBody = (headers: http.IncomingHttpHeaders): boolean => headers['content-length'] !== undefined || headers['transfer-encoding'] !== undefined;
 
 const forwardedHeaders = (headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders =>
-  Object.fromEntries(Object.entries(headers).filter(([name, value]) => !HOP_BY_HOP.has(name) && value !== undefined));
+  Object.fromEntries(Object.entries(headers).filter(([name, value]) => !NOT_FORWARDED.has(name) && value !== undefined));
 
 const statusText = (status: number): string => http.STATUS_CODES[status] ?? '';
 
@@ -82,8 +78,13 @@ const targetOfUrl = (text: string | undefined): (Target & { path: string; author
   return { host: entry.host, port: entry.port ?? 80, path: `${url.pathname}${url.search}`, authority: url.host };
 };
 
-export const startEgressProxy = async (options: { hosts: readonly string[]; ports?: EgressPorts }): Promise<EgressProxy> => {
+type Upstream = ReturnType<typeof createOutboundDispatcher>;
+
+export const startEgressProxy = async (options: { hosts: readonly string[]; network: OutboundNetwork; ports?: EgressPorts }): Promise<EgressProxy> => {
   const ports = options.ports ?? nodeEgressPorts;
+  const { network } = options;
+  const ending = new AbortController();
+  const upstreams = new Set<Upstream>();
   const hosts = normalizedHosts(options.hosts);
   const granted = hosts.map((text) => parseHostEntry(text) as HostEntry);
   const refused: EgressRefusal[] = [];
@@ -110,7 +111,7 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; port
     }
     const [first] = addresses;
     if (first === undefined) return { kind: 'unresolvable', host, port, cause: 'no address' };
-    const usable = addresses.find((address) => !isGuardedAddress(address) || covers({ host: address, port }));
+    const usable = addresses.find((address) => isAcceptableAddress(address, { loopback: false }) || covers({ host: address, port }));
     return usable === undefined ? { kind: 'guarded_address', host, port, address: first } : { address: usable };
   };
 
@@ -128,22 +129,34 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; port
       client.end(rawResponse(statusOf(admitted), refuse(admitted)));
       return;
     }
-    const upstream = track(ports.dial(admitted.address, target.port));
-    let established = false;
-    upstream.once('connect', () => {
-      established = true;
-      client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head.length > 0) upstream.write(head);
-      upstream.pipe(client);
-      client.pipe(upstream);
-    });
-    upstream.on('error', (error) => {
-      if (established) client.destroy();
-      else client.end(rawResponse(502, `the sandbox proxy could not connect to ${formatHostEntry(target)}: ${error.message}`));
-    });
+    let upstream: Duplex;
+    try {
+      upstream = await openOutboundTunnel(network, { host: target.host, address: admitted.address, port: target.port }, { connectReplyTimeoutMs: UNTIL_THE_COMMAND_ENDS, signal: ending.signal });
+    } catch (error) {
+      if (closed) return;
+      const failure = findOutboundError(error);
+      if (failure === undefined) throw error;
+      client.end(rawResponse(502, `the sandbox proxy could not connect to ${formatHostEntry(target)}: ${failure.message}`));
+      return;
+    }
+    upstream.on('error', () => client.destroy());
+    if (closed || client.destroyed) {
+      upstream.destroy();
+      return;
+    }
+    track(upstream);
     client.on('error', () => upstream.destroy());
     client.on('close', () => upstream.destroy());
     upstream.on('close', () => client.destroy());
+    client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    if (head.length > 0) upstream.write(head);
+    upstream.pipe(client);
+    client.pipe(upstream);
+  };
+
+  const released = async (upstream: Upstream): Promise<void> => {
+    upstreams.delete(upstream);
+    await upstream.destroy();
   };
 
   const forward = async (target: Target & { path: string; authority: string }, request: http.IncomingMessage, response: http.ServerResponse): Promise<void> => {
@@ -153,21 +166,38 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; port
       response.writeHead(statusOf(admitted), { 'content-type': 'text/plain; charset=utf-8', connection: 'close' }).end(`${refuse(admitted)}\n`);
       return;
     }
-    const outgoing = http.request({
-      method: request.method,
-      path: target.path,
-      headers: { ...forwardedHeaders(request.headers), host: target.authority, connection: 'close' },
-      agent: new DialingAgent(() => track(ports.dial(admitted.address, target.port))),
+    const upstream = createOutboundDispatcher(network, {
+      connectReplyTimeoutMs: UNTIL_THE_COMMAND_ENDS,
+      headersTimeout: UNTIL_THE_COMMAND_ENDS,
+      bodyTimeout: UNTIL_THE_COMMAND_ENDS,
+      lookup: answering(admitted.address),
     });
-    outgoing.on('response', (incoming) => {
-      response.writeHead(incoming.statusCode ?? 502, forwardedHeaders(incoming.headers));
-      incoming.pipe(response);
-    });
-    outgoing.on('error', (error) => {
+    upstreams.add(upstream);
+    try {
+      const incoming = await upstream.request({
+        origin: `http://${target.authority}`,
+        path: target.path,
+        method: request.method ?? 'GET',
+        headers: { ...forwardedHeaders(request.headers), host: target.authority },
+        body: carriesBody(request.headers) ? request : null,
+        reset: true,
+        signal: ending.signal,
+      });
+      incoming.body.on('error', () => response.destroy());
+      response.on('close', () => {
+        incoming.body.destroy();
+        guard(released(upstream), response);
+      });
+      response.writeHead(incoming.statusCode, forwardedHeaders(incoming.headers));
+      incoming.body.pipe(response);
+    } catch (error) {
+      await released(upstream);
+      if (closed) return;
+      const failure = findOutboundError(error);
+      if (failure === undefined) throw error;
       if (response.headersSent) response.destroy();
-      else response.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' }).end(`the sandbox proxy could not connect to ${formatHostEntry(target)}: ${error.message}\n`);
-    });
-    request.pipe(outgoing);
+      else response.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', connection: 'close' }).end(`the sandbox proxy could not connect to ${formatHostEntry(target)}: ${failure.message}\n`);
+    }
   };
 
   const guard = (work: Promise<void>, client: { destroy(): unknown }): void => {
@@ -209,8 +239,10 @@ export const startEgressProxy = async (options: { hosts: readonly string[]; port
   const close = (): Promise<void> => {
     closing ??= (async () => {
       closed = true;
+      ending.abort();
       const ended = new Promise<void>((resolve) => server.close(() => resolve()));
       for (const socket of open) socket.destroy();
+      await Promise.all([...upstreams].map(released));
       await ended;
       const [failure] = failures;
       if (failure !== undefined) throw failure;

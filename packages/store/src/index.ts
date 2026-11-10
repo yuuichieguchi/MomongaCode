@@ -154,6 +154,8 @@ export type {
   RecordedHash,
   ReflectionInputReply,
   ReflectionInputRequest,
+  ReportReply,
+  ReportRequest,
   VerdictFact,
   VerdictReply,
   VerdictRequest,

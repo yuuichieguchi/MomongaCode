@@ -17,8 +17,8 @@ import type { EvidenceRun, ToolRuntimePort, Worker, WorkerOptions } from '@momon
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
-import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir } from '@momonga/testkit';
+import type { Claim, ContributionPreparer, RuntimeStore, Session } from '@momonga/store';
+import { UNCONFIGURED_NETWORK, FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -448,6 +448,8 @@ export type ServiceOverrides = {
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
   maxAttempts?: number;
+  preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer;
+  onDecode?: (rows: number, bytes: number) => void;
   clock?: FakeClock;
   wrapStore?: (store: RuntimeStore) => RuntimeStore;
   cancelUpstream?: (runId: string) => Promise<void>;
@@ -490,15 +492,20 @@ export const createNotifier = (): Notifier => {
   return factory() as Notifier;
 };
 
-export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: Notifier; maxAttempts?: number } = {}): RuntimeStore => {
-  const store = openRuntimeStore({
+export const openStore = (
+  dbPath: string,
+  clock: FakeClock,
+  extra: { notifier?: Notifier; maxAttempts?: number; preparer?: (dbPath: string, store: () => RuntimeStore) => ContributionPreparer; onDecode?: (rows: number, bytes: number) => void } = {},
+): RuntimeStore => {
+  const store: RuntimeStore = openRuntimeStore({
     path: dbPath,
     home: path.dirname(dbPath),
     clock,
     leaseMs: LEASE_MS,
     maxAttempts: extra.maxAttempts ?? 5,
     maxTotalAttempts: 50,
-    preparer: journalReaderPreparer(dbPath),
+    preparer: extra.preparer === undefined ? journalReaderPreparer(dbPath) : extra.preparer(dbPath, () => store),
+    ...(extra.onDecode === undefined ? {} : { onDecode: extra.onDecode }),
     ...(extra.notifier === undefined ? {} : { onCommit: (touched: { runId?: string; sessionId: string }[]) => extra.notifier?.onCommit(touched) }),
   } as Parameters<typeof openRuntimeStore>[0]);
   onCleanup(() => store.close());
@@ -590,7 +597,12 @@ export const startService = async (overrides: ServiceOverrides & { fakeTimers?: 
   const clock = overrides.clock ?? createFakeClock(START_MS);
   const timers = overrides.timers ?? (overrides.fakeTimers === true ? createFakeTimers(clock) : undefined);
   const notifier = createNotifier();
-  const store = openStore(layout.dbPath, clock, { notifier, ...(overrides.maxAttempts === undefined ? {} : { maxAttempts: overrides.maxAttempts }) });
+  const store = openStore(layout.dbPath, clock, {
+    notifier,
+    ...(overrides.maxAttempts === undefined ? {} : { maxAttempts: overrides.maxAttempts }),
+    ...(overrides.preparer === undefined ? {} : { preparer: overrides.preparer }),
+    ...(overrides.onDecode === undefined ? {} : { onDecode: overrides.onDecode }),
+  });
   const ports = createFakePorts();
   const errors: unknown[] = [];
   const fatals: Error[] = [];
@@ -749,7 +761,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
   const tracer = createFakeTracer();
   const toolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
-  const executor = createToolExecutor({ fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
+  const executor = createToolExecutor({ outboundNetwork: UNCONFIGURED_NETWORK, fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE, idempotency: env.store.idempotency, blobs: env.store.blobs, clock: env.clock, processMarkerDir: markers, callLockDir: callLocks, kernelLock: createFakeKernelLock({ inheritable: false }), onWarning: () => undefined });
   const sessionsTmpRoot = path.join(env.layout.root, 'sessions');
   const sessionTmpDir = path.join(sessionsTmpRoot, 'session-tmp');
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });

@@ -173,7 +173,7 @@ describe('a search document of an origin this build does not know (11.4)', () =>
   it('is returned with the origin unknown and never shown to another project', async () => {
     const { store, dbPath, dir } = harness();
     const run = await finishedRun(store, `${dir}/a`, 'remember the zebra deployment');
-    indexAll(store);
+    await indexAll(store);
     markNewer(dbPath);
     writeUnknown(dbPath, 'search_docs', 'origin', 'run_id', run.id);
     writeUnknown(dbPath, 'runs', 'origin', 'id', run.id);

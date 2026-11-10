@@ -14,7 +14,6 @@ export type TerminalsOptions = {
 
 export const createTerminals = ({ store, claim, journal, control, clock }: TerminalsOptions): Terminals => {
   const cancel = async (): Promise<'done'> => {
-    journal.snapshot();
     const result = await store.transition(claim, ['CANCELLING'], 'CANCELLED');
     if (result.kind === 'lease_lost') control.lost();
     if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not be cancelled: ${result.reason ?? 'conflict'}`);
@@ -38,7 +37,6 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
 
   return {
     finish: async (to, patch, preceding = []) => {
-      journal.snapshot();
       if (settle(await store.transition(claim, ['RUNNING'], to, patch, preceding)) === 'cancelling') {
         if (preceding.length > 0) journal.append(preceding);
         return cancel();

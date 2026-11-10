@@ -1127,6 +1127,59 @@ CREATE TABLE rule_verdicts (
 );
 `;
 
+const RUN_INDEXED_CHARS_RECORD = `
+CREATE TABLE run_indexed_chars (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  chars INTEGER NOT NULL
+) WITHOUT ROWID;
+
+INSERT INTO run_indexed_chars (run_id, chars)
+SELECT run_id, SUM(length(payload_json)) FROM events
+WHERE run_id IS NOT NULL AND type IN ('user.message', 'model.responded', 'tool.call', 'tool.completed')
+GROUP BY run_id;
+
+INSERT INTO derived_through (run_id, derivation, through_seq) SELECT id, 35, last_seq FROM runs;
+`;
+
+const SEARCH_DOCUMENT_DRAFT = `
+CREATE TABLE search_draft_runs (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  task TEXT NOT NULL,
+  final_text TEXT NOT NULL
+);
+
+CREATE TABLE search_draft_steps (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  step INTEGER NOT NULL,
+  seq_from INTEGER NOT NULL,
+  seq_to INTEGER NOT NULL,
+  chars INTEGER NOT NULL,
+  PRIMARY KEY (run_id, step)
+) WITHOUT ROWID;
+CREATE INDEX search_draft_steps_by_seq ON search_draft_steps (run_id, seq_from);
+
+CREATE TABLE search_draft_parts (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  step INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('text', 'call', 'output')),
+  body TEXT NOT NULL,
+  paths_json TEXT NOT NULL,
+  PRIMARY KEY (run_id, step, seq)
+);
+
+CREATE TABLE search_draft_paths (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  path TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  position INTEGER NOT NULL,
+  PRIMARY KEY (run_id, path)
+) WITHOUT ROWID;
+
+INSERT INTO derived_through (run_id, derivation, through_seq)
+SELECT r.id, 36, r.last_seq FROM runs r WHERE EXISTS (SELECT 1 FROM search_docs d WHERE d.run_id = r.id AND d.level = 'run');
+`;
+
 const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
   version: 33,
   name: 'call the model of a session and of a run by its own name',
@@ -1222,9 +1275,18 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'let an approval ask a person about a tool call whose effect is unknown, by rebuilding approvals with the kind unknown_effect in its CHECK list, and store the verdict of a rule set under the fingerprint of its input in rule_verdicts',
     sql: UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS,
   },
-  { version: 35, name: 'placeholder on this branch only: the merge replaces this entry with migration 35 of the branch that adds run_indexed_chars', sql: 'SELECT 1;' },
+  {
+    version: 35,
+    name: 'add up, per run, the characters of the events the history index reads, at append and once for the runs written before, so the indexing batch reads one number and scans no payload to learn the size of a run',
+    sql: RUN_INDEXED_CHARS_RECORD,
+  },
   {
     version: 36,
+    name: 'keep the search document of a run as it is written: the task, the last answer, the touched paths and the parts of each step, added one appended event at a time and consumed when the run is indexed; a run already indexed is current, and a run not yet indexed is brought up by the paged repair',
+    sql: SEARCH_DOCUMENT_DRAFT,
+  },
+  {
+    version: 37,
     name: 'record when an idempotency record was authorised, so a recovery can tell an effect that never started from one that may have, and hold what an admitted model request of a run reserves of the budget of its run tree, in tokens and in nano-USD',
     sql: AUTHORISED_MARK_AND_BUDGET_RESERVATIONS,
   },
