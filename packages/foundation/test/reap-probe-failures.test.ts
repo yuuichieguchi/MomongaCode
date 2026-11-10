@@ -59,8 +59,8 @@ const inspectorReporting = (processes: readonly UninspectableProcess[]): Process
 
 const aliveRegistry = () => createUninspectableRegistry({ isAlive: () => true });
 
-const ssh = { pid: 77, command: 'ssh-agent', startedAt: 1001 };
-const otherSsh = { pid: 77, command: 'ssh-agent', startedAt: 1002 };
+const ssh = { pid: 77, command: 'ssh-agent', startedAt: 1001n };
+const otherSsh = { pid: 77, command: 'ssh-agent', startedAt: 1002n };
 
 describe('findHolders and reportUninspectableOnce with a process that cannot be inspected', () => {
   it('hands the process to the callback and still lists the holders', async () => {
@@ -74,11 +74,11 @@ describe('findHolders and reportUninspectableOnce with a process that cannot be 
     const warnings: string[] = [];
     const registry = aliveRegistry();
     const report = reportUninspectableOnce((message) => void warnings.push(message), 'tool marker /m', registry);
-    const fresh = { pid: 9001, command: 'sshd', startedAt: 5 };
+    const fresh = { pid: 9001, command: 'sshd', startedAt: 5n };
     report(fresh);
     report(fresh);
     reportUninspectableOnce((message) => void warnings.push(message), 'background job j1', registry)(fresh);
-    report({ ...fresh, startedAt: 6 });
+    report({ ...fresh, startedAt: 6n });
     expect(warnings).toEqual([
       'tool marker /m: process 9001 (sshd) could not be inspected, so it was left alone',
       'background job j1: process 9001 (sshd) could not be inspected, so it was left alone',
@@ -139,7 +139,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
         label: 'tool',
         onWarning: (message) => void warnings.push(message),
         timing: timing(),
-        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77 }]),
+        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77n }]),
         uninspectable: registry,
       });
     }
@@ -158,7 +158,7 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
         label,
         onWarning: (message) => void warnings.push(message),
         timing: timing(),
-        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77 }]),
+        inspector: inspectorReporting([{ pid: 4242, command: 'ssh-agent', startedAt: 77n }]),
         uninspectable: registry,
       });
     }

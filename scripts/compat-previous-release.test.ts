@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PREVIOUS_RELEASE } from '../packages/store/src/compat-baseline.ts';

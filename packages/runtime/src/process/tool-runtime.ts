@@ -136,6 +136,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     settings,
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
+    markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
   const sessionStates = createSessionStates({ clock, store, logger });

@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile } from './child-process.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';

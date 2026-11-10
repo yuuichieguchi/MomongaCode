@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import type { SpawnSyncReturns } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
+import type { SpawnSyncReturns } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

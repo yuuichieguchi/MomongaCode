@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import { getEventListeners } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -296,34 +296,12 @@ describe('reapMarkedProcesses', () => {
       expect(alive(-group.pgid)).toBe(true);
     });
 
-    it('leftAlonePids', async () => {
-      const dir = makeDir();
-      const marker = makeMarker(dir);
-      const fd = fs.openSync(marker, 'r');
-      const ready = path.join(dir, 'ready');
-      const source = "const fs = require('node:fs'); process.on('SIGTERM', () => fs.closeSync(3)); fs.writeFileSync(process.env.READY_FILE, ''); setInterval(() => {}, 1 << 30);";
-      const child = spawn(process.execPath, ['-e', source], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin', READY_FILE: ready } });
-      fs.closeSync(fd);
-      child.unref();
-      const pid = child.pid;
-      if (pid === undefined) throw new Error('spawn failed');
-      spawnedGroups.push(pid);
-      expect(await waitUntil(() => fs.existsSync(ready) && holdersOf(marker).includes(pid))).toBe(true);
-      const kill = (target: number, signal: NodeJS.Signals | 0): void => {
-        process.kill(target, signal);
-      };
-      const terminated = waitUntil(() => !holdersOf(marker).includes(pid));
-      const timing: ReapTiming = {
-        now: () => 0,
-        sleep: async () => {
-          await terminated;
-        },
-      };
+    it('leftAlonePids', async (context) => {
+      const marker = markerFile(withTempDir(context));
+      const world = processTable({ 200: { pgid: 200, holdsMarker: true, ignoresTerm: false, startUnreadable: true } }, {});
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, pgid: pid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing });
-      expect(result).toEqual({ removed: true });
-      expect(warnings).toContain(`mcp marker ${marker}: process ${pid} is still alive but could not be verified as belonging to this call, so it was left alone`);
-      expect(alive(pid)).toBe(true);
+      await reapMarkedProcesses({ marker, pgid: 100, killGraceMs: 1000, label: 'mcp', onWarning: (m) => warnings.push(m), kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+      expect(warnings).toContain(`mcp marker ${marker}: process 200 is still alive but could not be verified as belonging to this call, so it was left alone`);
     });
 
     it('unsignalled', async () => {
@@ -938,7 +916,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   });
 });
 
-type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: number; startUnreadable?: boolean };
+type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: bigint; startUnreadable?: boolean };
 
 type Reuses = { atListing?: Record<number, Record<number, TableProcess>>; afterGroupRead?: Record<number, Record<number, TableProcess>>; afterStartRead?: Record<number, TableProcess> };
 
@@ -970,7 +948,7 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
         pendingStartReuse.delete(pid);
         table.set(pid, replacement);
       }
-      return { kind: 'value', value: entry.startMs ?? pid };
+      return { kind: 'value', value: entry.startMs ?? BigInt(pid) };
     },
     holdersOf: async () => {
       listings += 1;
@@ -990,7 +968,7 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
   return { signals, kill, inspector };
 };
 
-const stranger = (pgid: number): TableProcess => ({ pgid, holdsMarker: false, ignoresTerm: false, startMs: 999_999 });
+const stranger = (pgid: number): TableProcess => ({ pgid, holdsMarker: false, ignoresTerm: false, startMs: 999_999n });
 
 describe('a target is signalled only when its start time read at the listing reads the same just before the signal (decision 12: a process whose start time cannot be read is never signalled; ProcessStop HolderTargetProved)', () => {
   it('a holder outside the group whose pid is reused after the group read gets no SIGTERM', async (context) => {

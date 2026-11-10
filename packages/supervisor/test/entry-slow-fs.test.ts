@@ -19,6 +19,7 @@ import {
   writeSettings,
 } from './fixtures/p3-harness.ts';
 import type { MomongaPaths } from '@momonga/foundation';
+import { testHostPath } from '@momonga/testkit';
 
 const fsLatency = vi.hoisted(() => ({ ms: 0 }));
 
@@ -58,7 +59,7 @@ const startEntry = (context: CleanupContext, prepared: { home: string; paths: Mo
   const io = createFakeEntryIo({
     argv: [`--home=${home}`, '--log-target=file'],
     home,
-    env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
     timers,
     lockMechanism,

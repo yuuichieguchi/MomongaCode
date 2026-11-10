@@ -70,7 +70,7 @@ describe('darwin inspector: holdersOf', () => {
 
 describe('darwin inspector: startTimeOf', () => {
   it('parses the start time as UTC', async () => {
-    expect(await inspectorReturning({ stdout: 'Mon Nov  2 10:00:00 2026\n' }).startTimeOf(42, LIVE)).toEqual({ kind: 'value', value: Date.parse('2026-11-02T10:00:00Z') });
+    expect(await inspectorReturning({ stdout: 'Mon Nov  2 10:00:00 2026\n' }).startTimeOf(42, LIVE)).toEqual({ kind: 'value', value: BigInt(Date.UTC(2026, 10, 2, 10, 0, 0)) });
   });
 
   it('reads exit 1 without any output as a process that is gone', async () => {

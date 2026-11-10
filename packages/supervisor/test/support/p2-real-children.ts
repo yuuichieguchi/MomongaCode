@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { ChildExit, ChildHandle, SpawnPortOptions } from '../../src/child-manager.ts';
+import { testHostPath } from '@momonga/testkit';
 
 export const CHILD_FIXTURE = fileURLToPath(new URL('../fixtures/p2-child.ts', import.meta.url));
 
@@ -18,7 +19,7 @@ export const readOnlyScratchFd = (context: CleanupContext): number => {
 
 export const portOptions = (markerFd: number): SpawnPortOptions => ({
   cwd: process.cwd(),
-  env: { PATH: '/usr/bin:/bin' },
+  env: { PATH: testHostPath('/usr/bin:/bin') },
   detached: true,
   stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
 });

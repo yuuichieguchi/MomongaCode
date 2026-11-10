@@ -16,7 +16,7 @@ import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSett
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const HOLDER_PID = 4343;
-const HOLDER_STARTED_AT = 1_700_000_000_000;
+const HOLDER_STARTED_AT = 1_700_000_000_000n;
 
 const survivorInspector = (pgid: number): ProcessInspector => ({
   startTimeOf: async () => ({ kind: 'value', value: HOLDER_STARTED_AT }),

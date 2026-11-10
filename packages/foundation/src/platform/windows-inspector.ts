@@ -4,7 +4,7 @@ import { withListedState } from './marker-state.ts';
 import type { GroupProbeOptions } from './group-port.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
 import type { GroupLedger } from './windows-parsers.ts';
-import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from './windows-parsers.ts';
+import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTime } from './windows-parsers.ts';
 import { PROCESS_TABLE_SCRIPT, holdersScript, powershellArgs, powershellPath, startTimeScript, taskkillPath } from './windows-scripts.ts';
 
 export type WindowsInspectorPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>> };
@@ -54,7 +54,7 @@ export const createWindowsInspector = ({ run, env }: WindowsInspectorPorts): Pro
     startTimeOf: (pid, { signal }) =>
       guarded(async () => {
         const output = await execute(startTimeScript(pid), signal);
-        const startedAt = parseOutput(() => parseStartTimeMs(output));
+        const startedAt = parseOutput(() => parseStartTime(output));
         return startedAt === undefined ? { kind: 'gone' } : { kind: 'value', value: startedAt };
       }),
     holdersOf: (marker, { signal }) =>

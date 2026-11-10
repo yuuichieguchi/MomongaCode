@@ -24,6 +24,7 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { FakeSpawn, FakeSpawnOptions, MarkerCalls, RealWorkScope } from './fixtures/p3-harness.ts';
 import type { MarkerPorts } from '../src/orphans.ts';
+import { testHostPath } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -71,7 +72,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   const io = createFakeEntryIo({
     argv: [...(options.argvHome === false ? [] : [`--home=${home}`]), '--log-target=file'],
     home,
-    env: { PATH: '/usr/bin:/bin', HOME: home, LANG: 'C' },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
     timers,
     ...(options.lockMechanism === undefined ? {} : { lockMechanism: options.lockMechanism }),

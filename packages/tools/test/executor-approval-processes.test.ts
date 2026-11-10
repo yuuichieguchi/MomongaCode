@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import { once } from 'node:events';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';

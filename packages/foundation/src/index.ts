@@ -83,7 +83,7 @@ export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './n
 export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
-export type { GroupMembersReader } from './platform/group-members.ts';
+export type { GroupMember, GroupMembersReader, MemberStat } from './platform/group-members.ts';
 export {
   HOLDER_READ_MAX_BYTES,
   LOCK_FD_ENV,
@@ -162,6 +162,7 @@ export {
   SECRET_BACKEND_ENV,
   SECRET_PROGRAM_ENV,
   SECRET_REFUSAL_ENV,
+  SECRET_STORE_SEARCHED_PROGRAMS,
   createSecretServiceStore,
   createCredentialManagerStore,
   credentialReadScript,
@@ -286,7 +287,7 @@ export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, 
 export { nodeCommandRunner } from './platform/command-runner.ts';
 export type { CommandOptions, CommandResult, CommandRunner } from './platform/command-runner.ts';
 export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailure, probeFailed, valueOrThrow } from './platform/inspector-types.ts';
-export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
+export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
 export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, groupPortOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';

@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -129,8 +129,9 @@ const expectStopped = (output: string): void => {
 
 const expectLeftAlone = async (group: Group, result: { outcome: string; output: string }): Promise<void> => {
   expect(result.outcome).toBe('unknown');
-  expect(result.output).toMatch(/could not be verified/i);
-  expect(result.output).toContain(String(group.pgid));
+  expect(result.output).toContain(`Still running but no longer verified as belonging to this call, so left alone: group ${group.pgid}.`);
+  expect(result.output).not.toContain('retries');
+  expect(result.output).not.toContain('/markers ignore');
   expect(alive(-group.pgid)).toBe(true);
   expect(fs.existsSync(path.join(group.dir, 'term'))).toBe(false);
 };
@@ -318,7 +319,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(alive(-group.pgid)).toBe(true);
   });
 
-  it('reports a former holder that dropped the marker and stays alive in leftAlonePids', async () => {
+  it('does not report a former holder that dropped the marker as a process left alone, and reports its group instead', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const fd = fs.openSync(marker, 'r');
@@ -335,7 +336,8 @@ describe('reconcileProcessGroup structured result', () => {
     const { signals, kill } = recordingKill();
     const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000, kill });
     expect(signals.filter(([, signal]) => signal === 'SIGTERM')).toEqual([[-pid, 'SIGTERM']]);
-    expect(result.leftAlonePids).toContain(pid);
+    expect(result.leftAlonePids).not.toContain(pid);
+    expect(result.leftAloneGroup).toBe(pid);
     expect(alive(pid)).toBe(true);
     expect(holdersOf(marker)).toEqual([]);
   });
@@ -454,7 +456,7 @@ describe('markerReapClockBoundMs', () => {
   const RECORDED_GROUP = 424_242;
   const OWN_GROUP = 424_241;
   const HOLDER = 424_243;
-  const HOLDER_STARTED_AT = 1_700_000_000;
+  const HOLDER_STARTED_AT = 1_700_000_000n;
   const FAILURES_PER_WINDOW = KILL_GRACE_MS / REAP_POLL_INTERVAL_MS - 1;
   const SLOW_PROBE: ProbeResult<number[]> = { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the probe was slow' } };
 

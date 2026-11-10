@@ -24,12 +24,42 @@ export const PROCESS_TABLE_SCRIPT = [
   'ConvertTo-Json -Compress -InputObject $rows',
 ].join('\n');
 
+const PROCESS_TIMES_TYPES = String.raw`
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+public static class MomongaProcessTimes {
+  const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+  [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
+  [DllImport("kernel32.dll", SetLastError = true)] static extern bool CloseHandle(IntPtr handle);
+  public static string Creation(int pid) {
+    IntPtr process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+    if (process == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+    try {
+      long creation, exit, kernel, user;
+      if (!GetProcessTimes(process, out creation, out exit, out kernel, out user)) throw new Win32Exception(Marshal.GetLastWin32Error());
+      return ((ulong)creation).ToString();
+    } finally {
+      CloseHandle(process);
+    }
+  }
+}`;
+
+const ERROR_INVALID_PARAMETER = 87;
+
 export const startTimeScript = (pid: number): string => {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new RangeError(`pid must be a positive integer: ${pid}`);
   return [
     "$ErrorActionPreference = 'Stop'",
-    `$p = Get-CimInstance -ClassName Win32_Process -Filter 'ProcessId=${pid}'`,
-    'if ($p -and $p.CreationDate) { [string]([DateTimeOffset]$p.CreationDate).ToUnixTimeMilliseconds() }',
+    `Add-Type -TypeDefinition @'${PROCESS_TIMES_TYPES}\n'@`,
+    'try {',
+    `  [MomongaProcessTimes]::Creation(${pid})`,
+    '} catch {',
+    `  if ($_.Exception.InnerException.NativeErrorCode -ne ${ERROR_INVALID_PARAMETER}) { throw }`,
+    `  if (@(Get-CimInstance -ClassName Win32_Process -Filter 'ProcessId = ${pid}').Count -gt 0) { throw }`,
+    "  ''",
+    '}',
   ].join('\n');
 };
 

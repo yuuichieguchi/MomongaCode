@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import type { ProcessGroupPort } from '@momonga/foundation';
+import type { ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
 import { pendingOrSettled, virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
@@ -65,5 +68,62 @@ describe('a group member that survives the stop after the leader exits is report
     child.emit('exit', 0, null);
     await timing.advanceTo(10 * KILL_GRACE_MS);
     expect(await pendingOrSettled(launched.exited)).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+  });
+
+  it('with a marker whose holder left the group, exited carries no groupNotStopped once the group ended, and the stop asks no holder listing', async () => {
+    const timing = virtualTiming();
+    let alive = true;
+    const groupPort: ProcessGroupPort = {
+      signal: async (_pgid, signal) => {
+        if (signal === 'SIGTERM') alive = false;
+      },
+      alive: async () => alive,
+    };
+    const asked: string[] = [];
+    const inspector: ProcessInspector = {
+      startTimeOf: async () => {
+        asked.push('startTimeOf');
+        return { kind: 'value', value: 1n };
+      },
+      holdersOf: async () => {
+        asked.push('holdersOf');
+        return { kind: 'value', value: [FAKE_PID + 1] };
+      },
+      groupsOf: async () => {
+        asked.push('groupsOf');
+        return { kind: 'value', value: new Map([[FAKE_PID + 1, FAKE_PID + 1]]) };
+      },
+      markerState: async () => {
+        asked.push('markerState');
+        return 'held';
+      },
+    };
+    const markerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sse-'));
+    const markerFile = path.join(markerDir, 'marker');
+    fs.writeFileSync(markerFile, `${FAKE_PID}\n`, { mode: 0o600 });
+    try {
+      const child = Object.assign(new EventEmitter(), { pid: FAKE_PID, stdout: new PassThrough(), stderr: new PassThrough(), stdin: null });
+      const launched = launch({
+        file: '/bin/sh',
+        args: [],
+        cwd: '/',
+        env: {},
+        signal: new AbortController().signal,
+        killGraceMs: KILL_GRACE_MS,
+        afterExit: () => undefined,
+        markerFile,
+        spawnProcess: (() => child) as unknown as NonNullable<LaunchOptions['spawnProcess']>,
+        groupPort,
+        timing,
+        inspector,
+      } as LaunchOptions);
+      launched.exited.catch(() => undefined);
+      child.emit('exit', 0, null);
+      await timing.advanceTo(10 * KILL_GRACE_MS);
+      expect(await pendingOrSettled(launched.exited)).toEqual({ state: 'resolved', value: { code: 0, signal: null } });
+      expect(asked).toEqual([]);
+    } finally {
+      fs.rmSync(markerDir, { recursive: true, force: true });
+    }
   });
 });

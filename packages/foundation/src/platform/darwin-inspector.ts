@@ -11,11 +11,11 @@ const ROW_FORMAT = /^\s*(\d+)\s+(\d+)\s*$/;
 const GROUP_STATE_ROW = /^\s*(\d+)\s+(\S+)\s*$/;
 const NO_MATCH_EXIT_CODE = 1;
 
-export const parseLstart = (text: string): number | undefined => {
+export const parseLstart = (text: string): bigint | undefined => {
   const trimmed = text.trim();
   if (trimmed === '') return undefined;
   const startedAt = Date.parse(`${trimmed} GMT`);
-  return Number.isNaN(startedAt) ? undefined : startedAt;
+  return Number.isNaN(startedAt) ? undefined : BigInt(startedAt);
 };
 
 const contentLines = (text: string): string[] => text.split('\n').filter((line) => line.trim() !== '');

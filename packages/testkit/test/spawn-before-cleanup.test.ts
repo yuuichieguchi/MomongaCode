@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const spawnCalls = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock('node:child_process', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:child_process')>();
+  const original = await importOriginal<typeof import('@momonga/testkit/child-process')>();
   return {
     ...original,
     spawn: () => {

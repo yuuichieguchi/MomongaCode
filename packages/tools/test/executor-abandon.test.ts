@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -393,7 +393,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
   });
 
-  const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9 };
+  const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9n };
   const unreadableInspector: ProcessInspector = {
     startTimeOf: async () => ({ kind: 'gone' }),
     holdersOf: async (_marker, _options, report) => {
