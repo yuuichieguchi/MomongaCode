@@ -141,7 +141,7 @@ const outputCallIdOf = (entry: WindowEntry): string | undefined => {
 const itemsOfEvent = (event: RunEvent): { item: InputItem; callId?: string; handle?: string }[] => {
   switch (event.type) {
     case 'user.message':
-      return [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }];
+      return [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images, event) } }];
     case 'model.responded':
       return (event.response.output as InputItem[]).map((item) => ({ item }));
     case 'tool.completed':

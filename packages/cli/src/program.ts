@@ -17,6 +17,7 @@ import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
 import type { ProgramDeps } from './program-deps.ts';
+import type { HeadlessReopen, Reopen } from './run/resolve-session.ts';
 import type { ShellPort } from './tui/slash.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
@@ -34,6 +35,20 @@ type RootOptions = {
   skill?: string;
   image: string[];
   verbose?: true;
+  resume?: string | true;
+  continue?: true;
+  screenReader?: true;
+};
+
+export const reopenOf = (options: Pick<RootOptions, 'resume' | 'continue'>): Reopen | undefined => {
+  if (options.resume === true) return { kind: 'pick' };
+  if (options.resume !== undefined) return { kind: 'id', id: options.resume };
+  return options.continue === true ? { kind: 'newest' } : undefined;
+};
+
+const headlessReopenOf = (reopen: Reopen | undefined): HeadlessReopen | undefined => {
+  if (reopen?.kind === 'pick') throw new Error('--resume needs a session id when --print is used');
+  return reopen;
 };
 
 export { pathsOf } from './paths.ts';
@@ -82,7 +97,11 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
     .option('--verbose', 'print tool activity to stderr')
+    .addOption(new Option('--resume [session-id]', 'reopen a conversation of this folder by its id or a unique prefix of at least 8 characters; without an id, choose from a list').conflicts('continue'))
+    .option('--continue', 'reopen the newest conversation of this folder')
+    .option('--screen-reader', 'draw the interactive session as plain appended lines for a screen reader')
     .action(async (prompt: string | undefined, options: RootOptions) => {
+      const reopen = reopenOf(options);
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
       const session = {
         ...(permissionMode === undefined ? {} : { permissionMode }),
@@ -90,6 +109,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {
+        const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
         const capabilitiesOf = async (alias: string) => {
           const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
@@ -99,12 +119,12 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
             await gateway.close();
           }
         };
-        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(resumed === undefined ? {} : { reopen: resumed }) }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, await deps.update(), createShellPort(given)));
+      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session, ...(reopen === undefined ? {} : { reopen }), screenReader: options.screenReader === true }, await deps.update(), createShellPort(given)));
     });
 
   program
@@ -163,7 +183,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     });
 
   const daemon = program.command('daemon').description('manage the background daemon');
-  daemon.command('start').description('start the daemon, or restart it when it runs another version').action(async () => {
+  daemon.command('start').description('start the daemon, or start a new one beside it when this program is newer').action(async () => {
     deps.complete(await daemonStart(ports, await pathsOf(ports)));
   });
   daemon.command('status').action(async () => {
@@ -217,7 +237,7 @@ export const createShellPort = (given: ProgramDeps): ShellPort => ({
   run: async (argv, io) => {
     let code = 0;
     const sink = { write: io.write };
-    const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
+    const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink, terminal: undefined }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
     program.exitOverride();
     try {
       await program.parseAsync([...argv], { from: 'user' });

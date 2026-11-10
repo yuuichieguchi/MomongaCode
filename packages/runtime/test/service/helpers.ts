@@ -1,13 +1,12 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedSocket } from '@momonga/foundation';
-import type { UdsClient } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
@@ -18,7 +17,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
+import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -71,9 +70,10 @@ export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup)
 export type Layout = { root: string; home: string; momonga: string; runDir: string; project: string; projectReal: string; socketPath: string; dbPath: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ms-')));
-  onCleanup(() => fs.rmSync(root, { recursive: true, force: true }));
-  const home = path.join(root, 'h');
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const momonga = path.join(home, '.momonga');
   const runDir = path.join(momonga, 'run');
   fs.mkdirSync(runDir, { recursive: true, mode: 0o700 });
@@ -419,7 +419,16 @@ const unusedMcpAdmin: McpAdminPort = {
   },
 };
 
+const unusedUserInput: runtime.UserInputPort = {
+  attach: () => Promise.reject(new Error('this test configured no user input port')),
+  shell: () => Promise.reject(new Error('this test configured no user input port')),
+};
+
 export type ServiceOverrides = {
+  role?: RolePort;
+  work?: { steps(): number; jobs(): number };
+  ignorableMarkerDirectories?: () => Promise<readonly string[]>;
+  onRequestEnd?: () => void;
   timers?: FakeTimers;
   keepAliveMs?: number;
   sweepIntervalMs?: number;
@@ -433,6 +442,7 @@ export type ServiceOverrides = {
   runTrace?: (runId: string) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
+  capabilitiesOf?: (alias: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -441,12 +451,21 @@ export type ServiceOverrides = {
   agents?: runtime.AgentCatalogPort;
   skillsTrusted?: () => boolean;
   mcp?: McpAdminPort;
+  userInput?: runtime.UserInputPort;
   evidenceRun?: (project: string) => EvidenceRun;
 };
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
-export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
+export type RunService = {
+  socketPath: string;
+  beginDraining(): void;
+  applyRole(): void;
+  openRequests(): number;
+  stopListening(): void;
+  retire(current: { generation: number; version: string } | undefined): Promise<void>;
+  close(): Promise<void>;
+};
 
 export type ServiceEnv = Awaited<ReturnType<typeof startService>>;
 
@@ -471,6 +490,22 @@ export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: 
   return store;
 };
 
+export const defaultModelCapabilities = (imageInput = false) => ({
+  contextWindow: 8192,
+  maxOutputTokens: 2048,
+  toolCalling: 'native',
+  structuredOutput: 'none',
+  streaming: true,
+  stopSequences: true,
+  ...protocol.imageCapability(imageInput, imageInput ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
+  parallelToolCalls: false,
+  schemaDialect: 'json-schema-2020-12',
+  tokenCounting: 'estimated',
+  usageReported: true,
+  maxConcurrency: 1,
+  source: 'declared',
+});
+
 export const serviceOptions = (
   base: { store: RuntimeStore; clock: FakeClock; home: string; socketPath: string; ports: FakePorts; notifier: Notifier; errors: unknown[]; fatals?: Error[] },
   overrides: ServiceOverrides = {},
@@ -486,23 +521,10 @@ export const serviceOptions = (
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
-  modelCapabilities: async () => {
+  modelCapabilities: async (alias: string) => {
     await overrides.beforeCapabilities?.();
-    return {
-      contextWindow: 8192,
-      maxOutputTokens: 2048,
-      toolCalling: 'native',
-      structuredOutput: 'none',
-      streaming: true,
-      stopSequences: true,
-      ...protocol.imageCapability(overrides.imageInput === true, overrides.imageInput === true ? { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } : undefined),
-      parallelToolCalls: false,
-      schemaDialect: 'json-schema-2020-12',
-      tokenCounting: 'estimated',
-      usageReported: true,
-      maxConcurrency: 1,
-      source: 'declared',
-    };
+    if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(alias);
+    return defaultModelCapabilities(overrides.imageInput === true);
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
   sessionReadSettings: base.ports.sessionReadSettings,
@@ -510,6 +532,7 @@ export const serviceOptions = (
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
+  userInput: overrides.userInput ?? unusedUserInput,
   defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,
@@ -530,6 +553,10 @@ export const serviceOptions = (
       },
       text: 'cost report',
     })),
+  role: overrides.role ?? fixedRolePort('serving'),
+  work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
+  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
+  ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });
@@ -768,6 +795,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,
+      role: fixedRolePort('serving'),
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: 'darwin',

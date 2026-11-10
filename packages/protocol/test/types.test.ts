@@ -11,6 +11,7 @@ import type {
   RunHealth,
   ToolCallingMode,
   ToolCallingSetting,
+  Unavailable,
 } from '@momonga/protocol';
 
 describe('protocol capability types', () => {
@@ -25,7 +26,7 @@ describe('protocol capability types', () => {
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
-        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number };
+        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string } | { state: 'probing'; message: string; retryAfterSeconds: number } | Unavailable;
         structuredOutput: 'json_schema' | 'none';
         jsonMode?: 'json_object' | 'none';
         streaming: boolean;
@@ -34,7 +35,7 @@ describe('protocol capability types', () => {
         systemRole?: 'system' | 'developer';
         toolPlacement?: 'top_level' | 'additional_tools';
         inputKinds?: {
-          content: readonly ('text' | 'image' | 'file' | 'audio' | 'video')[];
+          content: readonly ('file' | 'audio' | 'video')[];
           tools: readonly ('function' | 'custom' | 'programmatic_tool_calling' | 'image_generation' | 'file_search' | 'code_interpreter' | 'computer_use' | 'mcp' | 'tool_search')[];
         };
         parallelToolCalls?: boolean;
@@ -122,7 +123,10 @@ describe('run api types', () => {
       apiVersion: 1;
       pid: number;
       startedAt: string;
-      state: 'running' | 'draining';
+      state: 'running' | 'retiring' | 'draining';
+      role?: 'starting' | 'serving' | 'retiring';
+      steps?: number;
+      jobs?: number;
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });

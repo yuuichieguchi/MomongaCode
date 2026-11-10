@@ -1,5 +1,5 @@
 import { SdkError, SdkErrorCode, SdkHttpError } from '@modelcontextprotocol/client';
-import { OAuthAuthorizationError as McpAuthorizationError } from '@momonga/foundation';
+import { CredentialStoreError, OAuthAuthorizationError as McpAuthorizationError } from '@momonga/foundation';
 import type { AuthorizationFailure } from '@momonga/foundation';
 
 export type RemotePolicyViolation =
@@ -73,5 +73,11 @@ export const isUnauthorized = (error: unknown): boolean =>
 export const authorizationRequiredFor = (error: unknown): McpAuthorizationError | undefined =>
   findInCauseChain(error, (candidate): candidate is McpAuthorizationError => candidate instanceof McpAuthorizationError && candidate.failure === 'required');
 
-export const deterministicRemoteFailureOf = (error: unknown): McpRemotePolicyError | McpAuthorizationError | undefined =>
-  findInCauseChain(error, (candidate): candidate is McpRemotePolicyError | McpAuthorizationError => candidate instanceof McpRemotePolicyError || candidate instanceof McpAuthorizationError);
+export type DeterministicRemoteFailure = McpRemotePolicyError | McpAuthorizationError | CredentialStoreError;
+
+export const deterministicRemoteFailureOf = (error: unknown): DeterministicRemoteFailure | undefined =>
+  findInCauseChain(
+    error,
+    (candidate): candidate is DeterministicRemoteFailure =>
+      candidate instanceof McpRemotePolicyError || candidate instanceof McpAuthorizationError || candidate instanceof CredentialStoreError,
+  );

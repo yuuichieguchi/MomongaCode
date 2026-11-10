@@ -7,11 +7,14 @@ export type SupervisorChildState =
   | 'stopping'
   | 'backoff'
   | 'held-config'
+  | 'held-version'
   | 'waiting-lock'
   | 'external'
   | 'stopped';
 
 export type SupervisorPhase = 'reaping-orphans' | 'running' | 'draining';
+
+export type SupervisorGenerationRole = 'starting' | 'serving' | 'retiring';
 
 export type SupervisorExitReason =
   | 'requested'
@@ -23,7 +26,9 @@ export type SupervisorExitReason =
   | 'startup-timeout'
   | 'spawn-failed'
   | 'settings-read-failed'
-  | 'protocol-violation';
+  | 'protocol-violation'
+  | 'retired'
+  | 'version-mismatch';
 
 export type SupervisorChildHealth = {
   role: 'gateway' | 'runtime';
@@ -50,6 +55,11 @@ export type SupervisorHealth = {
   children: SupervisorChildHealth[];
   logs: { droppedLines: number };
   stopBoundMs?: number;
+  generation?: number;
+  role?: SupervisorGenerationRole;
+  steps?: number;
+  jobs?: number;
+  calls?: number;
 };
 
 export type SupervisorShutdownResponse = { phase: 'draining' };

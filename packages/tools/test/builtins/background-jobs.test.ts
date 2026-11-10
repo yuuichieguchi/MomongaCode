@@ -16,7 +16,7 @@ const view = (overrides: Partial<JobView> = {}): JobView => ({
   ...overrides,
 });
 
-type FakeJobs = BackgroundJobs & { started: BackgroundJobStart[]; reads: { runId: string; jobId: string; filter?: RegExp }[]; kills: string[]; current: JobView; output: string; known: boolean };
+type FakeJobs = BackgroundJobs & { started: BackgroundJobStart[]; reads: { runId: string; jobId: string; filter?: RegExp }[]; kills: string[]; current: JobView; output: string; known: boolean; killOutcome: 'stopped' | 'requested' };
 
 const fakeJobs = (): FakeJobs => {
   const jobs: FakeJobs = {
@@ -26,6 +26,7 @@ const fakeJobs = (): FakeJobs => {
     current: view(),
     output: '',
     known: true,
+    killOutcome: 'stopped',
     start: async (request) => {
       jobs.started.push(request);
       return { jobId: 'bash_aaaaaaaaaaaa' };
@@ -41,8 +42,9 @@ const fakeJobs = (): FakeJobs => {
     },
     kill: async (_runId, jobId) => {
       jobs.kills.push(jobId);
+      if (jobs.killOutcome === 'requested') return { view: jobs.current, kill: 'requested' };
       jobs.current = view({ status: 'killed', signal: 'SIGTERM' });
-      return jobs.current;
+      return { view: jobs.current, kill: 'stopped' };
     },
   };
   return jobs;
@@ -180,6 +182,15 @@ describe('KillBash', () => {
       output: 'Job bash_aaaaaaaaaaaa: it was stopped (SIGTERM).',
     });
     expect(jobs.kills).toEqual(['bash_aaaaaaaaaaaa']);
+  });
+
+  it('reports a kill that its owner has not finished as a completed call with the requested text (20.39)', async () => {
+    const jobs = fakeJobs();
+    jobs.killOutcome = 'requested';
+    expect(await killBash.execute({ shell_id: 'bash_aaaaaaaaaaaa' }, contextOf(jobs), undefined)).toEqual({
+      status: 'completed',
+      output: 'Job bash_aaaaaaaaaaaa: kill requested; it stops when its owner finishes the stop.',
+    });
   });
 
   it('is a write tool, so plan mode does not offer it', () => {

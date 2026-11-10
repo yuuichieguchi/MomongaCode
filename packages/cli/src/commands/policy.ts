@@ -5,8 +5,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import type { PolicyVerifyHost } from '../verify/host.ts';
@@ -38,7 +37,7 @@ const secretPathOf = (home: string, text: string): string => {
 };
 
 export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: PolicyVerifyHost, options: PolicyVerifyOptions): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const runtime = connectRuntime(paths);
   let trusted: boolean;
   let governance: PolicyGovernanceResponse;
@@ -51,7 +50,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted } });
   const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
   const roots = rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories);
-  const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'default';
+  const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';
   const verifier = await host.loadVerifier();
   const fs = await host.loadPolicyFilesystem();
   const home = canonicalPath(ports.home);

@@ -913,6 +913,13 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const GENERATION_OWNERSHIP = `
+ALTER TABLE runs ADD COLUMN lease_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN owner_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN kill_requested_at INTEGER;
+ALTER TABLE jobs ADD COLUMN output_path TEXT;
+`;
+
 const STORE_COMPATIBILITY = `
 CREATE TABLE store_compat (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -972,6 +979,106 @@ ALTER TABLE approvals_unbounded RENAME TO approvals;
 CREATE INDEX approvals_by_expiry ON approvals (status, expires_at);
 CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
 CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
+`;
+
+const RUNS_STOP_REASONS_WIDENED = `
+CREATE TABLE runs_widened (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions (id),
+  ordinal INTEGER NOT NULL,
+  idempotency_key TEXT,
+  status TEXT NOT NULL CHECK (
+    status IN ('QUEUED', 'RUNNING', 'WAITING_TOOL', 'WAITING_HUMAN', 'CANCELLING', 'COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED')
+  ),
+  stop_reason TEXT CHECK (
+    stop_reason IS NULL OR stop_reason IN ('max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit', 'conditions_unmet')
+  ),
+  version INTEGER NOT NULL,
+  lease_owner TEXT,
+  lease_token INTEGER NOT NULL,
+  lease_expires_at INTEGER,
+  available_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL,
+  failed_attempts INTEGER NOT NULL,
+  cancel_requested INTEGER NOT NULL CHECK (cancel_requested IN (0, 1)),
+  deadline_at INTEGER NOT NULL,
+  limits_json TEXT NOT NULL,
+  usage_json TEXT NOT NULL,
+  step INTEGER NOT NULL,
+  last_seq INTEGER NOT NULL,
+  pins TEXT NOT NULL,
+  error_json TEXT,
+  dead_letter INTEGER NOT NULL CHECK (dead_letter IN (0, 1)),
+  created_at INTEGER NOT NULL,
+  request_digest TEXT,
+  previous_run_id TEXT REFERENCES runs (id),
+  history_mode TEXT NOT NULL DEFAULT 'fresh' CHECK (history_mode IN ('inherit', 'fresh')),
+  parent_run_id TEXT REFERENCES runs (id),
+  parent_call_id TEXT,
+  origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted')),
+  cancel_origin TEXT CHECK (cancel_origin IS NULL OR cancel_origin IN ('QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL')),
+  UNIQUE (session_id, ordinal)
+);
+INSERT INTO runs_widened SELECT * FROM runs;
+DROP TRIGGER fidelity_verdicts_session_delete;
+DROP TABLE runs;
+ALTER TABLE runs_widened RENAME TO runs;
+CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM fidelity_verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_id = OLD.id);
+END;
+CREATE UNIQUE INDEX runs_by_session_idempotency_key ON runs (session_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX runs_by_status_availability ON runs (status, available_at, created_at);
+CREATE UNIQUE INDEX runs_by_parent_call ON runs (parent_run_id, parent_call_id) WHERE parent_run_id IS NOT NULL;
+CREATE INDEX runs_by_parent ON runs (parent_run_id) WHERE parent_run_id IS NOT NULL;
+CREATE TRIGGER runs_cancelling_has_cancel_origin_insert BEFORE INSERT ON runs WHEN NEW.status = 'CANCELLING' AND NEW.cancel_origin IS NULL BEGIN
+  SELECT RAISE(ABORT, 'a CANCELLING run must have a cancel origin');
+END;
+CREATE TRIGGER runs_cancelling_has_cancel_origin_update BEFORE UPDATE OF status, cancel_origin ON runs WHEN NEW.status = 'CANCELLING' AND NEW.cancel_origin IS NULL BEGIN
+  SELECT RAISE(ABORT, 'a CANCELLING run must have a cancel origin');
+END;
+`;
+
+const SESSIONS_MODE_MANUAL = `
+CREATE TABLE sessions_manual (
+  id TEXT PRIMARY KEY,
+  cwd TEXT NOT NULL,
+  env_json TEXT NOT NULL,
+  permission_mode TEXT NOT NULL CHECK (permission_mode IN ('manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions')),
+  model_alias TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  bypass_allowed INTEGER NOT NULL DEFAULT 0 CHECK (bypass_allowed IN (0, 1)),
+  additional_directories_json TEXT NOT NULL DEFAULT '[]',
+  mcp_servers_json TEXT NOT NULL DEFAULT '{}'
+);
+INSERT INTO sessions_manual (rowid, id, cwd, env_json, permission_mode, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json)
+  SELECT rowid, id, cwd, env_json, CASE permission_mode WHEN 'default' THEN 'manual' ELSE permission_mode END, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json
+  FROM sessions ORDER BY rowid;
+DROP TABLE sessions;
+ALTER TABLE sessions_manual RENAME TO sessions;
+CREATE INDEX sessions_by_cwd ON sessions (cwd, created_at);
+CREATE TRIGGER search_docs_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM search_docs WHERE session_id = OLD.id;
+END;
+CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM fidelity_verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_id = OLD.id);
+END;
+`;
+
+const RUN_INBOX = `
+CREATE TABLE run_inbox (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  delivery TEXT NOT NULL CHECK (delivery IN ('steer', 'queue')),
+  text TEXT NOT NULL,
+  attachments TEXT NOT NULL DEFAULT '[]',
+  seq INTEGER NOT NULL CHECK (seq >= 1),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'withdrawn')),
+  created_at INTEGER NOT NULL,
+  settled_at INTEGER,
+  UNIQUE (session_id, seq),
+  CHECK ((state = 'pending') = (settled_at IS NULL))
+);
+CREATE INDEX run_inbox_pending ON run_inbox (session_id, seq) WHERE state = 'pending';
 `;
 
 export const MIGRATIONS: readonly Migration[] = [
@@ -1034,5 +1141,27 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 28,
     name: 'let a previous release run beside this one: a reader floor in store_compat, a watermark per run and derivation of the records filled at append, and an events trigger that lets only an empty derived column be filled',
     sql: STORE_COMPATIBILITY,
+  },
+  {
+    version: 29,
+    name: 'widen the runs.stop_reason CHECK list to every stop reason, usage_limit and conditions_unmet included, by rebuilding runs with its indexes and triggers and re-creating the sessions trigger that reads runs',
+    sql: RUNS_STOP_REASONS_WIDENED,
+    rebuildsReferencedTable: true,
+  },
+  {
+    version: 30,
+    name: 'record the generation that holds a run lease, and for a background job the generation that owns it, the time a kill was requested and the file its owner writes the output to',
+    sql: GENERATION_OWNERSHIP,
+  },
+  {
+    version: 31,
+    name: "name the asking mode manual: rebuild sessions with a permission_mode CHECK list that holds 'manual' in place of 'default', rewrite each stored 'default' to 'manual', and re-create the index and the two triggers of sessions",
+    sql: SESSIONS_MODE_MANUAL,
+    rebuildsReferencedTable: true,
+  },
+  {
+    version: 32,
+    name: 'hold the messages typed while a run works in run_inbox, each to steer the run or queued as the next run, pending until delivered or withdrawn',
+    sql: RUN_INBOX,
   },
 ];

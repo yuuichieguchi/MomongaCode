@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { onTestFinished } from 'vitest';
-import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS, createChatCompletionsAdapter, createGateway, unauthenticatedSource } from '@momonga/gateway';
 import type { FakeClock, FakeScriptedReply } from '@momonga/testkit';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -11,7 +11,7 @@ import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
 import { capabilitiesFor } from './harness.ts';
 import { MODEL_ALIAS } from './scripts.ts';
-import { fixedSocket } from '@momonga/foundation';
+import { fixedRolePort, fixedSocket } from '@momonga/foundation';
 
 export const KEEP_ALIVE_EVERY_MS = 40;
 
@@ -34,7 +34,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
   fs.chmodSync(dir, 0o700);
   const upstream = await startFakeChatCompletions({ scenario: 'tools-ok', script: options.script });
   const capabilities = capabilitiesFor(100_000);
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => capabilities,
     schemaDialect: () => capabilities.schemaDialect,
@@ -61,6 +61,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
     hmacKey: Buffer.from('momonga-test-hmac-key-0001-padded-to-32-bytes', 'utf8'),
     socketPath,
     random: () => 0,
+    role: fixedRolePort('serving'),
     version: '1.10.0-test',
   });
   const client = createGatewayClient({ resolveSocket: fixedSocket(socketPath), clock: options.clock, version: '7.7.7' });

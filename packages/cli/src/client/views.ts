@@ -1,4 +1,4 @@
-import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
+import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -17,13 +17,15 @@ export type SessionView = {
 
 export type RunUsage = { readonly inputTokens: number; readonly outputTokens: number; readonly totalTokens: number };
 
+export type RunErrorView = { readonly code: string; readonly message: string; readonly plan?: PlanAccountRef };
+
 export type RunView = {
   readonly id: string;
   readonly sessionId: string;
   readonly ordinal: number;
   readonly status: RunStatus;
   readonly stopReason?: StopReason;
-  readonly error?: { readonly code: string; readonly message: string };
+  readonly error?: RunErrorView;
   readonly usage: RunUsage;
   readonly step: number;
   readonly limits: { readonly maxSteps?: number; readonly maxTotalTokens?: number; readonly approvalTtlMs?: number; readonly loopThreshold?: number };

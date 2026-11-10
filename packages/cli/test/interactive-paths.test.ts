@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -24,15 +24,15 @@ vi.mock('../src/tui/run-interactive.tsx', async () => {
   };
 });
 
-const cleanups: Array<() => void> = [];
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
 describe('interactive session on a HOME that has never run momonga', () => {
   it('receives its paths only once the private ~/.momonga tree exists, since its history lives in the state directory', async () => {
-    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
-    cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
+    const home = createTempDir({ asHome: true });
+    cleanups.push(() => removeTempDir(home));
     const ports: CliPorts = { ...nodePorts('9.9.9'), home, cwd: home, env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home }, terminal: {} as CliPorts['terminal'] };
     const entry = async (): Promise<number> => 0;
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };

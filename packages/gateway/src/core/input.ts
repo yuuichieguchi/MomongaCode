@@ -1,4 +1,4 @@
-import type { AdapterInputItem, ContentPart, InputItem } from '@momonga/protocol';
+import type { AdapterInputItem, ContentPart, FunctionTool, InputContentKind, InputItem, RequestToolKind } from '@momonga/protocol';
 import type { CompactionCodec } from './compaction.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import type { GatewayStore, StoredResponse } from './store.ts';
@@ -55,3 +55,19 @@ export const inputHasImages = (input: readonly (AdapterInputItem | InputItem)[])
     if (item.type === 'function_call_output') return partsHaveImage(item.output);
     return false;
   });
+
+const CONTENT_KIND_OF_PART: Readonly<Partial<Record<ContentPart['type'], InputContentKind>>> = { input_file: 'file' };
+
+const contentKindsOf = (content: string | readonly ContentPart[]): InputContentKind[] =>
+  typeof content === 'string' ? [] : content.flatMap((part) => CONTENT_KIND_OF_PART[part.type] ?? []);
+
+export type InputKindsRequirement = { content: InputContentKind[]; tools: RequestToolKind[] };
+
+export const inputKindsOf = (input: readonly (AdapterInputItem | InputItem)[], tools: readonly FunctionTool[] | null | undefined): InputKindsRequirement => {
+  const content = input.flatMap((item) => {
+    if (item.type === 'message') return contentKindsOf(item.content);
+    if (item.type === 'function_call_output') return contentKindsOf(item.output);
+    return [];
+  });
+  return { content: [...new Set(content)], tools: [...new Set((tools ?? []).map((tool) => tool.type))] };
+};

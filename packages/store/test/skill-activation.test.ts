@@ -29,7 +29,7 @@ const createRun = (store: RuntimeStore, sessionId: string, skill?: { name: strin
 
 const finish = async (store: RuntimeStore, claim: Claim): Promise<void> => {
   const answer: RunEventPayload[] = [
-    { type: 'run.started', attempt: 1, now: START_MS, pins: { model: 'fm' }, mode: 'default' },
+    { type: 'run.started', attempt: 1, now: START_MS, pins: { model: 'fm' }, mode: 'manual' },
     { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { tool_choice: 'auto' } },
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantItem('m1', 'done')], usage: USAGE } },
   ];
@@ -88,7 +88,7 @@ describe('skill inheritance across runs of a session', () => {
 
     const second = createRun(store, session.id, { name: 'review', content: 'review body' });
     const claim = mustClaim(store, 'w1');
-    expect((await store.inheritContext(claim, { mode: 'default' })).kind).not.toBe('conflict');
+    expect((await store.inheritContext(claim, { mode: 'manual' })).kind).not.toBe('conflict');
 
     const events = store.readRunEvents(second.id, 0, 100);
     const inherited = events.find((event) => event.type === 'context.inherited');
@@ -106,7 +106,7 @@ describe('skill inheritance across runs of a session', () => {
     createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
     await finish(store, mustClaim(store, 'w1'));
     const second = createRun(store, session.id, { name: 'pdf', content: 'changed body' });
-    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
+    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' });
     const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 3 }]);
   });
@@ -117,7 +117,7 @@ describe('skill inheritance across runs of a session', () => {
     createRun(store, session.id);
     await finish(store, mustClaim(store, 'w1'));
     const second = createRun(store, session.id);
-    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
+    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'manual' });
     const inherited = store.readRunEvents(second.id, 0, 100).find((event) => event.type === 'context.inherited');
     expect(inherited).toBeDefined();
     expect(inherited).not.toHaveProperty('activatedSkills');

@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter } from '@momonga/gateway';
 import {
@@ -49,7 +50,7 @@ describe('a fallback away and back on a mixed-adapter alias (item 5, decision 2(
     registerCleanup(() => anthropicFake.close());
     const primary = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: anthropicFake.socketPath }),
-      apiKey: async () => FAKE_API_KEY,
+      authSource: keyAuthSource(async () => FAKE_API_KEY),
       capabilities: async () => REMOTE_CAPABILITIES,
       clock: createFakeClock(START_MS),
       apiVersion: '2026-10-21',

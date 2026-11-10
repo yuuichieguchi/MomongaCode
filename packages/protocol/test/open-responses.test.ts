@@ -27,6 +27,7 @@ import type {
   MomongaEventName,
   MomongaModelEntry,
   MomongaResponseExtension,
+  PlanAccountRef,
   ReasoningItem,
   ResponseResource,
   StreamEvent,
@@ -196,7 +197,7 @@ describe('Open Responses types conform to the vendored component schemas', () =>
     const body: ErrorBody = { message: 'no such model', type: 'not_found', param: 'model', code: 'model_not_found' };
     const envelope: ErrorEnvelope = { error: body };
     expectValid('ErrorPayload', envelope.error);
-    expectTypeOf<ErrorBody>().toEqualTypeOf<{ message: string; type: ErrorType; param: string | null; code: string | null }>();
+    expectTypeOf<ErrorBody>().toEqualTypeOf<{ message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef }>();
     expectTypeOf<ErrorType>().toEqualTypeOf<'invalid_request' | 'not_found' | 'too_many_requests' | 'server_error' | 'model_error'>();
   });
 

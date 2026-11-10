@@ -98,13 +98,13 @@ describe('sandbox none keeps human approval for every command (pins)', () => {
     expect(policies).toEqual([]);
   });
 
-  it('asks again in default mode after an earlier allow_always', async () => {
+  it('asks again in manual mode after an earlier allow_always', async () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('none');
-    const first = await runScenario({ harness, sandbox, mode: 'default', rules: [], fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, approval: 'allow_always', callId: 'c1' });
+    const first = await runScenario({ harness, sandbox, mode: 'manual', rules: [], fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, approval: 'allow_always', callId: 'c1' });
     expect(first).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(policies).toHaveLength(1);
-    const again = await runScenario({ harness, sandbox, mode: 'default', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, callId: 'c2' });
+    const again = await runScenario({ harness, sandbox, mode: 'manual', rules: [ruleOf(harness, 'allow', 'Bash(perl:*)')], fileRules: computeFileRules([ruleOf(harness, 'allow', 'Bash(perl:*)')], [harness.layout.project], null, ruleEnforcementOf('none')), command: PERL, callId: 'c2' });
     expect(again?.kind).toBe('needs_approval');
     expect(policies).toHaveLength(1);
   });
@@ -183,7 +183,7 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
     const harness = makeHarness();
     const { sandbox, policies } = recordingSandbox('seatbelt');
     const { rules, built } = make(harness);
-    const error = await rejectionOf(harness.executor.runBatch(await batchOf({ harness, sandbox, mode: 'default', rules, fileRules: built, command: PERL, approval: 'allow_once' })));
+    const error = await rejectionOf(harness.executor.runBatch(await batchOf({ harness, sandbox, mode: 'manual', rules, fileRules: built, command: PERL, approval: 'allow_once' })));
     expect(error).toBeInstanceOf(SandboxPolicyError);
     expect((error as SandboxPolicyError).code).toBe('file_rules_stale');
     expect(policies).toEqual([]);
@@ -194,7 +194,7 @@ describe('seatbelt batches carry the file rules of their own rules', () => {
     const { sandbox, policies } = recordingSandbox('seatbelt');
     const rules = [ruleOf(harness, 'deny', 'Write(.env)'), { ...ruleOf(harness, 'deny', 'Read(*.env)'), exceptions: ['sample.env'] } as PermissionRule];
     const built = computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none'));
-    const outcome = await runScenario({ harness, sandbox, mode: 'default', rules, fileRules: built, command: PERL, approval: 'allow_once' });
+    const outcome = await runScenario({ harness, sandbox, mode: 'manual', rules, fileRules: built, command: PERL, approval: 'allow_once' });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(policies).toHaveLength(1);
     expect((policies[0] as SandboxPolicy & { fileRules: FileRuleSet }).fileRules.fingerprint).toBe(built.fingerprint);

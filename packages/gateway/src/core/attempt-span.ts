@@ -7,10 +7,9 @@ import {
   recordFallbackCauses,
   startChatSpan,
 } from '@momonga/observability';
-import type { FallbackCause } from '@momonga/foundation';
 import type { ChatBilling, Telemetry } from '@momonga/observability';
 import { MOMONGA_EVENTS } from '@momonga/protocol';
-import type { AdapterInputItem, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
+import type { AdapterInputItem, FallbackCause, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;

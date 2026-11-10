@@ -22,6 +22,7 @@ import {
   prepareStack,
   runtimeAlreadyRunningError,
   startRuntimeProcess,
+  startRuntimeProcessUnprepared,
   startStack,
   stepsLogged,
 } from './run-helpers.ts';
@@ -440,7 +441,9 @@ describe('startRuntimeProcess startup (system timers)', () => {
       [{ drainTimeoutMs: 0.5 }, RangeError],
     ];
     for (const [options, kind] of cases) {
-      const { started, logger, stdout } = startBare(temp, options);
+      const logger = hookLogger(() => undefined);
+      const stdout = captureStream();
+      const started = startRuntimeProcessUnprepared({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger, stdout, ...options });
       const error = await failureOf(started);
       expect(error, JSON.stringify(options)).toBeInstanceOf(kind);
       expect(stepsLogged(logger), JSON.stringify(options)).toEqual([]);
@@ -469,7 +472,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     } finally {
       await viaLink.close();
     }
-    const upper = path.join(stack.temp.root, 'H');
+    const upper = path.join(path.dirname(stack.temp.home), path.basename(stack.temp.home).toUpperCase());
     if (fs.existsSync(upper)) {
       const viaCase = await startRuntimeProcess({ generation: FIRST_GENERATION, home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
       try {

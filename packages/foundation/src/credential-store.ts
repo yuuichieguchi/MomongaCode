@@ -13,16 +13,24 @@ export interface CredentialEntry {
 }
 
 export interface CredentialStore {
-  read(key: string, signal?: AbortSignal): Promise<string | undefined>;
-  write(key: string, value: string, signal?: AbortSignal): Promise<void>;
-  update(key: string, change: (current: string | undefined) => string, signal?: AbortSignal): Promise<void>;
-  remove(key: string, signal?: AbortSignal): Promise<void>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
+  read(key: string, signal: AbortSignal): Promise<string | undefined>;
+  write(key: string, value: string, signal: AbortSignal): Promise<void>;
+  update(key: string, change: (current: string | undefined) => string, signal: AbortSignal): Promise<void>;
+  remove(key: string, signal: AbortSignal): Promise<void>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal): Promise<T>;
 }
 
+export type CredentialKeyListing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
+
+export interface ListableCredentialStore extends CredentialStore {
+  listKeys(signal: AbortSignal): Promise<CredentialKeyListing>;
+}
+
+export const AUTH_DOCUMENT_MAX_BYTES = 256 * 1024;
+
 export type ScopedOperations = {
-  read(key: string, signal?: AbortSignal): Promise<string | undefined>;
-  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
+  read(key: string, signal: AbortSignal): Promise<string | undefined>;
+  withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal: AbortSignal): Promise<T>;
 };
 
 export const storeThroughScope = ({ read, withKey }: ScopedOperations): CredentialStore => ({
@@ -33,7 +41,7 @@ export const storeThroughScope = ({ read, withKey }: ScopedOperations): Credenti
   remove: (key, signal) => withKey(key, (entry) => entry.remove(), signal),
 });
 
-export const createMemoryCredentialStore = (): CredentialStore => {
+export const createMemoryCredentialStore = (): ListableCredentialStore => {
   const entries = new Map<string, string>();
   const serialized = createKeyedSerializer();
   const entryOf = (key: string): CredentialEntry => ({
@@ -47,10 +55,16 @@ export const createMemoryCredentialStore = (): CredentialStore => {
       return Promise.resolve();
     },
   });
-  return storeThroughScope({
-    read: (key) => Promise.resolve(entries.get(key)),
-    withKey: (key, action) => serialized(key, () => action(entryOf(key))),
-  });
+  return {
+    ...storeThroughScope({
+      read: (key) => Promise.resolve(entries.get(key)),
+      withKey: (key, action, signal) => serialized(key, () => action(entryOf(key)), signal),
+    }),
+    listKeys: async (signal) => {
+      signal.throwIfAborted();
+      return { keys: [...entries.keys()].map((key) => ({ key, file: key })), problems: [] };
+    },
+  };
 };
 
 const FILE_MODE = 0o600;
@@ -70,17 +84,17 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
     await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, credentialFileFor(directory, key), value, { mode: FILE_MODE });
   };
 
-  const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> =>
-    serialized(key, async () => {
-      const lockDirectory = `${directory}.locks`;
-      await nodeFileSystem.mkdirPrivate(lockDirectory);
-      const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
-      return withFileLock(lockPath, action, {
-        ports,
-        ...(signal === undefined ? {} : { signal }),
-        ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }),
-      });
-    });
+  const locked = <T>(key: string, action: () => Promise<T>, signal: AbortSignal): Promise<T> =>
+    serialized(
+      key,
+      async () => {
+        const lockDirectory = `${directory}.locks`;
+        await nodeFileSystem.mkdirPrivate(lockDirectory);
+        const lockPath = path.join(lockDirectory, `${path.basename(credentialFileFor(directory, key))}.lock`);
+        return withFileLock(lockPath, action, { ports, signal, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) });
+      },
+      signal,
+    );
 
   const entryOf = (key: string): CredentialEntry => ({
     read: () => readOwnerOnly(credentialFileFor(directory, key)),

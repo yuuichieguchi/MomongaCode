@@ -48,7 +48,7 @@ const sessionWithRuns = async (runs: number, eventsPerRun: number) => {
   for (let at = 0; at < runs; at += 1) {
     env.clock.advance(1);
     const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const payloads: RunEventPayload[] = [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'default' }];
+    const payloads: RunEventPayload[] = [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'manual' }];
     for (let inRun = 0; inRun < eventsPerRun; inRun += 1) {
       const capabilities = index % 3 === 0 ? LARGE : SMALL;
       payloads.push(requestedOf(inRun + 1, `r${100 + at}-${inRun}`), observedOf(capabilities, index));

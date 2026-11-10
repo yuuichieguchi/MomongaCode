@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { groupRecordOutcome, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
-import type { SandboxExit } from '@momonga/sandbox';
+import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
+import type { SandboxCommand, SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
@@ -179,3 +181,40 @@ export const bashTool = defineTool<BashInput>({
     };
   },
 });
+
+export type UserCommandHost = {
+  command: string;
+  cwd: string;
+  env: Readonly<Record<string, string>>;
+  signal: AbortSignal;
+  refusal(command: string): Promise<string | undefined>;
+  spawn(command: SandboxCommand, signal: AbortSignal): SandboxedProcess;
+  onOutput(text: string): void;
+};
+
+export type UserCommandOutcome = { kind: 'refused'; reason: string } | { kind: 'ran'; exitCode: number | null; output: string };
+
+export const runUserCommand = async (host: UserCommandHost): Promise<UserCommandOutcome> => {
+  const reason = await host.refusal(host.command);
+  if (reason !== undefined) return { kind: 'refused', reason };
+  const child = host.spawn({ argv: [bashPathFor(host.env), '-c', host.command], cwd: host.cwd, env: bashEnvOf(host.env) }, host.signal);
+  const capture = createCapture(USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES);
+  const stdout = new StringDecoder('utf8');
+  const stderr = new StringDecoder('utf8');
+  const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => {
+    capture.push(chunk);
+    const text = (index === 0 ? stdout : stderr).write(chunk);
+    if (text !== '') host.onOutput(text);
+  });
+  let exit: SandboxExit;
+  try {
+    exit = await child.exited;
+    await pump.settle();
+  } finally {
+    await pump.close();
+  }
+  const failure = pump.failure();
+  if (failure !== undefined) throw failure.error;
+  const output = capture.text().replace(/\n+$/, '');
+  return { kind: 'ran', exitCode: exit.code, output: exit.signal === null ? output : `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };
+};

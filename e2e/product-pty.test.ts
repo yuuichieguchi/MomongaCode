@@ -13,7 +13,7 @@ import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const spawnWithFakes = (home: E2eHome, args: readonly string[] = []): Promise<PtySession> => spawnPty(home, args, {}, { fakes: true });
 
-const trustAndWait = async (pty: PtySession, mode = 'default'): Promise<void> => {
+const trustAndWait = async (pty: PtySession, mode = 'manual'): Promise<void> => {
   await pty.waitFor('Do you trust the files in');
   pty.write('1');
   await pty.waitFor(`mode: ${mode}`);
@@ -26,6 +26,8 @@ const submit = async (pty: PtySession, text: string): Promise<void> => {
 };
 
 const leave = async (pty: PtySession): Promise<void> => {
+  pty.write(KEYS.ctrlD);
+  await pty.waitFor('Press ctrl+d again to exit');
   pty.write(KEYS.ctrlD);
   expect(await pty.exit()).toEqual({ code: 0, signal: null });
 };
@@ -76,7 +78,7 @@ describe('the startup screen through a pty', () => {
     console.log(screen.slice(screen.indexOf('╭')));
     expect(screen).toContain('MomongaCode v0.0.0');
     expect(screen).toContain('(•ᴥ•)');
-    expect(screen).toContain('mode: default');
+    expect(screen).toContain('mode: manual');
     await leave(pty);
   });
 });

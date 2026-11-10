@@ -12,7 +12,7 @@ export type ExecPort = (file: string, args: readonly string[], options: { signal
 
 export type ManagedTimers = { setTimeout(callback: () => void, ms: number): unknown; clearTimeout(handle: unknown): void; now(): number };
 
-export type ManagedEndpoint = { kind: 'unix'; socketPath: string };
+export type ManagedEndpoint = { kind: 'unix'; path: string };
 
 export type HealthAnswer = { ok: boolean; reason?: string; detail?: string; remediation?: string };
 

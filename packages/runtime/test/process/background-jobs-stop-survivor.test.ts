@@ -13,6 +13,7 @@ import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
 import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { jobGenerationOptions } from './job-fixture.ts';
 
 const START_MS = 1_800_000_000_000;
 const KILL_GRACE_MS = 300;
@@ -34,7 +35,7 @@ const runJob = async (survives: boolean) => {
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const store: RuntimeStore = openRuntimeStore({ path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
-  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'default', modelAlias: 'fm' });
+  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', modelAlias: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
   const timing = virtualTiming();
@@ -51,6 +52,7 @@ const runJob = async (survives: boolean) => {
     clock,
     timers,
     markerDir,
+    ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
     reapTiming: { now: () => clock.now(), sleep: async () => undefined },

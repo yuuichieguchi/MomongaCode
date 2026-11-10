@@ -18,6 +18,8 @@ describe('labelHealthResponse', () => {
     expect(labelHealthResponse('runtime', { status: 200, body: JSON.stringify({ status: 'ok', state: 'running' }) })).toBe('healthy');
     expect(labelHealthResponse('gateway', { status: 200, body: JSON.stringify({ ok: false, state: 'running' }) })).toBe('healthy');
     expect(labelHealthResponse('gateway', { status: 200, body: JSON.stringify({ ok: true, state: 'running' }) })).toBe('healthy');
+    expect(labelHealthResponse('runtime', { status: 200, body: JSON.stringify({ status: 'ok', state: 'retiring' }) })).toBe('healthy');
+    expect(labelHealthResponse('gateway', { status: 200, body: JSON.stringify({ ok: true, state: 'retiring' }) })).toBe('healthy');
     expect(labelHealthResponse('runtime', { status: 200, body: JSON.stringify({ status: 'ok', state: 'draining' }) })).toBe('unhealthy');
     expect(labelHealthResponse('gateway', { status: 200, body: JSON.stringify({ ok: true, state: 'draining' }) })).toBe('unhealthy');
     expect(labelHealthResponse('runtime', { status: 200, body: JSON.stringify({ status: 'degraded', state: 'running' }) })).toBe('unhealthy');

@@ -108,7 +108,7 @@ describe('worker recovery of a started call with an existing record', () => {
     ];
     await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Write' } });
-    env.setMode('default');
+    env.setMode('manual');
     env.gateway.script.push(textStep('Checked.'));
 
     await env.runOnce(env.worker());

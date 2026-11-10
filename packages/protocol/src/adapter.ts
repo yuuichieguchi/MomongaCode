@@ -1,5 +1,7 @@
 import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult, UsageSource } from './gateway-api.ts';
+import type { PlanAccountRef } from './plan-account.ts';
+import type { BreakerVerdict, CredentialEffect, ErrorFallback } from './plan-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
@@ -47,11 +49,22 @@ export type AdapterContext = {
   capabilities: Capabilities;
 };
 
+export type UpstreamFailureFacts = {
+  status: number;
+  bodyKeys: string[];
+  code: string | null;
+  requestIds: Record<string, string>;
+};
+
 export type ClassifiedError = {
   retryable: boolean;
   stalled?: true;
   retryAfterMs?: number;
   error: ErrorBody;
+  verdict?: BreakerVerdict;
+  fallback?: ErrorFallback;
+  credential?: CredentialEffect;
+  upstream?: UpstreamFailureFacts;
 };
 
 export type AdapterCountTokensResult = CountTokensResult;
@@ -85,6 +98,7 @@ export type ProviderAdapter = {
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
   health?(target: AdapterTarget): Promise<HealthResult>;
+  servedAccount?(target: AdapterTarget): PlanAccountRef | undefined;
   roomFacts?(target: AdapterTarget): Promise<AliasRoomFacts>;
   close?(stop?: AdapterStop): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;

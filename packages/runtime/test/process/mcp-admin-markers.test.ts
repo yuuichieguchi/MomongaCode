@@ -1,3 +1,4 @@
+import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { McpAuthorizingPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -15,6 +16,9 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
     };
     const toolRuntime = runtime.createToolRuntime({
       paths: f.temp.paths,
+      sharedPaths: f.temp.paths,
+      generation: FIRST_GENERATION,
+      role: fixedRolePort('serving'),
       home: f.temp.home,
       store: f.store,
       notifier: f.notifier,

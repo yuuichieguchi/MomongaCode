@@ -12,7 +12,7 @@ const servers = { fx: { command: '/usr/bin/node', args: ['server.js'], env: { TO
 describe('session mcpServers', () => {
   it('stores and returns the servers a session was created with', () => {
     const { store } = harness();
-    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm', mcpServers: servers });
+    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm', mcpServers: servers });
 
     expect(created.mcpServers).toEqual(servers);
     expect(store.getSession(created.id)?.mcpServers).toEqual(servers);
@@ -21,7 +21,7 @@ describe('session mcpServers', () => {
 
   it('defaults to no servers', () => {
     const { dbPath, store } = harness();
-    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm' });
+    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm' });
 
     expect(created.mcpServers).toEqual({});
     expect(rawDb(dbPath).prepare('SELECT mcp_servers_json FROM sessions').all()).toEqual([{ mcp_servers_json: '{}' }]);
@@ -69,7 +69,7 @@ describe('session mcpServers', () => {
     ['a server that is not an object', '{"fx":"node"}'],
   ])('a malformed mcp_servers_json is reported as corrupt (%s)', (_label, value) => {
     const { dbPath, store } = harness();
-    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm' });
+    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm' });
     rawDb(dbPath).prepare('UPDATE sessions SET mcp_servers_json = ? WHERE id = ?').run(value, created.id);
 
     expect(() => store.getSession(created.id)).toThrow(/corrupt/);

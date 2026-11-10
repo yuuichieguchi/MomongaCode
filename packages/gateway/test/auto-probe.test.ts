@@ -119,7 +119,7 @@ const probeStarted = (gateway: Awaited<ReturnType<typeof setup>>, count = 1) => 
 
 describe('the automatic probe of an fm target with no probe record', () => {
   describe('P3 NoRecordGets503 and RetryAfterIsHonest', () => {
-    it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key', async () => {
+    it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key without holding the key lock during the flight', async () => {
       const gateway = await setup();
 
       const raw = await gateway.sendRaw(true);
@@ -128,7 +128,8 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expectProbing(response);
       expect(raw.headers['retry-after']).toBe('120');
       await probeStarted(gateway);
-      await expect(acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm')).rejects.toBeInstanceOf(ProbeInProgressError);
+      const free = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
+      free.release();
     });
   });
 
@@ -192,14 +193,14 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expect(gateway.probes()).toHaveLength(1);
     });
 
-    it('refuses the momonga gateway probe command while the gateway measures the same key, without starting fm', async () => {
+    it('runs the momonga gateway probe command beside the gateway flight of the same key, on its own instance, and records its measurement', async () => {
       const gateway = await setup();
       expectProbing(await gateway.send(true));
       await probeStarted(gateway);
       const paths = momongaPaths(gateway.home, process.platform, {});
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]);
 
-      const failure = await probeManagedFm({
+      const outcome = await probeManagedFm({
         platform: process.platform,
         paths,
         instance,
@@ -217,20 +218,23 @@ describe('the automatic probe of an fm target with no probe record', () => {
         onWarning: () => undefined,
       }).catch((error: unknown) => error);
 
-      expect(failure).toBeInstanceOf(ProbeInProgressError);
-      expect(fs.existsSync(instance.socketPath)).toBe(false);
+      expect(outcome).not.toBeInstanceOf(Error);
+      expect(gateway.probes()).toHaveLength(1);
+      expect(gateway.recordExists()).toBe(true);
+      expect(fs.readdirSync(gateway.probeDir).filter((name) => name.endsWith('.tmp'))).toEqual([]);
     });
 
-    it('starts no probe in the gateway while another process holds the probe lock of the key, and starts one after it is released', async () => {
-      const gateway = await setup();
+    it('starts the gateway flight while another process holds the key lock, and writes the record only after the lock is released', async () => {
+      const gateway = await setup({ probe: 'complete' });
       const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
 
       expectProbing(await gateway.send(true));
-      expect(gateway.probes()).toEqual([]);
+      await probeStarted(gateway);
+      await until(async () => !isAlive(gateway.probes()[0]?.pid ?? 0), 'the probe server of the flight to stop');
+      expect(gateway.recordExists()).toBe(false);
 
       held.release();
-      expectProbing(await gateway.send(true));
-      await probeStarted(gateway);
+      await until(gateway.recordExists, 'the probe record is written');
     });
 
     it('refuses a second holder of the same key in the same process', async () => {
@@ -255,7 +259,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
   });
 
   describe('P5 FailedWritesNothing and P9 NoProbeInBackoff', () => {
-    it('writes no record when the probe fails, answers 503 with the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
+    it('writes no record when the probe fails, answers 503 target_probe_failed with the cause and the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
       const clock = createFakeClock(START_MS);
       const gateway = await setup({ clock, probe: 'fail' });
       expectProbing(await gateway.send(false));
@@ -264,7 +268,10 @@ describe('the automatic probe of an fm target with no probe record', () => {
       clock.advance(30_000);
 
       const inside = await gateway.sendRaw(false);
-      expectProbing(await readJson(inside));
+      const failed = await readJson(inside);
+      expect(failed.status).toBe(503);
+      expect(failed.body.error.code).toBe('target_probe_failed');
+      expect(failed.body.error.message).toMatch(/^measuring this model failed: \S/);
       expect(inside.headers['retry-after']).toBe('90');
       expect(gateway.probes()).toHaveLength(1);
       expect(gateway.anyRecord()).toBe(false);
@@ -387,6 +394,7 @@ type InstanceProbeOptions = {
   dir: string;
   measure: (signal: AbortSignal) => Promise<Report>;
   retryAfterMs: number;
+  clock: { now(): number };
   onNotice: (text: string) => void;
 };
 
@@ -422,6 +430,7 @@ const setupInstance = () => {
       return next.promise;
     },
     retryAfterMs: RETRY_AFTER_MS,
+    clock: { now: () => 0 },
     onNotice: (text) => notices.push(text),
   });
   return { probe, notices, pending, dir };

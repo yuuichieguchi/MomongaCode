@@ -17,7 +17,7 @@ describe('supervisor control API wire types', () => {
 
   it('defines the child states including pending', () => {
     expectTypeOf<SupervisorChildState>().toEqualTypeOf<
-      'pending' | 'starting' | 'ready' | 'stopping' | 'backoff' | 'held-config' | 'waiting-lock' | 'external' | 'stopped'
+      'pending' | 'starting' | 'ready' | 'stopping' | 'backoff' | 'held-config' | 'held-version' | 'waiting-lock' | 'external' | 'stopped'
     >();
   });
 
@@ -37,6 +37,8 @@ describe('supervisor control API wire types', () => {
       | 'spawn-failed'
       | 'settings-read-failed'
       | 'protocol-violation'
+      | 'retired'
+      | 'version-mismatch'
     >();
   });
 
@@ -68,6 +70,11 @@ describe('supervisor control API wire types', () => {
       children: SupervisorChildHealth[];
       logs: { droppedLines: number };
       stopBoundMs?: number;
+      generation?: number;
+      role?: 'starting' | 'serving' | 'retiring';
+      steps?: number;
+      jobs?: number;
+      calls?: number;
     }>();
     expectTypeOf<SupervisorHealth>().not.toHaveProperty('state');
   });

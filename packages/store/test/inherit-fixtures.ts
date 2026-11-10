@@ -93,7 +93,7 @@ export const MARKER_TEXT = {
 } as const;
 
 export const MODE_RULE: Record<PermissionMode, string> = {
-  default:
+  manual:
     "File changes and commands need the user's approval unless an allow rule covers them; read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking.",
   acceptEdits:
     'File edits and the filesystem commands mkdir, touch, rm, rmdir, mv, cp and sed inside the workspace are accepted without asking, and read-only commands run without asking; other actions still need approval unless an allow rule covers them.',

@@ -1,0 +1,137 @@
+import { useReducer, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { Box, Text } from 'ink';
+import type { PlanProfileView } from '@momonga/protocol';
+import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
+import type { SelectSpec } from '../select.tsx';
+import type { SlashCommand } from '../slash.ts';
+import { menuRowsCap } from './layout.ts';
+
+export type Invitation = { profile: PlanProfileView };
+
+const INVITATION_TITLE = 'New';
+const NOT_NOW = 'Not now';
+
+export const INVITATION_ACCEPT = 0;
+
+export const invitationSpec = (invitation: Invitation): SelectSpec => ({
+  title: INVITATION_TITLE,
+  lines: [invitation.profile.messages.inviteTitle],
+  rows: [{ label: invitation.profile.loginLabel }, { label: NOT_NOW }],
+  initial: INVITATION_ACCEPT,
+  decideOn: 'immediate',
+  escape: 'back',
+  interrupt: 'back',
+  filter: false,
+});
+
+const COMPLETABLE = /^\/[^\s/]*$/;
+const MENU_FLOOR_ROWS = 3;
+
+const windowRows = (rows: number): number => Math.max(MENU_FLOOR_ROWS, rows);
+
+const namesOf = (command: SlashCommand): readonly string[] => [command.name, ...(command.aliases ?? [])];
+
+export const slashMatches = (text: string, commands: readonly SlashCommand[]): SlashCommand[] | undefined => {
+  if (!COMPLETABLE.test(text)) return undefined;
+  const typed = text.slice(1).toLowerCase();
+  const rankOf = (command: SlashCommand): number => {
+    const names = namesOf(command).map((name) => name.toLowerCase());
+    if (names.includes(typed)) return 0;
+    if (names.some((name) => name.startsWith(typed))) return 1;
+    return names.some((name) => name.includes(typed)) ? 2 : 3;
+  };
+  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank));
+};
+
+export const noCommandsMatch = (text: string): string => `No commands match "${text}"`;
+
+const labelOf = (command: SlashCommand): string => `/${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`;
+
+const completedOf = (command: SlashCommand): string => `/${command.name} `;
+
+export type SlashMenuAct = { readonly kind: 'handled' } | { readonly kind: 'complete'; readonly text: string } | { readonly kind: 'run'; readonly text: string };
+
+export const MENU_ACTIONS = ['menu.up', 'menu.down', 'menu.complete', 'menu.run', 'menu.close'] as const;
+
+export type MenuAction = (typeof MENU_ACTIONS)[number];
+
+export const isMenuAction = (action: string | undefined): action is MenuAction => MENU_ACTIONS.some((known) => known === action);
+
+export type SlashMenu = {
+  open: boolean;
+  rows: number;
+  act(text: string, action: MenuAction): SlashMenuAct | undefined;
+  press(row: number, rows: number): SlashMenuAct | undefined;
+  wheel(rows: number): void;
+  view(rows: number): ReactNode;
+};
+
+type MenuState = { text: string; index: number; top: number; closed: boolean };
+
+export const useSlashMenu = (host: { text: string; commands: readonly SlashCommand[]; active: boolean; height: number }): SlashMenu => {
+  const held = useRef<MenuState>({ text: '', index: 0, top: 0, closed: false });
+  const [, redraw] = useReducer((count: number) => count + 1, 0);
+  const cap = Math.max(MENU_FLOOR_ROWS, menuRowsCap(host.height));
+
+  const stateFor = (text: string): MenuState => (held.current.text === text ? held.current : { text, index: 0, top: 0, closed: false });
+
+  const keep = (next: MenuState): void => {
+    held.current = next;
+    redraw();
+  };
+
+  const matchesFor = (text: string): SlashCommand[] | undefined => (host.active && !stateFor(text).closed ? slashMatches(text, host.commands) : undefined);
+
+  const shown = matchesFor(host.text);
+  const state = stateFor(host.text);
+
+  const moveTo = (text: string, index: number, count: number): void => keep({ ...stateFor(text), index, top: topFor(index, stateFor(text).top, count, cap) });
+
+  return {
+    open: shown !== undefined,
+    rows: shown === undefined ? 0 : Math.max(1, Math.min(shown.length, cap)),
+    act: (text, action) => {
+      const matches = matchesFor(text);
+      if (matches === undefined) return undefined;
+      const current = stateFor(text);
+      const command = matches[current.index];
+      if (action === 'menu.close') {
+        keep({ ...current, closed: true });
+        return { kind: 'handled' };
+      }
+      if (action === 'menu.up' || action === 'menu.down') {
+        if (matches.length > 0) moveTo(text, (current.index + (action === 'menu.up' ? matches.length - 1 : 1)) % matches.length, matches.length);
+        return { kind: 'handled' };
+      }
+      if (action === 'menu.complete') return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+      return command === undefined ? undefined : { kind: 'run', text: `/${command.name}` };
+    },
+    press: (row, rows) => {
+      if (shown === undefined) return undefined;
+      const span = spanAt(shown.length, state.top, windowRows(rows));
+      const lead = span.start > 0 ? 1 : 0;
+      const at = span.start + row - lead;
+      const command = row < lead || at >= span.end ? undefined : shown[at];
+      return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+    },
+    wheel: (rows) => {
+      if (shown === undefined || shown.length <= cap) return;
+      keep({ ...state, top: Math.max(0, Math.min(state.top + rows, shown.length - (cap - 1))) });
+    },
+    view: (rows) => {
+      if (shown === undefined) return null;
+      if (shown.length === 0) return <Text dimColor wrap="truncate">{noCommandsMatch(host.text)}</Text>;
+      const span = spanAt(shown.length, state.top, windowRows(rows));
+      return (
+        <Box flexDirection="column">
+          {span.start > 0 ? <MoreRow direction="up" count={span.start} /> : null}
+          {shown.slice(span.start, span.end).map((command, offset) => (
+            <ChoiceRow key={command.name} selected={span.start + offset === state.index} label={labelOf(command)} />
+          ))}
+          {span.end < shown.length ? <MoreRow direction="down" count={shown.length - span.end} /> : null}
+        </Box>
+      );
+    },
+  };
+};

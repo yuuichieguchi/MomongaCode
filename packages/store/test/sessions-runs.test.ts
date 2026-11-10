@@ -12,7 +12,7 @@ describe('sessions', () => {
     expect(a).toMatchObject({
       cwd: '/work/a',
       env: { PATH: '/usr/bin' },
-      permissionMode: 'default',
+      permissionMode: 'manual',
       modelAlias: 'fm',
       createdAt: START_MS,
     });

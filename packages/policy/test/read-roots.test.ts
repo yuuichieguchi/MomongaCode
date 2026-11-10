@@ -37,19 +37,19 @@ const readOf = (target: string) => ({ kind: 'path', tool: 'Read', paths: [target
 describe('readRoots', () => {
   it('allows a read under a read root without asking', () => {
     const { skill, base } = setup();
-    const decision: Decision = decide({ ...base('default'), readRoots: [skill], tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) });
+    const decision: Decision = decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) });
     expect(decision).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 
   it('still asks for a read outside every root', () => {
     const { layout, skill, base } = setup();
-    const decision = decide({ ...base('default'), readRoots: [skill], tool: READ, subject: readOf(path.join(layout.outside, 'other.txt')) });
+    const decision = decide({ ...base('manual'), readRoots: [skill], tool: READ, subject: readOf(path.join(layout.outside, 'other.txt')) });
     expect(decision.kind).toBe('ask');
   });
 
   it('asks without read roots', () => {
     const { skill, base } = setup();
-    expect(decide({ ...base('default'), tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) }).kind).toBe('ask');
+    expect(decide({ ...base('manual'), tool: READ, subject: readOf(path.join(skill, 'scripts', 'run.py')) }).kind).toBe('ask');
   });
 
   it('does not make the read root writable', () => {
@@ -66,8 +66,8 @@ describe('readRoots', () => {
   it('applies to the read targets of a read-only command', () => {
     const { skill, base } = setup();
     const target = path.join(skill, 'scripts', 'run.py');
-    const withRoot = decide({ ...base('default'), readRoots: [skill], tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
-    const without = decide({ ...base('default'), tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
+    const withRoot = decide({ ...base('manual'), readRoots: [skill], tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
+    const without = decide({ ...base('manual'), tool: BASH, subject: { kind: 'command', tool: 'Bash', command: `cat ${target}` } });
     expect(withRoot.kind).toBe('allow');
     expect(without.kind).toBe('ask');
   });
@@ -76,7 +76,7 @@ describe('readRoots', () => {
     const { layout, skill, base } = setup();
     const rule = ruleIn(layout)('deny', `Read(/${skill}/**)`);
     const decision = decide({
-      ...base('default'),
+      ...base('manual'),
       rules: [rule],
       fileRules: fileRulesFor([rule], [layout.project]),
       readRoots: [skill],

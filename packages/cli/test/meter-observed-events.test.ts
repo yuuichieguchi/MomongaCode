@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { PublicRunEvent, RunEventPayload } from '@momonga/protocol';
+import type { RunEventPayload } from '@momonga/protocol';
 import { createMapperState, mapChildEvent, mapRunEvent } from '../src/acp/events.ts';
 import type { ClientFeatures, Phase } from '../src/acp/events.ts';
-import { initialTranscript, reduceEvent } from '../src/tui/transcript.ts';
+import { fold } from './tui/screen-fakes.ts';
 import { frameOf } from './acp-harness.ts';
 import type { EventPayload } from './acp-harness.ts';
 
@@ -26,8 +26,6 @@ const OBSERVED: RunEventPayload = {
   tokenCounting: 'estimated',
 };
 
-const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, createdAt: 1 } as const;
-
 describe('meter.observed in the clients', () => {
   it('maps to nothing in ACP in every phase and for every client', () => {
     const payload = OBSERVED as unknown as EventPayload;
@@ -40,7 +38,7 @@ describe('meter.observed in the clients', () => {
   });
 
   it('adds no entry to the TUI transcript', () => {
-    const state = reduceEvent(initialTranscript, { ...envelope, ...OBSERVED } as PublicRunEvent);
+    const state = fold([{ ...OBSERVED }]);
     expect(state.entries).toEqual([]);
   });
 });

@@ -36,7 +36,7 @@ import {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
-import type { ReadyFields } from '@momonga/foundation';
+import type { LogFields, ReadyFields } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 
 const START_MS = 1_800_000_000_000;
@@ -365,5 +365,34 @@ describe('LogFields.data', () => {
     const logger = createJsonLogger({ service: 'runtime', stream: capture.stream, clock: createFakeClock(START_MS) });
     logger.info('entry.start', { data: { logTarget: 'file', pid: 7, service: 'gateway', err: 'forged' } });
     expect(capture.lines()).toEqual([{ ts: START_ISO, level: 'info', service: 'runtime', pid: process.pid, msg: 'entry.start', logTarget: 'file' }]);
+  });
+});
+
+describe('O-R5-6 (M) 6.3: a list value of a structured event is a bounded JSON array', () => {
+  const lineWith = (data: Record<string, unknown>): Record<string, unknown> => {
+    const capture = captureStream();
+    const logger = createJsonLogger({ service: 'gateway', stream: capture.stream, clock: createFakeClock(START_MS) });
+    logger.info('plan.catalog', { data } as unknown as LogFields);
+    const [line] = capture.lines();
+    return line as Record<string, unknown>;
+  };
+
+  it('a list value is written as a JSON array', () => {
+    const line = lineWith({ entryKeys: ['context_window', 'slug'] });
+    expect(line['entryKeys']).toEqual(['context_window', 'slug']);
+    expect(line).not.toHaveProperty('entryKeysOmitted');
+  });
+
+  it('a list of more than 64 items is cut to 64 and the line carries <key>Omitted with the number left out', () => {
+    const items = Array.from({ length: 70 }, (_, index) => `key-${index}`);
+    const line = lineWith({ entryKeys: items });
+    expect(line['entryKeys']).toEqual(items.slice(0, 64));
+    expect(line['entryKeysOmitted']).toBe(6);
+  });
+
+  it('an item of more than 64 characters is cut to 64', () => {
+    const line = lineWith({ claimNames: ['a'.repeat(65), 'b'.repeat(64), 'short'] });
+    expect(line['claimNames']).toEqual(['a'.repeat(64), 'b'.repeat(64), 'short']);
+    expect(line).not.toHaveProperty('claimNamesOmitted');
   });
 });

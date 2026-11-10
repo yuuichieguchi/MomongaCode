@@ -84,7 +84,7 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
         byLength.get(length)?.counts.add(reply.entries.length);
         byLength.get(length)?.sizes.push(serializedSize(reply));
       }
-      const plan = await client.inheritPlan({ runId: queued.id, mode: 'default' });
+      const plan = await client.inheritPlan({ runId: queued.id, mode: 'manual' });
       expect(plan).toMatchObject({ kind: 'ready', payload: { form: 'reference' } });
       planSizes.push(serializedSize(plan));
     }
@@ -104,7 +104,7 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
       b.text(claim);
     }, { fresh: true });
     const child = b.createRun('child');
-    await b.inherit(b.claimNext(child.id), 'default');
+    await b.inherit(b.claimNext(child.id), 'manual');
     const client = await threadOn(h.dbPath);
     const reply = await client.inheritedWindow({ runId: child.id, windowTokens: 100_000, floorTokens: 1 });
     expect(reply.entries).toContainEqual({ seq: 3, callId, handle: h.store.blobs.handleFor(`out ${callId} ${'o'.repeat(30_000)}`), tokens: Math.ceil((`out ${callId} `.length + 30_000) / 4) });
@@ -118,7 +118,7 @@ describe('R9: inherit_plan and inherited_window write nothing', () => {
     const { h, links, queued } = await sourceWithChain(15);
     const before = snapshotOfDb(h.dbPath);
     const client = await threadOn(h.dbPath);
-    await client.inheritPlan({ runId: queued.id, mode: 'default' });
+    await client.inheritPlan({ runId: queued.id, mode: 'manual' });
     await client.inheritedWindow({ runId: links[9] as string, ...WINDOW });
     await client.inheritPlan({ runId: queued.id, mode: 'plan' });
     expect(snapshotOfDb(h.dbPath)).toEqual(before);
@@ -137,7 +137,7 @@ const loopDecodeDuringInheritance = async (steps: number) => {
   const b = builderOf(env);
   const source = b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
-  b.started(claim, 'default');
+  b.started(claim, 'manual');
   for (let step = 0; step < steps; step += 1) b.text(claim, 20);
   await b.end(claim, { to: 'COMPLETED' });
   const child = b.createRun('child task');
@@ -150,7 +150,7 @@ const loopDecodeDuringInheritance = async (steps: number) => {
   const facts = referenceFactsOf(env.store);
   const watched: RuntimeStore = new Proxy(env.store, {
     get: (target, key, receiver) => {
-      if (key === 'inheritContext') return (claimed: Claim, options: { mode: 'default' }) => counted(async () => target.inheritContext(claimed, options));
+      if (key === 'inheritContext') return (claimed: Claim, options: { mode: 'manual' }) => counted(async () => target.inheritContext(claimed, options));
       if (key === 'journalFacts') {
         return {
           ...target.journalFacts,
@@ -204,7 +204,7 @@ const childSnapshotBytes = async (steps: number): Promise<number> => {
   const b = builderOf(env);
   const source = b.createRun('base task', { history: 'fresh' });
   const claim = b.claimNext(source.id);
-  b.started(claim, 'default');
+  b.started(claim, 'manual');
   for (let step = 0; step < steps; step += 1) b.text(claim, 20);
   await b.end(claim, { to: 'COMPLETED' });
   const child = b.createRun('child task');
@@ -239,7 +239,7 @@ describe('R14: no history is read before the window is installed', () => {
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });
     const child = b.createRun('And again');
     const claim = b.claimNext(child.id);
-    expect(await env.store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
     const journal = openJournal({
       store: env.store,
       claim,

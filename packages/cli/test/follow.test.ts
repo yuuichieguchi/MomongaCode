@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PublicRunEvent } from '@momonga/protocol';
+import { DaemonMoved } from '../src/client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
 import { DaemonUnreachable, ReconnectBoundExceeded, SessionStreamLost, followRun, followSession, isTerminalStatus, isTransientStreamError, retryAfterRestore } from '../src/run/follow.ts';
 import { runView } from './fake-backend.ts';
@@ -52,6 +53,29 @@ const options = (client: RuntimeClient, seen: number[], extra: Partial<Parameter
 });
 
 describe('followRun', () => {
+  it('treats the daemon.current frame as a planned move: it restores the connection and resumes from the last event with no backoff sleep and no reconnect notice (20.44)', async () => {
+    const seen: number[] = [];
+    const attempts: number[] = [];
+    const restored: number[] = [];
+    const clock = virtualClock();
+    const { client, opened } = clientOf([{ frames: [1, 2], thenThrow: new DaemonMoved(2, '1.2.4') }, { frames: [3] }], [runView({ status: 'COMPLETED' })]);
+
+    const run = await followRun(
+      options(client, seen, {
+        clock,
+        restoreConnection: async () => void restored.push(clock.now()),
+        onReconnecting: (attempt) => attempts.push(attempt),
+      }),
+    );
+
+    expect(run.status).toBe('COMPLETED');
+    expect(seen).toEqual([1, 2, 3]);
+    expect(opened).toEqual([undefined, 2]);
+    expect(attempts).toEqual([]);
+    expect(restored).toEqual([0]);
+    expect(clock.now()).toBe(0);
+  });
+
   it('delivers every event of a finished stream and returns the terminal run', async () => {
     const seen: number[] = [];
     const { client, opened } = clientOf([{ frames: [1, 2, 3] }], [runView({ status: 'COMPLETED' })]);

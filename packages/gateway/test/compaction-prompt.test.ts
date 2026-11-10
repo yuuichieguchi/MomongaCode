@@ -1,10 +1,11 @@
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, MAX_COMPACTION_GUIDELINE_CHARS, MIN_SUMMARY_TOKENS, SUMMARY_PROMPT_TOKENS } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, MAX_COMPACTION_GUIDELINE_CHARS, MIN_SUMMARY_TOKENS, PROMPT_TEXT_MAX_CHARS, SUMMARY_PROMPT_TOKENS } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterTarget } from '@momonga/protocol';
 import { createFakeClock } from '@momonga/testkit';
-import { summaryRequestOf } from '../src/adapters/shared/compact.ts';
+import { FOCUS_LABEL, summaryRequestOf } from '../src/adapters/shared/compact.ts';
 import { createRequestValidator } from '../src/core/validation.ts';
 import { TARGET, startFake, userText } from './cc-support.ts';
 import { ccAdapterFor, estimatedTokens, KEEP_CLAUSE, RESTATE_CLAUSE } from './cc-compact-support.ts';
@@ -54,6 +55,23 @@ describe('the compaction prompt', () => {
     expect(guided.endsWith(GUIDELINE)).toBe(true);
   });
 
+  it('gives the focus text of the request after the rules and the guideline, ahead of the agent context, and leaves the prompt as it is without one', () => {
+    const guided = instructionsOf(compactRequest({ guideline: GUIDELINE }));
+    const focused = instructionsOf({ ...compactRequest({ guideline: GUIDELINE, instructions: 'keep the parser decisions' }), instructions: 'AGENT TEXT' });
+    expect(focused.startsWith(guided)).toBe(true);
+    expect(focused).toContain(`${FOCUS_LABEL}\nkeep the parser decisions`);
+    expect(focused.indexOf('keep the parser decisions')).toBeLessThan(focused.indexOf('AGENT TEXT'));
+    expect(instructionsOf(compactRequest())).not.toContain(FOCUS_LABEL);
+  });
+
+  it('accepts momonga.instructions as a string bounded like a prompt', () => {
+    const parse = (instructions: unknown) => createRequestValidator().parseCompact({ model: 'fast', input: [userText('hi')], momonga: { instructions } });
+    expect(parse('keep the parser decisions').momonga?.instructions).toBe('keep the parser decisions');
+    expect(() => parse('')).toThrow();
+    expect(() => parse(7)).toThrow();
+    expect(() => parse('x'.repeat(PROMPT_TEXT_MAX_CHARS + 1))).toThrow();
+  });
+
   it('keeps the guideline ahead of the agent context', () => {
     const text = instructionsOf({ ...compactRequest({ guideline: GUIDELINE }), instructions: 'AGENT TEXT' });
     expect(text.indexOf(GUIDELINE)).toBeGreaterThan(-1);
@@ -74,8 +92,8 @@ describe('every adapter renders the same prompt', () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [] });
     const adapters = {
       chat: ccAdapterFor(fake),
-      anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', apiKey: async () => 'unused' }),
-      responses: createOpenResponsesAdapter(shared),
+      anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', authSource: keyAuthSource(async () => 'unused') }),
+      responses: createOpenResponsesAdapter({ ...shared, authSource: unauthenticatedSource }),
     };
     return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN, REMOTE_CAPABILITIES))]);
   };

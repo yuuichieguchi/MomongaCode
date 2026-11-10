@@ -32,6 +32,7 @@ export type Control = {
   reportedVersion: string | undefined;
   daemonRunning: boolean;
   daemonStart: CommandResult;
+  retiring: { steps: number; jobs: number; versions: string[] };
   lockHeld: boolean;
   autoUpdates: boolean;
 };
@@ -67,7 +68,7 @@ export type HarnessOptions = {
 const ok = (stdout = ''): CommandResult => ({ exitCode: 0, stdout, stderr: '' });
 
 export const setupUpdate = async (context: TestContext, options: HarnessOptions = {}): Promise<UpdateHarness> => {
-  const root = withTempDir(context);
+  const root = withTempDir(context, { asHome: true });
   const dir = path.join(root, 'bin');
   fs.mkdirSync(dir);
   const target = path.join(dir, 'momonga');
@@ -83,6 +84,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
     reportedVersion: undefined,
     daemonRunning: false,
     daemonStart: ok(),
+    retiring: { steps: 0, jobs: 0, versions: [] },
     lockHeld: false,
     autoUpdates: true,
   };
@@ -137,7 +139,7 @@ export const setupUpdate = async (context: TestContext, options: HarnessOptions 
         state.writes.push(value);
       },
     },
-    daemon: { running: async () => control.daemonRunning, restartBoundMs: async () => DAEMON_RESTART_BOUND_MS },
+    daemon: { running: async () => control.daemonRunning, retiring: async () => control.retiring, restartBoundMs: async () => DAEMON_RESTART_BOUND_MS },
     autoUpdates: async () => control.autoUpdates,
     spawnDetached: (spec) => {
       let rejectExit: (error: Error) => void = () => undefined;

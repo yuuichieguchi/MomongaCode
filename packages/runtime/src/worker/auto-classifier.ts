@@ -5,9 +5,11 @@ import type { ClassifierVerdict, CreateResponseBody, RunEventPayload } from '@mo
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
+import { retireDecisionOf } from './gateway-policy.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
+import { outputBoundOf } from './output-bound.ts';
 
 const CLASSIFIER_TASK = [
   'You are a security reviewer for an autonomous coding agent. Decide whether one proposed tool call is safe to run without asking the person.',
@@ -57,11 +59,12 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       input,
       text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
       tool_choice: 'none',
-      max_output_tokens: outputReserveFor(capabilities),
+      ...outputBoundOf(capabilities, outputReserveFor(capabilities)),
       store: false,
       stream: true,
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
     };
+    ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
     let terminal: ModelResult | undefined;
     let firstEventMs: number | undefined;
     const { clock } = ctx.options;
@@ -108,7 +111,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         try {
           result = await judge(request, alias);
         } catch (error) {
-          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
+          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError) || (await retireDecisionOf(error, ctx.options.role)) === 'retire-yield') throw error;
           result = asked({ alias, failure: `${error.code}: ${error.message}` });
         }
       }

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
+import { PAUSE_CODE, PROFILE_ID, START_MS, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
 import type { FakeSignIn, Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -26,7 +26,7 @@ const installOf = (h: Harness, account: string, signIn: FakeSignIn, change: Part
     idToken: signIn.idToken,
     tokens: signIn.tokens,
     ...change,
-  });
+  }, new AbortController().signal);
 
 const activeFile = async (h: Harness): Promise<string | undefined> => {
   try {
@@ -40,7 +40,7 @@ describe('register: the compare-and-write of the registered record (I-S4)', () =
   it('writes a registered record with client id, host id and label when none exists', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId })).toEqual({ outcome: 'registered' });
+    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal)).toEqual({ outcome: 'registered' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'registered', client_id: signIn.clientId, ext_agent_host_id: signIn.hostId, account: 'work', profile: PROFILE_ID });
   });
 
@@ -49,7 +49,7 @@ describe('register: the compare-and-write of the registered record (I-S4)', () =
     await signedIn(h, 'work');
     const before = await rawRecord(h, 'work');
     const other = await signInAtFake(h);
-    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: other.clientId, hostId: other.hostId })).toEqual({
+    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: other.clientId, hostId: other.hostId }, new AbortController().signal)).toEqual({
       outcome: 'rejected',
       reason: 'registration_superseded',
     });
@@ -61,7 +61,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   it('binds the validated subject, writes generation + 1, and makes the account active', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     const registered = await readRecord(h, 'work');
     expect(await activeFile(h)).toBeUndefined();
     expect(await installOf(h, 'work', signIn)).toMatchObject({ outcome: 'signed_in' });
@@ -106,7 +106,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
     const h = await harness();
     h.auth.withheldScopes = ['chatgpt.tokens.use.direct'];
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     expect(await installOf(h, 'work', signIn)).toMatchObject({ outcome: 'plan_disabled' });
     expect((await readRecord(h, 'work'))?.['state']).toBe('plan_disabled');
     expect((await planError(h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal))).code).toBe('plan_use_not_enabled');
@@ -115,7 +115,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   it('a token response with no refresh token while offline_access is granted is a protocol error and installs nothing', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     const before = await rawRecord(h, 'work');
     await expect(installOf(h, 'work', signIn, { tokens: { ...signIn.tokens, refresh_token: undefined } as unknown as typeof signIn.tokens })).rejects.toThrow();
     expect(await rawRecord(h, 'work')).toBe(before);
@@ -129,7 +129,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   ])('a well-formed token response with expires_in %s is installed', async (_name, seconds) => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     expect(await installOf(h, 'work', signIn, { tokens: { ...signIn.tokens, expires_in: seconds } })).toMatchObject({ outcome: 'signed_in' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', access_token: signIn.tokens.access_token, refresh_token: signIn.tokens.refresh_token });
     expect(JSON.parse((await activeFile(h)) ?? '{}')).toEqual({ [PROFILE_ID]: 'work' });
@@ -138,7 +138,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   it('a new install of a paused account ends the pause', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({});
+    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({ code: PAUSE_CODE }, new AbortController().signal);
     const again = await signInAtFake(h, { clientId: signIn.clientId });
     await installOf(h, 'work', again);
     expect((await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal)).bearer).toBe(again.tokens.access_token);
@@ -154,7 +154,7 @@ describe('two accounts are isolated (AccountsIsolated, OtherAccountsUntouched)',
     const homeBefore = await rawRecord(h, 'home');
     toRefreshWindow(h, START_MS);
     await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
-    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.signOut({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect(await rawRecord(h, 'home')).toBe(homeBefore);
     expect(await readRecord(h, 'home')).toMatchObject({ client_id: home.clientId, subject: 'sub-second-user', refresh_token: home.tokens.refresh_token });
   });
@@ -165,10 +165,10 @@ describe('two accounts are isolated (AccountsIsolated, OtherAccountsUntouched)',
     h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
     await signedIn(h, 'home');
     const records = [await rawRecord(h, 'work'), await rawRecord(h, 'home')];
-    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect(JSON.parse((await activeFile(h)) ?? '{}')).toEqual({ [PROFILE_ID]: 'work' });
     expect([await rawRecord(h, 'work'), await rawRecord(h, 'home')]).toEqual(records);
-    await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'nobody' })).rejects.toThrow();
+    await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'nobody' }, new AbortController().signal)).rejects.toThrow();
     expect(JSON.parse((await activeFile(h)) ?? '{}')).toEqual({ [PROFILE_ID]: 'work' });
   });
 });

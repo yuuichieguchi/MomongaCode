@@ -40,6 +40,7 @@ export const autoModeCommand: SlashCommand = {
       return;
     }
     const agent = parsed.agent ?? context.modelAlias;
+    if (agent === undefined) throw new Error('the auto-mode check needs a session with a model alias');
     context
       .background('auto-mode check', (signal) => context.autoMode.check({ ...classifier, agent, signal }, context.info))
       .then(

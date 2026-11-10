@@ -41,7 +41,7 @@ describe('proactive compaction inside one turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [] });
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2378, replaced: expect.any(Number), workingStateGrowth: 0 } });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -84,13 +84,35 @@ describe('the working state a compaction adds', () => {
 
 });
 
+describe('a compaction asked for now', () => {
+  it('plans the widest cut outside the protected steps although the context is below the high mark', async () => {
+    const history = stepsOf([930, 930, 2100, 2100, 2100, 2100]);
+    const ports = harness(capabilities).ports;
+    const unasked = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), ports);
+    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0, compactNow: true }), ports);
+
+    expect(unasked.compaction).toBeUndefined();
+    expect(built.compaction?.throughSeq).toBe(4);
+    expect(built.compaction?.tokens.input).toBe(built.inputTokens);
+    expect(built.compaction?.tokens.replaced).toBeGreaterThan(0);
+    expect(built.compaction?.tokens.replaced).toBeLessThan(built.inputTokens);
+  });
+
+  it('plans nothing when every step lies inside the protection', async () => {
+    const history = stepsOf([930, 930]);
+    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0, compactNow: true }), harness(capabilities).ports);
+
+    expect(built.compaction).toBeUndefined();
+  });
+});
+
 describe('forced compaction inside one turn', () => {
   it('accepts a cut whose region closes the deficit although it fails the proactive gain rule', async () => {
     const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(2946);
-    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [] });
+    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [], tokens: { input: 2946, replaced: expect.any(Number), workingStateGrowth: 0 } });
   });
 
   it('takes the latest cut before the last step at the last level', async () => {

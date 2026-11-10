@@ -1,3 +1,4 @@
+import { MOVED_CODE } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
 
 export type ApiErrorInit = {
@@ -45,7 +46,7 @@ export const methodNotAllowed = (allowed: readonly string[]): ApiError =>
   });
 
 export const conflict = (
-  code: 'approval_not_pending' | 'child_session' | 'duplicate_charge' | 'guideline_conflict' | 'memory_state' | 'mode_unavailable' | 'run_cancelled' | 'skill_target' | 'value_unknown',
+  code: 'approval_not_pending' | 'child_session' | 'duplicate_charge' | 'guideline_conflict' | 'inbox_full' | 'memory_state' | 'mode_unavailable' | 'run_active' | 'run_cancelled' | 'skill_target' | 'user_shell_running' | 'value_unknown',
   message: string,
 ): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code, message });
@@ -73,6 +74,11 @@ export const idempotencyKeyReused = (): ApiError =>
 
 export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
+
+export const gatewayAnswer = (answer: { status: number; type: string; code: string; message: string }): ApiError => new ApiError(answer);
+export const MOVED_MESSAGE = 'This daemon has been replaced by a newer version and accepts no new work. The request was not run; send it again.';
+
+export const moved = (): ApiError => new ApiError({ status: 503, type: 'server_error', code: MOVED_CODE, message: MOVED_MESSAGE, headers: { 'retry-after': '1' } });
 
 export const contributionUnavailable = (message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code: 'contribution_unavailable', message, headers: { 'retry-after': '1' } });

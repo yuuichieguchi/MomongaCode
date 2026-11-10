@@ -3,7 +3,7 @@ import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, notTheRoleTick } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -51,7 +51,7 @@ describe('driving the injected fake timers of an in-process gateway whose body p
 
     const pending = ask(handle.socketPath);
     const settled = settledFlag(pending);
-    await driveFakeTime(timers, { done: settled, horizonAt: startedAt + RETRY_BUDGET_MS, description: 'the answer to a request against a closed upstream' });
+    await driveFakeTime(timers, { done: settled, considered: notTheRoleTick, horizonAt: startedAt + RETRY_BUDGET_MS, description: 'the answer to a request against a closed upstream' });
     const response = await pending;
 
     expect(response.body.error.code).toBe('provider_unavailable');
@@ -64,7 +64,7 @@ describe('driving the injected fake timers of an in-process gateway whose body p
     const settled = settledFlag(ask(handle.socketPath));
     const begunAt = performance.now();
 
-    await expect(driveFakeTime(timers, { done: () => false, horizonAt: startedAt + RETRY_BUDGET_MS, deadlineMs: 3000, description: 'a condition that never holds' })).rejects.toThrow(
+    await expect(driveFakeTime(timers, { done: () => false, considered: notTheRoleTick, horizonAt: startedAt + RETRY_BUDGET_MS, deadlineMs: 3000, description: 'a condition that never holds' })).rejects.toThrow(
       new RegExp(`a condition that never holds not met within ${RETRY_BUDGET_MS} fake ms: the real-time deadline of 3000 ms passed; pending timers .*"delayMs":${BODY_PURGE_INTERVAL_MS}`),
     );
     expect(performance.now() - begunAt).toBeLessThan(10_000);

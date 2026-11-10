@@ -1,18 +1,17 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
-import { createUdsClient, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReadyFields, TextStream, UdsClient } from '@momonga/foundation';
+import { createUdsClient, ensureMomongaDirs, fixedRolePort, generationLayout, inspectProcessLock, momongaPaths, FIRST_GENERATION, fixedSocket, scopeToGeneration } from '@momonga/foundation';
+import type { Clock, GenerationRole, JsonLogger, MomongaPaths, ReadyFields, RolePort, TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir, driveFakeTime, fakeUsageOfRequest, prepareGenerationForTest, removeTempDir, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
-import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
+import { closedAtCleanup, makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
 import { openEventStream, sendJson } from '../service/helpers.ts';
 import type { EventStream, JsonResponse, RequestInit } from '../service/helpers.ts';
@@ -24,13 +23,13 @@ export const GATEWAY_VERSION = '1.10.0-gateway-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 export const STARTUP_STEPS = [
   'dirs',
+  'role',
   'lock',
   'settings',
   'sandbox',
   'mcp-markers',
   'store',
   'tool-markers',
-  'tmp-sweep',
   'trace-store',
   'telemetry',
   'gateway-client',
@@ -51,13 +50,14 @@ export const CANCEL_SETTLE_MS = 1000;
 
 export type SandboxKind = 'seatbelt' | 'none';
 
-export type RuntimeCloseResult = { clean: boolean; fatal?: Error; abandoned: string[]; stragglers: string[] };
+export type RuntimeCloseResult = { clean: boolean; fatal?: Error; abandoned: string[]; stragglers: string[]; exitCode?: number };
 
 export type RuntimeProcess = {
   ready: ReadyFields;
   sandbox: SandboxKind;
   close(): Promise<RuntimeCloseResult>;
   abort(): Promise<RuntimeCloseResult>;
+  role(): GenerationRole;
   fatal: Promise<Error>;
 };
 
@@ -77,6 +77,8 @@ export type StartRuntimeProcessOptions = {
   leaseMs?: number;
   drainTimeoutMs?: number;
   signal?: AbortSignal;
+  role?: RolePort;
+  requestShutdown?: () => void;
 };
 
 const exported = <T>(name: string): T => {
@@ -85,8 +87,16 @@ const exported = <T>(name: string): T => {
   return value as T;
 };
 
-export const startRuntimeProcess = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
-  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')(options);
+export const startRuntimeProcessUnprepared = (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> =>
+  exported<(options: StartRuntimeProcessOptions) => Promise<RuntimeProcess>>('startRuntimeProcess')({ role: fixedRolePort('serving'), ...options });
+
+export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): Promise<RuntimeProcess> => {
+  if (path.isAbsolute(options.home) && options.signal?.aborted !== true) {
+    await ensureMomongaDirs(momongaPaths(options.home, process.platform, {}));
+    prepareGenerationForTest(options.home, options.generation, options.version);
+  }
+  return startRuntimeProcessUnprepared(options);
+};
 
 export const runtimeAlreadyRunningError = (): abstract new (...args: never[]) => Error =>
   exported<abstract new (...args: never[]) => Error>('RuntimeAlreadyRunningError');
@@ -94,29 +104,13 @@ export const runtimeAlreadyRunningError = (): abstract new (...args: never[]) =>
 export type RunHome = { root: string; home: string; paths: MomongaPaths; project: string };
 
 export const makeRunHome = (): RunHome => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mh-')));
-  onCleanup(() => {
-    restoreModes(root);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const home = path.join(root, 'h');
-  fs.mkdirSync(home, { mode: 0o700 });
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   return { root, home, paths: momongaPaths(home, process.platform, {}), project };
-};
-
-const restoreModes = (directory: string): void => {
-  let entries: fs.Dirent[];
-  try {
-    fs.chmodSync(directory, 0o700);
-    entries = fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory() && !entry.isSymbolicLink()) restoreModes(path.join(directory, entry.name));
-  }
 };
 
 export const sessionEnvFor = (tempHome: string): Readonly<Record<string, string>> => {
@@ -168,16 +162,24 @@ export const prepareStack = async (fakeOptions: FakeOptionsInput = {}, extraSett
 
 export type StartGatewayOptions = { env?: Readonly<Record<string, string>>; logger?: JsonLogger };
 
+export const prepareGeneration = async (temp: RunHome, generation: number = FIRST_GENERATION, version: string = RUNTIME_VERSION): Promise<void> => {
+  await ensureMomongaDirs(temp.paths);
+  prepareGenerationForTest(temp.home, generation, version);
+};
+
+export const scopedPaths = (temp: RunHome, generation: number = FIRST_GENERATION): MomongaPaths => scopeToGeneration(temp.paths, generation);
+
 export const startGateway = async (temp: RunHome, options: StartGatewayOptions = {}): Promise<void> => {
+  await prepareGeneration(temp);
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await startGatewayProcess({
+    const gateway = await closedAtCleanup(startGatewayProcess({
       generation: FIRST_GENERATION,
       home: temp.home,
       env: { ...sessionEnvFor(temp.home), ...options.env },
       version: GATEWAY_VERSION,
       ...(options.logger === undefined ? {} : { logger: options.logger }),
-    });
+    }));
     onCleanup(async () => {
       await gateway.close();
     });
@@ -218,6 +220,7 @@ export type Launched = {
 };
 
 export type LaunchOptions = Omit<StartRuntimeProcessOptions, 'home' | 'generation' | 'version' | 'logger' | 'stdout'> & {
+  generation?: number;
   logger?: RecordingLogger;
   stdout?: CapturedStdout;
   fakeTimers?: FakeTimers;
@@ -241,6 +244,15 @@ export const fireTimer = async (timers: FakeTimers, delayMs: number, description
   await afterMicrotasks();
 };
 
+export const SERVING_TICK_MS = 1000;
+
+export const SERVING_TICKS_DRIVEN = 10;
+
+export const passServingTime = async (timers: FakeTimers, ms: number, done: () => boolean, description: string): Promise<void> => {
+  timers.advance(ms);
+  await driveFakeTime(timers, { done, horizonAt: timers.now() + SERVING_TICKS_DRIVEN * SERVING_TICK_MS, description });
+};
+
 export const timerIds = (timers: FakeTimers): ReadonlySet<number> => new Set(timers.pending().map((timer) => timer.id));
 
 export const fireDuringTeardownStep = async (logger: RecordingLogger, timers: FakeTimers, step: string, delayMs: number): Promise<void> => {
@@ -249,12 +261,12 @@ export const fireDuringTeardownStep = async (logger: RecordingLogger, timers: Fa
 };
 
 export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}): Promise<Launched> => {
-  const { fakeTimers, logger: givenLogger, stdout: givenStdout, ...rest } = options;
+  const { fakeTimers, logger: givenLogger, stdout: givenStdout, generation = FIRST_GENERATION, ...rest } = options;
   const logger = givenLogger ?? makeLogger();
   const stdout = givenStdout ?? captureStream();
   const handle = await startRuntimeProcess({
     home: temp.home,
-    generation: FIRST_GENERATION,
+    generation,
     version: RUNTIME_VERSION,
     logger,
     stdout,
@@ -267,11 +279,11 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
     if (fakeTimers === undefined || clock === undefined) await closing;
     else await driveUntilSettled(closing, fakeTimers, runtime.runtimeMaxCloseMs(0), 'the runtime abort at cleanup');
   });
-  return { handle, logger, stdout, ...clientOf(temp) };
+  return { handle, logger, stdout, ...clientOf(temp, generation) };
 };
 
-export const clientOf = (temp: RunHome) => {
-  const client = createUdsClient(fixedSocket(firstGeneration(temp.paths).sockets.runtime));
+export const clientOf = (temp: RunHome, generation: number = FIRST_GENERATION) => {
+  const client = createUdsClient(fixedSocket(generationLayout(temp.home, generation).sockets.runtime));
   onCleanup(() => client.close());
   const http = (method: string, target: string, init?: RequestInit): Promise<JsonResponse> => sendJson(client, method, target, init);
   const createSession = async (body: Record<string, unknown> = {}): Promise<any> => {

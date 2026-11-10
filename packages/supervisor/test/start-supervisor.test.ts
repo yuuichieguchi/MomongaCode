@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
-import { orphanReapBoundMs } from '../src/orphans.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
+  HARNESS_GENERATION,
   INVALID_SETTINGS_TEXT,
   TEST_VERSION,
   captureLog,
@@ -62,29 +62,6 @@ describe('startSupervisor', () => {
     expect(messages.indexOf('orphans.reaped')).toBeLessThan(messages.indexOf('child.spawn'));
   });
 
-  it('ready precedes the first findHolders', async (context) => {
-    let socketPath = '';
-    const phases: string[] = [];
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => {
-        socketPath = firstGeneration(paths).sockets.supervisor;
-        writeMarker(paths, 'runtime-old');
-      },
-      markerPorts: {
-        findHolders: async () => {
-          if (phases.length === 0) {
-            const response = await httpOver(context, socketPath, 'GET', '/v1/health');
-            phases.push(String((JSON.parse(response.text) as { phase: string }).phase));
-          }
-          return [999_999];
-        },
-      },
-    });
-    await waitFor(() => phases.length === 1);
-    expect(phases).toEqual(['reaping-orphans']);
-    expect(h.stdout.lines()).toHaveLength(1);
-  });
-
   it('ready line goes to stdout only and carries the control socket', async (context) => {
     const h = await startHarness(context);
     expect(h.stdout.lines()).toHaveLength(1);
@@ -94,43 +71,41 @@ describe('startSupervisor', () => {
     expect(h.health().startedAt).toBe(ready?.startedAt);
   });
 
-  it('startSupervisor resolves before the reap ends, and no child spawns before it finished', async (context) => {
+  it('startSupervisor resolves before the reap of its own markers ends, and no child spawns before it finished', async (context) => {
     const reap = deferred<{ reaped: number; kept: number }>();
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: () => reap.promise },
-      overrides: { orphanGraceMs: 250 },
-    });
+    const h = await startHarness(context, { markerPorts: { reapMarkerDirectory: () => reap.promise } });
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
     await pumpUntil(h.timers, () => true, { realWork: h.realWork, maxMs: 0 });
-    expect(h.health().phase).toBe('reaping-orphans');
+    expect(h.health().phase).toBe('running');
     expect(h.fake.spawnCount()).toBe(0);
     reap.resolve({ reaped: 1, kept: 0 });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().phase).toBe('running');
   });
 
-  it('second supervisor on the same home is refused with the supervisor lock', async (context) => {
+  it('a second supervisor of the same generation is an abandoned start: it returns closed, spawns nothing and leaves the lock with its holder', async (context) => {
     const h = await startHarness(context);
     const clock = createFakeClock(0);
-    const second = startSupervisor({
+    const log = captureLog(clock);
+    const spawned = createFakeSpawn();
+    const second = await startSupervisor({
       home: h.home,
       version: TEST_VERSION,
+      generation: HARNESS_GENERATION,
       launcher: fakeLauncher,
-      spawn: createFakeSpawn().port,
+      spawn: spawned.port,
       clock,
       timers: createFakeTimers(clock),
-      logger: captureLog(clock).logger,
+      logger: log.logger,
       stdout: captureText(),
       watchSettings: false,
       markerPorts: recordingMarkerPorts().ports,
     });
-    const error = await second.then(
-      () => undefined,
-      (caught: unknown) => caught,
-    );
-    expect(error).toBeInstanceOf(ProcessLockHeldError);
-    expect((error as ProcessLockHeldError).lockPath).toBe(firstGeneration(h.paths).locks.supervisor);
+    expect(second.abandoned).toBe('lock-held');
+    expect(await second.closed).toEqual({ clean: true, killed: [], leaked: [] });
+    expect(spawned.spawnCount()).toBe(0);
+    expect(log.withMsg('start.abandoned')).toMatchObject([{ generation: HARNESS_GENERATION, reason: 'lock-held' }]);
+    expect((await inspectProcessLock(firstGeneration(h.paths).locks.supervisor)).state).toBe('held');
   });
 
   it('a supervisor.sock.lock left behind by a dead holder does not block the start', async (context) => {
@@ -148,7 +123,7 @@ describe('startSupervisor', () => {
   it('startup failure after the lock unwinds and releases the lock', async (context) => {
     const { home, paths } = prepareHome(context);
     writeSettings(home, validSettings());
-    fs.mkdirSync(firstGeneration(paths).dir, { recursive: true, mode: 0o700 });
+    prepareGenerationForTest(home, HARNESS_GENERATION, TEST_VERSION);
     fs.writeFileSync(firstGeneration(paths).sockets.supervisor, 'not a socket');
     const clock = createFakeClock(0);
     const stdout = captureText();
@@ -156,6 +131,7 @@ describe('startSupervisor', () => {
     const attempt = startSupervisor({
       home,
       version: TEST_VERSION,
+      generation: HARNESS_GENERATION,
       launcher: fakeLauncher,
       spawn: fake.port,
       clock,
@@ -173,18 +149,13 @@ describe('startSupervisor', () => {
   });
 
   it('a started supervisor with invalid settings still announces ready and reports both children held-config', async (context) => {
-    let holding = true;
-    const h = await startHarness(context, {
-      settingsText: INVALID_SETTINGS_TEXT,
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => (holding ? [999_999] : []) },
-      overrides: { orphanGraceMs: 60_000 },
-    });
+    const reap = deferred<{ reaped: number; kept: number }>();
+    const h = await startHarness(context, { settingsText: INVALID_SETTINGS_TEXT, markerPorts: { reapMarkerDirectory: () => reap.promise } });
     expect(h.stdout.lines()).toHaveLength(1);
-    await waitFor(() => h.markers.calls.findHolders.length > 0);
+    await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     expect(h.health().children.map((child) => child.state)).toEqual(['pending', 'pending']);
-    holding = false;
-    await pumpUntil(h.timers, () => h.health().phase === 'running', { realWork: h.realWork, maxMs: 5000 });
+    reap.resolve({ reaped: 0, kept: 0 });
+    await pumpUntil(h.timers, () => h.health().children.every((child) => child.state === 'held-config'), { realWork: h.realWork, maxMs: 5000 });
     expect(h.health().children.map((child) => child.state)).toEqual(['held-config', 'held-config']);
     for (const child of h.health().children) {
       expect(child.heldReason).toBeDefined();
@@ -298,8 +269,8 @@ describe('resolveStartTiming', () => {
     });
   });
 
-  it('bounds the start as the orphan reap followed by the startup timeout of the children', () => {
+  it('bounds the start by the startup timeout of the children alone: no start waits for a previous daemon', () => {
     const timing = resolveStartTiming({ orphanGraceMs: 3000 });
-    expect(supervisorStartBoundMs(timing)).toBe(orphanReapBoundMs(timing) + timing.startupTimeoutMs);
+    expect(supervisorStartBoundMs(timing)).toBe(timing.startupTimeoutMs);
   });
 });

@@ -1,4 +1,4 @@
-import { SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
+import { ADAPTER_NEUTRAL_ERROR_CODES, ERROR_TYPES, SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -10,6 +10,7 @@ import type {
   Capabilities,
   CapabilityOverride,
   CountTokensRequest,
+  ErrorType,
   ProviderAdapter,
   StreamEvent,
 } from '@momonga/protocol';
@@ -79,6 +80,21 @@ export const DEFAULT_SCRIPTED_CAPABILITIES: Capabilities = {
   maxConcurrency: 4,
   source: 'declared',
 };
+
+type InStreamFailure = { code: string; errorType: ErrorType; message: string };
+
+const isErrorType = (value: unknown): value is ErrorType => ERROR_TYPES.some((type) => type === value);
+
+const streamFailureOf = (error: unknown): InStreamFailure | undefined => {
+  if (!(error instanceof Error)) return undefined;
+  const { code, errorType } = error as Error & { code?: unknown; errorType?: unknown };
+  return typeof code === 'string' && isErrorType(errorType) ? { code, errorType, message: error.message } : undefined;
+};
+
+const NON_RETRYABLE_TYPES: readonly ErrorType[] = ['invalid_request', 'not_found'];
+const NEUTRAL_CODES: readonly string[] = ADAPTER_NEUTRAL_ERROR_CODES;
+
+const retryableStreamFailure = (failure: InStreamFailure): boolean => !NON_RETRYABLE_TYPES.includes(failure.errorType) && !NEUTRAL_CODES.includes(failure.code);
 
 const abortError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error ? signal.reason : new Error('scripted adapter call aborted');
@@ -199,6 +215,10 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
           };
         }
         return { retryable: false, error: { type: 'invalid_request', code: 'upstream_rejected', message: error.message, param: null } };
+      }
+      const streamFailure = streamFailureOf(error);
+      if (streamFailure !== undefined) {
+        return { retryable: retryableStreamFailure(streamFailure), error: { type: streamFailure.errorType, code: streamFailure.code, message: streamFailure.message, param: null } };
       }
       return {
         retryable: false,

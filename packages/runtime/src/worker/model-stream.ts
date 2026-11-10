@@ -1,7 +1,7 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccountRef, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
-import { carriesOutput, reportedCachedTokensOf } from '@momonga/protocol';
+import { carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
@@ -12,7 +12,7 @@ const FLUSH_BYTES = 1024;
 
 export type ModelResult =
   | { kind: 'response'; response: ResponseResource; incomplete: boolean }
-  | { kind: 'failed'; code: string; message: string; retryable: boolean };
+  | { kind: 'failed'; code: string; message: string; retryable: boolean; plan?: PlanAccountRef };
 
 type DeltaType = 'agent.message.delta' | 'agent.thought.delta';
 
@@ -83,8 +83,16 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
       return { kind: 'response', response: event.response, incomplete: false };
     case 'response.incomplete':
       return { kind: 'response', response: event.response, incomplete: true };
-    case 'response.failed':
-      return { kind: 'failed', code: event.response.error.code, message: event.response.error.message, retryable: event.response.momonga?.retryable === true };
+    case 'response.failed': {
+      const plan = planAccountRefOf(event.response.error.plan);
+      return {
+        kind: 'failed',
+        code: event.response.error.code,
+        message: event.response.error.message,
+        retryable: event.response.momonga?.retryable === true,
+        ...(plan === undefined ? {} : { plan }),
+      };
+    }
     default:
       return undefined;
   }

@@ -15,11 +15,11 @@ const prepared = (): RealWorkspace => {
 
 describe('rule 1: only the read-only analysis gives basis read_only', () => {
   const analysed: ReadonlyArray<readonly [PermissionMode, string]> = [
-    ['default', 'ls src'],
-    ['default', 'cat tracked'],
-    ['default', 'git status'],
-    ['default', 'cat tracked | wc -l'],
-    ['default', 'ls src; pwd'],
+    ['manual', 'ls src'],
+    ['manual', 'cat tracked'],
+    ['manual', 'git status'],
+    ['manual', 'cat tracked | wc -l'],
+    ['manual', 'ls src; pwd'],
     ['plan', 'ls src'],
     ['plan', 'git log -1'],
     ['acceptEdits', 'ls src'],

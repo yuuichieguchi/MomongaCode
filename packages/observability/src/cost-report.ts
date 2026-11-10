@@ -1,7 +1,5 @@
-import { describeFallbackCause } from '@momonga/foundation';
-import type { FallbackCause } from '@momonga/foundation';
-import { RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
-import type { UnpricedCode } from '@momonga/protocol';
+import { RUN_ROLE, UNPRICED_CODE_TEXT, describeFallbackCause, escapeTerminalLine, isFallbackCauseList } from '@momonga/protocol';
+import type { FallbackCause, UnpricedCode } from '@momonga/protocol';
 import { MOMONGA_ATTRIBUTES } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
@@ -119,8 +117,8 @@ const fallbackCausesOf = (span: SpanRecord): FallbackCause[] | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== 'string') throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must be a string`);
   const parsed: unknown = JSON.parse(value);
-  if (!Array.isArray(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list`);
-  return parsed as FallbackCause[];
+  if (!isFallbackCauseList(parsed)) throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
+  return parsed;
 };
 
 const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackCalls' | 'fallbacks'> => {

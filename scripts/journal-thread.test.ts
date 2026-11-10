@@ -67,8 +67,8 @@ describe('the journal thread build', () => {
     sourceBefore = sourceModuleState();
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it(
@@ -171,8 +171,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the journal thread in the single e
     await buildSea({ entry: PING_FIXTURE, output: binary, workDir: path.join(root, 'work'), journalThreadModule: generated });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('starts the embedded thread, completes the handshake and answers a ping with Node absent from PATH, running the bundled thread code', async () => {

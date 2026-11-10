@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { TEMP_DIR_PREFIX, stopSupervisorHolder } from '@momonga/testkit';
+import { TEMP_DIR_PREFIX, stopSupervisorHolders } from '@momonga/testkit';
 import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../../packages/cli/src/eval/context-host.ts';
 import { defaultLedgerPorts, killSelectedGroups, parsePidsFile, selectGroupsToSignal } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
@@ -69,7 +69,7 @@ export const runE2eTeardown = async (options: E2eTeardownOptions): Promise<void>
   for (const directory of [...leaked, ...leakedEval]) report(`e2e teardown: leaked directory ${directory}`);
   for (const directory of leakedTestkit) report(`e2e teardown: leaked testkit directory ${directory}, left in place outside the private e2e directory`);
   for (const directory of [...leaked, ...leakedEval]) {
-    await stopSupervisorHolder(directory);
+    await stopSupervisorHolders(directory);
     removeTree(directory);
   }
   for (const suffix of HARNESS_SUFFIXES) fs.rmSync(harnessFilePath(tmpRoot, run, suffix), { force: true });

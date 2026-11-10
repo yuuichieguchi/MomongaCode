@@ -8,6 +8,7 @@ import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, Perm
 import { withIdentityReadFetch } from '../network.ts';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
+import { runAuthLogin, runAuthLogout, runAuthResetHost, runAuthResume, runAuthStatus, runModelsAdd, runModelsCatalog } from './auth-wiring.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
@@ -70,6 +71,57 @@ const registerMcp: CommandGroup = (program, deps) => {
     .option('--no-browser', 'print the authorization URL without opening the browser')
     .action(async (server: string, options: { browser: boolean }) => {
       deps.complete(await mcpLogin(deps.ports, await pathsOf(deps.ports), server, { openBrowser: options.browser, interrupt: deps.interrupt }));
+    });
+};
+
+const registerAuth: CommandGroup = (program, deps) => {
+  const auth = program.command('auth').description('sign in to a subscription provider, sign out, and show the saved accounts');
+  auth
+    .command('login [provider]')
+    .description('sign in to a subscription provider in the browser')
+    .option('--account <label>', 'the label of the account; the first free label by default')
+    .option('--no-browser', 'print the authorization URL without opening the browser')
+    .option('--reconsent', 'sign in again to enable plan use for the account')
+    .action(async (provider: string | undefined, options: { account?: string; browser: boolean; reconsent?: true }) => {
+      deps.complete(
+        await runAuthLogin(
+          deps.ports,
+          await pathsOf(deps.ports),
+          {
+            ...(provider === undefined ? {} : { provider }),
+            ...(options.account === undefined ? {} : { account: options.account }),
+            browser: options.browser,
+            reconsent: options.reconsent === true,
+          },
+          deps.interrupt,
+        ),
+      );
+    });
+  auth
+    .command('logout [account]')
+    .description('sign out a saved account; without a terminal the account is required')
+    .action(async (account: string | undefined) => {
+      deps.complete(await runAuthLogout(deps.ports, await pathsOf(deps.ports), account, deps.interrupt));
+    });
+  auth
+    .command('status')
+    .description('show the saved accounts, their state and where to manage usage')
+    .option('--json', 'print the accounts as JSON')
+    .action(async (options: { json?: true }) => {
+      deps.complete(await runAuthStatus(deps.ports, await pathsOf(deps.ports), options.json === true));
+    });
+  auth
+    .command('resume <account>')
+    .description('resume plan use of an account paused by a usage limit')
+    .action(async (account: string) => {
+      deps.complete(await runAuthResume(deps.ports, await pathsOf(deps.ports), account));
+    });
+  auth
+    .command('reset-host')
+    .description('register this computer as a new host; asks first, or needs --yes without a terminal')
+    .option('--yes', 'reset without asking')
+    .action(async (options: { yes?: true }) => {
+      deps.complete(await runAuthResetHost(deps.ports, await pathsOf(deps.ports), options.yes === true, deps.interrupt));
     });
 };
 
@@ -402,13 +454,25 @@ const registerSecret: CommandGroup = (program, deps) => {
     });
 };
 
+const EXIT_USAGE_MODELS = 2;
+
 const registerModels: CommandGroup = (program, deps) => {
   const models = program
     .command('models')
     .description('list the model aliases with the capabilities their targets declare')
+    .argument('[account]', 'the account whose model list --catalog and --add use; the active one when only one could answer')
     .option('--json', 'print the models as JSON')
-    .action(async (options: { json?: true }) => {
-      deps.complete(await listModels(deps.ports, await pathsOf(deps.ports), options.json === true));
+    .option('--catalog', 'list the models of a signed-in subscription account, read again from the provider')
+    .option('--add <slug>', 'add a model of a signed-in subscription account as a target and an alias')
+    .action(async (account: string | undefined, options: { json?: true; catalog?: true; add?: string }) => {
+      const paths = await pathsOf(deps.ports);
+      const named = account === undefined ? {} : { account };
+      if (options.add !== undefined) deps.complete(await runModelsAdd(deps.ports, paths, { slug: options.add, ...named }));
+      else if (options.catalog === true) deps.complete(await runModelsCatalog(deps.ports, paths, { json: options.json === true, ...named }));
+      else if (account !== undefined) {
+        deps.ports.stderr.write('the account argument of momonga models is used with --catalog or --add\n');
+        deps.complete(EXIT_USAGE_MODELS);
+      } else deps.complete(await listModels(deps.ports, paths, options.json === true));
     });
   models
     .command('detect [url...]')
@@ -426,7 +490,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .command('verify')
     .description('prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect; states what is proved and what is not')
     .option('--json', 'print the report as JSON')
-    .addOption(new Option('--mode <mode>', 'the permission mode to check; the default mode of the settings when omitted').choices(PERMISSION_MODES))
+    .addOption(new Option('--mode <mode>', 'the permission mode to check; the starting mode of the settings when omitted').choices(PERMISSION_MODES))
     .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
       deps.complete(
@@ -456,7 +520,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerAuth, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

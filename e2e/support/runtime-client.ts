@@ -1,4 +1,5 @@
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
+import type { SocketResolver } from '@momonga/foundation';
 import type { AnsweredByView, PermissionMode, ReportPage, RunHealth } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
@@ -52,9 +53,9 @@ export const framesOfType = (frames: readonly RunEventFrame[], type: string): Ru
 
 type StreamOutcome = { kind: 'match'; frame: RunEventFrame } | { kind: 'ended' } | { kind: 'failed'; error: unknown };
 
-export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
-  const product: ProductClient = createProductClient({ resolveSocket: fixedSocket(firstGeneration(home.paths).sockets.runtime) });
-  const http = createUdsClient(fixedSocket(firstGeneration(home.paths).sockets.runtime));
+export const createRuntimeClient = (home: E2eHome, resolveSocket: SocketResolver = fixedSocket(firstGeneration(home.paths).sockets.runtime)): RuntimeClient => {
+  const product: ProductClient = createProductClient({ resolveSocket });
+  const http = createUdsClient(resolveSocket);
   const openStreams = new Set<{ abort(): Promise<void> }>();
 
   const createSession = async (options: CreateSessionOptions = {}): Promise<{ session: SessionView }> => {

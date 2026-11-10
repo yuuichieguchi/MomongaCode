@@ -250,7 +250,7 @@ describe('g: agent skills', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession({ permissionMode: 'default' });
+      const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run } = await runtime.createRun(session.id, 'Use the pdf guide');
       await runToEnd(runtime, run.id);
 

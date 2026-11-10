@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, newFileMode, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
+import { diffOfContents } from './applied-diff.ts';
 import { pluralize, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
@@ -76,6 +77,7 @@ export const writeTool = defineTool<WriteInput>({
       output: `${stat === undefined ? 'Created' : 'Updated'} ${shown} (${lines})${warning === undefined ? '' : `\n${warning}`}`,
       content: [{ type: 'diff', path: plan.path, oldText, newText: input.content }],
       files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
+      ...diffOfContents(oldText, input.content),
     };
   },
   reconcile: async (input, record, ctx) => reconcileWrite(record, 'Write', ctx, resolvedPathOf(ctx, input.file_path)),

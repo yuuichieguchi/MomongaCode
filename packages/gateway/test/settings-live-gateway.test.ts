@@ -13,6 +13,7 @@ import {
   REAL_PROCESS_TEST_TIMEOUT_MS,
   decodeOtlpSpans,
   openResponsesTextReply,
+  ownedStart,
   registerCleanup,
   startFakeChatCompletions,
   startFakeOpenResponses,
@@ -22,7 +23,7 @@ import {
   withTempDir,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 
@@ -53,16 +54,17 @@ type Stack = { home: string; handle: GatewayProcess; client: UdsClient; logText(
 
 const startStack = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   replaceSettings(home, settings);
   const chunks: string[] = [];
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -364,15 +366,15 @@ describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)
   });
 });
 
-describe('S1 gateway: a plan target added by a change is applied and served as unserved (design-settings-live 15.3)', () => {
-  it('a change that adds a plan target is applied: its alias fails each call with the unserved text, other targets serve', async (context) => {
+describe('S1 gateway: a plan target added by a change is applied and served through the plan sessions (design-settings-live 15.3, design-chatgpt-plan P6.8)', () => {
+  it('a change that adds a plan target is applied: with no account signed in its alias answers sign_in_required, other targets serve', async (context) => {
     const a = await fakeUpstream(context);
     const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } });
     replaceSettings(stack.home, {
-      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', plan: { profile: 'chatgpt' } } } },
+      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt' } } } },
     });
     const refused = await post(stack.client, ask('plan'));
-    expect(refused.text).toContain('target gpt uses plan profile chatgpt, which this gateway does not serve yet');
+    expect(refused.text).toContain('sign_in_required');
     expect((await post(stack.client, ask())).status).toBe(200);
   });
 });
@@ -406,9 +408,10 @@ const keyedTarget = (fake: FakeChatCompletionsServer) => ({ models: { aliases: {
 
 const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletionsServer, env: Record<string, string>, beforeStart: (home: string) => Promise<unknown>) => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   await beforeStart(home);
   replaceSettings(home, keyedTarget(fake));
-  const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } });
+  const handle = await ownedStart(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -473,17 +476,18 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
   ])('$label gives the unset text and no reply text in the answer or the log', async ({ status, body }, context) => {
     const a = await fakeUpstream(context);
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     await replyingSupervisor(context, home, status, body);
     replaceSettings(home, keyedTarget(a));
     const chunks: string[] = [];
-    const handle = await startGatewayProcess({
+    const handle = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }),
       version: PROCESS_VERSION,
       logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await handle.close(NO_GRACE);
     });

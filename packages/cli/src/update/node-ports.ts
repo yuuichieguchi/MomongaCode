@@ -7,9 +7,9 @@ import {
   acquireProcessLock,
   createLockedEntry,
   createOutboundDispatcher,
-  currentSocketResolver,
   hostKernelLock,
   inspectProcessLock,
+  listGenerations,
   nodeCommandRunner,
   nodeDescriptorWriter,
   nodeFileSystem,
@@ -21,9 +21,9 @@ import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, 
 import { interceptors, request } from 'undici';
 import type { Dispatcher } from 'undici';
 import { withOutboundNetwork } from '../network.ts';
-import { createSupervisorClient } from '../client/supervisor-client.ts';
-import { STOP_WAIT_WHEN_UNKNOWN_MS, daemonReadyBoundMs, probeSupervisor } from '../daemon/ensure-daemon.ts';
-import type { CliPorts } from '../ports.ts';
+import { daemonReadyBoundMs } from '../daemon/ensure-daemon.ts';
+import { listLiveGenerations, retiringWorkOf } from '../daemon/generations.ts';
+import type { CliClock, CliPorts } from '../ports.ts';
 import type { DaemonProbe, StagedFile, UpdateFs, UpdateHttp, UpdateLock, UpdatePorts, UpdateStateStore } from './ports.ts';
 
 export const TRANSFER_STALL_TIMEOUT_MS = 30_000;
@@ -186,18 +186,10 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
   };
 };
 
-export const nodeDaemonProbe = (paths: MomongaPaths): DaemonProbe => ({
-  running: async () => {
-    const client = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
-    try {
-      return (await probeSupervisor(client)) !== undefined;
-    } finally {
-      await client.close();
-    }
-  },
-  restartBoundMs: async () => {
-    return (await daemonReadyBoundMs()) + STOP_WAIT_WHEN_UNKNOWN_MS;
-  },
+export const nodeDaemonProbe = (paths: MomongaPaths, clock: CliClock): DaemonProbe => ({
+  running: async () => (await listGenerations(paths, { lock: hostKernelLock() })).some((listed) => listed.live),
+  retiring: async () => retiringWorkOf(await listLiveGenerations({ clock }, paths)),
+  restartBoundMs: () => daemonReadyBoundMs(),
 });
 
 const definedEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
@@ -216,7 +208,7 @@ export const nodeUpdatePorts = (ports: CliPorts, paths: MomongaPaths): UpdatePor
   run: nodeCommandRunner,
   lock: nodeUpdateLock(paths),
   state: nodeUpdateState(paths),
-  daemon: nodeDaemonProbe(paths),
+  daemon: nodeDaemonProbe(paths, ports.clock),
   autoUpdates: async () => (await loadUserSettings({ home: ports.home })).settings.autoUpdates,
   spawnDetached: ports.spawnDetached,
   stderr: ports.stderr,

@@ -1,10 +1,10 @@
 import path from 'node:path';
 import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
-import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
+import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
 
 export type PermissionsSettings = {
   defaultMode?: PermissionMode;
@@ -260,7 +260,7 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 
 export type BillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
 
-export type DeclaredServer = { command: string; args: string[]; readyPath: string };
+export type DeclaredServer = { command: string; args: string[]; readyPath: string; endpoint?: { forms: ManagedEndpointForm[] } };
 
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
@@ -341,6 +341,7 @@ export type Settings = {
   mcp?: McpCallSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
+  tui?: TuiSettings;
   gateway?: GatewaySettings;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
@@ -351,6 +352,18 @@ export type Settings = {
   context?: ContextSettings;
   tools?: ToolsSettings;
 };
+
+export type TuiTheme = (typeof TUI_THEMES)[number];
+
+export type TuiNotify = (typeof TUI_NOTIFY_MODES)[number];
+
+export type TuiScreen = (typeof TUI_SCREEN_MODES)[number];
+
+export type TuiSettings = { theme?: TuiTheme; notify?: TuiNotify; screenReader?: boolean; reducedMotion?: boolean; screen?: TuiScreen; mouse?: boolean; copyOnSelect?: boolean; attachFileMentions?: boolean };
+
+export type ResolvedTuiSettings = Required<TuiSettings>;
+
+export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
 
 export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
 
@@ -383,6 +396,16 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
   }
 };
 
+const assertTuiValues = (value: unknown, source: string): void => {
+  const tui = isRecord(value) ? value['tui'] : undefined;
+  if (!isRecord(tui)) return;
+  for (const [name, allowed] of Object.entries(TUI_SETTING_VALUES)) {
+    if (!Object.hasOwn(tui, name)) continue;
+    const given: unknown = tui[name];
+    if (!allowed.some((member) => member === given)) throw new Error(`${source}: tui.${name} must be one of ${allowed.join(', ')}; got ${JSON.stringify(given)}`);
+  }
+};
+
 const assertGatewayStopValues = (value: unknown, source: string): void => {
   const gateway = isRecord(value) ? value['gateway'] : undefined;
   if (!isRecord(gateway)) return;
@@ -399,6 +422,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   }
   assertPlanAdapters(value, source);
   assertGatewayStopValues(value, source);
+  assertTuiValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;

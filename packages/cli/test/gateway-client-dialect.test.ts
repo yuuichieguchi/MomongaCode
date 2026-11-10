@@ -24,7 +24,8 @@ const capabilities = (schemaDialect: unknown): Record<string, unknown> => ({
 
 const serveModels = async (context: TestContext, schemaDialect: unknown): Promise<GatewayClient> => {
   const socketPath = path.join(withTempDir(context), 'g.sock');
-  const body = JSON.stringify({ data: [{ id: 'default', targets: ['local'], capabilities: capabilities(schemaDialect) }] });
+  const listed = capabilities(schemaDialect);
+  const body = JSON.stringify({ data: [{ id: 'default', targets: ['local'], capabilities: listed, targetCapabilities: { local: listed } }] });
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });

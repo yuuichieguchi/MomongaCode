@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, currentSocketResolver } from '@momonga/foundation';
 import { buildInjectionReport, parseInjectionScenarios } from '@momonga/eval';
 import type { InjectionExpect, InjectionScenario, InjectionTrial } from '@momonga/eval';
 import { REPORT_PAGE_ROWS, TERMINAL_STATUSES } from '@momonga/protocol';
@@ -30,7 +30,6 @@ export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
 
 const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
 const HELD_COMMAND_SECONDS = 600;
-const COMPETING_SUPERVISOR_EXIT = 75;
 const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
 const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
 const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
@@ -245,16 +244,9 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       const second = spawnSupervisor({ home: env.home, stackNumber: 2, deps });
       hold.release();
       const bound = E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS;
-      const claimed = await second.ready(bound).then(
-        () => true,
-        () => false,
-      );
+      await second.ready(bound);
       const firstExit = await withinBound(stack.supervisor.exited, bound, 'the first supervisor to exit after its stop');
       if (firstExit.code !== 0) throw new Error(`scenario ${env.scenario.id}: the first supervisor exited with ${JSON.stringify(firstExit)} after its stop`);
-      if (claimed) return;
-      const refusal = await second.exited;
-      if (refusal.code !== COMPETING_SUPERVISOR_EXIT) throw new Error(`scenario ${env.scenario.id}: the competing supervisor exited with ${JSON.stringify(refusal)}, not ${COMPETING_SUPERVISOR_EXIT}`);
-      await spawnSupervisor({ home: env.home, stackNumber: 3, deps }).ready(bound);
     },
     extraBoundMs: () => E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS,
   },
@@ -382,7 +374,8 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
       settings: { permissions: { additionalDirectories: [ledgerDirectory] }, ...stackOptions.settings },
     });
     env.fake = env.stack.fake;
-    env.runtime = createRuntimeClient(home);
+    await until(async () => (await (env.stack as E2eStack).client.health()).role === 'serving', { deadlineMs: E2E_READY_DEADLINE_MS, description: 'the started generation to be the serving one' });
+    env.runtime = createRuntimeClient(home, currentSocketResolver(home.paths, 'runtime'));
     await fault.beforeRun?.(env);
     env.runId = await createRunId(env, fault);
     env.stream = env.runtime.events(env.runId);

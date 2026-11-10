@@ -68,7 +68,7 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
     const stack = await startStack({ home, sandbox: 'none', version: cliPackage.version, settingsText: emptyHomeSettings(home), script: [textReply('Done.')] });
     const runtime = createRuntimeClient(home);
     try {
-      const { session } = await runtime.createSession({ permissionMode: 'default' });
+      const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run } = await runtime.createRun(session.id, 'Say done');
       expect((await runToEnd(runtime, run.id)).at(-1)?.data['to']).toBe('COMPLETED');
 
@@ -111,7 +111,7 @@ describe('the core areas on by default (design core-on 6, test 11)', () => {
     const runtime = createRuntimeClient(home);
     try {
       await trust(home, project);
-      const { session } = await runtime.createSession({ permissionMode: 'default' });
+      const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run } = await runtime.createRun(session.id, 'Write answer.ts and run the check');
       await approveEachAsk(runtime, run.id, 2);
       expect((await runToEnd(runtime, run.id)).at(-1)?.data['to']).toBe('COMPLETED');

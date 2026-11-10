@@ -122,7 +122,7 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
           { adapter: target.adapter, model: target.model ?? target.adapter, ...(target.answers === undefined ? {} : { answers: target.answers }) },
         ]),
       ),
-    appendRule: (session, { effect, rule }) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect }),
+    appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 

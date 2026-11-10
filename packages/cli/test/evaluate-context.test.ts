@@ -19,7 +19,7 @@ const pairedCase = (id: string, scenario: string, compaction: 'on' | 'off') => (
   scenario,
   compaction,
   input: 'work',
-  permissionMode: 'default',
+  permissionMode: 'manual',
   onAsk: 'reject_once',
   runs: 1,
   minPassRate: 1,
@@ -40,7 +40,7 @@ const CONTEXT_DATASET = JSON.stringify({
 const GOLDEN_DATASET = JSON.stringify({
   format: DATASET_FORMAT,
   name: 'golden',
-  cases: [{ id: 'a-on', input: 'x', permissionMode: 'default', onAsk: 'reject_once', runs: 1, minPassRate: 1, graders: [{ kind: 'status', equals: 'COMPLETED' }] }],
+  cases: [{ id: 'a-on', input: 'x', permissionMode: 'manual', onAsk: 'reject_once', runs: 1, minPassRate: 1, graders: [{ kind: 'status', equals: 'COMPLETED' }] }],
 });
 
 const compactionEvents = (caseId: string): Transcript['events'] =>

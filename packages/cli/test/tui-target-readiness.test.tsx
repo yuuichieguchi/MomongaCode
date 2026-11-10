@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NeedsProbe } from '@momonga/protocol';
+import type { NeedsProbe, ToolCallingState } from '@momonga/protocol';
 import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
@@ -27,14 +27,14 @@ describe('the TUI shows the readiness verdict before any request', () => {
 
   it('shows no readiness notice for a target that calls tools', BOUND, async () => {
     const { app } = await start();
-    const frame = await untilFrame(app, 'mode: default');
+    const frame = await untilFrame(app, 'mode: manual');
     expect(frame).not.toContain(NO_TOOLS_NOTICE);
     app.unmount();
   });
 
   it('shows the no-tools notice when /model switches to a target that reports no tool calling', BOUND, async () => {
     const { backend, app } = await start({ aliases: ['default', 'chat-only'], toolCalling: { 'chat-only': 'none' } });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/model chat-only', '> /model chat-only');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'model: chat-only');
@@ -59,6 +59,24 @@ describe('the no-tools notice appears once to a TUI user', () => {
     backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'A plain answer.' }));
     const last = await untilFrame(app, 'A plain answer.');
     expect(last.split(NO_TOOLS_NOTICE).length - 1).toBe(1);
+    app.unmount();
+  });
+});
+
+const UNAVAILABLE_MESSAGE =
+  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
+const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
+
+describe('the TUI shows why an alias the gateway lists as unavailable cannot be used (G1)', () => {
+  it('an unavailable alias shows the notice M and R', BOUND, async () => {
+    const unavailable: ToolCallingState = { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNAVAILABLE_MESSAGE, param: 'model' };
+    const { backend, app } = await start({ toolCalling: { default: unavailable } });
+    const output = await untilOutput(app, UNAVAILABLE_REMEDY);
+    const lines = output.split('\n').map((line) => line.trim());
+    const at = lines.findIndex((line) => line.includes(UNAVAILABLE_MESSAGE.slice(0, 40)));
+    expect(at).toBeGreaterThan(-1);
+    expect(output.replace(/\s+/g, ' ')).toContain(`${UNAVAILABLE_MESSAGE} ${UNAVAILABLE_REMEDY}`);
+    expect(backend.started).toEqual([]);
     app.unmount();
   });
 });

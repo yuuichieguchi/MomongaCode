@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, notTheRoleTick } from './gateway-process-helpers.ts';
 import { RECORDED_SERVER_VERSION, startFakeOllama } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
@@ -132,7 +132,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
       settled = true;
     };
     void pending.then(settle, settle);
-    await driveFakeTime(timers, { done: () => settled, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request against a closed upstream' });
+    await driveFakeTime(timers, { done: () => settled, considered: notTheRoleTick, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request against a closed upstream' });
     const response = await pending;
 
     expect(response.body.error.code).toBe('provider_unavailable');

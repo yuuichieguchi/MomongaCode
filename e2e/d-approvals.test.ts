@@ -52,7 +52,7 @@ const approvalIdOf = (frame: RunEventFrame): string => {
 };
 
 const startDefaultRun = async (runtime: RuntimeClient, input: string): Promise<string> => {
-  const { session } = await runtime.createSession({ permissionMode: 'default' });
+  const { session } = await runtime.createSession({ permissionMode: 'manual' });
   return (await runtime.createRun(session.id, input)).run.id;
 };
 

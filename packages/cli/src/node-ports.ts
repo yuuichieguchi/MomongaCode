@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -6,17 +6,16 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
-import { LIFELINE_FD, createExecWithStdin, createBrowserOpener, createPlatformSecretStore, nodeFileSystem, systemClock } from '@momonga/foundation';
-import type { BrowserRunPort } from '@momonga/foundation';
+import { LIFELINE_FD, createBrowserOpener, createExecWithStdin, createHostExec, createPlatformSecretStore, minimalChildEnv, nodeFileSystem, systemClock, systemRandom, writeFileAtomically } from '@momonga/foundation';
+import type { LaunchProgram } from '@momonga/foundation';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
-const runBrowser: BrowserRunPort = (file, args, signal) =>
+export const launchProgram: LaunchProgram = (file, args) =>
   new Promise((resolve, reject) => {
-    execFile(file, [...args], { signal, windowsHide: true }, (error) => {
-      if (error === null) resolve({ exitCode: 0 });
-      else if (typeof error.code === 'number') resolve({ exitCode: error.code });
-      else reject(error);
-    });
+    const child = spawn(file, [...args], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.once('error', reject);
+    child.once('exit', (exitCode, signal) => resolve({ exitCode, signal }));
+    child.unref();
   });
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
@@ -42,7 +41,9 @@ export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
   readFile: nodeFileSystem.readFile,
   readTextFile: nodeFileSystem.readTextFile,
+  stat: nodeFileSystem.stat,
   mkdir: nodeFileSystem.mkdir,
+  mkdirPrivate: nodeFileSystem.mkdirPrivate,
   mkdtemp: nodeFileSystem.mkdtemp,
   rm: nodeFileSystem.rm,
   rename: nodeFileSystem.rename,
@@ -57,6 +58,18 @@ export const nodeFiles: CliFiles = {
   appendText: async (file, text, modes) => {
     await fs.mkdir(path.dirname(file), { recursive: true, mode: modes.directory });
     await fs.appendFile(file, text, { mode: modes.file });
+  },
+  exists: async (file) => {
+    try {
+      await nodeFileSystem.stat(file);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+      throw error;
+    }
+  },
+  writeTextAtomically: async (file, text, mode) => {
+    await writeFileAtomically(nodeFileSystem, systemRandom, file, text, { mode });
   },
 };
 
@@ -102,7 +115,8 @@ export const nodePorts = (version: string): CliPorts => ({
   spawnDetached: nodeSpawnDetached,
   terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
   files: nodeFiles,
-  openUrl: createBrowserOpener({ env: process.env, print: (text) => process.stderr.write(`${text}\n`), run: runBrowser }),
+  exec: createHostExec(minimalChildEnv(process.env)),
+  openUrl: createBrowserOpener({ env: process.env, launch: launchProgram }),
   secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
   acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
 });

@@ -1,13 +1,13 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, closeOnceStarted, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
 import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import { prepareGatewayHome } from './prepared-home.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -23,11 +23,13 @@ type Context = {
 };
 
 let context: Context;
+let suiteHome: string | undefined;
+let startedGateway: Promise<Awaited<ReturnType<typeof startGatewayProcess>>> | undefined;
 
 beforeAll(async () => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gh-'));
-  fs.chmodSync(home, 0o700);
+  const home = createTempDir({ asHome: true });
+  suiteHome = home;
   const fake = await startFakeChatCompletions({
     scenario: 'tools-ok',
     script: [
@@ -52,19 +54,20 @@ beforeAll(async () => {
     }),
     { mode: 0o600 },
   );
-  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
+  await prepareGatewayHome(home);
+  startedGateway = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
+  const gateway = await startedGateway;
   expect(Buffer.byteLength(gateway.socketPath)).toBeLessThan(104);
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 
 afterAll(async () => {
-  if (context === undefined) return;
-  await context.client.destroy().catch(() => {});
-  await context.gateway.close();
-  await context.fake.close();
-  context.restoreStdout();
-  fs.rmSync(context.home, { recursive: true, force: true });
+  await context?.client.destroy().catch(() => {});
+  if (startedGateway !== undefined) await closeOnceStarted(startedGateway)();
+  await context?.fake.close();
+  context?.restoreStdout();
+  if (suiteHome !== undefined) await removeTempDir(suiteHome);
 });
 
 describe('gateway client against a real gateway', () => {

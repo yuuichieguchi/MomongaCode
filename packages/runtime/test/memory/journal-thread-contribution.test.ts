@@ -61,7 +61,7 @@ describe('the contribution handler of the embedded journal thread', () => {
     expect((await env.store.transition(saverClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     env.clock.advance(1);
     const run = env.enqueue('Work through it', { history: 'fresh' });
-    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) }, responded('the answer mentions zorpWord1 only')], 'hold');
+    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' }, { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) }, responded('the answer mentions zorpWord1 only')], 'hold');
     const inProcess = await journalReaderPreparer(env.dbPath).measure({ runId: run.id, leading: [] });
 
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');

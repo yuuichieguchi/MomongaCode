@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import {
   createFakeClock,
   messageEvents,
@@ -27,7 +27,7 @@ const rateLimitedBeforeOutput = (headers?: Record<string, string>): FakeUpstream
 const openResponsesTarget = async (script: FakeUpstreamReply[]) => {
   const fake = await startFakeOpenResponses({ script });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

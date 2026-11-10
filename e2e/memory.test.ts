@@ -86,7 +86,7 @@ describe('memory', () => {
     const runtime = createRuntimeClient(home);
     const raw = rawClient(home);
     try {
-      const { session: sessionA } = await runtime.createSession({ permissionMode: 'default' });
+      const { session: sessionA } = await runtime.createSession({ permissionMode: 'manual' });
       const { run: runA } = await runtime.createRun(sessionA.id, 'Remember how we deploy');
       await approveOnce(runtime, runA.id);
       expect((await raw.call('GET', '/v1/memories')).json).toEqual({ memories: [], next: null });
@@ -209,7 +209,7 @@ describe('memory', () => {
     });
     const runtime = createRuntimeClient(home);
     try {
-      const { session: defaultSession } = await runtime.createSession({ permissionMode: 'default' });
+      const { session: defaultSession } = await runtime.createSession({ permissionMode: 'manual' });
       const { run: refused } = await runtime.createRun(defaultSession.id, 'Remember the key');
       const framesRefused = await runToEnd(runtime, refused.id);
       expect(framesOfType(framesRefused, 'tool.permission.requested')).toEqual([]);

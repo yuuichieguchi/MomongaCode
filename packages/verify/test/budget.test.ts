@@ -18,7 +18,7 @@ describe('the overall budget of a verification', () => {
         ['deny', 'Write(src/secret/**)'],
       ]),
       roots,
-      mode: 'default',
+      mode: 'manual',
       home: layout.home,
       cwd: layout.project,
       protectedSet: protectedSetFor(roots, fileSystem),

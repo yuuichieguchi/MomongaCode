@@ -1,28 +1,39 @@
+import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, sweepLeftovers } from '@momonga/foundation';
-import type { Clock, CredentialEntry, CredentialStore, FileSystem, KernelLockMechanism } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, operationLimit, sweepLeftovers, systemRandom } from '@momonga/foundation';
+import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
-import type { PlanAccountState } from '@momonga/protocol';
-import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
+import type { PlanAccountState, PlanListProblem } from '@momonga/protocol';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import type { WaitPolicy } from '../core/retry.ts';
-import { readActiveAccount, writeActiveAccount } from './active-account.ts';
+import { readActivePointer, writeActivePointer } from './active-account.ts';
+import type { ActivePointer } from './active-account.ts';
 import {
   PlanCredentialError,
   blockingCondition,
   conditionFailure,
   healthOf,
   hostIdentityFailure,
-  signInRequiredMessage,
+  signInRequiredCondition,
   statusOf,
   unavailableFailure,
   unwritableFailure,
 } from './auth-source.ts';
-import type { AccountView, AuthSource, PlanPause, PlanRead } from './auth-source.ts';
+import type { AccountView, AuthSource, PlanPause, PlanRead, PlanStatus } from './auth-source.ts';
+import { PLAN_EVENT_INTERNAL, endCodeOf, noPlanEvents } from './events.ts';
+import type { PlanEvents } from './events.ts';
 import { ensureHostIdentity } from './host-identity.ts';
-import { grantsScope, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
+import { PLAN_LABEL_PATTERN, isPlanLabel } from './label.ts';
+import type { PlanOutbound } from './outbound.ts';
+import { describeError, endedByOperation, recordAccess, storeReadFailure, storeWriteFailure, withRecord } from './record-io.ts';
+import { grantsScope, lazyRefreshMarginMs, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
 import type { RevocationAnswer } from './revoke.ts';
+import { createSerial } from './serial.ts';
+import { startSharedCall } from './shared-call.ts';
+import type { SharedCall } from './shared-call.ts';
+import type { Serial } from './serial.ts';
 
 export type { PlanFetch, PlanSleep, PlanTokenResponse } from './refresh.ts';
 export { PlanCredentialError } from './auth-source.ts';
@@ -48,6 +59,7 @@ export type PlanRecord = {
   refresh_token?: string;
   id_token?: string;
   expiresAt?: number;
+  lifetimeMs?: number;
   scope?: string;
   earliestRefreshAt?: string;
   generation?: number;
@@ -64,53 +76,115 @@ export type PlanAccountRef = { profile: string; account: string };
 export type OpenPlanSessionsOptions = {
   profiles: Readonly<Record<string, PlanProfile>>;
   paths: PlanPaths;
-  store: CredentialStore;
+  store: ListableCredentialStore;
   fileSystem: FileSystem;
   accounts: readonly PlanAccountRef[];
   clock: Clock;
-  fetch: PlanFetch;
+  outbound: PlanOutbound;
   sleep: PlanSleep;
-  onSecret(value: string): void;
+  signal: AbortSignal;
+  timing?: LimitTiming;
+  redact(key: string, values: readonly string[]): void;
   warn(message: string): void;
   lock?: KernelLockMechanism;
+  random?: () => number;
+  events?: PlanEvents;
+  pointerSerial?: Serial;
 };
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
 
-export type InstallInput = RegisterInput & { subject: string; email: string; idToken: string; tokens: PlanTokenResponse };
+export type InstallInput = RegisterInput & { subject: string; email?: string; idToken: string; tokens: PlanTokenResponse };
+
+export type Installed = { outcome: 'signed_in' | 'plan_disabled'; firstSignIn: boolean };
+
+export type Registration = { state: RecordState; clientId: string; subject?: string; email?: string; idToken?: string };
+
+export type KnownAccount = { profile: string; account: string; view: AccountView };
 
 export type Rejected = { outcome: 'rejected'; reason: 'registration_superseded' };
 
-export type SignOutReport = { revocation: RevocationAnswer; usageUrl: string };
+export type SignOutReport = { revocation: RevocationAnswer | 'none'; usageUrl: string };
 
 export type PlanSessions = {
-  register(input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected>;
-  install(input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected>;
-  selectActive(ref: PlanAccountRef): Promise<void>;
-  signOut(ref: PlanAccountRef): Promise<SignOutReport>;
+  register(input: RegisterInput, signal: AbortSignal): Promise<{ outcome: 'registered' } | Rejected>;
+  install(input: InstallInput, signal: AbortSignal): Promise<Installed | Rejected>;
+  registration(ref: PlanAccountRef, signal: AbortSignal): Promise<Registration | undefined>;
+  load(ref: PlanAccountRef, signal: AbortSignal): Promise<void>;
+  known(signal: AbortSignal): Promise<readonly KnownAccount[]>;
+  listProblems(): readonly PlanListProblem[];
+  resume(ref: PlanAccountRef, signal: AbortSignal): Promise<boolean>;
+  selectActive(ref: PlanAccountRef, signal: AbortSignal): Promise<void>;
+  pointerReady(): Promise<void>;
+  signOut(ref: PlanAccountRef, signal: AbortSignal): Promise<SignOutReport>;
   authSource(target: { profile: string; account?: string }): AuthSource;
+  signedOutSource(profile: string): AuthSource;
+  serve(refs: readonly PlanAccountRef[], signal: AbortSignal): Promise<void>;
+  activeLabel(profile: string): string | undefined;
+  readonly lifetime: AbortSignal;
   close(): Promise<void>;
 };
 
 type Loaded = { kind: 'absent' } | { kind: 'unreadable'; cause: string } | { kind: 'record'; record: PlanRecord };
+
+type ReplacedBy = 'lazy' | 'forced';
+
+type FedRecord = { tokens: readonly string[]; access: string | undefined; accessExpiresAt: number | undefined };
+
+type Fed = {
+  current: FedRecord | undefined;
+  previous: (FedRecord & { replacedBy: ReplacedBy }) | undefined;
+  older: ReadonlyArray<{ value: string; expiresAt: number }>;
+};
 
 type Account = {
   key: string;
   profile: PlanProfile;
   label: string;
   loaded: Loaded | undefined;
-  loading: Promise<void> | undefined;
+  loading: SharedCall<void> | undefined;
   dirty: boolean;
   unwritable: string | undefined;
-  interrupted: boolean;
-  inflight: Promise<void> | undefined;
-  forced: Map<number, Promise<void>>;
+  fed: Fed;
+  inflight: SharedCall<void> | undefined;
+  forced: Map<number, SharedCall<void>>;
   persisting: boolean;
+  resumedSignOut: Promise<SignOutReport> | undefined;
+  unloads: number;
 };
+
+type RecordLock = <T>(account: Account, action: (entry: CredentialEntry) => Promise<T>) => Promise<T>;
+
+class UnloadedWhileWaiting extends Error {
+  constructor() {
+    super('the plan account was unloaded while the request waited for its record lock');
+    this.name = 'UnloadedWhileWaiting';
+  }
+}
 
 type RefreshTrigger = { kind: 'lazy' } | { kind: 'forced'; generation: number };
 
-const recordKey = (profile: string, account: string): string => `plan/${profile}/${account}`;
+const PERSIST_LIMIT_LABEL = 'the persist limit';
+const SIGN_OUT_LIMIT_LABEL = 'the sign-out limit';
+
+const RECORD_KEY_PREFIX = 'plan/';
+
+const recordKey = (profile: string, account: string): string => `${RECORD_KEY_PREFIX}${profile}/${account}`;
+
+const refOfKey = (key: string): PlanAccountRef | undefined => {
+  if (!key.startsWith(RECORD_KEY_PREFIX)) return undefined;
+  const rest = key.slice(RECORD_KEY_PREFIX.length);
+  const separator = rest.indexOf('/');
+  if (separator < 0) return undefined;
+  const profile = rest.slice(0, separator);
+  const account = rest.slice(separator + 1);
+  return isPlanLabel(profile) && isPlanLabel(account) ? { profile, account } : undefined;
+};
+
+export const planRecordKeyOfPlaintext = (text: string): string => {
+  const record = parseRecord(text);
+  return recordKey(record.profile, record.account);
+};
 
 const optional = <K extends string, V>(name: K, value: V | undefined): { [P in K]?: V } => (value === undefined ? {} : ({ [name]: value } as { [P in K]?: V }));
 
@@ -157,19 +231,33 @@ const parsePending = (value: unknown): PlanRecord['pendingRefresh'] => {
   return { generation, startedAt };
 };
 
+const labelField = (source: Record<string, unknown>, name: 'profile' | 'account'): string => {
+  const value = requiredString(source, name);
+  if (!isPlanLabel(value)) throw new Error(`the plan record names ${name === 'profile' ? 'a profile' : 'an account'} that does not match ${PLAN_LABEL_PATTERN}`);
+  return value;
+};
+
+const parsedRecordText = (text: string): unknown => {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Error('the plan record is not valid JSON', { cause: error });
+  }
+};
+
 const parseRecord = (text: string): PlanRecord => {
-  const value: unknown = JSON.parse(text);
+  const value: unknown = parsedRecordText(text);
   if (!isRecord(value)) throw new Error('the plan record is not a JSON object');
   const version = numberField(value, 'version');
-  if (version !== RECORD_VERSION) throw new Error(`the plan record has version ${String(version)}, and this build reads version ${RECORD_VERSION}`);
+  if (version !== RECORD_VERSION) throw new Error(`the plan record has a version this build does not read; it reads version ${RECORD_VERSION}`);
   const state = requiredString(value, 'state');
-  if (!RECORD_STATES.has(state)) throw new Error(`the plan record has an unknown state ${JSON.stringify(state)}`);
+  if (!RECORD_STATES.has(state)) throw new Error('the plan record has an unknown state');
   const welcomeShown = value['welcomeShown'];
   if (typeof welcomeShown !== 'boolean') throw new Error('the plan record has no welcomeShown');
   return {
     version,
-    profile: requiredString(value, 'profile'),
-    account: requiredString(value, 'account'),
+    profile: labelField(value, 'profile'),
+    account: labelField(value, 'account'),
     state: state as RecordState,
     client_id: requiredString(value, 'client_id'),
     ext_agent_host_id: requiredString(value, 'ext_agent_host_id'),
@@ -180,6 +268,7 @@ const parseRecord = (text: string): PlanRecord => {
     ...optional('refresh_token', stringField(value, 'refresh_token')),
     ...optional('id_token', stringField(value, 'id_token')),
     ...optional('expiresAt', numberField(value, 'expiresAt')),
+    ...optional('lifetimeMs', numberField(value, 'lifetimeMs')),
     ...optional('scope', stringField(value, 'scope')),
     ...optional('earliestRefreshAt', stringField(value, 'earliestRefreshAt')),
     ...optional('generation', numberField(value, 'generation')),
@@ -206,7 +295,7 @@ const registrationOf = (record: PlanRecord): PlanRecord => ({
 });
 
 const withoutTokens = (record: PlanRecord, cause: string, interrupted: boolean): PlanRecord => {
-  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, pendingRefresh: _pending, interrupted: _interrupted, ...kept } = record;
+  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, lifetimeMs: _lifetime, pendingRefresh: _pending, interrupted: _interrupted, ...kept } = record;
   return { ...kept, state: 'needs_sign_in', cause, ...(interrupted ? { interrupted: true } : {}) };
 };
 
@@ -222,7 +311,21 @@ const withoutPause = (record: PlanRecord): PlanRecord => {
 
 const signingOutRecord = (record: PlanRecord): PlanRecord => ({ ...record, state: 'signing_out' });
 
-const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+const SELECTABLE_STATES: ReadonlySet<PlanStatus['state']> = new Set<PlanStatus['state']>(['active']);
+
+export class PlanAccountNotSelectableError extends Error {
+  readonly ref: PlanAccountRef;
+
+  constructor(ref: PlanAccountRef) {
+    super(`${ref.account} has no verified sign-in to switch to. Sign in to it first.`);
+    this.name = 'PlanAccountNotSelectableError';
+    this.ref = ref;
+  }
+}
+
+const tokensOf = (record: PlanRecord): string[] => [record.access_token, record.refresh_token, record.id_token].filter((value): value is string => value !== undefined);
+
+const causeOf = (failure: unknown): unknown => (failure instanceof PlanCredentialError ? failure.cause : failure);
 
 const sweepTemporaries = async (fileSystem: FileSystem, directory: string, lock: KernelLockMechanism, warn: (message: string) => void): Promise<void> => {
   await sweepLeftovers({
@@ -255,10 +358,15 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const { store, fileSystem, clock, paths } = options;
   const defaults = PLAN_SESSION_DEFAULTS;
   const retry = GATEWAY_CONFIG_DEFAULTS.retry;
-  const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: Math.random };
-  const ports = { fetch: options.fetch, sleep: options.sleep };
+  const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random ?? systemRandom.float };
+  const events = options.events ?? noPlanEvents;
+  const pointerWrites = options.pointerSerial ?? createSerial();
+  const pointerFile = `the active plan account file ${paths.active}`;
+  const activeLabels = new Map<string, string>();
+  let pointerProblem: string | undefined;
   const accounts = new Map<string, Account>();
   const background = new Set<Promise<void>>();
+  const refreshes = new Set<Promise<void>>();
   const backgroundFailures: unknown[] = [];
   const closing = new AbortController();
   let hostKnown = false;
@@ -281,14 +389,27 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       loading: undefined,
       dirty: false,
       unwritable: undefined,
-      interrupted: false,
+      fed: { current: undefined, previous: undefined, older: [] },
       inflight: undefined,
       forced: new Map(),
       persisting: false,
+      resumedSignOut: undefined,
+      unloads: 0,
     };
     accounts.set(key, created);
     return created;
   };
+
+  const sessionOf = (account: Account): string => `the plan session of ${account.profile.id} account ${account.label}`;
+
+  const identityOf = (account: Account): { profile: string; account: string } => ({ profile: account.profile.id, account: account.label });
+
+  const endedByLifetime = (error: unknown): boolean => closing.signal.aborted && error === closing.signal.reason;
+
+  const endedAtClose = (work: Promise<void>): Promise<void> =>
+    work.catch((error: unknown) => {
+      if (!endedByLifetime(error)) throw error;
+    });
 
   const runInBackground = (task: Promise<void>): void => {
     const tracked = task.then(
@@ -302,27 +423,84 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     void tracked.then(() => background.delete(tracked));
   };
 
-  const loadNow = async (account: Account): Promise<void> => {
+  const readRecordOf = (account: Account, read: () => Promise<string | undefined>, signal: AbortSignal): Promise<PlanRecord | undefined> =>
+    recordAccess(
+      'read',
+      sessionOf(account),
+      async () => {
+        const raw = await read();
+        return raw === undefined ? undefined : parseRecord(raw);
+      },
+      signal,
+    );
+
+  const writeRecord = (account: Account, entry: CredentialEntry, record: PlanRecord, signal: AbortSignal): Promise<void> =>
+    recordAccess('write', sessionOf(account), () => entry.write(serialize(record)), signal);
+
+  const lockedRecord =
+    (signal: AbortSignal): RecordLock =>
+    (account, action) =>
+      withRecord(store, account.key, sessionOf(account), action, signal);
+
+  const lockedSinceLoad =
+    (signal: AbortSignal): RecordLock =>
+    (account, action) => {
+      const unloads = account.unloads;
+      return lockedRecord(signal)(account, async (entry) => {
+        if (account.unloads !== unloads) throw new UnloadedWhileWaiting();
+        return action(entry);
+      });
+    };
+
+  const asAfterLoad = async <T>(account: Account, signal: AbortSignal, operation: (locked: RecordLock) => Promise<T>): Promise<T> => {
     try {
-      const raw = await store.read(account.key);
-      if (raw === undefined) {
+      return await operation(lockedSinceLoad(signal));
+    } catch (error) {
+      if (!(error instanceof UnloadedWhileWaiting)) throw error;
+    }
+    await load(account, signal);
+    return operation(lockedRecord(signal));
+  };
+
+  const loadNow = async (account: Account, signal: AbortSignal): Promise<void> => {
+    try {
+      const record = await readRecordOf(account, () => store.read(account.key, signal), signal);
+      signal.throwIfAborted();
+      if (record === undefined) {
         account.loaded = { kind: 'absent' };
         return;
       }
-      const record = parseRecord(raw);
-      account.loaded = { kind: 'record', record };
-      account.interrupted = record.pendingRefresh !== undefined;
+      adopt(account, record, 'lazy');
+      if (record.state === 'signing_out') resumeSignOut(account);
     } catch (error) {
-      const cause = describeError(error);
+      if (endedByOperation(error, signal)) throw error;
+      const cause = describeError(causeOf(error));
       account.loaded = { kind: 'unreadable', cause };
-      options.warn(`the plan session of ${account.profile.id} account ${account.label} cannot be read: ${cause}`);
+      options.warn(`${sessionOf(account)} cannot be read: ${cause}`);
     }
   };
 
-  const load = async (account: Account): Promise<void> => {
-    if (account.loaded !== undefined) return;
-    account.loading ??= loadNow(account);
-    await account.loading;
+  const load = (account: Account, signal: AbortSignal): Promise<void> => {
+    if (account.loaded !== undefined) return Promise.resolve();
+    if (account.loading === undefined) {
+      const forget = (): void => {
+        if (account.loading === flight) account.loading = undefined;
+      };
+      const flight: SharedCall<void> = startSharedCall(
+        closing.signal,
+        async (shared) => {
+          try {
+            await loadNow(account, shared);
+          } catch (error) {
+            forget();
+            throw error;
+          }
+        },
+        forget,
+      );
+      account.loading = flight;
+    }
+    return account.loading.join(signal);
   };
 
   const recordOf = (account: Account): PlanRecord | undefined => (account.loaded?.kind === 'record' ? account.loaded.record : undefined);
@@ -332,12 +510,27 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     return loaded.kind === 'record' ? { kind: 'record', record: loaded.record, unwritable: account.unwritable } : loaded;
   };
 
-  const adopt = (account: Account, record: PlanRecord): void => {
-    account.loaded = { kind: 'record', record };
+  const feedRedactor = (account: Account, record: PlanRecord, replacedBy: ReplacedBy): void => {
+    const tokens = tokensOf(record);
+    const { current, previous, older } = account.fed;
+    if (tokens.every((token) => current?.tokens.includes(token) === true)) return;
+    const nowMs = clock.now();
+    const leaving =
+      previous !== undefined && previous.replacedBy === 'lazy' && previous.access !== undefined && previous.accessExpiresAt !== undefined
+        ? [{ value: previous.access, expiresAt: previous.accessExpiresAt }]
+        : [];
+    const kept = [...older, ...leaving].filter((entry) => nowMs < entry.expiresAt);
+    account.fed = {
+      current: { tokens, access: record.access_token, accessExpiresAt: record.expiresAt },
+      previous: current === undefined ? undefined : { ...current, replacedBy },
+      older: kept,
+    };
+    options.redact(account.key, [...tokens, ...(current?.tokens ?? []), ...kept.map((entry) => entry.value)]);
   };
 
-  const feedSecrets = (...values: Array<string | undefined>): void => {
-    for (const value of values) if (value !== undefined) options.onSecret(value);
+  const adopt = (account: Account, record: PlanRecord, replacedBy: ReplacedBy): void => {
+    feedRedactor(account, record, replacedBy);
+    account.loaded = { kind: 'record', record };
   };
 
   const ensureHost = async (): Promise<void> => {
@@ -350,22 +543,49 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     hostKnown = true;
   };
 
-  const markWriteFailure = (account: Account, error: unknown): void => {
+  const markWriteFailure = (account: Account, failure: unknown, signal: AbortSignal): void => {
     account.dirty = true;
-    if (isTransientErrno(error)) {
+    const cause = causeOf(failure);
+    if (endedByOperation(failure, signal) || isTransientErrno(cause)) {
       schedulePersistRetry(account);
       return;
     }
-    account.unwritable = describeError(error);
+    account.unwritable = describeError(cause);
   };
 
-  const persistAfterSend = async (account: Account, entry: CredentialEntry, record: PlanRecord): Promise<void> => {
-    adopt(account, record);
+  const persistAfterSend = async (account: Account, entry: CredentialEntry, record: PlanRecord, replacedBy: ReplacedBy, signal: AbortSignal): Promise<boolean> => {
+    adopt(account, record, replacedBy);
     try {
-      await entry.write(serialize(record));
+      await writeRecord(account, entry, record, signal);
       account.dirty = false;
+      return true;
     } catch (error) {
-      markWriteFailure(account, error);
+      markWriteFailure(account, error, signal);
+      return false;
+    }
+  };
+
+  const persistAttempt = async (account: Account): Promise<void> => {
+    const limit = operationLimit(closing.signal, HOST_READ_BOUND_MS, PERSIST_LIMIT_LABEL, options.timing);
+    try {
+      await asAfterLoad(account, limit.signal, (locked) =>
+        locked(account, async (entry) => {
+          const record = recordOf(account);
+          if (!account.dirty || record === undefined) return;
+          try {
+            await writeRecord(account, entry, record, limit.signal);
+            account.dirty = false;
+          } catch (error) {
+            if (endedByOperation(error, limit.signal)) throw error;
+            const cause = causeOf(error);
+            if (!isTransientErrno(cause)) account.unwritable = describeError(cause);
+          }
+        }),
+      );
+    } catch (error) {
+      if (!endedByOperation(error, limit.signal)) throw error;
+    } finally {
+      limit.dispose();
     }
   };
 
@@ -377,16 +597,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         if (closing.signal.aborted) return;
         throw error;
       }
-      await store.withKey(account.key, async (entry) => {
-        const record = recordOf(account);
-        if (!account.dirty || record === undefined) return;
-        try {
-          await entry.write(serialize(record));
-          account.dirty = false;
-        } catch (error) {
-          if (!isTransientErrno(error)) account.unwritable = describeError(error);
-        }
-      });
+      await persistAttempt(account);
     }
   };
 
@@ -400,27 +611,32 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     );
   }
 
+  const lazyMarginOf = (record: PlanRecord): number => (record.lifetimeMs === undefined ? defaults.marginMs : lazyRefreshMarginMs(record.lifetimeMs));
+
   const refreshNeeded = (record: PlanRecord, trigger: RefreshTrigger): boolean => {
     if (record.state !== 'active' || record.refresh_token === undefined || record.expiresAt === undefined) return false;
+    if (record.lifetimeMs !== undefined && clock.now() - (record.expiresAt - record.lifetimeMs) < defaults.skewMs) return false;
     if (trigger.kind === 'forced') return (record.generation ?? 0) === trigger.generation;
-    return record.expiresAt - clock.now() <= defaults.marginMs;
+    return record.expiresAt - clock.now() <= lazyMarginOf(record);
   };
 
-  const applyRefreshEnd = async (account: Account, entry: CredentialEntry, record: PlanRecord, end: RefreshEnd): Promise<void> => {
+  type RefreshWrite = { account: Account; entry: CredentialEntry; record: PlanRecord; replacedBy: ReplacedBy; signal: AbortSignal };
+
+  const applyRefreshEnd = async ({ account, entry, record, replacedBy, signal }: RefreshWrite, end: RefreshEnd, interrupted: boolean): Promise<void> => {
     if (end.kind === 'transient') return;
     if (end.kind === 'configuration') {
-      await persistAfterSend(account, entry, { ...record, state: 'needs_sign_in', cause: end.code });
+      await persistAfterSend(account, entry, { ...record, state: 'needs_sign_in', cause: end.code }, replacedBy, signal);
       return;
     }
     if (end.kind === 'terminal') {
-      await persistAfterSend(account, entry, withoutTokens(record, end.code, sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore })));
-      account.interrupted = false;
+      await persistAfterSend(account, entry, withoutTokens(record, end.code, interrupted), replacedBy, signal);
       return;
     }
     const { tokens } = end;
     const scope = tokens.scope;
     const replaced = tokens.refresh_token !== undefined && tokens.refresh_token !== record.refresh_token;
-    const intentKept = !replaced && sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore });
+    const intentKept = !replaced && interrupted;
+    const lifetimeMs = tokens.expires_in * 1000;
     const next: PlanRecord = {
       ...withoutPending(record),
       ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
@@ -428,50 +644,112 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       access_token: tokens.access_token,
       ...optional('refresh_token', tokens.refresh_token ?? record.refresh_token),
       ...optional('id_token', tokens.id_token ?? record.id_token),
-      expiresAt: clock.now() + tokens.expires_in * 1000,
+      expiresAt: clock.now() + lifetimeMs,
+      lifetimeMs,
       scope,
       ...optional('earliestRefreshAt', tokens.earliest_refresh_at),
       generation: (record.generation ?? 0) + 1,
     };
-    await persistAfterSend(account, entry, next);
-    account.interrupted = intentKept;
-    feedSecrets(tokens.access_token, tokens.refresh_token, tokens.id_token);
+    await persistAfterSend(account, entry, next, replacedBy, signal);
   };
 
-  const refreshInScope = async (account: Account, trigger: RefreshTrigger): Promise<void> => {
-    await store.withKey(account.key, async (entry) => {
+  const refreshTiming = (startedAt: number, remainingMs: number): { latencyMs: number; remainingMs: number; at: string } => ({
+    latencyMs: clock.now() - startedAt,
+    remainingMs,
+    at: new Date(clock.now()).toISOString(),
+  });
+
+  const refreshEvent = (account: Account, end: RefreshEnd, interrupted: boolean, startedAt: number, remainingMs: number): void => {
+    const { latencyMs, at } = refreshTiming(startedAt, remainingMs);
+    events('plan.refresh', {
+      ...identityOf(account),
+      outcome: end.kind,
+      ...(end.kind === 'terminal' || end.kind === 'configuration' ? { code: end.code } : {}),
+      ...(end.kind === 'terminal' ? { interrupted } : {}),
+      attempts: end.attempts,
+      latencyMs,
+      remainingMs,
+      ...(end.kind === 'adopted' && end.tokens.earliest_refresh_at !== undefined ? { earliestRefreshAt: end.tokens.earliest_refresh_at } : {}),
+      at,
+    });
+  };
+
+  const refreshFailedEvent = (account: Account, failure: unknown, attempts: number, startedAt: number, remainingMs: number): void => {
+    events('plan.refresh', { ...identityOf(account), outcome: 'failed', code: endCodeOf(failure), attempts, ...refreshTiming(startedAt, remainingMs) });
+  };
+
+  const refreshUnderLock = (fetch: PlanFetch, account: Account, trigger: RefreshTrigger, locked: RecordLock, signal: AbortSignal): Promise<void> =>
+    locked(account, async (entry) => {
       const record = recordOf(account);
       if (record === undefined || account.unwritable !== undefined || !refreshNeeded(record, trigger)) return;
-      const refreshToken = record.refresh_token;
-      if (refreshToken === undefined) return;
-      const intent: PlanRecord = { ...record, pendingRefresh: { generation: record.generation ?? 0, startedAt: clock.now() } };
+      const { refresh_token: refreshToken, expiresAt } = record;
+      if (refreshToken === undefined || expiresAt === undefined) return;
+      const startedAt = clock.now();
+      const remainingMs = expiresAt - startedAt;
+      const intentLoaded = record.pendingRefresh !== undefined;
+      const intent: PlanRecord = { ...record, pendingRefresh: { generation: record.generation ?? 0, startedAt } };
       try {
-        await entry.write(serialize(intent));
+        await writeRecord(account, entry, intent, signal);
       } catch (error) {
-        markWriteFailure(account, error);
+        markWriteFailure(account, error, signal);
+        refreshFailedEvent(account, error, 0, startedAt, remainingMs);
         return;
       }
-      adopt(account, intent);
+      adopt(account, intent, 'lazy');
       account.dirty = false;
-      const end = await sendRefresh({
-        ports,
-        clock,
-        tokenUrl: account.profile.oauth.tokenUrl,
-        form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
-        attempts: retry.maxAttempts,
-        attemptTimeoutMs: defaults.attemptTimeoutMs,
-        waitPolicy,
-      });
-      await applyRefreshEnd(account, entry, intent, end);
+      let attempts = 0;
+      let finished: { end: RefreshEnd; interrupted: boolean };
+      try {
+        const end = await sendRefresh({
+          ports: { fetch, sleep: options.sleep },
+          clock,
+          tokenUrl: account.profile.oauth.tokenUrl,
+          form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
+          attempts: retry.maxAttempts,
+          attemptTimeoutMs: defaults.attemptTimeoutMs,
+          waitPolicy,
+          maxBodyBytes: PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
+          signal,
+        });
+        attempts = end.attempts;
+        const interrupted = (end.kind === 'terminal' || end.kind === 'adopted') && sendWasInterrupted({ intentLoaded, unansweredBefore: end.unansweredBefore });
+        await applyRefreshEnd({ account, entry, record: intent, replacedBy: trigger.kind, signal }, end, interrupted);
+        finished = { end, interrupted };
+      } catch (error) {
+        refreshFailedEvent(account, error, attempts, startedAt, remainingMs);
+        throw error;
+      }
+      refreshEvent(account, finished.end, finished.interrupted, startedAt, remainingMs);
     });
-  };
 
-  const refreshOnce = (account: Account, trigger: RefreshTrigger): Promise<void> => {
+  const refreshWith = (fetch: PlanFetch, account: Account, trigger: RefreshTrigger, signal: AbortSignal): Promise<void> =>
+    asAfterLoad(account, signal, (locked) => refreshUnderLock(fetch, account, trigger, locked, signal));
+
+  const refreshInScope = (account: Account, trigger: RefreshTrigger, signal: AbortSignal): Promise<void> =>
+    endedAtClose((async (): Promise<void> => options.outbound(signal, (fetch) => refreshWith(fetch, account, trigger, signal)))());
+
+  const refreshOnce = (account: Account, trigger: RefreshTrigger): SharedCall<void> => {
     if (account.inflight !== undefined) return account.inflight;
-    const running = refreshInScope(account, trigger).finally(() => {
-      account.inflight = undefined;
-    });
+    const flight: { abandoned: boolean } = { abandoned: false };
+    const finished = (): void => {
+      if (account.inflight === running) account.inflight = undefined;
+    };
+    const running: SharedCall<void> = startSharedCall(
+      closing.signal,
+      (shared) => refreshInScope(account, trigger, shared).finally(finished),
+      () => {
+        flight.abandoned = true;
+        finished();
+        for (const [generation, forced] of account.forced) if (forced === running) account.forced.delete(generation);
+      },
+    );
     account.inflight = running;
+    const tracked = running.work.catch((error: unknown) => {
+      if (!flight.abandoned) throw error;
+    });
+    refreshes.add(tracked);
+    const untrack = (): void => void refreshes.delete(tracked);
+    tracked.then(untrack, untrack);
     return running;
   };
 
@@ -479,9 +757,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     const condition = blockingCondition(account.profile, viewOf(account), clock.now());
     if (condition !== undefined) throw conditionFailure(condition);
     const record = recordOf(account);
-    if (record?.access_token === undefined || record.expiresAt === undefined) {
-      throw conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, record) });
-    }
+    if (record?.access_token === undefined || record.expiresAt === undefined) throw conditionFailure(signInRequiredCondition(account.profile, record));
     await ensureHost();
     return record;
   };
@@ -495,190 +771,381 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       if (remaining(before) > defaults.skewMs) return served(before);
       throw unwritableFailure(account.unwritable);
     }
-    if (remaining(before) > defaults.marginMs) return served(before);
-    await waitFor(refreshOnce(account, { kind: 'lazy' }), signal);
+    if (remaining(before) > lazyMarginOf(before)) return served(before);
+    await refreshOnce(account, { kind: 'lazy' }).join(signal);
     const after = await usableRecord(account);
-    if ((after.generation ?? 0) !== (before.generation ?? 0) || remaining(after) > defaults.marginMs) return served(after);
+    if ((after.generation ?? 0) !== (before.generation ?? 0) || remaining(after) > lazyMarginOf(after)) return served(after);
     if (remaining(after) > defaults.skewMs) return served(after);
     throw unavailableFailure();
   };
 
   const rejected = async (account: Account, generation: number, signal: AbortSignal): Promise<'renewed' | 'unchanged'> => {
-    await waitFor(load(account), signal);
-    const current = recordOf(account)?.generation ?? 0;
-    if (generation === current && !account.forced.has(current)) account.forced.set(current, refreshOnce(account, { kind: 'forced', generation: current }));
+    await load(account, signal);
+    const record = recordOf(account);
+    const current = record?.generation ?? 0;
+    const trigger: RefreshTrigger = { kind: 'forced', generation: current };
+    if (generation === current && !account.forced.has(current) && record !== undefined && refreshNeeded(record, trigger)) account.forced.set(current, refreshOnce(account, trigger));
     const pending = account.forced.get(generation);
-    if (pending !== undefined) await waitFor(pending, signal);
+    if (pending !== undefined) await pending.join(signal);
     return (recordOf(account)?.generation ?? 0) > generation ? 'renewed' : 'unchanged';
   };
 
-  const changeRecord = async (account: Account, change: (record: PlanRecord) => PlanRecord): Promise<void> => {
-    await load(account);
-    await store.withKey(account.key, async (entry) => {
-      const record = recordOf(account);
-      if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? { reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, undefined) });
-      const next = change(record);
-      await entry.write(serialize(next));
-      adopt(account, next);
-      account.dirty = false;
-    });
+  const applyChange = async (account: Account, change: (record: PlanRecord) => PlanRecord, signal: AbortSignal): Promise<{ record: PlanRecord; saved: boolean } | undefined> => {
+    await load(account, signal);
+    return asAfterLoad(account, signal, (locked) =>
+      locked(account, async (entry) => {
+        const record = recordOf(account);
+        if (record === undefined) return undefined;
+        const next = change(record);
+        return { record: next, saved: await persistAfterSend(account, entry, next, 'lazy', signal) };
+      }),
+    );
   };
 
-  const signOutAccount = async (account: Account): Promise<SignOutReport> => {
-    await load(account);
-    return store.withKey(account.key, async (entry) => {
-      const record = recordOf(account);
-      if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? { reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(account.profile, undefined) });
-      const latestKnown = record.pendingRefresh === undefined;
-      const signingOut = signingOutRecord(record);
-      await entry.write(serialize(signingOut));
-      adopt(account, signingOut);
-      account.dirty = false;
-      const answer: RevocationAnswer =
-        record.refresh_token === undefined
-          ? 'unconfirmed'
-          : await revokeRefreshToken({
-              ports,
-              clock,
-              profile: account.profile,
-              clientId: record.client_id,
-              refreshToken: record.refresh_token,
-              attempts: retry.maxAttempts,
-              attemptTimeoutMs: defaults.revocationTimeoutMs,
-              waitPolicy,
-            });
-      const cleared = registrationOf(record);
-      await entry.write(serialize(cleared));
-      adopt(account, cleared);
-      account.unwritable = undefined;
-      account.interrupted = false;
-      account.forced.clear();
-      return { revocation: answer === 'confirmed' && latestKnown ? 'confirmed' : 'unconfirmed', usageUrl: account.profile.usageUrl };
-    });
+  type SignOutProgress = { underLock: boolean; changed: boolean; revocation: RevocationAnswer | 'none' };
+
+  const unloadForResume = (account: Account): void => {
+    account.loaded = undefined;
+    account.loading = undefined;
+    account.resumedSignOut = undefined;
+    account.unloads += 1;
   };
 
-  const register = async (input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected> => {
-    const account = accountOf(input.profile, input.account);
-    return store.withKey(account.key, async (entry) => {
-      const raw = await entry.read();
-      if (raw !== undefined) {
-        const existing = parseRecord(raw);
-        adopt(account, existing);
-        return existing.client_id === input.clientId ? { outcome: 'registered' as const } : { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
+  const unloadUnfinishedSignOut = (account: Account): void => {
+    if (recordOf(account)?.state === 'signing_out') unloadForResume(account);
+  };
+
+  const signOutUnderLock = async (fetch: PlanFetch, account: Account, progress: SignOutProgress, entry: CredentialEntry, signal: AbortSignal): Promise<SignOutReport> => {
+    const record = recordOf(account);
+    if (record === undefined) throw conditionFailure(blockingCondition(account.profile, viewOf(account), clock.now()) ?? signInRequiredCondition(account.profile, undefined));
+    if (record.state === 'registered') return { revocation: 'none', usageUrl: account.profile.usageUrl };
+    const latestKnown = record.pendingRefresh === undefined;
+    const signingOut = signingOutRecord(record);
+    progress.changed = true;
+    await writeRecord(account, entry, signingOut, signal);
+    adopt(account, signingOut, 'lazy');
+    account.dirty = false;
+    const answer: RevocationAnswer =
+      record.refresh_token === undefined
+        ? 'unconfirmed'
+        : await revokeRefreshToken({
+            ports: { fetch, sleep: options.sleep },
+            clock,
+            profile: account.profile,
+            clientId: record.client_id,
+            refreshToken: record.refresh_token,
+            attempts: retry.maxAttempts,
+            attemptTimeoutMs: defaults.revocationTimeoutMs,
+            waitPolicy,
+            maxBodyBytes: PLAN_SIGN_IN_DEFAULTS.authBodyBytes,
+            signal: closing.signal,
+          });
+    const revocation: RevocationAnswer = answer === 'confirmed' && latestKnown ? 'confirmed' : 'unconfirmed';
+    progress.revocation = revocation;
+    const cleared = registrationOf(record);
+    await writeRecord(account, entry, cleared, signal);
+    adopt(account, cleared, 'lazy');
+    account.unwritable = undefined;
+    account.forced.clear();
+    return { revocation, usageUrl: account.profile.usageUrl };
+  };
+
+  const signOutWith = (fetch: PlanFetch, account: Account, progress: SignOutProgress, locked: RecordLock, signal: AbortSignal): Promise<SignOutReport> =>
+    locked(account, async (entry) => {
+      progress.underLock = true;
+      try {
+        return await signOutUnderLock(fetch, account, progress, entry, signal);
+      } catch (error) {
+        unloadUnfinishedSignOut(account);
+        throw error;
       }
-      const record: PlanRecord = {
-        version: RECORD_VERSION,
-        profile: input.profile,
-        account: input.account,
-        state: 'registered',
-        client_id: input.clientId,
-        ext_agent_host_id: input.hostId,
-        welcomeShown: false,
-      };
-      await entry.write(serialize(record));
-      adopt(account, record);
-      return { outcome: 'registered' as const };
     });
+
+  const runSignOut = async (account: Account, signal: AbortSignal, resumed: boolean, locked: RecordLock): Promise<SignOutReport> => {
+    const progress: SignOutProgress = { underLock: false, changed: false, revocation: 'none' };
+    try {
+      const report = await options.outbound(signal, (fetch) => signOutWith(fetch, account, progress, locked, signal));
+      if (progress.changed) events('plan.sign_out', { ...identityOf(account), resumed, end: 'cleared', revocation: report.revocation });
+      return report;
+    } catch (error) {
+      if (error instanceof UnloadedWhileWaiting) throw error;
+      if (!progress.underLock) unloadUnfinishedSignOut(account);
+      if (!progress.changed || endedByLifetime(error)) {
+        if (progress.changed || resumed) events('plan.sign_out', { ...identityOf(account), resumed, end: 'interrupted', revocation: 'none' });
+      } else {
+        events('plan.sign_out', { ...identityOf(account), resumed, end: 'failed', revocation: progress.revocation, code: endCodeOf(error) });
+      }
+      throw error;
+    }
   };
 
-  const install = async (input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected> => {
+  function resumeSignOut(account: Account): void {
+    const limit = operationLimit(closing.signal, HOST_READ_BOUND_MS, SIGN_OUT_LIMIT_LABEL, options.timing);
+    const flight = runSignOut(account, limit.signal, true, lockedRecord(limit.signal)).finally(() => limit.dispose());
+    account.resumedSignOut = flight;
+    runInBackground(
+      flight
+        .then(
+          () => undefined,
+          (error: unknown) => {
+            if (!endedByLifetime(error)) options.warn(`the sign-out of ${account.profile.id} account ${account.label} did not finish: ${describeError(error)}; it is resumed at the next load`);
+          },
+        )
+        .finally(() => {
+          if (account.resumedSignOut === flight) account.resumedSignOut = undefined;
+        }),
+    );
+  }
+
+  const signOutAccount = async (account: Account, signal: AbortSignal): Promise<SignOutReport> => {
+    await load(account, signal);
+    return asAfterLoad(account, signal, (locked) => (account.resumedSignOut === undefined ? runSignOut(account, signal, false, locked) : waitFor(account.resumedSignOut, signal)));
+  };
+
+  const adoptPointer = (pointer: ActivePointer): void => {
+    for (const [profile, label] of Object.entries(pointer)) activeLabels.set(profile, label);
+    pointerProblem = undefined;
+  };
+
+  const heal = async (): Promise<void> => {
+    if (pointerProblem === undefined) return;
+    try {
+      adoptPointer(await readActivePointer(fileSystem, paths.active));
+    } catch (error) {
+      pointerProblem = describeError(error);
+      throw storeReadFailure(pointerProblem, error);
+    }
+  };
+
+  const moveActive = (ref: PlanAccountRef): Promise<void> =>
+    pointerWrites.run(async () => {
+      await heal();
+      const next: ActivePointer = { ...Object.fromEntries(activeLabels), [ref.profile]: ref.account };
+      try {
+        await writeActivePointer(fileSystem, paths.active, next);
+      } catch (error) {
+        throw storeWriteFailure(pointerFile, error);
+      }
+      adoptPointer(next);
+    });
+
+  const pointerReady = async (): Promise<void> => {
+    if (pointerProblem === undefined) return;
+    await pointerWrites.run(heal);
+  };
+
+  const register = async (input: RegisterInput, signal: AbortSignal): Promise<{ outcome: 'registered' } | Rejected> => {
+    const account = accountOf(input.profile, input.account);
+    return asAfterLoad(account, signal, (locked) =>
+      locked(account, async (entry) => {
+        const existing = await readRecordOf(account, () => entry.read(), signal);
+        if (existing !== undefined) {
+          adopt(account, existing, 'lazy');
+          return existing.client_id === input.clientId ? { outcome: 'registered' as const } : { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
+        }
+        const record: PlanRecord = {
+          version: RECORD_VERSION,
+          profile: input.profile,
+          account: input.account,
+          state: 'registered',
+          client_id: input.clientId,
+          ext_agent_host_id: input.hostId,
+          welcomeShown: false,
+        };
+        await writeRecord(account, entry, record, signal);
+        adopt(account, record, 'lazy');
+        return { outcome: 'registered' as const };
+      }),
+    );
+  };
+
+  const install = async (input: InstallInput, signal: AbortSignal): Promise<Installed | Rejected> => {
     const account = accountOf(input.profile, input.account);
     const { tokens } = input;
     const problem = tokenResponseProblem(tokens, { refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
     if (problem !== undefined) throw new Error(`the sign-in installed nothing: ${problem}`);
-    const outcome = await store.withKey(account.key, async (entry) => {
-      const raw = await entry.read();
-      const existing = raw === undefined ? undefined : parseRecord(raw);
-      if (existing === undefined || existing.client_id !== input.clientId || (existing.subject !== undefined && existing.subject !== input.subject)) {
-        return { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
-      }
-      const state: RecordState = grantsScope(tokens.scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled';
-      const record: PlanRecord = {
-        version: RECORD_VERSION,
-        profile: input.profile,
-        account: input.account,
-        state,
-        client_id: existing.client_id,
-        ext_agent_host_id: input.hostId,
-        welcomeShown: existing.welcomeShown,
-        subject: input.subject,
-        email: input.email,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        id_token: input.idToken,
-        expiresAt: clock.now() + tokens.expires_in * 1000,
-        scope: tokens.scope,
-        ...optional('earliestRefreshAt', tokens.earliest_refresh_at),
-        generation: (existing.generation ?? 0) + 1,
-      };
-      await entry.write(serialize(record));
-      adopt(account, record);
-      account.dirty = false;
-      account.unwritable = undefined;
-      account.interrupted = false;
-      account.forced.clear();
-      feedSecrets(tokens.access_token, tokens.refresh_token, input.idToken);
-      return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const) };
-    });
-    if (outcome.outcome !== 'rejected') await writeActiveAccount(fileSystem, paths.active, input.profile, input.account);
+    const outcome = await asAfterLoad(account, signal, (locked) =>
+      locked(account, async (entry) => {
+        const existing = await readRecordOf(account, () => entry.read(), signal);
+        if (existing === undefined || existing.client_id !== input.clientId || (existing.subject !== undefined && existing.subject !== input.subject)) {
+          return { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
+        }
+        const state: RecordState = grantsScope(tokens.scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled';
+        const firstSignIn = state === 'active' && !existing.welcomeShown;
+        const lifetimeMs = tokens.expires_in * 1000;
+        const record: PlanRecord = {
+          version: RECORD_VERSION,
+          profile: input.profile,
+          account: input.account,
+          state,
+          client_id: existing.client_id,
+          ext_agent_host_id: input.hostId,
+          welcomeShown: existing.welcomeShown || firstSignIn,
+          subject: input.subject,
+          ...optional('email', input.email),
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          id_token: input.idToken,
+          expiresAt: clock.now() + lifetimeMs,
+          lifetimeMs,
+          scope: tokens.scope,
+          ...optional('earliestRefreshAt', tokens.earliest_refresh_at),
+          generation: (existing.generation ?? 0) + 1,
+        };
+        await writeRecord(account, entry, record, signal);
+        adopt(account, record, 'lazy');
+        account.dirty = false;
+        account.unwritable = undefined;
+        account.forced.clear();
+        return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const), firstSignIn };
+      }),
+    );
+    if (outcome.outcome !== 'rejected') await moveActive({ profile: input.profile, account: input.account });
     return outcome;
   };
 
-  const selectActive = async (ref: PlanAccountRef): Promise<void> => {
+  const registration = async (ref: PlanAccountRef, signal: AbortSignal): Promise<Registration | undefined> => {
     const account = accountOf(ref.profile, ref.account);
-    await load(account);
-    if (recordOf(account)?.subject === undefined) throw new Error(`the ${ref.profile} account ${JSON.stringify(ref.account)} has no validated sign-in to select`);
-    await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
+    await load(account, signal);
+    if (account.loaded?.kind === 'unreadable') throw storeReadFailure(account.loaded.cause, undefined);
+    const record = recordOf(account);
+    if (record === undefined) return undefined;
+    return { state: record.state, clientId: record.client_id, ...optional('subject', record.subject), ...optional('email', record.email), ...optional('idToken', record.id_token) };
+  };
+
+  const known = async (signal: AbortSignal): Promise<readonly KnownAccount[]> => {
+    const listed = [...accounts.values()];
+    await Promise.all(listed.map((account) => load(account, signal)));
+    return listed.flatMap((account) => (account.loaded === undefined || account.loaded.kind === 'absent' ? [] : [{ profile: account.profile.id, account: account.label, view: viewOf(account) }]));
+  };
+
+  const resume = async (ref: PlanAccountRef, signal: AbortSignal): Promise<boolean> => {
+    const account = accountOf(ref.profile, ref.account);
+    await load(account, signal);
+    if (recordOf(account)?.paused === undefined) return false;
+    return (await applyChange(account, withoutPause, signal)) !== undefined;
+  };
+
+  const selectActive = async (ref: PlanAccountRef, signal: AbortSignal): Promise<void> => {
+    const account = accountOf(ref.profile, ref.account);
+    await load(account, signal);
+    if (!SELECTABLE_STATES.has(statusOf(viewOf(account), clock.now()).state)) throw new PlanAccountNotSelectableError(ref);
+    await moveActive(ref);
+  };
+
+  const unpinnedView = (): AccountView => (pointerProblem === undefined ? { kind: 'absent' } : { kind: 'unreadable', cause: pointerProblem });
+
+  const noActiveAccount = (profile: PlanProfile): PlanCredentialError =>
+    conditionFailure(blockingCondition(profile, unpinnedView(), clock.now()) ?? signInRequiredCondition(profile, undefined));
+
+  const signedOutSource = (profileId: string): AuthSource => {
+    const profile = profileOf(profileId);
+    return {
+      read: async () => {
+        throw noActiveAccount(profile);
+      },
+      rejected: async () => 'unchanged',
+      pause: async () => undefined,
+      resume: async () => undefined,
+      status: () => statusOf({ kind: 'absent' }, clock.now()),
+      health: () => healthOf(profile, undefined, unpinnedView(), clock.now()),
+      resolvedAccount: () => undefined,
+    };
   };
 
   const authSource = (target: { profile: string; account?: string }): AuthSource => {
     const profile = profileOf(target.profile);
     let servedLabel = target.account;
-    const resolve = async (): Promise<Account> => {
-      const label = target.account ?? (await readActiveAccount(fileSystem, paths.active, profile.id));
-      if (label === undefined) throw conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, undefined) });
+    const resolve = async (signal: AbortSignal): Promise<Account> => {
+      const label = target.account ?? activeLabels.get(profile.id);
+      if (label === undefined) throw noActiveAccount(profile);
       servedLabel = label;
       const account = accountOf(profile.id, label);
-      await load(account);
+      await load(account, signal);
       return account;
     };
-    const servedAccount = async (): Promise<Account> => (servedLabel === undefined ? resolve() : accountOf(profile.id, servedLabel));
-    const knownView = (): AccountView => (servedLabel === undefined ? { kind: 'absent' } : viewOf(accountOf(profile.id, servedLabel)));
+    const servedAccount = async (signal: AbortSignal): Promise<Account> => (servedLabel === undefined ? resolve(signal) : accountOf(profile.id, servedLabel));
+    const statusView = (): AccountView => (servedLabel === undefined ? { kind: 'absent' } : viewOf(accountOf(profile.id, servedLabel)));
+    const healthView = (): AccountView => (servedLabel === undefined ? unpinnedView() : viewOf(accountOf(profile.id, servedLabel)));
     return {
-      read: async (signal) => bearer(await waitFor(resolve(), signal), signal),
-      rejected: async (generation, signal) => rejected(await waitFor(servedAccount(), signal), generation, signal),
-      pause: async ({ untilMs }) => changeRecord(await servedAccount(), (record) => ({ ...record, paused: untilMs === undefined ? {} : { until: untilMs } })),
-      resume: async () => changeRecord(await servedAccount(), withoutPause),
-      status: () => statusOf(knownView(), clock.now()),
-      health: () => healthOf(profile, servedLabel, knownView(), clock.now()),
+      read: async (signal) => bearer(await waitFor(resolve(signal), signal), signal),
+      rejected: async (generation, signal) => {
+        const account = await waitFor(servedAccount(signal), signal);
+        const rejection = { ...identityOf(account), generation };
+        try {
+          const answer = await rejected(account, generation, signal);
+          events('plan.rejected', { ...rejection, answer });
+          return answer;
+        } catch (error) {
+          events('plan.rejected', { ...rejection, answer: signal.aborted && error === signal.reason ? 'aborted' : PLAN_EVENT_INTERNAL });
+          throw error;
+        }
+      },
+      pause: async ({ untilMs, code }, signal) => {
+        const account = await servedAccount(signal);
+        const changed = await applyChange(account, (record) => ({ ...record, paused: untilMs === undefined ? {} : { until: untilMs } }), signal);
+        if (changed === undefined) return;
+        events('plan.pause', { ...identityOf(account), code, saved: changed.saved, ...(untilMs === undefined ? {} : { until: new Date(untilMs).toISOString() }) });
+      },
+      resume: async (signal) => {
+        await applyChange(await servedAccount(signal), withoutPause, signal);
+      },
+      status: () => statusOf(statusView(), clock.now()),
+      health: () => healthOf(profile, servedLabel, healthView(), clock.now()),
+      resolvedAccount: () => (servedLabel === undefined ? undefined : { profile: profile.id, account: servedLabel }),
     };
   };
 
+  const serve = async (refs: readonly PlanAccountRef[], signal: AbortSignal): Promise<void> => {
+    await Promise.all(refs.map((ref) => load(accountOf(ref.profile, ref.account), signal)));
+  };
+
   await sweepTemporaries(fileSystem, paths.sessions, options.lock ?? hostKernelLock(), options.warn);
-  const startup = options.accounts.map((ref) => accountOf(ref.profile, ref.account));
-  await Promise.all(startup.map(load));
-  for (const account of startup) {
-    if (recordOf(account)?.state === 'signing_out') runInBackground(signOutAccount(account).then(() => undefined));
+  const listing = await store.listKeys(options.signal);
+  const recordProblems: PlanListProblem[] = [...listing.problems];
+  const listProblems = (): readonly PlanListProblem[] => (pointerProblem === undefined ? recordProblems : [...recordProblems, { file: path.basename(paths.active), cause: pointerProblem }]);
+  for (const { key, file } of listing.keys) {
+    const ref = refOfKey(key);
+    if (ref === undefined) recordProblems.push({ file, cause: 'the record key does not name a plan account' });
+    else if (Object.hasOwn(options.profiles, ref.profile)) accountOf(ref.profile, ref.account);
+    else options.warn(`a saved account of profile ${ref.profile} is not listed: this build ships no such profile`);
   }
+  try {
+    adoptPointer(await readActivePointer(fileSystem, paths.active));
+  } catch (error) {
+    pointerProblem = describeError(error);
+  }
+  for (const problem of listProblems()) options.warn(`could not list ${problem.file}: ${problem.cause}`);
+  await serve(options.accounts, options.signal);
 
   return {
     register,
-    install: async (input) => {
-      const outcome = await install(input);
+    install: async (input, signal) => {
+      const outcome = await install(input, signal);
       if (outcome.outcome !== 'rejected') {
         const account = accountOf(input.profile, input.account);
         const record = recordOf(account);
-        if (record?.paused !== undefined) adopt(account, withoutPause(record));
+        if (record?.paused !== undefined) adopt(account, withoutPause(record), 'lazy');
       }
       return outcome;
     },
+    registration,
+    load: (ref, signal) => load(accountOf(ref.profile, ref.account), signal),
+    known,
+    listProblems,
+    resume,
     selectActive,
-    signOut: (ref) => signOutAccount(accountOf(ref.profile, ref.account)),
+    pointerReady,
+    signOut: (ref, signal) => signOutAccount(accountOf(ref.profile, ref.account), signal),
     authSource,
+    signedOutSource,
+    serve,
+    activeLabel: (profile) => activeLabels.get(profile),
+    lifetime: closing.signal,
     close: async () => {
       closing.abort();
       await Promise.all([...background]);
-      await Promise.all([...accounts.values()].map((account) => account.inflight));
+      await Promise.all([...refreshes]);
       if (backgroundFailures.length > 0) throw new AggregateError(backgroundFailures, 'plan session background tasks failed');
     },
   };

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
 import { distrusting, localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, userSettingsPath, writeJson } from './helpers.ts';
 
+const NEVER_ABORTED = new AbortController().signal;
+
 describe('local settings in an untrusted project', () => {
   it('applies an allow_always rule written by appendPermissionRule', async () => {
     const tree = makeTree();
-    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm run test:*)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm run test:*)', effect: 'allow', signal: NEVER_ABORTED });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.rules.map((r) => [r.text, r.effect, r.origin, r.source])).toEqual([
       ['Bash(npm run test:*)', 'allow', 'local', localSettingsPath(tree)],
@@ -16,7 +18,7 @@ describe('local settings in an untrusted project', () => {
 
   it('applies a reject_always rule written by appendPermissionRule', async () => {
     const tree = makeTree();
-    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(rm:*)', effect: 'deny' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(rm:*)', effect: 'deny', signal: NEVER_ABORTED });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
     expect(result.rules.map((r) => [r.text, r.effect, r.origin])).toEqual([['Bash(rm:*)', 'deny', 'local']]);
   });

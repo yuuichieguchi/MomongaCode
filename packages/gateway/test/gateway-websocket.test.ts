@@ -3,6 +3,7 @@ import { WebSocket } from 'ws';
 import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
 import { registerCleanup, startGateway, userInput, validator } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
+import { REDACTED, TEST_API_KEY, expectNoCredential, expectRedacted } from './credential-support.ts';
 
 const DEBUG_TOKEN = 'momonga-ws-debug-token';
 const CONNECTION_LIMIT_MS = 5000;
@@ -168,6 +169,29 @@ describe('WebSocket transport over the unix socket', () => {
     expect(validator.validate('WebSocketErrorEvent', rejected).errors).toEqual([]);
     client.send(create());
     expect((await client.untilTerminal()).at(-1)?.['type']).toBe('response.completed');
+  });
+
+  it.for([
+    { name: 'a short message that is the bare credential', sent: TEST_API_KEY },
+    { name: 'a long message with the credential at the failing position', sent: `{"a":1,"padding":"${'p'.repeat(200)}","key":${TEST_API_KEY}}` },
+  ])('answers $name with invalid_json and a message that quotes nothing of it', async ({ sent }) => {
+    const adapter = createScriptedAdapter({ calls: [] });
+    const harness = await startGateway({ adapters: { primary: adapter }, credentials: [TEST_API_KEY] });
+    const client = await connectUnix(harness);
+    client.socket.send(sent);
+    const rejected = (await client.untilTerminal()).at(-1) as Message;
+    expect(rejected).toMatchObject({ type: 'error', error: { code: 'invalid_json', param: null, message: 'the WebSocket message is not valid JSON' } });
+    expectNoCredential(JSON.stringify(rejected), TEST_API_KEY);
+  });
+
+  it('redacts a credential that the validator quotes as an unknown item type', async () => {
+    const adapter = createScriptedAdapter({ calls: [] });
+    const harness = await startGateway({ adapters: { primary: adapter }, credentials: [TEST_API_KEY] });
+    const client = await connectUnix(harness);
+    client.send(create({ input: [{ type: TEST_API_KEY }] }));
+    const rejected = (await client.untilTerminal()).at(-1) as Message;
+    expect(rejected).toEqual({ type: 'error', status: 400, error: { type: 'invalid_request', code: 'invalid_body', message: `input[0].type has unknown item type "${REDACTED}"`, param: 'input[0].type' } });
+    expectRedacted(JSON.stringify(rejected), TEST_API_KEY);
   });
 
   it('reports a failed upstream response as a response.failed event, not an error envelope', async () => {

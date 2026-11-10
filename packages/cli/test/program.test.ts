@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { freshHome } from './fresh-home.ts';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { buildProgram } from '../src/program.ts';
+import { buildProgram, reopenOf } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
@@ -84,6 +84,19 @@ describe('root command', () => {
     const { program } = harness();
     await expect(run(program, '-p', 'x', '--output-format', 'xml')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
     await expect(run(harness().program, '-p', 'x', '--permission-mode', 'yolo')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    const refused = harness();
+    await expect(run(refused.program, '-p', 'x', '--permission-mode', 'default')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    expect(refused.out.join('')).toContain('Allowed choices are manual, acceptEdits, plan, auto, bypassPermissions.');
+  });
+
+  it('policy verify --mode refuses default and names the starting mode in its help', async () => {
+    const { program, out } = harness();
+    const verify = program.commands.find((command) => command.name() === 'policy')?.commands.find((command) => command.name() === 'verify');
+    if (verify === undefined) throw new Error('no policy verify command');
+    verify.exitOverride().configureOutput({ writeOut: (text) => out.push(text), writeErr: (text) => out.push(text) });
+    await expect(run(program, 'policy', 'verify', '--mode', 'default')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    expect(out.join('')).toContain('Allowed choices are manual, acceptEdits, plan, auto, bypassPermissions.');
+    expect(verify.helpInformation().replace(/\s+/g, ' ')).toContain('the permission mode to check; the starting mode of the settings when omitted');
   });
 
   it('needs a terminal for the interactive session', async () => {
@@ -94,5 +107,34 @@ describe('root command', () => {
   it('rejects a non-integer --after for attach', async () => {
     const { program } = harness();
     await expect(run(program, 'attach', '--after', 'soon')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+  });
+});
+
+describe('the reopen options (9.1)', () => {
+  it('reads --resume <id>, --resume and --continue', () => {
+    expect(reopenOf({ resume: '0123456789abcdef' })).toEqual({ kind: 'id', id: '0123456789abcdef' });
+    expect(reopenOf({ resume: true })).toEqual({ kind: 'pick' });
+    expect(reopenOf({ continue: true })).toEqual({ kind: 'newest' });
+    expect(reopenOf({})).toBeUndefined();
+  });
+
+  it('lists both options in the help', () => {
+    const help = harness().program.helpInformation();
+
+    expect(help).toContain('--resume [session-id]');
+    expect(help).toContain('--continue');
+  });
+
+  it('refuses --resume together with --continue', async () => {
+    const { program, out } = harness();
+
+    await expect(run(program, '--resume', '0123456789abcdef', '--continue')).rejects.toThrow();
+    expect(out.join('')).toContain("option '--resume [session-id]' cannot be used with option '--continue'");
+  });
+
+  it('refuses --print with --resume and no id, since no picker can be shown', async () => {
+    const { program } = harness();
+
+    await expect(run(program, '--print', 'go', '--resume')).rejects.toThrow('--resume needs a session id when --print is used');
   });
 });

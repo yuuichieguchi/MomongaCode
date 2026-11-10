@@ -1,4 +1,6 @@
 import type { SchemaNarrowing } from './dialect.ts';
+import type { FallbackCause } from './fallback-cause.ts';
+import type { PlanAccountRef } from './plan-account.ts';
 import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
@@ -38,7 +40,7 @@ export type StreamEventType = (typeof OPEN_RESPONSES_STREAM_EVENT_TYPES)[number]
 export type TerminalStreamEventType = (typeof TERMINAL_STREAM_EVENT_TYPES)[number];
 export type ErrorType = (typeof ERROR_TYPES)[number];
 
-export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null };
+export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef };
 export type ErrorEnvelope = { error: ErrorBody };
 
 export type Annotation = { type: string; [key: string]: unknown };
@@ -214,7 +216,7 @@ export const reportedCachedTokensOf = (
   extension: { cacheReadNotReported?: true } | undefined,
 ): number | undefined => (extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details?.cached_tokens);
 
-export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
+export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number; plan?: PlanAccountRef };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
@@ -228,7 +230,7 @@ export type MomongaResponseExtension = {
   counter: string;
   attempts: number;
   fallbackFrom?: string[];
-  fallbackCauses?: { target: string; code: string | null; message: string }[];
+  fallbackCauses?: FallbackCause[];
   schemaNarrowings?: SchemaNarrowing[];
   jsonReply?: JsonReplyPath;
   usageSource: 'reported' | 'estimated';
@@ -399,7 +401,7 @@ export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string };
 
 export type CompactRequest = {
   model: string;

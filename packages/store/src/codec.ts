@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import { FILE_ACCESSES, INBOX_DELIVERIES, INBOX_STATES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, planAccountRefOf } from '@momonga/protocol';
+import type { InboxRowView, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -65,7 +65,11 @@ const decodeRunError = (identity: string, value: unknown): RunError => {
   if (typeof record['code'] !== 'string' || typeof record['message'] !== 'string') {
     throw corrupt('runs', identity, 'column error_json must hold string code and message');
   }
-  return { code: record['code'], message: record['message'] };
+  const error: RunError = { code: record['code'], message: record['message'] };
+  if (!Object.hasOwn(record, 'plan')) return error;
+  const plan = planAccountRefOf(record['plan']);
+  if (plan === undefined) throw corrupt('runs', identity, 'column error_json must hold a plan with string profile and account when it holds one');
+  return { ...error, plan };
 };
 
 export const decodeRun = (row: Row, context: DecodeContext): Run => {
@@ -120,6 +124,8 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'tool.call': true,
   'tool.permission.requested': true,
   'tool.permission.classified': true,
+  'tool.permission.classifying': true,
+  'hook.started': true,
   'hook.completed': true,
   'tool.permission.resolved': true,
   'tool.permission.cancelled': true,
@@ -140,6 +146,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'context.governing_loaded': true,
   'context.memories_loaded': true,
   'context.contribution': true,
+  'context.compacting': true,
   'context.compaction_rejected': true,
   'context.inherited': true,
   'context.truncated': true,
@@ -154,7 +161,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   notice: true,
 };
 
-const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true };
+const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true, 'inbox.changed': true, user_shell: true };
 
 const isToolFile = (value: unknown): boolean =>
   isRecord(value) &&
@@ -215,6 +222,25 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
   return { ...payload, ...envelope } as RunEvent;
 };
 
+const isInboxRowView = (value: unknown): value is InboxRowView =>
+  isRecord(value) &&
+  typeof value['id'] === 'string' &&
+  typeof value['sessionId'] === 'string' &&
+  typeof value['text'] === 'string' &&
+  Number.isInteger(value['seq']) &&
+  Number.isInteger(value['createdAt']) &&
+  (value['settledAt'] === null || Number.isInteger(value['settledAt'])) &&
+  INBOX_DELIVERIES.some((delivery) => delivery === value['delivery']) &&
+  INBOX_STATES.some((state) => state === value['state']);
+
+export const userShellRecordOf = (identity: string, payload: Record<string, unknown>): UserShellRecord => {
+  const { command, exitCode, output, include } = payload;
+  if (typeof command !== 'string' || typeof output !== 'string' || typeof include !== 'boolean' || !(exitCode === null || Number.isInteger(exitCode))) {
+    throw corrupt('events', identity, 'payload_json of user_shell must hold command, exitCode, output and include');
+  }
+  return { command, exitCode: exitCode as number | null, output, include };
+};
+
 const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>, context: DecodeContext): SessionEvent => {
   const reader = readerFor('events', identity, row);
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
@@ -225,6 +251,12 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
     }
     return { type: 'model.changed', modelAlias, previousModelAlias, ...envelope };
   }
+  if (type === 'inbox.changed') {
+    const { pending } = payload;
+    if (!Array.isArray(pending) || !pending.every(isInboxRowView)) throw corrupt('events', identity, 'payload_json pending must hold inbox rows');
+    return { type: 'inbox.changed', pending, ...envelope };
+  }
+  if (type === 'user_shell') return { type: 'user_shell', ...userShellRecordOf(identity, payload), ...envelope };
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');
   return { type: 'mode.changed', mode: storedOneOf(context, 'events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };

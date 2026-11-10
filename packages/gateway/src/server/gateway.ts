@@ -15,6 +15,7 @@ import { openGatewayStore } from '../core/store.ts';
 import { createUnaryService } from '../core/unary.ts';
 import { createRequestValidator, createStoredDataChecks } from '../core/validation.ts';
 import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
+import { createErrorExit } from './error-exit.ts';
 import { createApp } from './app.ts';
 import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
@@ -90,6 +91,7 @@ const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' 
     router: createRouter({ config: options.config, adapters: options.adapters, clock: options.clock, timers: options.timers, ...shared }),
     priceTable: options.priceTable,
     telemetry: options.telemetry,
+    planTargets: Object.entries(options.config.models.targets).flatMap(([name, target]) => (target.plan === undefined ? [] : [{ name, ...target.plan }])),
   };
   return {
     epochs: { acquire: async () => ({ value: epoch, release: () => undefined }), close: async () => undefined },
@@ -132,23 +134,30 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       reasoningOrigin,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,
+      redactor,
     };
+    const errors = createErrorExit(redactor, options.onError);
     const responses = createResponsesService(services, validator);
     const unary = createUnaryService(services, validator);
     const tracker = createRequestTracker();
     const startedAtMs = clock.now();
     const startedAt = new Date(startedAtMs).toISOString();
+    const isRetiring = (): boolean => options.role.current() === 'retiring';
+    const activeRequests = (): number => Math.max(tracker.active(), responses.activeCount() + unary.activeCount()) + (options.probeFlights?.() ?? 0);
     const app = createApp({
       services,
       responses,
       unary,
       tracker,
+      isRetiring,
+      activeRequests,
       startedAtSeconds: Math.floor(startedAtMs / 1000),
       costReport: options.costReport,
       billedCalls: options.billedCalls,
       startedAt,
       version: options.version,
-      onError: options.onError,
+      errors,
+      plan: options.plan,
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 
@@ -156,8 +165,9 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       services,
       responses,
       tracker,
+      isRetiring,
       connectionLimitMs: limits.websocketConnectionMs,
-      ...(options.onError === undefined ? {} : { onError: options.onError }),
+      errors,
     });
     transports.push(webSocket);
     const unixServer = http.createServer(getRequestListener(handler));
@@ -174,9 +184,10 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         services,
         responses,
         tracker,
+        isRetiring,
         connectionLimitMs: limits.websocketConnectionMs,
         authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
-        ...(options.onError === undefined ? {} : { onError: options.onError }),
+        errors,
       });
       transports.push(tcpSockets);
       tcpServer = http.createServer(getRequestListener(requireToken(token, handler)));
@@ -238,6 +249,11 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         return abandonedRuns;
       },
       addCredential: (credential) => redactor.add(credential),
+      activeRequests,
+      releaseIdleConnections: () => {
+        for (const transport of transports) transport.beginClose();
+        for (const server of servers) server.closeIdleConnections();
+      },
       close,
       abort: (values) => {
         requestAbort();

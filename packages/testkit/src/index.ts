@@ -116,7 +116,7 @@ export {
   nestedNotSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
-export { CLEANUP_KILL_DEADLINE_MS, killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
+export { CLEANUP_KILL_DEADLINE_MS, killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolders } from './process-groups.ts';
 export { FAKE_OS_BUILD, createFakeFm, fakeExec } from './fake-fm.ts';
 export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from './fake-fm.ts';
 export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_MODEL, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeManagedServer } from './fake-managed-server.ts';
@@ -130,6 +130,11 @@ export {
   isUnderTestTempBase,
   registerCleanup,
   spawnTracked,
+  closeOnceStarted,
+  createTempDir,
+  ownedStart,
+  removeTempDir,
+  testTempBases,
   tempDirPrefixFor,
   testRunToken,
   withTempDir,
@@ -204,6 +209,7 @@ export {
   startFakeSiwcAuth,
 } from './fake-siwc-auth.ts';
 export type {
+  SiwcAccessTokenForm,
   SiwcAuth,
   SiwcAuthOptions,
   SiwcAuthorizeMode,
@@ -214,6 +220,7 @@ export type {
   SiwcJwk,
   SiwcRecord,
   SiwcRegistration,
+  SiwcJwksStep,
   SiwcRevokeStep,
   SiwcTokenStep,
 } from './fake-siwc-auth.ts';
@@ -229,8 +236,9 @@ export {
   startFakePlanResponses,
 } from './fake-plan-responses.ts';
 export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
-export { createFakeSecretStore, createFakeSecurityPort } from './fake-secrets.ts';
-export type { FakeSecretStore, FakeSecurityPort } from './fake-secrets.ts';
+export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
+export type { FakeSecretPrograms } from './fake-secret-programs.ts';
+export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
 export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
@@ -246,8 +254,20 @@ export {
 } from './mcp-http-fixture.ts';
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
-export { firstGeneration } from './first-generation.ts';
+export { firstGeneration, prepareGenerationForTest, startGenerationForTest } from './first-generation.ts';
+export type { StartedGenerationForTest } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
-export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
+export {
+  TEST_SECRET_PROGRAMS_ENV,
+  createFakeSecretPrograms,
+  fakeSecretProgramsBin,
+  getFakeSecretEnded,
+  getFakeSecretHanging,
+  installFakeSecretPrograms,
+  removeFakeSecretPrograms,
+  resetFakeSecretControl,
+  setFakeSecretControl,
+  testHostPath,
+} from './fake-secret-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';

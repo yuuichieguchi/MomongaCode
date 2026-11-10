@@ -1,6 +1,6 @@
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter } from '@momonga/gateway';
+import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolCallingMode } from '@momonga/protocol';
 import { createFakeClock } from '@momonga/testkit';
 import { buildCountTokensBody, buildMessagesBody } from '../src/adapters/anthropic/request.ts';
@@ -35,7 +35,7 @@ const historyWith = (args: string): AdapterInputItem[] => [
 const requestWith = (args: string, tools: FunctionTool[]): AdapterRequest => ({ model: 'm', input: historyWith(args), ...(tools.length === 0 ? {} : { tools }) });
 
 const chatAdapter = (mode: ToolCallingMode) =>
-  createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
+  createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => {
       throw new Error('rendering a wire never reaches the upstream');
     },

@@ -139,3 +139,106 @@ describe('followRun over the runs a tool call waits on', () => {
     expect(opened.map((entry) => entry.runId)).toEqual(['parent']);
   });
 });
+
+describe('followRun tells the caller which subagents are running (design-screens 3.3)', () => {
+  it('calls onChildStarted with the agent and the run when it starts following a child, before any frame of that child, and onChildEnded when its stream ends', async () => {
+    const { client } = clientOf({ parent: [text('parent', 1), waiting('parent', 2, 'child', 'reviewer')], child: [text('child', 1), text('child', 2)] });
+    const seen: string[] = [];
+
+    await followRun(
+      optionsOf(client, {
+        onChildEvent: (frame, agent) => seen.push(`frame:${agent}:${runIdOf(frame)}:${frame.id}`),
+        onChildStarted: (agent, runId) => seen.push(`started:${agent}:${runId}`),
+        onChildEnded: (agent, runId) => seen.push(`ended:${agent}:${runId}`),
+      }),
+    );
+
+    expect(seen).toEqual(['started:reviewer:child', 'frame:reviewer:child:1', 'frame:reviewer:child:2', 'ended:reviewer:child']);
+  });
+
+  it('reports a grandchild that the child waits on, started and ended inside the child', async () => {
+    const { client } = clientOf({
+      parent: [waiting('parent', 1, 'child', 'planner')],
+      child: [waiting('child', 1, 'grandchild', 'reviewer')],
+      grandchild: [text('grandchild', 1)],
+    });
+    const seen: string[] = [];
+
+    await followRun(
+      optionsOf(client, {
+        onChildEvent: () => undefined,
+        onChildStarted: (agent, runId) => seen.push(`started:${agent}:${runId}`),
+        onChildEnded: (agent, runId) => seen.push(`ended:${agent}:${runId}`),
+      }),
+    );
+
+    expect(seen).toEqual(['started:planner:child', 'started:reviewer:grandchild', 'ended:reviewer:grandchild', 'ended:planner:child']);
+  });
+
+  it('reports a child once however many times the wait is announced', async () => {
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer'), waiting('parent', 2, 'child', 'reviewer')], child: [] });
+    const seen: string[] = [];
+
+    await followRun(
+      optionsOf(client, {
+        onChildEvent: () => undefined,
+        onChildStarted: (agent, runId) => seen.push(`started:${agent}:${runId}`),
+        onChildEnded: (agent, runId) => seen.push(`ended:${agent}:${runId}`),
+      }),
+    );
+
+    expect(seen).toEqual(['started:reviewer:child', 'ended:reviewer:child']);
+  });
+
+  it('reports the end of a child whose stream failed', async () => {
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer')] }, new Set(['child']));
+    const seen: string[] = [];
+
+    await expect(
+      followRun(
+        optionsOf(client, {
+          onChildEvent: () => undefined,
+          onChildStarted: (agent, runId) => seen.push(`started:${agent}:${runId}`),
+          onChildEnded: (agent, runId) => seen.push(`ended:${agent}:${runId}`),
+        }),
+      ),
+    ).rejects.toThrow('stream of child is broken');
+
+    expect(seen).toEqual(['started:reviewer:child', 'ended:reviewer:child']);
+  });
+
+  it('reports a subagent that was already running before the cursor the caller resumed from', async () => {
+    const child = runView({ id: 'child', status: 'WAITING_TOOL', parentRunId: 'parent', agent: 'reviewer' });
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer'), text('parent', 2)], child: [text('child', 1)] }, new Set(), [child]);
+    const seen: string[] = [];
+
+    await followRun(
+      optionsOf(client, {
+        seenThrough: 1,
+        onChildEvent: () => undefined,
+        onChildStarted: (agent, runId) => seen.push(`started:${agent}:${runId}`),
+        onChildEnded: (agent, runId) => seen.push(`ended:${agent}:${runId}`),
+      }),
+    );
+
+    expect(seen).toEqual(['started:reviewer:child', 'ended:reviewer:child']);
+  });
+});
+
+describe('followRun delivers the run events that back the waiting row (design-screens 6.1.1)', () => {
+  it('hands context.compacting, tool.permission.classifying and hook.started of the run and of a child to the handlers', async () => {
+    const waits = (runId: string, from: number): RunEventFrame[] => [
+      frameOf(runId, from, { type: 'context.compacting', step: 1, attempt: 1 }),
+      frameOf(runId, from + 1, { type: 'tool.permission.classifying', callId: 'call-1', subjectDigest: 'd'.repeat(64) }),
+      frameOf(runId, from + 2, { type: 'hook.started', event: 'PreToolUse', command: 'echo checked', callId: 'call-1' }),
+    ];
+    const { client } = clientOf({ parent: [waiting('parent', 1, 'child', 'reviewer'), ...waits('parent', 2)], child: waits('child', 1) });
+    const own: unknown[] = [];
+    const children: unknown[] = [];
+
+    await followRun(optionsOf(client, { onEvent: (frame) => own.push(frame.data), onChildEvent: (frame) => children.push(frame.data) }));
+
+    expect(own.slice(1)).toEqual(waits('parent', 2).map((frame) => frame.data));
+    expect(children).toEqual(waits('child', 1).map((frame) => frame.data));
+  });
+});

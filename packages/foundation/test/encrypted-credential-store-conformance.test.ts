@@ -40,7 +40,7 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
       plaintextTokenFiles: () => false,
       ports,
     });
-    await store.write('plan/p/a', 'token');
+    await store.write('plan/p/a', 'token', new AbortController().signal);
     expect(events.at(-1)).toBe('record_written_with_marker');
     expect(events.slice(0, -1).map((event) => MODEL_STEP_OF_EVENT[event])).toEqual([...CREDENTIAL_KEY_CREATION_STEPS]);
   });
@@ -52,7 +52,7 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
     const keys = createFakeKeyStore();
     const options = { directory, stateDirectory, secretStore: { kind: 'available' as const, store: keys }, plaintextTokenFiles: () => false };
     const writers = Array.from({ length: 4 }, () => createEncryptedCredentialStore(options));
-    await Promise.all(writers.map((writer, index) => writer.write(`plan/p/${index}`, `token-${index}`)));
+    await Promise.all(writers.map((writer, index) => writer.write(`plan/p/${index}`, `token-${index}`, new AbortController().signal)));
     expect(keys.writes.filter((name) => name.startsWith('credential-key-'))).toHaveLength(1);
   });
 });

@@ -19,6 +19,7 @@ const KEPT: readonly Kept[] = [
   { file: 'runtime/src/process/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/start-supervisor.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
+  { file: 'supervisor/src/reaper-pass.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'foundation/src/process-contract.ts', row: 'B17', reason: 'conventions of which variables each OS needs' },
   { file: 'foundation/src/release-assets.ts', row: 'B19', reason: 'asset names are release-engineering names' },
   { file: 'cli/src/update/source.ts', row: 'B19', reason: 'signing is a macOS fact' },
@@ -35,7 +36,6 @@ const BURN_DOWN: readonly BurnDown[] = [
   { file: 'tools/src/policy-filesystem.ts', rows: 'B6', owner: 'HB10e' },
   { file: 'config/src/settings.ts', rows: 'B8', owner: 'HB10c' },
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', owner: 'HB10c' },
-  { file: 'gateway/src/managed/server.ts', rows: 'B12', owner: 'HB10a, measuring the socket path by bind as uds.ts does' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', owner: 'not classified by the HB10 table' },
 ];
 

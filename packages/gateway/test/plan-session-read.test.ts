@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, recordFileOf, profileFor, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -156,8 +157,8 @@ describe('read: the state decides the failure, and no failure is skippable', () 
   });
 });
 
-describe('read: a target with no account follows the active-account pointer on every read', () => {
-  it('reads the label from plan-active.json at each read, and fails with sign_in_required when the profile has no entry', async () => {
+describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', () => {
+  it('an unpinned source follows the active pointer of the gateway on every read, and never the file', async () => {
     const h = await harness();
     const unpinned = h.sessions.authSource({ profile: PROFILE_ID });
     expect((await planError(unpinned.read(new AbortController().signal))).code).toBe('sign_in_required');
@@ -165,7 +166,107 @@ describe('read: a target with no account follows the active-account pointer on e
     h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
     const home = await signedIn(h, 'home');
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(home.tokens.access_token);
-    await fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: 'work' }), { mode: 0o600 });
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
+    expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
+    await fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: 'home' }));
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
   });
+
+  const damaged: Array<{ name: string; damage(file: string): Promise<void>; cause(file: string): string | RegExp }> = [
+    {
+      name: 'a file that cannot be read',
+      damage: async (file) => {
+        await fs.rm(file, { force: true });
+        await fs.mkdir(file);
+      },
+      cause: (file) => new RegExp(`^could not read the active plan account file ${escaped(file)}: .+`),
+    },
+    {
+      name: 'a file that is not valid JSON',
+      damage: (file) => fs.writeFile(file, '{'),
+      cause: (file) => `the active plan account file ${file} is not valid JSON`,
+    },
+    {
+      name: 'a file that is not a JSON object',
+      damage: (file) => fs.writeFile(file, '"x"'),
+      cause: (file) => `the active plan account file ${file} is not a JSON object`,
+    },
+    {
+      name: 'a file that names a non-string account',
+      damage: (file) => fs.writeFile(file, JSON.stringify({ [PROFILE_ID]: 1 })),
+      cause: (file) => `the active plan account file ${file} names an account that is not text`,
+    },
+    {
+      name: 'a file that names an account that does not match the label pattern',
+      damage: (file) => fs.writeFile(file, JSON.stringify({ [PROFILE_ID]: 'not/a-label' })),
+      cause: (file) => `the active plan account file ${file} names an account that does not match ${SECRET_NAME_PATTERN}`,
+    },
+  ];
+
+  it('while plan-active.json is damaged the status of an unpinned source shows no account, as for a profile nobody signed in to', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).status()).toEqual({ state: 'absent' });
+    expect(h.sessions.signedOutSource(PROFILE_ID).status()).toEqual({ state: 'absent' });
+  });
+
+  it('while plan-active.json is damaged, health() of an unpinned source and of the signed-out source names store_unreadable with the cause', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    const expected = {
+      ok: false,
+      reason: 'store_unreadable',
+      detail: `the active plan account file ${h.paths.active} is not a JSON object`,
+      remediation: 'repair the plan session store for this account, then sign in again with /login in the app, or run `momonga auth login chatgpt --account <label>`',
+    };
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).health()).toEqual(expected);
+    expect(h.sessions.signedOutSource(PROFILE_ID).health()).toEqual(expected);
+  });
+
+  it('after a successful pointer write the same sources answer as before the damage', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    const unpinnedBefore = h.sessions.authSource({ profile: PROFILE_ID }).health();
+    const signedOutBefore = h.sessions.signedOutSource(PROFILE_ID).health();
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    await fs.writeFile(h.paths.active, '{}');
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).health()).toEqual(unpinnedBefore);
+    expect(h.sessions.signedOutSource(PROFILE_ID).health()).toEqual(signedOutBefore);
+  });
+
+  for (const entry of damaged) {
+    it(`${entry.name} is warned at open, an unpinned source fails plan_store_unreadable with the cause, a pinned source reads and selectActive does not overwrite it`, async () => {
+      const h = await harness();
+      const work = await signedIn(h, 'work');
+      await entry.damage(h.paths.active);
+      await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+      const cause = entry.cause(h.paths.active);
+      const failure = await planError(h.sessions.authSource({ profile: PROFILE_ID }).read(new AbortController().signal));
+      expect(failure.code).toBe('plan_store_unreadable');
+      if (typeof cause === 'string') {
+        expect(failure.message).toBe(cause);
+        expect(h.warnings).toContain(`could not list plan-active.json: ${cause}`);
+      } else {
+        expect(failure.message).toMatch(cause);
+        expect(h.warnings.filter((warning) => warning.startsWith('could not list plan-active.json: ') && cause.test(warning.slice('could not list plan-active.json: '.length)))).toHaveLength(1);
+      }
+      expect((await pinned(h, 'work').read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
+      const before = await pointerContent(h.paths.active);
+      await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal)).rejects.toThrow(cause);
+      expect(await pointerContent(h.paths.active)).toEqual(before);
+    });
+  }
 });
+
+const pointerContent = async (file: string): Promise<{ kind: 'directory'; entries: string[] } | { kind: 'file'; bytes: string }> =>
+  (await fs.stat(file)).isDirectory() ? { kind: 'directory', entries: await fs.readdir(file) } : { kind: 'file', bytes: (await fs.readFile(file)).toString('hex') };
+
+const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

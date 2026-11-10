@@ -33,7 +33,7 @@ const shuffled = <T>(items: readonly T[], seed: number): T[] => {
 
 const outcomeOf = async (tools: readonly AnyTool[]) => {
   const set = await toolSetOf(...tools);
-  const offered = set.forModel({ mode: 'default', rules: [] });
+  const offered = set.forModel({ mode: 'manual', rules: [] });
   const capabilities = capabilitiesFor(2_048, { maxOutputTokens: 1024 });
   const { ports } = harness(capabilities);
   const built = await buildContext(
@@ -93,7 +93,7 @@ describe('the tools_dropped notice', () => {
     const { ports } = harness(capabilities);
     const built = await buildContext(
       inputFor(capabilities, {
-        sources: sourcesWith({ tools: set.forModel({ mode: 'default', rules: [] }) }),
+        sources: sourcesWith({ tools: set.forModel({ mode: 'manual', rules: [] }) }),
         companions: { hostOf: Object.fromEntries(set.companions), keepWithoutHost: false },
       }),
       ports,

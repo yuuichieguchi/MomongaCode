@@ -1,0 +1,17 @@
+{
+  "name": "mouse-wheel",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b3c36343b31303b354d",
+  "events": [
+    {
+      "type": "mouse",
+      "kind": "wheel",
+      "button": "wheel-up",
+      "col": 10,
+      "row": 5,
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

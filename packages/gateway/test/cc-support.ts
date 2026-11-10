@@ -1,5 +1,5 @@
 import { contextOf } from './own-reasoning.ts';
-import { createChatCompletionsAdapter } from '@momonga/gateway';
+import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
 import { wireUsageOf } from '@momonga/protocol';
 import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCallingMode } from '@momonga/protocol';
@@ -44,6 +44,7 @@ export const makeAdapter = (
     schemaDialect: () => CC_CAPABILITIES.schemaDialect,
     clock,
     ...overrides,
+    authSource: overrides.authSource ?? unauthenticatedSource,
   });
   registerCleanup(() => adapter.close());
   return adapter;

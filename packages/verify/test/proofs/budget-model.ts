@@ -57,6 +57,18 @@ export const windowOf = (arith: ProofArith): Window => {
   return { W, maxOutput, R, margin, I0 };
 };
 
+export const unboundedWindowOf = (arith: ProofArith, options: { readonly loadRule: boolean }): Window => {
+  const { ctx } = arith;
+  const W = arith.int('W');
+  const maxOutput = arith.int('maxOutput');
+  arith.given(W.ge(1), W.le(ctx.Int.val(MAX_WINDOW)), maxOutput.ge(1), maxOutput.le(W));
+  const R = named(arith, 'R', maxOutput);
+  const margin = named(arith, 'margin', arith.max(ceilOf(arith, MARGIN, W), ctx.Int.val(MIN_MARGIN)));
+  if (options.loadRule) arith.given(W.sub(R).sub(margin).ge(ceilOf(arith, OUTPUT_RESERVE, W)));
+  const I0 = named(arith, 'I0', arith.max(ctx.Int.val(0), W.sub(R).sub(margin)));
+  return { W, maxOutput, R, margin, I0 };
+};
+
 export const anyCeiling = (arith: ProofArith, window: Window): ProofInt => {
   const ceiling = arith.int('ceiling');
   arith.given(ceiling.ge(0), ceiling.le(window.I0));

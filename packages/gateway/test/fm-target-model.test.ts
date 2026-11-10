@@ -23,10 +23,10 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
   let starts = 0;
   const fmServe: ManagedServer = {
     restarts: 0,
-    start: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
+    start: async () => ({ kind: 'unix', path: fake.socketPath }),
     ensureRunning: async () => {
       starts += 1;
-      return { kind: 'unix', socketPath: fake.socketPath };
+      return { kind: 'unix', path: fake.socketPath };
     },
     stop: async () => undefined,
     health: async () => ({ ok: true }),

@@ -19,12 +19,12 @@ describe('environment disclosure: the Bash environment is scrubbed before the sh
   });
 
   it('therefore allows echo of a variable, which can print only what the scrubbed environment holds', () => {
-    expect(kindIn(commandRow('echo $AWS_SECRET_ACCESS_KEY'), 'default')).toBe('allow');
-    expect(kindIn(commandRow('which $X'), 'default')).toBe('allow');
+    expect(kindIn(commandRow('echo $AWS_SECRET_ACCESS_KEY'), 'manual')).toBe('allow');
+    expect(kindIn(commandRow('which $X'), 'manual')).toBe('allow');
   });
 
   it('still asks for ps with the environment option, which reads the unscrubbed environment of other processes', () => {
-    expect(kindIn(commandRow('ps aux -e'), 'default')).toBe('ask');
-    expect(kindIn(commandRow('ps -E'), 'default')).toBe('ask');
+    expect(kindIn(commandRow('ps aux -e'), 'manual')).toBe('ask');
+    expect(kindIn(commandRow('ps -E'), 'manual')).toBe('ask');
   });
 });

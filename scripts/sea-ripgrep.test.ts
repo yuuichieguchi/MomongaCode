@@ -53,7 +53,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
   };
 
   beforeAll(async () => {
-    root = fs.realpathSync(createTempRoot());
+    root = createTempRoot({ asHome: true });
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
     paths = momongaLayout(root);
@@ -90,7 +90,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
   afterAll(async () => {
     if (binary !== '') await run('daemon', 'stop');
     await upstream.close();
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   it('has no rg on the PATH it is started with', () => {

@@ -1,5 +1,6 @@
-import type { Clock, StopValues } from '@momonga/foundation';
+import type { Clock, RolePort, StopValues } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
+import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
@@ -14,12 +15,17 @@ export type GatewayTargetConfig = {
   admissionTimeoutMs: number;
   counter: string;
   capabilities?: CapabilityOverride;
+  plan?: { profile: string; account?: string };
+  keyGroup?: string;
 };
+
+export type GatewayBillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
 
 export type GatewayConfig = {
   models: {
     aliases: Record<string, string[]>;
     targets: Record<string, GatewayTargetConfig>;
+    billingChanges?: readonly GatewayBillingChange[];
   };
   retry: { maxAttempts: number; totalWaitMs: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };
@@ -50,6 +56,8 @@ export type GatewayOptions = GatewayCommonOptions & (FixedModelsOptions | Derive
 
 export type GatewayCommonOptions = {
   startSignal?: AbortSignal;
+  role: RolePort;
+  probeFlights?: () => number;
   credentials: readonly string[];
   credentialFeed?: (add: (credential: string) => void) => void;
   clock: Clock;
@@ -63,6 +71,7 @@ export type GatewayCommonOptions = {
   random: () => number;
   version: string;
   onError?: (error: unknown) => void;
+  plan?: PlanApi;
   onFatal?: (error: Error) => void;
 };
 
@@ -72,6 +81,8 @@ export type Gateway = {
   readonly tcpPort: number | undefined;
   readonly abandonedRuns: number;
   addCredential(credential: string): void;
+  activeRequests(): number;
+  releaseIdleConnections(): void;
   close(values?: StopValues): Promise<void>;
   abort(values?: StopValues): Promise<void>;
 };

@@ -75,7 +75,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('returns needs_approval with the subject digest and never executes when the policy asks', async () => {
     const { harness, tool, subject, executor, executions } = setup();
 
-    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { mode: 'default' }));
+    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', subjectDigest: expectedSubjectDigest(subject, harness.layout.project) });
     expect(executions()).toBe(0);
@@ -87,10 +87,10 @@ describe('executor gates a call whose recovered record vanished before begin', (
     const { harness, tool, executor, executions } = setup('unknown');
     const toolSet = await toolSetOf(tool);
 
-    const [asked] = await executor.runBatch(harness.input(toolSet, [call('c1', 'Write')], { mode: 'default' }));
+    const [asked] = await executor.runBatch(harness.input(toolSet, [call('c1', 'Write')], { mode: 'manual' }));
     expect(asked?.kind).toBe('needs_approval');
 
-    const [approved] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Write', {}, 'allow_once')], { mode: 'default' }));
+    const [approved] = await harness.executor.runBatch(harness.input(toolSet, [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
 
     expect(approved).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'written' } });
     expect(executions()).toBe(1);
@@ -111,7 +111,7 @@ describe('executor gates a call whose recovered record vanished before begin', (
   it('executes exactly once when the call carries a matching approval', async () => {
     const { harness, tool, executor, executions } = setup();
 
-    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')], { mode: 'default' }));
+    const [outcome] = await executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Write', {}, 'allow_once')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed', output: 'written' } });
     expect(executions()).toBe(1);

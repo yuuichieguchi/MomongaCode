@@ -75,7 +75,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
 });
 
 const secondSessionRun = (env: Env) => {
-  const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: MODEL_ALIAS });
+  const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', modelAlias: MODEL_ALIAS });
   return createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
 };
 

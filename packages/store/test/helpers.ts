@@ -39,6 +39,7 @@ export type StoreOptions = {
   preparer?: RuntimeStoreOptions['preparer'];
   inheritance?: boolean;
   home?: string;
+  generation?: number;
 };
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
@@ -99,6 +100,7 @@ export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptio
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
     ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
+    ...(options.generation === undefined ? {} : { generation: options.generation }),
     ...(options.contribution === undefined ? {} : { preparer: hookPreparer(options.contribution, dbPath) }),
     ...(options.inheritance === true ? { preparer: inheritancePreparer(dbPath) } : {}),
     ...(options.preparer === undefined ? {} : { preparer: options.preparer }),
@@ -128,7 +130,7 @@ export const rawDb = (dbPath: string): DatabaseSync => {
 };
 
 export const newSession = (store: RuntimeStore, cwd = '/work/a') =>
-  store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
+  store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'manual', modelAlias: 'fm' });
 
 export const TIMEOUT_MS = 3_600_000;
 export const DEADLINE_MS = START_MS + TIMEOUT_MS;

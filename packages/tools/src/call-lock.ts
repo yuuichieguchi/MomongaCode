@@ -1,6 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { CLAIM_POLL_MS, claimWithin } from '@momonga/foundation';
+import { CLAIM_POLL_MS, claimWithin, sweepLeftovers } from '@momonga/foundation';
 import type { KernelLockMechanism, ReapTiming } from '@momonga/foundation';
 
 export class EarlierAttemptNotStoppedError extends Error {
@@ -14,9 +13,10 @@ export class EarlierAttemptNotStoppedError extends Error {
   }
 }
 
-export const clearCallLocks = async (dir: string): Promise<void> => {
-  const names = await fs.promises.readdir(dir);
-  await Promise.all(names.map((name) => fs.promises.rm(path.join(dir, name), { force: true })));
+const CALL_LOCK_SUFFIX = '.lock';
+
+export const sweepCallLocks = async ({ dir, mechanism }: { dir: string; mechanism: KernelLockMechanism }): Promise<void> => {
+  await sweepLeftovers({ directories: [{ directory: dir, isLeftover: (name) => name.endsWith(CALL_LOCK_SUFFIX) }], lock: mechanism });
 };
 
 export type CallLock = { release(): void };
@@ -34,7 +34,7 @@ export type CallLocksOptions = {
 
 export const createCallLocks = ({ dir, mechanism, timing, waitMs }: CallLocksOptions): CallLocks => ({
   acquire: async (key, signal) => {
-    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}.lock`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
+    const outcome = await claimWithin({ mechanism, lockPath: path.join(dir, `${key}${CALL_LOCK_SUFFIX}`), holder: String(process.pid), timing, pollMs: CLAIM_POLL_MS, waitMs, signal });
     if (outcome.kind === 'aborted') return 'aborted';
     if (outcome.kind === 'claimed') return { release: () => outcome.lock.dispose() };
     throw new EarlierAttemptNotStoppedError(

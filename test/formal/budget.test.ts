@@ -22,8 +22,8 @@ const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[])
 const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', EVERY_RUN_BUDGET_RATIO * 20 - 34)]);
 
 describe('the time budget of the every-run tier', () => {
-  it('allows the every-run tier twenty-three times the unit suite time', () => {
-    expect(EVERY_RUN_BUDGET_RATIO).toBe(23);
+  it('allows the every-run tier thirty-eight times the unit suite time', () => {
+    expect(EVERY_RUN_BUDGET_RATIO).toBe(38);
   });
 
   it('sums the budgets of the every-run entries only', () => {

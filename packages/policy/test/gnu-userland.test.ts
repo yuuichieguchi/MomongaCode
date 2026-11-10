@@ -52,14 +52,14 @@ describe('decisions follow the platform of the filesystem port', () => {
     ['stat -t /etc/passwd', 'ask', 'allow'],
     ['grep --dereference-recursive x .', 'ask', 'ask'],
   ] as const)('%s asks on Linux where GNU reads the operand, and is %s on macOS', (command, onLinux, onDarwin) => {
-    expect(kindIn(commandRow(command, linux), 'default')).toBe(onLinux);
-    expect(kindIn(commandRow(command, darwin), 'default')).toBe(onDarwin);
+    expect(kindIn(commandRow(command, linux), 'manual')).toBe(onLinux);
+    expect(kindIn(commandRow(command, darwin), 'manual')).toBe(onDarwin);
   });
 
   it('sed -i takes no value on GNU, so the file after the script is the write target', () => {
     expect(kindIn(commandRow('sed -i p .envrc', { ...linux, protection: true }), 'acceptEdits')).toBe('prot');
     expect(kindIn(commandRow('sed -i p f', linux), 'acceptEdits')).toBe('allow');
-    expect(kindIn(commandRow('sed -i p f', linux), 'default')).toBe('ask');
+    expect(kindIn(commandRow('sed -i p f', linux), 'manual')).toBe('ask');
     expect(kindIn(commandRow("sed -i.bak p f", linux), 'acceptEdits')).toBe('allow');
     expect(kindIn(commandRow("sed --in-place=bak/* p f", linux), 'acceptEdits')).toBe('ask');
   });
@@ -71,18 +71,18 @@ describe('decisions follow the platform of the filesystem port', () => {
 
   it('allows the common GNU read-only forms on Linux', () => {
     for (const command of ['ls -la --color=auto', 'cat -n f', 'head -n 5 f', 'tail -n 5 f', 'grep -rn --include=*.ts x .', 'wc -l f', 'stat -c %s f', 'du -sh .', 'find . -name x -type f', 'sort -u f', 'diff -u f m', 'ps aux', 'ps -ef']) {
-      expect(kindIn(commandRow(command, { ...linux }), 'default'), command).toBe('allow');
+      expect(kindIn(commandRow(command, { ...linux }), 'manual'), command).toBe('allow');
     }
   });
 
   it('asks for GNU forms that write, execute or follow links', () => {
     for (const command of ['sort -o out f', 'find . -delete', 'find . -fprint out', 'find . -exec rm {} ;', 'ls -L', 'du -L .', 'tail -f f --pid=1 -s 1 --unknown', 'ps aux -e', 'ps -E', 'sed -f s.sed f', 'sed --file=s.sed f']) {
-      expect(kindIn(commandRow(command, { ...linux }), 'default'), command).toBe('ask');
+      expect(kindIn(commandRow(command, { ...linux }), 'manual'), command).toBe('ask');
     }
   });
 
   it('does not treat /usr/bin on Windows as a system directory', () => {
-    expect(kindIn(commandRow('ls', { fs: () => ({ platform: 'win32' }) }), 'default')).toBe('ask');
+    expect(kindIn(commandRow('ls', { fs: () => ({ platform: 'win32' }) }), 'manual')).toBe('ask');
   });
 });
 

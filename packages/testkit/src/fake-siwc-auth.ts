@@ -49,9 +49,12 @@ export type SiwcTokenStep =
   | { kind: 'drop' }
   | { kind: 'lose_response' }
   | { kind: 'no_replacement_refresh_token' }
-  | { kind: 'expires_in'; seconds: number };
+  | { kind: 'expires_in'; seconds: number }
+  | { kind: 'hold'; reached: () => void; released: Promise<void> };
 
-export type SiwcRevokeStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
+export type SiwcJwksStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
+
+export type SiwcRevokeStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' } | { kind: 'hold'; reached: () => void; released: Promise<void> };
 
 export type SiwcGrant = 'authorization_code' | 'refresh_token';
 
@@ -83,6 +86,7 @@ export type SiwcAuth = {
   calls: SiwcCalls;
   scriptToken(grant: SiwcGrant, steps: SiwcTokenStep[]): void;
   scriptRevoke(steps: SiwcRevokeStep[]): void;
+  scriptJwks(steps: SiwcJwksStep[]): void;
   rotateKeys(options: { retireOld: boolean }): Promise<string>;
   jwks(): { keys: SiwcJwk[] };
   disconnect(clientId: string): void;
@@ -94,7 +98,9 @@ export type SiwcAuth = {
   close(): Promise<void>;
 };
 
-export type SiwcAuthOptions = { now?: () => number };
+export type SiwcAccessTokenForm = 'jwt' | 'opaque';
+
+export type SiwcAuthOptions = { now?: () => number; resource?: string; accessTokenForm?: SiwcAccessTokenForm };
 
 type SigningKey = { kid: string; privateKey: KeyObject; jwk: SiwcJwk };
 
@@ -149,6 +155,8 @@ const isLoopbackCallback = (redirectUri: string): boolean => {
 
 export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<SiwcAuth> => {
   const now = options.now ?? Date.now;
+  const resource = options.resource ?? SIWC_RESOURCE;
+  const accessTokenForm = options.accessTokenForm ?? 'jwt';
   const keys = await sharedKeyPair();
   const published: SigningKey[] = [keys.signing];
   let signing: SigningKey = keys.signing;
@@ -160,6 +168,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const secrets: string[] = [];
   const tokenScripts: Record<SiwcGrant, SiwcTokenStep[]> = { authorization_code: [], refresh_token: [] };
   const revokeScript: SiwcRevokeStep[] = [];
+  const jwksScript: SiwcJwksStep[] = [];
   const records: SiwcRecord[] = [];
   const calls: SiwcCalls = { authorize: 0, tokenAuthorizationCode: 0, tokenRefreshToken: 0, revoke: 0, jwks: 0, discovery: 0 };
   let earliestRefreshCounter = 0;
@@ -186,6 +195,9 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     },
     scriptRevoke: (steps) => {
       revokeScript.push(...steps);
+    },
+    scriptJwks: (steps) => {
+      jwksScript.push(...steps);
     },
     rotateKeys: async ({ retireOld }) => {
       const fresh = await newSigningKey();
@@ -258,23 +270,25 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const issueAccess = (family: Family, clientId: string, resource: string, scope: string, expiresIn: number): string => {
     const seconds = Math.floor(now() / 1000);
     const token = remember(
-      signRs256(
-        {},
-        {
-          sub: registrationsById.get(clientId)?.sub ?? fixture.identity.sub,
-          aud: resource,
-          client_id: clientId,
-          scope,
-          'https://api.openai.com/auth': { per_user_salt: createCanary('salt'), encrypted_auth_metadata: createCanary('meta') },
-          iss: fixture.issuer,
-          iat: seconds,
-          exp: seconds + expiresIn,
-          jti: createCanary('access'),
-          nbf: seconds,
-        },
-        signing,
-        signing.kid,
-      ),
+      accessTokenForm === 'opaque'
+        ? randomBytes(32).toString('base64url')
+        : signRs256(
+            {},
+            {
+              sub: registrationsById.get(clientId)?.sub ?? fixture.identity.sub,
+              aud: resource,
+              client_id: clientId,
+              scope,
+              'https://api.openai.com/auth': { per_user_salt: createCanary('salt'), encrypted_auth_metadata: createCanary('meta') },
+              iss: fixture.issuer,
+              iat: seconds,
+              exp: seconds + expiresIn,
+              jti: createCanary('access'),
+              nbf: seconds,
+            },
+            signing,
+            signing.kid,
+          ),
     );
     accessGrants.set(token, { family, resource, expiresAtMs: now() + expiresIn * 1000, expired: false });
     return token;
@@ -319,7 +333,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     const family: Family = { clientId: grant.clientId, revoked: false };
     const body = tokenBody({
       access: issueAccess(family, grant.clientId, grant.resource, grant.scope, expiresIn),
-      refresh: issueRefresh(family, grant.clientId, grant.resource, grant.scope),
+      ...(step?.kind === 'no_replacement_refresh_token' ? {} : { refresh: issueRefresh(family, grant.clientId, grant.resource, grant.scope) }),
       idToken: remember(idTokenFor(grant.clientId, grant, grant.scope)),
       scope: grant.scope,
       expiresIn,
@@ -366,6 +380,10 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (grantType === 'authorization_code') calls.tokenAuthorizationCode += 1;
     else calls.tokenRefreshToken += 1;
     const step = tokenScripts[grantType].shift();
+    if (step?.kind === 'hold') {
+      step.reached();
+      await step.released;
+    }
     if (step?.kind === 'drop') {
       res.socket?.destroy();
       return;
@@ -392,6 +410,10 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     records.push({ method: 'POST', path: REVOKE_PATH, form });
     calls.revoke += 1;
     const step = revokeScript.shift();
+    if (step?.kind === 'hold') {
+      step.reached();
+      await step.released;
+    }
     if (step?.kind === 'drop') {
       res.socket?.destroy();
       return;
@@ -420,7 +442,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (query['response_type'] !== 'code') return refuse('response_type must be code');
     if (query['code_challenge_method'] !== 'S256' || (query['code_challenge'] ?? '') === '') return refuse('PKCE S256 is required');
     for (const name of ['state', 'nonce', 'ext_agent_host_id']) if ((query[name] ?? '') === '') return refuse(`${name} is required`);
-    if (query['resource'] !== SIWC_RESOURCE) return refuse('resource must be the Responses API');
+    if (query['resource'] !== resource) return refuse('resource must be the Responses API');
     const hostId = query['ext_agent_host_id'] as string;
     const presented = query['client_id'] ?? '';
     const dynamic = presented === SIWC_DYNAMIC_CLIENT_ID;
@@ -450,7 +472,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     }
     const scope = grantedScope(query['scope'] ?? '');
     const code = remember(createCanary('code'));
-    codes.set(code, { clientId, redirectUri, challenge: query['code_challenge'] as string, resource: SIWC_RESOURCE, scope, nonce: query['nonce'] as string });
+    codes.set(code, { clientId, redirectUri, challenge: query['code_challenge'] as string, resource, scope, nonce: query['nonce'] as string });
     target.searchParams.set('code', code);
     target.searchParams.set('scope', scope);
     if (fixture.authorizeMode === 'foreign_client_id') target.searchParams.set('client_id', `oaiapp_${randomBytes(12).toString('hex')}`);
@@ -482,6 +504,16 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (req.method === 'GET' && url.pathname === JWKS_PATH) {
       calls.jwks += 1;
       records.push({ method: 'GET', path: JWKS_PATH, form: {} });
+      const jwksStep = jwksScript.shift();
+      if (jwksStep?.kind === 'drop') {
+        res.socket?.destroy();
+        return;
+      }
+      if (jwksStep?.kind === 'http') {
+        res.writeHead(jwksStep.status, { 'content-type': 'application/json' });
+        res.end(jwksStep.body ?? '{}');
+        return;
+      }
       sendJson(res, 200, fixture.jwks());
       return;
     }

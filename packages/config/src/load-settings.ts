@@ -19,8 +19,8 @@ import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
-import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpCallSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpCallSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -46,6 +46,7 @@ export type ResolvedSettings = {
   mcp: McpCallSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
+  tui: ResolvedTuiSettings;
   gateway: StopValues;
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
@@ -145,6 +146,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     mcp: {},
     models,
     autoUpdates: true,
+    tui: defaultTuiSettings(),
     gateway: DEFAULT_STOP_VALUES,
     sandbox: defaultSandboxSetting(),
     memory: defaultMemorySettings(),
@@ -165,6 +167,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       mcpServers,
       mcp,
       autoUpdates,
+      tui,
       gateway,
       sandbox,
       telemetry,
@@ -209,6 +212,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     Object.assign(merged.mcpServers, mcpServers);
     Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (tui !== undefined) merged.tui = { ...merged.tui, ...tui };
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;

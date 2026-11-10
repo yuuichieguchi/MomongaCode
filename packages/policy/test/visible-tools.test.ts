@@ -17,22 +17,22 @@ const TOOLS: PolicyTool[] = [
 const names = (tools: PolicyTool[]): string[] => tools.map((t) => t.name);
 
 describe('modelVisibleTools', () => {
-  it('shows every tool without rules in default mode', () => {
-    expect(names(modelVisibleTools(TOOLS, { mode: 'default', rules: [] }))).toEqual(names(TOOLS));
+  it('shows every tool without rules in manual mode', () => {
+    expect(names(modelVisibleTools(TOOLS, { mode: 'manual', rules: [] }))).toEqual(names(TOOLS));
   });
 
   it('hides tools denied without a specifier, and whole MCP servers', () => {
     const layout = makeLayout();
     const make = ruleIn(layout);
     const rules = [make('deny', 'Bash'), make('deny', 'Read(./secret/**)'), make('deny', 'mcp__srv'), make('ask', 'Grep'), make('allow', 'Edit')];
-    expect(names(modelVisibleTools(TOOLS, { mode: 'default', rules }))).toEqual(['Read', 'Grep', 'Edit', 'UpdatePlan', 'mcp__other__x']);
+    expect(names(modelVisibleTools(TOOLS, { mode: 'manual', rules }))).toEqual(['Read', 'Grep', 'Edit', 'UpdatePlan', 'mcp__other__x']);
   });
 
   it('hides a single denied MCP tool', () => {
     const layout = makeLayout();
     const rules = [ruleIn(layout)('deny', 'mcp__srv__run')];
-    expect(names(modelVisibleTools(TOOLS, { mode: 'default', rules }))).not.toContain('mcp__srv__run');
-    expect(names(modelVisibleTools(TOOLS, { mode: 'default', rules }))).toContain('mcp__srv__list');
+    expect(names(modelVisibleTools(TOOLS, { mode: 'manual', rules }))).not.toContain('mcp__srv__run');
+    expect(names(modelVisibleTools(TOOLS, { mode: 'manual', rules }))).toContain('mcp__srv__list');
   });
 
   it('shows read_only tools and Bash in plan mode, and hides Edit and MCP exec tools', () => {
@@ -71,6 +71,6 @@ describe('modelVisibleTools in plan mode for tools that decide refuses there', (
   });
 
   it('shows KillBash outside plan mode', () => {
-    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'default', rules: [] }))).toContain('KillBash');
+    expect(names(modelVisibleTools([...TOOLS, ...OTHERS], { mode: 'manual', rules: [] }))).toContain('KillBash');
   });
 });

@@ -1,6 +1,10 @@
 import net from 'node:net';
-import { describe, expect, it } from 'vitest';
-import { McpUnknownToolError, connectMcpServer, type McpServerConnection } from '@momonga/mcp';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { CredentialStoreError } from '@momonga/foundation';
+import { McpUnavailableError, McpUnknownToolError, connectMcpServer, createManagedConnection, type McpServerConnection } from '@momonga/mcp';
+import type { McpCallToolInput } from '../src/connection.ts';
+import { LIMIT_TEST, NO_STORE_REFUSAL, afterPendingIo, controlledCredentialStore, keyReadLimitSentence, outcomeOf, settledAfter, stillPendingAfter, useLimitTimers } from './credential-store-fakes.ts';
+import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 import type { McpServerConfig } from '@momonga/config';
 import {
   LEGACY_FIXTURE_PROTOCOL_VERSION,
@@ -12,6 +16,7 @@ import {
 } from '@momonga/testkit';
 import {
   BASE_ENV,
+  NEVER_ABORTED,
   callRecords,
   groupExists,
   legacyConfig,
@@ -133,7 +138,7 @@ describe('connectMcpServer tool listing', () => {
     const recordFile = makeRecordFile();
     const connection = await connect('modern', modernConfig(recordFile, { [MODERN_FIXTURE_LIST_TTL_ENV]: '600000' }));
     await connection.listTools();
-    await connection.callTool({ name: 'trigger_list_changed', arguments: {} });
+    await connection.callTool({ name: 'trigger_list_changed', arguments: {}, signal: NEVER_ABORTED });
     const tools = await connection.listTools();
     expect(tools.map((tool) => tool.name)).toEqual([...MODERN_FIXTURE_TOOL_NAMES, 'added_later']);
     expect(listRecordCount(recordFile)).toBeGreaterThan(3);
@@ -149,15 +154,15 @@ describe('connectMcpServer tool listing', () => {
 describe('connectMcpServer callTool', () => {
   it('calls a tool by its original name on both fixtures', async () => {
     const modern = await connect('modern', modernConfig(makeRecordFile()));
-    expect(textOf(await modern.callTool({ name: 'dotted.name/with-slash', arguments: {} }))).toBe('dotted');
+    expect(textOf(await modern.callTool({ name: 'dotted.name/with-slash', arguments: {}, signal: NEVER_ABORTED }))).toBe('dotted');
     const legacy = await connect('legacy', legacyConfig());
-    expect(textOf(await legacy.callTool({ name: 'add', arguments: { a: 40, b: 2 } }))).toBe('42');
+    expect(textOf(await legacy.callTool({ name: 'add', arguments: { a: 40, b: 2 }, signal: NEVER_ABORTED }))).toBe('42');
   });
 
   it('fails with a typed error for a tool the server does not list, without calling the server', async () => {
     const recordFile = makeRecordFile();
     const connection = await connect('modern', modernConfig(recordFile));
-    const failure = await connection.callTool({ name: 'not_listed', arguments: {} }).catch((error: unknown) => error);
+    const failure = await connection.callTool({ name: 'not_listed', arguments: {}, signal: NEVER_ABORTED }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(McpUnknownToolError);
     expect(failure).toMatchObject({ server: 'modern', tool: 'not_listed' });
     expect(callRecords(recordFile, 'not_listed')).toEqual([]);
@@ -166,7 +171,7 @@ describe('connectMcpServer callTool', () => {
   it('times out after timeoutMs and the server records the cancellation', async () => {
     const recordFile = makeRecordFile();
     const connection = await connect('modern', modernConfig(recordFile));
-    await expect(connection.callTool({ name: 'slow', arguments: {}, timeoutMs: 300 })).rejects.toThrow();
+    await expect(connection.callTool({ name: 'slow', arguments: {}, signal: NEVER_ABORTED, timeoutMs: 300 })).rejects.toThrow();
     expect(await waitForRecord(recordFile, (record) => record.type === 'cancelled')).toMatchObject({ type: 'cancelled', tool: 'slow' });
   });
 
@@ -188,8 +193,118 @@ describe('connectMcpServer callTool', () => {
     const recordFile = makeRecordFile();
     const connection = await connect('modern', modernConfig(recordFile));
     const traceparent = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
-    await connection.callTool({ name: 'echo', arguments: { text: 'x' }, traceparent, tracestate: 'vendor=fixture' });
+    await connection.callTool({ name: 'echo', arguments: { text: 'x' }, signal: NEVER_ABORTED, traceparent, tracestate: 'vendor=fixture' });
     const [call] = callRecords(recordFile, 'echo');
     expect(call?.type === 'call' ? call.meta : undefined).toEqual({ traceparent, tracestate: 'vendor=fixture' });
+  });
+});
+
+describe('the connect of a server against the limit of the connect', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const remoteServer = async (connection: { connectTimeoutMs?: number } = {}) => {
+    const fixture = await startHttpFixture({ era: 'legacy' });
+    const credentials = controlledCredentialStore();
+    const harness = makeRemoteConnection({ fixture, store: credentials.store, connection: { name: 's', ...connection } });
+    return { fixture, credentials, ...harness };
+  };
+
+  const expiredConnect = async (server: Awaited<ReturnType<typeof remoteServer>>, hungReads: number, limitMs: number): Promise<unknown> => {
+    const attempt = outcomeOf(server.connection.connect());
+    await server.credentials.arrived(hungReads, 'hang');
+    await stillPendingAfter(attempt, limitMs - 1);
+    await vi.advanceTimersByTimeAsync(1);
+    await settledAfter(attempt);
+    expect(attempt.state()).toBe('rejected');
+    return attempt.error();
+  };
+
+  it.for([
+    { connectTimeoutMs: undefined, limitMs: 30_000 },
+    { connectTimeoutMs: 5000, limitMs: 5000 },
+  ])('a stored-credential read that never settles ends the connect at connectTimeoutMs ($limitMs ms)', LIMIT_TEST, async ({ connectTimeoutMs, limitMs }) => {
+    const server = await remoteServer(connectTimeoutMs === undefined ? {} : { connectTimeoutMs });
+    server.credentials.mode = 'hang';
+    useLimitTimers();
+
+    const failure = await expiredConnect(server, 1, limitMs);
+
+    expect((failure as Error).message).toBe(keyReadLimitSentence('the MCP connect limit', limitMs));
+    expect(server.connection.diagnostics().lastError).toBe(keyReadLimitSentence('the MCP connect limit', limitMs));
+    expect(server.connection.diagnostics().state).toBe('disconnected');
+  });
+
+  it('a connect that hangs outside the store has the limit text', LIMIT_TEST, async () => {
+    const connection = createManagedConnection({
+      name: 's',
+      config: { command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'] },
+      scope: 'user',
+      projectDir: makeDir(),
+      baseEnv: BASE_ENV,
+      clock: createFakeClock(1_000_000),
+      random: () => 0,
+    });
+    onCleanup(() => connection.close());
+    useLimitTimers();
+
+    const attempt = outcomeOf(connection.connect());
+    while (vi.getTimerCount() === 0) await afterPendingIo();
+    await stillPendingAfter(attempt, 29_999);
+    await vi.advanceTimersByTimeAsync(1);
+    await settledAfter(attempt);
+
+    expect(attempt.state()).toBe('rejected');
+    expect((attempt.error() as Error).message).toBe('the connect did not finish within the MCP connect limit of 30000 ms');
+    expect(connection.diagnostics().state).toBe('disconnected');
+  });
+
+  it('three connect expiries open the breaker', LIMIT_TEST, async () => {
+    const server = await remoteServer();
+    server.credentials.mode = 'hang';
+    useLimitTimers();
+    const sentence = keyReadLimitSentence('the MCP connect limit', 30_000);
+
+    for (const expiry of [1, 2, 3]) expect(((await expiredConnect(server, expiry, 30_000)) as Error).message).toBe(sentence);
+    expect(server.connection.diagnostics().state).toBe('unavailable');
+    const refused = outcomeOf(server.connection.connect());
+    await settledAfter(refused);
+
+    expect(refused.error()).toBeInstanceOf(McpUnavailableError);
+    expect((refused.error() as Error).message).toBe(`MCP server "s" is unavailable: ${sentence}`);
+    expect(server.credentials.calls).toHaveLength(3);
+
+    server.clock.advance(60_000);
+    server.credentials.mode = 'answer';
+    const passed = outcomeOf(server.connection.connect());
+    await settledAfter(passed);
+
+    expect(passed.state()).toBe('fulfilled');
+    expect(server.credentials.calls.length).toBeGreaterThan(3);
+    expect(server.connection.diagnostics()).toMatchObject({ state: 'connected', lastError: null });
+  });
+
+  it('an absent store is a deterministic connect failure', async () => {
+    const server = await remoteServer();
+    server.credentials.mode = 'absent';
+
+    for (const attemptNumber of [1, 2, 3, 4]) {
+      const failure: unknown = await server.connection.connect().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).not.toBeInstanceOf(McpUnavailableError);
+      expect((failure as Error).message).toBe(NO_STORE_REFUSAL);
+      expect(server.credentials.calls).toHaveLength(attemptNumber);
+      expect(server.connection.diagnostics()).toMatchObject({ state: 'disconnected', lastError: NO_STORE_REFUSAL });
+    }
+    expect(server.credentials.calls.at(-1)?.rejection).toBeInstanceOf(CredentialStoreError);
+  });
+});
+
+describe('the signal of a tool call', () => {
+  it('McpCallToolInput.signal is required', () => {
+    expectTypeOf<McpCallToolInput['signal']>().toEqualTypeOf<AbortSignal>();
   });
 });

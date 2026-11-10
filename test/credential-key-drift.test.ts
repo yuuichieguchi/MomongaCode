@@ -63,4 +63,18 @@ describe('CredentialKey.tla and the encrypted credential store (N81, P5a)', () =
   it('creates the key in the order of the model (fails until P5a defines the export)', () => {
     expect(exported.CREDENTIAL_KEY_CREATION_STEPS).toEqual(stringsIn(definedLine('CreationSteps')));
   });
+
+  it('names the OS points as the spec does', () => {
+    expect(stringsIn(definedLine('OsPoints'))).toEqual(['fast', 'locked', 'creating']);
+    expect(exported.CREDENTIAL_KEY_OS_POINTS).toEqual(stringsIn(definedLine('OsPoints')));
+  });
+
+  it('touches the OS store only at the modelled points', () => {
+    const source = fs.readFileSync(path.join(root, 'packages', 'foundation', 'src', 'encrypted-credential-store.ts'), 'utf8');
+    const occurrencesOf = (pattern: RegExp): number => [...source.matchAll(pattern)].length;
+    expect(occurrencesOf(/\bstore\.read\(/g)).toBe(1);
+    expect(occurrencesOf(/\bstore\.write\(/g)).toBe(1);
+    expect(occurrencesOf(/(?<!function )\breadNamedKey\(/g)).toBe(3);
+    expect(occurrencesOf(/\breadNamedKey\b/g)).toBe(4);
+  });
 });

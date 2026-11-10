@@ -12,11 +12,12 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf, observedCodeOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf, retireDecisionOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
-import { governingFailureAtStart, measurePinnedFor } from './context-step.ts';
+import { compactOnly, governingFailureAtStart, measurePinnedFor } from './context-step.ts';
+import { readCompactPin } from './compact-pin.ts';
 import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
 import type { Journal } from './journal.ts';
@@ -113,6 +114,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     store,
     timers: options.timers,
     claim,
+    role: options.role,
     heartbeatMs: options.heartbeatMs ?? heartbeatMsFor(options.leaseMs),
     cancelPollMs: options.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
   });
@@ -146,6 +148,10 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     }
     try {
       if (control.shuttingDown() || cause instanceof UnknownValueError) {
+        await terminals.yieldLease();
+        return;
+      }
+      if ((await retireDecisionOf(cause, options.role)) === 'retire-yield') {
         await terminals.yieldLease();
         return;
       }
@@ -210,8 +216,9 @@ const requeueOrStop = async (
 ): Promise<void> => {
   if (await stopRejectedWrapUp(options, claim, journal, terminals, cause)) return;
   const disposition = dispositionOf(cause, memory.interruptions);
-  if (disposition.kind === 'fail') {
-    await terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
+  if (disposition.kind === 'fail' || disposition.kind === 'stop') {
+    const terminal = terminalOf(disposition);
+    await terminals.finish(terminal.to, terminal.patch);
     return;
   }
   if (disposition.kind === 'timeout') {
@@ -531,6 +538,11 @@ const drive = async (
     await terminals.finish('FAILED', { error: governingFailure });
     return;
   }
+  const compactPin = readCompactPin(run.pins);
+  if (compactPin !== undefined) {
+    await compactOnly(ctx, compactPin.instructions);
+    return;
+  }
   if ((await runStartHooks(ctx)) === 'done') return;
   if (responsePending(journal.state)) {
     if ((await decideAfterResponse(ctx)) === 'done') return;
@@ -551,6 +563,7 @@ const drive = async (
       await terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
+    journal.deliverSteering();
     flow = await runModelStep(ctx);
   }
 };

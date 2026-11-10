@@ -13,11 +13,12 @@ ASSUME Underivable \subseteq 2..MaxV
 ASSUME Observer \in BOOLEAN
 ASSUME AbortOps \subseteq Ops
 
-DerivedObjects == {"D1", "D2", "D3", "D4"}
-InputsD1 == {"models", "network", "pricing"}
+DerivedObjects == {"D1", "D2", "D3", "D4", "D5"}
+InputsD1 == {"models", "network", "pricing", "context.unboundedOutputReserve"}
 InputsD2 == {"network", "telemetry"}
 InputsD3 == {"sandbox"}
 InputsD4 == {"network"}
+InputsD5 == {"network", "credentials.plaintextTokenFiles"}
 
 Tg == {"a", "b"}
 Pos(t) == IF t = "a" THEN 1 ELSE 2

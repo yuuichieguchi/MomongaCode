@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MRTR_STATE_ONLY_PACING_MS, McpInputProtocolError, McpInputSuspension } from '@momonga/mcp';
 import type { McpTimers } from '@momonga/mcp';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture, textOf } from './remote-harness.ts';
 
 const INJECTED_ROUNDS = 2;
@@ -28,7 +29,7 @@ describe('multi round-trip requests', () => {
     const timers = instantTimers();
     const { connection } = makeRemoteConnection({ fixture, timers });
     await connection.listTools();
-    expect(textOf(await connection.callTool({ name: 'mrtr_state', arguments: {} }))).toBe('mrtr complete');
+    expect(textOf(await connection.callTool({ name: 'mrtr_state', arguments: {}, signal: NEVER_ABORTED }))).toBe('mrtr complete');
     expect(timers.delays).toEqual([MRTR_STATE_ONLY_PACING_MS, MRTR_STATE_ONLY_PACING_MS]);
 
     const calls = toolCalls(fixture, 'mrtr_state');
@@ -41,7 +42,7 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture, timers: instantTimers(), connection: { mrtrMaxRounds: INJECTED_ROUNDS } });
     await connection.listTools();
-    const failure = await connection.callTool({ name: 'mrtr_loop', arguments: {} }).then(
+    const failure = await connection.callTool({ name: 'mrtr_loop', arguments: {}, signal: NEVER_ABORTED }).then(
       () => undefined,
       (error: unknown) => error as Error & { code?: string },
     );
@@ -53,7 +54,7 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const suspension = await connection.callTool({ name: 'mrtr_elicit', arguments: {} }).then(
+    const suspension = await connection.callTool({ name: 'mrtr_elicit', arguments: {}, signal: NEVER_ABORTED }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -67,7 +68,7 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const suspension = (await connection.callTool({ name: 'mrtr_elicit', arguments: {} }).catch((error: unknown) => error)) as McpInputSuspension;
+    const suspension = (await connection.callTool({ name: 'mrtr_elicit', arguments: {}, signal: NEVER_ABORTED }).catch((error: unknown) => error)) as McpInputSuspension;
     expect(suspension.requests).toEqual([
       {
         key: 'who',
@@ -84,10 +85,11 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const suspension = (await connection.callTool({ name: 'mrtr_elicit', arguments: {} }).catch((error: unknown) => error)) as McpInputSuspension;
+    const suspension = (await connection.callTool({ name: 'mrtr_elicit', arguments: {}, signal: NEVER_ABORTED }).catch((error: unknown) => error)) as McpInputSuspension;
     const result = await connection.callTool({
       name: 'mrtr_elicit',
       arguments: {},
+      signal: NEVER_ABORTED,
       resume: { checkpoint: suspension.checkpoint, answers: { who: { action: 'accept', content: { name: 'Ada' } } } },
     });
     expect(textOf(result)).toBe('hello Ada');
@@ -102,11 +104,12 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const suspension = (await connection.callTool({ name: 'mrtr_url', arguments: {} }).catch((error: unknown) => error)) as McpInputSuspension;
+    const suspension = (await connection.callTool({ name: 'mrtr_url', arguments: {}, signal: NEVER_ABORTED }).catch((error: unknown) => error)) as McpInputSuspension;
     expect(suspension.requests).toEqual([{ key: 'link', mode: 'url', message: 'Connect your account.', url: 'https://example.test/connect?s=1' }]);
     const result = await connection.callTool({
       name: 'mrtr_url',
       arguments: {},
+      signal: NEVER_ABORTED,
       resume: { checkpoint: suspension.checkpoint, answers: { link: { action: 'decline' } } },
     });
     expect(textOf(result)).toBe('link decline');
@@ -116,7 +119,7 @@ describe('multi round-trip requests', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const failure = await connection.callTool({ name: 'mrtr_sampling', arguments: {} }).then(
+    const failure = await connection.callTool({ name: 'mrtr_sampling', arguments: {}, signal: NEVER_ABORTED }).then(
       () => undefined,
       (error: unknown) => error,
     );

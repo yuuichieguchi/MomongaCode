@@ -1,7 +1,9 @@
 import { JsonDepthError, isRecord, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { nextWait } from '../core/retry.ts';
 import type { WaitPolicy } from '../core/retry.ts';
+import { PLAN_SESSION_DEFAULTS } from '../defaults.ts';
 
 export type PlanFetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -21,11 +23,15 @@ export const PLAN_TERMINAL_REFRESH_CODES = ['invalid_grant', 'invalid_refresh_to
 
 export const PLAN_CONFIGURATION_REFRESH_CODES = ['invalid_client'] as const;
 
-export type SendOutcome = { kind: 'answered'; status: number; headers: Headers; body: string } | { kind: 'unanswered' };
+export type SendOutcome = { kind: 'answered'; status: number; headers: Headers; body: string; truncated: boolean } | { kind: 'unanswered' };
+
+const EMPTY_BODY: AsyncIterable<Uint8Array> = { [Symbol.asyncIterator]: async function* () {} };
+
+export const lazyRefreshMarginMs = (lifetimeMs: number): number => Math.min(PLAN_SESSION_DEFAULTS.marginMs, Math.max(PLAN_SESSION_DEFAULTS.skewMs, Math.floor(lifetimeMs / 2)));
 
 export type BoundedSendPorts = { fetch: PlanFetch; sleep: PlanSleep };
 
-export const boundedSend = async (ports: BoundedSendPorts, url: string, init: RequestInit, boundMs: number): Promise<SendOutcome> => {
+export const boundedSend = async (ports: BoundedSendPorts, url: string, init: RequestInit, boundMs: number, maxBytes: number): Promise<SendOutcome> => {
   const fetchControl = new AbortController();
   const boundControl = new AbortController();
   const bound = ports.sleep(boundMs, boundControl.signal).then(
@@ -37,7 +43,8 @@ export const boundedSend = async (ports: BoundedSendPorts, url: string, init: Re
   );
   const sent = (async (): Promise<SendOutcome> => {
     const response = await ports.fetch(url, { ...init, redirect: 'manual', signal: fetchControl.signal });
-    return { kind: 'answered', status: response.status, headers: response.headers, body: await response.text() };
+    const read = await readTextLimited((response.body as AsyncIterable<Uint8Array> | null) ?? EMPTY_BODY, maxBytes);
+    return { kind: 'answered', status: response.status, headers: response.headers, body: read.text, truncated: read.truncated };
   })().catch((): SendOutcome => ({ kind: 'unanswered' }));
   const outcome = await Promise.race([sent, bound.then((): SendOutcome => ({ kind: 'unanswered' }))]);
   boundControl.abort();
@@ -97,7 +104,7 @@ const parsedBody = (text: string): unknown => {
 export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): RefreshAnswer => {
   const resend = !answeredForResend(outcome);
   if (outcome.kind === 'unanswered') return { kind: 'transient', resend };
-  const body = parsedBody(outcome.body);
+  const body = outcome.truncated ? undefined : parsedBody(outcome.body);
   if (outcome.status === SUCCESS_STATUS) {
     return tokenResponseProblem(body, { refreshRequired: false }) === undefined ? { kind: 'adopted', tokens: body as RefreshTokens } : { kind: 'transient', resend };
   }
@@ -111,10 +118,10 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): Refr
 export const sendWasInterrupted = ({ intentLoaded, unansweredBefore }: { intentLoaded: boolean; unansweredBefore: boolean }): boolean => intentLoaded || unansweredBefore;
 
 export type RefreshEnd =
-  | { kind: 'adopted'; tokens: RefreshTokens; unansweredBefore: boolean }
-  | { kind: 'terminal'; code: string; unansweredBefore: boolean }
-  | { kind: 'configuration'; code: string }
-  | { kind: 'transient' };
+  | { kind: 'adopted'; tokens: RefreshTokens; unansweredBefore: boolean; attempts: number }
+  | { kind: 'terminal'; code: string; unansweredBefore: boolean; attempts: number }
+  | { kind: 'configuration'; code: string; attempts: number }
+  | { kind: 'transient'; attempts: number };
 
 export type RefreshRequest = {
   ports: BoundedSendPorts;
@@ -124,31 +131,42 @@ export type RefreshRequest = {
   attempts: number;
   attemptTimeoutMs: number;
   waitPolicy: WaitPolicy;
+  maxBodyBytes: number;
+  signal: AbortSignal;
 };
 
 export const sendRefresh = async (request: RefreshRequest): Promise<RefreshEnd> => {
   const startedAt = request.clock.now();
   let unansweredBefore = false;
-  for (let attempt = 0; attempt < request.attempts; attempt += 1) {
+  let attempts = 0;
+  while (attempts < request.attempts) {
+    if (request.signal.aborted) return { kind: 'transient', attempts };
     const outcome = await boundedSend(
       request.ports,
       request.tokenUrl,
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(request.form).toString() },
       request.attemptTimeoutMs,
+      request.maxBodyBytes,
     );
+    attempts += 1;
     const answer = classifyRefreshAnswer(outcome, request.clock.now());
-    if (answer.kind === 'terminal' || answer.kind === 'adopted') return { ...answer, unansweredBefore };
-    if (answer.kind !== 'transient') return answer;
+    if (answer.kind === 'terminal' || answer.kind === 'adopted') return { ...answer, unansweredBefore, attempts };
+    if (answer.kind !== 'transient') return { ...answer, attempts };
     unansweredBefore ||= outcome.kind === 'unanswered';
-    if (!answer.resend || attempt + 1 >= request.attempts) return { kind: 'transient' };
+    if (!answer.resend || attempts >= request.attempts) return { kind: 'transient', attempts };
     const decision = nextWait({
-      attempt,
+      attempt: attempts - 1,
       ...(answer.retryAfterMs === undefined ? {} : { retryAfterMs: answer.retryAfterMs }),
       elapsedMs: request.clock.now() - startedAt,
       policy: request.waitPolicy,
     });
-    if (decision.kind === 'leave') return { kind: 'transient' };
-    await request.ports.sleep(decision.ms);
+    if (decision.kind === 'leave') return { kind: 'transient', attempts };
+    try {
+      await request.ports.sleep(decision.ms, request.signal);
+    } catch (error) {
+      if (request.signal.aborted) return { kind: 'transient', attempts };
+      throw error;
+    }
   }
-  return { kind: 'transient' };
+  return { kind: 'transient', attempts };
 };

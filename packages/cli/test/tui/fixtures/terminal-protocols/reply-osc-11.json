@@ -1,0 +1,12 @@
+{
+  "name": "reply-osc-11",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5d31313b7267623a303030302f303030302f303030301b5c",
+  "events": [
+    {
+      "type": "report",
+      "kind": "background-color",
+      "color": "rgb:0000/0000/0000"
+    }
+  ]
+}

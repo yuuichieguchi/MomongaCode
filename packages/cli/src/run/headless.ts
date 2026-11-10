@@ -1,12 +1,11 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessText } from '@momonga/protocol';
-import type { AliasCapabilities, PermissionMode, ProbingCapabilities, PublicRunEvent } from '@momonga/protocol';
+import type { MomongaModelEntry, PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
@@ -15,10 +14,12 @@ import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError } from '../policy-messages.ts';
+import type { MessageSurface } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
 import type { CliSession } from './open-session.ts';
+import type { HeadlessReopen } from './resolve-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
 
 export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
@@ -34,7 +35,8 @@ export type HeadlessOptions = {
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
   modelAlias?: string;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
+  reopen?: HeadlessReopen;
+  capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -69,14 +71,16 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   usage: run.usage,
 });
 
-const endReasonLines = (run: RunView): string[] => {
-  if (run.error !== undefined) return describeRunError(run.error);
+const endReasonLines = (run: RunView, surface: MessageSurface): string[] => {
+  if (run.error !== undefined) return describeRunError(run.error, surface);
   return run.stopReason === undefined ? [] : [run.stopReason];
 };
 
-export const describeEnd = (run: RunView): string => {
+export const describeEnd = (run: RunView): string => describeRunEnd(run, 'headless');
+
+export const describeRunEnd = (run: RunView, surface: MessageSurface): string => {
   const head = `momonga: run ${run.id} ${run.status}`;
-  const reason = endReasonLines(run);
+  const reason = endReasonLines(run, surface);
   if (reason.length === 0) return escapedLines([head]);
   const lines = [`${head} (${reason[0]}`, ...reason.slice(1)];
   lines[lines.length - 1] += ')';
@@ -210,7 +214,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     ...(options.after === undefined ? {} : { seenThrough: options.after }),
     onSeenEvent: sink.absorb,
     reconnectBoundMs: await daemonReadyBoundMs(),
-    restoreConnection: restoreDaemon(ports, paths, stderrStopNotice(ports)),
+    restoreConnection: restoreDaemon(ports, paths),
     onEvent: sink.handle,
     onChildEvent: sink.handleChild,
     onReconnecting: (attempt) => ports.stderr.write(`momonga: lost the event stream, reconnecting (attempt ${attempt + 1})\n`),
@@ -234,6 +238,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }),
+      ...(options.reopen === undefined ? {} : { reopen: options.reopen }),
     });
   } catch (error) {
     if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;
@@ -264,7 +269,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   try {
     const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.modelAlias));
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
-    if (readiness.state === 'needs_probe') {
+    if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
       const message = readinessText(readiness);
       ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);
       if (options.format !== 'text') {

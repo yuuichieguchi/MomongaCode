@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, readRecord, recordFileOf, signedIn, startHarness, CONDITION_WAIT } from './plan-support.ts';
+import { PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, readRecord, recordFileOf, signedIn, startHarness, CONDITION_WAIT } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -37,7 +37,9 @@ describe('startup of the session engine', () => {
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     expect(source.status().state).toBe('store_unreadable');
     expect(source.status().cause).toBeDefined();
-    expect(h.warnings).toHaveLength(1);
+    expect(h.warnings).toHaveLength(2);
+    expect(h.warnings.filter((warning) => warning.startsWith(`could not list ${path.basename(recordFileOf(h, 'work'))}: `))).toHaveLength(1);
+    expect(h.warnings.filter((warning) => warning.startsWith('the plan session of '))).toHaveLength(1);
     expect(source.health()).toMatchObject({ ok: false, reason: 'store_unreadable' });
     expect((await planError(source.read(new AbortController().signal))).code).toBe('plan_store_unreadable');
   });
@@ -67,7 +69,7 @@ describe('startup of the session engine', () => {
     expect(h.auth.records.find((record) => record.path.endsWith('/revoke'))?.form['token']).toBe(signIn.tokens.refresh_token);
   });
 
-  it('a record with pendingRefresh is marked ambiguous: its terminal answer keeps the server code and sets interrupted', async () => {
+  it('a record with pendingRefresh: its terminal answer keeps the server code, sets interrupted and writes a terminal plan.refresh event with interrupted true', async () => {
     const h = await harness();
     await signedIn(h, 'work');
     const installed = await readRecord(h, 'work');
@@ -75,8 +77,12 @@ describe('startup of the session engine', () => {
     await h.reopen({ accounts: work });
     h.auth.scriptToken('refresh_token', [{ kind: 'error', code: 'invalid_grant' }]);
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
+    h.clock.advance(SKEW_MS);
     await source.rejected(installed?.['generation'] as number, new AbortController().signal);
     expect(source.status()).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant', interrupted: true });
+    const refreshes = h.events.filter((event) => event.name === 'plan.refresh');
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]?.data).toMatchObject({ outcome: 'terminal', code: 'invalid_grant', interrupted: true, attempts: 1 });
   });
 });

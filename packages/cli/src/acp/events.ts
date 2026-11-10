@@ -192,6 +192,9 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return phase === 'live' ? [{ kind: 'update', update: { sessionUpdate: 'current_mode_update', currentModeId: event.mode } }] : [];
     case 'model.changed':
       return phase === 'live' ? [{ kind: 'model', modelAlias: event.modelAlias }] : [];
+    case 'inbox.changed':
+    case 'user_shell':
+      return [];
     case 'attempt.failed':
       state.lastFailure = event;
       return [];
@@ -218,6 +221,9 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'context.governing_loaded':
     case 'context.memories_loaded':
     case 'context.contribution':
+    case 'context.compacting':
+    case 'tool.permission.classifying':
+    case 'hook.started':
       return [];
     case 'hook.completed':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event).join('\n')) : [];

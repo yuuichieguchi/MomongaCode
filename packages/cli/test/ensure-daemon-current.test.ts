@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest';
 import { ensureDaemon } from '../src/daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../src/daemon/ensure-daemon.ts';
 import type { CliClock, SelfExecutable } from '../src/ports.ts';
-import { createFakeWork, recordingSpawn, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
+import { createFakeWork, recordingSpawn, startFakeSupervisor } from './fake-supervisor.ts';
 import type { FakeSupervisor } from './fake-supervisor.ts';
 
 const VERSION = '1.2.3';
-const BOUNDS = { readyMs: 500, stopMs: 500 };
+const BOUNDS = { readyMs: 600_000, stopMs: 500 };
 const SELF: SelfExecutable = { kind: 'script', execPath: '/opt/node', script: '/opt/momonga/main.js' };
 
 const yieldOnce = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
@@ -30,13 +30,14 @@ describe('ensureDaemon and run/current', () => {
       await work.settled();
       await supervisor?.stop();
     });
-    const inner = virtualClock(work);
+    let now = 0;
     let sleptAfterReadyAnswer = false;
     const clock: CliClock = {
-      now: () => inner.now(),
-      sleep: (ms) => {
+      now: () => now,
+      sleep: async (ms) => {
         if ((supervisor?.healthRequests ?? 0) >= 1) sleptAfterReadyAnswer = true;
-        return inner.sleep(ms);
+        now += ms;
+        await yieldOnce();
       },
     };
     const { spawn } = recordingSpawn(() => {
@@ -57,9 +58,9 @@ describe('ensureDaemon and run/current', () => {
     expect(returned).toBe(false);
 
     releasePublish();
-    const health = await pending;
+    const connection = await pending;
 
-    expect(health.phase).toBe('running');
+    expect(connection.health.phase).toBe('running');
     expect(await readCurrentGeneration(paths)).toEqual({ generation: 1, version: VERSION, sockets: firstGeneration(paths).sockets });
   });
 });

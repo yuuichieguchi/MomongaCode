@@ -30,6 +30,7 @@ export type {
   CompactionBlock,
   CompactionBlockReason,
   CompactionPlan,
+  CompactionTokens,
   ContextArrival,
   ContextBudget,
   ContextEviction,
@@ -63,3 +64,5 @@ export type {
   TokenMeterOptions,
   UsageObservation,
 } from './types.ts';
+export { ATTACH_DIR_ENTRIES, ATTACH_FILE_SHARE, ATTACH_MAX_FILES, ATTACH_READ_FACTOR, ATTACH_SNIFF_BYTES, ATTACH_TOTAL_SHARE, admits, attachLimitsFor, attachMentions, directoryListing, mentionsOf, numberedContent } from './attachments.ts';
+export type { AttachHost, AttachLimits, AttachTarget, AttachedMentions } from './attachments.ts';

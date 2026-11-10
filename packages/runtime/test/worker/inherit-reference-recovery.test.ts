@@ -108,7 +108,7 @@ describe('13.6: crash during inherit_plan', () => {
     await env.runOnce(env.worker('worker-a', { store: failing }));
     expect(inheritedEvents(env, second.id)).toEqual([]);
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);
-    expect(trace.plans).toEqual([{ runId: second.id, mode: 'default' }]);
+    expect(trace.plans).toEqual([{ runId: second.id, mode: 'manual' }]);
 
     env.clock.advance(120_000);
     await settle(env, second.id, env.worker('worker-b', { store: failing }));
@@ -127,9 +127,9 @@ describe('13.6: a resent thread request', () => {
     const b = builderOf(env);
     const queued = b.createRun('Not yet claimed');
     const facts = referenceFactsOf(env.store);
-    const plan = await facts.inheritPlan({ runId: queued.id, mode: 'default' });
+    const plan = await facts.inheritPlan({ runId: queued.id, mode: 'manual' });
     expect(plan).toMatchObject({ kind: 'ready', payload: { form: 'reference' } });
-    expect(await facts.inheritPlan({ runId: queued.id, mode: 'default' })).toEqual(plan);
+    expect(await facts.inheritPlan({ runId: queued.id, mode: 'manual' })).toEqual(plan);
     expect(inheritedEvents(env, queued.id)).toEqual([]);
 
     env.gateway.script.push(textStep('Answer.'));
@@ -163,8 +163,8 @@ describe('13.6: two claimants', () => {
     const b = builderOf(env);
     const child = b.createRun('And again');
     const claim = b.claimNext(child.id);
-    expect(await env.store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
-    expect(await env.store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'already' });
+    expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'inherited' });
+    expect(await env.store.inheritContext(claim, { mode: 'manual' })).toEqual({ kind: 'already' });
     expect(inheritedEvents(env, child.id)).toEqual([expect.objectContaining({ form: 'reference' })]);
   });
 });

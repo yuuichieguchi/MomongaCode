@@ -15,8 +15,8 @@ describe('sed script grammar', () => {
   });
 
   it('makes sed -n with a simple script approvable and -f non-approvable', () => {
-    expect(kindIn(commandRow("sed -n 'p' f"), 'default')).toBe('allow');
-    expect(kindIn(commandRow('sed -f s.sed f'), 'default')).toBe('ask');
+    expect(kindIn(commandRow("sed -n 'p' f"), 'manual')).toBe('allow');
+    expect(kindIn(commandRow('sed -f s.sed f'), 'manual')).toBe('ask');
   });
 });
 

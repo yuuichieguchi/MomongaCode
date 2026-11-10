@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, prepareHome, notTheRoleTick } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
@@ -76,9 +76,10 @@ type FakeTime = { clock: ReturnType<typeof createFakeClock>; timers: ReturnType<
 
 const startGateway = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}, time?: FakeTime) => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
@@ -86,7 +87,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
     ...(time === undefined ? {} : { clock: time.clock, timers: time.timers, random: () => 0.5 }),
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close();
   });
@@ -177,7 +178,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', () 
       settled = true;
     };
     void pending.then(settle, settle);
-    await driveFakeTime(timers, { done: () => settled, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request through a silent proxy' });
+    await driveFakeTime(timers, { done: () => settled, considered: notTheRoleTick, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request through a silent proxy' });
     const response = await pending;
 
     expect(proxy.received()).toContain('CONNECT model.example.test:443');

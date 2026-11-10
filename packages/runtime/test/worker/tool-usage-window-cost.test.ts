@@ -49,7 +49,7 @@ const requestOf = (step: number): RunEventPayload => ({
 const offeredRecord = { type: TOOL_OFFERED, names: TOOLS.map((tool) => tool.name) } as unknown as RunEventPayload;
 
 const runEvents = (now: number): RunEventPayload[] => [
-  { type: 'run.started', attempt: 1, now, pins: {}, mode: 'default' },
+  { type: 'run.started', attempt: 1, now, pins: {}, mode: 'manual' },
   offeredRecord,
   ...Array.from({ length: STEPS }, (_unused, index) => index + 1).flatMap((step): RunEventPayload[] => [
     requestOf(step),
