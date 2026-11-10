@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation';
@@ -24,6 +25,22 @@ export const installFakeSecretPrograms = (root: string, platform: NodeJS.Platfor
     fs.writeFileSync(path.join(bin, launcher.name), launcher.text, { mode: 0o755 });
   }
   return bin;
+};
+
+const ROOT_PREFIX = 'momonga-secret-programs-';
+
+export type FakeSecretPrograms = { root: string; bin: string };
+
+export const createFakeSecretPrograms = (): FakeSecretPrograms => {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), ROOT_PREFIX));
+  fs.chmodSync(root, 0o700);
+  return { root, bin: installFakeSecretPrograms(root) };
+};
+
+export const removeFakeSecretPrograms = (root: string): void => {
+  const isFake = path.basename(root).startsWith(ROOT_PREFIX) && fs.existsSync(path.join(root, 'bin')) && fs.existsSync(path.join(root, 'items'));
+  if (!isFake) throw new Error(`${root} is not a fake secret programs directory`);
+  fs.rmSync(root, { recursive: true, force: true });
 };
 
 export const fakeSecretProgramsBin = (env: Readonly<Record<string, string | undefined>> = process.env): string => {

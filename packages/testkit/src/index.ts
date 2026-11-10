@@ -248,5 +248,5 @@ export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOpti
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
 export { firstGeneration } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
-export { TEST_SECRET_PROGRAMS_ENV, fakeSecretProgramsBin, installFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
+export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
 export { assertFakeSecretStoreEnv, execProductFile, productTestEnv, spawnProduct, spawnProductSync } from './product-spawn.ts';
