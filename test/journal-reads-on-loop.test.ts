@@ -48,6 +48,11 @@ describe('statements that read inside payload_json on the main thread (section 7
     });
   });
 
+  it('search indexing reads the document kept at append and no event of the run: search.ts names payload_json in the two classified statements only (row 12, O9 option c)', () => {
+    const naming = fs.readFileSync(path.join(packagesDir, 'store/src/search.ts'), 'utf8').split('\n').filter((line) => /payload_json/.test(line));
+    expect(naming.map((line) => line.trim())).toEqual(payloadSqlLines('store/src/search.ts'));
+  });
+
   it('the size probe of search indexing reads no payload: no statement of search.ts sums a length over the events of a run (row 12, O9)', () => {
     expect(payloadSqlLines('store/src/search.ts').filter((line) => /SUM\(/.test(line))).toEqual([]);
   });

@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { setImmediate as eventLoopTurn } from 'node:timers/promises';
 import { readTx, safeSlice } from '@momonga/foundation';
 import type { Redactor } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
@@ -11,15 +12,14 @@ import type { DecodeContext } from './decode-context.ts';
 import type { Row, Stored } from './rows.ts';
 import { HISTORY_CANDIDATE_LIMIT, HISTORY_READ_PAGE_CHARS, HISTORY_SCAN_LIMIT, HISTORY_SEARCH_ANCHOR_LIMIT, HISTORY_SNIPPET_MAX_CHARS, HISTORY_STEP_HITS_PER_ANCHOR } from './search-constants.ts';
 import { asciiLower, instrFilters, partitionTerms, quoted, termsOf } from './search-terms.ts';
-import { INDEXED_PAYLOAD_TYPES, buildDocuments, locationPathsOf } from './search-documents.ts';
-import type { RecordedEvent } from './search-documents.ts';
+import type { AppendRecordReaders } from './append-records.ts';
+import { locationPathsOf, runDocumentOf, stepDocumentOf } from './search-documents.ts';
+import type { SearchDocument } from './search-documents.ts';
 import type { HistoryAnchor, HistoryQueryRequest, HistoryQueryResult, HistoryReadRequest, HistoryReadResult, HistoryScope, HistorySession, HistoryStepHit, HistoryVisibility, SearchStore } from './types.ts';
 
 const ORIGINS = ['trusted', 'untrusted'] as const;
 
 const TERMINAL_LIST = TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ');
-
-const INDEXED_EVENT_TYPES = INDEXED_PAYLOAD_TYPES.map((type) => `'${type}'`).join(', ');
 
 const ELLIPSIS = '…';
 
@@ -92,9 +92,8 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
      WHERE e.id > :cursor AND e.type = 'run.status' AND json_extract(e.payload_json, '$.to') IN (${TERMINAL_LIST})
      ORDER BY e.id LIMIT 1`,
   );
-  const runEvents = db.prepare(
-    `SELECT id, seq, step, type, CASE WHEN type IN (${INDEXED_EVENT_TYPES}) THEN payload_json ELSE '{}' END AS payload_json FROM events WHERE run_id = :runId ORDER BY seq`,
-  );
+  const seqBounds = db.prepare('SELECT (SELECT MIN(seq) FROM events WHERE run_id = :runId) AS first_seq, (SELECT MAX(seq) FROM events WHERE run_id = :runId) AS last_seq');
+  const runIndexed = db.prepare("SELECT 1 AS present FROM search_docs WHERE run_id = :runId AND level = 'run' LIMIT 1");
   const insertDocument = db.prepare(
     `INSERT INTO search_docs (level, session_id, run_id, step, project, origin, outcome, seq_from, seq_to, at, body, paths_json)
      VALUES (:level, :sessionId, :runId, :step, :project, :origin, :outcome, :seqFrom, :seqTo, :at, :body, :pathsJson)`,
@@ -107,20 +106,6 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     `SELECT *, length(payload_json) AS payload_chars FROM events WHERE run_id = :runId AND seq >= :seqFrom AND seq <= :seqTo AND (:step IS NULL OR step = :step) ORDER BY seq LIMIT :limit`,
   );
 
-  const recordedEventsOf = (runId: string): Iterable<RecordedEvent> => {
-    const rows = runEvents.iterate({ runId });
-    return {
-      [Symbol.iterator]: function* () {
-        for (const row of rows) {
-          const reader = readerFor('events', String(row['id']), row);
-          const payload = reader.json('payload_json');
-          if (!isRecord(payload)) throw corrupt('events', String(row['id']), 'payload_json must be a JSON object');
-          yield { seq: reader.number('seq'), step: reader.number('step'), type: reader.string('type'), payload };
-        }
-      },
-    };
-  };
-
   const cursorOf = (): number => {
     const cursorRow = readCursor.get();
     if (cursorRow === undefined) throw new Error('the search cursor row is missing');
@@ -131,12 +116,20 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
 
   const runIdOf = (row: Row): string => readerFor('events', String(row['event_id']), row).string('run_id');
 
-  type Indexed = { kind: 'indexed'; chars: number } | { kind: 'none' } | { kind: 'over_budget' } | { kind: 'moved' };
+  type Indexed = { kind: 'indexed'; chars: number } | { kind: 'more' } | { kind: 'none' } | { kind: 'over_budget' } | { kind: 'moved' };
 
-  const indexRun = (runId: string, chars: number, redactor: Redactor, budget: number): Indexed => {
+  const seqBoundsOf = (runId: string): { seqFrom: number; seqTo: number } => {
+    const row = seqBounds.get({ runId });
+    if (row === undefined || row['first_seq'] === null) throw new Error('a terminal run has no recorded events');
+    const reader = readerFor('events', runId, row);
+    return { seqFrom: reader.number('first_seq'), seqTo: reader.number('last_seq') };
+  };
+
+  const indexPage = (runId: string, view: AppendRecordReaders, redactor: Redactor, budget: number, pageChars: number): Indexed => {
     const row = nextTerminalRow();
     if (row === undefined) return { kind: 'none' };
     if (runIdOf(row) !== runId) return { kind: 'moved' };
+    const chars = view.indexedCharsOf(runId);
     if (chars > budget) return { kind: 'over_budget' };
     const reader = readerFor('events', String(row['event_id']), row);
     const outcome = reader.string('status');
@@ -148,7 +141,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
       outcome,
       at: reader.number('ended_at'),
     };
-    for (const document of buildDocuments(recordedEventsOf(runId), outcome, redactor)) {
+    const insert = (document: SearchDocument): void => {
       insertDocument.run({
         ...common,
         level: document.level,
@@ -158,19 +151,29 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
         body: document.body,
         pathsJson: JSON.stringify(document.paths),
       });
+    };
+    if (runIndexed.get({ runId }) === undefined) insert(runDocumentOf({ ...view.searchDraftRunOf(runId), ...seqBoundsOf(runId) }, outcome, redactor));
+    const page = view.searchDraftPageOf(runId, pageChars);
+    for (const step of page.steps) {
+      const document = stepDocumentOf(step, redactor);
+      if (document !== undefined) insert(document);
     }
+    view.consumeSearchDraftSteps(runId, page.steps.map((step) => step.step));
+    if (page.more) return { kind: 'more' };
+    view.consumeSearchDraftRun(runId);
     writeCursor.run({ eventId: reader.number('event_id') });
     return { kind: 'indexed', chars };
   };
 
-  const indexNext = async (redactor: Redactor, budget: number): Promise<number | undefined> => {
+  const indexNext = async (redactor: Redactor, budget: number, pageChars: number): Promise<number | undefined> => {
     for (;;) {
       const next = readTx(db, nextTerminalRow);
       if (next === undefined) return undefined;
       const runId = runIdOf(next);
-      const indexed = await reads.write({ runId }, (view) => indexRun(runId, view.indexedCharsOf(runId), redactor, budget));
+      const indexed = await reads.write({ runId }, (view) => indexPage(runId, view, redactor, budget, pageChars));
       if (indexed.kind === 'indexed') return indexed.chars;
-      if (indexed.kind !== 'moved') return undefined;
+      if (indexed.kind === 'more') await eventLoopTurn();
+      else if (indexed.kind !== 'moved') return undefined;
     }
   };
 
@@ -347,7 +350,7 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
       let spent = 0;
       while (runs < limit) {
         const budget = maxChars === undefined || runs === 0 ? Number.POSITIVE_INFINITY : maxChars - spent;
-        const chars = await indexNext(redactor, budget);
+        const chars = await indexNext(redactor, budget, maxChars ?? Number.POSITIVE_INFINITY);
         if (chars === undefined) break;
         runs += 1;
         spent += chars;

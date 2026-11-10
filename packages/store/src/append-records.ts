@@ -4,7 +4,8 @@ import { ERROR_WINDOW, UNKNOWN_ANSWERER, assistantTextOf } from '@momonga/protoc
 import type { RunEventPayload, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import { INDEXED_PAYLOAD_TYPES, locationPathsOf } from './search-documents.ts';
+import { DRAFT_PART_KINDS, INDEXED_PAYLOAD_TYPES, eventDraftOf, locationPathsOf } from './search-documents.ts';
+import type { DraftPart, StepDraft } from './search-documents.ts';
 import type { MeterKey, MeterRecord, SessionTouched, StartedCall } from './types.ts';
 
 export type EventColumns = {
@@ -66,8 +67,15 @@ export const APPEND_TIME_RECORDS_DERIVATION = 20;
 export const SESSION_TOUCHED_DERIVATION = 23;
 export const RUN_ANSWERERS_DERIVATION = 24;
 export const INDEXED_CHARS_DERIVATION = 35;
+export const SEARCH_DRAFT_DERIVATION = 36;
 
-export const RECORD_DERIVATIONS = [INDEXED_CHARS_DERIVATION, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
+export const SEARCH_DRAFT_PAGE_STEPS = 500;
+
+export type SearchDraftRun = { task: string; finalText: string; paths: string[] };
+
+export type SearchDraftPage = { steps: StepDraft[]; more: boolean };
+
+export const RECORD_DERIVATIONS = [SEARCH_DRAFT_DERIVATION, INDEXED_CHARS_DERIVATION, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
 
 export type RecordDerivation = (typeof RECORD_DERIVATIONS)[number];
 
@@ -84,6 +92,10 @@ export type AppendRecords = {
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   answeringTargetsOf(runId: string): string[];
   indexedCharsOf(runId: string): number;
+  searchDraftRunOf(runId: string): SearchDraftRun;
+  searchDraftPageOf(runId: string, maxChars: number): SearchDraftPage;
+  consumeSearchDraftSteps(runId: string, steps: readonly number[]): void;
+  consumeSearchDraftRun(runId: string): void;
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
   permissionRequestOf(runId: string, approvalId: string): Row | undefined;
@@ -165,6 +177,28 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
        ON CONFLICT (run_id) DO UPDATE SET chars = chars + excluded.chars`,
     ),
     indexedChars: db.prepare('SELECT COALESCE((SELECT chars FROM run_indexed_chars WHERE run_id = :runId), 0) AS chars'),
+    setDraftTask: db.prepare(
+      `INSERT INTO search_draft_runs (run_id, task, final_text) VALUES (:runId, :task, '')
+       ON CONFLICT (run_id) DO UPDATE SET task = excluded.task WHERE task = ''`,
+    ),
+    setDraftFinalText: db.prepare(
+      `INSERT INTO search_draft_runs (run_id, task, final_text) VALUES (:runId, '', :finalText)
+       ON CONFLICT (run_id) DO UPDATE SET final_text = excluded.final_text`,
+    ),
+    extendDraftStep: db.prepare(
+      `INSERT INTO search_draft_steps (run_id, step, seq_from, seq_to, chars) VALUES (:runId, :step, :seq, :seq, :chars)
+       ON CONFLICT (run_id, step) DO UPDATE SET seq_from = MIN(seq_from, excluded.seq_from), seq_to = MAX(seq_to, excluded.seq_to), chars = chars + excluded.chars`,
+    ),
+    insertDraftPart: db.prepare('INSERT INTO search_draft_parts (run_id, step, seq, kind, body, paths_json) VALUES (:runId, :step, :seq, :kind, :body, :pathsJson)'),
+    insertDraftPath: db.prepare('INSERT OR IGNORE INTO search_draft_paths (run_id, path, seq, position) VALUES (:runId, :path, :seq, :position)'),
+    draftRun: db.prepare('SELECT task, final_text FROM search_draft_runs WHERE run_id = :runId'),
+    draftPaths: db.prepare('SELECT path FROM search_draft_paths WHERE run_id = :runId ORDER BY seq, position'),
+    draftSteps: db.prepare('SELECT step, seq_from, seq_to, chars FROM search_draft_steps WHERE run_id = :runId ORDER BY seq_from LIMIT :limit'),
+    draftParts: db.prepare('SELECT kind, body, paths_json FROM search_draft_parts WHERE run_id = :runId AND step = :step ORDER BY seq'),
+    dropDraftStep: db.prepare('DELETE FROM search_draft_steps WHERE run_id = :runId AND step = :step'),
+    dropDraftParts: db.prepare('DELETE FROM search_draft_parts WHERE run_id = :runId AND step = :step'),
+    dropDraftRun: db.prepare('DELETE FROM search_draft_runs WHERE run_id = :runId'),
+    dropDraftPaths: db.prepare('DELETE FROM search_draft_paths WHERE run_id = :runId'),
     modelCallRows: db.prepare(
       `SELECT seq, step, type, model_call_json
        FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
@@ -234,6 +268,42 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     if (INDEXED_PAYLOAD_TYPES.some((type) => type === event.payload.type)) sql.addIndexedChars.run({ runId: event.runId, eventId: event.eventId });
   };
 
+  const recordSearchDraft = (event: RecordedEvent): void => {
+    const { runId, seq, step } = event;
+    const draft = eventDraftOf({ step, type: event.payload.type, payload: event.payload });
+    if (draft.task !== undefined) sql.setDraftTask.run({ runId, task: draft.task });
+    if (draft.finalText !== undefined) sql.setDraftFinalText.run({ runId, finalText: draft.finalText });
+    if (step === 0) return;
+    const { part } = draft;
+    sql.extendDraftStep.run({ runId, step, seq, chars: part === undefined ? 0 : part.body.length });
+    if (part === undefined) return;
+    sql.insertDraftPart.run({ runId, step, seq, kind: part.kind, body: part.body, pathsJson: JSON.stringify(part.paths) });
+    part.paths.forEach((path, position) => sql.insertDraftPath.run({ runId, path, seq, position }));
+  };
+
+  const draftPartOf = (runId: string, row: Row): DraftPart => {
+    const reader = readerFor('search_draft_parts', runId, row);
+    const kind = DRAFT_PART_KINDS.find((known) => known === reader.string('kind'));
+    const paths = reader.json('paths_json');
+    if (kind === undefined) throw corrupt('search_draft_parts', runId, 'column kind names no part of a search document');
+    if (!Array.isArray(paths) || paths.some((entry: unknown) => typeof entry !== 'string')) throw corrupt('search_draft_parts', runId, 'paths_json must be a JSON array of strings');
+    return { kind, body: reader.string('body'), paths: paths as string[] };
+  };
+
+  const searchDraftPageOf = (runId: string, maxChars: number): SearchDraftPage => {
+    const rows = sql.draftSteps.all({ runId, limit: SEARCH_DRAFT_PAGE_STEPS + 1 });
+    const steps: StepDraft[] = [];
+    let chars = 0;
+    for (const row of rows.slice(0, SEARCH_DRAFT_PAGE_STEPS)) {
+      const reader = readerFor('search_draft_steps', runId, row);
+      chars += reader.number('chars');
+      if (steps.length > 0 && chars > maxChars) break;
+      const step = reader.number('step');
+      steps.push({ step, seqFrom: reader.number('seq_from'), seqTo: reader.number('seq_to'), parts: sql.draftParts.all({ runId, step }).map((part) => draftPartOf(runId, part)) });
+    }
+    return { steps, more: steps.length < rows.length };
+  };
+
   const recordTouched = (event: RecordedEvent): void => {
     if (event.payload.type !== 'tool.call') return;
     for (const path of locationPathsOf(event.payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
@@ -286,6 +356,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     [SESSION_TOUCHED_DERIVATION]: recordTouched,
     [RUN_ANSWERERS_DERIVATION]: recordAnswerer,
     [INDEXED_CHARS_DERIVATION]: recordIndexedChars,
+    [SEARCH_DRAFT_DERIVATION]: recordSearchDraft,
   };
 
   const recordFor = (derivation: RecordDerivation, event: RecordedEvent): void => RECORDERS[derivation](event);
@@ -326,6 +397,24 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       const row: Row | undefined = sql.indexedChars.get({ runId });
       if (row === undefined) throw new Error(`the indexed characters of run ${runId} could not be read`);
       return readerFor('run_indexed_chars', runId, row).number('chars');
+    },
+    searchDraftRunOf: (runId) => {
+      const row: Row | undefined = sql.draftRun.get({ runId });
+      const paths = sql.draftPaths.all({ runId }).map((path) => readerFor('search_draft_paths', runId, path).string('path'));
+      if (row === undefined) return { task: '', finalText: '', paths };
+      const reader = readerFor('search_draft_runs', runId, row);
+      return { task: reader.string('task'), finalText: reader.string('final_text'), paths };
+    },
+    searchDraftPageOf,
+    consumeSearchDraftSteps: (runId, steps) => {
+      for (const step of steps) {
+        sql.dropDraftParts.run({ runId, step });
+        sql.dropDraftStep.run({ runId, step });
+      }
+    },
+    consumeSearchDraftRun: (runId) => {
+      sql.dropDraftRun.run({ runId });
+      sql.dropDraftPaths.run({ runId });
     },
     touchedAfter: (sessionId, afterEventId, limit, afterPath) =>
       touchedOf(afterPath === undefined ? sql.touchedAfter.all({ sessionId, after: afterEventId, limit }) : sql.touchedAfterPath.all({ sessionId, after: afterEventId, afterPath, limit }), sessionId),

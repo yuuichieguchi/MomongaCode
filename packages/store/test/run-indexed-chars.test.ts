@@ -36,7 +36,6 @@ describe('run_indexed_chars, the characters of the indexed events of a run, adde
     expect(DERIVATIONS).toContain(INDEXED_CHARS_DERIVATION);
     const versions = MIGRATIONS.map((migration) => migration.version);
     expect(versions.indexOf(INDEXED_CHARS_DERIVATION)).toBe(versions.indexOf(34) + 1);
-    expect(Math.max(...versions)).toBe(INDEXED_CHARS_DERIVATION);
   });
 
   it('equals what the scan of the payloads of the indexed types gives, for ASCII, Japanese, astral characters and escapes, and counts no other event type', () => {

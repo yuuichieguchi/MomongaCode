@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { setImmediate as eventLoopTurn } from 'node:timers/promises';
 import { readTx } from '@momonga/foundation/sqlite';
 import type { RunEvent, RunEventPayload, SessionEventPayload } from '@momonga/protocol';
-import { APPEND_TIME_RECORDS_DERIVATION, INDEXED_CHARS_DERIVATION, RECORD_DERIVATIONS, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, columnsOf } from './append-records.ts';
+import { APPEND_TIME_RECORDS_DERIVATION, INDEXED_CHARS_DERIVATION, RECORD_DERIVATIONS, RUN_ANSWERERS_DERIVATION, SEARCH_DRAFT_DERIVATION, SESSION_TOUCHED_DERIVATION, columnsOf } from './append-records.ts';
 import type { AppendRecordReaders, AppendRecords, RecordDerivation, RecordedEvent } from './append-records.ts';
 import { decodeRunEvents } from './codec.ts';
 import type { DecodeContext } from './codec.ts';
@@ -31,6 +31,10 @@ export const DERIVED_VALUES = [
   { derivation: SESSION_TOUCHED_DERIVATION, holds: 'session_touched', scope: 'session' },
   { derivation: RUN_ANSWERERS_DERIVATION, holds: 'run_answerers', scope: 'run' },
   { derivation: INDEXED_CHARS_DERIVATION, holds: 'run_indexed_chars', scope: 'run' },
+  { derivation: SEARCH_DRAFT_DERIVATION, holds: 'search_draft_runs', scope: 'run' },
+  { derivation: SEARCH_DRAFT_DERIVATION, holds: 'search_draft_steps', scope: 'run' },
+  { derivation: SEARCH_DRAFT_DERIVATION, holds: 'search_draft_parts', scope: 'run' },
+  { derivation: SEARCH_DRAFT_DERIVATION, holds: 'search_draft_paths', scope: 'run' },
 ] as const;
 
 export type DerivedScope = { readonly runId: string } | { readonly sessionId: string } | { readonly runTree: string };
@@ -162,6 +166,10 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, reco
     meterRecordOf: guarded(records.meterRecordOf),
     answeringTargetsOf: guarded(records.answeringTargetsOf),
     indexedCharsOf: guarded(records.indexedCharsOf),
+    searchDraftRunOf: guarded(records.searchDraftRunOf),
+    searchDraftPageOf: guarded(records.searchDraftPageOf),
+    consumeSearchDraftSteps: guarded(records.consumeSearchDraftSteps),
+    consumeSearchDraftRun: guarded(records.consumeSearchDraftRun),
     touchedAfter: guarded(records.touchedAfter),
     touchedNewest: guarded(records.touchedNewest),
     permissionRequestOf: guarded(records.permissionRequestOf),
