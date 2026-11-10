@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProbeFailedError, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import { ProbeFailedError, reapMarkedProcesses, reapMarkedProcessesWithReport, reconcileProcessGroup } from '@momonga/foundation';
 import type { MarkerReconcileResult, ProbeResult, ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 import { reapHolders } from '../src/process-markers.ts';
@@ -617,6 +617,196 @@ describe('a group read that cannot be made ends the stop like a listing that can
       reapMarkedProcesses({ marker, pgid: GROUP, killGraceMs: 100, label: 'tool', onWarning: () => undefined, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal }),
     ).rejects.toBeInstanceOf(ProbeFailedError);
     expect(targetsOf(world)).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+});
+
+describe('every read of a stop goes through its one read port: the group-runnable read, the marker-state read and the reap (design 19.6 point 21)', () => {
+  const OUTSIDE = 80_005;
+  const UNKNOWN = ' The effect of the interrupted command is unknown; inspect the current state before retrying it.';
+  const ASKER_REASON = 'the asker stopped the call';
+  const READ_FAILURE = 'reading the run states of group 50000 failed (transient): the ps run was slow';
+  const WINDOWS_FAILURE = 'listing the members of job 50000 exited with 1';
+
+  const expectedOutput = (reason: string, signalled: boolean): string =>
+    `MomongaCode could not check whether a process started by the interrupted command is still running (${reason}).${signalled ? '' : ' Nothing was stopped.'}${UNKNOWN}`;
+
+  const lastSignalOf = (sent: World['sent']): NodeJS.Signals | undefined => sent.filter(({ signal }) => signal !== 0).at(-1)?.signal as NodeJS.Signals | undefined;
+
+  const signalsOf = (world: World) => world.sent.filter(({ signal }) => signal !== 0);
+
+  type Place = {
+    name: string;
+    initial: () => Record<number, Proc>;
+    lastSignalAtFailure: NodeJS.Signals | undefined;
+    sentBefore: Array<{ target: number; signal: NodeJS.Signals }>;
+    stoppedHolders: number[];
+  };
+
+  const places: Place[] = [
+    {
+      name: 'before any send',
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true } }),
+      lastSignalAtFailure: undefined,
+      sentBefore: [],
+      stoppedHolders: [],
+    },
+    {
+      name: 'after the SIGTERM pass',
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } }),
+      lastSignalAtFailure: 'SIGTERM',
+      sentBefore: [{ target: -GROUP, signal: 'SIGTERM' }],
+      stoppedHolders: [ENTRY],
+    },
+    {
+      name: 'after the SIGKILL pass',
+      initial: () => ({ [OUTSIDE]: { start: 400n, group: OUTSIDE, holds: true, survives: ['SIGTERM', 'SIGKILL'] } }),
+      lastSignalAtFailure: 'SIGKILL',
+      sentBefore: [
+        { target: OUTSIDE, signal: 'SIGTERM' },
+        { target: OUTSIDE, signal: 'SIGKILL' },
+      ],
+      stoppedHolders: [OUTSIDE],
+    },
+  ];
+
+  type Ending = { name: string; reason: string; ends: (asker: AbortController) => Error };
+
+  const endings: Ending[] = [
+    { name: 'fails with a probe error', reason: READ_FAILURE, ends: () => new ProbeFailedError('reading the run states of group 50000', { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the ps run was slow' } }) },
+    { name: 'fails with a plain error, as the Windows reader raises', reason: WINDOWS_FAILURE, ends: () => new Error(WINDOWS_FAILURE) },
+    {
+      name: 'is ended by the asker signal',
+      reason: ASKER_REASON,
+      ends: (asker) => {
+        asker.abort(new Error(ASKER_REASON));
+        return new ProbeFailedError('reading the run states of group 50000', { kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'ABORT_ERR', detail: 'The operation was aborted' } });
+      },
+    },
+  ];
+
+  const countingReadsAfter = (world: World, ended: () => boolean): (() => number) => {
+    let after = 0;
+    const count = <A extends unknown[], R>(read: (...args: A) => Promise<R>) => async (...args: A): Promise<R> => {
+      if (ended()) after += 1;
+      return read(...args);
+    };
+    world.inspector.holdersOf = count(world.inspector.holdersOf.bind(world.inspector));
+    world.inspector.groupsOf = count(world.inspector.groupsOf.bind(world.inspector));
+    world.inspector.startTimeOf = count(world.inspector.startTimeOf.bind(world.inspector));
+    world.inspector.markerState = count(world.inspector.markerState.bind(world.inspector));
+    return () => after;
+  };
+
+  const cases = places.flatMap((place) => endings.map((ending) => ({ ...place, ending, title: `${place.name} ${ending.name}` })));
+
+  it.each(cases)('a group-runnable read $title resolves with the could-not-check result and nothing more', async ({ initial, lastSignalAtFailure, sentBefore, stoppedHolders, ending }) => {
+    const world = worldOf(initial());
+    const asker = new AbortController();
+    let failed = false;
+    let signalsAtFailure = 0;
+    const readsAfter = countingReadsAfter(world, () => failed);
+    let alivesAfter = 0;
+    const alive = world.groupPort.alive.bind(world.groupPort);
+    world.groupPort.alive = async (pgid, options) => {
+      if (failed) {
+        alivesAfter += 1;
+        return alive(pgid, options);
+      }
+      if (lastSignalOf(world.sent) === lastSignalAtFailure) {
+        failed = true;
+        signalsAtFailure = signalsOf(world).length;
+        throw ending.ends(asker);
+      }
+      return alive(pgid, options);
+    };
+    const marker = realMarker();
+    const result = await reconcileProcessGroup({ pgid: GROUP, marker }, { killGraceMs: 100, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: asker.signal });
+    const signalled = sentBefore.length > 0;
+    expect(failed).toBe(true);
+    expect(result.output).toBe(expectedOutput(ending.reason, signalled));
+    expect(result.stopped).toBe(signalled);
+    expect(result.stoppedHolders).toEqual(stoppedHolders);
+    expect(signalsOf(world)).toEqual(sentBefore);
+    expect(signalsOf(world).length).toBe(signalsAtFailure);
+    expect(readsAfter()).toBe(0);
+    expect(alivesAfter).toBe(0);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a marker-state read that answers unknown because the asker signal ended it ends the stop with the could-not-check result naming the asker reason', async () => {
+    const world = worldOf({});
+    const asker = new AbortController();
+    world.inspector.markerState = async () => {
+      asker.abort(new Error(ASKER_REASON));
+      return 'unknown';
+    };
+    const marker = realMarker();
+    const result = await reconcileProcessGroup({ pgid: GROUP, marker }, { killGraceMs: 100, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: asker.signal });
+    expect(result.output).toBe(expectedOutput(ASKER_REASON, false));
+    expect(result.stopped).toBe(false);
+    expect(signalsOf(world)).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a marker-state read that answers unknown while the asker signal is not aborted keeps the marker-state result', async () => {
+    const world = worldOf({});
+    world.inspector.markerState = async () => 'unknown';
+    const marker = realMarker();
+    const result = await reconcileProcessGroup({ pgid: GROUP, marker }, { killGraceMs: 100, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal });
+    expect(result.output).toBe(`MomongaCode could not check whether a process started by the interrupted command is still running (the marker state could not be read).${UNKNOWN}`);
+    expect(result.stopped).toBe(false);
+    expect(signalsOf(world)).toEqual([]);
+  });
+
+  const ABORTED_START: ProbeResult<bigint> = { kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'ABORT_ERR', detail: 'The operation was aborted' } };
+
+  const reapOf = (world: World, marker: string, asker: AbortController) =>
+    reapMarkedProcessesWithReport({ marker, pgid: GROUP, killGraceMs: 100, label: 'tool', onWarning: () => undefined, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: asker.signal });
+
+  const abortingStartReadWhen = (world: World, asker: AbortController, abortsWhen: () => boolean): void => {
+    const startTimeOf = world.inspector.startTimeOf.bind(world.inspector);
+    world.inspector.startTimeOf = async (pid, options) => {
+      if (!asker.signal.aborted && abortsWhen()) {
+        asker.abort(new Error(ASKER_REASON));
+        return ABORTED_START;
+      }
+      return startTimeOf(pid, options);
+    };
+  };
+
+  it('a reap whose start-time read in the SIGKILL pass is ended by the asker signal reports stopped and keeps the marker', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } });
+    const asker = new AbortController();
+    abortingStartReadWhen(world, asker, () => lastSignalOf(world.sent) === 'SIGTERM');
+    const marker = realMarker();
+    const report = await reapOf(world, marker, asker);
+    expect(signalsOf(world)).toEqual([{ target: -GROUP, signal: 'SIGTERM' }]);
+    expect(report.stopped).toBe(true);
+    expect(report.removed).toBe(false);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a reap whose start-time read before any send is ended by the asker signal reports nothing stopped and keeps the marker', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true } });
+    const asker = new AbortController();
+    abortingStartReadWhen(world, asker, () => true);
+    const marker = realMarker();
+    const report = await reapOf(world, marker, asker);
+    expect(signalsOf(world)).toEqual([]);
+    expect(report.stopped).toBe(false);
+    expect(report.removed).toBe(false);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('a reap whose group read fails after the SIGTERM pass still rejects with the probe error and keeps the marker', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } });
+    const groupsOf = world.inspector.groupsOf.bind(world.inspector);
+    world.inspector.groupsOf = async (...args) =>
+      lastSignalOf(world.sent) === 'SIGTERM' ? { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the group read was slow' } } : groupsOf(...args);
+    const marker = realMarker();
+    await expect(reapMarkedProcesses({ marker, pgid: GROUP, killGraceMs: 100, label: 'tool', onWarning: () => undefined, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal })).rejects.toBeInstanceOf(ProbeFailedError);
+    expect(signalsOf(world)).toEqual([{ target: -GROUP, signal: 'SIGTERM' }]);
     expect(fs.existsSync(marker)).toBe(true);
   });
 });
