@@ -67,6 +67,6 @@ describe('the manifest reader', () => {
     for (const name of ['MANIFEST_FORMAT', 'readManifest', 'discoveryProblems', 'verdictProblems', 'TLC_WORKERS', 'runTlc', 'everyRunBudgetSeconds', 'tierBudgetProblem', 'EVERY_RUN_BUDGET_RATIO'] as const) {
       expect(manifestModule[name], name).toBeDefined();
     }
-    expect(manifestModule.EVERY_RUN_BUDGET_RATIO).toBe(23);
+    expect(manifestModule.EVERY_RUN_BUDGET_RATIO).toBe(24);
   });
 });
