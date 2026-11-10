@@ -3,12 +3,13 @@ import type { Duplex } from 'node:stream';
 import { WebSocketServer } from 'ws';
 import type { RawData, WebSocket } from 'ws';
 import { RUN_ROLE } from '@momonga/protocol';
-import type { StreamEvent } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import type { PlanAccountRef, StreamEvent } from '@momonga/protocol';
+import { ClientDisconnectedError, GatewayError, generationRetiredError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import type { ErrorExit } from './error-exit.ts';
 import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
-import type { ResponsesService } from '../core/responses-service.ts';
-import type { Services } from '../core/services.ts';
+import type { ResponsesService, Submission } from '../core/responses-service.ts';
+import type { GatewayServices } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
 import { isRecord } from '@momonga/foundation';
 import { parseRequestJson } from './body.ts';
@@ -25,12 +26,13 @@ const FORBIDDEN_FIELDS = ['stream', 'stream_options', 'background'] as const;
 const DEADLINE_HEADER = 'momonga-deadline-ms';
 
 export type WebSocketTransportOptions = {
-  services: Services;
+  services: GatewayServices;
   responses: ResponsesService;
   tracker: RequestTracker;
+  isRetiring: () => boolean;
   connectionLimitMs: number;
   authorize?: (request: http.IncomingMessage) => boolean;
-  onError?: (error: unknown) => void;
+  errors: ErrorExit;
 };
 
 export type WebSocketTransport = {
@@ -39,12 +41,12 @@ export type WebSocketTransport = {
   terminateAll(): void;
 };
 
-type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null } };
+type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null; plan?: PlanAccountRef } };
 
 const envelopeOf = (error: GatewayError): ErrorEnvelope => ({
   type: 'error',
   status: error.status,
-  error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param },
+  error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) },
   ...errorHintsOf(error),
 });
 
@@ -101,14 +103,14 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       connections.add(this);
       this.limitTimer = services.timers.setTimeout(() => {
         this.expire().catch((error: unknown) => {
-          options.onError?.(error);
+          options.errors.report(error);
           this.socket.terminate();
         });
       }, options.connectionLimitMs);
       socket.on('message', (data) => this.receive(data));
       socket.on('error', (error) => {
         this.lifetime.abort(new ClientDisconnectedError());
-        options.onError?.(error);
+        options.errors.report(error);
       });
       socket.once('close', () => {
         services.timers.clearTimeout(this.limitTimer);
@@ -166,7 +168,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           await this.turn(text);
         }
       } catch (error) {
-        options.onError?.(error);
+        options.errors.report(error);
         this.socket.terminate();
       } finally {
         this.draining = false;
@@ -174,15 +176,27 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       }
     }
 
+    private async refuseRetired(): Promise<void> {
+      this.closing = true;
+      this.queue.discard();
+      if (this.socket.readyState !== this.socket.OPEN) return;
+      await this.send(envelopeOf(generationRetiredError()));
+      this.socket.close(GOING_AWAY);
+    }
+
     private async turn(text: string): Promise<void> {
+      if (options.isRetiring()) {
+        await this.refuseRetired();
+        return;
+      }
       const release = tracker.begin();
       let previousId: string | undefined;
       let failed = false;
-      let submission: ReturnType<ResponsesService['submit']> | undefined;
+      let submission: Submission | undefined;
       try {
         const body = parseCreateEvent(text);
         previousId = typeof body['previous_response_id'] === 'string' ? body['previous_response_id'] : undefined;
-        submission = responses.submit(
+        submission = await responses.submit(
           { ...body, stream: true },
           { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined, role: RUN_ROLE },
           this.lifetime.signal,
@@ -191,17 +205,13 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
         for (;;) {
           const step = await submission.events.next();
           if (step.done === true) break;
-          await this.send(step.value satisfies StreamEvent);
+          await this.send(options.errors.shownEvent(step.value));
           if (step.value.type === 'response.failed') failed = true;
         }
       } catch (error) {
         if (error instanceof ClientDisconnectedError) return;
         failed = true;
-        if (!(error instanceof GatewayError)) options.onError?.(error);
-        const reported =
-          error instanceof GatewayError
-            ? error
-            : new GatewayError({ status: 500, type: 'server_error', code: 'internal_error', message: error instanceof Error ? error.message : String(error) });
+        const reported = options.errors.answer(error);
         if (this.socket.readyState === this.socket.OPEN) await this.send(envelopeOf(reported));
       } finally {
         if (failed && previousId !== undefined) this.state.evict(previousId);
@@ -223,7 +233,7 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
           refuse(socket, '401 Unauthorized');
           return;
         }
-        if (services.closeSignal.aborted) {
+        if (services.closeSignal.aborted || options.isRetiring()) {
           refuse(socket, '503 Service Unavailable');
           return;
         }

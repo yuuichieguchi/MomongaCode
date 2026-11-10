@@ -1,9 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 
 const run = promisify(execFile);
 const MAIN = path.resolve(import.meta.dirname, '..', 'src', 'main.ts');
@@ -13,14 +14,14 @@ let home = '';
 let settingsFile = '';
 
 beforeAll(() => {
-  home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mis-')));
+  home = createTempDir({ asHome: true });
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   settingsFile = path.join(home, '.momonga', 'settings.json');
   fs.writeFileSync(settingsFile, '{ "network": ', { mode: 0o600 });
 });
 
-afterAll(() => {
-  fs.rmSync(home, { recursive: true, force: true });
+afterAll(async () => {
+  await removeTempDir(home);
 });
 
 const momonga = (args: readonly string[]): Promise<{ code: number; stdout: string; stderr: string }> =>

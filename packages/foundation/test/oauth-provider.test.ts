@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { OAuthAuthorizationError, createMemoryCredentialStore, createOAuthProvider } from '@momonga/foundation';
-import type { OAuthProviderOptions } from '@momonga/foundation';
+import type { CredentialStore, OAuthProviderOptions } from '@momonga/foundation';
 
 const KEY = 'mcp-oauth/server/abc';
 const ISSUER = 'https://issuer.example.com';
 const TOKENS = { access_token: 'fake-access', refresh_token: 'fake-refresh', token_type: 'Bearer' };
 const AUTHORIZE = 'https://auth.example.com/authorize?state=s';
+const SIGNAL = new AbortController().signal;
 
 const build = (overrides: Partial<OAuthProviderOptions> = {}) => {
   const store = createMemoryCredentialStore();
@@ -14,6 +15,7 @@ const build = (overrides: Partial<OAuthProviderOptions> = {}) => {
     key: KEY,
     subject: 'the test client',
     store,
+    signalForCall: () => SIGNAL,
     redirectUrl: 'http://127.0.0.1:1/callback',
     randomToken: () => 'random-state',
     onAuthorizationUrl: (url) => {
@@ -42,7 +44,7 @@ describe('oauth provider with every hook at its default', () => {
     const { provider, store } = build();
     await provider.saveTokens(TOKENS, { issuer: ISSUER });
     expect(await provider.tokens({ issuer: ISSUER })).toEqual(TOKENS);
-    expect(JSON.parse((await store.read(KEY)) as string)).toEqual({ version: 1, lastIssuer: ISSUER, issuers: { [ISSUER]: { tokens: TOKENS } } });
+    expect(JSON.parse((await store.read(KEY, SIGNAL)) as string)).toEqual({ version: 1, lastIssuer: ISSUER, issuers: { [ISSUER]: { tokens: TOKENS } } });
   });
 
   it('reports each secret it stores or returns', async () => {
@@ -68,12 +70,12 @@ describe('oauth provider with every hook at its default', () => {
     expect(await provider.tokens({ issuer: ISSUER })).toBeUndefined();
     expect((await provider.clientInformation({ issuer: ISSUER }))?.client_id).toBe('c');
     await provider.invalidateCredentials?.('all');
-    expect(await store.read(KEY)).toBeUndefined();
+    expect(await store.read(KEY, SIGNAL)).toBeUndefined();
   });
 
   it('refuses a stored record of an unrecognised shape', async () => {
     const { provider, store } = build();
-    await store.write(KEY, JSON.stringify({ version: 2, issuers: {} }));
+    await store.write(KEY, JSON.stringify({ version: 2, issuers: {} }), SIGNAL);
     await expect(provider.tokens({ issuer: ISSUER })).rejects.toThrow('stored credentials have an unrecognised shape');
   });
 });
@@ -132,7 +134,7 @@ describe('oauth provider hooks', () => {
       },
     });
     await expect(provider.saveTokens(TOKENS, { issuer: ISSUER })).rejects.toThrow('scope check failed');
-    expect(await store.read(KEY)).toBeUndefined();
+    expect(await store.read(KEY, SIGNAL)).toBeUndefined();
     veto = false;
     await provider.saveTokens(TOKENS, { issuer: ISSUER });
     expect(seen).toEqual([TOKENS, TOKENS]);
@@ -150,5 +152,98 @@ describe('oauth provider hooks', () => {
     await provider.saveTokens(TOKENS, { issuer: ISSUER });
     order.push('saved');
     expect(order).toEqual(['accepted', 'saved']);
+  });
+});
+
+describe('oauth provider store calls under the signal of the operation', () => {
+  const recordingStore = (): { store: CredentialStore; seen: Array<AbortSignal | undefined> } => {
+    const inner = createMemoryCredentialStore();
+    const seen: Array<AbortSignal | undefined> = [];
+    const store: CredentialStore = {
+      read: (key, signal) => {
+        seen.push(signal);
+        return inner.read(key, signal);
+      },
+      write: (key, value, signal) => {
+        seen.push(signal);
+        return inner.write(key, value, signal);
+      },
+      update: (key, change, signal) => {
+        seen.push(signal);
+        return inner.update(key, change, signal);
+      },
+      remove: (key, signal) => {
+        seen.push(signal);
+        return inner.remove(key, signal);
+      },
+      withKey: (key, action, signal) => {
+        seen.push(signal);
+        return inner.withKey(key, action, signal);
+      },
+    };
+    return { store, seen };
+  };
+
+  type Provider = ReturnType<typeof build>['provider'];
+
+  const STORE_CALLS: ReadonlyArray<readonly [string, (provider: Provider) => Promise<unknown>]> = [
+    ['tokens', (provider) => Promise.resolve(provider.tokens({ issuer: ISSUER }))],
+    ['saveTokens', (provider) => Promise.resolve(provider.saveTokens(TOKENS, { issuer: ISSUER }))],
+    ['clientInformation', (provider) => Promise.resolve(provider.clientInformation({ issuer: ISSUER }))],
+    ['saveClientInformation', (provider) => Promise.resolve(provider.saveClientInformation?.({ client_id: 'c' }, { issuer: ISSUER }))],
+    ["invalidateCredentials('all')", (provider) => Promise.resolve(provider.invalidateCredentials?.('all'))],
+    ["invalidateCredentials('tokens')", (provider) => Promise.resolve(provider.invalidateCredentials?.('tokens'))],
+    ["invalidateCredentials('client')", (provider) => Promise.resolve(provider.invalidateCredentials?.('client'))],
+    ['secretValues', (provider) => provider.secretValues()],
+  ];
+
+  it.for(STORE_CALLS)('every store call takes the signal supplied at that moment (%s)', async ([, call]) => {
+    const { store, seen } = recordingStore();
+    const atBuild = new AbortController().signal;
+    let current = atBuild;
+    const { provider } = build({ store, signalForCall: () => current });
+    const atCall = new AbortController().signal;
+    current = atCall;
+    await call(provider);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const signal of seen) expect(signal).toBe(atCall);
+  });
+
+  it('every store call takes the signal supplied at that moment (a second call after the supplier changes)', async () => {
+    const { store, seen } = recordingStore();
+    const first = new AbortController().signal;
+    const second = new AbortController().signal;
+    let current = first;
+    const supplied: AbortSignal[] = [];
+    const { provider } = build({
+      store,
+      signalForCall: () => {
+        supplied.push(current);
+        return current;
+      },
+    });
+    await provider.tokens({ issuer: ISSUER });
+    current = second;
+    await provider.tokens({ issuer: ISSUER });
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(first);
+    expect(seen[1]).toBe(second);
+    expect(supplied).toEqual([first, second]);
+  });
+
+  it('the calls that touch no store ask for no signal', () => {
+    let asked = 0;
+    const { provider } = build({
+      signalForCall: () => {
+        asked += 1;
+        return SIGNAL;
+      },
+    });
+    provider.state?.();
+    provider.saveCodeVerifier('verifier');
+    provider.codeVerifier();
+    void provider.invalidateCredentials?.('verifier');
+    void provider.invalidateCredentials?.('discovery');
+    expect(asked).toBe(0);
   });
 });

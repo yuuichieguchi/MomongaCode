@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
@@ -9,6 +9,8 @@ import { createUnsandboxed } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const LSOF = '/usr/sbin/lsof';
 
@@ -47,17 +49,18 @@ const contextWith = (command: string, run: CommandRunner) => {
     projectDir: dir,
     markerDir,
     runId: 'run-1',
-    session: { id: 's1', permissionMode: 'default' },
+    session: { id: 's1', permissionMode: 'manual' },
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 60_000,
+    started: () => undefined,
     report: (execution: HookExecution) => void executions.push(execution),
     inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(), run, capability: notProved } as never),
   } as HookRunContext;
   return { context, executions, markerDir };
 };
 
-describe.runIf(process.platform === 'darwin')('T2 hook variant: the holder state of a finished hook is unknown', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('T2 hook variant: the holder state of a finished hook is unknown', () => {
   it('returns the real hook result, keeps the marker and asks the injected inspector under the hook signal with no private timeout', async () => {
     const calls: CommandOptions[] = [];
     const { context, executions, markerDir } = contextWith('echo ok >/dev/null; exit 0', failingLsof(calls));

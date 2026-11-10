@@ -1,7 +1,7 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
+import { SECURITY_BINARY, codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
@@ -10,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePath
 import type { SecretHostProgram } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
 const SECRET_NAME = 'counter-test-secret';
@@ -22,14 +24,17 @@ const listedCounters = async (socketPath: string): Promise<Record<string, string
   return entry.targetCounters;
 };
 
+const resolvedSettings = async (home: string) => (await loadUserSettings({ home })).settings;
+
 const resolvedPrimary = async (home: string) => {
-  const { settings } = await loadUserSettings({ home });
-  const target = settings.models.targets['primary'];
+  const target = (await resolvedSettings(home)).models.targets['primary'];
   if (target === undefined) throw new Error('the settings resolved no primary target');
   return target;
 };
 
-describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+const resolvedOutputPolicy = async (home: string) => ({ unboundedOutputReserve: (await resolvedSettings(home)).context.unboundedOutputReserve });
+
+describe('the counters a started gateway lists', () => {
   it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
@@ -67,22 +72,17 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       writeSettings(home, settings);
       const host = fakeSecretHost(makeHome(), KEYCHAIN_HOST);
       const security = portOnSecretHost(createFakeSecurityPort(() => ({ [SECRET_NAME]: value })), KEYCHAIN_HOST, host);
-      const lines: string[] = [];
-      const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' });
-      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security, logger });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
-      return { counters, reads: security.calls, programPath: host.programPath, log: lines.join('') };
+      return { counters, reads: security.calls };
     };
 
     const first = await launchWithSecret('first-value-of-the-secret');
     const second = await launchWithSecret('second-value-of-the-secret');
 
-    const lookupArgs = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'];
-    expect(first.reads).toEqual([{ file: first.programPath, args: lookupArgs, stdin: '' }]);
-    expect(second.reads).toEqual([{ file: second.programPath, args: lookupArgs, stdin: '' }]);
-    expect(first.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
-    expect(second.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
+    expect(first.reads).toEqual([]);
+    expect(second.reads).toEqual([]);
     expect(first.counters['primary']).toMatch(/^[0-9a-f]{64}$/);
     expect(second.counters).toEqual(first.counters);
   });
@@ -98,15 +98,15 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
-      return { counters, target: await resolvedPrimary(home) };
+      return { counters, target: await resolvedPrimary(home), outputPolicy: await resolvedOutputPolicy(home) };
     };
 
     const one = await launchWithRecord('identity-one');
     const two = await launchWithRecord('identity-two');
 
     const codeDigest = await codeDigestOfRunningProcess();
-    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one' }) });
-    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two' }) });
+    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
+    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
     expect(two.counters['primary']).not.toBe(one.counters['primary']);
   });
 });

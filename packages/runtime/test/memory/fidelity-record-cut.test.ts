@@ -7,15 +7,16 @@ import { seeded } from '../../../store/test/support/seeded.ts';
 import { mustRun, rawDb } from '../../../store/test/helpers.ts';
 import { chainBound, directFidelity, oracleAttested, threadFidelity, threadOf } from './record-cut-support.ts';
 import type { FidelityReply } from './fidelity-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 600_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const ABSENT: ClaimedToken = { token: 'npm run never-recorded', claim: 'executed' };
 
 const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder) => {
   const child = b.createRun('the child task');
   const claim = b.claimNext(child.id);
-  expect(await b.inherit(claim, 'default')).toEqual({ kind: 'inherited' });
+  expect(await b.inherit(claim, 'manual')).toEqual({ kind: 'inherited' });
   return mustRun(h.store, child.id);
 };
 
@@ -120,7 +121,7 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     const b = chainBuilder(h);
     const first = b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     b.tool(claim);
     const late = b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
@@ -138,7 +139,7 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     const b = chainBuilder(h);
     const first = b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     b.tool(claim);
     const retracted = b.createRun('Never mind this');
     expect((await h.store.requestCancel(retracted.id)).kind).toBe('ok');

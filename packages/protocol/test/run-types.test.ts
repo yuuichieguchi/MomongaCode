@@ -8,6 +8,8 @@ import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
   ImageAttachment,
+  MessageAttachment,
+  UserShellRecord,
   InheritedCopyPayload,
   InheritedReferencePayload,
   InputItem,
@@ -28,6 +30,7 @@ import type {
   TokenAnatomy,
   ToolAwait,
   ToolKind,
+  UnpricedOutcome,
   WorkingFacts,
 } from '@momonga/protocol';
 
@@ -54,7 +57,7 @@ describe('run status constants', () => {
   });
 
   it('lists the stop reasons', () => {
-    expect(STOP_REASONS).toEqual(['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal']);
+    expect(STOP_REASONS).toEqual(['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit']);
   });
 });
 
@@ -65,9 +68,9 @@ describe('run status types', () => {
     >();
     expectTypeOf<TerminalStatus>().toEqualTypeOf<'COMPLETED' | 'STOPPED' | 'FAILED' | 'CANCELLED'>();
     expectTypeOf<StopReason>().toEqualTypeOf<
-      'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal'
+      'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal' | 'usage_limit'
     >();
-    expectTypeOf<PermissionMode>().toEqualTypeOf<'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
+    expectTypeOf<PermissionMode>().toEqualTypeOf<'manual' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
     expectTypeOf<ToolKind>().toEqualTypeOf<
       'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other'
     >();
@@ -78,6 +81,9 @@ describe('run event payloads', () => {
   it('discriminates on exactly these types', () => {
     expectTypeOf<RunEventPayload['type']>().toEqualTypeOf<
       | 'user.message'
+      | 'context.compacting'
+      | 'tool.permission.classifying'
+      | 'hook.started'
       | 'run.started'
       | 'attempt.failed'
       | 'attempt.lost'
@@ -126,7 +132,7 @@ describe('run event payloads', () => {
   });
 
   it('defines the conversation and lifecycle payloads', () => {
-    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string; images?: ImageAttachment[] }>();
+    expectTypeOf<Payload<'user.message'>>().toEqualTypeOf<{ type: 'user.message'; text: string; images?: ImageAttachment[]; source?: 'steer' | 'queue'; attachments?: MessageAttachment[]; shell?: UserShellRecord[] }>();
     expectTypeOf<Payload<'run.started'>>().toEqualTypeOf<{
       type: 'run.started';
       attempt: number;
@@ -157,7 +163,7 @@ describe('run event payloads', () => {
         input_tokens_details?: { cached_tokens: number };
         output_tokens_details?: { reasoning_tokens: number };
       };
-      momonga?: { cacheWriteInputTokens?: number; cost?: ModelCost };
+      momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
       timing?: CallTiming;
     }>();
     expectTypeOf<Payload<'model.requested'>>().toEqualTypeOf<{
@@ -247,6 +253,10 @@ describe('run event payloads', () => {
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
+      hunks?: { oldStart: number; newStart: number; lines: string[] }[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
@@ -289,6 +299,8 @@ describe('run event payloads', () => {
       source?: 'model' | 'deterministic';
       fidelity?: SummaryFidelity;
       guidelineVersion?: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
     }>();
     expectTypeOf<Payload<'context.governing_loaded'>>().toEqualTypeOf<{
       type: 'context.governing_loaded';

@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from '@momonga/testkit/child-process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,9 +13,10 @@ import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
+import { productTestEnv } from '@momonga/testkit';
 
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
-const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: '/usr/bin:/bin', HOME: home });
+const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => (productTestEnv({ PATH: '/usr/bin:/bin', HOME: home }));
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
 
@@ -66,8 +67,8 @@ describe('the journal thread build', () => {
     sourceBefore = sourceModuleState();
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it(
@@ -170,8 +171,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the journal thread in the single e
     await buildSea({ entry: PING_FIXTURE, output: binary, workDir: path.join(root, 'work'), journalThreadModule: generated });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('starts the embedded thread, completes the handshake and answers a ping with Node absent from PATH, running the bundled thread code', async () => {

@@ -29,12 +29,14 @@ const codeTable = (table: Record<string, readonly string[]>): Record<string, str
   Object.fromEntries(Object.entries(table).map(([status, targets]) => [status, [...targets].sort()]));
 
 const UNMODELLED_EVENT_TYPES = [
+  'user_shell',
   'agent.message.delta',
   'agent.thought.delta',
   'approval.rule.persisted',
   'attempt.failed',
   'attempt.lost',
   'context.compacted',
+  'context.compacting',
   'context.compaction_rejected',
   'context.contribution',
   'context.governing_loaded',
@@ -42,11 +44,13 @@ const UNMODELLED_EVENT_TYPES = [
   'context.memories_loaded',
   'context.truncated',
   'hook.completed',
+  'hook.started',
   'instructions.loaded',
   'job.finished',
   'loop.warned',
   'mcp.authorization.required',
   'meter.observed',
+  'inbox.changed',
   'mode.changed',
   'model.changed',
   'model.rejected',
@@ -60,6 +64,7 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.loaded',
   'tool.offered',
   'tool.permission.classified',
+  'tool.permission.classifying',
   'tool.updated',
   'usage.charged',
   'usage.updated',
@@ -143,12 +148,17 @@ describe('RunRecovery.tla against the implementation', () => {
 describe('STOP_REASONS against RunRecovery.tla and the store', () => {
   const schemaSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'schema.ts'), 'utf8');
 
-  it('is the list of the stop_reason CHECK constraint of the store, each reason once', () => {
-    const constraint = /stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/.exec(schemaSource);
-    expect(constraint, 'schema.ts states the stop_reason CHECK').not.toBeNull();
-    const sqlReasons = [...(constraint?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1] as string);
-    expect(new Set(sqlReasons).size).toBe(sqlReasons.length);
-    expect(sqlReasons.sort()).toEqual([...STOP_REASONS].sort());
+  const COMING_STOP_REASONS = ['conditions_unmet'];
+
+  it('is a subset of the stop_reason CHECK of the widened runs table, each reason once, and the rest is exactly the coming reasons (design-chatgpt-plan O-R5-6 L7)', () => {
+    const constraints = [...schemaSource.matchAll(/stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/g)];
+    const widened = constraints.at(-1);
+    expect(widened, 'schema.ts states the widened stop_reason CHECK').toBeDefined();
+    expect(schemaSource.indexOf('const RUNS_STOP_REASONS_WIDENED')).toBeLessThan(widened?.index ?? -1);
+    const list = [...(widened?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1] as string);
+    expect(new Set(list).size).toBe(list.length);
+    expect(STOP_REASONS.every((reason) => list.includes(reason))).toBe(true);
+    expect(list.filter((reason) => !(STOP_REASONS as readonly string[]).includes(reason)).sort()).toEqual(COMING_STOP_REASONS);
   });
 
   it('is one STOPPED terminal in the model: no stop reason is a variable, and STOPPED has no outgoing edge in any table', () => {
@@ -293,3 +303,23 @@ describe('the generation actors of RunRecovery.tla', () => {
   });
 });
 
+
+describe('the failed listing of ProcessStop.tla', () => {
+  const processStopChecks = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'ProcessStop' && entry.role === 'check' && constantsOf(entry.config)['Escape'] === 'TRUE').map((entry) => entry.config);
+
+  it('checks that a failed listing says unlisted and no stop word in every check configuration where a listing can fail', () => {
+    expect(processStopChecks.length).toBeGreaterThan(0);
+    for (const name of processStopChecks) {
+      expect(lists(name, 'ListFailureSaysUnlisted'), name).toBe(true);
+      expect(lists(name, 'NoWordFromFailedListing'), name).toBe(true);
+    }
+  });
+
+  it.each([
+    ['ProcessStop.listFailAsUnconfirmed', 'ListFailureSaysUnlisted'],
+    ['ProcessStop.listFailAsEmpty', 'NoWordFromFailedListing'],
+  ])('keeps %s as the every-run evidence that violates %s', (config, property) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 13 } });
+    expect(lists(config, property)).toBe(true);
+  });
+});

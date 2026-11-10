@@ -109,7 +109,7 @@ describe('momonga eval against real processes', () => {
         {
           id: 'read-runtime-database',
           input: 'Read the runtime database.',
-          permissionMode: 'default',
+          permissionMode: 'manual',
           onAsk: 'reject_once',
           runs: 1,
           minPassRate: 1,

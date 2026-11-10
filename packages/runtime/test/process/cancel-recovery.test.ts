@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,10 +6,12 @@ import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momong
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
-import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
+import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ watchedGroups: [] as number[], aliveAtCancel: [] as Array<Promise<boolean>>, poolsCreated: 0 }));
 
@@ -48,7 +50,6 @@ vi.mock('@momonga/mcp', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const SEED_MS = START_MS;
 const RUNTIME_MS = START_MS + 3_600_000;
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
@@ -64,7 +65,7 @@ const toolKey = (runId: string, step: number, callId: string): string => sha256H
 type SeedCall = { callId: string; name: string; args: Record<string, unknown>; kind: 'execute' | 'other' };
 
 const openSeedStore = async (temp: RunHome) => {
-  await ensureMomongaDirs(temp.paths);
+  await prepareGeneration(temp);
   return openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
 };
 
@@ -96,7 +97,7 @@ const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: s
     store.idempotency.begin(key, { expiresAt: RUNTIME_MS + 86_400_000, meta: { tool: call.name } });
     let pgid: number | undefined;
     if (holderScript !== undefined) {
-      pgid = spawnHolder(path.join(temp.paths.markers.tools, key), holderScript);
+      pgid = spawnHolder(path.join(scopedPaths(temp).markers.tools, key), holderScript);
       store.idempotency.attachProcess(key, { pgid, startedAt: SEED_MS });
     }
     const cancelled = await store.requestCancel(runId);
@@ -138,7 +139,7 @@ const reconciledOutcomes = (temp: RunHome, runId: string): string[] =>
 const BASH: SeedCall = { callId: 'call_bash_1', name: 'Bash', args: { command: 'sleep 30' }, kind: 'execute' };
 
 describe('cancel recovery through startRuntimeProcess (real processes, system timers)', () => {
-  it('a Bash call started before the cancel is reaped before the run reaches CANCELLED', PROCESS_TIMEOUT, async () => {
+  it('a Bash call started before the cancel is reaped before the run reaches CANCELLED', async () => {
     const stack = await startStack();
     const seeded = await seedCancellingRun(stack.temp, BASH, 'exec sleep 30');
     const pgid = seeded.pgid as number;
@@ -153,7 +154,7 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     expect(stack.completions()).toBe(0);
   });
 
-  it('a child that closed fd 3 (sleep 30 & exec 3>&-) is gone before CANCELLED', PROCESS_TIMEOUT, async () => {
+  it('a child that closed fd 3 (sleep 30 & exec 3>&-) is gone before CANCELLED', async () => {
     const stack = await startStack();
     const seeded = await seedCancellingRun(stack.temp, BASH, 'sleep 30 & exec 3>&-; wait');
     const pgid = seeded.pgid as number;
@@ -166,25 +167,25 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     expect(recordState(stack.temp, seeded.key)).toBe('UNKNOWN');
   });
 
-  it('a started MCP call becomes tool.reconciled{unknown} without connecting MCP', PROCESS_TIMEOUT, async () => {
+  it('a started MCP call becomes tool.reconciled{unknown} without connecting MCP', async () => {
     const stack = await startStack({}, { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] } } });
     const seeded = await seedCancellingRun(stack.temp, { callId: 'call_mcp_1', name: 'mcp__fx__echo', args: { text: 'x' }, kind: 'other' });
     await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
     expect(await waitForStatus(stack.temp, seeded.runId, ['CANCELLED', 'FAILED', 'COMPLETED'])).toBe('CANCELLED');
     expect(reconciledOutcomes(stack.temp, seeded.runId)).toEqual(['unknown']);
     expect(control.poolsCreated).toBe(0);
-    expect(fs.readdirSync(stack.temp.paths.markers.mcp)).toEqual([]);
+    expect(fs.readdirSync(scopedPaths(stack.temp).markers.mcp)).toEqual([]);
     expect(eventTypes(stack.temp, seeded.runId)).not.toContain('tool.completed');
   });
 
-  it('an UNKNOWN record whose marker survived is reaped at the next start (safety net)', PROCESS_TIMEOUT, async () => {
+  it('an UNKNOWN record whose marker survived is reaped at the next start (safety net)', async () => {
     const stack = await startStack();
     const store = await openSeedStore(stack.temp);
     const key = 'c'.repeat(64);
     let pgid: number;
     try {
       store.idempotency.begin(key, { expiresAt: RUNTIME_MS + 86_400_000, meta: { tool: 'Bash' } });
-      pgid = spawnHolder(path.join(stack.temp.paths.markers.tools, key), 'exec sleep 30');
+      pgid = spawnHolder(path.join(scopedPaths(stack.temp).markers.tools, key), 'exec sleep 30');
       store.idempotency.attachProcess(key, { pgid, startedAt: SEED_MS });
       store.idempotency.markUnknown(key);
     } finally {
@@ -194,7 +195,7 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     const launched = await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
     expect(launched.stdout.lines()).toHaveLength(1);
     expect(await groupExists(pgid)).toBe(false);
-    expect(fs.existsSync(path.join(stack.temp.paths.markers.tools, key))).toBe(false);
+    expect(fs.existsSync(path.join(scopedPaths(stack.temp).markers.tools, key))).toBe(false);
     expect(recordState(stack.temp, key)).toBe('UNKNOWN');
   });
 });

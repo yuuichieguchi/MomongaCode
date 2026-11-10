@@ -1,15 +1,17 @@
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, prepareHome, notTheRoleTick } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROXY_PASSWORD = 'proxy-password-0123456789';
 const body = { model: 'fast', input: userInput('hi') };
@@ -74,9 +76,10 @@ type FakeTime = { clock: ReturnType<typeof createFakeClock>; timers: ReturnType<
 
 const startGateway = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}, time?: FakeTime) => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
@@ -84,7 +87,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
     ...(time === undefined ? {} : { clock: time.clock, timers: time.timers, random: () => 0.5 }),
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close();
   });
@@ -98,7 +101,7 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
   return { status: response.status, text: await response.text() };
 };
 
-describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: the proxy password is a credential', () => {
   it.for([
     { label: 'the network.httpsProxy setting', network: { httpsProxy: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` }, env: {} },
     { label: 'the HTTPS_PROXY variable', network: undefined, env: { HTTPS_PROXY: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` } },
@@ -120,7 +123,7 @@ describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_
   });
 });
 
-describe('gateway: a model call to a remote target goes through the configured proxy', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call to a remote target goes through the configured proxy', () => {
   it('sends the CONNECT to the proxy from network.httpsProxy and names the proxy hop and its source when it refuses', async (context) => {
     const proxy = await startRefusingProxy(context);
     const remote = {
@@ -156,7 +159,7 @@ const REMOTE_TARGET = {
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
 };
 
-describe('gateway: a model call through a proxy that never answers CONNECT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call through a proxy that never answers CONNECT', () => {
   it('ends every attempt at the model headers bound and names the proxy hop and its source', async (context) => {
     const proxy = await startSilentProxy(context);
     const clock = createFakeClock(Date.now());
@@ -175,7 +178,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', { t
       settled = true;
     };
     void pending.then(settle, settle);
-    await driveFakeTime(timers, { done: () => settled, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request through a silent proxy' });
+    await driveFakeTime(timers, { done: () => settled, considered: notTheRoleTick, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request through a silent proxy' });
     const response = await pending;
 
     expect(proxy.received()).toContain('CONNECT model.example.test:443');

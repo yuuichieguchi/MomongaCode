@@ -34,7 +34,7 @@ describe('executor asks for every call that needs approval in one batch', () => 
 
     const outcomes = await harness.executor.runBatch(
       harness.input(await toolSetOf(write), calls, {
-        mode: 'default',
+        mode: 'manual',
         rules: [rule('allow', `Write(/${target('c.txt')})`), rule('deny', `Write(/${target('d.txt')})`)],
       }),
     );
@@ -69,7 +69,7 @@ describe('executor asks for every call that needs approval in one batch', () => 
 
     const outcomes = await harness.executor.runBatch(
       harness.input(await toolSetOf(write, read), [call('cW', 'Write', { file_path: path.join(harness.layout.outside, 'w.txt') }), call('cR', 'Read')], {
-        mode: 'default',
+        mode: 'manual',
       }),
     );
 

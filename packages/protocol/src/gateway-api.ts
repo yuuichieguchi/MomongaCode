@@ -1,5 +1,5 @@
 import type { ErrorShape } from './budget-constants.ts';
-import type { AliasCapabilities, Capabilities, HealthResult, ProbingCapabilities } from './capabilities.ts';
+import type { AliasCapabilities, Capabilities, HealthResult, ProbingCapabilities, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
@@ -44,7 +44,8 @@ export type GatewayHealth = {
   apiVersion: 1;
   pid: number;
   startedAt: string;
-  state: 'running' | 'draining';
+  state: 'running' | 'retiring' | 'draining';
+  activeRequests: number;
 };
 
 export type UsageSource = 'reported' | 'estimated';
@@ -85,6 +86,8 @@ export type ModelList = { object: 'list'; data: ModelListEntry[] };
 
 export const TARGET_PROBING = 'target_probing';
 
+export const TARGET_PROBE_FAILED = 'target_probe_failed';
+
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
 export type MomongaModelEntry = {
@@ -92,8 +95,11 @@ export type MomongaModelEntry = {
   object: 'model';
   targets: string[];
   targetCounters: Record<string, string>;
-  capabilities: AliasCapabilities | ProbingCapabilities;
-  targetCapabilities: Record<string, Capabilities | ProbingCapabilities>;
+  capabilities: AliasCapabilities | ProbingCapabilities | UnavailableCapabilities;
+  targetCapabilities: Record<string, Capabilities | ProbingCapabilities | UnavailableCapabilities>;
+  targetBilling?: Record<string, TargetBilling>;
+  targetPlan?: Record<string, { profile: string; account?: string }>;
+  targetKey?: Record<string, { group: string }>;
 };
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };

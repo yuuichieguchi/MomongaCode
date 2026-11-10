@@ -1,14 +1,15 @@
 import path from 'node:path';
-import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
-import type { ManagedServerDescription } from '@momonga/protocol';
+import { FIRST_GENERATION, canonicalPath, comparableContains, endpointFormsOfSocket, generationLayout, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
+import type { ServerRegistry } from './server-registry.ts';
 import { aliasRoomVerdict } from './alias-room.ts';
 import type { AliasMember } from './alias-room.ts';
 import { DEFAULT_ANTHROPIC_API_VERSION, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, ManagedEndpointForm, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
+import type { PlanProfile } from './plan-profiles.ts';
 import type {
   AnthropicTarget,
   BillingChange,
@@ -43,11 +44,14 @@ export type ResolvedModels = {
   billingChanges: BillingChange[];
   headersTimeoutMs: number;
   idleTimeoutMs: number;
+  servers: ServerRegistry;
 };
 
 const FIVE_MINUTES_MS = 300_000;
 
-export type ResolveModelsOptions = { source: string; home: string; warnings: string[]; managedServers?: readonly ManagedServerDescription[] };
+export type PlanProfiles = Readonly<Record<string, PlanProfile>>;
+
+export type ResolveModelsOptions = { source: string; home: string; warnings: string[]; servers: ServerRegistry; planProfiles?: PlanProfiles };
 
 const DEFAULT_ALIAS = 'default';
 
@@ -55,12 +59,13 @@ const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const s
 
 const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
 
-const unknownServerMessage = (where: string, id: string, servers: readonly ManagedServerDescription[]): string =>
-  `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`;
+const unknownServerMessage = (where: string, id: string, servers: ServerRegistry): string =>
+  `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`;
 
-const resolveManaged = (target: ManagedTarget, where: string, servers: readonly ManagedServerDescription[]): ResolvedManagedTarget => {
-  const description = managedServerOf(servers, target.server);
+const resolveManaged = (target: ManagedTarget, where: string, servers: ServerRegistry, hostForms: readonly ManagedEndpointForm[]): ResolvedManagedTarget => {
+  const description = registeredServer(servers, target.server);
   if (description === undefined) throw new Error(unknownServerMessage(where, target.server, servers));
+  requireOfferedEndpointForm(description, hostForms, where);
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${where}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a target declare; declarable: ${description.declarable.join(', ')}`);
   }
@@ -192,13 +197,13 @@ const resolveOpenResponses = (target: OpenResponsesTarget, home: string, where: 
   ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
 });
 
-const resolvePlan = (target: PlanOpenResponsesTarget, where: string): ResolvedPlanTarget => {
+const resolvePlan = (target: PlanOpenResponsesTarget, where: string, profiles: PlanProfiles): ResolvedPlanTarget => {
   const { profile: profileId } = target.plan;
-  if (!Object.hasOwn(PLAN_PROFILES, profileId)) {
-    const known = Object.keys(PLAN_PROFILES).map((id) => JSON.stringify(id)).join(', ');
-    throw new Error(`${where}: plan.profile ${JSON.stringify(profileId)} is not a shipped plan profile; the shipped profiles are ${known}`);
+  const profile = Object.hasOwn(profiles, profileId) ? profiles[profileId] : undefined;
+  if (profile === undefined) {
+    const known = Object.keys(profiles).map((id) => JSON.stringify(id)).join(', ');
+    throw new Error(`${where}: unknown plan profile ${JSON.stringify(profileId)}; the known profiles are ${known === '' ? 'none' : known}`);
   }
-  const profile = PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>;
   for (const key of ['apiKeyEnv', 'apiKeySecret'] as const) {
     if (target[key] !== undefined) throw new Error(`${where}: plan cannot be combined with ${key}; a plan target takes its credential from the signed-in account`);
   }
@@ -288,19 +293,19 @@ const checkJsonMode = (name: string, target: ModelTarget, source: string): void 
   );
 };
 
-const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[]): ResolvedModelTarget => ({
-  ...resolveAdapter(target, home, where, warnings, servers),
+const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[], servers: ServerRegistry, profiles: PlanProfiles): ResolvedModelTarget => ({
+  ...resolveAdapter(target, home, where, warnings, servers, profiles),
   ...(target.answers === undefined ? {} : { answers: target.answers }),
 });
 
-const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[]): ResolvedModelTarget => {
+const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: ServerRegistry, profiles: PlanProfiles): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
-      return resolveManaged(target, where, servers);
+      return resolveManaged(target, where, servers, endpointFormsOfSocket(generationLayout(home, FIRST_GENERATION).sockets.gateway));
     case 'chat-completions':
       return resolveChatCompletions(target, home, where);
     case 'open-responses':
-      return 'plan' in target ? resolvePlan(target, where) : resolveOpenResponses(target, home, where);
+      return 'plan' in target ? resolvePlan(target, where, profiles) : resolveOpenResponses(target, home, where);
     case 'anthropic':
       return resolveAnthropic(target, home, where, warnings);
     case 'ollama':
@@ -370,7 +375,7 @@ const warnUnallowedBillingChanges = (
   }
 };
 
-export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, managedServers = MANAGED_SERVERS }: ResolveModelsOptions): ResolvedModels => {
+export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, servers, planProfiles = PLAN_PROFILES }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
   const configured = Object.entries(models?.targets ?? {});
   const targets: Record<string, ResolvedModelTarget> = {};
@@ -378,7 +383,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     const where = `${source}: models.targets.${name}`;
     if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
     checkJsonMode(name, target, source);
-    targets[name] = resolveTarget(target, home, where, warnings, managedServers);
+    targets[name] = resolveTarget(target, home, where, warnings, servers, planProfiles);
   }
   checkTargetDialects(targets, dialects, source);
 
@@ -417,6 +422,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     billingChanges,
     headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,
     idleTimeoutMs: models?.idleTimeoutMs ?? FIVE_MINUTES_MS,
+    servers,
   };
 };
 

@@ -83,7 +83,7 @@ describe('createBuiltinTools', () => {
     for (const tool of createBuiltinTools()) registry.register(tool);
     const toolSet = await registry.snapshot();
     expect(toolSet.tools.map((tool: AnyTool) => tool.name)).toEqual(OFFERED);
-    expect(toolSet.forModel({ mode: 'default', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
+    expect(toolSet.forModel({ mode: 'manual', rules: [] }).map((tool) => tool.name)).toEqual(OFFERED);
   });
 
   describe('offering the job tools', () => {
@@ -93,7 +93,7 @@ describe('createBuiltinTools', () => {
       for (const tool of createBuiltinTools()) registry.register(tool);
       return registry.snapshot();
     };
-    const offered = async (mode: 'default' | 'plan', rules: PermissionRule[]): Promise<string[]> =>
+    const offered = async (mode: 'manual' | 'plan', rules: PermissionRule[]): Promise<string[]> =>
       (await snapshot()).forModel({ mode, rules }).map((tool) => tool.name);
 
     it('declares the tool they serve', async () => {
@@ -101,11 +101,11 @@ describe('createBuiltinTools', () => {
     });
 
     it('are offered with Bash', async () => {
-      expect((await offered('default', [])).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
+      expect((await offered('manual', [])).filter((name) => JOB_TOOLS.includes(name))).toEqual(JOB_TOOLS);
     });
 
     it('hides KillBash under its own deny rule', async () => {
-      const names = await offered('default', [ruleFor(makeLayout())('deny', 'KillBash')]);
+      const names = await offered('manual', [ruleFor(makeLayout())('deny', 'KillBash')]);
       expect(names).toContain('BashOutput');
       expect(names).not.toContain('KillBash');
     });

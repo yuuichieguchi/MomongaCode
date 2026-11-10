@@ -109,7 +109,7 @@ const parseCheckedObject = (json: string, location: RowLocation, check: (value: 
   try {
     parsed = JSON.parse(json);
   } catch (error) {
-    throw new Error(`${locationText(location)} is not valid JSON: ${(error as Error).message}`, { cause: error });
+    throw new Error(`${locationText(location)} is not valid JSON`, { cause: error });
   }
   const problem = check(parsed);
   if (problem !== undefined) throw new Error(`${locationText(location)} failed validation: ${problem}`);

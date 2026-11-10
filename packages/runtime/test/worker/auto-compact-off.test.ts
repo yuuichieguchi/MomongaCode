@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultContextSettings } from '@momonga/config';
 import type { RunEventPayload } from '@momonga/protocol';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
@@ -54,5 +55,17 @@ describe('context.autoCompact false', () => {
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
     const messages = env.ofType(run.id, 'notice').map((event) => event.message);
     expect(messages.filter((message) => message.includes('compaction is off (context.autoCompact is false)'))).toHaveLength(1);
+  });
+});
+
+describe('context.autoCompact under the shipped defaults (design core-on 3.5 item 4)', () => {
+  it('reads autoCompact on per claim and compacts this conversation', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+    env.settings.contextValue = defaultContextSettings();
+    const run = env.enqueue('question one');
+    await env.seed(run.id, conversation, 'release');
+    env.gateway.script.push(textStep('Done.'));
+    await env.runOnce(env.worker());
+    expect(env.ofType(run.id, 'context.compacted')).toHaveLength(1);
   });
 });

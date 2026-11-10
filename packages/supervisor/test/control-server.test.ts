@@ -1,11 +1,11 @@
-import { spawnSync } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
+import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration, realProcessTestSignal } from '@momonga/testkit';
@@ -14,6 +14,8 @@ import { createControlRequestHandler, respondShutdown, startControlServer } from
 import type { ControlServer } from '../src/control-server.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { createRealWorkScope, httpOver, phaseChanges, pumpUntil, quiesce, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
@@ -90,6 +92,7 @@ const startServer = async (
     socketPath,
     timers,
     health,
+    credential: () => ({ kind: 'refused' }),
     onShutdownRequested: () => {
       shutdowns += 1;
     },
@@ -194,6 +197,7 @@ describe('startControlServer', () => {
       socketPath,
       timers: createFakeTimers(clock),
       health: () => SAMPLE_HEALTH,
+      credential: () => ({ kind: 'refused' }),
       onShutdownRequested: () => undefined,
       onError: () => undefined,
     });
@@ -266,8 +270,8 @@ describe('control API through the supervisor', () => {
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as Record<string, unknown> & SupervisorHealth;
     expect(body).not.toHaveProperty('state');
-    expect(Object.keys(body).sort()).toEqual(['apiVersion', 'children', 'env', 'logs', 'phase', 'pid', 'startedAt', 'status', 'version']);
-    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', apiVersion: 1, pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 } });
+    expect(Object.keys(body).sort()).toEqual(['apiVersion', 'children', 'env', 'generation', 'logs', 'phase', 'pid', 'role', 'startedAt', 'status', 'version']);
+    expect(body).toMatchObject({ status: 'ok', version: '9.9.9-test', apiVersion: 1, pid: process.pid, phase: 'running', env: 'frozen at supervisor start', logs: { droppedLines: 0 }, generation: 1 });
     expect(body.startedAt).toMatch(ISO);
     expect(body.children.map((child) => child.role)).toEqual(['gateway', 'runtime']);
     for (const child of body.children) {
@@ -305,21 +309,21 @@ describe('control API through the supervisor', () => {
     expect(wire.children[0]?.heldReason).toBe('child exited 78: sandbox-exec is missing');
   });
 
-  it('health during the reap', async (context) => {
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999] },
-    });
-    await waitFor(() => h.markers.calls.findHolders.length > 0, { description: 'phase 1 polling' });
+  it('health during the reap of its own markers', async (context) => {
+    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
+    const h = await startHarness(context, { markerPorts: { reapMarkerDirectory: () => reap.promise } });
+    await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0, { description: 'the reap of its own markers' });
     const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health');
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as SupervisorHealth;
-    expect(body.phase).toBe('reaping-orphans');
+    expect(body.phase).toBe('running');
+    expect(body.role).toBe('starting');
     expect(body.children).toEqual([
       { role: 'gateway', state: 'pending', restarts: 0, consecutiveFailures: 0 },
       { role: 'runtime', state: 'pending', restarts: 0, consecutiveFailures: 0 },
     ]);
     expect(h.fake.spawnCount()).toBe(0);
+    reap.resolve({ reaped: 0, kept: 0 });
   });
 
   it('phase transitions are one way', async (context) => {
@@ -332,16 +336,17 @@ describe('control API through the supervisor', () => {
     await pumpUntil(h.timers, () => (observe(), h.health().phase === 'running'), { realWork: h.realWork, maxMs: 5000 });
     const closing = settledFlag(h.supervisor.close());
     await pumpUntil(h.timers, () => (observe(), closing.settled()), { realWork: h.realWork, maxMs: 120_000 });
-    expect(observed).toEqual(['reaping-orphans', 'running', 'draining']);
-    expect(phaseChanges(h.log)).toEqual(['reaping-orphans->running', 'running->draining']);
+    expect(observed).toEqual(['running', 'draining']);
+    expect(phaseChanges(h.log)).toEqual(['running->draining']);
   });
 
-  it('a shutdown begun in reaping-orphans goes directly to draining', async (context) => {
+  it('a shutdown begun before the first spawn goes to draining and spawns nothing', async (context) => {
     const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999] },
+      markerPorts: {
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+      },
     });
-    await waitFor(() => h.markers.calls.findHolders.length > 0);
+    await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown');
     expect(response.status).toBe(202);
     expect(JSON.parse(response.text)).toEqual({ phase: 'draining' });
@@ -354,7 +359,8 @@ describe('control API through the supervisor', () => {
     })();
     expect(result).toEqual({ clean: true, killed: [], leaked: [] });
     expect(h.fake.spawnCount()).toBe(0);
-    expect(phaseChanges(h.log)).toEqual(['reaping-orphans->draining']);
+    expect(phaseChanges(h.log)).toEqual(['running->draining']);
+    expect(h.log.withMsg('start.unpromoted')).toMatchObject([{ generation: 1, reason: 'stopped' }]);
   });
 
   it('onShutdownRequested absent: the callback starts close()', async (context) => {
@@ -440,7 +446,7 @@ const firstStdoutLine = (child: ChildProcess, predicate: (line: string) => boole
     child.once('exit', (code, signal) => reject(new Error(`${description}: exited ${String(code)} ${String(signal)} before the line: ${errors}`)));
   });
 
-describe('control API transport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('control API transport', () => {
   it('no TCP listener', async (context) => {
     const listener = spawnTracked(context, process.execPath, [TCP_LISTENER_FIXTURE], { stdio: ['ignore', 'pipe', 'pipe'] });
     const listening = JSON.parse(await firstStdoutLine(listener, (line) => line.includes('"listening"'), 'tcp listener')) as { listening: number };

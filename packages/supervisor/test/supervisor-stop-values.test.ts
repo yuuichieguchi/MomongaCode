@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, formatStopMessage, generationLayout, readStopRecord } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor, withTempDir } from '@momonga/testkit';
@@ -9,6 +9,8 @@ import { startControlServer } from '../src/control-server.ts';
 import { writeSettings } from './support/p2-manager-harness.ts';
 import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
 const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 7 * 200 + 6 * 40 + 79_245;
@@ -54,7 +56,7 @@ const observeChildren = (harness: SupervisorHarness): Record<'gateway' | 'runtim
 
 const spawnedBoth = (harness: SupervisorHarness) => waitFor(() => harness.port.children.length >= 2, { description: 'both children to spawn' });
 
-describe('the supervisor reads the four stop values once, when its stop begins', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the supervisor reads the four stop values once, when its stop begins', () => {
   it('a close it begins itself sends the values read at its begin to the gateway and to the runtime, and reports their bound in its health', async (context) => {
     const harness = await startSupervisorHarness(context, { settings: settingsOf(FIRST) });
     await spawnedBoth(harness);
@@ -101,6 +103,7 @@ describe('POST /v1/shutdown carries the four requester values', () => {
       health: () => {
         throw new Error('health is not read here');
       },
+      credential: () => ({ kind: 'refused' }),
       onShutdownRequested: (values?: StopValues) => requested.push(values),
       onError: () => undefined,
     });

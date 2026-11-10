@@ -1,4 +1,4 @@
-import { computeBackoff, markerReapClockBoundMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_CONFIG, EXIT_OK, EXIT_RETIRED, computeBackoff, markerReapClockBoundMs } from '@momonga/foundation';
 import type { SupervisorExitReason } from '@momonga/protocol';
 import { DAEMON_MARKER_KILL_GRACE_MS, RESTART_BASE_MS, RESTART_MAX_MS, RESTART_MIN_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS } from './constants.ts';
 
@@ -10,17 +10,16 @@ export type RestartPolicy = {
   startupKillGraceMs: number;
 };
 
-export type StopReason = 'shutdown' | 'plan-restart' | 'startup-timeout' | 'ready-mismatch';
+export type StopReason = 'shutdown' | 'startup-timeout' | 'ready-mismatch';
 
 export type StopMode = 'term' | 'int';
 
-export type ExitClass = 'requested' | 'plan-stopped' | 'unexpected-clean' | 'failure' | 'signal' | 'lock-held' | 'config';
+export type ExitClass = 'requested' | 'unexpected-clean' | 'failure' | 'signal' | 'lock-held' | 'config' | 'retired';
 
 export type ExitClassification = { class: ExitClass; reason: SupervisorExitReason };
 
 export type ExitDecision =
   | { next: 'stopped' }
-  | { next: 'plan-stopped' }
   | { next: 'backoff'; delayMs: number }
   | { next: 'waiting-lock' }
   | { next: 'held-config' };
@@ -36,8 +35,7 @@ export const DEFAULT_RESTART_POLICY: RestartPolicy = {
 export const resolveRestartPolicy = (overrides: Partial<RestartPolicy> = {}): RestartPolicy => ({ ...DEFAULT_RESTART_POLICY, ...overrides });
 
 const STOP_REASON_RANKS = {
-  shutdown: 3,
-  'plan-restart': 2,
+  shutdown: 2,
   'startup-timeout': 1,
   'ready-mismatch': 1,
 } as const satisfies Record<StopReason, number>;
@@ -48,8 +46,6 @@ const classifyStopReason = (stop: StopReason): ExitClassification => {
   switch (stop) {
     case 'shutdown':
       return { class: 'requested', reason: 'requested' };
-    case 'plan-restart':
-      return { class: 'plan-stopped', reason: 'requested' };
     case 'startup-timeout':
       return { class: 'failure', reason: 'startup-timeout' };
     case 'ready-mismatch':
@@ -61,12 +57,14 @@ export const classifyExit = (input: { code: number | null; signal: NodeJS.Signal
   if (input.stop !== undefined) return classifyStopReason(input.stop);
   if (input.signal !== null) return { class: 'signal', reason: 'signal' };
   switch (input.code) {
-    case 0:
+    case EXIT_OK:
       return { class: 'unexpected-clean', reason: 'unexpected-clean' };
-    case 75:
+    case EXIT_ALREADY_RUNNING:
       return { class: 'lock-held', reason: 'lock-held' };
-    case 78:
+    case EXIT_CONFIG:
       return { class: 'config', reason: 'config' };
+    case EXIT_RETIRED:
+      return { class: 'retired', reason: 'retired' };
     default:
       return { class: 'failure', reason: 'failure' };
   }
@@ -83,9 +81,8 @@ export const backoffDelay = (input: { consecutiveFailures: number; policy: Resta
 export const decideAfterExit = (input: { exit: ExitClassification; consecutiveFailures: number; policy: RestartPolicy; random: () => number }): ExitDecision => {
   switch (input.exit.class) {
     case 'requested':
+    case 'retired':
       return { next: 'stopped' };
-    case 'plan-stopped':
-      return { next: 'plan-stopped' };
     case 'lock-held':
       return { next: 'waiting-lock' };
     case 'config':

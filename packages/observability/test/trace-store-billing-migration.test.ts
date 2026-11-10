@@ -13,7 +13,7 @@ const insertSpan = (db: ReturnType<typeof openDatabase>, spanId: string, name: s
 };
 
 describe('the chat-span billing migration of the trace store', () => {
-  it('records earlier chat spans of any provider as unknown, and the cost report counts them apart without pricing them', () => {
+  it('records earlier chat spans of any provider as unknown, and the cost report counts them as price not recorded without pricing them', () => {
     const file = path.join(makeDir(), 'traces.db');
     const legacy = openDatabase(file);
     migrate(legacy, TRACE_STORE_MIGRATIONS.slice(0, 1));
@@ -42,9 +42,10 @@ describe('the chat-span billing migration of the trace store', () => {
       { provider: 'apple', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, outputPerMTok: 8, currency: 'USD' },
     ]);
     const report = buildCostReport(store, [{ runId: RUN_ID, sessionId: 's' }], { table });
-    expect(report.total).toMatchObject({ calls: 2, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 2, inputTokens: 2_000_000, amount: 0, priceVersions: [] });
+    expect(report.total).toMatchObject({ calls: 2, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, unpriced: {}, priceNotRecordedCalls: 2, inputTokens: 2_000_000, amount: null, priceVersions: [] });
     const formatted = formatCostReport(report);
-    expect(formatted).toMatch(/2 of 2 call\(s\).*unknown/);
+    expect(formatted).toMatch(/total: 2 call\(s\), .* output tokens, not complete: price not recorded in 2 call\(s\)$/m);
+    expect(formatted).not.toContain('0 USD');
     expect(formatted).not.toContain('ran locally');
     expect(formatted).not.toContain('no price entry');
   });

@@ -5,14 +5,17 @@ import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, agentReadiness } from '@momonga/protocol';
-import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
+import type { Clock, GenerationRole } from '@momonga/foundation';
+import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, USER_SHELL_RUN_ACTIVE_CODE, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, outputReserveFor, readinessText } from '@momonga/protocol';
+import { mentionsOf } from '@momonga/context';
+import type { AttachedMentions } from '@momonga/context';
+import type { Capabilities, CompactSessionRequest, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { JournalThreadError, sameRunRequest } from '@momonga/store';
+import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
-import { GatewayRequestError } from '../gateway-client.ts';
-import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
+import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
+import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
+import { registerUserShellRoutes } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
   ApiError,
@@ -20,12 +23,14 @@ import {
   configError,
   contributionUnavailable,
   errorResponse,
+  gatewayAnswer,
   imageInputUnsupported,
   idempotencyKeyReused,
   internalErrorResponse,
   invalidRequest,
   methodNotAllowed,
   modeNotAllowed,
+  moved,
   notFound,
   serviceUnavailable,
   skillUnavailable,
@@ -36,7 +41,8 @@ import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
-import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
+import { compactInputOf, compactPinOf } from '../worker/compact-pin.ts';
+import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
@@ -74,14 +80,17 @@ export type RunAppDeps = {
   version: string;
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
-  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
+  userInput: UserInputPort;
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
-  health: { pid: number; startedAt: string; sandbox: SandboxKind };
+  role(): GenerationRole;
+  work: { steps(): number; jobs(): number };
+  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
@@ -89,11 +98,14 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  retireSignal: AbortSignal;
+  retireFrame: () => Uint8Array | undefined;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
   markerOwners: MarkerOwners;
+  ignorableMarkerDirectories: () => Promise<readonly string[]>;
   onError: (error: unknown) => void;
 };
 
@@ -113,6 +125,18 @@ const protectedAreaOf = (areas: readonly string[], target: string): string | und
 
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
+
+const isClientErrorStatus = (status: number): boolean => status >= 400 && status < 500;
+
+const capabilitiesReadFailure = (error: unknown): unknown => {
+  if (error instanceof GatewayRequestError && isTargetProbing(error)) return targetNotReady(TARGET_PROBING_MESSAGE);
+  if (error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (isGatewayUnavailable(error)) return serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+  if (error instanceof GatewayRequestError && isClientErrorStatus(error.status)) {
+    return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
+  }
+  return error;
+};
 
 const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
   if (mode === 'auto') {
@@ -170,18 +194,33 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
   };
 
-  const health: Handler = () =>
+  const health: Handler = async (context) =>
   json({
     status: 'ok',
     version: deps.version,
     apiVersion: 1,
     pid: deps.health.pid,
     startedAt: deps.health.startedAt,
-    state: deps.isDraining() ? 'draining' : 'running',
-    sandbox: deps.health.sandbox,
+    state: deps.isDraining() ? 'draining' : deps.role() === 'retiring' ? 'retiring' : 'running',
+    role: deps.role(),
+    steps: deps.work.steps(),
+    jobs: deps.work.jobs(),
+    sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
+
+  const newWorkRefusal = (): ApiError | undefined => (deps.isDraining() ? drainingError() : deps.role() === 'serving' ? undefined : moved());
+
+  const refuseNewWork = (): void => {
+    const refusal = newWorkRefusal();
+    if (refusal !== undefined) throw refusal;
+  };
+
+  const refuseWhileRetiring = (): void => {
+    if (deps.isDraining()) throw drainingError();
+    if (deps.role() === 'retiring') throw moved();
+  };
 
   const gatewayAliases = async (): Promise<readonly string[]> => {
     try {
@@ -192,18 +231,18 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const settingsThrough = async (load: (cwd: string) => Promise<SessionCreateSettings>, cwd: string): Promise<SessionCreateSettings> => {
+  const settingsThrough = async (load: () => Promise<SessionCreateSettings>): Promise<SessionCreateSettings> => {
     try {
-      return await load(cwd);
+      return await load();
     } catch (error) {
       if (error instanceof ConfigError) throw configError(error.message);
       throw error;
     }
   };
 
-  const sessionSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionCreateSettings, cwd);
+  const sessionSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionCreateSettings(cwd, signal));
 
-  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionReadSettings, cwd);
+  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd));
 
   const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
     const view = toSessionView(store, session);
@@ -215,7 +254,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   };
 
   const createSession: Handler = async (context) => {
-    if (deps.isDraining()) throw drainingError();
+    refuseNewWork();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
     const resolved = canonicalDirectory(body.cwd);
     if (!resolved.ok) throw invalidRequest(`cwd ${body.cwd} ${resolved.reason}`, 'cwd');
@@ -226,7 +265,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const aliases = await gatewayAliases();
     if (aliases.length === 0) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
     if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
-    const settings = await sessionSettingsOf(cwd);
+    const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([comparablePath(cwd)]);
     for (const entry of settings.additionalDirectories) {
@@ -239,13 +278,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       seen.add(key);
       additionalDirectories.push(entry);
     }
-    const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
+    const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
-    if (deps.isDraining()) throw drainingError();
+    refuseNewWork();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
     return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
@@ -322,6 +361,25 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ agents: agents.agents.map(toAgentView), warnings: [...agents.warnings] });
   };
 
+  const capabilitiesOf = async (session: Session, signal: AbortSignal): Promise<Capabilities> => {
+    try {
+      return await deps.modelCapabilities(session.modelAlias, signal);
+    } catch (error) {
+      throw capabilitiesReadFailure(error);
+    }
+  };
+
+  const requireImageInput = async (session: Session, images: readonly unknown[] | undefined, signal: AbortSignal): Promise<void> => {
+    if (images === undefined || images.length === 0) return;
+    if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(session.modelAlias);
+  };
+
+  const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {
+    if (body.attachMentions !== true || mentionsOf(body.input).length === 0) return { attachments: [], images: [] };
+    const capabilities = await capabilitiesOf(session, signal);
+    return deps.userInput.attach(session, body.input, { ceiling: capabilities.contextWindow - outputReserveFor(capabilities), imageInput: capabilities.imageInput, signal });
+  };
+
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
@@ -335,30 +393,24 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (!sameRunRequest(found, idempotency.requestDigest)) throw idempotencyKeyReused();
       return json({ run: toRunView(found.run) }, 202, { location: `/v1/runs/${found.run.id}`, 'idempotent-replayed': 'true' });
     };
-    const replayWhileDraining = (): Response | undefined => {
-      if (!deps.isDraining()) return undefined;
+    const replayWhileRefusing = (): Response | undefined => {
+      const refusal = newWorkRefusal();
+      if (refusal === undefined) return undefined;
       const replayed = replay();
-      if (replayed === undefined) throw drainingError();
+      if (replayed === undefined) throw refusal;
       return replayed;
     };
-    const drained = replayWhileDraining();
-    if (drained !== undefined) return drained;
+    const refused = replayWhileRefusing();
+    if (refused !== undefined) return refused;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
-    await sessionSettingsOf(session.cwd);
+    await sessionSettingsOf(session.cwd, context.req.raw.signal);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
-    if (body.images !== undefined && body.images.length > 0) {
-      let capabilities: Capabilities;
-      try {
-        capabilities = await deps.modelCapabilities(session.modelAlias, context.req.raw.signal);
-      } catch (error) {
-        if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
-        throw error;
-      }
-      if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
-    }
-    const drainedDuringChecks = replayWhileDraining();
-    if (drainedDuringChecks !== undefined) return drainedDuringChecks;
+    await requireImageInput(session, body.images, context.req.raw.signal);
+    const attached = await attachedTo(session, body, context.req.raw.signal);
+    const images = [...(body.images ?? []), ...attached.images];
+    const refusedDuringChecks = replayWhileRefusing();
+    if (refusedDuringChecks !== undefined) return refusedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
       input: body.input,
       ...idempotency,
@@ -367,7 +419,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       pins: {},
       history: body.history ?? 'inherit',
       ...(skill === undefined ? {} : { skill }),
-      ...(body.images === undefined ? {} : { images: body.images }),
+      ...(images.length === 0 ? {} : { images }),
+      ...(attached.attachments.length === 0 ? {} : { attachments: attached.attachments }),
     });
     if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
     if (result.kind === 'key_reused') throw idempotencyKeyReused();
@@ -375,6 +428,61 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
+  };
+
+  const compactSession: Handler = async (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
+    refuseNewWork();
+    const body = validateBody<CompactSessionRequest>('CompactSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    refuseNewWork();
+    if (store.userShell.runActive(session.id)) throw conflict(USER_SHELL_RUN_ACTIVE_CODE, 'a run of this session is working; the compaction starts when it has ended');
+    const result = store.createRunAndEnqueue(session.id, {
+      input: compactInputOf(body.instructions),
+      timeoutMs: deps.defaults.runTimeoutMs,
+      limits: { ...deps.defaults.limits },
+      pins: compactPinOf(body.instructions),
+      history: 'inherit',
+    });
+    if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+    if (result.kind === 'key_reused') throw idempotencyKeyReused();
+    return json({ run: toRunView(result.run) }, 202, { location: `/v1/runs/${result.run.id}` });
+  };
+
+  const addInbox: Handler = async (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
+    if (deps.isDraining()) throw drainingError();
+    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    await requireImageInput(session, body.images, context.req.raw.signal);
+    if (deps.isDraining()) throw drainingError();
+    const result = store.inbox.add(session.id, {
+      delivery: body.delivery,
+      text: body.text,
+      ...(body.images === undefined ? {} : { images: body.images }),
+      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits } },
+    });
+    if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+    if (result.kind === 'full') throw conflict(INBOX_FULL_CODE, inboxFullMessage());
+    return json({ row: inboxRowView(result.row), pending: result.pending.map(inboxRowView) }, 201);
+  };
+
+  const listInbox: Handler = (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    return json({ pending: store.inbox.list(session.id).map(inboxRowView) });
+  };
+
+  const withdrawInbox: Handler = (context) => {
+    const id = context.req.param('id') ?? '';
+    const result = store.inbox.withdraw(id);
+    if (result.kind === 'not_found') throw notFound(`waiting message ${id} does not exist`);
+    return json({ outcome: result.kind, row: inboxRowView(result.row), pending: result.pending.map(inboxRowView) });
+  };
+
+  const runSuccessor: Handler = (context) => {
+    const run = requireRun(context.req.param('id') ?? '');
+    const next = store.inbox.successorOf(run.id);
+    return json({ successor: next === undefined ? null : toRunView(next) });
   };
 
   const listChildRuns: Handler = (context) => {
@@ -504,7 +612,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
           watch,
           timers: deps.timers,
           keepAliveMs: deps.keepAliveMs,
-          signals: [deps.closeSignal, context.req.raw.signal],
+          signals: [deps.closeSignal, deps.retireSignal, context.req.raw.signal],
+          finalFrame: deps.retireFrame,
           onError: deps.onError,
         });
 
@@ -538,10 +647,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions', { GET: listSessions, POST: createSession });
   route('/v1/sessions/:id', { GET: getSession, PATCH: patchSession });
   route('/v1/sessions/:id/runs', { GET: listRuns, POST: createRun });
+  route('/v1/sessions/:id/compact', { POST: compactSession });
   route('/v1/sessions/:id/skills', { GET: listSkills });
   route('/v1/sessions/:id/agents', { GET: listAgents });
   route('/v1/sessions/:id/jobs', { GET: listJobs });
   route('/v1/sessions/:id/events', { GET: sessionEvents });
+  route('/v1/sessions/:id/inbox', { GET: listInbox, POST: addInbox });
+  route('/v1/inbox/:id/withdraw', { POST: withdrawInbox });
+  route('/v1/runs/:id/successor', { GET: runSuccessor });
   route('/v1/runs/:id', { GET: getRun });
   route('/v1/runs/:id/answered-by', { GET: runAnsweredBy });
   route('/v1/runs/:id/children', { GET: listChildRuns });
@@ -569,9 +682,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,
+    refuseWhileRetiring,
   });
-  registerMarkerRoutes(route, { home: deps.home, owners: deps.markerOwners, closeSignal: deps.closeSignal });
-  registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
+  registerMarkerRoutes(route, { markerDirectories: deps.ignorableMarkerDirectories, owners: deps.markerOwners, closeSignal: deps.closeSignal });
+  registerUserShellRoutes(route, { store, userInput: deps.userInput, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal });
+  registerInputRoutes(route, { store, mcp: deps.mcp, maxBodyBytes: deps.maxBodyBytes, closeSignal: deps.closeSignal, refuseWhileRetiring });
 
   app.notFound(() => errorResponse(notFound('no such route')));
   app.onError((error) => {

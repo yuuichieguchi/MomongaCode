@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BASE_ENTRY_FLAGS, nodeEntryIo, parseFlags } from '@momonga/foundation';
 import type { SupervisorEntryDeps } from '@momonga/supervisor';
+import { startGenerationForTest } from '@momonga/testkit/first-generation';
 import { runSupervise } from '../../packages/cli/src/daemon/supervise.ts';
+import { nodeSpawnDetached } from '../../packages/cli/src/node-ports.ts';
+import type { SelfExecutable } from '../../packages/cli/src/ports.ts';
 import { entryFileLauncher } from './launcher.ts';
 import type { LauncherOverrides } from './launcher.ts';
 import { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN } from './run-env.ts';
@@ -99,6 +103,10 @@ const refuse = (message: string): void => {
   process.exitCode = 1;
 };
 
+const HOME_FLAG = '--home=';
+
+const homeOfArgv = (argv: readonly string[], fallback: string): string => argv.find((argument) => argument.startsWith(HOME_FLAG))?.slice(HOME_FLAG.length) ?? fallback;
+
 export const supervisorMain = async (): Promise<void> => {
   const violation = guardSupervisorHome(process.argv.slice(2), { env: process.env, userHome: os.userInfo().homedir });
   if (violation !== undefined) {
@@ -118,7 +126,13 @@ export const supervisorMain = async (): Promise<void> => {
     return;
   }
   const { launcherOverrides, ...rest } = loaded;
-  const finished = runSupervise({ ...nodeEntryIo(), env: withoutHarnessVariables(process.env) }, { launcher: entryFileLauncher(loaded.version, launcherOverrides), deps: rest });
+  const io = nodeEntryIo();
+  const argv = io.argv.some((argument) => argument.startsWith('--generation=')) ? io.argv : [...io.argv, `--generation=${(await startGenerationForTest(homeOfArgv(io.argv, io.home), { version: loaded.version })).generation}`];
+  const self: SelfExecutable = { kind: 'script', execPath: process.execPath, script: fileURLToPath(import.meta.url) };
+  const finished = runSupervise(
+    { ...io, argv, env: withoutHarnessVariables(process.env) },
+    { launcher: entryFileLauncher(loaded.version, launcherOverrides), deps: rest, successor: { self, spawnDetached: nodeSpawnDetached } },
+  );
   watchParentDeath();
   await finished;
 };

@@ -9,7 +9,7 @@ import type { Layout } from './helpers.ts';
 
 type Case = { label: string; tool: PolicyTool; subject: (layout: Layout) => PermissionSubject; ruleText: string };
 
-const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
+const MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
 const READ: PolicyTool = { name: 'Read', kind: 'read', sideEffect: 'read_only' };
 const GREP: PolicyTool = { name: 'Grep', kind: 'search', sideEffect: 'read_only' };
@@ -33,20 +33,20 @@ const pathSubject =
   });
 
 const CASES: Array<Case & { defaults: Record<(typeof MODES)[number], DecisionKind> }> = [
-  { label: 'Read inside roots', tool: READ, subject: pathSubject('Read', 'project', 'read'), ruleText: 'Read', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'Grep inside roots', tool: GREP, subject: pathSubject('Grep', 'project', 'read'), ruleText: 'Grep', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'Read outside roots', tool: READ, subject: pathSubject('Read', 'outside', 'read'), ruleText: 'Read', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
-  { label: 'Edit inside roots', tool: EDIT, subject: pathSubject('Edit', 'project', 'write'), ruleText: 'Edit', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Write inside roots', tool: WRITE, subject: pathSubject('Write', 'project', 'write'), ruleText: 'Write', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
-  { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'BashOutput', tool: BASH_OUTPUT, subject: () => ({ kind: 'none', tool: 'BashOutput' }), ruleText: 'BashOutput', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
-  { label: 'KillBash', tool: KILL_BASH, subject: () => ({ kind: 'none', tool: 'KillBash' }), ruleText: 'KillBash', defaults: { default: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MemorySave to the user scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'user', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MemorySave to the project scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'project', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
-  { label: 'MCP read_only tool', tool: MCP_READ, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'list' }), ruleText: 'mcp__srv', defaults: { default: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'Read inside roots', tool: READ, subject: pathSubject('Read', 'project', 'read'), ruleText: 'Read', defaults: { manual: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'Grep inside roots', tool: GREP, subject: pathSubject('Grep', 'project', 'read'), ruleText: 'Grep', defaults: { manual: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'Read outside roots', tool: READ, subject: pathSubject('Read', 'outside', 'read'), ruleText: 'Read', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'Edit inside roots', tool: EDIT, subject: pathSubject('Edit', 'project', 'write'), ruleText: 'Edit', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Write inside roots', tool: WRITE, subject: pathSubject('Write', 'project', 'write'), ruleText: 'Write', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Edit outside roots', tool: EDIT, subject: pathSubject('Edit', 'outside', 'write'), ruleText: 'Edit', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'Bash', tool: BASH, subject: () => ({ kind: 'command', tool: 'Bash', command: 'make build' }), ruleText: 'Bash(make build)', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
+  { label: 'UpdatePlan', tool: PLAN, subject: () => ({ kind: 'none', tool: 'UpdatePlan' }), ruleText: 'UpdatePlan', defaults: { manual: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'BashOutput', tool: BASH_OUTPUT, subject: () => ({ kind: 'none', tool: 'BashOutput' }), ruleText: 'BashOutput', defaults: { manual: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'allow', bypassPermissions: 'allow' } },
+  { label: 'KillBash', tool: KILL_BASH, subject: () => ({ kind: 'none', tool: 'KillBash' }), ruleText: 'KillBash', defaults: { manual: 'allow', auto: 'allow', acceptEdits: 'allow', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MemorySave to the user scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'user', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MemorySave to the project scope', tool: MEMORY_SAVE, subject: () => ({ kind: 'memory', tool: 'MemorySave', scope: 'project', text: 'a note', memoryKind: 'fact', paths: [], supersedes: [] }), ruleText: 'MemorySave', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MCP exec tool', tool: MCP_EXEC, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'run' }), ruleText: 'mcp__srv__run', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'deny', bypassPermissions: 'allow' } },
+  { label: 'MCP read_only tool', tool: MCP_READ, subject: () => ({ kind: 'mcp', server: 'srv', tool: 'list' }), ruleText: 'mcp__srv', defaults: { manual: 'ask', auto: 'ask', acceptEdits: 'ask', plan: 'ask', bypassPermissions: 'allow' } },
 ];
 
 const expectedWithRule = (effect: 'allow' | 'ask' | 'deny', mode: (typeof MODES)[number], c: Case, layout: Layout): DecisionKind => {
@@ -106,7 +106,7 @@ describe('decide precedence', () => {
   it('deny beats ask beats allow regardless of order and origin', () => {
     const layout = makeLayout();
     const subject: PermissionSubject = { kind: 'command', tool: 'Bash', command: 'make build' };
-    const base = { tool: BASH, subject, mode: 'default' as const, roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
+    const base = { tool: BASH, subject, mode: 'manual' as const, roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET };
     const allowCli = ruleIn(layout, 'cli')('allow', 'Bash(make build)');
     const askLocal = ruleIn(layout, 'local')('ask', 'Bash(make:*)');
     const denyProject = ruleIn(layout, 'project')('deny', 'Bash(make:*)');
@@ -154,7 +154,7 @@ describe('decide adversarial Bash', () => {
     return decide({
       tool: BASH,
       subject: { kind: 'command', tool: 'Bash', command },
-      mode: extra.mode ?? 'default',
+      mode: extra.mode ?? 'manual',
       rules: [...ALLOW.map((t) => make('allow', t)), ...(extra.deny ?? []).map((t) => make('deny', t))],
       roots: [layout.project],
       home: layout.home,

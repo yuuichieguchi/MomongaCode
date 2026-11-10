@@ -1,26 +1,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, hostKernelLock, sidecarOf } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import {
   FIVE_MINUTES_MS,
   HOUR_MS,
+  SERVING_TICK_MS,
   STORE_IDENTITY_CHECK_MS,
   entriesNamed,
   eventTypes,
   finishApprovingPrompts,
   launchRuntime,
+  passServingTime,
   readDb,
   scriptedToolCall,
   startStack,
 } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const DAY_MS = 86_400_000;
 const SESSION_STATE_IDLE_MS = 1_800_000;
 const EXPIRED_KEY = 'a'.repeat(64);
@@ -36,6 +39,24 @@ const advanceStepwise = async (timers: FakeTimers, totalMs: number, stepMs: numb
   for (let elapsed = 0; elapsed < totalMs; elapsed += stepMs) {
     timers.advance(Math.min(stepMs, totalMs - elapsed));
     await afterMicrotasks();
+  }
+};
+
+const LATER_KEY = 'c'.repeat(64);
+
+const seedKey = async (temp: RunHome, key: string, expiresAt: number): Promise<void> => {
+  const store = openRuntimeStore({
+    path: temp.paths.databases.runtime,
+    home: temp.home,
+    clock: createFakeClock(START_MS - 8 * DAY_MS),
+    leaseMs: 30_000,
+    maxAttempts: 5,
+    maxTotalAttempts: 20,
+  });
+  try {
+    store.idempotency.begin(key, { expiresAt, meta: {} });
+  } finally {
+    store.close();
   }
 };
 
@@ -63,21 +84,20 @@ const idempotencyKeys = (temp: RunHome): string[] =>
 const delays = (timers: FakeTimers): number[] => timers.pending().map((timer) => timer.delayMs);
 
 describe('runtime periodic timers (fake timers and fake clock, in-process gateway)', () => {
-  it('the purge runs hourly and removes an expired idempotency record', PROCESS_TIMEOUT, async () => {
+  it('the purge runs when the runtime becomes serving and then at the first serving tick after each hour (20.48)', async () => {
     const stack = await startStack();
     await seedIdempotency(stack.temp);
     const { clock, timers } = fakeTime();
     await launchRuntime(stack.temp, { clock, fakeTimers: timers });
-    expect(idempotencyKeys(stack.temp)).toEqual([EXPIRED_KEY, LIVE_KEY]);
+    expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY]);
+    await seedKey(stack.temp, LATER_KEY, START_MS - 1);
     timers.advance(HOUR_MS - 1);
     await afterMicrotasks();
-    expect(idempotencyKeys(stack.temp)).toEqual([EXPIRED_KEY, LIVE_KEY]);
-    timers.advance(1);
-    await afterMicrotasks();
-    expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY]);
+    expect(idempotencyKeys(stack.temp)).toEqual([LIVE_KEY, LATER_KEY]);
+    await passServingTime(timers, 1, () => idempotencyKeys(stack.temp).join(',') === LIVE_KEY, 'the purge at the first serving tick after an hour');
   });
 
-  it('the session tmp sweep runs hourly with the session-state registry', PROCESS_TIMEOUT, async () => {
+  it('the session scratch sweep runs at the first serving tick after each hour and keeps a session the store knows', async () => {
     const stack = await startStack();
     const { clock, timers } = fakeTime();
     const launched = await launchRuntime(stack.temp, { clock, fakeTimers: timers });
@@ -89,15 +109,17 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     timers.advance(HOUR_MS - 1);
     await afterMicrotasks();
     expect(fs.existsSync(unknownDir)).toBe(true);
-    timers.advance(1);
     const kept = [known.id, path.basename(sidecarOf(hostKernelLock(), knownDir))].sort().join(',');
-    await waitFor(() => fs.readdirSync(stack.temp.paths.tmp.sessions).sort().join(',') === kept, {
-      description: 'the hourly sweep to remove the unknown session dir and its sidecar under its claim',
-    });
+    await passServingTime(
+      timers,
+      1,
+      () => fs.readdirSync(stack.temp.paths.tmp.sessions).sort().join(',') === kept,
+      'the hourly sweep to remove the unknown session dir and its sidecar under its claim',
+    );
     expect(fs.existsSync(knownDir)).toBe(true);
   });
 
-  it('the ledger sweep runs every 5 minutes and evicts an idle session state', PROCESS_TIMEOUT, async () => {
+  it('the ledger sweep runs every 5 minutes and evicts an idle session state', async () => {
     const stack = await startStack((temp) => ({ script: [scriptedToolCall('Read', { file_path: path.join(temp.project, 'notes.txt') })] }));
     fs.writeFileSync(path.join(stack.temp.project, 'notes.txt'), 'remember this\n');
     const { clock, timers } = fakeTime();
@@ -115,11 +137,12 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     expect(evicted[0]?.fields).toMatchObject({ count: 1, ids: [session.id] });
   });
 
-  it('all four timers are stopped by close and abort: fakeTimers.pending() has none of them', PROCESS_TIMEOUT, async () => {
+  it('the role tick, the ledger sweep and the identity check are stopped by close and abort: fakeTimers.pending() has none of them', async () => {
     const stack = await startStack();
     const first = fakeTime();
     const closing = await launchRuntime(stack.temp, { clock: first.clock, fakeTimers: first.timers });
-    expect(delays(first.timers).filter((delay) => delay === HOUR_MS).length).toBeGreaterThanOrEqual(2);
+    expect(delays(first.timers)).toContain(SERVING_TICK_MS);
+    expect(delays(first.timers)).not.toContain(HOUR_MS);
     expect(delays(first.timers)).toContain(FIVE_MINUTES_MS);
     expect(delays(first.timers)).toContain(STORE_IDENTITY_CHECK_MS);
     expect(await closing.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });

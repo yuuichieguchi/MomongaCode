@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, PinnedBoundError, budgetFor, buildContext, createTokenMeter, maxInputFor, measurePinned } from '@momonga/context';
 import type { BuildContextPorts, TokenMeter } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE, countReplyOf, errorBoundOfShape, marginFloorFor, summaryItemTokensFor } from '@momonga/protocol';
@@ -22,6 +22,9 @@ import {
 } from './helpers.ts';
 import type { FakeCounter } from './helpers.ts';
 import type { HistoryItem } from '@momonga/context';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const W8192 = capabilitiesFor(8192, { maxOutputTokens: 1024, tokenCounting: 'estimated' });
 

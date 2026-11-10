@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -8,6 +8,7 @@ import { buildSea } from './sea.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
+import { productTestEnv } from '@momonga/testkit';
 
 const ARCHIVE = 'node-v26.12.1-darwin-arm64.tar.gz';
 const OTHER_SHA = 'a'.repeat(64);
@@ -38,20 +39,20 @@ describe('SHASUMS256 verification', () => {
     expect(() => assertPinnedChecksum(`${OTHER_SHA}  other.tar.gz\n`, ARCHIVE, SEA_NODE_ARCHIVE_SHA256)).toThrow('is not listed');
   });
 
-  it('rejects a file whose bytes do not match the checksum', () => {
+  it('rejects a file whose bytes do not match the checksum', async () => {
     const root = createTempRoot();
     try {
       const file = path.join(root, 'blob');
       fs.writeFileSync(file, 'tampered');
       expect(() => assertFileChecksum(file, SEA_NODE_ARCHIVE_SHA256)).toThrow('sha256 mismatch');
     } finally {
-      removeTempRoot(root);
+      await removeTempRoot(root);
     }
   });
 });
 
 describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the fixture entry', () => {
-  const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: '/usr/bin:/bin', HOME: home });
+  const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => (productTestEnv({ PATH: '/usr/bin:/bin', HOME: home }));
   let root = '';
   let binary = '';
 
@@ -63,8 +64,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the f
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/entry.ts`, output: binary, workDir: path.join(root, 'work') });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('runs on a PATH that contains no node', () => {

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedTarget, saveProbeRecord, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
@@ -36,7 +36,7 @@ const startFmStyleUpstream = async (errorBody: unknown): Promise<FakeUpstreamSer
 };
 
 const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
-  const endpoint = { kind: 'unix' as const, socketPath: upstream.socketPath };
+  const endpoint = { kind: 'unix' as const, path: upstream.socketPath };
   const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => endpoint,
@@ -61,13 +61,13 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     }),
     'fm',
   );
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };
 
 const genericAdapter = (upstream: FakeUpstreamServer) => {
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),

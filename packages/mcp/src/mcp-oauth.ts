@@ -17,6 +17,7 @@ export type McpOAuthProviderOptions = {
   resourceUrl: string;
   scope: McpServerScope;
   store: McpCredentialStore;
+  signalForCall(): AbortSignal;
   redirectUrl: string | undefined;
   randomToken(): string;
   preregisteredClientId?: string;
@@ -32,6 +33,7 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
     key: credentialKey(options.server, options.resourceUrl),
     subject: `MCP server "${options.server}"`,
     store: options.store,
+    signalForCall: options.signalForCall,
     redirectUrl: options.redirectUrl,
     randomToken: options.randomToken,
     ...(options.preregisteredClientId === undefined ? {} : { preregisteredClientId: options.preregisteredClientId }),

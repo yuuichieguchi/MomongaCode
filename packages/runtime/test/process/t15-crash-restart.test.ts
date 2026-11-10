@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
+import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { reapMarkedProcesses } from '@momonga/foundation';
 import type { SignalSender } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
@@ -12,6 +12,8 @@ import type { HarnessOptions } from '../../../tools/test/harness.ts';
 import { keyFor } from '../../../tools/test/helpers.ts';
 import { reapToolMarkers } from '../../src/process/tool-markers.ts';
 import type { ResultOutcome } from '@momonga/tools';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const leaders: ChildProcess[] = [];
 
@@ -29,7 +31,7 @@ const refusingKill = (leader: () => number): SignalSender =>
 
 const INTERRUPTED = (name: string) => `Not run: a process started by an earlier command that was interrupted when MomongaCode stopped (marker ${name}, `;
 
-describe.runIf(process.platform === 'darwin')('T15 a lost call whose leader survives the crash', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('T15 a lost call whose leader survives the crash', () => {
   it('is kept by the start-up sweep, refuses Write, Edit and Bash, is retried once by the sweep, and clears when the leader exits', async () => {
     let leaderPid = 0;
     const kill = refusingKill(() => leaderPid);

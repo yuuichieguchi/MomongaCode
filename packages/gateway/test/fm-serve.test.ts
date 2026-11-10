@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -10,6 +10,9 @@ import { createManagedServer, type ExecOptions, type ExecResult, type ManagedSer
 import { KILL_CONFIRM_MS } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
+import type { GenerationRole } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 interface FakeChildOptions {
   manualServe?: boolean;
@@ -183,6 +186,7 @@ interface SetupConfig {
   socketPath?: string;
   readStopGraceMs?: () => number;
   markerDirectory?: string;
+  role?: { current(): GenerationRole };
 }
 
 const setup = (config: SetupConfig = {}) => {
@@ -214,6 +218,7 @@ const setup = (config: SetupConfig = {}) => {
     timers: manual.timers,
     onWarning: (message) => warnings.push(message),
     ...(config.markerDirectory === undefined ? {} : { markerDirectory: config.markerDirectory }),
+    ...(config.role === undefined ? {} : { role: config.role }),
   });
   cleanups.push(async () => {
     await server.stop();
@@ -329,7 +334,7 @@ describe('createManagedServer start', () => {
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
     expect(resolved).toBe(false);
     await children[0]?.serveNow();
-    expect(await starting).toEqual({ kind: 'unix', socketPath });
+    expect(await starting).toEqual({ kind: 'unix', path: socketPath });
     expect(spawn).toHaveBeenCalledWith('/usr/bin/fm', ['serve', '--socket', socketPath]);
     expect(events).toEqual(['spawn:1000', 'serving:1000', 'resolved']);
     expect(await server.health(asking())).toEqual({ ok: true });
@@ -397,7 +402,7 @@ describe('createManagedServer start', () => {
     const first = server.start();
     const second = server.start();
     expect(second).toBe(first);
-    expect(await first).toEqual({ kind: 'unix', socketPath });
+    expect(await first).toEqual({ kind: 'unix', path: socketPath });
     expect(spawn).toHaveBeenCalledTimes(1);
     await expect(server.start()).rejects.toThrow(/already started/);
   });
@@ -458,7 +463,7 @@ describe('createManagedServer start', () => {
   });
 });
 
-describe('createManagedServer socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createManagedServer socket ownership', () => {
   it('waits for a live server that owns the socket path without the instance lock only until the start deadline, then ends unhealthy with no launch and leaves that socket (items 12 and 18; section 18, item 7)', async () => {
     const socketPath = makeSocketPath();
     const owner = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath });
@@ -503,6 +508,35 @@ describe('createManagedServer socket ownership', { timeout: REAL_PROCESS_TEST_TI
 });
 
 describe('createManagedServer restarts', () => {
+  it('schedules no restart for a child that exits while its gateway is retiring, and starts it again for a call that needs it (design-update 18.1.5, 20.55)', async () => {
+    let role: GenerationRole = 'serving';
+    const { server, spawn, manual, socketPath } = setup({ role: { current: () => role } });
+    await server.start();
+    role = 'retiring';
+
+    await children[0]?.crash(1, null);
+    await vi.waitFor(async () => expect(await server.health(asking())).toEqual({ ok: true, detail: 'idle; starts on demand' }));
+    expect(manual.delays()).not.toContain(BACKOFF_MS);
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    expect(await server.ensureRunning()).toEqual({ kind: 'unix', path: socketPath });
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a restart that was scheduled before its gateway became retiring', async () => {
+    let role: GenerationRole = 'serving';
+    const { server, spawn, manual } = setup({ role: { current: () => role } });
+    await server.start();
+    await children[0]?.crash(1, null);
+    await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
+
+    role = 'retiring';
+    manual.fire(BACKOFF_MS);
+
+    expect(await server.health(asking())).toEqual({ ok: true, detail: 'idle; starts on demand' });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
   it('restarts the child after the backoff following an unexpected exit and counts restarts', async () => {
     const { server, spawn, manual } = setup();
     await server.start();
@@ -765,7 +799,7 @@ describe('createManagedServer ensureRunning', () => {
   it('starts once for concurrent callers and returns the endpoint without spawning when running', async () => {
     const { server, spawn, socketPath } = setup();
     const [first, second] = await Promise.all([server.ensureRunning(), server.ensureRunning()]);
-    expect(first).toEqual({ kind: 'unix', socketPath });
+    expect(first).toEqual({ kind: 'unix', path: socketPath });
     expect(second).toEqual(first);
     expect(await server.ensureRunning()).toEqual(first);
     expect(spawn).toHaveBeenCalledTimes(1);
@@ -792,7 +826,7 @@ describe('createManagedServer ensureRunning', () => {
     const { server, spawn, socketPath } = setup();
     await server.ensureRunning();
     await children[0]?.crash(1, null);
-    expect(await server.ensureRunning()).toEqual({ kind: 'unix', socketPath });
+    expect(await server.ensureRunning()).toEqual({ kind: 'unix', path: socketPath });
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 });

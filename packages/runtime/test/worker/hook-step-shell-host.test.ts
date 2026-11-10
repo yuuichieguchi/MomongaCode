@@ -6,7 +6,7 @@ import type { ClaimContext } from '../../src/worker/claim-context.ts';
 describe('hookRunContextFor', () => {
   it('hands the tool runtime shell host to the hook runner', () => {
     const shellHost: ShellHost = { platform: 'linux', isExecutable: () => true };
-    const session = { id: 's1', cwd: '/work', permissionMode: 'default' };
+    const session = { id: 's1', cwd: '/work', permissionMode: 'manual' };
     const ctx = {
       options: {
         tools: {
@@ -22,7 +22,7 @@ describe('hookRunContextFor', () => {
     } as unknown as ClaimContext;
     const policy = { sandboxPolicy: {}, env: {}, tmpDir: '/tmp/x' } as never;
 
-    const context = hookRunContextFor(ctx, session as never, {} as never, policy, () => undefined);
+    const context = hookRunContextFor(ctx, session as never, {} as never, policy, {} as never, () => undefined);
 
     expect(context.shellHost).toBe(shellHost);
   });

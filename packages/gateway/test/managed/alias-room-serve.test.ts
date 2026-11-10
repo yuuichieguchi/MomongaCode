@@ -1,13 +1,15 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import type { ProbeReport } from '@momonga/protocol';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { saveFakeFmRecord } from '../fm-record-support.ts';
 import { makeReport } from '../report-fixture.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const unboundedReport: ProbeReport = { ...makeReport(1, 1), outputBoundField: 'none' } as ProbeReport;
 
@@ -35,7 +37,7 @@ const setup = async (appleReport: ProbeReport) => {
   return clientFor(handle.socketPath);
 };
 
-describe('R-ALIAS is checked when a request is served, with the declared or measured values (design-managed-servers section 18, item 3)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('R-ALIAS is checked when a request is served, with the declared or measured values (design-managed-servers section 18, item 3)', () => {
   it('refuses the alias with the R-ALIAS text when a member measured as unbounded sits beside a member whose maxOutputTokens is neither declared nor reported after its probe', async () => {
     const client = await setup(unboundedReport);
     const answered = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));

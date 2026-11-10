@@ -14,9 +14,9 @@ import { DEFAULT_E2E_DEPS, baseSettings, sandboxChoiceOf, startStack, startUpstr
 import { SCRIPTED_USAGE, chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { pidOf } from './support/supervisor-client.ts';
-import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, daemonReplacingRunBoundMs, until } from './support/wait.ts';
+import { E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, newerClientRunBoundMs, until } from './support/wait.ts';
 
-const DAEMON_REPLACING_RUN_BOUND_MS = await daemonReplacingRunBoundMs();
+const NEWER_CLIENT_RUN_BOUND_MS = await newerClientRunBoundMs();
 
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
@@ -274,47 +274,55 @@ describe('cli: momonga -p', () => {
     expect(Number(/pid (\d+)/.exec(again.stdout)?.[1])).not.toBe(pid);
   });
 
-  it(titleOf('cli-version-restart'), { timeout: DAEMON_REPLACING_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-version-restart'), { timeout: NEWER_CLIENT_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home, script: [textReply('from the new daemon')], version: '1.0.0' });
     const oldPid = stack.supervisor.pid;
     expect(stack.health.version).toBe('1.0.0');
 
     setFakeCliVersion(home, '2.0.0');
-    const result = await runCliWithFakes(home, ['-p', 'hello'], { boundMs: DAEMON_REPLACING_RUN_BOUND_MS });
+    const result = await runCliWithFakes(home, ['-p', 'hello'], { boundMs: NEWER_CLIENT_RUN_BOUND_MS });
 
     expect(result.code).toBe(0);
     expect(result.stdout).toBe('from the new daemon\n');
     expect((await stack.supervisor.exited).code).toBe(0);
+    const oldRecords = supervisorLog(home.paths, oldPid);
+    expect(oldRecords.filter((record) => record.msg === 'shutdown.begin')).toEqual([]);
+    expect(oldRecords.filter((record) => record.msg === 'generation.retiring')).toHaveLength(1);
     const status = await runCliWithFakes(home, ['daemon', 'status']);
-    expect(status.stdout).toMatch(/version 2\.0\.0/);
+    expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
   });
 
-  it(titleOf('cli-older-daemon-active-run'), { timeout: DAEMON_REPLACING_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('cli-older-daemon-active-run'), { timeout: NEWER_CLIENT_RUN_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const stack = await startStack({ home, script: [textReply('held run'), textReply('resumed run'), textReply('another run')], version: '1.0.0' });
+    const stack = await startStack({ home, script: [textReply('held run'), textReply('another run')], version: '1.0.0' });
     const hold = stack.fake.hold();
     const runtime = createRuntimeClient(home);
     const session = await runtime.createSession();
     const held = (await runtime.createRun(session.session.id, 'work in progress')).run;
     await hold.waitForRequest();
     const oldPid = stack.supervisor.pid;
+    const heldStatus = (): string | undefined => readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs WHERE id = ?', held.id)[0]?.status;
 
     setFakeCliVersion(home, '2.0.0');
-    const another = await runCliWithFakes(home, ['-p', 'another'], { boundMs: DAEMON_REPLACING_RUN_BOUND_MS });
+    const another = await runCliWithFakes(home, ['-p', 'another'], { boundMs: NEWER_CLIENT_RUN_BOUND_MS });
 
     expect(another.code).toBe(0);
-    expect((await stack.supervisor.exited).code).toBe(0);
+    expect(another.stdout).toBe('another run\n');
+    expect(heldStatus()).not.toBe('COMPLETED');
+    expect(process.kill(oldPid, 0)).toBe(true);
     const status = await runCliWithFakes(home, ['daemon', 'status']);
-    expect(status.stdout).toMatch(/version 2\.0\.0/);
+    expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     expect(Number(/pid (\d+)/.exec(status.stdout)?.[1])).not.toBe(oldPid);
-    const completed = await until(
-      () => readDb<{ status: string }>(home.paths.databases.runtime, 'SELECT status FROM runs WHERE id = ?', held.id).find((row) => row.status === 'COMPLETED'),
-      { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the run that was active in the older daemon to complete in the new daemon' },
-    );
-    expect(completed.status).toBe('COMPLETED');
+    expect(status.stdout).toMatch(new RegExp(`^v1\\.0\\.0 retiring \\(pid ${oldPid}\\): 1 steps in flight, 0 background jobs, \\d+ model calls in flight$`, 'm'));
+
     hold.release();
+    await until(() => heldStatus() === 'COMPLETED', { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the run that was active in the older daemon to complete in its own generation' });
+    expect((await stack.supervisor.exited).code).toBe(0);
+    expect(supervisorLog(home.paths, oldPid).filter((record) => record.msg === 'shutdown.begin')).toEqual([]);
+    const heldCalls = stack.fake.requests.filter((request) => request.path === '/v1/chat/completions' && JSON.stringify(request.body).includes('work in progress'));
+    expect(heldCalls).toHaveLength(1);
   });
 
   it(titleOf('cli-newer-daemon'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -326,10 +334,40 @@ describe('cli: momonga -p', () => {
 
     expect(result.code).toBe(1);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('momonga was updated to 3.0.0; reopen this session');
-    expect(result.stderr).toContain('runs version 3.0.0, not 2.0.0');
+    expect(result.stderr).toContain('momonga was updated to v3.0.0; reopen this session.');
+    expect(result.stderr).not.toContain('pid');
+    const oneShot = await runCliWithFakes(home, ['status']);
+    expect(oneShot.code).toBe(1);
+    expect(oneShot.stderr).toContain('momonga was updated to v3.0.0 while this command was running; run it again. Your tasks are not affected.');
+    const status = await runCliWithFakes(home, ['daemon', 'status']);
+    expect(status.code).toBe(0);
+    expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 3\.0\.0, phase running/);
     expect(process.kill(stack.supervisor.pid, 0)).toBe(true);
     expect((await stack.client.health()).version).toBe('3.0.0');
+  });
+
+  it(titleOf('cli-stop-generations'), { timeout: NEWER_CLIENT_RUN_BOUND_MS + E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_TEST_TIMEOUT_MS }, async () => {
+    const home = await createE2eHome();
+    const stack = await startStack({ home, script: [textReply('held run'), textReply('another run')], version: '1.0.0' });
+    const hold = stack.fake.hold();
+    const runtime = createRuntimeClient(home);
+    const session = await runtime.createSession();
+    await runtime.createRun(session.session.id, 'work in progress');
+    await hold.waitForRequest();
+    const oldPid = stack.supervisor.pid;
+    setFakeCliVersion(home, '2.0.0');
+    expect((await runCliWithFakes(home, ['-p', 'another'], { boundMs: NEWER_CLIENT_RUN_BOUND_MS })).code).toBe(0);
+    const newPid = Number(/pid (\d+)/.exec((await runCliWithFakes(home, ['daemon', 'status'])).stdout)?.[1]);
+    expect(newPid).not.toBe(oldPid);
+
+    const stopped = await runCliWithFakes(home, ['daemon', 'stop'], { boundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS });
+
+    expect(stopped.code).toBe(0);
+    expect(stopped.stdout).toBe('Stopping the daemon. This interrupts 1 running steps and 0 background jobs. Interrupted runs resume when the daemon starts again.\nmomonga daemon stopped\n');
+    expect(() => process.kill(oldPid, 0)).toThrow();
+    expect(() => process.kill(newPid, 0)).toThrow();
+    expect((await runCliWithFakes(home, ['daemon', 'status'])).stdout).toBe('momonga daemon is not running\n');
+    hold.release();
   });
 
   it(titleOf('cli-long-home'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {

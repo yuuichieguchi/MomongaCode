@@ -1,7 +1,7 @@
 import type { StreamEvent } from '@momonga/protocol';
 import { idempotencyInProgressError, invalidRequest } from './errors.ts';
 import type { SharedRun } from './run.ts';
-import type { Services } from './services.ts';
+import type { GatewayServices } from './services.ts';
 
 export type IdempotencyLookup =
   | { kind: 'miss' }
@@ -32,7 +32,7 @@ export const parseIdempotencyKey = (header: string | undefined): string | undefi
   return key;
 };
 
-export const createIdempotencyRegistry = (services: Services): IdempotencyRegistry => {
+export const createIdempotencyRegistry = (services: GatewayServices): IdempotencyRegistry => {
   const inflight = new Map<string, { digest: string; run: SharedRun }>();
   return {
     lookup: (key, digest) => {

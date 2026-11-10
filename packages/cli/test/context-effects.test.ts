@@ -1,17 +1,20 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { probeKeyOf } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import { nodeFiles } from '../src/node-ports.ts';
-import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-host.ts';
+import { ContextHostError, OWNER_FILE, ROOT_PREFIX, caseEnvironment, readCredentials } from '../src/eval/context-host.ts';
 import { endpointRecordFileName } from '@momonga/gateway';
 import { copyEndpointProbeRecord, copyProbeRecord, listEvalRoots, nodeContextEffects, readEvalOwner } from '../src/eval/context-effects.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { KEYCHAIN_UNANSWERED_ADVICE, afterPendingIo, keychainFixture, outcomeOf, useLimitTimers } from './keychain-fixture.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const directories: string[] = [];
 
@@ -24,6 +27,7 @@ const temporary = (): string => {
 };
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const directory of locked.splice(0)) fs.chmodSync(directory, 0o700);
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
@@ -107,7 +111,7 @@ describe('the timer of a case', () => {
   });
 });
 
-describe('the environment of a session inside a case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the environment of a session inside a case', () => {
   const portsWith = (home: string, env: Record<string, string>): CliPorts => ({ platform: 'linux', env, home, files: nodeFiles }) as unknown as CliPorts;
 
   const personEnv = {
@@ -202,7 +206,7 @@ describe('copyProbeRecord', () => {
     const name = recordNameFor(binary, 'system');
     const record = JSON.stringify({ key: 'k', descriptionDigest: 'd', report: { anything: true } });
     fs.writeFileSync(path.join(from, name), record);
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, new AbortController().signal)).toBe(true);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(true);
     expect(fs.readFileSync(path.join(to, name), 'utf8')).toBe(record);
     expect(fs.statSync(path.join(to, name)).mode & 0o777).toBe(0o600);
   });
@@ -210,7 +214,63 @@ describe('copyProbeRecord', () => {
   it('copies nothing when the person never probed the target, so the case sees the same answer', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, new AbortController().signal)).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
+  });
+});
+
+describe('the credentials a live run reads with the store of the person', () => {
+  const COMMAND_LIMIT_MS = 300_000;
+  const FIRST_ANSWERS_AFTER_MS = 200_000;
+  const credentials = [
+    { envName: 'MOMONGA_EVAL_KEY_0', secretName: 'a' },
+    { envName: 'MOMONGA_EVAL_KEY_1', secretName: 'b' },
+  ];
+
+  const effectsOver = (store: CliPorts['secretStore']): ReturnType<typeof nodeContextEffects> =>
+    nodeContextEffects({ platform: 'linux', env: {}, home: '/home/person', files: nodeFiles, secretStore: store } as unknown as CliPorts);
+
+  it('readCredentials ends at the command limit for all secrets together', async () => {
+    useLimitTimers();
+    const keychain = keychainFixture({
+      items: { a: 'key-a', b: 'key-b' },
+      beforeAnswer: async (command, account) => {
+        if (command !== 'find-generic-password') return;
+        if (account === 'a') await new Promise<void>((resolve) => void setTimeout(resolve, FIRST_ANSWERS_AFTER_MS));
+        if (account === 'b') keychain.control.calls = 'hang';
+      },
+    });
+    const interrupt = new AbortController();
+
+    const attempt = outcomeOf(readCredentials(effectsOver(() => keychain.store), credentials, interrupt.signal));
+    try {
+      await keychain.arrived('find-generic-password', 1);
+      await vi.advanceTimersByTimeAsync(FIRST_ANSWERS_AFTER_MS);
+      await keychain.arrived('find-generic-password', 2);
+      await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - FIRST_ANSWERS_AFTER_MS - 1);
+      await afterPendingIo();
+      expect(attempt.state()).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1);
+      await afterPendingIo();
+
+      expect(attempt.state()).toBe('rejected');
+      expect(attempt.error()).toBeInstanceOf(ContextHostError);
+      expect((attempt.error() as Error).message).toBe(
+        `the key of a target is the secret b in the platform secret store, and it could not be read: the read of the secret "b" did not finish within the command limit of 300000 ms; ${KEYCHAIN_UNANSWERED_ADVICE}; run the command again`,
+      );
+    } finally {
+      interrupt.abort(new Error('the test ended'));
+    }
+  });
+
+  it('a missing secret keeps the store-it-with tail', async () => {
+    const keychain = keychainFixture({ items: { a: 'key-a' } });
+
+    const attempt = readCredentials(effectsOver(() => keychain.store), credentials, new AbortController().signal);
+
+    await expect(attempt).rejects.toBeInstanceOf(ContextHostError);
+    await expect(attempt).rejects.toThrow(
+      'the key of a target is the secret b in the platform secret store, and it could not be read: the secret "b" could not be read from the Keychain (exit 44: the fake keychain has no such item); store it with: security add-generic-password -s momonga -a b -w; the gateway reads a missing secret again on the next request. The benchmark reads it with the same store the gateway uses; store it with momonga secret set b',
+    );
   });
 });

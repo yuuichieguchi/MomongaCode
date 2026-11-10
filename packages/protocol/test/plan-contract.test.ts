@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   BREAKER_VERDICTS,
   CREDENTIAL_EFFECTS,
@@ -19,7 +19,7 @@ import {
   TOOL_PLACEMENTS,
   applyCapabilityOverride,
 } from '../src/index.ts';
-import type { Capabilities } from '../src/index.ts';
+import type { Capabilities, PlanSignOutResponse } from '../src/index.ts';
 
 const BASE: Capabilities = {
   contextWindow: 8192,
@@ -66,7 +66,7 @@ describe('route carriage vocabularies', () => {
   });
 
   it('names the content kinds and the tool kinds a request can carry', () => {
-    expect([...INPUT_CONTENT_KINDS]).toEqual(['text', 'image', 'file', 'audio', 'video']);
+    expect([...INPUT_CONTENT_KINDS]).toEqual(['file', 'audio', 'video']);
     expect([...REQUEST_TOOL_KINDS]).toEqual([
       'function',
       'custom',
@@ -85,9 +85,9 @@ describe('route carriage vocabularies', () => {
       outputBoundField: 'none',
       systemRole: 'developer',
       toolPlacement: 'additional_tools',
-      inputKinds: { content: ['text'], tools: ['function'] },
+      inputKinds: { content: ['file'], tools: ['function'] },
     });
-    expect(merged).toMatchObject({ outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['text'], tools: ['function'] } });
+    expect(merged).toMatchObject({ outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['file'], tools: ['function'] } });
   });
 });
 
@@ -115,10 +115,18 @@ describe('the plan admin routes', () => {
       accountResume: '/accounts/:account/resume',
       accountModels: '/accounts/:account/models',
       accountTargets: '/accounts/:account/targets',
+      hostReset: '/host/reset',
     });
   });
 
   it('names the account states of the credential model', () => {
     expect([...PLAN_ACCOUNT_STATES]).toEqual(['active', 'plan_disabled', 'needs_sign_in', 'signing_out', 'registered', 'store_unreadable', 'store_unwritable']);
+  });
+});
+
+describe('the sign-out response', () => {
+  it('reports the revocation as confirmed, unconfirmed or none', () => {
+    expectTypeOf<PlanSignOutResponse['revocation']>().toEqualTypeOf<'confirmed' | 'unconfirmed' | 'none'>();
+    expectTypeOf<PlanSignOutResponse>().toEqualTypeOf<{ revocation: 'confirmed' | 'unconfirmed' | 'none'; usageUrl: string }>();
   });
 });

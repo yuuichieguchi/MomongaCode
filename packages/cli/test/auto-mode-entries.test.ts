@@ -62,7 +62,7 @@ const slashContext = (overrides: Partial<SlashContext> & Record<string, unknown>
     status: async () => ({ measurement: 'not_measured' as const }),
   };
   const context = {
-    mode: 'default',
+    mode: 'manual',
     modelAlias: 'session-model',
     bypassAllowed: false,
     autoAvailable: true,

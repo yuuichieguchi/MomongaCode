@@ -56,6 +56,7 @@ export type PlanResponsesOptions = {
   script?: FakeUpstreamReply[];
   respond?: (request: RecordedUpstreamRequest) => FakeUpstreamReply | undefined;
   models?: readonly unknown[];
+  catalogReply?: FakeUpstreamReply;
   maxRequestBytes?: { limit: number; reply: FakeUpstreamReply };
 };
 
@@ -169,7 +170,7 @@ export const startFakePlanResponses = async (options: PlanResponsesOptions): Pro
       return;
     }
     if (recorded.method === 'GET' && recorded.path === PLAN_MODELS_PATH) {
-      await serveFakeUpstreamReply({ kind: 'json', body: { models } }, res);
+      await serveFakeUpstreamReply(options.catalogReply ?? { kind: 'json', body: { models } }, res);
       return;
     }
     if (recorded.method !== 'POST' || recorded.path !== PLAN_RESPONSES_PATH) {

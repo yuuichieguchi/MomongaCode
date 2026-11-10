@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hostKernelLock } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir } from '@momonga/testkit';
-import { clearCallLocks, heldCallWaitMs } from '@momonga/tools';
+import { heldCallWaitMs, sweepCallLocks } from '@momonga/tools';
 import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY = keyFor('run-1', 1, 'c1');
 const HOLDER_PID = 4242;
@@ -88,7 +90,7 @@ const reconcilingTool = (name: string, sideEffect: 'write' | 'exec', trace: Trac
     },
   });
 
-describe('the per-call lock of the executor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the per-call lock of the executor', () => {
   it('does not reconcile while another attempt holds the call lock, and reconciles once it is released', async () => {
     const waiting = gatedFirstPoll();
     const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });
@@ -208,14 +210,58 @@ describe('the per-call lock of the executor', { timeout: REAL_PROCESS_TEST_TIMEO
     expect(harness.idempotency.stateOf(KEY)).toBe('PENDING');
   });
 
-  it('clears every lock file a crashed process left behind', async () => {
+  it('the sweep removes every lock file nobody holds and keeps the lock file a live holder has (20.35, R1)', async () => {
     const harness = makeHarness();
     fs.writeFileSync(path.join(harness.callLockDir, 'a.lock'), '123');
     fs.writeFileSync(path.join(harness.callLockDir, 'b.lock'), '');
+    fs.writeFileSync(path.join(harness.callLockDir, 'held.lock'), String(HOLDER_PID));
+    harness.kernelLock.holdExternally(path.join(harness.callLockDir, 'held.lock'), HOLDER_PID);
 
-    await clearCallLocks(harness.callLockDir);
+    await sweepCallLocks({ dir: harness.callLockDir, mechanism: harness.kernelLock });
 
-    expect(fs.readdirSync(harness.callLockDir)).toEqual([]);
+    expect(fs.readdirSync(harness.callLockDir)).toEqual(['held.lock']);
+    expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, 'held.lock'))).toBe('external');
+  });
+
+  it('the sweep leaves a lock held through the host kernel mechanism by this process in place', async (context) => {
+    const dir = withTempDir(context);
+    const mechanism = hostKernelLock();
+    const held = await mechanism.claim(path.join(dir, 'live.lock'));
+    if (held.kind !== 'claimed') throw new Error('the first claim of a fresh lock file was refused');
+    fs.writeFileSync(path.join(dir, 'stale.lock'), '');
+    try {
+      await sweepCallLocks({ dir, mechanism });
+      expect(fs.readdirSync(dir)).toEqual(['live.lock']);
+    } finally {
+      held.lock.dispose();
+    }
+  });
+
+  it('stops the marker of an earlier attempt that another generation left, after it holds the call lock (20.35)', async () => {
+    const trace = makeTrace();
+    const lockStates: (string | undefined)[] = [];
+    const place: { harness?: Harness; otherGeneration?: string } = {};
+    const harness = makeHarness({
+      executor: {
+        earlierMarkerDirs: async () => {
+          if (place.harness === undefined || place.otherGeneration === undefined) throw new Error('the harness is not ready');
+          lockStates.push(place.harness.kernelLock.isHeldBy(lockPathOf(place.harness)));
+          return [place.otherGeneration];
+        },
+      },
+    });
+    const otherGeneration = path.join(path.dirname(harness.callLockDir), 'markers-g1-tools');
+    place.harness = harness;
+    place.otherGeneration = otherGeneration;
+    fs.mkdirSync(otherGeneration, { mode: 0o700 });
+    fs.writeFileSync(path.join(otherGeneration, KEY), '');
+    harness.idempotency.seed(KEY, 'PENDING', { tool: 'Edit' });
+
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(reconcilingTool('Edit', 'write', trace)), [call('c1', 'Edit', {}, 'allow_once')]));
+
+    expect(outcome).toMatchObject({ kind: 'result', reconciled: 'already_applied' });
+    expect(lockStates).toEqual(['claim']);
+    expect(fs.existsSync(path.join(otherGeneration, KEY))).toBe(false);
   });
 
   it.each([

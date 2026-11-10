@@ -3,13 +3,13 @@ import path from 'node:path';
 import type { SignalSender } from './process-alive.ts';
 import { groupPortOf, hostAsyncSignalSender } from './platform/group-port.ts';
 import type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
-import type { MarkerMode } from './marker-state.ts';
+import type { MarkerMode, MarkerState } from './marker-state.ts';
 import { commandMayStillRun } from './command-liveness.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
 import { REAP_POLL_INTERVAL_MS, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
 import type { ProbeTiming } from './platform/probe-timing.ts';
-import type { ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
+import type { ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
@@ -57,15 +57,51 @@ export const reportUninspectableOnce =
 const groupsByHolder = async (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector, signal: AbortSignal): Promise<Map<number, number>> =>
   valueOrThrow(`reading the process groups of ${holders.join(',')}`, await inspector.groupsOf(holders, candidateGroups, { signal }), new Map<number, number>());
 
-type Identity = { pid: number; startedAt: number };
+type Identity = { pid: number; startedAt: StartTime };
+
+type PassReads = {
+  startTime(pid: number): Promise<ProbeResult<StartTime>>;
+  groups(pids: readonly number[], candidateGroups: readonly number[]): Promise<Map<number, number>>;
+};
+
+const sweepReads = (inspector: ProcessInspector, stop: AbortSignal): PassReads => ({
+  startTime: (pid) => inspector.startTimeOf(pid, { signal: stop }),
+  groups: (pids, candidateGroups) => groupsByHolder(pids, candidateGroups, inspector, stop),
+});
+
+const messageOfReason = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
+
+const endedByAsker = (stop: AbortSignal): boolean => stop.aborted;
+
+const errorOf = (thrown: unknown): Error => (thrown instanceof Error ? thrown : new Error(String(thrown)));
+
+class StopUnreadable extends Error {
+  readonly failure: Error;
+  readonly reason: string;
+
+  constructor(failure: Error, stop: AbortSignal) {
+    super(failure.message);
+    this.name = 'StopUnreadable';
+    this.failure = failure;
+    this.reason = endedByAsker(stop) ? messageOfReason(stop.reason) : failure.message;
+  }
+}
+
+const setReadOrEnd = async <T>(stop: AbortSignal, read: () => Promise<T>): Promise<T> => {
+  try {
+    return await read();
+  } catch (error) {
+    throw new StopUnreadable(errorOf(error), stop);
+  }
+};
 
 type Identified = { identities: Identity[]; unreadable: number[] };
 
-const identify = async (pids: readonly number[], inspector: ProcessInspector, signal: AbortSignal): Promise<Identified> => {
+const identify = async (pids: readonly number[], reads: PassReads): Promise<Identified> => {
   const identities: Identity[] = [];
   const unreadable: number[] = [];
   for (const pid of pids) {
-    const read = await inspector.startTimeOf(pid, { signal });
+    const read = await reads.startTime(pid);
     if (read.kind === 'value') identities.push({ pid, startedAt: read.value });
     else if (read.kind === 'failed') unreadable.push(pid);
   }
@@ -74,10 +110,10 @@ const identify = async (pids: readonly number[], inspector: ProcessInspector, si
 
 type HolderSplit = { inGroup: Identity[]; outsideGroup: Identity[]; unreadable: number[] };
 
-const splitByGroup = async (holders: readonly number[], pgid: number, inspector: ProcessInspector, signal: AbortSignal): Promise<HolderSplit> => {
-  const { identities, unreadable } = await identify(holders, inspector, signal);
+const splitByGroup = async (holders: readonly number[], pgid: number, reads: PassReads): Promise<HolderSplit> => {
+  const { identities, unreadable } = await identify(holders, reads);
   if (identities.length === 0) return { inGroup: [], outsideGroup: [], unreadable };
-  const groups = await groupsByHolder(identities.map(({ pid }) => pid), [pgid], inspector, signal);
+  const groups = await reads.groups(identities.map(({ pid }) => pid), [pgid]);
   return {
     inGroup: identities.filter(({ pid }) => groups.get(pid) === pgid),
     outsideGroup: identities.filter(({ pid }) => groups.has(pid) && groups.get(pid) !== pgid),
@@ -113,51 +149,114 @@ export const holderGroups = async (
   { signal, inspector = defaultProcessInspector() }: { signal: AbortSignal; inspector?: ProcessInspector },
 ): Promise<number[]> => [...(await groupsByHolder(holders, candidateGroups, inspector, signal)).values()];
 
-type ProvedTarget = { target: number; proof: readonly Identity[] };
+type ProvedTarget = { group: number | undefined; proof: readonly Identity[] };
 
-const ownProof = (identity: Identity): ProvedTarget => ({ target: identity.pid, proof: [identity] });
+const ownProof = (identity: Identity): ProvedTarget => ({ group: undefined, proof: [identity] });
 
-const groupTarget = (pgid: number, proof: readonly Identity[], alive: boolean): ProvedTarget[] => (alive && proof.length > 0 ? [{ target: -pgid, proof }] : []);
-
-type Reproof = { proved: boolean; unreadable: number[] };
-
-const reprove = async (proof: readonly Identity[], inspector: ProcessInspector, stop: AbortSignal): Promise<Reproof> => {
-  const unreadable: number[] = [];
-  for (const { pid, startedAt } of proof) {
-    const read = await inspector.startTimeOf(pid, { signal: stop });
-    if (read.kind === 'value' && read.value === startedAt) return { proved: true, unreadable: [] };
-    if (read.kind === 'failed') unreadable.push(pid);
-  }
-  return { proved: false, unreadable };
-};
+const groupTarget = (pgid: number, proof: readonly Identity[], alive: boolean): ProvedTarget[] => (alive && proof.length > 0 ? [{ group: pgid, proof }] : []);
 
 type SignalPass = { sent: number[]; stoppedHolders: number[]; unsignalled: number[]; unreadable: number[] };
 
-const signalProved = async (send: AsyncSignalSender, targets: readonly ProvedTarget[], signal: NodeJS.Signals, inspector: ProcessInspector, stop: AbortSignal): Promise<SignalPass> => {
+const sendCounted = async (send: AsyncSignalSender, target: number, signal: NodeJS.Signals, stop: AbortSignal, pass: SignalPass): Promise<void> => {
+  pass.sent.push(target);
+  try {
+    await send(target, signal, { signal: stop });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM') pass.unsignalled.push(Math.abs(target));
+    else if (code !== 'ESRCH') throw error;
+  }
+};
+
+type ProvedSignal = { send: AsyncSignalSender; reads: PassReads; stop: AbortSignal };
+
+const startUnchanged = async ({ pid, startedAt }: Identity, reads: PassReads, pass: SignalPass): Promise<boolean> => {
+  const read = await reads.startTime(pid);
+  if (read.kind === 'failed') pass.unreadable.push(pid);
+  return read.kind === 'value' && read.value === startedAt;
+};
+
+const signalHolder = async ({ send, stop }: ProvedSignal, pid: number, signal: NodeJS.Signals, pass: SignalPass): Promise<void> => {
+  pass.stoppedHolders.push(pid);
+  await sendCounted(send, pid, signal, stop, pass);
+};
+
+const signalGroupTarget = async (proved: ProvedSignal, group: number, proof: readonly Identity[], signal: NodeJS.Signals, pass: SignalPass): Promise<void> => {
+  const { send, reads, stop } = proved;
+  for (const identity of proof) {
+    if (!(await startUnchanged(identity, reads, pass))) continue;
+    const groupNow = (await reads.groups([identity.pid], [group])).get(identity.pid);
+    if (groupNow === group) {
+      pass.stoppedHolders.push(...proof.map(({ pid }) => pid));
+      await sendCounted(send, -group, signal, stop, pass);
+      return;
+    }
+    if (groupNow !== undefined) await signalHolder(proved, identity.pid, signal, pass);
+  }
+};
+
+const signalProved = async (proved: ProvedSignal, targets: readonly ProvedTarget[], signal: NodeJS.Signals, passes: SignalPass[] = []): Promise<SignalPass> => {
   const pass: SignalPass = { sent: [], stoppedHolders: [], unsignalled: [], unreadable: [] };
-  for (const { target, proof } of targets) {
-    const reproof = await reprove(proof, inspector, stop);
-    if (!reproof.proved) {
-      pass.unreadable.push(...reproof.unreadable);
-      continue;
-    }
-    pass.sent.push(target);
-    pass.stoppedHolders.push(...proof.map(({ pid }) => pid));
-    try {
-      await send(target, signal, { signal: stop });
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'EPERM') pass.unsignalled.push(Math.abs(target));
-      else if (code !== 'ESRCH') throw error;
-    }
+  passes.push(pass);
+  for (const { group, proof } of targets) {
+    if (group !== undefined) await signalGroupTarget(proved, group, proof, signal, pass);
+    else for (const identity of proof) if (await startUnchanged(identity, proved.reads, pass)) await signalHolder(proved, identity.pid, signal, pass);
   }
   return pass;
 };
 
-const stillAliveOf = async (listed: readonly Identity[], remaining: readonly number[], inspector: ProcessInspector, stop: AbortSignal): Promise<number[]> => {
-  const alive: number[] = [];
-  for (const identity of listed) if (!remaining.includes(identity.pid) && (await reprove([identity], inspector, stop)).proved) alive.push(identity.pid);
-  return alive;
+const holdersOutsideGroup = async (holders: readonly number[], pgid: number, reads: PassReads): Promise<number[]> => {
+  if (holders.length === 0) return [];
+  const groups = await reads.groups(holders, [pgid]);
+  return holders.filter((pid) => groups.has(pid) && groups.get(pid) !== pgid);
+};
+
+const holdersAfterWindow = async (marker: string, listing: Listing, windowMs: number, unsettled: Map<number, UninspectableProcess> | undefined): Promise<number[]> => {
+  const { timing, signal } = listing;
+  const deadline = timing.now() + windowMs;
+  let holders = await holdersUntil(marker, listing, deadline, unsettled);
+  while ((holders.length > 0 || (unsettled?.size ?? 0) > 0) && timing.now() < deadline && !signal.aborted) {
+    await timing.sleep(REAP_POLL_INTERVAL_MS);
+    holders = await holdersUntil(marker, listing, deadline, unsettled);
+  }
+  return holders;
+};
+
+type ReconcileReads = PassReads & {
+  groupRunnable(pgid: number): Promise<boolean>;
+  markerState(): Promise<MarkerState>;
+  holders(withinMs: number, observed?: UninspectableProcess[]): Promise<number[]>;
+  holdersAfterWindow(windowMs: number): Promise<number[]>;
+};
+
+type ReconcileReadsOf = {
+  marker: string;
+  markerMode: MarkerMode | undefined;
+  inspector: ProcessInspector;
+  group: ProcessGroupPort;
+  timing: ReapTiming;
+  stop: AbortSignal;
+  unsettled: Map<number, UninspectableProcess> | undefined;
+};
+
+const stopReads = ({ marker, markerMode, inspector, group, timing, stop, unsettled }: ReconcileReadsOf): ReconcileReads => {
+  const listing: Listing = { inspector, timing, signal: stop };
+  return {
+    startTime: async (pid) => {
+      const read = await setReadOrEnd(stop, () => inspector.startTimeOf(pid, { signal: stop }));
+      if (read.kind === 'failed' && endedByAsker(stop)) throw new StopUnreadable(new ProbeFailedError(`reading the start time of ${pid}`, read), stop);
+      return read;
+    },
+    groups: (pids, candidateGroups) => setReadOrEnd(stop, () => groupsByHolder(pids, candidateGroups, inspector, stop)),
+    groupRunnable: (pgid) => setReadOrEnd(stop, () => group.alive(pgid, { signal: stop })),
+    markerState: async () => {
+      const state = await setReadOrEnd(stop, () => inspector.markerState(marker, { signal: stop, ...(markerMode === undefined ? {} : { mode: markerMode }) }));
+      if (state === 'unknown' && endedByAsker(stop)) throw new StopUnreadable(new Error(`reading the marker state of ${marker} was ended`), stop);
+      return state;
+    },
+    holders: (withinMs, observed) => setReadOrEnd(stop, () => holdersUntil(marker, listing, timing.now() + withinMs, unsettled, observed)),
+    holdersAfterWindow: (windowMs) => setReadOrEnd(stop, () => holdersAfterWindow(marker, listing, windowMs, unsettled)),
+  };
 };
 
 export type MarkerReconcileResult = {
@@ -197,6 +296,8 @@ const unknownResult = (detail: string, stopped: boolean, { stoppedHolders = [], 
 
 export const stoppedCommandResult = (): MarkerReconcileResult => unknownResult('The interrupted command was stopped.', true);
 
+const NONE_VERIFIED = 'No process of the interrupted command could be verified as belonging to this call, so none was signalled.';
+
 export type ReconcileProcessGroupOptions = {
   killGraceMs?: number;
   kill?: SignalSender;
@@ -208,13 +309,21 @@ export type ReconcileProcessGroupOptions = {
   markerMode?: MarkerMode;
 };
 
+type ReconcileEnd = { kind: 'listed'; result: MarkerReconcileResult; lastHolders: number[] } | { kind: 'unlisted'; failure: Error; reason: string; signalled: boolean; stoppedHolders: number[] };
+
+const couldNotCheckResult = (reason: string, signalled: boolean, stoppedHolders: number[]): MarkerReconcileResult =>
+  unknownResult(`MomongaCode could not check whether a process started by the interrupted command is still running (${reason}).${signalled ? '' : ' Nothing was stopped.'}`, signalled, { stoppedHolders });
+
+const unlistedResult = ({ reason, signalled, stoppedHolders }: Extract<ReconcileEnd, { kind: 'unlisted' }>): MarkerReconcileResult => couldNotCheckResult(reason, signalled, stoppedHolders);
+
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
   { killGraceMs = 2000, kill, groupPort, timing = hostReapTiming, signal, inspector = defaultProcessInspector(), unsettled, markerMode }: ReconcileProcessGroupOptions = {},
 ): Promise<MarkerReconcileResult> => {
   const operation = operationSignal(signal);
   try {
-    return await reconcileWithin(recorded, { given: signal, killGraceMs, kill, group: groupPortOf(groupPort, kill), timing, stop: operation.signal, inspector, unsettled, markerMode });
+    const end = await reconcileWithin(recorded, { given: signal, killGraceMs, kill, group: groupPortOf(groupPort, kill), timing, stop: operation.signal, inspector, unsettled, markerMode });
+    return end.kind === 'listed' ? end.result : unlistedResult(end);
   } finally {
     operation.end();
   }
@@ -232,59 +341,80 @@ type ReconcileWithin = {
   markerMode: MarkerMode | undefined;
 };
 
-const reconcileWithin = async (recorded: { pgid: number; marker: string }, { given, killGraceMs, kill, group, timing, stop, inspector, unsettled, markerMode }: ReconcileWithin): Promise<MarkerReconcileResult> => {
+const reconcileWithin = async (recorded: { pgid: number; marker: string }, options: ReconcileWithin): Promise<ReconcileEnd> => {
+  const passes: SignalPass[] = [];
+  try {
+    return await reconcilePasses(recorded, options, passes);
+  } catch (error) {
+    if (!(error instanceof StopUnreadable)) throw error;
+    return {
+      kind: 'unlisted',
+      failure: error.failure,
+      reason: error.reason,
+      signalled: passes.some(({ sent }) => sent.length > 0),
+      stoppedHolders: [...new Set(passes.flatMap(({ stoppedHolders }) => stoppedHolders))],
+    };
+  }
+};
+
+const reconcilePasses = async (
+  recorded: { pgid: number; marker: string },
+  { given, killGraceMs, kill, group, timing, stop, inspector, unsettled, markerMode }: ReconcileWithin,
+  passes: SignalPass[],
+): Promise<ReconcileEnd> => {
   const { pgid, marker } = recorded;
-  const send = asyncSenderOf(kill);
-  const groupRunning = (): Promise<boolean> => group.alive(pgid, { signal: stop });
-  const listing: Listing = { inspector, timing, signal: stop };
+  const reads = stopReads({ marker, markerMode, inspector, group, timing, stop, unsettled });
+  const groupRunning = (): Promise<boolean> => reads.groupRunnable(pgid);
+  const listed = (end: MarkerReconcileResult, lastHolders: number[]): ReconcileEnd => ({ kind: 'listed', result: end, lastHolders });
   const refused: UninspectableProcess[] = [];
-  const holders = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled, refused);
+  const holders = await reads.holders(killGraceMs, refused);
   const groupAlive = await groupRunning();
   if (holders.length === 0) {
     const liveness = commandMayStillRun({
-      marker: await inspector.markerState(marker, { signal: stop, ...(markerMode === undefined ? {} : { mode: markerMode }) }),
+      marker: await reads.markerState(),
       listing: { kind: 'listed', holders, refused },
       group: { kind: 'read', runnable: groupAlive },
     });
-    if (liveness.answer === 'no') return unknownResult('The interrupted command is no longer running.', false);
-    if (liveness.answer === 'unknown') return unknownResult(`MomongaCode could not check whether a process started by the interrupted command is still running (${liveness.reason}).`, false);
-    return unknownResult(
-      `Processes in group ${pgid} are still running but could not be verified as belonging to this call (for example they closed the inherited descriptor), so they were left alone.`,
-      false,
-      { leftAloneGroup: pgid },
-    );
+    if (liveness.answer === 'no') return listed(unknownResult('The interrupted command is no longer running.', false), []);
+    if (liveness.answer === 'unknown') return listed(couldNotCheckResult(liveness.reason, false, []), []);
+    return listed(unknownResult([NONE_VERIFIED, ...findingNotes({ leftAloneGroup: pgid })].join(' '), false, { leftAloneGroup: pgid }), []);
   }
-  const listed = await splitByGroup(holders, pgid, inspector, stop);
-  const termPass = await signalProved(send, [...groupTarget(pgid, listed.inGroup, groupAlive), ...listed.outsideGroup.map(ownProof)], 'SIGTERM', inspector, stop);
+  const proved: ProvedSignal = { send: asyncSenderOf(kill), reads, stop };
+  const first = await splitByGroup(holders, pgid, reads);
+  const termPass = await signalProved(proved, [...groupTarget(pgid, first.inGroup, groupAlive), ...first.outsideGroup.map(ownProof)], 'SIGTERM', passes);
   const unsignalled = new Set(termPass.unsignalled);
-  const waitEnded = (): MarkerReconcileResult =>
-    unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', termPass.sent.length > 0, {
-      stoppedHolders: [...new Set(termPass.stoppedHolders)],
-      leftAlonePids: [...new Set([...listed.unreadable, ...termPass.unreadable])],
-      unsignalledPids: [...unsignalled],
-    });
+  const waitEnded = (): ReconcileEnd =>
+    listed(
+      unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', termPass.sent.length > 0, {
+        stoppedHolders: [...new Set(termPass.stoppedHolders)],
+        leftAlonePids: [...new Set([...first.unreadable, ...termPass.unreadable])],
+        unsignalledPids: [...unsignalled],
+      }),
+      holders,
+    );
   await graceSleep(timing, killGraceMs, given, stop);
   if (stop.aborted) return waitEnded();
 
-  const remaining = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled);
+  const remaining = await reads.holders(killGraceMs);
   if (stop.aborted) return waitEnded();
-  const left = await splitByGroup(remaining, pgid, inspector, stop);
-  const stillInGroup = left.inGroup.length > 0 && (await groupRunning());
-  const killPass = await signalProved(send, [...groupTarget(pgid, left.inGroup, stillInGroup), ...left.outsideGroup.map(ownProof)], 'SIGKILL', inspector, stop);
+  const second = await splitByGroup(remaining, pgid, reads);
+  const stillInGroup = second.inGroup.length > 0 && (await groupRunning());
+  const killPass = await signalProved(proved, [...groupTarget(pgid, second.inGroup, stillInGroup), ...second.outsideGroup.map(ownProof)], 'SIGKILL', passes);
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
 
   const leftAloneGroup = !killPass.sent.includes(-pgid) && (await groupRunning()) ? pgid : undefined;
-  const leftAlonePids = new Set(await stillAliveOf([...listed.inGroup, ...listed.outsideGroup], remaining, inspector, stop));
-  for (const pid of [...left.unreadable, ...killPass.unreadable]) leftAlonePids.add(pid);
+  const lastHolders = await reads.holdersAfterWindow(KILL_CONFIRM_MS);
+  const outsideAfter = await holdersOutsideGroup(lastHolders, pgid, reads);
   const findings: StructuredFindings = {
     stoppedHolders: [...new Set([...termPass.stoppedHolders, ...killPass.stoppedHolders])],
     ...(leftAloneGroup === undefined ? {} : { leftAloneGroup }),
-    leftAlonePids: [...leftAlonePids],
+    leftAlonePids: [...new Set([...outsideAfter, ...second.unreadable, ...killPass.unreadable])],
     unsignalledPids: [...unsignalled],
   };
-  const stopped = termPass.sent.length > 0 || killPass.sent.length > 0;
-  const summary = stopped ? 'The interrupted command was stopped.' : 'No process of the interrupted command could be verified as belonging to this call, so none was signalled.';
-  return unknownResult([summary, ...findingNotes(findings)].join(' '), stopped, findings);
+  const signalled = termPass.sent.length > 0 || killPass.sent.length > 0;
+  if (outsideAfter.length > 0) return listed(unknownResult(findingNotes(findings).join(' '), signalled, findings), lastHolders);
+  const summary = signalled ? 'The interrupted command was stopped.' : NONE_VERIFIED;
+  return listed(unknownResult([summary, ...findingNotes(findings)].join(' '), signalled, findings), lastHolders);
 };
 
 export type ReapMarkedProcessesOptions = {
@@ -345,8 +475,10 @@ const signalHoldersOnly = async (
   const deadline = timing.now() + killGraceMs;
   const holders = (await holdersUntil(marker, listing, deadline, unsettled)).filter((pid) => pid > 1);
   if (stop.aborted) return { unsignalled: new Set(), leftAlone: [], signalled: false };
-  const listed = await identify(holders, inspector, stop);
-  const termPass = await signalProved(send, listed.identities.map(ownProof), 'SIGTERM', inspector, stop);
+  const reads = sweepReads(inspector, stop);
+  const listed = await identify(holders, reads);
+  const proved: ProvedSignal = { send, reads, stop };
+  const termPass = await signalProved(proved, listed.identities.map(ownProof), 'SIGTERM');
   const unsignalled = new Set(termPass.unsignalled);
   let remaining = await holdersUntil(marker, listing, deadline, unsettled);
   while (remaining.length > 0 && timing.now() < deadline && !stop.aborted) {
@@ -354,9 +486,9 @@ const signalHoldersOnly = async (
     remaining = await holdersUntil(marker, listing, deadline, unsettled);
   }
   if (stop.aborted) return { unsignalled, leftAlone: [...new Set([...listed.unreadable, ...termPass.unreadable])], signalled: termPass.sent.length > 0 };
-  const leftAlone = new Set(await stillAliveOf(listed.identities, remaining, inspector, stop));
-  const kept = await identify(remaining.filter((pid) => pid > 1), inspector, stop);
-  const killPass = await signalProved(send, kept.identities.map(ownProof), 'SIGKILL', inspector, stop);
+  const leftAlone = new Set<number>();
+  const kept = await identify(remaining.filter((pid) => pid > 1), reads);
+  const killPass = await signalProved(proved, kept.identities.map(ownProof), 'SIGKILL');
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
   for (const pid of [...kept.unreadable, ...killPass.unreadable]) leftAlone.add(pid);
   return { unsignalled, leftAlone: [...leftAlone], signalled: termPass.sent.length > 0 || killPass.sent.length > 0 };
@@ -403,8 +535,11 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   const ownGroup = (await holderGroups([process.pid], recorded === undefined ? [] : [recorded], { signal: stop, inspector }))[0];
   const unsettled = new Map<number, UninspectableProcess>();
   let stopped: boolean;
+  let remaining: number[];
   if (recorded !== undefined && recorded > 1 && recorded !== ownGroup) {
-    const result = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, group: groupPortOf(options.groupPort, kill), timing, stop, inspector, unsettled, markerMode });
+    const end = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, group: groupPortOf(options.groupPort, kill), timing, stop, inspector, unsettled, markerMode });
+    if (end.kind === 'unlisted') throw new ReapUnlisted(end.failure, end.signalled);
+    const { result } = end;
     stopped = result.stopped;
     if (result.leftAloneGroup !== undefined) {
       onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but could not be verified as belonging to this call, so it was left alone`);
@@ -413,6 +548,8 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     if (result.unsignalledPids.length > 0) {
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids(result.unsignalledPids)}`);
     }
+    if (stop.aborted) return ended(stopped, [...unsettled.values()]);
+    remaining = end.lastHolders;
   } else {
     const { unsignalled, leftAlone, signalled } = await signalHoldersOnly(marker, killGraceMs, send, timing, stop, inspector, unsettled);
     stopped = signalled;
@@ -420,14 +557,8 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     if (unsignalled.size > 0) {
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids([...unsignalled])}`);
     }
-  }
-  if (stop.aborted) return ended(stopped, [...unsettled.values()]);
-  const listing: Listing = { inspector, timing, signal: stop };
-  const deadline = timing.now() + KILL_CONFIRM_MS;
-  let remaining = await holdersUntil(marker, listing, deadline, unsettled);
-  while ((remaining.length > 0 || unsettled.size > 0) && timing.now() < deadline && !stop.aborted) {
-    await timing.sleep(REAP_POLL_INTERVAL_MS);
-    remaining = await holdersUntil(marker, listing, deadline, unsettled);
+    if (stop.aborted) return ended(stopped, [...unsettled.values()]);
+    remaining = await holdersAfterWindow(marker, { inspector, timing, signal: stop }, KILL_CONFIRM_MS, unsettled);
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);
@@ -439,13 +570,26 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   return { removed: true, stopped, uninspectable: [] };
 };
 
+class ReapUnlisted extends Error {
+  readonly failure: Error;
+  readonly signalled: boolean;
+
+  constructor(failure: Error, signalled: boolean) {
+    super(failure.message);
+    this.name = 'ReapUnlisted';
+    this.failure = failure;
+    this.signalled = signalled;
+  }
+}
+
 const reapObserved = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
   const operation = operationSignal(options.signal);
   try {
     return await reapWithin(options, operation.signal);
   } catch (error) {
-    if (operation.signal.aborted && error instanceof ProbeFailedError) return { removed: false, stopped: false, uninspectable: [] };
-    throw error;
+    const endedRead = error instanceof ReapUnlisted || error instanceof ProbeFailedError;
+    if (endedRead && endedByAsker(operation.signal)) return { removed: false, stopped: error instanceof ReapUnlisted && error.signalled, uninspectable: [] };
+    throw error instanceof ReapUnlisted ? error.failure : error;
   } finally {
     operation.end();
   }
@@ -474,7 +618,7 @@ export type ReapMarkerDirectoryOptions = {
   onWarning(message: string): void;
   kill?: SignalSender;
   timing?: ReapTiming;
-  signal?: AbortSignal | undefined;
+  signal: AbortSignal;
   inspector?: ProcessInspector;
   occasion?: RetryKind;
 };
@@ -556,7 +700,7 @@ export const reapMarkerDirectory = async ({
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {
-        const { removed } = occasion === undefined ? await reap(marker) : await reapOnOccasion(marker, occasion, label, onWarning, signal ?? new AbortController().signal, reap);
+        const { removed } = occasion === undefined ? await reap(marker) : await reapOnOccasion(marker, occasion, label, onWarning, signal, reap);
         return { marker, removed };
       } catch (failure) {
         return { marker, failure };

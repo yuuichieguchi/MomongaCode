@@ -13,7 +13,7 @@ const cachingTurn = () =>
   ]);
 
 const plainTurn = () =>
-  anthropicStream([anthropicMessageStart({ input_tokens: 10, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
+  anthropicStream([anthropicMessageStart({ input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
 
 describe('the cost of a call reaches the response as a momonga extension', () => {
   it('prices uncached input, cache read, cache write and output from the gateway price table, each at its own rate', async () => {

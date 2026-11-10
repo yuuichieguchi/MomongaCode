@@ -1,10 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
-import type { MomongaPaths, ProbeResult } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, generationLayout, isProcessAlive, judgeProcessIdentity, listGenerationNumbers, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import type { MomongaPaths, ProbeResult, StartTime } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
+import { killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 import { appendHarnessFile } from './run-env.ts';
@@ -14,10 +14,10 @@ export const UNREACHABLE_ERRNO_CODES: ReadonlySet<string> = new Set(['ECONNREFUS
 
 export type LedgerSource = 'supervisor' | 'health' | 'supervisor-log' | 'db' | 'mcp-record' | 'fixture' | 'marker-holder';
 
-export type LedgerEntry = { readonly pgid: number; readonly startTime: number | undefined; readonly source: LedgerSource };
+export type LedgerEntry = { readonly pgid: number; readonly startTime: StartTime | undefined; readonly source: LedgerSource };
 
 export type LedgerPorts = {
-  startTimeOf: (pid: number) => Promise<ProbeResult<number>>;
+  startTimeOf: (pid: number) => Promise<ProbeResult<StartTime>>;
   groupAlive: (pgid: number) => boolean;
   pidAlive: (pid: number) => boolean;
   killGroups: (pgids: readonly number[]) => Promise<void>;
@@ -98,6 +98,11 @@ export const defaultLedgerPorts: LedgerPorts = {
 
 export const formatPidsLine = (entry: LedgerEntry): string => `${entry.pgid}${PIDS_FIELD_SEPARATOR}${entry.startTime ?? NO_START_TIME}${PIDS_FIELD_SEPARATOR}${entry.source}\n`;
 
+const decimalStartTime = (text: string): StartTime | undefined => {
+  if (!/^\d+$/.test(text)) return undefined;
+  return BigInt(text);
+};
+
 export const parsePidsFile = (text: string): LedgerEntry[] =>
   text
     .split('\n')
@@ -105,8 +110,8 @@ export const parsePidsFile = (text: string): LedgerEntry[] =>
     .map((line) => {
       const [pgidText, startText, source, ...extra] = line.split(PIDS_FIELD_SEPARATOR);
       const pgid = Number(pgidText);
-      const startTime = startText === NO_START_TIME ? undefined : Number(startText);
-      if (extra.length > 0 || !Number.isInteger(pgid) || pgid <= 1 || startText === undefined || Number.isNaN(startTime) || source === undefined || !isSource(source)) {
+      const startTime = startText === undefined || startText === NO_START_TIME ? undefined : decimalStartTime(startText);
+      if (extra.length > 0 || !Number.isInteger(pgid) || pgid <= 1 || startText === undefined || (startText !== NO_START_TIME && startTime === undefined) || source === undefined || !isSource(source)) {
         throw new Error(`malformed pids line: ${line}`);
       }
       return { pgid, startTime, source };
@@ -182,9 +187,11 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
-    const text = readTextIfPresent(firstGeneration(paths).locks.supervisor);
-    const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
-    if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
+    for (const generation of await listGenerationNumbers(paths)) {
+      const text = readTextIfPresent(generationLayout(path.dirname(paths.root), generation).locks.supervisor);
+      const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
+      if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
+    }
   };
 
   const collectDatabase = async (paths: MomongaPaths): Promise<void> => {

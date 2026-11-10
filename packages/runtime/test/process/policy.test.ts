@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
 import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, SessionScratch } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Session } from '@momonga/store';
@@ -13,12 +13,14 @@ import { buildSandboxPolicy } from '@momonga/tools';
 import { BASE_ENV, HAS_SEATBELT, createSession, errnoError, makeDir, makeLogger, makeTempHome, openStore, runSandboxed } from './helpers.ts';
 import type { TempHome } from './helpers.ts';
 
-type EnsureTmpDir = (paths: MomongaPaths, sessionId: string) => Promise<string>;
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+type EnsureTmpDir = (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 
 const setup = async (options: { ensure?: EnsureTmpDir; sessionStates?: { get(session: Pick<Session, 'id' | 'cwd'>): unknown } } = {}) => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
-  const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
+  const states = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
   const policyFor = runtime.createPolicyFor({
     paths: temp.paths,
     home: temp.home,
@@ -154,7 +156,7 @@ describe('policyFor (system timers, none used)', () => {
   });
 
   describe.runIf(HAS_SEATBELT)('real Seatbelt', () => {
-    it('Bash $TMPDIR persists between calls of a session', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    it('Bash $TMPDIR persists between calls of a session', async () => {
       const { temp, store, policyFor } = await setup();
       const session = createSession(store, temp.project);
       const sandbox = createSeatbeltSandbox({ tmpRoot: temp.paths.tmp.spawn, killGraceMs: 300 });
@@ -170,7 +172,7 @@ describe('policyFor (system timers, none used)', () => {
       expect(read).toMatchObject({ code: 0, stdout: 'kept' });
     });
 
-    it("another session's tmp dir is unreadable", { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    it("another session's tmp dir is unreadable", async () => {
       const { temp, store, policyFor } = await setup();
       const mine = createSession(store, temp.project);
       const other = createSession(store, temp.project);
@@ -276,7 +278,7 @@ describe('policyFor (system timers, none used)', () => {
     const temp = await makeTempHome();
     const locked = makeDir(temp.root, 'locked');
     const lockedTmp = path.join(locked, 'session-tmp');
-    const errnoCase = await setup({ ensure: async () => lockedTmp });
+    const errnoCase = await setup({ ensure: async () => ({ dir: lockedTmp, claim: 'owned' }) });
     const errnoSession = createSession(errnoCase.store, errnoCase.temp.project);
     fs.chmodSync(locked, 0o000);
 
@@ -286,7 +288,7 @@ describe('policyFor (system timers, none used)', () => {
     expectWrapped(errnoFailure, errnoSession.id);
     expect(((errnoFailure as Error).cause as NodeJS.ErrnoException).code).toBe('EACCES');
 
-    const assertionCase = await setup({ ensure: async () => 'relative-tmp' });
+    const assertionCase = await setup({ ensure: async () => ({ dir: 'relative-tmp', claim: 'owned' }) });
     const assertionSession = createSession(assertionCase.store, assertionCase.temp.project);
 
     const assertionFailure = await rejectionOf(assertionCase.policyFor(assertionSession, { env: env(), rules: [] }));
@@ -320,7 +322,7 @@ describe('policyFor (system timers, none used)', () => {
   it('a relative home raises TypeError', async () => {
     const temp = await makeTempHome();
     const { store, clock } = openStore(temp);
-    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger() });
+    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
     let error: unknown;
     try {
       runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });

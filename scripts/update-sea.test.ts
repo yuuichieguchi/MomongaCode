@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -13,6 +13,7 @@ import { buildSea } from './sea.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
+import { productTestEnv } from '@momonga/testkit';
 
 const FIXTURE_REPO = 'acme/momonga';
 const PINNED_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
@@ -43,6 +44,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
   let releaseKey: Key = { privateKey: '', publicKey: '' };
   let attackerKey: Key = { privateKey: '', publicKey: '' };
   const installationRoots: string[] = [];
+  const installationHomes: string[] = [];
 
   const bytes = (file: string): Buffer => fs.readFileSync(file);
 
@@ -51,14 +53,13 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     const base = path.join(root, `i${instances}`);
     installationRoots.push(base);
     const dir = path.join(base, 'bin');
-    const home = path.join(root, 'h');
+    const home = createTempRoot({ asHome: true });
+    installationHomes.push(home);
     fs.mkdirSync(dir, { recursive: true });
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.mkdirSync(home);
     const bin = path.join(dir, 'momonga');
     fs.copyFileSync(v1, bin);
     fs.chmodSync(bin, 0o755);
-    return { bin: fs.realpathSync(bin), dir: fs.realpathSync(dir), home: fs.realpathSync(home) };
+    return { bin: fs.realpathSync(bin), dir: fs.realpathSync(dir), home };
   };
 
   const run = (file: string, args: readonly string[], home: string, env: Record<string, string> = {}): Promise<Outcome> =>
@@ -68,7 +69,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
         [...args],
         {
           encoding: 'utf8',
-          env: { PATH: '/usr/bin:/bin', HOME: home, MOMONGA_FIXTURE_RELEASE_URL: server.endpoints.apiBaseUrl, MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY: releaseKey.publicKey, ...env },
+          env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: home, MOMONGA_FIXTURE_RELEASE_URL: server.endpoints.apiBaseUrl, MOMONGA_FIXTURE_RELEASE_PUBLIC_KEY: releaseKey.publicKey, ...env }),
         },
         (error, stdout, stderr) => {
           if (error === null) resolve({ code: 0, stdout, stderr });
@@ -106,13 +107,14 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/update-v2.ts`, output: v2, workDir: path.join(root, 'work2') });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const home of installationHomes.splice(0)) await removeTempRoot(home);
     for (const base of installationRoots.splice(0)) fs.rmSync(base, { recursive: true, force: true });
   });
 
   afterAll(async () => {
     await server.stop();
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   it('replaces the running executable with the verified release and the new binary runs', async () => {
@@ -238,7 +240,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     expect(third.stderr).toBe('');
   });
 
-  it('restarts a running daemon on the new version', async () => {
+  it('starts the new version beside a running daemon, which is not stopped', async () => {
     const installation = install();
     fs.mkdirSync(path.join(installation.home, '.momonga'));
     fs.writeFileSync(
@@ -259,9 +261,9 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
 
       const outcome = await run(installation.bin, ['update'], installation.home);
 
-      expect(outcome.stdout).toBe(`updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\nrestarted the daemon on the new version\n`);
+      expect(outcome.stdout).toBe(`updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\nUpdated to v2.0.0. The daemon is running the new version.\n`);
       const status = await run(installation.bin, ['daemon', 'status'], installation.home);
-      expect(status.stdout).toContain('version 2.0.0');
+      expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     } finally {
       await run(installation.bin, ['daemon', 'stop'], installation.home);
     }
@@ -272,15 +274,15 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
   let root = '';
 
   beforeAll(() => {
-    root = createTempRoot();
+    root = createTempRoot({ asHome: true });
   });
 
   afterEach(() => {
     for (const binary of ['no-source', 'no-team', 'no-key']) fs.rmSync(path.join(root, binary), { force: true });
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('is absent from a bundle built without inputs and embedded in one built with them', async () => {
@@ -307,7 +309,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const configured = path.join(root, 'configured-run.mjs');
     await bundle({ entry: MAIN_ENTRY, outfile: configured, releaseRepo: 'acme/momonga', teamId: 'ABCDE12345', releasePublicKey: PINNED_KEY });
 
-    const result = spawnSync(process.execPath, [configured, 'update'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: root } });
+    const result = spawnSync(process.execPath, [configured, 'update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('self-update only replaces a momonga single executable; this process is running from source under node');
@@ -317,7 +319,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-source');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-source') });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: root } });
+    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('momonga: this build has no update source: it was built without MOMONGA_REPO');
@@ -328,7 +330,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-team');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-team'), releaseRepo: 'acme/momonga', releasePublicKey: PINNED_KEY });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: root } });
+    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('built without MOMONGA_TEAM_ID');
@@ -338,7 +340,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     const binary = path.join(root, 'no-key');
     await buildSea({ entry: MAIN_ENTRY, output: binary, workDir: path.join(root, 'work-no-key'), releaseRepo: 'acme/momonga', teamId: 'ABCDE12345' });
 
-    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin', HOME: root } });
+    const result = spawnSync(binary, ['update'], { encoding: 'utf8', env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }) });
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('built without MOMONGA_RELEASE_PUBLIC_KEY');

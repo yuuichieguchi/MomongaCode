@@ -51,10 +51,12 @@ class CredentialVariableError extends Error {
 const USER_EXPANSION_NOTE =
   'user-scope ${VAR} expansion sees only the environment it is given (in the runtime, the credential-stripped session environment); keep MCP credentials as literal values in user settings until the keychain store exists';
 
+export const mcpServerNameProblem = (name: string): string | undefined =>
+  !SERVER_NAME.test(name) || name.includes('__') || name.startsWith('_') || name.endsWith('_') ? `invalid MCP server name ${JSON.stringify(name)}; use letters, digits, "-" and single "_" only` : undefined;
+
 const assertServerName = (name: string, source: string): void => {
-  if (!SERVER_NAME.test(name) || name.includes('__') || name.startsWith('_') || name.endsWith('_')) {
-    throw new Error(`${source}: invalid MCP server name ${JSON.stringify(name)}; use letters, digits, "-" and single "_" only`);
-  }
+  const problem = mcpServerNameProblem(name);
+  if (problem !== undefined) throw new Error(`${source}: ${problem}`);
 };
 
 type VariableGuard = (variable: string) => boolean;

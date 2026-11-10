@@ -1,14 +1,33 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { credentialEnvNames, stopValuesOfSettings } from '@momonga/config';
-import { canonicalJson, createFileCredentialStore, createLockCapability, hostProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
+import {
+  canonicalJson,
+  createEncryptedCredentialStore,
+  createExecWithStdin,
+  createLockCapability,
+  givenCredentialSecretStore,
+  givenSecretStoreChildEnv,
+  minimalChildEnv,
+  hostProcessInspector,
+  ensureSessionTmpDir as defaultEnsureSessionTmpDir,
+  generationMarkerDirectories,
+  inspectProcessLock,
+  generationLayout,
+  generationOfDirectoryName,
+  nodeFileSystem,
+  releaseSessionScratch,
+  hostInspectorPorts,
+  ruleEnforcementOf,
+  sha256Hex,
+} from '@momonga/foundation';
+import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RolePort, RuleEnforcement, SessionScratch } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
-import type { Sandbox } from '@momonga/sandbox';
+import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, UserPolicy, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -25,11 +44,16 @@ import { createSessionStates } from './session-states.ts';
 import type { SessionStates } from './session-states.ts';
 import type { SettingsComposition } from './settings-port.ts';
 import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
+import type { EnforcedPolicyFor } from './tool-policy.ts';
 
 export type ToolRuntimeOptions = {
   lockCapability?: LockCapabilityProbe;
   kernelLock?: KernelLockMechanism;
   paths: MomongaPaths;
+  sharedPaths: MomongaPaths;
+  generation: number;
+  role: Pick<RolePort, 'current'>;
+  onJobSettled?: () => void;
   home: string;
   store: RuntimeStore;
   notifier: Pick<RunNotifier, 'watchRun'>;
@@ -37,7 +61,7 @@ export type ToolRuntimeOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
-  sandbox: Sandbox;
+  sandboxes: SandboxBindings;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
@@ -46,7 +70,8 @@ export type ToolRuntimeOptions = {
   createPool?: (options: McpPoolOptions) => McpPool;
   createAdminPool?: (options: McpPoolOptions) => McpAuthorizingPool;
   mcpRemote?: McpRemotePorts;
-  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  credentialSecretStore?: CredentialSecretStore;
+  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
   policyFilesystem?: PolicyHostFilesystem;
   bundledRipgrep?: BundledRipgrepResolver;
   owners?: MarkerOwners;
@@ -54,6 +79,7 @@ export type ToolRuntimeOptions = {
 
 export type ToolRuntime = {
   port: ToolRuntimePort;
+  userPolicy: UserPolicy;
   mcpPools: McpPoolCache;
   mcpAdmin: McpAdmin;
   sessionStates: SessionStates;
@@ -65,11 +91,16 @@ export type ToolRuntime = {
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
 
 export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
-  const { paths, home, store, notifier, clock, timers, logger, report, sandbox, settings, reapTiming } = options;
+  const { paths, home, store, notifier, clock, timers, logger, report, sandboxes, settings, reapTiming } = options;
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
-    credentials: createFileCredentialStore(mcpCredentialDirectory(paths)),
+    credentials: createEncryptedCredentialStore({
+      directory: mcpCredentialDirectory(paths),
+      stateDirectory: paths.state,
+      secretStore: options.credentialSecretStore ?? givenCredentialSecretStore(createExecWithStdin({ ...minimalChildEnv(process.env), ...givenSecretStoreChildEnv(process.env) }), process.env),
+      plaintextTokenFiles: () => settings.takeUserSnapshot().settings.credentials.plaintextTokenFiles,
+    }),
     randomToken: () => randomBytes(32).toString('base64url'),
     openAuthorizationUrl: () => Promise.reject(new Error('the daemon never opens a browser; authorization URLs are handed to the client through the Run API')),
   };
@@ -85,6 +116,13 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     clock,
     timers,
     markerDir: paths.markers.tools,
+    generation: options.generation,
+    jobsDir: paths.jobs,
+    role: options.role,
+    ...(options.onJobSettled === undefined ? {} : { onSettled: options.onJobSettled }),
+    markerDirOf: (ownerGeneration) => generationMarkerDirectories(options.sharedPaths, ownerGeneration).tools,
+    ownerAlive: async (ownerGeneration) =>
+      (await inspectProcessLock(generationLayout(home, ownerGeneration).locks.runtime, options.kernelLock === undefined ? {} : { mechanism: options.kernelLock })).state !== 'free',
     markerFiles: createNodeJobMarkerFiles(lockCapability),
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
@@ -100,6 +138,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     blobs: store.blobs,
     clock,
     processMarkerDir: paths.markers.tools,
+    earlierMarkerDirs: async () =>
+      (await nodeFileSystem.readdir(options.sharedPaths.markers.root))
+        .map(generationOfDirectoryName)
+        .filter((generation): generation is number => generation !== undefined)
+        .map((generation) => generationMarkerDirectories(options.sharedPaths, generation).tools),
     owners,
     callLockDir: paths.callLocks,
     ...(options.kernelLock === undefined ? {} : { kernelLock: options.kernelLock }),
@@ -118,12 +161,17 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
     readCloseGraceMs,
+    markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
-  const sessionStates = createSessionStates({ clock, store, logger });
-  const ruleEnforcement: RuleEnforcement = ruleEnforcementOf(sandbox.kind);
-  const policyOptions = { paths, home, fs: policyFilesystem, ruleEnforcement, sessionStates, ensureSessionTmpDir };
-  const policyFor = createPolicyFor(policyOptions);
+  const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
+  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
+  const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
+  const policyFor: ToolRuntimePort['policyFor'] = (session, request) => {
+    const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
+    policyBuilders.set(request.ruleEnforcement, builder);
+    return builder(session, request);
+  };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {
@@ -205,7 +253,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     policyFor,
     recoveryContextFor,
     executor,
-    sandbox,
+    sandboxes,
     ripgrepLocator: (env) =>
       createHostRipgrepLocator({
         setting: settings.takeUserSnapshot().settings.tools.ripgrep,
@@ -228,5 +276,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     },
   };
 
-  return { port, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
+  return { port, userPolicy: executor, mcpPools, mcpAdmin, sessionStates, jobs, owners, inspector };
 };

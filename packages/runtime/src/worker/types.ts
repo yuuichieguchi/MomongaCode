@@ -1,7 +1,7 @@
-import type { Clock } from '@momonga/foundation';
+import type { Clock, RolePort } from '@momonga/foundation';
 import type { ContextOverflowError, InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
-import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerPort } from '../ports.ts';
+import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerLeases } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import type { SystemPromptContext } from '../system-prompt.ts';
 
@@ -32,9 +32,11 @@ export type WorkerOptions = {
   governance: GovernancePort;
   agents?: AgentsPort;
   tools: ToolRuntimePort;
-  tracer: TracerPort;
+  tracers: TracerLeases;
   clock: Clock;
   workerId: string;
+  role: RolePort;
+  onClaimSettled?: () => void;
   leaseMs: number;
   heartbeatMs?: number;
   cancelPollMs?: number;
@@ -59,4 +61,5 @@ export type Worker = {
   stop(): Promise<void>;
   abort(reason: 'shutdown'): Promise<void>;
   memorySize(): number;
+  claimsInFlight(): number;
 };

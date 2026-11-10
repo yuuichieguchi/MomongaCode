@@ -25,7 +25,7 @@ const SAMPLES: { [K in keyof Events]: PayloadOf<K> } = {
   'child.ready.mismatch': { child: 'runtime', childPid: 4244, readyService: 'gateway', readyPid: 1 },
   'child.ready.ignored': { child: 'runtime', childPid: 4245 },
   'child.version.mismatch': { child: 'runtime', childPid: 4248, childVersion: '9.9.9', supervisorVersion: '1.2.3' },
-  'child.stop': { child: 'runtime', childPid: 4246, stop: 'plan-restart', mode: 'term', superseded: 'startup-timeout' },
+  'child.stop': { child: 'runtime', childPid: 4246, stop: 'shutdown', mode: 'term', superseded: 'startup-timeout' },
   'child.exit': { child: 'gateway', childPid: 4247, code: 1, signal: null, reason: 'failure', restarts: 3 },
   'child.backoff': { child: 'runtime', delayMs: 999, consecutiveFailures: 2 },
   'child.held': { child: 'gateway', heldReason: 'child exited 78 (see gateway.log)', source: 'child-exit' },
@@ -37,17 +37,23 @@ const SAMPLES: { [K in keyof Events]: PayloadOf<K> } = {
   'child.stdout': { child: 'gateway', childPid: 4251, raw: 'stray', rawBytes: 5, truncated: true },
   'supervisor.background_transient': { source: 'lock-poll' },
   'supervisor.background_failed': { source: 'exit-handler' },
-  'settings.changed': { models: true, sandbox: false, telemetry: false, network: false },
-  'settings.evaluated': { modelsChanged: false, sandboxChanged: true, roles: '' },
+  'settings.changed': {},
   'settings.invalid': { detail: 'settings file is invalid: bad', action: 'keep-running-children-hold-spawns' },
   'settings.read_failed': { detail: 'EMFILE' },
   'settings.warning': { detail: 'settings file is invalid: x' },
-  'plan.begin': { roles: 'runtime,gateway', planned: 2 },
-  'plan.end': { roles: 'runtime', planned: 1 },
+  'settings.record_failed': { detail: 'EACCES: permission denied' },
   'orphans.waiting': { markers: 2, holders: 1 },
   'orphans.reaping': { holders: 1 },
   'orphans.reaped': { reaped: 1, kept: 0 },
   'orphans.warning': { detail: 'lsof failed', marker: '/h/.momonga/run/markers/daemons/runtime-x' },
+  'start.abandoned': { generation: 2, reason: 'version-differs' },
+  'start.superseded': { generation: 2, current: 3 },
+  'start.unpromoted': { generation: 2, reason: 'startup-bound' },
+  'generation.promoted': { generation: 2, version: '1.2.3', startToPromotedMs: 120 },
+  'generation.retiring': { generation: 2, current: 3 },
+  'generation.ended': { generation: 2, liveMs: 4000 },
+  'generation.successor': { generation: 2, successor: 3, version: '1.2.4', outcome: 'started' },
+  'generation.many': { live: 4 },
   'shutdown.begin': { mode: 'close' },
   'shutdown.step': { shutdownStep: 4, detail: 'step 4 bound reached' },
   'shutdown.end': { clean: true, killed: '', leaked: '' },
@@ -73,16 +79,22 @@ const EXPECTED_LEVELS: { [K in keyof Events]: LogLevel } = {
   'supervisor.background_failed': 'error',
   'supervisor.background_transient': 'warn',
   'settings.changed': 'info',
-  'settings.evaluated': 'info',
   'settings.invalid': 'warn',
   'settings.read_failed': 'warn',
   'settings.warning': 'warn',
-  'plan.begin': 'info',
-  'plan.end': 'info',
+  'settings.record_failed': 'warn',
   'orphans.waiting': 'info',
   'orphans.reaping': 'warn',
   'orphans.reaped': 'info',
   'orphans.warning': 'warn',
+  'start.abandoned': 'warn',
+  'start.superseded': 'info',
+  'start.unpromoted': 'warn',
+  'generation.promoted': 'info',
+  'generation.retiring': 'info',
+  'generation.ended': 'info',
+  'generation.successor': 'info',
+  'generation.many': 'warn',
   'shutdown.begin': 'info',
   'shutdown.step': 'info',
   'shutdown.end': 'info',
@@ -134,12 +146,8 @@ describe('log-events', () => {
   it('carries the agreed payload names', () => {
     expect(emit('child.ready')).toMatchObject({ child: 'gateway', childPid: 4243 });
     expect(emit('child.external')).toMatchObject({ holderPid: 777 });
-    expect(emit('plan.begin')).toMatchObject({ roles: 'runtime,gateway', planned: 2 });
-    expect(emit('plan.end')).toMatchObject({ roles: 'runtime', planned: 1 });
-    expect(emit('settings.changed')).toMatchObject({ models: true, sandbox: false });
-    expect(emit('settings.evaluated')).toMatchObject({ modelsChanged: false, sandboxChanged: true, roles: '' });
-    expect(emit('settings.evaluated')).not.toHaveProperty('models');
-    expect(emit('settings.evaluated')).not.toHaveProperty('sandbox');
+    expect(emit('settings.changed')).toMatchObject({ msg: 'settings.changed' });
+    expect(emit('settings.record_failed')).toMatchObject({ detail: 'EACCES: permission denied' });
     expect(emit('shutdown.step')).toMatchObject({ shutdownStep: 4 });
     expect(emit('shutdown.step')).not.toHaveProperty('step');
   });
@@ -183,6 +191,6 @@ describe('log-events', () => {
 
   it('child.stop names the superseded stop reason', () => {
     expectTypeOf<PayloadOf<'child.stop'>['superseded']>().toEqualTypeOf<StopReason | undefined>();
-    expect(emit('child.stop')).toMatchObject({ stop: 'plan-restart', superseded: 'startup-timeout' });
+    expect(emit('child.stop')).toMatchObject({ stop: 'shutdown', superseded: 'startup-timeout' });
   });
 });

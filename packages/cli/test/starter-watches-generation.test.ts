@@ -73,34 +73,35 @@ describe('the client that starts a generation watches that generation, not run/c
     const { home, paths, start, portsWith } = await setup(context);
     const starting = await start({ version: VERSION, pid: STARTING_PID, children: startingChildren() });
     const clock = clockThatReadies(starting, STARTUP_TIMEOUT_MS / 2);
-    const first = recordingSpawn(async () => ({ code: EXIT_ALREADY_RUNNING, signal: null }));
-    const second = recordingSpawn(async () => ({ code: EXIT_ALREADY_RUNNING, signal: null }));
+    const first = recordingSpawn(() => undefined);
+    const second = recordingSpawn(() => undefined);
     const bounds = { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS };
 
     const firstStart = ensureDaemon(portsWith(first.spawn, clock), paths, { bounds });
     const secondStart = ensureDaemon(portsWith(second.spawn, clock), paths, { bounds });
-    const [firstHealth, secondHealth] = await Promise.all([firstStart, secondStart]);
+    const [{ health: firstHealth }, { health: secondHealth }] = await Promise.all([firstStart, secondStart]);
 
     expect(firstHealth.pid).toBe(STARTING_PID);
     expect(secondHealth.pid).toBe(STARTING_PID);
     expect(secondHealth.children.map((child) => child.state)).toEqual(['ready', 'ready']);
     expect(starting.healthRequests).toBeGreaterThan(0);
+    expect([...first.spawned, ...second.spawned]).toEqual([]);
     expect(JSON.parse(fs.readFileSync(paths.current, 'utf8'))).toEqual({ generation: FIRST_GENERATION, version: VERSION, sockets: generationLayout(home, FIRST_GENERATION).sockets });
   });
 
   it('resolves the starter later requests through run/current once the started generation is current (rule 5a)', async (context) => {
     const { home, paths, start, portsWith } = await setup(context);
     const starting = await start({ version: VERSION, pid: STARTING_PID, children: startingChildren() });
-    const { spawn, spawned } = recordingSpawn(async () => ({ code: EXIT_ALREADY_RUNNING, signal: null }));
+    const { spawn, spawned } = recordingSpawn(() => undefined);
     const ports = portsWith(spawn, clockThatReadies(starting, STARTUP_TIMEOUT_MS / 2));
     const bounds = { readyMs: STARTUP_TIMEOUT_MS, stopMs: STARTUP_TIMEOUT_MS };
 
-    expect((await ensureDaemon(ports, paths, { bounds })).pid).toBe(STARTING_PID);
+    expect((await ensureDaemon(ports, paths, { bounds })).health.pid).toBe(STARTING_PID);
     await start({ version: VERSION, pid: SECOND_GENERATION_PID, generation: 2, children: readyChildren() });
     await publishCurrentGeneration(paths, { generation: 2, version: VERSION, sockets: generationLayout(home, 2).sockets });
 
     const spawnsBefore = spawned.length;
-    expect((await ensureDaemon(ports, paths, { bounds })).pid).toBe(SECOND_GENERATION_PID);
+    expect((await ensureDaemon(ports, paths, { bounds })).health.pid).toBe(SECOND_GENERATION_PID);
     expect(spawned).toHaveLength(spawnsBefore);
   });
 });

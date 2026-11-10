@@ -1,12 +1,14 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createGitWorkTreeObserver, observedToolFiles } from '@momonga/tools';
 import type { ObservedFile, WorkTreeObserver } from '@momonga/tools';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SYSTEM_GIT = '/usr/bin/git';
 
@@ -78,7 +80,7 @@ afterEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe('the git work-tree observer on a real temporary repository', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the git work-tree observer on a real temporary repository', () => {
   it('reports an in-place edit, a created file and a deleted file', async () => {
     const observer = observerFor(project);
     const files = await observe(observer, () => {

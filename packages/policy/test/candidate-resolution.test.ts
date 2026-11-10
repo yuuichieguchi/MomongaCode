@@ -57,7 +57,7 @@ describe.skipIf(RUNNING_AS_ROOT)('candidate-side canonicalisation under a mode 0
   it('decide treats a read below it as outside the roots (pin)', () => {
     withLockedDirectory((layout, locked) => {
       const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [path.join(locked, 'x', 'y')], access: 'read' };
-      const decision = decide({ ...inputFor(layout, READ, subject), mode: 'default' });
+      const decision = decide({ ...inputFor(layout, READ, subject), mode: 'manual' });
       expect(decision.kind).toBe('ask');
     });
   });

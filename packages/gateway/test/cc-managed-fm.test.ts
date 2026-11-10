@@ -10,6 +10,7 @@ import {
   createManagedServer,
   createManagedTarget,
   saveProbeRecord,
+  unauthenticatedSource,
 } from '@momonga/gateway';
 import type { ExecResult, ManagedServer, ManagedServerTimers, ManagedTarget } from '@momonga/gateway';
 import { ESTIMATED_ERROR_SHAPE, TARGET_PROBING, errorBoundOfShape } from '@momonga/protocol';
@@ -155,7 +156,7 @@ const setup = async (config: Setup = {}) => {
 };
 
 const adapterFor = (managed: ManagedTarget, clock: FakeClock) => {
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   registerCleanup(() => adapter.close());
   return adapter;
 };

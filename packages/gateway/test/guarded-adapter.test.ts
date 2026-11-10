@@ -64,6 +64,7 @@ const optionalImplementations = (record: (member: string, self: unknown) => void
     return {
       summary: 'short',
       usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+      usageSource: 'reported',
     };
   },
   renderCompactWire: function (this: unknown) {
@@ -483,5 +484,103 @@ describe('TargetRuntime.adapter type', () => {
     // @ts-expect-error
     const adapter: TargetRuntime['adapter'] = raw;
     expect(adapter).toBe(raw);
+  });
+});
+
+const MATCHING_PLANS: ReadonlyArray<{ name: string; plan: Record<string, unknown> }> = [
+  { name: 'a profile and an account that match', plan: { profile: 'chatgpt', account: 'work' } },
+  { name: 'the longest label', plan: { profile: 'chatgpt', account: `a${'b'.repeat(127)}` } },
+  { name: 'a matching profile and no account', plan: { profile: 'chatgpt' } },
+];
+
+const REFUSED_PLANS: ReadonlyArray<{ name: string; plan: Record<string, unknown> }> = [
+  { name: 'a profile with a slash', plan: { profile: 'chat/gpt', account: 'work' } },
+  { name: 'an account with a space', plan: { profile: 'chatgpt', account: 'wo rk' } },
+  { name: 'an account with a line break', plan: { profile: 'chatgpt', account: 'work\nmore' } },
+  { name: 'an account of 129 characters', plan: { profile: 'chatgpt', account: 'q'.repeat(129) } },
+  { name: 'an empty account', plan: { profile: 'chatgpt', account: '' } },
+  { name: 'a profile that is not text', plan: { profile: 7, account: 'work' } },
+  { name: 'an account that is not text', plan: { profile: 'chatgpt', account: { label: 'work' } } },
+  { name: 'no profile', plan: { account: 'work' } },
+];
+
+const guardedPlans = async (
+  plan: Record<string, unknown>,
+): Promise<{ classified: Record<string, unknown>; errorEvent: Record<string, unknown>; failed: Record<string, unknown>; gatewayError: Record<string, unknown> }> => {
+  const body = { type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null, plan };
+  const inner = baseAdapter({
+    classify: () => ({ retryable: false, error: body }) as unknown as ClassifiedError,
+    create: () =>
+      eventsOf([
+        { type: 'error', sequence_number: 3, error: body } as unknown as StreamEvent,
+        failedEvent({ code: 'plan_usage_limit', type: 'too_many_requests', message: 'limit', param: null, plan }),
+      ]),
+  });
+  const guard = guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC);
+  const [errorEvent, failed] = await collect(guard.create(REQUEST, ctx()));
+  const throwing = guardAdapter(
+    baseAdapter({
+      capabilities: async () => {
+        throw new GatewayError({ status: 429, type: 'too_many_requests', code: 'plan_usage_limit', param: 'p'.repeat(200), message: 'limit', plan: plan as unknown as { profile: string; account: string } });
+      },
+    }),
+    redactor,
+    REASONING_ORIGIN_CODEC,
+  );
+  const thrown = await throwing.capabilities(TARGET).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (!(thrown instanceof GatewayError)) throw new Error('expected the guard to pass a GatewayError');
+  return {
+    gatewayError: thrown.body as unknown as Record<string, unknown>,
+    classified: guard.classify(new Error('x')).error as unknown as Record<string, unknown>,
+    errorEvent: (errorEvent as unknown as { error: Record<string, unknown> }).error,
+    failed: (failed as unknown as { response: { error: Record<string, unknown> } }).response.error,
+  };
+};
+
+describe('guardAdapter keeps plan on an error only when its profile and account have the label shape (K3)', () => {
+  it.for(MATCHING_PLANS)('keeps $name unchanged on a classified body, an error event and a response.failed error', async ({ plan }) => {
+    const guarded = await guardedPlans(plan);
+    expect(guarded.classified).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null, plan });
+    expect(guarded.errorEvent).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null, plan });
+    expect(guarded.failed).toEqual({ code: 'plan_usage_limit', type: 'too_many_requests', message: 'limit', param: null, plan });
+    expect(guarded.gatewayError).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null, plan });
+  });
+
+  it.for(REFUSED_PLANS)('drops plan with $name from a GatewayError passing the guard', async ({ plan }) => {
+    const { gatewayError } = await guardedPlans(plan);
+    expect(gatewayError).not.toHaveProperty('plan');
+    expect(gatewayError).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null });
+  });
+
+  it.for(REFUSED_PLANS)('drops plan with $name from a classified body', async ({ plan }) => {
+    const { classified } = await guardedPlans(plan);
+    expect(classified).not.toHaveProperty('plan');
+    expect(classified).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null });
+  });
+
+  it.for(REFUSED_PLANS)('drops plan with $name from an error event', async ({ plan }) => {
+    const { errorEvent } = await guardedPlans(plan);
+    expect(errorEvent).not.toHaveProperty('plan');
+    expect(errorEvent).toEqual({ type: 'too_many_requests', code: 'plan_usage_limit', message: 'limit', param: null });
+  });
+
+  it.for(REFUSED_PLANS)('drops plan with $name from a response.failed error', async ({ plan }) => {
+    const { failed } = await guardedPlans(plan);
+    expect(failed).not.toHaveProperty('plan');
+    expect(failed).toEqual({ code: 'plan_usage_limit', type: 'too_many_requests', message: 'limit', param: null });
+  });
+
+  it.for([
+    { name: 'a profile and an account', plan: { profile: 'chatgpt', account: 'work', extra: 'leaked-extra' }, kept: { profile: 'chatgpt', account: 'work' } },
+    { name: 'a profile and no account', plan: { profile: 'chatgpt', nested: { account: 'leaked-extra' } }, kept: { profile: 'chatgpt' } },
+  ])('a plan with $name and a key beyond the two comes out of every site as exactly the two', async ({ plan, kept }) => {
+    const guarded = await guardedPlans(plan);
+    expect(guarded.classified['plan']).toEqual(kept);
+    expect(guarded.errorEvent['plan']).toEqual(kept);
+    expect(guarded.failed['plan']).toEqual(kept);
+    expect(guarded.gatewayError['plan']).toEqual(kept);
   });
 });

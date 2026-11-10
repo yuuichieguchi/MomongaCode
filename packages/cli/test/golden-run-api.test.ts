@@ -2,6 +2,7 @@ import { getEventListeners } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { ContextChargeView, ReflectionJobView, RunReflectionView } from '@momonga/protocol';
 import { goldenRunApi } from '../src/client/golden-run-api.ts';
+import { DaemonMoved } from '../src/client/runtime-client.ts';
 
 const job = (state: ReflectionJobView['state'], attempts = state === 'pending' ? 0 : 1): ReflectionJobView => ({ runId: 'run-1', state, attempts, reason: null, dropped: [], updatedAt: 1 });
 
@@ -158,5 +159,47 @@ describe('what answered a run in the golden run api', () => {
     const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
     expect(await api.answeredBy('run-9')).toEqual(answered);
     expect(asked).toEqual(['run-9']);
+  });
+});
+
+describe('the events of a run in the golden run api across a retiring daemon (20.44)', () => {
+  it('resumes after the last event it yielded when the stream ends with the daemon.current frame, and yields each event once', async () => {
+    const opened: (number | undefined)[] = [];
+    const event = (id: number) => ({ id, event: undefined, data: { type: 'agent.message.delta', id } });
+    const client = {
+      streamEvents: async function* (_runId: string, options: { lastEventId?: number } = {}) {
+        opened.push(options.lastEventId);
+        if (options.lastEventId === undefined) {
+          yield event(1);
+          yield event(2);
+          throw new DaemonMoved(2, '1.2.4');
+        }
+        yield event(3);
+      },
+    };
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+
+    const seen: unknown[] = [];
+    for await (const data of api.events('run-1')) seen.push(data);
+
+    expect(seen).toEqual([event(1).data, event(2).data, event(3).data]);
+    expect(opened).toEqual([undefined, 2]);
+  });
+
+  it('lets any other stream failure propagate', async () => {
+    const lost = new Error('socket lost');
+    const client = {
+      streamEvents: async function* () {
+        yield* [];
+        throw lost;
+      },
+    };
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+
+    const failure = await (async () => {
+      for await (const _ of api.events('run-1')) void _;
+    })().catch((error: unknown) => error);
+
+    expect(failure).toBe(lost);
   });
 });

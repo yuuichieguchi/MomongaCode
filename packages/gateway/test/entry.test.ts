@@ -1,3 +1,4 @@
+import { prepareHome } from './gateway-process-helpers.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -5,13 +6,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, inspectProcessLock, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, runGatewayEntry } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const VERSION = '1.10.0-gateway-entry-test';
 const API_KEY_VALUE = 'momonga-test-api-key';
 
@@ -22,6 +24,7 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, target) } } });
   return { home, paths: momongaPaths(home, process.platform, {}), fake };
 };
@@ -52,8 +55,9 @@ const stderrJson = (io: FakeEntryIo): JsonLine[] => parseJsonLines(io.stderrLine
 const lastLine = (lines: readonly JsonLine[]): JsonLine | undefined => lines[lines.length - 1];
 
 describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)', () => {
-  it('gateway: invalid settings give 78 and an entry.exit start-failed line', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: invalid settings give 78 and an entry.exit start-failed line', async (context) => {
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
@@ -63,7 +67,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', service: 'gateway', code: 78, path: 'start-failed', clean: false });
   });
 
-  it('gateway: a held gateway.lock gives 75', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a held gateway.lock gives 75', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.gateway);
@@ -73,7 +77,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(io.stdoutText()).toBe('');
   });
 
-  it('gateway: a held gateway.sock.lock gives 1', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a held gateway.sock.lock gives 1', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, `${firstGeneration(paths).sockets.gateway}.lock`);
@@ -83,7 +87,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(io.stdoutText()).toBe('');
   });
 
-  it('gateway: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     fs.writeFileSync(firstGeneration(paths).locks.gateway, '999999\n', { mode: 0o600 });
@@ -95,7 +99,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(await launched.exit).toBe(0);
   });
 
-  it('gateway: a home given through a symlink still gives 75 (the entry canonicalises the home)', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a home given through a symlink still gives 75 (the entry canonicalises the home)', async (context) => {
     const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.gateway);
@@ -106,7 +110,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(await exit).toBe(75);
   });
 
-  it('gateway: a clean close gives 0, one stdout line, no lock left, entry.exit close/sigterm in the role log', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a clean close gives 0, one stdout line, no lock left, entry.exit close/sigterm in the role log', async (context) => {
     const { home, paths } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file']);
     await waitForReadyOrExit(launched);
@@ -124,7 +128,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(launched.io.stderrLines()).toEqual([]);
   });
 
-  it('gateway: a second SIGTERM aborts and cuts the close grace', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: a second SIGTERM aborts and cuts the close grace', async (context) => {
     const { home, paths, fake } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
@@ -146,7 +150,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     await request;
   });
 
-  it("gateway: a server 'error' after ready latches fatal, aborts, and exits 1", PROCESS_TIMEOUT, async (context) => {
+  it("gateway: a server 'error' after ready latches fatal, aborts, and exits 1", async (context) => {
     const { home } = await validHome(context);
     const servers: http.Server[] = [];
     const createServer = http.createServer.bind(http);
@@ -170,7 +174,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(lastLine(lines)).toMatchObject({ msg: 'entry.exit', code: 1, path: 'abort', clean: false, trigger: 'fatal' });
   });
 
-  it('gateway: the env passed to startGatewayProcess is io.env as given (a declared apiKeyEnv reaches upstream)', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: the env passed to startGatewayProcess is io.env as given (a declared apiKeyEnv reaches upstream)', async (context) => {
     const { home, paths, fake } = await validHome(context, { apiKeyEnv: 'MOMONGA_ENTRY_KEY' });
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr'], { MOMONGA_ENTRY_KEY: API_KEY_VALUE });
     await waitForReadyOrExit(launched);
@@ -185,7 +189,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     expect(completions[0]?.headers['authorization']).toBe(`Bearer ${API_KEY_VALUE}`);
   });
 
-  it('gateway: an unknown flag gives 78 with one JSON line on stderr', PROCESS_TIMEOUT, async (context) => {
+  it('gateway: an unknown flag gives 78 with one JSON line on stderr', async (context) => {
     const { home } = await validHome(context);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--no-such-flag']);
 

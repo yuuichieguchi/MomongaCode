@@ -68,6 +68,17 @@ describe('settings composition hooks and auto mode', () => {
     });
   });
 
+  it('reads the classifier key on the OS the composition is given, not the host it runs on', async () => {
+    const f = await makeRuntimeFixture();
+    const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
+    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    writeUserSettings(f.temp.home, { autoMode: { classifier: 'guard' }, models: { aliases: { guard: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary, toolCalling: 'native' } } } });
+    const composition = runtime.createSettingsComposition({ home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
+    const created = await composition.sessionCreateSettings(f.temp.project);
+    expect(created.autoModeClassifier).toBe('guard');
+    expect(created.autoModeKey).toBeUndefined();
+  });
+
   it('reports no classifier when the user settings name none', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
@@ -192,7 +203,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     expect(await delta(() => f.composition.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.envFor(session))).toBe(1);
     expect(await delta(() => f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) }))).toBe(1);
-    expect(await delta(() => f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [] }))).toBe(0);
+    expect(await delta(() => f.toolRuntime.port.policyFor(session, { env: Object.freeze({ PLAIN: '1' }), rules: [], ruleEnforcement: 'exact-paths' }))).toBe(0);
   });
 
   it('loadSessionSettings wraps a non-ConfigError as ConfigError with cause', async () => {
@@ -265,7 +276,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project);
 
-    await f.composition.settings.appendRule(session, { effect: 'allow', rule: 'Bash(npm test)' });
+    await f.composition.settings.appendRule(session, { effect: 'allow', rule: 'Bash(npm test)' }, signalNever());
 
     const file = path.join(f.temp.home, '.momonga', 'projects', sha256Hex(fs.realpathSync.native(f.temp.project)), 'settings.local.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ permissions: { allow: ['Bash(npm test)'] } });
@@ -307,7 +318,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     const temp = await makeTempHome();
     const { store } = openStore(temp);
 
-    const error = thrownBy(() => runtime.createSettingsComposition({ home: 'relative/home', cache: makeCache(temp.home), store }));
+    const error = thrownBy(() => runtime.createSettingsComposition({ home: 'relative/home', platform: process.platform, cache: makeCache(temp.home), store }));
 
     expect(error).toBeInstanceOf(TypeError);
     expect((error as Error).message).toContain('relative/home');

@@ -1,9 +1,11 @@
 import { decodeSse } from '@momonga/foundation';
-import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { agentReadiness, isUnavailableCapabilities, readinessText, summaryTokenCapFor } from '@momonga/protocol';
+import type { ClassifiedError, ResponseError, Capabilities, ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { unavailableError } from '../../core/unavailable.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
+import { applyCredentialEffect, sendAuthorized } from '../shared/auth.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
@@ -31,9 +33,17 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   let closing: Promise<void> | undefined;
   let closed = false;
 
+  const classify = createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL, options.errorRules);
+
+  const classifyFailedEvent = (error: ResponseError): ClassifiedError => {
+    const classified = classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message));
+    return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
+  };
+
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the open-responses adapter is closed');
     const capabilities = ctx.capabilities;
+    if (isUnavailableCapabilities(capabilities)) throw unavailableError(capabilities.toolCalling);
     const readiness = agentReadiness(capabilities);
     if (readiness.state === 'no_tools' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', readinessText(readiness), 'tools');
@@ -46,6 +56,8 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
         ledger,
         jsonReply,
         carriesOutputBound: carriesResponsesOutputBound(capabilities),
+        ...(capabilities.systemRole === undefined ? {} : { systemRole: capabilities.systemRole }),
+        ...(capabilities.toolPlacement === undefined ? {} : { toolPlacement: capabilities.toolPlacement }),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       }),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
@@ -55,18 +67,24 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     let watch: ContentWatch | undefined;
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const apiKey = await options.apiKey?.(ctx.target, signal);
-      const response = await pool.clientFor(endpoint).post({
-        headers: {
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-          ...(apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` }),
-        },
-        body: JSON.stringify(body),
-        signal,
-        ...watchedPostOf(options.liveness),
-      });
-      if (response.status !== 200) throw await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
+      const auth = options.authSource(ctx.target);
+      const response = await sendAuthorized(auth, signal, (bearer) =>
+        pool.clientFor(endpoint).post({
+          headers: {
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),
+          },
+          body: JSON.stringify(body),
+          signal,
+          ...watchedPostOf(options.liveness),
+        }),
+      );
+      if (response.status !== 200) {
+        const failure = await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
+        await applyCredentialEffect(auth, classify(failure), options.clock, ctx.signal);
+        throw failure;
+      }
 
       watch = watchContent(options.liveness);
       const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watch.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) });
@@ -77,6 +95,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
           if (message.data === SSE_DONE_MARKER) break;
           for (const event of driver.accept(parseOpenResponsesEvent(message.data))) {
             ctx.signal.throwIfAborted();
+            if (event.type === 'response.failed') await applyCredentialEffect(auth, classifyFailedEvent(event.response.error), options.clock, ctx.signal);
             yield event;
           }
           if (driver.terminated) return;
@@ -106,7 +125,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
-      return { summary: collected.summary, usage };
+      return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
@@ -125,7 +144,8 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     compact,
     renderCompactWire,
     toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
-    classify: createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL),
+    classify,
+    servedAccount: (target: AdapterTarget) => options.authSource(target).resolvedAccount(),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {
       closed = true;

@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isUnixSocketLive, socketPathLimit, systemClock } from '@momonga/foundation';
-import type { ProcessLock, UdsClient } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isPipePath, isUnixSocketLive, socketBindRefusalOf, systemClock } from '@momonga/foundation';
+import type { GenerationRole, ProcessLock, UdsClient } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER } from '@momonga/protocol';
-import type { HealthResult, ManagedServerDescription } from '@momonga/protocol';
+import type { HealthResult, ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import { realTimers } from '../process-ports.ts';
 import { PreconditionFailedError, TargetNotReadyError } from '../adapters/shared/failures.ts';
 import { createExecFn, createGroupSpawn, reapStaleGroups } from './fm-processes.ts';
@@ -40,12 +40,14 @@ export type ManagedServerOptions = {
   timers?: ManagedServerTimers;
   readStopGraceMs: () => number;
   onWarning: (message: string) => void;
+  onChildStart?: (signal: AbortSignal) => Promise<void>;
   onChildExit?: () => void;
+  role?: { current(): GenerationRole };
 };
 
 export interface ManagedEndpoint {
-  kind: 'unix';
-  socketPath: string;
+  kind: ManagedEndpointForm;
+  path: string;
 }
 
 export interface ManagedServer {
@@ -191,11 +193,18 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     return undefined;
   };
 
-  const unfitSocketError = (): TargetNotReadyError | undefined => {
-    const byteLength = Buffer.byteLength(options.socketPath);
-    const limit = socketPathLimit(process.platform);
-    if (byteLength <= limit) return undefined;
-    return new TargetNotReadyError(said(`its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`));
+  const endpoint: ManagedEndpoint = { kind: isPipePath(options.socketPath) ? 'pipe' : 'unix', path: options.socketPath };
+
+  const unfitSocketError = async (): Promise<TargetNotReadyError | undefined> => {
+    if (endpoint.kind !== 'unix') return undefined;
+    await fs.promises.mkdir(path.dirname(options.socketPath), { recursive: true, mode: LOCK_DIRECTORY_MODE });
+    const refusal = await socketBindRefusalOf(options.socketPath);
+    if (refusal === undefined) return undefined;
+    return new TargetNotReadyError(
+      said(
+        `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter target name`,
+      ),
+    );
   };
 
   const occupied = (detail: string): ManagedServerError => new ManagedServerError('unhealthy', said('the server socket path is occupied'), detail);
@@ -346,7 +355,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     failure = { ok: false, reason, ...(detail === undefined ? {} : { detail }) };
   };
 
+  const restartsOnlyForCalls = (): boolean => options.role?.current() === 'retiring';
+
   const scheduleRestart = (): void => {
+    if (restartsOnlyForCalls()) {
+      state = 'idle';
+      return;
+    }
     if (consecutiveFailures >= description.restart.maxRestarts) {
       enterFailed('unhealthy', said(`the server exceeded ${description.restart.maxRestarts} restarts; the next request starts it again`));
       return;
@@ -355,6 +370,10 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     const scheduledGeneration = generation;
     restartTimer = timers.setTimeout(() => {
       restartTimer = undefined;
+      if (restartsOnlyForCalls()) {
+        if (generation === scheduledGeneration) state = 'idle';
+        return;
+      }
       const run = runRestart(scheduledGeneration);
       restartRun = run;
       void run.then(() => {
@@ -374,9 +393,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   const launchReady = async (startClient: UdsClient, signal: AbortSignal, isCurrent: () => boolean): Promise<RunningChild | undefined> => {
     const lock = await claimInstance(signal);
     let launched: RunningChild | undefined;
+    let childStartBegun = false;
     try {
       if (!isCurrent()) return undefined;
       signal.throwIfAborted();
+      childStartBegun = true;
+      await options.onChildStart?.(signal);
+      if (!isCurrent()) return undefined;
       launched = launch();
       await waitUntilReady(launched, startClient, signal);
       return launched;
@@ -384,6 +407,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       if (launched !== undefined) await terminate(launched);
       throw error;
     } finally {
+      if (childStartBegun && launched === undefined) options.onChildExit?.();
       lock.release();
     }
   };
@@ -439,7 +463,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     client = startClient;
     const isCurrent = (): boolean => generation === startGeneration;
     try {
-      const unfit = unfitSocketError();
+      const unfit = await unfitSocketError();
       if (unfit !== undefined) {
         state = 'precondition_failed';
         failure = { ok: false, reason: 'precondition_failed', detail: unfit.message };
@@ -467,7 +491,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       throw error;
     }
     state = 'running';
-    return { kind: 'unix', socketPath: options.socketPath };
+    return endpoint;
   };
 
   const begin = (signal: AbortSignal | undefined): Promise<ManagedEndpoint> => {
@@ -505,7 +529,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     start,
 
     ensureRunning(signal?: AbortSignal): Promise<ManagedEndpoint> {
-      if (state === 'running' || state === 'restarting') return Promise.resolve({ kind: 'unix', socketPath: options.socketPath });
+      if (state === 'running' || state === 'restarting') return Promise.resolve(endpoint);
       if (state === 'stopped') return Promise.reject(new ManagedServerError('not_running', said('the server was stopped'), undefined));
       return start(signal);
     },

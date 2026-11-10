@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
@@ -6,6 +6,9 @@ import type { CreateResponseBody, InputItem, PromptCacheCounts, RunEventPayload 
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const ROOT_RULE = 'Indent with tabs in this project.';
 

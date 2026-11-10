@@ -6,6 +6,8 @@ import type { SlashCommand, SlashContext } from '../src/tui/slash.ts';
 import { fakeBackend } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import { runStarted, type } from './tui-harness.tsx';
+import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { systemTiming } from '@momonga/foundation';
 
 type Background = <T>(label: string, work: (signal: AbortSignal) => Promise<T>) => Promise<T>;
 
@@ -32,15 +34,15 @@ const longCheck = () => {
 
 const startWith = async (command: SlashCommand, tasks = createBackgroundTasks()) => {
   const backend = fakeBackend();
-  const app = renderObservable(<App backend={backend} initialMode={undefined} slash={createSlashRegistry([...BUILTIN_SLASH_COMMANDS, command])} {...({ tasks } as object)} onExit={() => undefined} />);
-  await untilFrame(app, 'mode: default');
+  const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={systemTiming} initialMode={undefined} slash={createSlashRegistry([...BUILTIN_SLASH_COMMANDS, command])} {...({ tasks } as object)} onExit={() => undefined} />);
+  await untilFrame(app, 'mode: manual');
   return { backend, app, tasks };
 };
 
 const startCheck = async (app: ReturnType<typeof renderObservable>, seen: { signal?: AbortSignal }) => {
   await type(app, '/long', '> /long');
   app.stdin.write(KEYS.enter);
-  await untilFrame(app, 'esc cancels');
+  await untilFrame(app, /running long check \d+s · esc to cancel/);
   expect(seen.signal?.aborted).toBe(false);
 };
 
@@ -76,12 +78,12 @@ describe('a long client-side task in the TUI (C1)', () => {
     const { backend, app } = await startWith(command);
     await startCheck(app, seen);
     await runStarted(backend, app, 'long task');
-    await untilFrame(app, 'working (esc to cancel)');
+    await untilFrame(app, /waiting for the model \d+s · esc to cancel/);
     app.stdin.write(KEYS.escape);
     await backend.called('cancel:run-1');
     expect(seen.signal?.aborted).toBe(false);
     backend.finish({ ...(await import('./fake-backend.ts')).runView({ status: 'CANCELLED' }) });
-    await untilFrame(app, 'esc cancels');
+    await untilFrame(app, /running long check \d+s · esc to cancel/);
     app.stdin.write(KEYS.escape);
     await aborted(seen);
     app.unmount();

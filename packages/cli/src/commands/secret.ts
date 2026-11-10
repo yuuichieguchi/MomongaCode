@@ -1,6 +1,7 @@
-import { SECRET_NAME_PATTERN, currentSocketResolver } from '@momonga/foundation';
+import { CREDENTIAL_KEY_PREFIX, SECRET_NAME_PATTERN, currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
+import { withinCommandLimit } from '../command-limit.ts';
 import { probeSupervisor } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { withHiddenInput } from '../terminal/hidden-prompt.ts';
@@ -23,6 +24,7 @@ const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 
 export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: string, interrupt: AbortSignal): Promise<number> => {
   if (!NAME_SHAPE.test(name)) throw new SecretInputError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
+  if (name.startsWith(CREDENTIAL_KEY_PREFIX)) throw new SecretInputError(`secret names starting with ${CREDENTIAL_KEY_PREFIX} are reserved for the key of the encrypted credential store`);
   if (ports.terminal === undefined) throw new SecretInputError('momonga secret set reads the value from the terminal; run it in an interactive terminal');
   const value = await withHiddenInput(ports.terminal, interrupt, async (read) => {
     const entered = await read(`Value for secret ${name} (input is hidden): `);
@@ -31,8 +33,11 @@ export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: stri
     return entered;
   });
   const store = ports.secretStore();
-  await store.write(name, value, interrupt);
-  if ((await store.read(name, interrupt)) !== value) throw new SecretVerificationError(name);
+  const readBack = await withinCommandLimit(interrupt, async (signal) => {
+    await store.write(name, value, signal);
+    return store.read(name, signal);
+  });
+  if (readBack !== value) throw new SecretVerificationError(name);
   ports.stdout.write(`stored secret ${name}\n`);
   const supervisor = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
   try {

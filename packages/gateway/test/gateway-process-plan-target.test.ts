@@ -1,17 +1,43 @@
-import { describe, expect, it } from 'vitest';
-import { startGatewayProcess } from '@momonga/gateway';
-import { PROCESS_VERSION, baseEnv, makeHome, writeSettings } from './gateway-process-helpers.ts';
-import { FIRST_GENERATION } from '@momonga/foundation';
+import fs from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import { FIRST_GENERATION, createFileCredentialStore, momongaLayout } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore } from '@momonga/testkit';
+import { getJson } from './gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
-describe('a plan target before the session engine exists', () => {
-  it('stops the gateway start naming the target and the profile instead of serving it without a credential', async () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const planSettings = (account?: string) => ({
+  models: {
+    aliases: { default: 'gpt' },
+    targets: {
+      gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt', ...(account === undefined ? {} : { account }) } },
+    },
+  },
+});
+
+const targetHealth = async (home: string) => {
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore: createFakeSecretStore({}) });
+  const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
+  expect(health.status).toBe(200);
+  return health.body.targets['gpt'];
+};
+
+describe('the gateway serves a plan target through the session engine (P5a-w)', () => {
+  it('starts with a plan target and reports it sign_in_required while no account is signed in', async () => {
     const home = makeHome();
-    writeSettings(home, {
-      models: {
-        aliases: { default: 'gpt' },
-        targets: { gpt: { adapter: 'open-responses', model: 'gpt-fake', plan: { profile: 'chatgpt' } } },
-      },
-    });
-    await expect(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(/target gpt uses plan profile chatgpt/);
+    writeSettings(home, planSettings());
+    expect(await targetHealth(home)).toMatchObject({ ok: false, reason: 'sign_in_required' });
+  });
+
+  it('reads account records through the encrypted store of N81, so a plaintext record is store_unreadable, never needs_sign_in', async () => {
+    const home = makeHome();
+    writeSettings(home, planSettings('work'));
+    const sessions = momongaLayout(home).planSessions;
+    fs.mkdirSync(sessions, { recursive: true, mode: 0o700 });
+    await createFileCredentialStore(sessions).write('plan/chatgpt/work', JSON.stringify({ version: 1, profile: 'chatgpt', account: 'work', state: 'registered' }), new AbortController().signal);
+    const health = await targetHealth(home);
+    expect(health).toMatchObject({ ok: false, reason: 'store_unreadable' });
+    expect(health.detail).toContain('is not encrypted');
   });
 });

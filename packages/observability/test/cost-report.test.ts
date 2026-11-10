@@ -20,7 +20,7 @@ const recordCalls = async (runId: string, calls: readonly Call[], h: ReturnType<
     h.clock.set(call.at);
     const chat = startChatSpan(h.telemetry.tracer, { providerName: call.provider, billing: call.billing ?? 'metered', requestModel: call.model, stream: true, runId, step: index + 1, attempt: 1 }, parent);
     if (call.fail === true) recordError(chat, new Error('boom'), 'upstream_error');
-    else recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, outputTokens: call.output, ...(call.cached === undefined ? {} : { cachedInputTokens: call.cached }) } });
+    else recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: call.input, outputTokens: call.output, ...(call.cached === undefined ? {} : { cachedInputTokens: call.cached }) } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());
@@ -32,10 +32,10 @@ describe('buildCostReport', () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'acme', model: 'm1', input: 1_000_000, cached: 400_000, output: 500_000, at: AT_MARCH },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 1_000_000, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 1_000_000, at: AT_JULY },
     ], h);
-    await recordCalls('run-b', [{ provider: 'acme', model: 'm1', input: 3, output: 7, at: AT_MARCH }], h);
-    await recordCalls('run-c', [{ provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY }], h);
+    await recordCalls('run-b', [{ provider: 'acme', model: 'm1', input: 3, cached: 0, output: 7, at: AT_MARCH }], h);
+    await recordCalls('run-c', [{ provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY }], h);
 
     const report = buildCostReport(h.store, [
       { runId: 'run-a', sessionId: 'session-1' },
@@ -69,20 +69,20 @@ describe('buildCostReport', () => {
   it('counts a call without a price entry as unpriced instead of pricing it at zero', async () => {
     const h = harness();
     await recordCalls('run-a', [
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
-      { provider: 'acme', model: 'unlisted', input: 5, output: 5, at: AT_JULY },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'unlisted', input: 5, cached: 0, output: 5, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: Date.parse('2025-12-31T00:00:00Z') },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
-    expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, amount: 1, inputTokens: 2_000_005 });
-    expect(formatCostReport(report)).toContain('2 of 3 call(s) have no price entry and are not counted');
+    expect(report.total).toMatchObject({ calls: 3, unpricedCalls: 2, unpriced: { no_price_entry: 2 }, amount: 1, inputTokens: 2_000_005 });
+    expect(formatCostReport(report)).toContain('  total: 3 call(s), 2000005 input (0 cached) + 5 output tokens, not complete: no price entry in 2 call(s); priced part: 1 USD over 1 of 3 call(s)');
   });
 
   it('does not bill a failed attempt that recorded no usage', async () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'acme', model: 'm1', input: 0, output: 0, at: AT_JULY, fail: true },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 1 });
@@ -90,22 +90,26 @@ describe('buildCostReport', () => {
 
   it('reports a call with no price entry as unpriced and a run with no chat spans as empty', async () => {
     const h = harness();
-    await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY }], h);
+    await recordCalls('run-a', [{ provider: 'apple', model: 'system', input: 100, cached: 0, output: 10, at: AT_JULY }], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }, { runId: 'run-none', sessionId: 's' }], { table: definePriceTable([]) });
-    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, amount: 0, inputTokens: 100 });
-    expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, amount: 0, priceVersions: [] });
+    expect(report.runs[0]).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, inputTokens: 100 });
+    expect(report.runs[1]).toMatchObject({ calls: 0, unpricedCalls: 0, unpriced: {}, amount: 0, priceVersions: [] });
+    const text = formatCostReport(report);
+    expect(text).toContain('    run run-a: 1 call(s), 100 input (0 cached) + 10 output tokens, not complete: no price entry in 1 call(s)');
+    expect(text).toContain('    run run-none: 0 call(s), 0 input (0 cached) + 0 output tokens, no calls');
+    expect(text).not.toContain('0 USD');
   });
 
-  it('reports a call to a local target as local with no amount, not as unpriced', async () => {
+  it('reports a call to a local target as priced 0, never as unpriced, so the figure is whole', async () => {
     const h = harness();
     await recordCalls('run-a', [
       { provider: 'apple', model: 'system', input: 100, output: 10, at: AT_JULY, billing: 'local' },
-      { provider: 'acme', model: 'm1', input: 1_000_000, output: 0, at: AT_JULY },
+      { provider: 'acme', model: 'm1', input: 1_000_000, cached: 0, output: 0, at: AT_JULY },
     ], h);
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
     expect(report.total).toMatchObject({ calls: 2, localCalls: 1, unpricedCalls: 0, amount: 1, inputTokens: 1_000_100, outputTokens: 10 });
     const text = formatCostReport(report);
-    expect(text).toContain('1 of 2 call(s) ran locally and cost nothing');
+    expect(text).toContain('  total: 2 call(s), 1000100 input (0 cached in 1 of 2 call(s); cache reads not reported in 1 call(s)) + 10 output tokens, 1 USD at price version 2026-06-01');
     expect(text).not.toContain('no price entry');
   });
 
@@ -128,7 +132,7 @@ describe('buildCostReport', () => {
         { providerName: 'acme', billing: 'metered', requestModel: 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1, target: fallback ? 'secondary' : 'primary' },
         parent,
       );
-      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 10, outputTokens: 5 } });
+      recordChatResponse(chat, { finishReasons: ['stop'], usageSource: 'reported', usage: { inputTokens: 10, outputTokens: 5 } });
       if (fallback) recordFallbackCauses(chat, causes);
       chat.end(h.clock.now());
     }

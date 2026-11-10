@@ -31,25 +31,25 @@ In Momonga Code, memory and context are built by the runtime from recorded event
 
 - Memories have a kind (`fact`, `episode`, `procedure`), a scope (user or project), a state (`active`, `candidate`, `archived`, `duplicate`, `rejected`), and optional evidence: a file with its SHA-256, a commit, or a check that was run. A memory that is bound to a file is shown as stale once the file changes.
 - Memories the agent proposes wait in a review queue until you accept or reject them. Duplicates are marked, replaced notes keep a history, and active memories whose file evidence is stale, or that are bound to no file, are archived once they have not been kept or used for `memory.forgetAfterDays` (default 90).
-- With `context.adaptiveBudget` (default `false`), the share of the context budget given to memories is adjusted every 20 runs of a folder from how many injected memories were used: halved when fewer than a quarter were used, doubled when more than three quarters were used and memories had to be dropped, within 1/16 to 1/2 of the budget (starting at 1/4).
+- The share of the context budget given to memories is adjusted every 20 runs of a folder from how many injected memories were used: halved when fewer than a quarter were used, doubled when more than three quarters were used and memories had to be dropped, within 1/16 to 1/2 of the budget (starting at 1/4). On by default; turn off with `context.adaptiveBudget: false`.
 - The context for each model call is assembled under a token budget from the instruction files, rules, memories, active skills, and history. When history is compacted, the summary is checked against the material it replaces, and the agent can search and read the earlier history again with the `HistorySearch` and `HistoryRead` tools.
 - Standing rules (`momonga rule`) bind a folder or every folder. A rule given with `--deny` or `--ask` is enforced by the permission system rather than only written into the prompt.
 - `momonga context improve` samples candidate compaction guidelines, benchmarks them against the guideline in force, and writes the outcome to a file. Nothing is stored until you adopt a guideline with `momonga context guideline adopt`.
 
 ### Agent Token Efficiency Engineering
 
-Each token-saving mechanism is a setting, and `momonga eval` measures a change against a baseline before it is trusted.
+Every token-saving mechanism is on by default; each has a setting only so you can turn it off, and `momonga eval` measures it against a base with it off.
 
-- **Prompt cache.** `context.cachePrefix` keeps the leading part of each request stable between calls in a run, so a provider's prompt cache can apply. The runtime records which events may change the prefix and reports a notice when a request keeps fewer leading items than those events allow.
-- **Tool deferral.** `tools.deferral` replaces the definitions of tools that were offered in each of the last 20 runs of a folder and called in none of them (nothing is deferred before a folder has 20 runs) with a one-line catalog and a `LoadTools` tool. A tool's full definition is sent only after the model loads it.
-- **Concise tool descriptions.** `tools.conciseDescriptions`.
-- **Output formatters.** `context.outputFormatters` takes any of `log`, `json`, `grep`, `identicalOutput` to shrink tool output before it enters the context.
-- **Loop guidance.** `context.loopGuidance` warns the model, with the repeated call and the commands that failed, before a run that repeats the same call is stopped.
-- **Observed capacity.** `context.observedCapacity`.
+- **Prompt cache.** On by default; turn off with `context.cachePrefix: false`. It keeps the leading part of each request stable between calls in a run, so a provider's prompt cache can apply. The runtime records which events may change the prefix and reports a notice when a request keeps fewer leading items than those events allow.
+- **Tool deferral.** On by default; turn off with `tools.deferral: false`. It replaces the definitions of tools that were offered in each of the last 20 runs of a folder and called in none of them (nothing is deferred before a folder has 20 runs) with a one-line catalog and a `LoadTools` tool. A tool's full definition is sent only after the model loads it.
+- **Concise tool descriptions.** On by default; turn off with `tools.conciseDescriptions: false`.
+- **Output formatters.** On by default with every formatter (`log`, `json`, `grep`, `identicalOutput`) shrinking tool output before it enters the context; turn some off by listing the rest in `context.outputFormatters`, or all with `[]`.
+- **Loop guidance.** On by default; turn off with `context.loopGuidance: false`. It warns the model, with the repeated call and the commands that failed, before a run that repeats the same call is stopped.
+- **Observed capacity.** On by default; turn off with `context.observedCapacity: false`.
 - **Cost visibility.** `momonga cost --breakdown` shows what the requests were made of, the billed tokens by kind, the cache hit ratio, the timing, and the cost.
-- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges a token policy against a baseline report.
+- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges the defaults against a base report built with `--settings packages/eval/policies/core-off.json` (every core feature off).
 
-All of these settings are off by default (see Configuration).
+All of these settings are on by default; each is turned off key by key (see Configuration).
 
 ## 3. Getting Started
 
@@ -82,7 +82,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Targets for Apple's `fm`, chat-completions servers, Open Responses servers, Anthropic, and Ollama. An alias names one target or an ordered list of targets. `momonga gateway probe <target>` measures a target's capabilities and records the result.
 - **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background jobs), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), and `activate_skill`.
-- **Permission modes.** `default`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
+- **Permission modes.** `manual`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
 - **Policy verification.** `momonga policy verify` checks the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not.
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
@@ -104,7 +104,7 @@ momonga [options] [prompt]
 | --- | --- |
 | `-p, --print <prompt>` | Run the prompt without a terminal UI and print the result |
 | `--output-format <format>` | `text`, `json`, or `stream-json` (for `--print` and `attach`) |
-| `--permission-mode <mode>` | `default`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
+| `--permission-mode <mode>` | `manual`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
 | `--model <alias>` | The model alias of the session |
 | `--dangerously-skip-permissions` | Run in `bypassPermissions` mode |
 | `--skill <name>` | Run the prompt with this skill activated |
@@ -134,15 +134,15 @@ Commands:
 | `secret set <name>` | Store a secret in the platform secret store; the value is read from the terminal |
 | `context improve`, `context guideline` | Improve and manage the compaction guideline |
 | `eval <dataset>`, `eval context <dataset>`, `eval compare <baseline> <candidate>` | Run and compare golden datasets and context reports (`--gate context\|token`) |
-| `daemon start\|status\|stop` | Manage the background daemon |
+| `daemon start\|status\|stop` | Start the daemon (or a new one beside it when this program is newer), list the running generations, stop all of them |
 | `acp` | Agent Client Protocol on standard input and output |
 | `update [--check]` | Update the executable |
 
 Run `momonga <command> --help` for the options of each command.
 
-`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists. If the daemon was running, both `momonga update` and the automatic update restart it on the new version: each run finishes its current step, then continues in the new daemon. A session opened before the update is told that momonga was updated and to reopen it. If the restart fails, the new version stays installed and the message says what to run.
+`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists. An update never interrupts running work. If the daemon was running, both `momonga update` and the automatic update start a daemon of the new version beside it. The new one serves every new request at once. The old one accepts no new work, finishes the steps and background jobs it already runs, and then ends by itself; `momonga daemon status` lists it as retiring until then. A session opened before the update keeps working on the old daemon while that daemon lives, and is then told that momonga was updated and to reopen it. If the new daemon does not start, the new version stays installed, the old daemon keeps running, and the message says what to run. `momonga daemon stop` is the only command that interrupts running work: it stops every running daemon, and it first prints how many running steps and background jobs it interrupts.
 
-A release build also checks for updates in the background, at most once every 24 hours. When it starts a command other than `update` and the internal ones, it runs the check in a detached process and, if a newer release exists, installs it on its own. The installation verifies the release's signed checksum list, the executable's sha256 and, where the build pins an Apple Team ID, its Developer ID signature, and it runs the new executable with `--version` before it replaces the file. If the check or the installation fails, nothing is replaced. Once the new executable is in place, a running daemon is restarted on it as described above, and a session that was already open keeps the old one until it is reopened. Before a later command runs, `momonga` prints a one-line notice once (on standard error, or in the interactive session's notices) that the update was installed or that the check failed. Set `"autoUpdates": false` in the user settings to turn the background check and its notices off; it is read only from user settings. A build run from source never updates itself.
+A release build also checks for updates in the background, at most once every 24 hours. When it starts a command other than `update` and the internal ones, it runs the check in a detached process and, if a newer release exists, installs it on its own. The installation verifies the release's signed checksum list, the executable's sha256 and, where the build pins an Apple Team ID, its Developer ID signature, and it runs the new executable with `--version` before it replaces the file. If the check or the installation fails, nothing is replaced. Once the new executable is in place, a daemon of the new version is started beside a running one as described above, and a session that was already open keeps the old one until that daemon ends. Before a later command runs, `momonga` prints a one-line notice once (on standard error, or in the interactive session's notices) that the update was installed or that the check failed. Set `"autoUpdates": false` in the user settings to turn the background check and its notices off; it is read only from user settings. A build run from source never updates itself.
 
 Inside the interactive session, slash commands include `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/rule`, `/memory`, `/auto-mode`, and `/cost`, `/status`, `/jobs`, `/trace`, `/mcp`, `/context`, `/policy`, `/models`, `/gateway`, which run the command of the same name. `/help` lists the rest.
 
@@ -198,7 +198,7 @@ Example:
     "billingChanges": [{ "from": "metered", "to": "local", "alias": "cloud" }]
   },
   "permissions": {
-    "defaultMode": "default",
+    "defaultMode": "manual",
     "allow": ["Bash(npm test:*)"],
     "deny": ["Bash(rm:*)"]
   }
@@ -235,13 +235,15 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 | `mcpServers` | User MCP servers (`stdio` with `command`, `args`, `env`, `cwd`; or `http` with `url`, `headers`, `oauth`) |
 | `enabledMcpjsonServers`, `disabledMcpjsonServers`, `enableAllProjectMcpServers` | Which servers of a project `.mcp.json` are used |
 | `autoMode.classifier` | The alias that judges approvals in auto mode |
-| `memory.reflection.enabled` (default `false`), `memory.reflection.maxTokens` | Let the agent propose memories after a run |
+| `memory.reflection.enabled`, `memory.reflection.maxTokens` | Let the agent propose memories after a verified run. On by default; turn off with `memory.reflection.enabled: false` |
 | `memory.forgetAfterDays` | Default 90 |
-| `memory.repositoryFacts` (default `false`) | Propose a procedure memory from a verification command that passed in a verified run |
+| `memory.repositoryFacts` | Propose a procedure memory from a verification command that passed in a verified run. On by default; turn off with `false` |
 | `verification.commands`, `verification.manifests` | Commands (default `npm test`, `pnpm test`, `yarn test`, `cargo test`, `pytest`, `go test ./...`, `swift test`, `make test`) and manifest files that count as verification |
-| `context.adaptiveBudget` (default `false`) | Adjust the memory share of the context budget (see section 2) |
-| `context.cachePrefix`, `context.outputFormatters`, `context.loopGuidance`, `context.observedCapacity` | Token settings (see section 2). All off by default |
-| `tools.deferral`, `tools.conciseDescriptions` | Token settings (see section 2). Both off by default |
+| `context.adaptiveBudget` | Adjust the memory share of the context budget (see section 2). On by default; turn off with `false` |
+| `context.autoCompact` | Compact the conversation automatically when it nears the context window. On by default; turn off with `false` |
+| `context.unboundedOutputReserve` | Reserve room for the largest declared output when a target bounds no output. On by default; turn off with `false` |
+| `context.cachePrefix`, `context.outputFormatters`, `context.loopGuidance`, `context.observedCapacity` | Token settings (see section 2). On by default; turn off with `false` (`[]` for `context.outputFormatters`) |
+| `tools.deferral`, `tools.conciseDescriptions` | Token settings (see section 2). On by default; turn off with `false` |
 | `pricing` | Per-million-token prices by provider and model, for `momonga cost` |
 | `telemetry.otlp.endpoint`, `telemetry.otlp.headers`, `telemetry.captureMessageContent`, `telemetry.contentRetentionDays` | OTLP export. Retention default 30 days |
 | `autoUpdates` | Boolean |
@@ -278,7 +280,7 @@ The installers change your PATH only when the install directory is missing from 
 Momonga Code is an npm workspace of packages under `packages/`. The `momonga` command is a client; the work is done by background processes.
 
 - **Client.** `packages/cli` (command line, terminal UI, ACP server). It starts and talks to the daemon.
-- **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime, and restarts them when relevant settings change.
+- **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime. Each start of the daemon is a generation with its own supervisor; a newer generation takes over new work while an older one finishes what it runs and ends by itself. A settings change applies in place: each child reads the settings per operation, and no child is restarted for it.
 - **Runtime.** `packages/runtime` runs sessions, runs, and the model and tool loop. It builds each request with `packages/context`, applies `packages/policy` to tool calls, executes tools from `packages/tools` inside `packages/sandbox`, and records everything in `packages/store`.
 - **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for `fm`, chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing.
 - **Store.** `packages/store` holds runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`.

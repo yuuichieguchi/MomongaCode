@@ -24,6 +24,7 @@ import {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
+import { resolveStartTiming, supervisorStartBoundMs } from '@momonga/supervisor';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
@@ -121,24 +122,23 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
     const phaseOne = runtimeCloseOf(arith, drainTimeout);
     const reapGrace = constant(arith, ORPHAN_REAP_GRACE_MS);
     const startup = constant(arith, STARTUP_TIMEOUT_MS);
-    const required = phaseOne.add(reapGrace).add(startup);
-    return { arith, drainTimeout, phaseOne, reapGrace, startup, required };
+    const readyBound = constant(arith, supervisorStartBoundMs(resolveStartTiming({})));
+    const withPredecessorWait = phaseOne.add(reapGrace).add(startup);
+    return { arith, drainTimeout, phaseOne, startup, readyBound, withPredecessorWait };
   };
 
-  it('S3 proves daemonReadyBoundMs(d) >= phaseOne(d) + ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS for every d >= 0 when the bound is that sum', async () => {
-    const { arith, required } = clientBoundArith('S3');
-    expect(await prove(arith, required.ge(required))).toEqual({ status: 'proved' });
+  it('S3 proves the ready bound of a start is STARTUP_TIMEOUT_MS for every drain timeout: a start waits for no previous daemon', async () => {
+    const { arith, startup, readyBound } = clientBoundArith('S3');
+    expect(await prove(arith, readyBound.eq(startup))).toEqual({ status: 'proved' });
+    expect(supervisorStartBoundMs(resolveStartTiming({ runtime: { drainTimeoutMs: 600_000 } }))).toBe(STARTUP_TIMEOUT_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('S3w refutes the same inequality for today\'s formula ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS, with a counter-example for every d >= 0', async () => {
-    const { arith, drainTimeout, phaseOne, reapGrace, startup, required } = clientBoundArith('S3w');
-    const today = reapGrace.add(startup);
-    const model = await expectRefuted(arith, today.ge(required));
+  it('S3w refutes that bound for a start that waited for a previous daemon to close, with a counter-example for every d >= 0', async () => {
+    const { arith, drainTimeout, phaseOne, readyBound, withPredecessorWait } = clientBoundArith('S3w');
+    const model = await expectRefuted(arith, readyBound.ge(withPredecessorWait));
     expect(BigInt(model.drainTimeoutMs as string)).toBeGreaterThanOrEqual(0n);
-    expect(await prove(arith, today.lt(required))).toEqual({ status: 'proved' });
-    expect(await prove(arith, required.sub(today).eq(phaseOne))).toEqual({ status: 'proved' });
+    expect(await prove(arith, readyBound.lt(withPredecessorWait))).toEqual({ status: 'proved' });
     expect(await prove(arith, phaseOne.ge(drainTimeout.add(15_000)))).toEqual({ status: 'proved' });
-    expect(ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS).toBeLessThan(runtimeMaxCloseMs(0) + ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });
 

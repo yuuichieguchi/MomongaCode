@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { canonicalJson } from '@momonga/foundation';
 import {
   CONTEXT_DATASET_FORMAT,
   CONTEXT_REPORT_FORMAT,
@@ -10,10 +11,12 @@ import {
   parseContextDataset,
   parseContextReport,
   parsePolicyOverlay,
+  resolvePolicyOverlay,
 } from '@momonga/eval';
 import type { PolicyOverlay, Transcript } from '@momonga/eval';
 import { contextCase, recorded } from './context-fixtures.ts';
 import { buildReportAs } from './answered-fixtures.ts';
+import { RESOLVED_OFF_POLICY, RESOLVED_ON_POLICY } from './fixtures.ts';
 
 const SCENARIOS = ['a', 'b'] as const;
 
@@ -31,8 +34,8 @@ const transcripts: Transcript[] = SCENARIOS.flatMap((scenario) => [recorded(`${s
 const MAIN_CODE = 'a'.repeat(64);
 const HEAD_CODE = 'b'.repeat(64);
 
-const reportWith = (policy: PolicyOverlay = {}, codeDigest = MAIN_CODE) =>
-  buildReportAs({ dataset, transcripts: transcripts.map((transcript) => ({ ...transcript, policy, codeDigest })), model: 'real', seed: 1 });
+const reportWith = (policy: unknown = RESOLVED_ON_POLICY, codeDigest = MAIN_CODE) =>
+  buildReportAs({ dataset, transcripts: transcripts.map((transcript) => ({ ...transcript, policy: policy as PolicyOverlay, codeDigest })), model: 'real', seed: 1 });
 
 const EVERY_KEY: PolicyOverlay = {
   context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true },
@@ -41,11 +44,8 @@ const EVERY_KEY: PolicyOverlay = {
 };
 
 describe('parsePolicyOverlay', () => {
-  it('accepts every token key', () => {
-    expect(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toEqual({
-      ...EVERY_KEY,
-      context: { ...EVERY_KEY.context, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] },
-    });
+  it('accepts every token key and resolves the formatters sorted', () => {
+    expect(resolvePolicyOverlay(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json'))).toEqual(RESOLVED_ON_POLICY);
   });
 
   it('accepts an empty overlay', () => {
@@ -53,7 +53,6 @@ describe('parsePolicyOverlay', () => {
   });
 
   it.each([
-    ['a context key outside the token design', { context: { autoCompact: false } }],
     ['a memory key outside the token design', { memory: { forgetAfterDays: 3 } }],
     ['a section outside the token design', { models: { aliases: {} } }],
     ['an unknown tools key', { tools: { lazy: true } }],
@@ -93,22 +92,20 @@ describe('caseSettingsFor with a policy', () => {
   });
 });
 
-describe('the policy recorded in a context report', () => {
-  it('records the overlay as policy', () => {
-    expect(reportWith({ context: { cachePrefix: true } }).policy).toEqual({ context: { cachePrefix: true } });
-  });
+const CACHE_PREFIX_OFF = { ...RESOLVED_ON_POLICY, context: { ...RESOLVED_ON_POLICY.context, cachePrefix: false } };
 
-  it('records an empty policy when no overlay was given', () => {
-    expect(reportWith().policy).toEqual({});
+describe('the policy recorded in a context report', () => {
+  it('records the resolved policy of its transcripts', () => {
+    expect(reportWith(CACHE_PREFIX_OFF).policy).toEqual(CACHE_PREFIX_OFF);
   });
 
   it('round-trips through the stored report', () => {
-    const report = reportWith(EVERY_KEY);
+    const report = reportWith(RESOLVED_OFF_POLICY);
     expect(parseContextReport(encodeContextReport(report), 'r.json')).toEqual(report);
   });
 
-  it('refuses a stored report whose policy holds a key outside the token design', () => {
-    const report = { ...reportWith(), policy: { context: { autoCompact: false } } };
+  it('refuses a stored report whose policy holds a key outside the core list', () => {
+    const report = { ...reportWith(), policy: { ...RESOLVED_ON_POLICY, context: { ...RESOLVED_ON_POLICY.context, lazyPrefix: false } } };
     expect(() => parseContextReport(JSON.stringify(report), 'r.json')).toThrow(/not a context report/);
   });
 
@@ -133,32 +130,26 @@ describe('the code digest recorded in a context report', () => {
 });
 
 describe('compare --gate token, the policies and the code digests', () => {
-  it('refuses two reports with the same policy on the same code', () => {
-    const policy = { context: { cachePrefix: true } };
-    expect(() => compareContextReports(reportWith(policy), reportWith(policy), { seed: 1, gate: 'token' })).toThrow(EvalError);
+  it('refuses two reports with the same resolved policy on the same code', () => {
+    expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(EvalError);
     expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical policy and an identical code digest/);
   });
 
-  it('treats policies that differ only in key order as identical', () => {
-    const left = { context: { cachePrefix: true, loopGuidance: true }, tools: { deferral: true } };
-    const right = { tools: { deferral: true }, context: { loopGuidance: true, cachePrefix: true } };
-    expect(() => compareContextReports(reportWith(left), reportWith(right), { seed: 1, gate: 'token' })).toThrow(/identical/);
-  });
-
   it('accepts the same policy on different code, the main-versus-head gate', () => {
-    expect(() => compareContextReports(reportWith({}, MAIN_CODE), reportWith({}, HEAD_CODE), { seed: 1, gate: 'token' })).not.toThrow();
+    expect(() => compareContextReports(reportWith(RESOLVED_ON_POLICY, MAIN_CODE), reportWith(RESOLVED_ON_POLICY, HEAD_CODE), { seed: 1, gate: 'token' })).not.toThrow();
   });
 
-  it('accepts different policies on the same code', () => {
-    expect(() => compareContextReports(reportWith({}), reportWith({ context: { cachePrefix: true } }), { seed: 1, gate: 'token' })).not.toThrow();
+  it('accepts different policies on the same code, which were equal under the old defaults', () => {
+    expect(() => compareContextReports(reportWith(RESOLVED_OFF_POLICY), reportWith(RESOLVED_ON_POLICY), { seed: 1, gate: 'token' })).not.toThrow();
   });
 
-  it('prints both policies and both code digests', () => {
-    const text = formatContextComparison(compareContextReports(reportWith({}, MAIN_CODE), reportWith({ context: { cachePrefix: true } }, HEAD_CODE), { seed: 1, gate: 'token' }));
-    expect(text).toContain('baseline policy: {}');
-    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+  it('prints both resolved policies and both code digests', () => {
+    const text = formatContextComparison(compareContextReports(reportWith(CACHE_PREFIX_OFF, MAIN_CODE), reportWith(RESOLVED_ON_POLICY, HEAD_CODE), { seed: 1, gate: 'token' }));
+    expect(text).toContain(`baseline policy: ${canonicalJson(CACHE_PREFIX_OFF)}`);
+    expect(text).toContain(`candidate policy: ${canonicalJson(RESOLVED_ON_POLICY)}`);
     expect(text).toContain(`baseline codeDigest: ${MAIN_CODE}`);
     expect(text).toContain(`candidate codeDigest: ${HEAD_CODE}`);
+    expect(text).toContain('policy differs in: context.cachePrefix');
   });
 
   it('still compares identical policies on identical code under the context gate, which judges guidelines', () => {
@@ -166,79 +157,36 @@ describe('compare --gate token, the policies and the code digests', () => {
   });
 });
 
-describe('policies are compared by their effect', () => {
-  it('refuses an empty overlay against one that sets deferral to its default false, on the same code', () => {
-    expect(() => compareContextReports(reportWith({}), reportWith({ tools: { deferral: false } }), { seed: 1, gate: 'token' })).toThrow(/identical/);
-  });
-
-  it('refuses an empty overlay against one that sets every key to its default, on the same code', () => {
-    const allDefaults: PolicyOverlay = {
-      context: { cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false },
-      tools: { deferral: false, conciseDescriptions: false },
-      memory: { repositoryFacts: false },
-    };
-    expect(() => compareContextReports(reportWith({}), reportWith(allDefaults), { seed: 1, gate: 'token' })).toThrow(/identical/);
-  });
-
-  it('refuses two overlays whose formatters differ only in order, on the same code', () => {
-    const left: PolicyOverlay = { context: { outputFormatters: ['log', 'json'] } };
-    const right: PolicyOverlay = { context: { outputFormatters: ['json', 'log'] } };
-    expect(() => compareContextReports(reportWith(left), reportWith(right), { seed: 1, gate: 'token' })).toThrow(/identical/);
-  });
-
-  it('still accepts an overlay that turns a key on against one that leaves it at its default', () => {
-    expect(() => compareContextReports(reportWith({ tools: { deferral: false } }), reportWith({ tools: { deferral: true } }), { seed: 1, gate: 'token' })).not.toThrow();
-  });
-
-  it('records the same policy in a report for an empty overlay and for an overlay of defaults', () => {
-    expect(reportWith({ tools: { deferral: false }, context: { outputFormatters: [] } }).policy).toEqual(reportWith({}).policy);
-  });
-
-  it('records the same policy in a report for formatters given in either order', () => {
-    expect(reportWith({ context: { outputFormatters: ['json', 'log'] } }).policy).toEqual(reportWith({ context: { outputFormatters: ['log', 'json'] } }).policy);
-  });
-
-  it('builds one report from transcripts whose overlays differ only by defaults', () => {
-    const mixed = transcripts.map((transcript, index) => ({ ...transcript, policy: index === 0 ? {} : { tools: { deferral: false } }, codeDigest: MAIN_CODE }));
-    expect(() => buildReportAs({ dataset, transcripts: mixed, model: 'real', seed: 1 })).not.toThrow();
-  });
-});
-
 describe('the context report format', () => {
-  it('is version 4, which records the policy, the code digest and what answered', () => {
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/4');
-    expect(reportWith().format).toBe('momonga-eval-context-report/4');
+  it('is version 7, which records the resolved policy', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
+    expect(reportWith().format).toBe('momonga-eval-context-report/7');
   });
 
-  it('refuses a version 1 report, naming the retired format, the required one and the file, not a schema path', () => {
+  it('refuses a version 1 report as retired, naming the formats, the file and the base and candidate commands of the gate', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/4/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*retired.*momonga-eval-context-report\/7/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/policy .*recorded relative to the old defaults/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(
+      /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
+    );
   });
 
-  it('says a version 1 report is retired and names the off-against-on pair that produces a version 4 base', () => {
-    const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
-    const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/retired/);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval context .*--report/);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/--settings/);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval compare .*--gate token/);
-  });
-
-  it('writes version 4 today, with the policy and the code digest of the runs', () => {
-    const stored = JSON.parse(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE))) as Record<string, unknown>;
-    expect(stored['format']).toBe('momonga-eval-context-report/4');
-    expect(stored['policy']).toEqual({ context: { cachePrefix: true } });
+  it('writes version 7 today, with the resolved policy and the code digest of the runs', () => {
+    const stored = JSON.parse(encodeContextReport(reportWith(CACHE_PREFIX_OFF, HEAD_CODE))) as Record<string, unknown>;
+    expect(stored['format']).toBe('momonga-eval-context-report/7');
+    expect(stored['policy']).toEqual(CACHE_PREFIX_OFF);
     expect(stored['codeDigest']).toBe(HEAD_CODE);
   });
 });
 
-describe('the token gate base: one head, the policy off against on', () => {
-  it('accepts the defaults against a policy turned on, from the same code digest', () => {
-    const base = parseContextReport(encodeContextReport(reportWith({}, HEAD_CODE)), 'base.json');
-    const head = parseContextReport(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE)), 'head.json');
+describe('the token gate base: one head, the feature off against the defaults', () => {
+  it('accepts the all-off base against the defaults, from the same code digest', () => {
+    const base = parseContextReport(encodeContextReport(reportWith(RESOLVED_OFF_POLICY, HEAD_CODE)), 'base.json');
+    const head = parseContextReport(encodeContextReport(reportWith(RESOLVED_ON_POLICY, HEAD_CODE)), 'head.json');
     expect(() => compareContextReports(base, head, { seed: 1, gate: 'token' })).not.toThrow();
   });
 });

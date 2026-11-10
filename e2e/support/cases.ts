@@ -35,7 +35,8 @@ export type E2eCaseFile =
   | 'hooks-auto-cli.test.ts'
   | 'token-anatomy.test.ts'
   | 'roles.test.ts'
-  | 'first-run.test.ts';
+  | 'first-run.test.ts'
+  | 'core-on-defaults.test.ts';
 
 export const E2E_CASES = [
   { id: 'b1-join', file: 'b1-model-call.test.ts', title: 'b1 join: restarted runtime joins the in-flight upstream call', needsBash: false },
@@ -60,19 +61,19 @@ export const E2E_CASES = [
   { id: 'mcp-remote-modern', file: 'mcp-remote.test.ts', title: 'mcp remote: a run calls tools of a 2026-07-28 streamable HTTP server, including a multi round-trip tool', needsBash: false },
   { id: 'mcp-remote-legacy', file: 'mcp-remote.test.ts', title: 'mcp remote: a run calls a tool of a 2025-11-25 streamable HTTP server over a session', needsBash: false },
   { id: 's1', file: 'supervisor.test.ts', title: 'S1 supervisor SIGKILL: children close themselves, observably', needsBash: false },
-  { id: 's1b', file: 'supervisor.test.ts', title: 'S1b wedged orphan is reaped by the next supervisor, observably', needsBash: false },
-  { id: 's1c-phase1', file: 'supervisor.test.ts', title: 'S1c shutdown during the reap is bounded and spawns nothing', needsBash: false },
+  { id: 's1b', file: 'supervisor.test.ts', title: 'S1b a wedged orphan of a dead generation is reaped in the background by the next generation, which starts without waiting for it', needsBash: false },
+  { id: 's1c-phase1', file: 'supervisor.test.ts', title: 'S1c shutdown while the reap waits for the orphan is bounded and leaves the orphan alone', needsBash: false },
   { id: 's1c-phase2', file: 'supervisor.test.ts', title: 'S1c shutdown during phase 2 of the reap aborts the reap', needsBash: false },
-  { id: 's2', file: 'supervisor.test.ts', title: 'S2 sandbox change restarts only the runtime', needsBash: true },
-  { id: 's3', file: 'supervisor.test.ts', title: 'S3 models change restarts the gateway and the runtime', needsBash: false },
-  { id: 's4', file: 'supervisor.test.ts', title: 'S4 irrelevant change restarts nothing', needsBash: false },
+  { id: 's2', file: 'supervisor.test.ts', title: 'S2 a sandbox change applies in place: the runtime takes the new kind with no restart', needsBash: true },
+  { id: 's3', file: 'supervisor.test.ts', title: 'S3 a models change applies in place: no daemon is restarted', needsBash: false },
+  { id: 's4', file: 'supervisor.test.ts', title: 'S4 a permissions change applies in place: no daemon is restarted', needsBash: false },
   { id: 's5', file: 'supervisor.test.ts', title: 'S5 exit 78 holds, a settings fix starts', needsBash: false },
   { id: 's5b', file: 'supervisor.test.ts', title: 'S5b held-config recovers from an environmental cause', needsBash: true },
   { id: 's6', file: 'supervisor.test.ts', title: 'S6 invalid settings at start: nothing is spawned', needsBash: false },
   { id: 's7', file: 'supervisor.test.ts', title: 'S7 exit 75 is not a loop', needsBash: false },
   { id: 's8', file: 'supervisor.test.ts', title: 'S8 ghost lock is taken over', needsBash: false },
   { id: 's9', file: 'supervisor.test.ts', title: 'S9 graceful shutdown order', needsBash: false },
-  { id: 's10', file: 'supervisor.test.ts', title: 'S10 two supervisors', needsBash: false },
+  { id: 's10', file: 'supervisor.test.ts', title: 'S10 a second supervisor for a generation that is held abandons its start and disturbs nothing', needsBash: false },
   { id: 'logs-layout', file: 'logs.test.ts', title: 'logs layout', needsBash: false },
   { id: 'logs-raw-output', file: 'logs.test.ts', title: 'raw child output goes to supervisor.log only', needsBash: false },
   { id: 'd-reject-once', file: 'd-approvals.test.ts', title: 'd: reject_once returns the rejection to the model; an unoffered option is 400 and a second resolve is 409', needsBash: false },
@@ -86,7 +87,7 @@ export const E2E_CASES = [
   { id: 'a-constrained-tool-room', file: 'a-compaction.test.ts', title: 'a: constrained tool calling with every tool is offered only the tools that leave room and the run completes', needsBash: false },
   { id: 'g-skills', file: 'skills.test.ts', title: 'g: a skill in .agents/skills appears in the catalog, the model activates it and its body stays in context across a compaction', needsBash: false },
   { id: 'g-skills-explicit', file: 'skills.test.ts', title: 'g: the Run API lists the skills of a session and a run started with a skill has it active before the first model call', needsBash: false },
-  { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in default mode and the rest of ~/.momonga stays denied', needsBash: false },
+  { id: 'g-skills-resources', file: 'skills.test.ts', title: 'g: bundled resources of a user skill are read without approval in manual mode and the rest of ~/.momonga stays denied', needsBash: false },
   { id: 'g-skills-bash-resource', file: 'skills.test.ts', title: 'g: under seatbelt a Bash command reads a resource of a user skill while the rest of ~/.momonga stays denied', needsBash: true },
   { id: 'g-skills-untrusted', file: 'skills.test.ts', title: 'g: an untrusted folder offers no project skills', needsBash: false },
   { id: 'eval-starter', file: 'eval-runner.test.ts', title: 'eval: momonga eval runs the starter dataset through the daemon against the fake upstream, records transcripts and replays them to the same report', needsBash: false },
@@ -102,14 +103,15 @@ export const E2E_CASES = [
   { id: 'providers-missing-secret', file: 'providers.test.ts', title: 'providers: a run fails with secret_unavailable when the stored secret is missing and the upstream is never called', needsBash: false },
   { id: 'cli-print', file: 'cli.test.ts', title: 'cli: momonga -p completes a Glob, Read and Edit task through an autostarted daemon and the file changes', needsBash: false },
   { id: 'cli-formats', file: 'cli.test.ts', title: 'cli: --output-format json prints one result object and stream-json prints init, every run event and the result', needsBash: false },
-  { id: 'cli-approve', file: 'cli.test.ts', title: 'cli: a -p run in default mode waits for approval, momonga approve lists and resolves it, and the edit lands', needsBash: false },
+  { id: 'cli-approve', file: 'cli.test.ts', title: 'cli: a -p run in manual mode waits for approval, momonga approve lists and resolves it, and the edit lands', needsBash: false },
   { id: 'cli-child-approval', file: 'cli.test.ts', title: 'cli: a -p run whose subagent asks for approval prints the request, momonga approve and momonga status show it under the child run, and resolving it lets both runs finish', needsBash: false },
   { id: 'cli-cancel', file: 'cli.test.ts', title: 'cli: momonga cancel ends a running -p run as CANCELLED', needsBash: false },
   { id: 'cli-attach', file: 'cli.test.ts', title: 'cli: attach replays a finished run, --after skips what was seen, and trace summarises it', needsBash: false },
   { id: 'cli-daemon', file: 'cli.test.ts', title: 'cli: daemon status and stop, and the next command autostarts a single daemon again', needsBash: false },
-  { id: 'cli-version-restart', file: 'cli.test.ts', title: 'cli: an idle daemon of an older version is drained and replaced before a run is started', needsBash: false },
-  { id: 'cli-older-daemon-active-run', file: 'cli.test.ts', title: 'cli: a newer client drains an older daemon that has an active run and replaces it, and the run completes in the new daemon', needsBash: false },
-  { id: 'cli-newer-daemon', file: 'cli.test.ts', title: 'cli: an older client never replaces a newer daemon and never uses it: it fails naming both versions and tells the person to update or restart the CLI', needsBash: false },
+  { id: 'cli-version-restart', file: 'cli.test.ts', title: 'cli: a newer client starts its generation beside an idle daemon of an older version, which retires and ends by itself', needsBash: false },
+  { id: 'cli-older-daemon-active-run', file: 'cli.test.ts', title: 'cli: a newer client starts its generation beside an older daemon that has an active run, never waits for it, and the run completes in the old generation with one upstream call', needsBash: false },
+  { id: 'cli-newer-daemon', file: 'cli.test.ts', title: 'cli: an older client never replaces a newer daemon and never uses it: its session is told that momonga was updated and to reopen it', needsBash: false },
+  { id: 'cli-stop-generations', file: 'cli.test.ts', title: 'cli: daemon stop with two generations alive stops both and returns when both are gone', needsBash: false },
   { id: 'cli-long-home', file: 'cli.test.ts', title: 'cli: --version works under a home too long for a socket path, and other commands report the typed cause instead of a stack trace', needsBash: false },
   { id: 'cli-reconnect', file: 'cli.test.ts', title: 'cli: a runtime killed mid-run drops the event stream and the CLI resumes it with Last-Event-ID without a gap or a duplicate', needsBash: false },
   { id: 'cli-env', file: 'cli.test.ts', title: 'cli: the environment snapshot sent at session creation carries no credentials', needsBash: false },
@@ -164,7 +166,7 @@ export const E2E_CASES = [
   { id: 'cli-elicit-pty', file: 'product-pty.test.ts', title: 'cli pty: an MCP form is filled and validated in the terminal, and a url request shows the full URL and opens it only after consent', needsBash: false },
   { id: 'acp-daemon-restart', file: 'acp.test.ts', title: 'acp: session/new starts the daemon again after it was stopped while the connection stayed open', needsBash: false },
   { id: 'acp-edit-task', file: 'acp.test.ts', title: 'acp: a prompt that globs, reads and edits a file streams tool calls with their kinds, a diff and a usage update while stdout carries protocol frames only', needsBash: false },
-  { id: 'acp-permission', file: 'acp.test.ts', title: 'acp: in default mode the edit asks the client with the four options; allow_once applies it and reject_once leaves the file and tells the model', needsBash: false },
+  { id: 'acp-permission', file: 'acp.test.ts', title: 'acp: in manual mode the edit asks the client with the four options; allow_once applies it and reject_once leaves the file and tells the model', needsBash: false },
   { id: 'acp-child-permission', file: 'acp.test.ts', title: 'acp: an approval raised inside a subagent run reaches the client as session/request_permission, and the parent turn ends after it is answered', needsBash: false },
   { id: 'acp-cancel', file: 'acp.test.ts', title: 'acp: session/cancel ends a streaming prompt with the cancelled stop reason', needsBash: false },
   { id: 'acp-mode', file: 'acp.test.ts', title: 'acp: session/set_mode changes the permission mode of the Run API session and announces it, and a mode the session may not use is refused', needsBash: false },
@@ -184,6 +186,8 @@ export const E2E_CASES = [
   { id: 'inject-faults', file: 'inject.test.ts', title: 'holds the ten faults of section 4.3, each in its own scenario, and only the out-of-disk fault needs the Linux container', needsBash: false },
   { id: 'inject-p9', file: 'inject.test.ts', title: 'P9: in every scenario that can run on this host, every effect key is witnessed at most once', needsBash: false },
   { id: 'inject-not-run', file: 'inject.test.ts', title: 'reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', needsBash: false },
+  { id: 'core-on-token-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no core setting declared, the first run pins every token key on and its request offers the concise tool descriptions', needsBash: false },
+  { id: 'core-on-memory-defaults', file: 'core-on-defaults.test.ts', title: 'core on: with no memory setting declared, a verified run in a trusted folder is reflected on and its candidate waits for review', needsBash: false },
 ] as const satisfies readonly { id: string; file: E2eCaseFile; title: string; needsBash: boolean }[];
 
 export type E2eCase = (typeof E2E_CASES)[number];

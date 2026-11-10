@@ -5,7 +5,7 @@ import { createFakeClock } from '@momonga/testkit';
 
 const PGID = 1_999_999_031;
 const COULD_NOT_CHECK = (reason: string) =>
-  `MomongaCode could not check whether a process started by the interrupted command is still running (${reason}). The effect of the interrupted command is unknown; inspect the current state before retrying it.`;
+  `MomongaCode could not check whether a process started by the interrupted command is still running (${reason}). Nothing was stopped. The effect of the interrupted command is unknown; inspect the current state before retrying it.`;
 const REASON: Record<'held' | 'unknown', string> = { held: 'no process could be named', unknown: 'the marker state could not be read' };
 
 const inspectorWith = (state: MarkerState): ProcessInspector =>

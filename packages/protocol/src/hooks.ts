@@ -28,6 +28,8 @@ export const HOOK_PRE_TOOL_DECISIONS = ['allow', 'ask', 'deny'] as const;
 
 export type HookPreToolDecision = (typeof HOOK_PRE_TOOL_DECISIONS)[number];
 
+export type HookStart = { event: HookEvent; command: string; callId?: string };
+
 export type HookExecution = {
   hookEvent: HookEvent;
   command: string;

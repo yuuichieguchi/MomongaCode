@@ -23,14 +23,13 @@ import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesRe
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { isProbingCapabilities } from '@momonga/protocol';
+import { isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -45,7 +44,7 @@ export type ContextImproveOptions = {
   tokenCap: number;
   seed: number;
   outcome: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
 };
 
 const RECORD_WINDOW_SHARE = 4;
@@ -67,10 +66,9 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
-const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
-  const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
+const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
+  const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient, isGenerationRetiredRefusal } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
-  const signal = interrupt ?? new AbortController().signal;
   const complete: Completer = async (request) => {
     const body: CreateResponseBody = {
       model: alias,
@@ -84,13 +82,21 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
       stream: true,
       metadata: { purpose: 'guideline', ...(request.seed === undefined ? {} : { seed: String(request.seed) }) },
     };
-    const events: StreamEvent[] = [];
     const startedAt = ports.clock.now();
+    const call = { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' } as const;
     let firstEventMs: number | undefined;
-    for await (const event of gateway.stream(body, { idempotencyKey: randomUUID(), deadlineAt: startedAt + RUNTIME_DEFAULTS.runTimeoutMs, signal, role: 'analysis' })) {
-      if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = ports.clock.now() - startedAt;
-      events.push(event);
-    }
+    const collect = async (): Promise<StreamEvent[]> => {
+      const collected: StreamEvent[] = [];
+      for await (const event of gateway.stream(body, call)) {
+        if (firstEventMs === undefined && carriesOutput(event)) firstEventMs = ports.clock.now() - startedAt;
+        collected.push(event);
+      }
+      return collected;
+    };
+    const events = await collect().catch((error: unknown) => {
+      if (!isGenerationRetiredRefusal(error)) throw error;
+      return collect();
+    });
     const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: ports.clock.now() - startedAt };
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');
@@ -137,7 +143,7 @@ export const contextImprove = async (
   hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   const gatewayInfo = createCliGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
@@ -148,7 +154,7 @@ export const contextImprove = async (
     const models = loadUserModels({ home: ports.home });
     const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: async (alias) => {
         const capabilities = await gatewayInfo.capabilitiesOf(alias);
-        if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+        if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
         return capabilities;
       },
     });
@@ -168,10 +174,11 @@ export const contextImprove = async (
               limits,
               reflection,
               codeDigest,
+              planRelaySocket: currentSocketResolver(paths, 'gateway'),
               ...(guideline === undefined ? {} : { guideline }),
               onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
-              ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+              interrupt: options.interrupt,
             });
             const report = buildContextReport({ dataset, transcripts, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
             return { report, transcripts, tokens: tokensOf(transcripts) };
@@ -208,7 +215,7 @@ export const formatGuidelines = ({ current, guidelines }: GuidelinesResponse): s
   guidelines.length === 0 ? 'no guideline has been adopted' : guidelines.map((row) => formatGuideline(row, row.version === current?.version)).join('\n');
 
 export const guidelineList = async (ports: CliPorts, paths: MomongaPaths): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client: RuntimeClient = connectRuntime(paths);
   try {
     ports.stdout.write(`${formatGuidelines(await client.guidelines())}\n`);
@@ -238,7 +245,7 @@ export const adoptOutcome = async (stdout: Sink, client: Pick<RuntimeClient, 'gu
 
 export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outcomeFile: string): Promise<number> => {
   const outcomeText = await ports.files.readText(path.resolve(ports.cwd, outcomeFile));
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client: RuntimeClient = connectRuntime(paths);
   try {
     return await adoptOutcome(ports.stdout, client, outcomeText);
@@ -248,7 +255,7 @@ export const guidelineAdopt = async (ports: CliPorts, paths: MomongaPaths, outco
 };
 
 export const guidelineRollback = async (ports: CliPorts, paths: MomongaPaths, version: number): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     const row = await client.rollbackGuideline(version);

@@ -1,14 +1,16 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { RunEvent, ToolFile } from '@momonga/protocol';
 import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead, runFactsOf } from '@momonga/runtime';
 import type { EvidenceCommand } from '@momonga/runtime';
 import { createEvidenceFold } from '../../src/memory/evidence-fold.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROJECT = '/work/a';
 const HASH = 'a'.repeat(64);
@@ -235,7 +237,7 @@ describe('production isAncestor', () => {
   });
 });
 
-describe('production hashFile', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('production hashFile', () => {
   it('gives the sha256 of a file', async () => {
     const { project } = tempProject();
     fs.writeFileSync(path.join(project, 'a.txt'), 'abc');

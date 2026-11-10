@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import type { TokenCounter, TokenMeter } from '@momonga/context';
-import { createChatCompletionsAdapter } from '@momonga/gateway';
+import { createChatCompletionsAdapter, unauthenticatedSource } from '@momonga/gateway';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, envelopeOf } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterTarget, Capabilities, InputItem, ToolCallingMode } from '@momonga/protocol';
 import { UNDICI_DEFAULT_LIVENESS, createFakeClock } from '@momonga/testkit';
@@ -31,7 +31,7 @@ const capabilitiesOf = (toolCalling: ToolCallingMode): Capabilities => ({
 
 const renderingMeter = (toolCalling: ToolCallingMode): TokenMeter => {
   const capabilities = capabilitiesOf(toolCalling);
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource,
     liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => {
       throw new Error('a count renders the wire and never contacts the upstream');

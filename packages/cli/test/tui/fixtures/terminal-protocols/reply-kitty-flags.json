@@ -1,0 +1,12 @@
+{
+  "name": "reply-kitty-flags",
+  "source": "kitty keyboard protocol page (sw.kovidgoyal.net/kitty/keyboard-protocol)",
+  "hex": "1b5b3f3075",
+  "events": [
+    {
+      "type": "report",
+      "kind": "kitty-keys",
+      "flags": 0
+    }
+  ]
+}

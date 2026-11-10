@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAP_POLL_INTERVAL_MS, createUninspectableRegistry, findHolders, groupAlive } from '@momonga/foundation';
 import type { ProcessInspector, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
@@ -9,7 +9,8 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness, HarnessOptions } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const STUBBORN_GRACE_MS = 100;
 const KEY_A = keyFor('run-1', 1, 'call-a');
 const KEY_B = keyFor('run-1', 1, 'call-b');
@@ -97,7 +98,7 @@ const harnessWith = (reap: { kill?: SignalSender; timing?: ReapTiming; killGrace
   makeHarness({ executor: { reap } } as HarnessOptions);
 
 describe('executor abandon', () => {
-  it('abandon kills the process group of a PENDING call, marks the record UNKNOWN and returns unknown', PROCESS_TIMEOUT, async () => {
+  it('abandon kills the process group of a PENDING call, marks the record UNKNOWN and returns unknown', async () => {
     const harness = makeHarness();
     const marker = markerOf(harness, KEY_A);
     const pgid = spawnHolder(marker, 'exec sleep 30');
@@ -113,7 +114,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.log.some((entry) => entry.op === 'markUnknown')).toBe(false);
   });
 
-  it('abandon kills a child that closed fd 3 and the group is gone when it returns', PROCESS_TIMEOUT, async () => {
+  it('abandon kills a child that closed fd 3 and the group is gone when it returns', async () => {
     const harness = makeHarness();
     const marker = markerOf(harness, KEY_A);
     const pgid = spawnHolder(marker, 'sleep 30 & exec 3>&-; wait');
@@ -131,7 +132,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
   });
 
-  it('abandon sweeps a setsid grandchild that still holds the marker', PROCESS_TIMEOUT, async () => {
+  it('abandon sweeps a setsid grandchild that still holds the marker', async () => {
     const harness = makeHarness();
     const marker = markerOf(harness, KEY_A);
     const pidFile = path.join(harness.layout.root, 'grandchild.pid');
@@ -151,7 +152,7 @@ describe('executor abandon', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('abandon on a COMPLETED record reaps nothing and marks nothing, and still returns unknown', PROCESS_TIMEOUT, async () => {
+  it('abandon on a COMPLETED record reaps nothing and marks nothing, and still returns unknown', async () => {
     const harness = makeHarness();
     const marker = markerOf(harness, KEY_A);
     const pgid = spawnHolder(marker, 'exec sleep 30');
@@ -166,7 +167,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending' && entry.changed)).toEqual([]);
   });
 
-  it.each(['UNKNOWN', 'missing'] as const)('abandon on a record that is %s reaps nothing and returns unknown', PROCESS_TIMEOUT, async (state) => {
+  it.each(['UNKNOWN', 'missing'] as const)('abandon on a record that is %s reaps nothing and returns unknown', async (state) => {
     const harness = makeHarness();
     const marker = markerOf(harness, KEY_A);
     const pgid = spawnHolder(marker, 'exec sleep 30');
@@ -197,7 +198,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending')).toEqual([{ op: 'markUnknownIfPending', key: KEY_A, changed: false }]);
   });
 
-  it('abandon handles targets concurrently', PROCESS_TIMEOUT, async () => {
+  it('abandon handles targets concurrently', async () => {
     const timing = fakeTiming(2);
     const signalled: Array<{ pid: number; signal: NodeJS.Signals | 0; afterResolve: boolean }> = [];
     let resolved = false;
@@ -233,7 +234,7 @@ describe('executor abandon', () => {
     await waitUntilGone(pgidB);
   });
 
-  it('abandon uses the marker path processMarkerDir/<idemKey>', PROCESS_TIMEOUT, async () => {
+  it('abandon uses the marker path processMarkerDir/<idemKey>', async () => {
     const harness = makeHarness();
     const target = markerOf(harness, KEY_A);
     const bystander = markerOf(harness, KEY_B);
@@ -289,7 +290,7 @@ describe('executor abandon', () => {
     expect(harness.idempotency.log.filter((entry) => entry.op === 'markUnknownIfPending')).toEqual([{ op: 'markUnknownIfPending', key: KEY_B, changed: true }]);
   });
 
-  it('a process that survives its kill is a typed failure, the marker stays on disk and the record is still marked UNKNOWN', PROCESS_TIMEOUT, async () => {
+  it('a process that survives its kill is a typed failure, the marker stays on disk and the record is still marked UNKNOWN', async () => {
     const timing = fakeTiming();
     let stubborn = 0;
     const kill: SignalSender = (pid, signal) => {
@@ -316,7 +317,7 @@ describe('executor abandon', () => {
     expect(timing.sleeps).toBe((2 * STUBBORN_GRACE_MS) / REAP_POLL_INTERVAL_MS);
   });
 
-  it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
+  it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', async () => {
     const harness = makeHarness();
     const brokenMarker = markerOf(harness, KEY_A);
     fs.mkdirSync(path.join(brokenMarker, 'nested'), { recursive: true });
@@ -363,7 +364,7 @@ describe('executor abandon', () => {
 });
 
 describe('executor reconcile of a PENDING call whose earlier attempt is still running', () => {
-  it('fails with a typed error when the process survives its kill, never reconciles, keeps the record PENDING and releases the call lock', PROCESS_TIMEOUT, async () => {
+  it('fails with a typed error when the process survives its kill, never reconciles, keeps the record PENDING and releases the call lock', async () => {
     const timing = fakeTiming();
     let stubborn = 0;
     const kill: SignalSender = (pid, signal) => {
@@ -392,7 +393,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(harness.kernelLock.isHeldBy(path.join(harness.callLockDir, `${KEY_A}.lock`))).toBeUndefined();
   });
 
-  const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9 };
+  const unreadable = { pid: 31_340, command: 'ssh-agent', startedAt: 9n };
   const unreadableInspector: ProcessInspector = {
     startTimeOf: async () => ({ kind: 'gone' }),
     holdersOf: async (_marker, _options, report) => {
@@ -472,7 +473,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(seen.every((signal) => signal.aborted)).toBe(true);
   };
 
-  it('abandon bounds every probe of its reap by the abandon signal: a listing that never answers ends with it, refused as unverifiable, the marker kept', PROCESS_TIMEOUT, async () => {
+  it('abandon bounds every probe of its reap by the abandon signal: a listing that never answers ends with it, refused as unverifiable, the marker kept', async () => {
     const seen: AbortSignal[] = [];
     const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
     const marker = markerOf(harness, KEY_A);
@@ -485,7 +486,7 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('recovery bounds every probe of the earlier-attempt reap by the batch signal: a listing that never answers ends with it and reconcile does not run', PROCESS_TIMEOUT, async () => {
+  it('recovery bounds every probe of the earlier-attempt reap by the batch signal: a listing that never answers ends with it and reconcile does not run', async () => {
     const seen: AbortSignal[] = [];
     const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
     const marker = markerOf(harness, KEY_A);

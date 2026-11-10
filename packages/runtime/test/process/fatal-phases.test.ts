@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -15,6 +15,8 @@ import {
   waitForCondition,
   waitForTimer,
 } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   onFatal: [] as ((error: Error) => void)[],
@@ -46,7 +48,6 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const DRAIN_MS = 60_000;
 const ALL_STEPS = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock'];
 
@@ -72,7 +73,7 @@ const launchFake = async (logger = hookLogger(() => undefined)) => {
 };
 
 describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway, fatal injected through a mocked worker onFatal)', () => {
-  it('a fatal during teardown resolves close() with fatal set and clean false, and does not re-enter abort', PROCESS_TIMEOUT, async () => {
+  it('a fatal during teardown resolves close() with fatal set and clean false, and does not re-enter abort', async () => {
     const fatal = new Error('fatal during teardown');
     const logger = hookLogger((step, msg) => {
       if (msg === 'teardown.step' && step === 'telemetry') injectFatal(fatal);
@@ -86,7 +87,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('fatal settles before or at the same time as close()', PROCESS_TIMEOUT, async () => {
+  it('fatal settles before or at the same time as close()', async () => {
     const fatal = new Error('fatal during teardown');
     const order: string[] = [];
     const logger = hookLogger((step, msg) => {
@@ -102,7 +103,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(order).toEqual(['fatal', 'close']);
   });
 
-  it('fatal resolves when it is latched, before teardown completes', PROCESS_TIMEOUT, async () => {
+  it('fatal resolves when it is latched, before teardown completes', async () => {
     let release: () => void = () => undefined;
     control.abortGate = new Promise<void>((resolve) => {
       release = resolve;
@@ -119,7 +120,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(await closing).toEqual({ clean: false, fatal, abandoned: [], stragglers: [] });
   });
 
-  it('a fatal during the drain escalates to abort and shares the single teardown', PROCESS_TIMEOUT, async () => {
+  it('a fatal during the drain escalates to abort and shares the single teardown', async () => {
     control.hangStop = true;
     const launched = await launchFake();
     const closing = launched.handle.close();
@@ -134,7 +135,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('a fatal during abort is recorded in the result and does not start a second abort', PROCESS_TIMEOUT, async () => {
+  it('a fatal during abort is recorded in the result and does not start a second abort', async () => {
     let release: () => void = () => undefined;
     control.abortGate = new Promise<void>((resolve) => {
       release = resolve;
@@ -151,7 +152,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('a stuck abort after a fatal leaves a straggler and still reports the fatal', PROCESS_TIMEOUT, async () => {
+  it('a stuck abort after a fatal leaves a straggler and still reports the fatal', async () => {
     control.abortGate = new Promise<void>(() => undefined);
     const launched = await launchFake();
     const before = timerIds(launched.timers);
@@ -163,7 +164,7 @@ describe('fatal latch by lifecycle phase (manual fake timers, in-process gateway
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('a second fatal is logged only', PROCESS_TIMEOUT, async () => {
+  it('a second fatal is logged only', async () => {
     let release: () => void = () => undefined;
     control.abortGate = new Promise<void>((resolve) => {
       release = resolve;

@@ -55,22 +55,22 @@ describe('mode_changed marker between runs', () => {
     const second = await inheritOnce(env, 'Again');
     const event = inheritedEventOf(env, second);
     expect(event.markers).toEqual([]);
-    expect(event.mode).toBe('default');
+    expect(event.mode).toBe('manual');
     expect(modeMarkersOf(event.history)).toEqual([]);
   });
 
-  it('ends the inherited history with the plan notice after a PATCH from default to plan', async () => {
+  it('ends the inherited history with the plan notice after a PATCH from manual to plan', async () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello.');
     env.setMode('plan');
     const second = await inheritOnce(env, 'Now plan');
     const event = inheritedEventOf(env, second);
-    expect(event.history.at(-1)?.item).toEqual({ type: 'message', role: 'user', content: modeChangedText('default', 'plan') });
+    expect(event.history.at(-1)?.item).toEqual({ type: 'message', role: 'user', content: modeChangedText('manual', 'plan') });
     expect(event.markers.at(-1)?.kind).toBe('mode_changed');
-    expect(event.fromMode).toBe('default');
+    expect(event.fromMode).toBe('manual');
     expect(event.mode).toBe('plan');
     expect(firstConversation(env, second).slice(-2)).toEqual([
-      ['user', modeChangedText('default', 'plan')],
+      ['user', modeChangedText('manual', 'plan')],
       ['user', 'Now plan'],
     ]);
   });
@@ -91,7 +91,7 @@ describe('mode_changed marker between runs', () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello.');
     env.setMode('plan');
-    env.setMode('default');
+    env.setMode('manual');
     const second = await inheritOnce(env, 'Again');
     expect(inheritedEventOf(env, second).markers).toEqual([]);
   });
@@ -126,12 +126,12 @@ describe('mode_changed marker between runs', () => {
     await answered(env, 'Say hello', 'Hello.');
     env.setMode('plan');
     const second = await claimedFirstAsCancelling(env, 'Cancelled early');
-    expect(modeMarkersOf(inheritedEventOf(env, second).history)).toEqual([modeChangedText('default', 'plan')]);
+    expect(modeMarkersOf(inheritedEventOf(env, second).history)).toEqual([modeChangedText('manual', 'plan')]);
     expect(env.fold(second).mode).toBe('plan');
 
     const third = await inheritOnce(env, 'Third');
 
-    expect(modeMarkersOf(inheritedEventOf(env, third).history)).toEqual([modeChangedText('default', 'plan')]);
+    expect(modeMarkersOf(inheritedEventOf(env, third).history)).toEqual([modeChangedText('manual', 'plan')]);
     expect(inheritedEventOf(env, third).mode).toBe('plan');
   });
 });
@@ -170,7 +170,7 @@ describe('mode notice on recovery', () => {
     await env.runOnce(env.worker('worker-1', { store: countingStore(env, calls), tools }));
     expect(env.run(second.id).status).toBe('RUNNING');
     const journaled = inheritedEventOf(env, second.id);
-    expect(modeMarkersOf(journaled.history)).toEqual([modeChangedText('default', 'plan')]);
+    expect(modeMarkersOf(journaled.history)).toEqual([modeChangedText('manual', 'plan')]);
 
     env.setMode('acceptEdits');
     env.clock.advance(120_000);

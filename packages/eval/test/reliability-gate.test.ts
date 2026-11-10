@@ -90,7 +90,7 @@ describe('decision 47: the benchmark report builder', () => {
   });
 
   const mismatches: [string, Partial<RunFactsView>][] = [
-    ['the recorded mode differs from the task permissionMode', { mode: 'default' }],
+    ['the recorded mode differs from the task permissionMode', { mode: 'manual' }],
     ['the recorded maxSteps differs from budget.maxSteps', { limits: { ...FIXTURE_LIMITS, maxSteps: 50 } }],
     ['the recorded maxTotalTokens differs from budget.maxTotalTokens', { limits: { ...FIXTURE_LIMITS, maxTotalTokens: 1_000_000 } }],
     ['deadlineAt - createdAt differs from budget.timeoutMs', { deadlineAt: CREATED_AT + FIXTURE_TIMEOUT_MS + 1 }],

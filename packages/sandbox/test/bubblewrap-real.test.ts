@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
@@ -9,11 +9,13 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@mo
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin' };
 const HAS_BWRAP = process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH);
 
-describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_BWRAP)('bubblewrap sandbox (real bwrap)', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let work = '';

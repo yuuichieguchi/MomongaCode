@@ -31,7 +31,7 @@ const rulesOf = (fx: Fixture, specs: readonly RuleSpec[]): PermissionRule[] =>
     return exceptions === undefined ? rule : ({ ...rule, exceptions } as PermissionRule);
   });
 
-const decideOn = (fx: Fixture, specs: readonly RuleSpec[], tool: keyof typeof TOOLS, target: string, mode: 'default' | 'acceptEdits' = 'default') => {
+const decideOn = (fx: Fixture, specs: readonly RuleSpec[], tool: keyof typeof TOOLS, target: string, mode: 'manual' | 'acceptEdits' = 'manual') => {
   const rules = rulesOf(fx, specs);
   const roots = [fx.project, fx.extra];
   const access = tool === 'Write' ? 'write' : 'read';

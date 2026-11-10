@@ -28,7 +28,7 @@ describe('recoveryContextFor needs no protected set (3.15 (a) Recovery)', () => 
   it('returns roots, tmpDir and env without calling the policy filesystem', async () => {
     const temp = await makeTempHome();
     const { store, clock } = openStore(temp);
-    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger() });
+    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
     const extra = makeDir(temp.root, 'extra');
     const session = createSession(store, temp.project, { additionalDirectories: [extra] });
     const { filesystem, touched } = failingFilesystem();

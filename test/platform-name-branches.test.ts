@@ -19,6 +19,7 @@ const KEPT: readonly Kept[] = [
   { file: 'runtime/src/process/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/entry.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'supervisor/src/start-supervisor.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
+  { file: 'supervisor/src/reaper-pass.ts', row: 'B15', reason: 'passes the OS to the B15 layout conventions' },
   { file: 'foundation/src/process-contract.ts', row: 'B17', reason: 'conventions of which variables each OS needs' },
   { file: 'foundation/src/release-assets.ts', row: 'B19', reason: 'asset names are release-engineering names' },
   { file: 'cli/src/update/source.ts', row: 'B19', reason: 'signing is a macOS fact' },

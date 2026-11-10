@@ -77,8 +77,8 @@ describe('buildRipgrepAssets (downloads the pinned archives into .cache/ripgrep,
     root = createTempRoot();
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it.each(Object.keys(PINS) as ReleaseTargetName[])('produces a manifest, a compressed binary of the right format, and the notices for %s', async (target) => {

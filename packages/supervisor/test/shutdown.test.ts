@@ -37,6 +37,8 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const DEFAULT_DRAIN = 30_000;
 const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(DEFAULT_DRAIN) + SHUTDOWN_MARGIN_MS;
 const GATEWAY_TERM_BOUND = gatewayStopBudgetMs(DEFAULT_STOP_VALUES);
@@ -68,7 +70,7 @@ describe('childCloseBudgetMs', () => {
   });
 });
 
-describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('shutdown order and bounds', () => {
   it('runtime stops before the gateway is signalled', async (context) => {
     const h = await running(context);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
@@ -181,14 +183,17 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     expect(h.fake.spawnCount('runtime')).toBe(1);
   });
 
-  it('a plan stop followed by close() sends one SIGTERM', async (context) => {
+  it('a settings change signals no child, and the close() after it sends one SIGTERM', async (context) => {
     const watch = fakeSettingsWatch();
     const h = await running(context, { overrides: { watchSettings: true, settingsWatch: watch.watch } });
     await pump200(h);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { realWork: h.realWork, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.changed').length === 1, { realWork: h.realWork, maxMs: 10_000 });
+    await pump200(h);
+    expect(h.fake.latest('runtime').signals).toEqual([]);
+    expect(h.fake.latest('gateway').signals).toEqual([]);
     const closing = h.supervisor.close();
     await quiesce(h.realWork);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
@@ -527,15 +532,16 @@ describe('shutdown and marker reaps', () => {
   });
 });
 
-describe('shutdown and coordinated restarts', () => {
-  it('shutdown during a plan never spawns', async (context) => {
+describe('shutdown and settings changes', () => {
+  it('shutdown after a settings change never spawns: the change applies in place', async (context) => {
     const watch = fakeSettingsWatch();
     const h = await running(context, { overrides: { watchSettings: true, settingsWatch: watch.watch } });
     await pump200(h);
-    h.fake.setBehaviour('gateway', { autoReady: false });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 20_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.changed').length === 1, { realWork: h.realWork, maxMs: 20_000 });
+    await pump200(h);
+    expect(h.fake.spawnCount('gateway')).toBe(1);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     const spawnsAtClose = h.fake.spawnCount();
     await finish(h, h.supervisor.close());
@@ -547,52 +553,6 @@ describe('shutdown and coordinated restarts', () => {
 });
 
 describe('shutdown during the orphan reap', () => {
-  const inPhase1 = (onFind?: (count: number) => void): HarnessOptions => {
-    let count = 0;
-    return {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: {
-        findHolders: async () => {
-          count += 1;
-          onFind?.(count);
-          return [999_999];
-        },
-      },
-    };
-  };
-
-  it('shutdown during phase 1 of the reap spawns nothing, signals nothing and keeps the markers', async (context) => {
-    const h = await startHarness(context, inPhase1());
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 2, { realWork: h.realWork, maxMs: 5000 });
-    const closing = settledFlag(h.supervisor.close());
-    await waitFor(() => h.health().phase === 'draining');
-    expect(h.health().children.map((child) => child.state)).toEqual(['stopped', 'stopped']);
-    await pumpUntil(h.timers, () => closing.settled(), { realWork: h.realWork, maxMs: SHUTDOWN_RELEASE_BOUND_MS + 1000 });
-    expect(closing.value()).toEqual({ clean: true, killed: [], leaked: [] });
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    expect(h.markers.calls.reapMarkedProcesses).toEqual([]);
-    expect(fs.existsSync(`${h.paths.markers.daemons}/runtime-old`)).toBe(true);
-    expect(h.fake.spawnCount()).toBe(0);
-  });
-
-  it('an abort during the last findHolders of phase 1 calls neither the reap nor kill', async (context) => {
-    let trigger: (() => void) | undefined;
-    const h = await startHarness(context, {
-      ...inPhase1((count) => {
-        if (count === 2) trigger?.();
-      }),
-      overrides: { orphanGraceMs: 10_000 },
-    });
-    let closing: Promise<SupervisorCloseResult> | undefined;
-    trigger = () => {
-      closing = h.supervisor.close();
-    };
-    await pumpUntil(h.timers, () => closing !== undefined, { realWork: h.realWork, maxMs: 5000 });
-    await finish(h, closing ?? Promise.reject(new Error('no close')));
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    expect(h.fake.spawnCount()).toBe(0);
-  });
-
   const inPhase2 = (onReap: (options: ReapMarkerDirectoryOptions) => Promise<{ reaped: number; kept: number }>): HarnessOptions => ({
     prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
     markerPorts: { findHolders: async () => [999_999], reapMarkerDirectory: onReap },
@@ -664,10 +624,13 @@ describe('shutdown during the orphan reap', () => {
   });
 
   it('a shutdown trigger between ready and the first launch step spawns nothing', async (context) => {
-    const h = await startHarness(context, inPhase1());
+    const h = await startHarness(context, {
+      markerPorts: {
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+      },
+    });
     const closing = h.supervisor.close();
     await finish(h, closing);
     expect(h.fake.spawnCount()).toBe(0);
-    expect(h.markers.calls.findHolders).toEqual([]);
   });
 });

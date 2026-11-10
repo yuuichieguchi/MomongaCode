@@ -1,6 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
+import { couldNotOpenBrowser } from '../browser-text.ts';
 import { AUTHORIZATION_POLL_INTERVAL_MS } from '../constants.ts';
 import { mcpLoginCommand } from '../mcp/messages.ts';
 import { pollUntil } from '../poll.ts';
@@ -13,7 +14,7 @@ export class McpLoginFailed extends Error {
   readonly code: string;
 
   constructor(server: string, code: string, message: string) {
-    super(`authorization of MCP server ${server} failed (${code}): ${message}`);
+    super(message);
     this.name = 'McpLoginFailed';
     this.server = server;
     this.code = code;
@@ -55,7 +56,9 @@ export const mcpList = async (ports: CliPorts, paths: MomongaPaths, json: boolea
 export type McpLoginOptions = { openBrowser: boolean; interrupt: AbortSignal };
 
 const settled = (view: McpAuthorizationView): McpAuthorizationView => {
-  if (view.status === 'failed') throw new McpLoginFailed(view.server, view.failure?.code ?? 'unknown', view.failure?.message ?? 'the runtime gave no reason');
+  if (view.status === 'failed') {
+    throw new McpLoginFailed(view.server, view.failure?.code ?? 'unknown', view.failure?.message ?? `the runtime gave no reason for the failed authorization of MCP server ${view.server}`);
+  }
   return view;
 };
 
@@ -70,9 +73,15 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
     }
     if (started.url === undefined) throw new Error(`the runtime started the authorization of MCP server ${server} without an authorization URL`);
     ports.stdout.write(`${mcpAuthorizationInvitation(server, started.url)}\n`);
+    let finished: McpAuthorizationView;
+    const ended = new AbortController();
     try {
-      if (options.openBrowser) await ports.openUrl(new URL(started.url), options.interrupt);
-      const finished = await pollUntil(
+      if (options.openBrowser) {
+        ports.openUrl(new URL(started.url), AbortSignal.any([options.interrupt, ended.signal]), (message) =>
+          ports.stderr.write(`${escapedLines([`${couldNotOpenBrowser(message)} Open the URL above to continue.`])}\n`),
+        );
+      }
+      finished = await pollUntil(
         ports.clock,
         async () => {
           const view = await session.client.mcpAuthorization(sessionId, server);
@@ -85,16 +94,17 @@ export const mcpLogin = async (ports: CliPorts, paths: MomongaPaths, server: str
           signal: options.interrupt,
         },
       );
-      settled(finished);
     } catch (error) {
-      if (error instanceof McpLoginFailed) throw error;
       await session.client.cancelMcpAuthorization(sessionId, server);
       if (options.interrupt.aborted) {
         ports.stderr.write(`${escapedLines([`momonga: authorization of MCP server ${server} cancelled`])}\n`);
         return EXIT_INTERRUPTED;
       }
       throw error;
+    } finally {
+      ended.abort();
     }
+    settled(finished);
     ports.stdout.write(`${escapedLines([`MCP server ${server} is authorized`])}\n`);
     return 0;
   } finally {

@@ -1,5 +1,5 @@
-import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
+import type { Lease, ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -17,7 +17,8 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, UserCommandOutcome, WorkTreeObserver } from '@momonga/tools';
+import type { AttachedMentions } from '@momonga/context';
 
 export type { Clock };
 
@@ -53,8 +54,17 @@ export type SettingsPort = {
   autoModeClassifier(): string | undefined;
   modelRoles(): ModelRoles;
   modelTargets(): Readonly<Record<string, TargetFacts>>;
-  appendRule(session: Session, entry: AppendedRule): Promise<void>;
+  appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
   trusted(session: Session): boolean;
+};
+
+export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
+
+export type UserShellIo = { signal: AbortSignal; onOutput(text: string): void };
+
+export type UserInputPort = {
+  attach(session: Session, text: string, terms: AttachTerms): Promise<AttachedMentions>;
+  shell(session: Session, command: string, io: UserShellIo): Promise<UserCommandOutcome>;
 };
 
 export type SkillsPort = {
@@ -104,14 +114,18 @@ export type ToolPolicy = {
 
 export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: ToolEnv };
 
+export type SandboxBinding = { readonly sandbox: Sandbox; readonly ruleEnforcement: RuleEnforcement };
+
+export type SandboxBindings = { acquire(signal: AbortSignal): Promise<Lease<SandboxBinding>> };
+
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;
   toolSet(runId: string, options: { signal: AbortSignal; env: ToolEnv; additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet>;
   recoveryToolSet(options: { signal: AbortSignal; additionalTools?: readonly AnyTool[] }): Promise<ToolSet>;
-  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[] }): Promise<ToolPolicy>;
+  policyFor(session: Session, options: { env: ToolEnv; rules: readonly PermissionRule[]; readableDirectories?: readonly string[]; ruleEnforcement: RuleEnforcement }): Promise<ToolPolicy>;
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
-  sandbox: Sandbox;
+  sandboxes: SandboxBindings;
   ripgrepLocator(env: ToolEnv): RipgrepLocator;
   shellHost: ShellHost;
   markerDir: string;
@@ -128,6 +142,8 @@ export type TraceSpan = {
   recordToolBackend(backend: { source: string; version: string }): void;
   end(error?: unknown): void;
 };
+
+export type TracerLeases = { acquire(signal: AbortSignal): Promise<Lease<TracerPort>> };
 
 export type AgentSpanInput = { runId: string; sessionId: string; attempt: number };
 

@@ -126,7 +126,7 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
   const run = env.enqueue('Work through the logs', { history: 'fresh' });
   const middle = Math.floor(steps / 2);
   const events: RunEventPayload[] = [
-    { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
+    { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' },
     { type: 'context.memories_loaded', memories: memoryIds.map((id) => ({ id, status: 'unbound' as const })) },
   ];
   for (let step = 1; step <= steps; step += 1) {

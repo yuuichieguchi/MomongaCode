@@ -1,7 +1,9 @@
 import { uuidv7 } from '@momonga/foundation';
+import { redactedError } from './guarded-adapter.ts';
 import type {
   AdapterRequest,
   Capabilities,
+  ClassifiedError,
   CreateResponseBody,
   ErrorType,
   FailedResponseResource,
@@ -17,16 +19,17 @@ import type {
   Usage,
   UsageSource,
 } from '@momonga/protocol';
-import { modelCostOf } from './model-cost.ts';
-import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
+import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
+import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
-import { breakerVerdictOf, retryableFailureOf } from './breaker-verdict.ts';
+import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
 import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
-import { inputHasImages, resolveInput } from './input.ts';
+import { inputHasImages, inputKindsOf, resolveInput } from './input.ts';
+import { StreamFailure } from './stream-failure.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
@@ -126,7 +129,12 @@ const thrownSpanType = (error: unknown): string => (error instanceof GatewayErro
 
 export const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
-const failureBeforeOutput = (event: StreamEvent): UpstreamFailure | undefined => {
+const classifiedFailure = (adapter: TargetRuntime['adapter'], error: ResponseError): ClassifiedError => {
+  const classified = adapter.classify(new StreamFailure(error.code, error.type ?? 'server_error', error.message));
+  return error.retryAfterMs === undefined ? classified : { ...classified, retryAfterMs: error.retryAfterMs };
+};
+
+const failureBeforeOutput = (event: StreamEvent, adapter: TargetRuntime['adapter']): UpstreamFailure | undefined => {
   if (!TERMINAL_TYPES.has(event.type)) return undefined;
   const terminal = event as TerminalEvent;
   const violation = protocolViolationOf(terminal);
@@ -137,14 +145,8 @@ const failureBeforeOutput = (event: StreamEvent): UpstreamFailure | undefined =>
     });
   }
   if (terminal.type !== 'response.failed') return undefined;
-  const { error } = terminal.response;
-  const type = error.type ?? 'server_error';
-  if (!retryableFailureOf(type, error.code)) return undefined;
-  return new UpstreamFailure({
-    retryable: true,
-    ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-    error: { type, code: error.code, message: error.message, param: null },
-  });
+  const classified = classifiedFailure(adapter, terminal.response.error);
+  return classified.retryable ? new UpstreamFailure(classified) : undefined;
 };
 
 const openAttempt = async (
@@ -194,7 +196,7 @@ const openAttempt = async (
       const step = await iterator.next();
       if (step.done === true) throw emptyStreamFailure();
       held.push(step.value);
-      const failure = failureBeforeOutput(step.value);
+      const failure = failureBeforeOutput(step.value, target.adapter);
       if (failure !== undefined) throw failure;
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
@@ -412,19 +414,21 @@ async function* relaySteps(
   const momongaFor = (
     usageSource: UsageSource,
     contextInputTokens?: number,
-    billed?: { usage: Usage; cacheWriteInputTokens: number | undefined },
+    billed?: { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined },
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
     jsonReply?: JsonReplyPath,
+    cacheReadNotReported?: true,
   ): MomongaResponseExtension => {
-    const cost =
-      billed === undefined || services.priceTable === undefined
-        ? null
+    const pricing =
+      billed === undefined
+        ? undefined
         : modelCostOf({
             provider: target.provider,
             model: target.model,
             billing: target.billing,
             usage: billed.usage,
+            usageSource: billed.usageSource,
             cacheWriteInputTokens: billed.cacheWriteInputTokens,
             at: opened.span.startedAtMs,
             table: services.priceTable,
@@ -440,19 +444,21 @@ async function* relaySteps(
       usageSource,
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
-      ...(cost === null ? {} : { cost }),
+      ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
+      ...(pricing === undefined ? {} : pricingFieldsOf(pricing)),
       ...(retryable === undefined ? {} : { retryable }),
     };
   };
   const completedAt = Math.floor(clock.now() / 1000);
 
   const failedTerminal = (error: ResponseError, output: ItemField[], retryable: boolean): StreamEvent => {
+    const plan = target.servedAccount();
     const response: FailedResponseResource = {
       ...base,
       status: 'failed',
       completed_at: completedAt,
       output,
-      error,
+      error: plan === undefined ? error : { ...error, plan },
       momonga: momongaFor('estimated', undefined, undefined, retryable),
     };
     return { type: 'response.failed', sequence_number: nextSequence(), response };
@@ -472,13 +478,13 @@ async function* relaySteps(
   const upstreamOutput = upstream.output.map(rewriteItem);
 
   if (terminalEvent.type === 'response.failed') {
-    const error = terminalEvent.response.error;
-    const failureType = error.type ?? 'server_error';
-    const verdict = breakerVerdictOf(failureType, error.code);
-    outcome.settle(verdict);
-    opened.span.fail(error.type ?? 'server_error', new Error(error.message), error.message);
+    const upstreamError = terminalEvent.response.error;
+    const classified = classifiedFailure(target.adapter, upstreamError);
+    const { error } = classified;
+    outcome.settle(classified.verdict ?? breakerVerdictOf(error.type, error.code));
+    opened.span.fail(error.type, new Error(error.message), error.message);
     progress.concluded = true;
-    yield failedTerminal({ code: error.code, message: error.message, type: failureType }, upstreamOutput, retryableFailureOf(failureType, error.code));
+    yield failedTerminal({ code: error.code ?? upstreamError.code, message: error.message, type: error.type }, upstreamOutput, classified.retryable);
     return;
   }
 
@@ -493,6 +499,7 @@ async function* relaySteps(
       estimateOutputTokens(upstreamOutput),
     );
   const usageSource: UsageSource = reported === null ? 'estimated' : 'reported';
+  const wire = wireUsageOf(usage);
   const status = terminalEvent.type === 'response.completed' ? 'completed' : 'incomplete';
   const resource: ResponseResource = {
     ...base,
@@ -500,14 +507,15 @@ async function* relaySteps(
     completed_at: completedAt,
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
-    usage,
+    usage: wire.usage,
     momonga: momongaFor(
       usageSource,
       upstream.contextInputTokens,
-      reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+      { usage, usageSource, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
       undefined,
       upstream.schemaNarrowings,
       upstream.jsonReply,
+      wire.cacheReadNotReported,
     ),
   };
   const terminal: StreamEvent = {
@@ -556,7 +564,7 @@ async function* relaySteps(
     }
   }
   if (commitFailure !== undefined) {
-    const message = `the gateway could not persist the response: ${messageOfError(commitFailure)}`;
+    const message = `the gateway could not persist the response: ${redactedError(services.redactor, commitFailure).message}`;
     outcome.settle('neutral');
     opened.span.fail('server_error', commitFailure, message);
     progress.concluded = true;
@@ -570,6 +578,7 @@ async function* relaySteps(
     responseId,
     finishReason: finishReasonOf(resource),
     usage,
+    usageSource,
     ...(upstream.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: upstream.cacheWriteInputTokens }),
     output: resource.output,
     fallbackCauses,
@@ -584,7 +593,9 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
   const narrowed = await services.router.candidates(job.alias, {
     tools: (job.body.tools?.length ?? 0) > 0,
     images: inputHasImages(resolved.forAdapter),
+    inputKinds: inputKindsOf(resolved.forAdapter, job.body.tools),
     sampling: job.body,
+    outputBound: job.body.max_output_tokens !== undefined && job.body.max_output_tokens !== null,
     toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice },
     unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
   });
@@ -593,6 +604,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
     const outcome = await runWithRetry({
       candidates: narrowed.targets,
       refusals: narrowed.refusals,
+      billing: narrowed.billing,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,

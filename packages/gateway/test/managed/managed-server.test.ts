@@ -7,6 +7,8 @@ import { HEALTH_POLL_INTERVAL_MS } from '../../src/managed/server.ts';
 import { FakeChild, SERVER_KINDS, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ExecPort, FakeChildOptions, ManagedServerHandle, ServerKind } from './managed-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const READY_MS = 400;
 const GRACE_MS = 30;
 const BACKOFF_MS = 50;
@@ -72,7 +74,7 @@ const settleRounds = async (): Promise<void> => {
 describe.each(SERVER_KINDS)('one managed server mechanism, driven by the description of $label (design-managed-servers sections 3.2, 7.1, 8, 13)', (kind) => {
   it('launches the binary with the description argv, the socket substituted for {socket}, and is ready only when the description readiness route answers', async () => {
     const { server, spawn, socket } = setup({ kind });
-    expect(await server.start(asking())).toEqual({ kind: 'unix', socketPath: socket });
+    expect(await server.start(asking())).toEqual({ kind: 'unix', path: socket });
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn).toHaveBeenCalledWith('/opt/managed/bin/server', kind.argvOf(socket));
   });
@@ -103,7 +105,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     const { server, spawn, socket } = setup({ kind, exec });
     await expect(server.start(asking())).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     refusing = false;
-    expect(await server.start(asking())).toEqual({ kind: 'unix', socketPath: socket });
+    expect(await server.start(asking())).toEqual({ kind: 'unix', path: socket });
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
@@ -208,7 +210,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     const winner = order[0] === 'a' ? 'a' : 'b';
     const loser = winner === 'a' ? 'b' : 'a';
     await spawned[0]?.serveNow();
-    expect(await starts[winner]).toEqual({ kind: 'unix', socketPath });
+    expect(await starts[winner]).toEqual({ kind: 'unix', path: socketPath });
     expect(spawned).toHaveLength(1);
     await starters[winner].server.stop();
     while (order.length < 2) {
@@ -216,7 +218,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
       if (order.length < 2) starters[loser].manual.fire(HEALTH_POLL_INTERVAL_MS);
     }
     await spawned[1]?.serveNow();
-    expect(await starts[loser]).toEqual({ kind: 'unix', socketPath });
+    expect(await starts[loser]).toEqual({ kind: 'unix', path: socketPath });
     expect(order).toEqual([winner, loser]);
     expect(othersAliveAtSpawn).toEqual([false, false]);
   });
@@ -244,13 +246,13 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     expect(outcome).toBe('pending');
     expect(spawned).toHaveLength(1);
     await older.server.stop();
-    expect(await waiting).toEqual({ kind: 'unix', socketPath });
+    expect(await waiting).toEqual({ kind: 'unix', path: socketPath });
     expect(spawned).toHaveLength(2);
     expect(spawned[0]?.alive).toBe(false);
   });
 });
 
-describe('the second kind runs as a real process through the same mechanism (design section 13.2, item 1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the second kind runs as a real process through the same mechanism (design section 13.2, item 1)', () => {
   it('launches the fake server binary, waits for GET /ready, and the endpoint lists the fake model at GET /models', async () => {
     const dir = makeShortDir(dirs);
     const fake = await createFakeManagedServer({ dir });
@@ -269,7 +271,7 @@ describe('the second kind runs as a real process through the same mechanism (des
     });
     servers.push(server);
     const endpoint = await server.start(AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS));
-    const client = createUdsClient(fixedSocket(endpoint.socketPath));
+    const client = createUdsClient(fixedSocket(endpoint.path));
     try {
       const response = await client.request({ method: 'GET', path: '/models', signal: AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS) });
       expect(response.status).toBe(200);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
-import type { JsonLogger, ReapTiming, StopValues, UninspectableRegistry } from '@momonga/foundation';
+import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import type { JsonLogger, ReapTiming, RetryKind, StopValues, UninspectableRegistry } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
@@ -49,6 +49,7 @@ export type OrphanReapOptions = {
   reapTiming: ReapTiming;
   markerPorts?: MarkerPorts;
   uninspectable?: UninspectableRegistry;
+  occasion?: RetryKind;
 };
 
 export type OrphanReapResult = { reaped: number; kept: number; aborted: boolean };
@@ -129,6 +130,23 @@ const sleepUnlessAborted = (options: OrphanReapOptions, ms: number): Promise<voi
     options.signal.addEventListener('abort', finish, { once: true });
   });
 
+const hasChanceLeft = async (marker: string, occasion: RetryKind): Promise<boolean> => {
+  try {
+    const record = await readAttemptRecord(marker);
+    return !record.ignored && !record.spent[occasion];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+};
+
+const markersWithChanceLeft = async (markers: readonly string[], occasion: RetryKind | undefined): Promise<string[]> => {
+  if (occasion === undefined) return [...markers];
+  const left: string[] = [];
+  for (const marker of markers) if (await hasChanceLeft(marker, occasion)) left.push(marker);
+  return left;
+};
+
 export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanReapResult> => {
   const { signal, logger } = options;
   const holdersOf = options.markerPorts?.findHolders ?? findHolders;
@@ -151,14 +169,16 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     }
   };
 
-  const markers = await listMarkers();
+  const listed = await listMarkers();
+  const markers = await markersWithChanceLeft(listed, options.occasion);
 
   if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
 
-  if (markers.length === 0) {
+  if (listed.length === 0) {
     writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
     return { reaped: 0, kept: 0, aborted: false };
   }
+  if (markers.length === 0) return { reaped: 0, kept: listed.length, aborted: false };
   const graceMs = phaseOneGraceMs(options);
   const deadline = now() + graceMs;
   const phaseStop = new AbortController();
@@ -214,6 +234,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     onWarning: warn,
     signal,
     timing: options.reapTiming,
+    ...(options.occasion === undefined ? {} : { occasion: options.occasion }),
   });
   return { reaped: result.reaped, kept: result.kept, aborted: signal.aborted };
 };

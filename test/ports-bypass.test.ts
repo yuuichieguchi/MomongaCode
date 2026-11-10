@@ -16,7 +16,9 @@ type Token =
   | 'node:fs/promises'
   | 'execFileSync';
 
-type Counts = Partial<Record<Token, number>>;
+type CliToken = 'createHostExec' | 'nodeFileSystem' | 'process.env';
+
+type Counts = Partial<Record<Token | CliToken, number>>;
 
 const TOKENS: Readonly<Record<Token, RegExp>> = {
   setTimeout: /(?<![\w.$])setTimeout\(/g,
@@ -31,26 +33,34 @@ const TOKENS: Readonly<Record<Token, RegExp>> = {
   execFileSync: /(?<![\w.$])execFileSync\(/g,
 };
 
+const CLI_TOKENS: Readonly<Record<CliToken, RegExp>> = {
+  createHostExec: /(?<![\w.$])createHostExec\(/g,
+  nodeFileSystem: /(?<![\w.$])nodeFileSystem\b/g,
+  'process.env': /(?<![\w.$])process\.env\b/g,
+};
+
+const IMPORT_STATEMENT = /^\s*import\b[\s\S]*?\bfrom\s+['"][^'"]+['"];?/gm;
+
 const METHOD_SIGNATURE = /^\s*[\w$]+\(.*\)\s*:\s*[^=]+;\s*$/;
 
-const countBypasses = (source: string): Counts => {
-  const body = source
+const countBypasses = (source: string, tokens: Readonly<Partial<Record<Token | CliToken, RegExp>>> = TOKENS): Counts => {
+  const body = (tokens === TOKENS ? source : source.replace(IMPORT_STATEMENT, ''))
     .split('\n')
     .filter((line) => !METHOD_SIGNATURE.test(line))
     .join('\n');
   const counts: Counts = {};
-  for (const [token, pattern] of Object.entries(TOKENS) as Array<[Token, RegExp]>) {
+  for (const [token, pattern] of Object.entries(tokens) as Array<[Token | CliToken, RegExp]>) {
     const found = [...body.matchAll(pattern)].length;
     if (found > 0) counts[token] = found;
   }
   return counts;
 };
 
-const sourceFiles = (dir: string): string[] =>
+const sourceFiles = (dir: string, extension: RegExp = /\.ts$/): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts') ? [full] : [];
+    if (entry.isDirectory()) return sourceFiles(full, extension);
+    return extension.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 const productSources = (): string[] =>
@@ -59,7 +69,7 @@ const productSources = (): string[] =>
     .filter((name) => name !== 'testkit')
     .map((name) => path.join(ROOT, 'packages', name, 'src'))
     .filter((dir) => fs.existsSync(dir))
-    .flatMap(sourceFiles);
+    .flatMap((dir) => sourceFiles(dir));
 
 const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/system-timing.ts': 'the one production Timing adapter over the host timers and clocks',
@@ -69,6 +79,7 @@ const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/daemon-entry.ts': 'the composition root of every daemon process: host streams, signals and timers',
   'packages/cli/src/node-ports.ts': 'the composition root of the CLI ports',
   'packages/cli/src/update/node-ports.ts': 'the composition root of the update ports',
+  'packages/cli/src/tui/terminal/host.ts': 'the composition root of the terminal layer ports: the synchronous write to the terminal descriptor and the process signals',
   'packages/gateway/src/process-ports.ts': 'the composition root of the gateway process ports',
   'packages/runtime/src/process/start-runtime-process.ts': 'the composition root of the runtime process',
 };
@@ -95,8 +106,12 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/clock.ts': { 'Date.now': 1 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 1 },
   'packages/foundation/src/file-lock.ts': { 'setTimeout': 1, 'randomBytes': 1 },
+  'packages/foundation/src/generation-reaper.ts': { 'node:fs': 1 },
+  'packages/foundation/src/host-identity.ts': { 'node:fs': 1 },
+  'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 1 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1 },
   'packages/foundation/src/momonga-paths.ts': { 'node:fs': 1, 'node:fs/promises': 1 },
+  'packages/foundation/src/owned-directory.ts': { 'node:fs': 1 },
   'packages/foundation/src/path-compare.ts': { 'node:fs': 1 },
   'packages/foundation/src/platform/file-identity.ts': { 'node:fs': 1 },
   'packages/foundation/src/platform/group-members.ts': { 'node:fs': 1 },
@@ -114,8 +129,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/uds.ts': { 'node:fs': 1 },
   'packages/gateway/src/adapters/replay-adapter.ts': { 'node:fs': 1 },
   'packages/gateway/src/managed/fm-processes.ts': { 'randomUUID': 1, 'node:fs': 1 },
-  'packages/gateway/src/managed/fm-record-key.ts': { 'node:fs': 1 },
-  'packages/gateway/src/managed/fm-serve.ts': { 'node:fs': 1 },
+  'packages/gateway/src/managed/server.ts': { 'node:fs': 1 },
   'packages/gateway/src/probe/endpoint-record.ts': { 'node:fs': 1 },
   'packages/gateway/src/probe/record.ts': { 'node:fs': 1 },
   'packages/gateway/src/probe/run-probe.ts': { 'performance.now': 4 },
@@ -127,9 +141,11 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/runtime/src/memory/journal-thread.ts': { 'performance.now': 2, 'node:fs': 1 },
   'packages/runtime/src/memory/skill-promotion.ts': { 'node:fs': 1 },
   'packages/runtime/src/memory/upkeep.ts': { 'node:fs': 1 },
+  'packages/runtime/src/process/job-output-file.ts': { 'node:fs': 1 },
   'packages/runtime/src/process/runtime-files.ts': { 'node:fs': 1 },
-  'packages/runtime/src/process/tmp-sweep.ts': { 'node:fs': 1 },
   'packages/runtime/src/process/tool-runtime.ts': { 'randomBytes': 1 },
+  'packages/runtime/src/process/user-input.ts': { 'node:fs': 1 },
+  'packages/runtime/src/service/markers.ts': { 'node:fs': 1 },
   'packages/runtime/src/service/timers.ts': { 'setTimeout': 1 },
   'packages/runtime/src/worker/model-stream.ts': { 'setTimeout': 1 },
   'packages/sandbox/src/always-write-denied.ts': { 'node:fs': 1 },
@@ -142,19 +158,20 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/store/src/blobs.ts': { 'node:fs': 1 },
   'packages/store/src/runtime-store.ts': { 'node:fs': 1 },
   'packages/store/src/trust.ts': { 'node:fs': 1 },
+  'packages/supervisor/src/child-manager.ts': { 'randomBytes': 1 },
   'packages/supervisor/src/orphans.ts': { 'node:fs': 1 },
   'packages/supervisor/src/settings-watch.ts': { 'node:fs': 1 },
   'packages/supervisor/src/start-supervisor.ts': { 'setTimeout': 1, 'node:fs': 1 },
   'packages/tools/src/builtins/bash.ts': { 'randomBytes': 1 },
   'packages/tools/src/builtins/edit.ts': { 'node:fs': 1 },
-  'packages/tools/src/builtins/files.ts': { 'randomBytes': 1, 'node:fs': 1 },
+  'packages/tools/src/builtins/files.ts': { 'node:fs': 1 },
   'packages/tools/src/ripgrep-locator.ts': { 'node:fs/promises': 1 },
   'packages/tools/src/builtins/glob.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/shell.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/walk.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/write.ts': { 'node:fs': 1 },
-  'packages/tools/src/call-lock.ts': { 'node:fs': 1 },
   'packages/tools/src/capture.ts': { 'setTimeout': 1 },
+  'packages/tools/src/file-listing.ts': { 'node:fs': 1 },
   'packages/tools/src/executor.ts': { 'setTimeout': 3, 'node:fs': 1 },
   'packages/tools/src/policy-filesystem.ts': { 'setTimeout': 1, 'node:fs': 1 },
   'packages/tools/src/timers.ts': { 'setTimeout': 1 },
@@ -162,6 +179,21 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/verify/src/dialect-model/gate.ts': { 'Date.now': 4 },
   'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
 };
+
+const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
+  'packages/cli/src/commands/auto-mode.ts': { createHostExec: 1 },
+  'packages/cli/src/daemon/ensure-daemon.ts': { nodeFileSystem: 1 },
+  'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
+  'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
+  'packages/cli/src/verify/host.ts': { nodeFileSystem: 4 },
+};
+
+const actualCliBypasses = (): Record<string, Counts> =>
+  Object.fromEntries(
+    sourceFiles(path.join(ROOT, 'packages', 'cli', 'src'), /\.tsx?$/)
+      .map((file) => [path.relative(ROOT, file).split(path.sep).join('/'), countBypasses(fs.readFileSync(file, 'utf8'), CLI_TOKENS)] as const)
+      .filter(([relative, counts]) => !(relative in ADAPTERS) && Object.keys(counts).length > 0),
+  );
 
 const actualBypasses = (): Record<string, Counts> =>
   Object.fromEntries(
@@ -195,5 +227,16 @@ describe('ports bypass scan', () => {
 
   it('the direct host calls outside the adapters are exactly the listed present bypasses', () => {
     expect(actualBypasses()).toEqual(PRESENT_BYPASSES);
+  });
+
+  it('the new tokens are counted', () => {
+    expect(countBypasses('const exec = createHostExec(minimalChildEnv(env));', CLI_TOKENS)).toEqual({ createHostExec: 1 });
+    expect(countBypasses('await nodeFileSystem.stat(file);', CLI_TOKENS)).toEqual({ nodeFileSystem: 1 });
+    expect(countBypasses("const home = process.env['HOME'];", CLI_TOKENS)).toEqual({ 'process.env': 1 });
+    expect(countBypasses("import {\n  nodeFileSystem,\n  createHostExec,\n} from '@momonga/foundation';", CLI_TOKENS)).toEqual({});
+  });
+
+  it("the CLI's direct createHostExec, nodeFileSystem and process.env uses outside the adapters are exactly the listed present bypasses", () => {
+    expect(actualCliBypasses()).toEqual(CLI_PRESENT_BYPASSES);
   });
 });

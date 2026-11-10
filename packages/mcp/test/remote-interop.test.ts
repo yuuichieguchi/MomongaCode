@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { HTTP_FIXTURE_LEGACY_VERSION, HTTP_FIXTURE_MODERN_VERSION } from '@momonga/testkit';
 import { isTransientRemoteFailure } from '@momonga/mcp';
 import { createFakeClock } from '@momonga/testkit';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
 
 describe('streamable HTTP, protocol 2026-07-28', () => {
@@ -13,7 +14,7 @@ describe('streamable HTTP, protocol 2026-07-28', () => {
     expect(connection.protocolEra).toBe('modern');
     expect(connection.protocolVersion).toBe(HTTP_FIXTURE_MODERN_VERSION);
 
-    const result = await connection.callTool({ name: 'echo', arguments: { text: 'hi' }, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01' });
+    const result = await connection.callTool({ name: 'echo', arguments: { text: 'hi' }, signal: NEVER_ABORTED, traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01' });
     expect(textOf(result)).toBe('hi');
     const call = fixture.rpcRecords('tools/call')[0];
     expect(call?.headers['mcp-method']).toBe('tools/call');
@@ -27,7 +28,7 @@ describe('streamable HTTP, protocol 2026-07-28', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const result = await connection.callTool({ name: 'region_echo', arguments: { region: 'us-west1' } });
+    const result = await connection.callTool({ name: 'region_echo', arguments: { region: 'us-west1' }, signal: NEVER_ABORTED });
     expect(textOf(result)).toBe('region us-west1');
     expect(fixture.rpcRecords('tools/call')[0]?.headers['mcp-param-region']).toBe('us-west1');
   });
@@ -36,7 +37,7 @@ describe('streamable HTTP, protocol 2026-07-28', () => {
     const fixture = await startHttpFixture({ era: 'modern' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const failure = await connection.callTool({ name: 'stream_drop', arguments: {} }).then(
+    const failure = await connection.callTool({ name: 'stream_drop', arguments: {}, signal: NEVER_ABORTED }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -71,7 +72,7 @@ describe('streamable HTTP, protocol 2025-11-25', () => {
     await connection.listTools();
     expect(connection.protocolEra).toBe('legacy');
     expect(connection.protocolVersion).toBe(HTTP_FIXTURE_LEGACY_VERSION);
-    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'hi' } }))).toBe('hi');
+    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'hi' }, signal: NEVER_ABORTED }))).toBe('hi');
 
     expect(fixture.rpcRecords('server/discover')[0]?.status).toBe(400);
     const sessionIds = new Set(
@@ -103,7 +104,7 @@ describe('streamable HTTP, protocol 2025-11-25', () => {
     const fixture = await startHttpFixture({ era: 'legacy' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const result = await connection.callTool({ name: 'stream_drop', arguments: {} });
+    const result = await connection.callTool({ name: 'stream_drop', arguments: {}, signal: NEVER_ABORTED });
     expect(textOf(result)).toBe('resumed result');
     expect(fixture.rpcRecords('tools/call')).toHaveLength(1);
     const resume = fixture.records.find((record) => record.httpMethod === 'GET' && record.headers['last-event-id'] !== undefined);
@@ -116,7 +117,7 @@ describe('streamable HTTP, protocol 2025-11-25', () => {
     await connection.listTools();
     const before = fixture.rpcRecords('initialize').length;
     fixture.expireSessions();
-    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'again' } }))).toBe('again');
+    expect(textOf(await connection.callTool({ name: 'echo', arguments: { text: 'again' }, signal: NEVER_ABORTED }))).toBe('again');
     expect(fixture.rpcRecords('initialize')).toHaveLength(before + 1);
     expect(fixture.rpcRecords('tools/call').map((record) => record.status)).toEqual([404, 200]);
   });

@@ -3,14 +3,17 @@ import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstra
 import type { ClusterPair } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { canonicalJson } from '@momonga/foundation';
+import { policyDifferences } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import { QUALITY_METRICS } from './context-quality.ts';
 import type { QualityMetric, QualityMetricName } from './context-quality.ts';
-import { describeClustered } from './context-report.ts';
+import { describeClustered, unmeasuredCauseOf, unmeasuredCostCauseOf } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import type { Answerer } from './transcript.ts';
 import { percent } from './report.ts';
 import { EvalError } from './runner.ts';
+import { uncachedInputOf } from './token-metrics.ts';
+import type { RatioMetric, ReflectionColumn } from './token-metrics.ts';
 
 export const GATE_CHECKS = [
   'real_model',
@@ -39,10 +42,13 @@ export type GateCheck = { name: GateCheckName; passed: boolean; detail: string }
 
 type ReportIdentity = { dataset: string; model: ContextReport['model']; policy: PolicyOverlay | null; codeDigest: string | null };
 
+type ReflectionSide = { costPerSuccess: RatioMetric | undefined; callsPerSuccess: RatioMetric | undefined; cases: { id: string; column: ReflectionColumn | undefined }[] };
+
 export type ContextComparison = {
   gateName: ContextGateName;
   baseline: ReportIdentity;
   candidate: ReportIdentity;
+  reflection: { baseline: ReflectionSide; candidate: ReflectionSide };
   contrastiveFailures: { baseline: number; candidate: number; n: number };
   fabricationRate: { baseline: ClusteredProportion | undefined; candidate: ClusteredProportion | undefined };
   differences: {
@@ -276,14 +282,24 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
     metric === 'costPerSuccess'
       ? undefined
       : costMissing.length > 0
-        ? `cost per success is not measured in the ${costMissing.join(' and the ')} (a call carries no price, or no run succeeded)`
+        ? costMissing.map((side) => `cost per success is not measured in the ${side} (${unmeasuredCostCauseOf(reports[side].cases)})`).join('; ')
         : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
-  const complete = perSuccessPairsOf(pairs, (entry) => (metric === 'costPerSuccess' ? entry.tokens?.cost : entry.tokens?.uncachedInputTokens));
+  const complete = perSuccessPairsOf(pairs, (entry) => (entry.tokens === undefined ? undefined : metric === 'costPerSuccess' ? entry.tokens.cost : uncachedInputOf(entry.tokens)));
   const measured = complete !== undefined && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
-  const unsettled = pairs.reduce((sum, pair) => sum + (pair.baseline.tokens?.unsettledReflections ?? 0) + (pair.candidate.tokens?.unsettledReflections ?? 0), 0);
-  const reflectionNote = unsettled === 0 ? undefined : `${unsettled} run(s) have a reflection that is pending, running past its bound or not recorded, so their token cost is not final`;
-  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
+  const uncachedNote =
+    metric === 'uncachedInputPerSuccess'
+      ? sideNames.flatMap((side) =>
+          reports[side].metrics.uncachedInputPerSuccess === undefined ? [`uncached input per success is not measured in the ${side} (${unmeasuredCauseOf(metric, reports[side].cases)})`] : [],
+        )
+      : [];
+  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, ...uncachedNote].filter((part) => part !== undefined).join('; ') || undefined };
 };
+
+const reflectionSideOf = (report: ContextReport): ReflectionSide => ({
+  costPerSuccess: report.metrics.reflectionCostPerSuccess,
+  callsPerSuccess: report.metrics.reflectionCallsPerSuccess,
+  cases: report.cases.map((entry) => ({ id: entry.id, column: entry.tokens?.reflection })),
+});
 
 const identityOf = (report: ContextReport): ReportIdentity => ({ dataset: report.dataset, model: report.model, policy: report.policy, codeDigest: report.codeDigest });
 
@@ -330,6 +346,7 @@ export const compareContextReports = (
     gateName,
     baseline: identityOf(baseline),
     candidate: identityOf(candidate),
+    reflection: { baseline: reflectionSideOf(baseline), candidate: reflectionSideOf(candidate) },
     contrastiveFailures: { baseline: baseline.metrics.contrastiveFailures.count, candidate: candidate.metrics.contrastiveFailures.count, n: baseline.metrics.contrastiveFailures.n },
     fabricationRate: { baseline: baseline.metrics.fabricationRate, candidate: candidate.metrics.fabricationRate },
     differences: {
@@ -343,6 +360,27 @@ export const compareContextReports = (
 
 const describeDifference = (name: string, interval: BootstrapInterval | undefined, digits: number): string =>
   `${name} ${interval === undefined ? 'n/a (no pair)' : `paired difference ${describeInterval(interval, digits)}`}`;
+
+const describePerSuccess = (metric: RatioMetric | undefined, digits: number): string => (metric === undefined ? 'n/a' : metric.value.toFixed(digits));
+
+const describeColumn = (column: ReflectionColumn | undefined): string => {
+  if (column === undefined) return 'no token facts';
+  if (!column.settled) return 'unsettled';
+  return `${column.calls ?? 'n/a'} call(s), ${column.inputTokens ?? 'n/a'} input, cost ${column.cost === undefined ? 'n/a' : column.cost.toFixed(6)}`;
+};
+
+const reflectionLine = (label: string, side: ReflectionSide): string =>
+  `reflection ${label} (not in the primary metric): costPerSuccess ${describePerSuccess(side.costPerSuccess, 6)}, callsPerSuccess ${describePerSuccess(side.callsPerSuccess, 3)}; ${side.cases
+    .map((entry) => `${entry.id} ${describeColumn(entry.column)}`)
+    .join('; ')}`;
+
+const policyDifferenceLine = (comparison: ContextComparison): string[] => {
+  const { policy: left } = comparison.baseline;
+  const { policy: right } = comparison.candidate;
+  if (left === null || right === null) return [];
+  const differing = policyDifferences(left, right);
+  return [differing.length === 0 ? 'policy differs in: nothing (the code digests differ)' : `policy differs in: ${differing.join(', ')}`];
+};
 
 const describeFabrication = (value: ClusteredProportion | undefined): string => (value === undefined ? 'n/a' : describeClustered(value));
 
@@ -362,12 +400,15 @@ export const formatContextComparison = (comparison: ContextComparison): string =
       ...heading,
       `baseline policy: ${canonicalJson(comparison.baseline.policy)}`,
       `candidate policy: ${canonicalJson(comparison.candidate.policy)}`,
+      ...policyDifferenceLine(comparison),
       `baseline codeDigest: ${comparison.baseline.codeDigest}`,
       `candidate codeDigest: ${comparison.candidate.codeDigest}`,
       describeDifference('passRate', comparison.differences.passRate, 3),
       primary === undefined ? 'primary n/a' : describeDifference(primary.metric, primary.interval, primary.metric === 'costPerSuccess' ? 6 : 1),
       describeDifference('lossSignalsPerCompaction', comparison.differences.lossSignalsPerCompaction, 3),
       `fabricationRate baseline ${describeFabrication(comparison.fabricationRate.baseline)}, candidate ${describeFabrication(comparison.fabricationRate.candidate)}`,
+      reflectionLine('baseline', comparison.reflection.baseline),
+      reflectionLine('candidate', comparison.reflection.candidate),
       ...gateLines(comparison),
     ]
       .map(escapeTerminalLine)

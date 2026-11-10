@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { UNMEASURED_CAPABILITY, createMarker, createProcessInspector, hostInspectorPorts, recordMarkerGroup } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -9,6 +9,8 @@ import type { ToolContext } from '@momonga/tools';
 import { bashTool } from '../../src/builtins/bash.ts';
 import { makeClock, makeLayout } from '../helpers.ts';
 import { trackGroup, trackPid, waitFor } from './fixtures.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const NOT_AN_ATTEMPT_RECORD = 'not an attempt record\n';
 
@@ -24,7 +26,7 @@ const isAlive = (pid: number): boolean => {
 const occurrences = (text: string, part: string): number => text.split(part).length - 1;
 
 describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('Bash when recording the process group into the marker fails', () => {
-  it('still waits for the real exit and settles the marker with the group it holds in memory, stopping what outlived the command, and reports the failed record once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('still waits for the real exit and settles the marker with the group it holds in memory, stopping what outlived the command, and reports the failed record once', async () => {
     const layout = makeLayout();
     const markerDir = path.join(layout.root, 'markers');
     fs.mkdirSync(markerDir, { mode: 0o700 });

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { MAX_GLOB_MATCHES, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { DecideInput, GlobDeadline } from '@momonga/policy';
@@ -8,6 +8,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@
 import { createPolicyFilesystem } from '@momonga/tools';
 import type { GlobChild, GlobPorts } from '@momonga/tools';
 import { makeRealWorkspace } from './real-workspace.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 class FakeChild extends EventEmitter implements GlobChild {
   readonly stdout = new PassThrough();
@@ -84,7 +86,7 @@ class StreamlessChild extends EventEmitter {
 
 const DYNAMIC = { unresolvable: { kind: 'dynamic' } };
 
-describe('expandGlob stays inside the decision budget (HIGH-1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('expandGlob stays inside the decision budget (HIGH-1)', () => {
   it('arms one timer for what is left of the deadline, and clears it once the child has finished', async () => {
     const { ports, children, timers } = fakePorts();
     const pending = expanderWith(ports)('*', '/', 10, deadlineOf(1_234));
@@ -144,7 +146,7 @@ describe('expandGlob stays inside the decision budget (HIGH-1)', { timeout: REAL
     const input: DecideInput = {
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command: 'cat a*' },
-      mode: 'default',
+      mode: 'manual',
       rules: [],
       roots,
       home: workspace.home,
@@ -373,7 +375,7 @@ describe('glob matches keep the bytes bash returned (HIGH-3, review item 10)', (
   });
 });
 
-describe('a real shell through the real spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a real shell through the real spawn', () => {
   it('expands a pattern', async () => {
     const workspace = makeRealWorkspace();
     workspace.write('keep', '');

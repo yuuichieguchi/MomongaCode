@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, formatStopMessage } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, formatStopMessage, managedServerStopBoundMs } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { afterMicrotasks } from '@momonga/testkit';
 import type { FakeChild } from './support/p2-fake-spawn-port.ts';
@@ -131,6 +131,7 @@ type ReapDirectoryCall = { dir: string; killGraceMs: number };
 
 const reapingHarness = (context: Parameters<typeof createManagerHarness>[0]) => {
   const calls: ReapDirectoryCall[] = [];
+  const signals: AbortSignal[] = [];
   const pending = Promise.withResolvers<{ reaped: number; kept: number }>();
   const setup = gatewayHarness(context, {
     overrides: {
@@ -138,12 +139,13 @@ const reapingHarness = (context: Parameters<typeof createManagerHarness>[0]) => 
         reapMarkedProcesses: async () => ({ removed: true }),
         reapMarkerDirectory: async (options) => {
           calls.push({ dir: options.dir, killGraceMs: options.killGraceMs });
+          signals.push(options.signal);
           return pending.promise;
         },
       },
     },
   });
-  return { ...setup, calls, finishReap: () => pending.resolve({ reaped: 1, kept: 0 }) };
+  return { ...setup, calls, signals, finishReap: () => pending.resolve({ reaped: 1, kept: 0 }) };
 };
 
 const settledFlag = (promise: Promise<unknown>): { done: boolean } => {
@@ -181,5 +183,26 @@ describe('a gone gateway child has its managed servers reaped before it counts a
     finishReap();
     await stopped;
     expect(harness.manager.state()).toBe('stopped');
+  });
+});
+
+describe('the reap of the managed servers of a gone gateway child is bounded by the managed server stop', () => {
+  it('passes a signal that aborts when the managed server stop bound has passed', async (testContext) => {
+    const { harness, child, write, signals, finishReap } = reapingHarness(testContext);
+    const stopped = harness.manager.stop('shutdown', 'term', VALUES);
+    await afterMicrotasks();
+    write.complete();
+    await afterMicrotasks();
+    child.exit(0, null);
+    await afterMicrotasks();
+    expect(signals).toHaveLength(1);
+    const [signal] = signals;
+    expect(signal?.aborted).toBe(false);
+    harness.timers.advance(managedServerStopBoundMs(VALUES.managedServerStopGraceMs) - 1);
+    expect(signal?.aborted).toBe(false);
+    harness.timers.advance(1);
+    expect(signal?.aborted).toBe(true);
+    finishReap();
+    await stopped;
   });
 });

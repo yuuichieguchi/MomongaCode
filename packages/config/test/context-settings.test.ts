@@ -5,7 +5,7 @@ import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath,
 const DEFAULT_COMMANDS = ['npm test', 'pnpm test', 'yarn test', 'cargo test', 'pytest', 'go test ./...', 'swift test', 'make test'];
 const DEFAULT_MANIFESTS = ['package.json', 'pnpm-lock.yaml', 'Cargo.toml', 'pyproject.toml', 'go.mod', 'Package.swift', 'Makefile'];
 
-const TOKEN_OFF = { cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
+const TOKEN_ON = { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true };
 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
@@ -14,22 +14,22 @@ const resolvedWith = async (settings: Record<string, unknown>) => {
 };
 
 describe('context settings defaults', () => {
-  it('turns reflection off, sets no fixed token cap, and forgets after 90 days', async () => {
-    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: false });
+  it('turns reflection on, sets no fixed token cap, and forgets after 90 days', async () => {
+    expect((await resolvedWith({})).memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 90, repositoryFacts: true });
   });
 
   it('lists the documented verification commands and manifests', async () => {
     expect((await resolvedWith({})).verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS });
   });
 
-  it('keeps the adaptive budget off and automatic compaction on', async () => {
-    expect((await resolvedWith({})).context).toEqual({ adaptiveBudget: false, autoCompact: true, ...TOKEN_OFF });
+  it('keeps the adaptive budget and automatic compaction on', async () => {
+    expect((await resolvedWith({})).context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 });
 
 describe('context.autoCompact', () => {
   it('resolves false from the user settings', async () => {
-    expect((await resolvedWith({ context: { autoCompact: false } })).context).toEqual({ adaptiveBudget: false, autoCompact: false, ...TOKEN_OFF });
+    expect((await resolvedWith({ context: { autoCompact: false } })).context).toEqual({ adaptiveBudget: true, autoCompact: false, ...TOKEN_ON });
   });
 
   it('lets a later layer win without touching the other key', async () => {
@@ -37,7 +37,7 @@ describe('context.autoCompact', () => {
     writeJson(userSettingsPath(tree), { context: { autoCompact: false, adaptiveBudget: true } });
     writeJson(projectSettingsPath(tree), { context: { autoCompact: true } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_OFF });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 
   it('keeps a lower layer when a later layer does not set it', async () => {
@@ -45,7 +45,7 @@ describe('context.autoCompact', () => {
     writeJson(userSettingsPath(tree), { context: { autoCompact: false } });
     writeJson(projectSettingsPath(tree), { context: { adaptiveBudget: true } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: false, ...TOKEN_OFF });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: false, ...TOKEN_ON });
   });
 });
 
@@ -56,14 +56,14 @@ describe('context settings values', () => {
       verification: { commands: ['just check'], manifests: ['justfile'] },
       context: { adaptiveBudget: true },
     });
-    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30, repositoryFacts: false });
+    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30, repositoryFacts: true });
     expect(settings.verification).toEqual({ commands: ['just check'], manifests: ['justfile'] });
-    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_OFF });
+    expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 
   it('keeps the other defaults when one nested key is set', async () => {
     const settings = await resolvedWith({ memory: { reflection: { maxTokens: 512 } }, verification: { commands: ['just check'] } });
-    expect(settings.memory).toEqual({ reflection: { enabled: false, maxTokens: 512 }, forgetAfterDays: 90, repositoryFacts: false });
+    expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 90, repositoryFacts: true });
     expect(settings.verification).toEqual({ commands: ['just check'], manifests: DEFAULT_MANIFESTS });
   });
 
@@ -76,7 +76,7 @@ describe('context settings values', () => {
     writeJson(userSettingsPath(tree), { memory: { forgetAfterDays: 30 }, verification: { commands: ['just check'], manifests: ['justfile'] } });
     writeJson(projectSettingsPath(tree), { memory: { reflection: { enabled: true } }, verification: { commands: ['make verify'] } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: false });
+    expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: true });
     expect(settings.verification).toEqual({ commands: ['make verify'], manifests: ['justfile'] });
   });
 

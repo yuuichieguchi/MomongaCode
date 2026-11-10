@@ -1,4 +1,4 @@
-import { SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
+import { ADAPTER_NEUTRAL_ERROR_CODES, ERROR_TYPES, SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -10,6 +10,7 @@ import type {
   Capabilities,
   CapabilityOverride,
   CountTokensRequest,
+  ErrorType,
   ProviderAdapter,
   StreamEvent,
 } from '@momonga/protocol';
@@ -79,6 +80,21 @@ export const DEFAULT_SCRIPTED_CAPABILITIES: Capabilities = {
   maxConcurrency: 4,
   source: 'declared',
 };
+
+type InStreamFailure = { code: string; errorType: ErrorType; message: string };
+
+const isErrorType = (value: unknown): value is ErrorType => ERROR_TYPES.some((type) => type === value);
+
+const streamFailureOf = (error: unknown): InStreamFailure | undefined => {
+  if (!(error instanceof Error)) return undefined;
+  const { code, errorType } = error as Error & { code?: unknown; errorType?: unknown };
+  return typeof code === 'string' && isErrorType(errorType) ? { code, errorType, message: error.message } : undefined;
+};
+
+const NON_RETRYABLE_TYPES: readonly ErrorType[] = ['invalid_request', 'not_found'];
+const NEUTRAL_CODES: readonly string[] = ADAPTER_NEUTRAL_ERROR_CODES;
+
+const retryableStreamFailure = (failure: InStreamFailure): boolean => !NON_RETRYABLE_TYPES.includes(failure.errorType) && !NEUTRAL_CODES.includes(failure.code);
 
 const abortError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error ? signal.reason : new Error('scripted adapter call aborted');
@@ -200,6 +216,10 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
         }
         return { retryable: false, error: { type: 'invalid_request', code: 'upstream_rejected', message: error.message, param: null } };
       }
+      const streamFailure = streamFailureOf(error);
+      if (streamFailure !== undefined) {
+        return { retryable: retryableStreamFailure(streamFailure), error: { type: streamFailure.errorType, code: streamFailure.code, message: streamFailure.message, param: null } };
+      }
       return {
         retryable: false,
         error: { type: 'model_error', code: 'adapter_error', message: error instanceof Error ? error.message : String(error), param: null },
@@ -218,7 +238,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
     adapter.compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
       compactCalls.push({ request, target: ctx.target });
       if (options.compactGate !== undefined) await waitForGate(options.compactGate, ctx.signal);
-      return { summary, usage: { input_tokens: 40, output_tokens: 8, total_tokens: 48, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } };
+      return { summary, usage: { input_tokens: 40, output_tokens: 8, total_tokens: 48, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } }, usageSource: 'reported' };
     };
   }
   return adapter;

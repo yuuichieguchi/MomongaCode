@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +43,13 @@ export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
 };
 
 const liveGroups = new Set<number>();
+
+export const trackGroup = (pgid: number): (() => void) => {
+  liveGroups.add(pgid);
+  return () => {
+    liveGroups.delete(pgid);
+  };
+};
 
 export type GroupHost = {
   signalGroup: (pgid: number) => void;
@@ -95,7 +102,7 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     });
     const pid = child.pid;
     if (pid === undefined) throw new Error(`${options.script} did not start`);
-    liveGroups.add(pid);
+    const untrackGroup = trackGroup(pid);
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8');
@@ -140,12 +147,12 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     };
     try {
       const [[exitCode, signal]] = await Promise.all([closed, watchCpu()]);
-      return { pid, exitCode, signal, killedAtCpuBudget, stdout, stderr };
+      return { pid, exitCode, signal, killedAtCpuBudget, metadir, stdout, stderr };
     } finally {
       finished = true;
       wake();
       killGroup(pid);
-      liveGroups.delete(pid);
+      untrackGroup();
     }
   } finally {
     fs.rmSync(metadir, { recursive: true, force: true });

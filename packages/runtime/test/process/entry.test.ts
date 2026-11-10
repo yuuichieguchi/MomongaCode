@@ -1,17 +1,19 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, fixedSocket, inspectProcessLock, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, ensureMomongaDirs, fixedSocket, generationLayout, inspectProcessLock, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
 import { runRuntimeEntry } from '@momonga/runtime';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeEntryIo, parseJsonLines, prepareGenerationForTest, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import { MINIMAL_PATH, clientOf, modelSettings, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ injectStraggler: false }));
 
@@ -33,16 +35,19 @@ vi.mock('../../src/process/start-runtime-process.ts', async (importOriginal) => 
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const VERSION = '1.10.0-entry-test';
 
 type Home = { home: string; paths: MomongaPaths; aux: string };
 
-const validHome = (context: CleanupContext): Home => {
+const validHome = async (context: CleanupContext): Promise<Home> => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(aux, 'up.sock')) });
-  return { home, paths: momongaPaths(home, process.platform, {}), aux };
+  const paths = momongaPaths(home, process.platform, {});
+  await ensureMomongaDirs(paths);
+  prepareGenerationForTest(home, FIRST_GENERATION, VERSION);
+  await publishCurrentGeneration(paths, { generation: FIRST_GENERATION, version: VERSION, sockets: generationLayout(home, FIRST_GENERATION).sockets });
+  return { home, paths, aux };
 };
 
 const runDir = (paths: MomongaPaths): void => {
@@ -73,9 +78,10 @@ const lastLine = (lines: readonly JsonLine[]): JsonLine | undefined => lines[lin
 const roleLog = (io: FakeEntryIo, paths: MomongaPaths): JsonLine[] => parseJsonLines(io.logLines(paths.logFiles.runtime));
 
 describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () => {
-  it('runtime: ConfigError gives 78 with JSON stderr and an entry.exit start-failed line', PROCESS_TIMEOUT, async (context) => {
+  it('runtime: ConfigError gives 78 with JSON stderr and an entry.exit start-failed line', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
+    await ensureMomongaDirs(momongaPaths(home, process.platform, {}));
+    prepareGenerationForTest(home, FIRST_GENERATION, VERSION);
     writeInvalidUserSettings(home);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
@@ -86,8 +92,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(lines)).toMatchObject({ msg: 'entry.exit', service: 'runtime', code: 78, path: 'start-failed', clean: false });
   });
 
-  it('runtime: a held runtime lock (live pid that started before the lock) gives 75', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: a held runtime lock (live pid that started before the lock) gives 75', async (context) => {
+    const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.runtime);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
@@ -97,8 +103,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 75, path: 'start-failed', clean: false });
   });
 
-  it('runtime: a held runtime.sock.lock gives 1, not 75', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: a held runtime.sock.lock gives 1, not 75', async (context) => {
+    const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, `${firstGeneration(paths).sockets.runtime}.lock`);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
@@ -108,8 +114,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(stderrJson(io))).toMatchObject({ msg: 'entry.exit', code: 1, path: 'start-failed' });
   });
 
-  it('runtime: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: a lock file left behind by a dead process is no obstacle, and SIGTERM then exits 0', async (context) => {
+    const { home, paths } = await validHome(context);
     runDir(paths);
     fs.writeFileSync(firstGeneration(paths).locks.runtime, '999999\n', { mode: 0o600 });
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
@@ -120,8 +126,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(await launched.exit).toBe(0);
   });
 
-  it('runtime: a home given through a symlink still gives 75 (canonical lock path equality)', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: a home given through a symlink still gives 75 (canonical lock path equality)', async (context) => {
+    const { home, paths } = await validHome(context);
     runDir(paths);
     await startLockHolder(context, firstGeneration(paths).locks.runtime);
     const link = path.join(withTempDir(context), 'h');
@@ -131,8 +137,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(await exit).toBe(75);
   });
 
-  it('runtime: a clean close gives 0, one stdout line, no lock left, and entry.exit close/sigterm in the role log', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: a clean close gives 0, one stdout line, no lock left, and entry.exit close/sigterm in the role log', async (context) => {
+    const { home, paths } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file']);
     await waitForReadyOrExit(launched);
 
@@ -149,18 +155,18 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(launched.io.stderrLines()).toEqual([]);
   });
 
-  it('runtime: a second SIGTERM aborts the drain (the user drain setting at its maximum, far beyond the test timeout)', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths, aux } = validHome(context);
+  it('runtime: a second SIGTERM aborts the drain (the user drain setting at its maximum, far beyond the test timeout)', async (context) => {
+    const { home, paths, aux } = await validHome(context);
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
     writeUserSettings(home, { sandbox: 'none', runtime: { drainTimeoutMs: 300_000 }, ...modelSettings(fake.socketPath) });
-    const gateway = await startGatewayProcess({
+    const gateway = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux },
       version: VERSION,
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await gateway.close();
     });
@@ -183,12 +189,12 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(stderrJson(launched.io))).toMatchObject({ msg: 'entry.exit', code: 0, path: 'abort', clean: true, trigger: 'sigterm' });
   });
 
-  it('runtime: a non-clean close (an injected straggler) gives 1', PROCESS_TIMEOUT, async (context) => {
+  it('runtime: a non-clean close (an injected straggler) gives 1', async (context) => {
     control.injectStraggler = true;
     registerCleanup(context, () => {
       control.injectStraggler = false;
     });
-    const { home } = validHome(context);
+    const { home } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
 
@@ -197,8 +203,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(lastLine(stderrJson(launched.io))).toMatchObject({ msg: 'entry.exit', code: 1, path: 'close', clean: false, trigger: 'sigterm' });
   });
 
-  it('runtime: an unknown flag gives 78 with one JSON line on stderr and no log file', PROCESS_TIMEOUT, async (context) => {
-    const { home } = validHome(context);
+  it('runtime: an unknown flag gives 78 with one JSON line on stderr and no log file', async (context) => {
+    const { home } = await validHome(context);
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--no-such-flag=1']);
 
     expect(await exit).toBe(78);
@@ -210,8 +216,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(io.logFilePaths).toEqual([]);
   });
 
-  it('runtime: the OTel error handler is installed and logs otel.error as a warn line on stderr, nothing on stdout', PROCESS_TIMEOUT, async (context) => {
-    const { home } = validHome(context);
+  it('runtime: the OTel error handler is installed and logs otel.error as a warn line on stderr, nothing on stdout', async (context) => {
+    const { home } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
 
@@ -225,8 +231,8 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(await launched.exit).toBe(0);
   });
 
-  it('runtime: the health route answers while the entry runs without a lifeline', PROCESS_TIMEOUT, async (context) => {
-    const { home, paths } = validHome(context);
+  it('runtime: the health route answers while the entry runs without a lifeline', async (context) => {
+    const { home, paths } = await validHome(context);
     const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
     const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.runtime));

@@ -83,7 +83,7 @@ describe('recovery inside one turn', () => {
     await env.runOnce(env.worker('worker-1', overrides));
     expect(env.run(straight.id).status).toBe('COMPLETED');
 
-    env.setMode('default');
+    env.setMode('manual');
     env.gateway.script.push(...script());
     const paused = env.enqueue('Fill the context', { history: 'fresh' });
     await env.runOnce(env.worker('worker-2', overrides));

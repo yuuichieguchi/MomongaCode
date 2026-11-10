@@ -5,6 +5,7 @@ import type { FakeTimers } from '@momonga/testkit';
 import { OAuthAuthorizationError, startLoopbackRedirect } from '@momonga/foundation';
 
 const WAIT_MS = 5000;
+const CALLBACK_PATH = '/auth/callback';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -35,7 +36,7 @@ const observedTimers = (clock: ReturnType<typeof createFakeClock>): ObservedTime
 
 const start = async () => {
   const timers = observedTimers(createFakeClock(1_000_000));
-  const redirect = await startLoopbackRedirect({ port: 0, timers });
+  const redirect = await startLoopbackRedirect({ port: 0, path: CALLBACK_PATH, timers });
   onCleanup(() => redirect.close());
   const url = new URL(redirect.redirectUrl);
   return { redirect, timers, url };
@@ -57,7 +58,7 @@ describe('loopback redirect listener', () => {
     const { port, hostname } = new URL(redirect.redirectUrl);
     expect(hostname).toBe('127.0.0.1');
     const viaIpv6 = new Promise<number>((resolve, reject) => {
-      const req = http.request({ host: '::1', port: Number(port), path: '/callback' }, (res) => resolve(res.statusCode as number));
+      const req = http.request({ host: '::1', port: Number(port), path: '/auth/callback' }, (res) => resolve(res.statusCode as number));
       req.on('error', reject);
       req.end();
     });
@@ -67,20 +68,21 @@ describe('loopback redirect listener', () => {
   it('delivers the first callback that carries the expected state and then stops listening for more', async () => {
     const { redirect, url } = await start();
     const arrived = redirect.callback({ state: 'right', signal: new AbortController().signal, timeoutMs: WAIT_MS });
-    expect(await rawGet(Number(url.port), '/callback?state=wrong&code=evil', `127.0.0.1:${url.port}`)).toBe(400);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=wrong&code=evil', `127.0.0.1:${url.port}`)).toBe(400);
     expect(await rawGet(Number(url.port), '/other?state=right&code=x', `127.0.0.1:${url.port}`)).toBe(404);
-    expect(await rawGet(Number(url.port), '/callback?state=right&code=x', `127.0.0.1:${url.port}`, 'POST')).toBe(404);
-    expect(await rawGet(Number(url.port), '/callback?state=right&code=x', 'attacker.example')).toBe(404);
-    expect(await rawGet(Number(url.port), '/callback?state=right&code=good&iss=i', `127.0.0.1:${url.port}`)).toBe(200);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=right&code=x', `127.0.0.1:${url.port}`, 'POST')).toBe(404);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=right&code=x', 'attacker.example')).toBe(404);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=right&code=x', `localhost:${url.port}`)).toBe(404);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=right&code=good&iss=i', `127.0.0.1:${url.port}`)).toBe(200);
     const params = await arrived;
     expect(params.get('code')).toBe('good');
     expect(params.get('iss')).toBe('i');
-    expect(await rawGet(Number(url.port), '/callback?state=right&code=second', `127.0.0.1:${url.port}`)).toBe(404);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=right&code=second', `127.0.0.1:${url.port}`)).toBe(404);
   });
 
   it('answers 404 before a callback is awaited', async () => {
     const { url } = await start();
-    expect(await rawGet(Number(url.port), '/callback?state=any&code=x', `127.0.0.1:${url.port}`)).toBe(404);
+    expect(await rawGet(Number(url.port), '/auth/callback?state=any&code=x', `127.0.0.1:${url.port}`)).toBe(404);
   });
 
   it('rejects with timed_out when the wait elapses', async () => {
@@ -97,6 +99,6 @@ describe('loopback redirect listener', () => {
 
   it('refuses to bind a port that is taken', async () => {
     const { url } = await start();
-    await expect(startLoopbackRedirect({ port: Number(url.port), timers: observedTimers(createFakeClock(0)) })).rejects.toThrow(/EADDRINUSE/);
+    await expect(startLoopbackRedirect({ port: Number(url.port), path: CALLBACK_PATH, timers: observedTimers(createFakeClock(0)) })).rejects.toThrow(/EADDRINUSE/);
   });
 });

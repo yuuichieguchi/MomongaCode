@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,7 +66,7 @@ export const makeRealWorkspace = (): RealWorkspace => {
     return decide({
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject: { kind: 'command', tool: 'Bash', command },
-      mode: options.mode ?? 'default',
+      mode: options.mode ?? 'manual',
       rules,
       roots,
       home,

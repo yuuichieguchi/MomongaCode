@@ -1,17 +1,20 @@
 import { defineProductSchema, isRecord, parseOutsideJson, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import { validatePolicyOverlay } from './context-policy.ts';
+import { validateResolvedPolicy } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
+import { RETIRED_POLICY_REASON, NEW_PAIR_COMMANDS } from './retired-formats.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/6';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/8';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
   'momonga-transcript/3': 'the policy and the code digest of the run',
   'momonga-transcript/4': 'what answered the run (the answering targets and whether each is a model or a script)',
   'momonga-transcript/5': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
+  'momonga-transcript/6': 'whether the upstream reported the cache reads of each call',
+  'momonga-transcript/7': `the resolved policy (${RETIRED_POLICY_REASON})`,
 };
 
 export type TranscriptRun = {
@@ -73,8 +76,8 @@ const CODE_DIGEST = /^[0-9a-f]{64}$/;
 
 const policyOf = (value: unknown, where: string): PolicyOverlay | null => {
   if (value === null) return null;
-  const verdict = validatePolicyOverlay(value);
-  if (!verdict.valid) throw new TranscriptError(`${where}: policy must be a token policy overlay`);
+  const verdict = validateResolvedPolicy(value);
+  if (!verdict.valid) throw new TranscriptError(`${where}: policy must be a resolved token policy`);
   return verdict.value;
 };
 
@@ -235,7 +238,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     throw new TranscriptError(`${source}:1: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (isRecord(header) && typeof header['format'] === 'string' && Object.hasOwn(RETIRED_TRANSCRIPT_FORMATS, header['format'])) {
-    throw new TranscriptError(`${source}:1: ${header['format']} transcripts do not record ${RETIRED_TRANSCRIPT_FORMATS[header['format']]}, so they cannot be graded as ${TRANSCRIPT_FORMAT}; record the case again`);
+    throw new TranscriptError(`${source}:1: ${header['format']} transcripts do not record ${RETIRED_TRANSCRIPT_FORMATS[header['format']]}, so they cannot be graded as ${TRANSCRIPT_FORMAT}; record the case again; every transcript older than ${TRANSCRIPT_FORMAT} has its ${RETIRED_POLICY_REASON}, so record a pair from one bundle: ${NEW_PAIR_COMMANDS}`);
   }
   if (!isRecord(header) || header['format'] !== TRANSCRIPT_FORMAT) throw new TranscriptError(`${source}:1: first line must be a ${TRANSCRIPT_FORMAT} header`);
   const { caseId, runIndex } = header;
@@ -243,9 +246,9 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (!isNonNegativeInteger(runIndex)) throw new TranscriptError(`${source}:1: runIndex must be a non-negative integer`);
   const run = runOf(header['run'], `${source}:1`);
   const children = childrenOf(header['children'], `${source}:1`);
+  if ((header['policy'] === null) !== (header['codeDigest'] === null)) throw new TranscriptError(`${source}:1: policy and codeDigest are both null or both recorded`);
   const policy = policyOf(header['policy'], `${source}:1`);
   const codeDigest = codeDigestOf(header['codeDigest'], `${source}:1`);
-  if ((policy === null) !== (codeDigest === null)) throw new TranscriptError(`${source}:1: policy and codeDigest are both null or both recorded`);
   const end = endRecordOf(eventLines.at(-1), source);
   const events: PublicRunEvent[] = [];
   eventLines.slice(0, -1).forEach((line, index) => {

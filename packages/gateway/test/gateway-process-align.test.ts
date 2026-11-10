@@ -3,15 +3,17 @@ import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIRST_GENERATION, fixedSocket, fixedRolePort } from '@momonga/foundation';
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings, prepareHome as prepareGenerationHome } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   createGatewayError: undefined as Error | undefined,
@@ -94,6 +96,7 @@ const prepareHome = async (context: CleanupContext) => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareGenerationHome(home);
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath) } } });
   return { home, fake, paths: homePaths(home) };
 };
@@ -103,14 +106,14 @@ const closeQuietly = async (handle: GatewayProcess): Promise<void> => {
 };
 
 const start = async (context: CleanupContext, options: Parameters<typeof startGatewayProcess>[0]): Promise<GatewayProcess> => {
-  const handle = await startGatewayProcess({ stdout: capture(), ...options });
+  const handle = await ownedStart(context, startGatewayProcess({ stdout: capture(), ...options }));
   registerCleanup(context, () => closeQuietly(handle));
   return handle;
 };
 
 const rejectionOf = async (context: CleanupContext, promise: Promise<GatewayProcess>): Promise<unknown> => {
   try {
-    const handle = await promise;
+    const handle = await ownedStart(context, promise);
     registerCleanup(context, () => closeQuietly(handle));
   } catch (error) {
     return error;
@@ -158,6 +161,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
   it('ConfigError from settings is rethrown as ConfigError and the lock is released', async (context) => {
     resetControl(context);
     const home = withTempDir(context, { asHome: true });
+    prepareGenerationHome(home);
     writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const error = await rejectionOf(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }));
     expect(error).toBeInstanceOf(ConfigError);
@@ -309,6 +313,7 @@ describe('gateway fatal (§4.2, §4.3)', () => {
     }) as typeof http.createServer);
     const seen: Error[] = [];
     const gateway = await createGateway({
+      role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),

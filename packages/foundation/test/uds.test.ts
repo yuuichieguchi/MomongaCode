@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from '@momonga/testkit/child-process';
 import net from 'node:net';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -9,6 +9,8 @@ import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernel
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, realProcessTestSignal } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SQLITE_JOURNAL_SUFFIX = '-journal';
 
@@ -72,7 +74,7 @@ const client = (socketPath: string): ReturnType<typeof createUdsClient> => {
   return created;
 };
 
-describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('listenUnix', () => {
   it('listens on a socket in a 0700 directory and leaves the socket mode 0600', async () => {
     const socketPath = path.join(makeDir(), 's.sock');
     const server = echoServer();
@@ -156,7 +158,7 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   });
 });
 
-describe('listenUnix locking', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('listenUnix locking', () => {
   const holderScript = (socketPath: string): string => `
     import net from 'node:net';
     import { listenUnix } from ${JSON.stringify(path.resolve(import.meta.dirname, '../src/uds.ts'))};

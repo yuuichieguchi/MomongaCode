@@ -1,15 +1,15 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ChildProcessByStdio } from 'node:child_process';
+import type { ChildProcessByStdio } from '@momonga/testkit/child-process';
 import type { Readable, Writable } from 'node:stream';
 import { expect } from 'vitest';
 import type { SandboxSetting } from '@momonga/config';
-import { parseReadyLine } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
@@ -27,7 +27,7 @@ import { pinnedRipgrepPath } from '../../test/support/pinned-ripgrep.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
 export { SUPERVISOR_APP_VERSION };
-export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+export const SUPERVISOR_ENV_PATH = MINIMAL_CHILD_PATH;
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_TARGET = 'primary';
@@ -48,6 +48,7 @@ export type StackTarget = { readonly capabilities?: StackTargetCapabilities; rea
 
 export type StartStackOptions = {
   home: E2eHome;
+  preparedGeneration?: number;
   needsBash?: boolean;
   sandbox?: StackSandbox;
   settings?: Readonly<Record<string, unknown>>;
@@ -77,7 +78,7 @@ export type SpawnedSupervisor = {
   exited: Promise<SupervisorExit>;
 };
 
-export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string };
+export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string; generation?: number };
 
 export type E2eStack = {
   readonly home: E2eHome;
@@ -194,16 +195,17 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number,
   return file;
 };
 
-export const supervisorArgv = (home: E2eHome): string[] => [`--home=${home.home}`, '--log-target=file'];
+export const supervisorArgv = (home: E2eHome, generation?: number): string[] => [`--home=${home.home}`, '--log-target=file', ...(generation === undefined ? [] : [`--generation=${generation}`])];
 
-export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> => ({
-  PATH: SUPERVISOR_ENV_PATH,
-  HOME: home.home,
-  TMPDIR: home.root,
-  LANG: 'C',
-  [E2E_RUN_ENV]: home.run,
-  [E2E_DEPS_ENV]: depsFile,
-});
+export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> =>
+  productTestEnv({
+    PATH: SUPERVISOR_ENV_PATH,
+    HOME: home.home,
+    TMPDIR: home.root,
+    LANG: 'C',
+    [E2E_RUN_ENV]: home.run,
+    [E2E_DEPS_ENV]: depsFile,
+  });
 
 const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
   let start = 0;
@@ -214,10 +216,11 @@ const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
 const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signal ${exit.signal}`;
 
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
-  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version } = options;
+  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version, generation } = options;
   const depsFile = writeDepsFile(home, deps, stackNumber, version);
-  const child = spawn(process.execPath, [script, ...supervisorArgv(home)], {
-    env: supervisorEnv(home, depsFile),
+  const env = supervisorEnv(home, depsFile);
+  const child = spawn(process.execPath, [script, ...supervisorArgv(home, generation)], {
+    env,
     cwd: home.root,
     detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -337,7 +340,14 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
   writeSettingsFile(home, settingsOf(home, choice.kind, options));
   const deadline = Date.now() + (options.readinessDeadlineMs ?? e2eStartBoundMs(deps));
   const remainingMs = (): number => Math.max(0, deadline - Date.now());
-  const supervisor = spawnSupervisor({ home, deps, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }), ...(options.version === undefined ? {} : { version: options.version }) });
+  const supervisor = spawnSupervisor({
+    home,
+    deps,
+    stackNumber: 1,
+    ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }),
+    ...(options.version === undefined ? {} : { version: options.version }),
+    ...(options.preparedGeneration === undefined ? {} : { generation: options.preparedGeneration }),
+  });
   const ready = await supervisor.ready(remainingMs());
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());

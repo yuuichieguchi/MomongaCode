@@ -126,7 +126,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
       buildQueryContext(z3.engine().api, {
         rules: rulesOf(layout, rules),
         roots,
-        mode: 'default',
+        mode: 'manual',
         home: layout.home,
         cwd: layout.project,
         protectedSet: protectedSetFor(roots, fileSystem),

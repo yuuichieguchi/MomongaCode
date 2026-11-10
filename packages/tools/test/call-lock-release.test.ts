@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hostKernelLock, sqliteFileLock } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startLockHolder, withTempDir } from '@momonga/testkit';
@@ -8,6 +8,8 @@ import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY = keyFor('run-1', 1, 'c1');
 const READ_AND_ENTER_ONLY = 0o500;
@@ -38,7 +40,7 @@ const seal = (dir: string, context: Parameters<typeof registerCleanup>[0]): void
   registerCleanup(context, () => fs.chmodSync(dir, PRIVATE_DIR));
 };
 
-describe('call lock files of the Linux and Windows mechanism', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('call lock files of the Linux and Windows mechanism', () => {
   it('leaves nothing behind after release', async (context) => {
     const dir = withTempDir(context);
     const locks = createCallLocks({ dir, mechanism: sqliteFileLock, timing: advancingTiming(), waitMs: 0 });

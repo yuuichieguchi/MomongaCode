@@ -1,10 +1,10 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFileSync, execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
@@ -51,14 +51,14 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
 
   const run = (...args: string[]): Promise<Invocation> =>
     new Promise((resolve, reject) => {
-      execFile(binary, args, { cwd: project, env: { PATH: '/usr/bin:/bin', HOME: root }, encoding: 'utf8' }, (error, stdout, stderr) => {
+      execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== 'number') reject(error);
         else resolve({ status: error === null ? 0 : (error.code as number), stdout, stderr });
       });
     });
 
   beforeAll(async () => {
-    root = fs.realpathSync(createTempRoot());
+    root = createTempRoot({ asHome: true });
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
     paths = momongaLayout(root);
@@ -100,7 +100,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
   afterAll(async () => {
     if (binary !== '') await run('daemon', 'stop');
     await upstream.close();
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   it('prints its version on a PATH that contains no node', async () => {

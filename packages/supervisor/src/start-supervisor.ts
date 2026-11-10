@@ -1,53 +1,82 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey } from '@momonga/config';
+import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import {
-  EXIT_VERSION_MISMATCH,
+  GenerationDirectoryMissingError,
   MAXIMUM_STOP_VALUES,
   acquireProcessLock,
   announceReady,
   canonicalPath,
+  claimGeneration,
   createJsonLogger,
   daemonStopBoundMs,
-  ensureGenerationDirs,
   generationLayout,
+  hostKernelLock,
+  listGenerations,
   momongaPaths,
   orphanReapGraceMs,
   publishCurrentGeneration,
-  readCurrentStopRecord,
+  readCurrentGeneration,
+  reapMarkerDirectory,
+  requireGenerationDirs,
   roleEndpoint,
   runtimeMaxCloseMs,
+  scopeToGeneration,
   systemClock,
   writeStopRecord,
 } from '@momonga/foundation';
-import type { AtomicWriteFileSystem, Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
+import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
-import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, SUPERVISOR_API_VERSION } from '@momonga/protocol';
+import { readChildCounts } from './child-counts.ts';
+import type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_GENERATION, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, MANY_GENERATIONS_THRESHOLD, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
+import { handedCredentialNames } from './child-env.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
-import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
+import {
+  generationEnded,
+  generationMany,
+  generationPromoted,
+  generationRetiring,
+  orphansWarning,
+  phaseChange,
+  settingsChanged,
+  settingsInvalid,
+  settingsRecordFailed,
+  settingsReadFailed,
+  settingsWarning,
+  startAbandoned,
+  startSuperseded,
+  startUnpromoted,
+  supervisorBackgroundFailed,
+  supervisorBackgroundTransient,
+  writeEvent,
+} from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
-import { orphanReapBoundMs } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
-import { changedSections, digestsOf, planRoles, runRestartPlan } from './plan.ts';
-import type { RestartPlanPort } from './plan.ts';
 import { resolveRestartPolicy } from './restart-policy.ts';
 import type { RestartPolicy } from './restart-policy.ts';
 import { safeChangeKey, watchSettings } from './settings-watch.ts';
 import type { SettingsWatch } from './settings-watch.ts';
 import { createShutdownController } from './shutdown.ts';
+import { createSuccessor } from './successor.ts';
+import type { SuccessorLauncher } from './successor.ts';
 
 export type SupervisorOptions = {
   home: string;
   version: string;
+  generation: number;
   launcher: Launcher;
+  successorLauncher?: SuccessorLauncher;
+  reaperPass?: (context: { signal: AbortSignal }) => Promise<void>;
+  childCounts?: ChildCountsReader;
   env?: Readonly<Record<string, string | undefined>>;
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
@@ -92,7 +121,7 @@ export const resolveStartTiming = (
   };
 };
 
-export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => orphanReapBoundMs(timing) + timing.startupTimeoutMs;
+export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => timing.startupTimeoutMs;
 
 export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error; exitCode?: number };
 
@@ -103,9 +132,9 @@ export type SupervisorProcess = {
   abort(values?: StopValues): Promise<SupervisorCloseResult>;
   closed: Promise<SupervisorCloseResult>;
   fatal: Promise<Error>;
+  role(): GenerationRole;
+  abandoned?: AbandonReason;
 };
-
-const PLANNABLE_STATES: ReadonlySet<string> = new Set(['starting', 'ready', 'stopping', 'backoff']);
 
 const realTimers: SupervisorTimers = {
   setTimeout: (callback, ms) => setTimeout(callback, ms),
@@ -114,6 +143,36 @@ const realTimers: SupervisorTimers = {
 
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
+const abandonedStart = (options: SupervisorOptions, own: { sockets: { supervisor: string } }, startedAt: string, reason: AbandonReason): SupervisorProcess => {
+  const result: SupervisorCloseResult = { clean: true, killed: [], leaked: [] };
+  const closed = Promise.resolve(result);
+  options.onShutdownRequested?.();
+  return {
+    ready: { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt },
+    health: () => ({
+      status: 'ok',
+      version: options.version,
+      apiVersion: SUPERVISOR_API_VERSION,
+      pid: process.pid,
+      startedAt,
+      phase: 'draining',
+      env: 'frozen at supervisor start',
+      children: [],
+      logs: { droppedLines: options.droppedLogLines?.() ?? 0 },
+      generation: options.generation,
+      role: 'starting',
+    }),
+    close: () => closed,
+    abort: () => closed,
+    closed,
+    fatal: new Promise<Error>(() => undefined),
+    role: () => 'starting',
+    abandoned: reason,
+  };
+};
+
+type OwnClaim = { kind: 'claimed'; lock: ProcessLock } | { kind: 'abandoned'; reason: AbandonReason };
+
 export const startSupervisor = async (options: SupervisorOptions): Promise<SupervisorProcess> => {
   const clock = options.clock ?? systemClock;
   const timers = options.timers ?? realTimers;
@@ -121,45 +180,75 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
   const canonicalHome = canonicalPath(options.home);
-  const paths = momongaPaths(canonicalHome, process.platform, {});
-  const predecessorStopValues = 'predecessorStopValues' in options ? options.predecessorStopValues : await readCurrentStopRecord(paths);
-  const startTiming = resolveStartTiming({ ...options, predecessorStopValues });
+  const startTiming = resolveStartTiming(options);
   const { startupTimeoutMs } = startTiming;
+  const homePaths = momongaPaths(canonicalHome, process.platform, {});
+  const paths = scopeToGeneration(homePaths, options.generation);
   const env = { ...(options.env ?? process.env) };
   const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
+  const lockMechanism = options.lockMechanism ?? hostKernelLock();
+  const processStartedAt = clock.now();
+  const startedAt = new Date(processStartedAt).toISOString();
+  const log = writeEvent.bind(undefined, logger);
+  const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => timers.setTimeout(resolve, ms));
 
-  const own = generationLayout(canonicalHome, SUPERVISOR_GENERATION);
+  const own = generationLayout(canonicalHome, options.generation);
 
-  await ensureGenerationDirs(paths, own.generation);
-  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(own.locks.supervisor);
+  const claimOwn = async (): Promise<OwnClaim> => {
+    const acquire = options.acquireLock ?? ((lockPath: string) => acquireProcessLock(lockPath, undefined, lockOptions));
+    for (let waited = 0; ; waited += intervals.generationPollMs) {
+      options.signal?.throwIfAborted();
+      const claim = await claimGeneration(homePaths, own.generation, { version: options.version, lock: lockMechanism, acquire });
+      if (claim.kind !== 'busy') return claim;
+      if (waited >= startupTimeoutMs) return { kind: 'abandoned', reason: 'lock-held' };
+      await sleep(intervals.generationPollMs);
+    }
+  };
+
+  const abandon = (reason: AbandonReason): SupervisorProcess => {
+    log(startAbandoned({ generation: own.generation, reason }));
+    return abandonedStart(options, own, startedAt, reason);
+  };
+
+  const claimed = await claimOwn();
+  if (claimed.kind === 'abandoned') return abandon(claimed.reason);
+  const lock = claimed.lock;
+  try {
+    await requireGenerationDirs(homePaths, own.generation);
+  } catch (error) {
+    lock.release();
+    if (error instanceof GenerationDirectoryMissingError) return abandon('directory-missing');
+    throw error;
+  }
 
   let server: ControlServer | undefined;
   try {
-    const startedAt = new Date(clock.now()).toISOString();
-    let phase: SupervisorPhase = 'reaping-orphans';
+    let phase: SupervisorPhase = 'running';
+    let role: GenerationRole = 'starting';
+    let ended = false;
+    let promoting = false;
     let draining = false;
-    let planRunning = false;
-    let evaluationPending = false;
     let lastEvaluatedKey: string | undefined;
     let lastReadFailure: string | undefined;
     let launchPromise: Promise<void> = Promise.resolve();
-    let planPromise: Promise<void> = Promise.resolve();
     let settingsWatcher: SettingsWatch | undefined;
-    let versionMismatch = false;
     let requestShutdown: (values?: StopValues) => void = () => undefined;
     let stopBoundMs: number | undefined;
-    let published = false;
     let publishPromise: Promise<void> = Promise.resolve();
-    let publishOnceAllReady: () => void = () => undefined;
+    let pollPromise: Promise<void> = Promise.resolve();
+    let reaperPromise: Promise<void> | undefined;
+    let pollTimer: unknown;
+    let promotionBoundTimer: unknown;
+    let counts: GenerationCounts = {};
+    let reportedLive: number | undefined;
     const launchController = new AbortController();
-    const planController = new AbortController();
+    const launchSignal = options.signal === undefined ? launchController.signal : AbortSignal.any([launchController.signal, options.signal]);
+    const lifetime = new AbortController();
     const reportedSources = new Set<string>();
     let resolveFatal: (error: Error) => void = () => undefined;
     const fatal = new Promise<Error>((resolve) => {
       resolveFatal = resolve;
     });
-
-    const log = writeEvent.bind(undefined, logger);
 
     const reportedTransient = new Map<string, string>();
 
@@ -188,7 +277,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
     const reapTiming: ReapTiming = options.reapTiming ?? {
       now: () => clock.now(),
-      sleep: (ms) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms)),
+      sleep,
     };
 
     const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
@@ -203,13 +292,55 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         onNotice: (detail) => log(settingsWarning({ detail })),
       });
 
-    const createManager = (role: ChildRole): ChildManager =>
+    const endByItself = (): void => {
+      if (ended || draining) return;
+      ended = true;
+      requestShutdown();
+    };
+
+    const successor = createSuccessor({
+      home: canonicalHome,
+      paths: homePaths,
+      generation: own.generation,
+      version: options.version,
+      foldVersion: FIDELITY_FOLD_VERSION,
+      lock: lockMechanism,
+      launcher: options.successorLauncher,
+      timers,
+      pollMs: intervals.generationPollMs,
+      boundMs: startupTimeoutMs,
+      logger,
+      onError: (error) => reportTransient(error, 'successor'),
+    });
+
+    let managers: readonly ChildManager[] = [];
+
+    const becomeRetiring = (current: number | null): void => {
+      if (role === 'retiring' || draining) return;
+      role = 'retiring';
+      log(generationRetiring({ generation: own.generation, current }));
+      settingsWatcher?.stop();
+      successor.stop();
+      for (const manager of managers) manager.enterRetiring();
+    };
+
+    const onVersionMismatch = (childVersion: string): void => {
+      if (draining || ended) return;
+      if (role === 'starting') {
+        log(startAbandoned({ generation: own.generation, reason: 'version-differs' }));
+        endByItself();
+        return;
+      }
+      if (role === 'serving') void successor.request(childVersion).catch((error: unknown) => reportTransient(error, 'successor'));
+    };
+
+    const createManager = (childRole: ChildRole): ChildManager =>
       createChildManager({
-        role,
+        role: childRole,
         home: canonicalHome,
         paths,
         generation: own.generation,
-        endpoint: roleEndpoint(own, role),
+        endpoint: roleEndpoint(own, childRole),
         launcher: options.launcher,
         env,
         spawn: options.spawn,
@@ -225,12 +356,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         lockWaitMs: options.lockWaitMs ?? LOCK_WAIT_DEADLINE_MS,
         version: options.version,
         isDraining: () => draining,
-        onVersionMismatch: () => {
-          versionMismatch = true;
-          requestShutdown();
-        },
+        isRetiring: () => role === 'retiring',
+        onRetiredExit: () => becomeRetiring(null),
+        onVersionMismatch: (mismatch) => onVersionMismatch(mismatch.childVersion),
         stopValues,
-        onReady: () => publishOnceAllReady(),
+        onReady: () => promoteOnceAllReady(),
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
@@ -238,16 +368,108 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
     const gateway = createManager('gateway');
     const runtime = createManager('runtime');
-    const managers = [gateway, runtime] as const;
+    managers = [gateway, runtime];
 
-    publishOnceAllReady = (): void => {
-      if (published || draining || !managers.every((manager) => manager.state() === 'ready')) return;
-      published = true;
-      publishPromise = publishCurrentGeneration(paths, { generation: own.generation, version: options.version, sockets: own.sockets }, options.currentFileSystem).catch((error: unknown) =>
-        reportBackground(error, 'publish-current'),
-      );
+    const runReaperPass = (): void => {
+      const pass = options.reaperPass;
+      if (pass === undefined || reaperPromise !== undefined || role !== 'serving' || draining) return;
+      reaperPromise = pass({ signal: lifetime.signal })
+        .catch((error: unknown) => reportTransient(error, 'reaper-pass'))
+        .finally(() => {
+          reaperPromise = undefined;
+        });
     };
-    const managerOf = (role: ChildRole): ChildManager => (role === 'gateway' ? gateway : runtime);
+
+    const promote = async (): Promise<void> => {
+      const outcome = await publishCurrentGeneration(
+        homePaths,
+        { generation: own.generation, version: options.version, sockets: own.sockets },
+        { lock: lockMechanism, ...omitUndefined({ fs: options.currentFileSystem }) },
+      );
+      if (outcome === 'busy' || draining || ended) return;
+      if (outcome === 'superseded') {
+        log(startSuperseded({ generation: own.generation, current: (await readCurrentGeneration(homePaths))?.generation ?? own.generation }));
+        endByItself();
+        return;
+      }
+      role = 'serving';
+      if (promotionBoundTimer !== undefined) timers.clearTimeout(promotionBoundTimer);
+      promotionBoundTimer = undefined;
+      log(generationPromoted({ generation: own.generation, version: options.version, startToPromotedMs: clock.now() - processStartedAt }));
+      runReaperPass();
+    };
+
+    function promoteOnceAllReady(): void {
+      if (role !== 'starting' || promoting || draining || ended || !managers.every((manager) => manager.state() === 'ready')) return;
+      promoting = true;
+      publishPromise = promote()
+        .catch((error: unknown) => reportBackground(error, 'publish-current'))
+        .finally(() => {
+          promoting = false;
+        });
+    }
+    const refreshCounts = async (): Promise<void> => {
+      const reader = options.childCounts ?? readChildCounts;
+      const read = async (manager: ChildManager): Promise<GenerationCounts> => {
+        if (manager.state() !== 'ready') return {};
+        try {
+          return await reader(manager.role, roleEndpoint(own, manager.role).socketPath);
+        } catch (error) {
+          reportTransient(error, `child-counts-${manager.role}`);
+          return {};
+        }
+      };
+      const [fromGateway, fromRuntime] = await Promise.all([read(gateway), read(runtime)]);
+      counts = { ...fromRuntime, ...fromGateway };
+    };
+
+    const warnWhenMany = async (): Promise<void> => {
+      const live = (await listGenerations(homePaths, { lock: lockMechanism })).filter((listed) => listed.live).length;
+      if (live === reportedLive) return;
+      reportedLive = live;
+      if (live > MANY_GENERATIONS_THRESHOLD) log(generationMany({ live }));
+    };
+
+    const pollOnce = async (): Promise<void> => {
+      let current: number | undefined;
+      try {
+        current = (await readCurrentGeneration(homePaths))?.generation;
+      } catch (error) {
+        reportTransient(error, 'current-generation');
+        return;
+      }
+      if (draining || ended) return;
+      if (role === 'starting') {
+        if (current !== undefined && current > own.generation) {
+          log(startSuperseded({ generation: own.generation, current }));
+          endByItself();
+          return;
+        }
+        promoteOnceAllReady();
+      } else if (role === 'serving' && current !== undefined && current > own.generation) {
+        becomeRetiring(current);
+      }
+      if (role === 'retiring' && managers.every((manager) => manager.hasEnded())) {
+        log(generationEnded({ generation: own.generation, liveMs: clock.now() - processStartedAt }));
+        endByItself();
+        return;
+      }
+      if (role === 'serving') {
+        runReaperPass();
+        await warnWhenMany();
+      }
+      await refreshCounts();
+    };
+
+    const armPoll = (): void => {
+      if (draining || ended) return;
+      pollTimer = timers.setTimeout(() => {
+        pollTimer = undefined;
+        pollPromise = pollOnce()
+          .catch((error: unknown) => reportTransient(error, 'generation-poll'))
+          .finally(armPoll);
+      }, intervals.generationPollMs);
+    };
 
     const health = (): SupervisorHealth => ({
       status: 'ok',
@@ -260,36 +482,22 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       children: [gateway.health(), runtime.health()],
       logs: { droppedLines: options.droppedLogLines?.() ?? 0 },
       ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
+      generation: own.generation,
+      role,
+      ...counts,
     });
 
-    const planPort: RestartPlanPort = {
-      isDraining: () => draining,
-      stop: async (role) => {
-        await managerOf(role).stop('plan-restart', 'term');
-      },
-      start: (role) => managerOf(role).planStart(),
-      awaitSettled: async (role, timeoutMs) => {
-        await managerOf(role).awaitLeave('starting', { timeoutMs, signal: planController.signal });
-      },
-      isPlanStopped: (role) => managerOf(role).isPlanStopped(),
-    };
-
-    let evaluate: () => void = () => undefined;
-
-    const startPlan = (roles: readonly ChildRole[]): void => {
-      planRunning = true;
-      log(planBegin({ roles: roles.join(','), planned: roles.length }));
-      planPromise = runRestartPlan({ roles, port: planPort, signal: planController.signal, startupTimeoutMs })
-        .catch((error: unknown) => reportBackground(error, 'restart-plan'))
-        .then(() => {
-          planRunning = false;
-          log(planEnd({ roles: roles.join(','), planned: roles.length }));
-          if (evaluationPending && !draining) {
-            evaluationPending = false;
-            evaluate();
-          }
-        })
-        .catch((error: unknown) => reportBackground(error, 'restart-plan'));
+    let recordFailedKey: string | undefined;
+    let lastWrittenSeq: number | undefined;
+    const recordApplied = (key: string | undefined): void => {
+      try {
+        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, lastWrittenSeq);
+        if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
+      } catch (error) {
+        if (key === recordFailedKey) return;
+        recordFailedKey = key;
+        log(settingsRecordFailed({ detail: failureOf(error).message }));
+      }
     };
 
     const reportReadFailure = (error: unknown): void => {
@@ -316,27 +524,12 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         log(settingsInvalid({ detail: snapshot.error.message, action: 'keep-running-children-hold-spawns' }));
         return;
       }
-      const current = digestsOf(snapshot.settings);
-      const runtimeApplied = runtime.appliedDigests();
-      const gatewayApplied = gateway.appliedDigests();
-      const changed = changedSections(current, runtimeApplied, gatewayApplied);
-      const modelsChanged = changed.models;
-      const sandboxChanged = changed.sandbox;
-      if (Object.values(changed).some((value) => value)) log(settingsChanged(changed));
-      const roles = planRoles(current, {
-        ...(runtimeApplied !== undefined && PLANNABLE_STATES.has(runtime.state()) ? { runtime: runtimeApplied } : {}),
-        ...(gatewayApplied !== undefined && PLANNABLE_STATES.has(gateway.state()) ? { gateway: gatewayApplied } : {}),
-      });
-      log(settingsEvaluated({ modelsChanged, sandboxChanged, roles: roles.join(',') }));
-      if (roles.length > 0) startPlan(roles);
+      recordApplied(key);
+      log(settingsChanged({}));
     };
 
-    evaluate = (): void => {
-      if (draining) return;
-      if (planRunning) {
-        evaluationPending = true;
-        return;
-      }
+    const evaluate = (): void => {
+      if (draining || role === 'retiring') return;
       try {
         evaluateOnce();
       } catch (error) {
@@ -345,11 +538,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     };
 
     const startWatch = (initialKey: string): SettingsWatch | undefined => {
-      if (options.watchSettings === false) return undefined;
+      if (options.watchSettings === false || role === 'retiring') return undefined;
       lastEvaluatedKey = initialKey;
       settingsWatcher = watchSettings({
-        directory: path.dirname(paths.settingsFile),
-        file: path.basename(paths.settingsFile),
+        directory: path.dirname(homePaths.settingsFile),
+        file: path.basename(homePaths.settingsFile),
         debounceMs: intervals.settingsDebounceMs,
         pollMs: intervals.settingsPollMs,
         changeKey: () => userSettingsChangeKey(canonicalHome),
@@ -371,14 +564,20 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values),
       ...omitUndefined({ markerPorts: options.markerPorts }),
       beginDraining: () => {
+        if (role === 'starting' && !ended) log(startUnpromoted({ generation: own.generation, reason: 'stopped' }));
         draining = true;
         setPhase('draining');
         launchController.abort();
-        planController.abort();
+        lifetime.abort();
         settingsWatcher?.stop();
+        successor.stop();
+        if (pollTimer !== undefined) timers.clearTimeout(pollTimer);
+        if (promotionBoundTimer !== undefined) timers.clearTimeout(promotionBoundTimer);
+        pollTimer = undefined;
+        promotionBoundTimer = undefined;
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, planPromise, publishPromise]);
+        await Promise.all([launchPromise, publishPromise, pollPromise, reaperPromise]);
       },
       closeControl: async () => {
         await server?.close();
@@ -387,28 +586,23 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       onFatal: (error) => reportBackground(error, 'shutdown'),
     });
 
-    const withExitCode = async (closing: Promise<SupervisorCloseResult>): Promise<SupervisorCloseResult> => {
-      const result = await closing;
-      return versionMismatch ? { ...result, exitCode: EXIT_VERSION_MISMATCH } : result;
-    };
-    const closedWithExitCode = withExitCode(shutdown.closed);
     const valuesOfStop = (given: StopValues | undefined): StopValues | undefined => {
       if (shutdown.mode() !== 'idle') return given;
       const values = given ?? stopValues.read();
       stopBoundMs = daemonStopBoundMs(values);
       return values;
     };
-    const closeWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+    const close = (values?: StopValues): Promise<SupervisorCloseResult> => {
       void shutdown.close(valuesOfStop(values));
-      return closedWithExitCode;
+      return shutdown.closed;
     };
-    const abortWithExitCode = (values?: StopValues): Promise<SupervisorCloseResult> => {
+    const abort = (values?: StopValues): Promise<SupervisorCloseResult> => {
       void shutdown.abort(valuesOfStop(values));
-      return closedWithExitCode;
+      return shutdown.closed;
     };
 
     requestShutdown = (values?: StopValues): void => {
-      if (options.onShutdownRequested === undefined) void closeWithExitCode(values);
+      if (options.onShutdownRequested === undefined) void close(values);
       else options.onShutdownRequested(values);
     };
 
@@ -418,40 +612,53 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: own.sockets.supervisor,
       timers,
       health,
+      credential: (name, capability) => {
+        if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
+        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'refused' };
+        const value = env[name];
+        return value === undefined || value === '' ? { kind: 'unset' } : { kind: 'value', value };
+      },
       onShutdownRequested: (values) => requestShutdown(values),
       onIgnoredStopValues: (reason) => log(settingsWarning({ detail: `the stop values of the shutdown request were malformed and were ignored: ${reason}` })),
       onError: (error) => reportBackground(error, 'control-server'),
       ...lockOptions,
     });
 
+    recordApplied(userSettingsChangeKey(canonicalHome));
     const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt };
     announceReady(ready, options.stdout);
 
+    const reapOwnMarkers = async (): Promise<{ reaped: number; kept: number }> =>
+      (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
+        dir: paths.markers.daemons,
+        killGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
+        label: 'daemon',
+        onWarning: (detail) => log(orphansWarning({ detail })),
+        signal: launchSignal,
+        timing: reapTiming,
+      });
+
+    promotionBoundTimer = timers.setTimeout(() => {
+      promotionBoundTimer = undefined;
+      if (role !== 'starting' || draining || ended) return;
+      log(startUnpromoted({ generation: own.generation, reason: 'startup-bound' }));
+      endByItself();
+    }, startupTimeoutMs);
+    armPoll();
+
     launchPromise = runLaunchTask({
-      signal: launchController.signal,
+      signal: launchSignal,
       logger,
-      reap: {
-        markersDir: paths.markers.daemons,
-        orphanGraceMs: startTiming.orphanGraceMs,
-        orphanReapGraceMs: startTiming.orphanReapGraceMs,
-        orphanPollMs: startTiming.orphanPollMs,
-        predecessorStopValues,
-        timers,
-        signal: launchController.signal,
-        logger,
-        reapTiming,
-        ...omitUndefined({ markerPorts: options.markerPorts }),
-      },
+      reapOwnMarkers,
       settings,
       changeKey: () => userSettingsChangeKey(canonicalHome),
       gateway,
       runtime,
-      enterRunning: () => setPhase('running'),
       startWatch,
       evaluate,
     }).catch((error: unknown) => reportBackground(error, 'launch-task'));
 
-    return { ready, health, close: closeWithExitCode, abort: abortWithExitCode, closed: closedWithExitCode, fatal };
+    return { ready, health, close, abort, closed: shutdown.closed, fatal, role: () => role };
   } catch (error) {
     try {
       await server?.close();

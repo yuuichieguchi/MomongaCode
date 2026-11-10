@@ -26,13 +26,17 @@ export type ManagedRecordedDefaults = {
   readonly maxConcurrency: number;
 };
 
+export const MANAGED_ENDPOINT_FORMS = ['unix', 'pipe'] as const;
+
+export type ManagedEndpointForm = (typeof MANAGED_ENDPOINT_FORMS)[number];
+
 export type ManagedServerDescription = {
   readonly id: string;
   readonly provider: string;
   readonly wire: 'chat-completions';
   readonly binary: { readonly defaultPath: string };
   readonly launch: { readonly argv: readonly string[] };
-  readonly endpoint: { readonly kind: 'unix' };
+  readonly endpoint: { readonly forms: readonly ManagedEndpointForm[] };
   readonly ready: { readonly method: 'GET'; readonly path: string; readonly status: 200; readonly limitMs: number };
   readonly preconditions: readonly Precondition[];
   readonly identity: readonly ProbeKeyComponent[];
@@ -48,14 +52,18 @@ export type ManagedServerDescription = {
 
 export const SOCKET_PLACEHOLDER = '{socket}';
 
+export const MANAGED_READY_LIMIT_MS = 10_000;
+
+export const MANAGED_RESTART_POLICY = { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 } as const;
+
 export const FM_SERVER = {
   id: 'fm',
   provider: 'apple',
   wire: 'chat-completions',
   binary: { defaultPath: '/usr/bin/fm' },
   launch: { argv: ['serve', '--socket', SOCKET_PLACEHOLDER] },
-  endpoint: { kind: 'unix' },
-  ready: { method: 'GET', path: '/health', status: 200, limitMs: 10_000 },
+  endpoint: { forms: ['unix'] },
+  ready: { method: 'GET', path: '/health', status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [
     {
       argv: ['license', '--status'],
@@ -74,7 +82,7 @@ export const FM_SERVER = {
     },
   ],
   identity: ['binarySha256', 'hostOsBuild'],
-  restart: { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 },
+  restart: MANAGED_RESTART_POLICY,
   models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
   toolForms: ['envelope'],
   tokenCount: { argv: ['count-tokens', '-q'], input: 'stdin', output: 'integer' },

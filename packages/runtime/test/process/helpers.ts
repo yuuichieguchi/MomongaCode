@@ -1,20 +1,20 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { claimPathOf, ensureMomongaDirs, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
-import type { JsonLogger, LogFields, MomongaPaths, ReapTiming } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
+import type { JsonLogger, LogFields, MomongaPaths, ReapTiming, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, fakeReapTiming, killGroupsForCleanup, removeTempDir } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
 export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
@@ -41,34 +41,23 @@ afterEach(async () => {
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
 
+export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
+  onCleanup(closeOnceStarted(started));
+  return started;
+};
+
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 
 export const makeTempHome = async (): Promise<TempHome> => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mh-')));
-  onCleanup(() => {
-    restoreModes(root);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const home = path.join(root, 'h');
-  fs.mkdirSync(home, { mode: 0o700 });
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   return { root, home, paths, project, dbPath: path.join(root, 's.db') };
-};
-
-const restoreModes = (directory: string): void => {
-  let entries: fs.Dirent[];
-  try {
-    fs.chmodSync(directory, 0o700);
-    entries = fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) restoreModes(path.join(directory, entry.name));
-  }
 };
 
 export const makeDir = (base: string, ...parts: string[]): string => {
@@ -156,7 +145,7 @@ export const createSession = (
   store.createSession({
     cwd,
     env: extra.env ?? {},
-    permissionMode: 'default',
+    permissionMode: 'manual',
     modelAlias: 'default',
     ...(extra.additionalDirectories === undefined ? {} : { additionalDirectories: extra.additionalDirectories }),
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
@@ -274,8 +263,10 @@ export type RuntimeFixtureOptions = {
   temp?: TempHome;
   sandbox?: Sandbox;
   createPool?: (options: McpPoolOptions) => McpPool;
-  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
   reapTiming?: ReapTiming;
+  role?: RolePort;
+  generation?: number;
 };
 
 export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): Promise<RuntimeFixture> => {
@@ -286,9 +277,13 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
-  const composition = runtime.createSettingsComposition({ home: temp.home, cache, store: fixture.store });
+  const composition = runtime.createSettingsComposition({ home: temp.home, platform: process.platform, cache, store: fixture.store });
+  fs.mkdirSync(temp.paths.jobs, { recursive: true, mode: 0o700 });
   const toolRuntime = runtime.createToolRuntime({
     paths: temp.paths,
+    sharedPaths: temp.paths,
+    generation: options.generation ?? FIRST_GENERATION,
+    role: options.role ?? fixedRolePort('serving'),
     home: temp.home,
     store: fixture.store,
     notifier: fixture.notifier,
@@ -296,7 +291,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     timers: fixture.timers,
     logger,
     report: reporter.report,
-    sandbox: options.sandbox ?? inertSandbox,
+    sandboxes: fixedSandboxBindings(options.sandbox ?? inertSandbox),
     shellHost: nodeShellHost(),
     settings: composition,
     reapTiming: options.reapTiming ?? reapTiming,
@@ -347,13 +342,14 @@ export const runBashThroughPort = async (
   session: Session,
   runId: string,
   command: string,
-  mode: 'default' | 'bypassPermissions' = 'bypassPermissions',
+  mode: 'manual' | 'bypassPermissions' = 'bypassPermissions',
   options: { fence?: { runId: string; workerId: string; leaseToken: number }; callId?: string } = {},
 ) => {
   const port = f.toolRuntime.port;
   const signal = signalNever();
   const env = port.envFor(session);
-  const policy = await port.policyFor(session, { env, rules: [] });
+  const binding = (await port.sandboxes.acquire(signal)).value;
+  const policy = await port.policyFor(session, { env, rules: [], ruleEnforcement: binding.ruleEnforcement });
   const toolSet = await port.toolSet(runId, { signal, env });
   const outcomes = await port.executor.runBatch({
     calls: [{ callId: options.callId ?? `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],
@@ -368,7 +364,7 @@ export const runBashThroughPort = async (
     tmpDir: policy.tmpDir,
     env: policy.env,
     session: port.sessionState(session),
-    sandbox: port.sandbox,
+    sandbox: binding.sandbox,
     sandboxPolicy: policy.sandboxPolicy,
     ripgrep: port.ripgrepLocator(policy.env),
     deadlineAt: f.clock.now() + 120_000,

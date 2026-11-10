@@ -1,9 +1,9 @@
 import { loadMcpServers } from '@momonga/config';
 import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
-import { AUTHORIZATION_WAIT_MS, canonicalJson, sha256Hex } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
-import type { McpAuthorizingPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { ToolEnv } from '../ports.ts';
@@ -32,6 +32,7 @@ export type McpAdminOptions = {
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
   readCloseGraceMs(): number;
+  markers?: McpMarkerOptions;
 };
 
 type ProbePool = { pool: McpAuthorizingPool; users: number; idle?: unknown };
@@ -60,8 +61,11 @@ export const loadSessionMcpServers = (
     sessionServers: session.mcpServers,
   });
 
-const failureOf = (error: unknown): { code: string; message: string } =>
-  error instanceof McpAuthorizationError ? { code: error.failure, message: error.message } : { code: 'error', message: asError(error).message };
+const failureOf = (server: string, error: unknown): { code: string; message: string } => {
+  if (error instanceof McpAuthorizationError) return { code: error.failure, message: error.message };
+  if (error instanceof CredentialStoreError) return { code: error.code, message: error.message };
+  return { code: 'error', message: `the authorization of MCP server "${server}" failed: ${asError(error).message}` };
+};
 
 export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   const { clock, report } = options;
@@ -91,6 +95,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       timers: options.timers,
       remote,
       closeGraceMs: options.readCloseGraceMs(),
+      ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
 
   const keyOf = (sessionId: string, name: string): string => `${sessionId}/${name}`;
@@ -132,7 +137,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       const views: McpServerView[] = [];
       for (const entry of loaded.enabled) {
         signal.throwIfAborted();
-        const probe = await pool.authState(entry.name);
+        const probe = await pool.authState(entry.name, signal);
         const attempt = attempts.get(keyOf(sessionId, entry.name));
         views.push({
           name: entry.name,
@@ -179,7 +184,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
         view.status = 'completed';
       } catch (error) {
         view.status = 'failed';
-        view.failure = failureOf(error);
+        view.failure = failureOf(name, error);
       } finally {
         surface();
         await pool.close();

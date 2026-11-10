@@ -2,13 +2,16 @@ import { auth, extractWWWAuthenticateParams, validateAuthorizationResponseIssuer
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
 import type { McpCredentialStore } from './mcp-oauth.ts';
-import { AUTHORIZATION_WAIT_MS, startLoopbackRedirect } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, StoreCallEndedError, limitEndOf, limitEndText, operationLimit, startLoopbackRedirect } from '@momonga/foundation';
+import { CONNECT_LIMIT_LABEL, CREDENTIAL_STORE_WAIT } from './limit-texts.ts';
 import { createMcpOAuthProvider } from './mcp-oauth.ts';
 import { McpAuthorizationError } from './remote-errors.ts';
 import { sanitizeServerText, capText } from './text.ts';
 import type { McpTimers } from './timers.ts';
 
 const MAX_ERROR_CHARS = 200;
+
+export const MCP_CALLBACK_PATH = '/callback';
 
 export type McpOAuthSettings = { clientId?: string; scope?: string; callbackPort?: number };
 
@@ -27,6 +30,7 @@ export type AuthorizeMcpServerOptions = {
   fetch: FetchLike;
   ports: McpAuthorizationPorts;
   signal: AbortSignal;
+  storeLimitMs: number;
   waitMs?: number;
   resourceMetadataUrl?: URL;
 };
@@ -46,7 +50,21 @@ const challengeOf = async (fetch: FetchLike, url: string, signal: AbortSignal): 
 
 export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Promise<void> => {
   const { ports, oauth, signal } = options;
-  const redirect = await startLoopbackRedirect({ port: oauth?.callbackPort ?? 0, timers: ports.timers });
+  const redirect = await startLoopbackRedirect({ port: oauth?.callbackPort ?? 0, path: MCP_CALLBACK_PATH, timers: ports.timers });
+  const phase = { signal };
+  const inStorePhase = async <T>(step: () => Promise<T>): Promise<T> => {
+    const limit = operationLimit(signal, options.storeLimitMs, CONNECT_LIMIT_LABEL, ports.timers);
+    phase.signal = limit.signal;
+    try {
+      return await step();
+    } catch (error) {
+      const end = limitEndOf(error);
+      if (end === undefined || error instanceof StoreCallEndedError) throw error;
+      throw new Error(limitEndText(end, CREDENTIAL_STORE_WAIT), { cause: error });
+    } finally {
+      limit.dispose();
+    }
+  };
   try {
     let authorizationUrl: URL | undefined;
     const provider = createMcpOAuthProvider({
@@ -54,6 +72,7 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
       resourceUrl: options.url,
       scope: options.scope,
       store: ports.store,
+      signalForCall: () => phase.signal,
       redirectUrl: redirect.redirectUrl,
       randomToken: ports.randomToken,
       ...(oauth?.clientId === undefined ? {} : { preregisteredClientId: oauth.clientId }),
@@ -62,16 +81,20 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
         authorizationUrl = url;
       },
     });
-    const challenge = await challengeOf(options.fetch, options.url, signal);
-    const scope = oauth?.scope ?? challenge.scope;
-    const resourceMetadataUrl = options.resourceMetadataUrl ?? challenge.resourceMetadataUrl;
-    const common = {
-      serverUrl: options.url,
-      fetchFn: options.fetch,
-      ...(scope === undefined ? {} : { scope }),
-      ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
-    };
-    if ((await auth(provider, common)) === 'AUTHORIZED') return;
+    const beforeTheBrowser = await inStorePhase(async () => {
+      const challenge = await challengeOf(options.fetch, options.url, signal);
+      const scope = oauth?.scope ?? challenge.scope;
+      const resourceMetadataUrl = options.resourceMetadataUrl ?? challenge.resourceMetadataUrl;
+      const common = {
+        serverUrl: options.url,
+        fetchFn: options.fetch,
+        ...(scope === undefined ? {} : { scope }),
+        ...(resourceMetadataUrl === undefined ? {} : { resourceMetadataUrl }),
+      };
+      return { common, outcome: await auth(provider, common) };
+    });
+    const { common } = beforeTheBrowser;
+    if (beforeTheBrowser.outcome === 'AUTHORIZED') return;
     if (authorizationUrl === undefined || provider.expectedState === undefined) {
       throw new McpAuthorizationError('required', `MCP server "${options.server}" did not produce an authorization request`);
     }
@@ -92,15 +115,15 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
     }
     const iss = params.get('iss') ?? undefined;
     const recorded = provider.recordedIssuer;
-    if (recorded === undefined) throw new McpAuthorizationError('invalid_callback', 'the authorization server was not recorded before the redirect');
+    if (recorded === undefined) throw new McpAuthorizationError('invalid_callback', `the authorization server of MCP server "${options.server}" was not recorded before the redirect`);
     validateAuthorizationResponseIssuer({ iss, expectedIssuer: recorded.issuer, issParameterSupported: recorded.issParameterSupported });
     const refusal = params.get('error');
     if (refusal !== null) {
       throw new McpAuthorizationError('denied', `authorization for MCP server "${options.server}" was refused (${capText(sanitizeServerText(refusal), MAX_ERROR_CHARS)})`);
     }
     const code = params.get('code');
-    if (code === null) throw new McpAuthorizationError('invalid_callback', 'the authorization response carried no code');
-    await auth(provider, { ...common, authorizationCode: code, ...(iss === undefined ? {} : { iss }) });
+    if (code === null) throw new McpAuthorizationError('invalid_callback', `the authorization response of MCP server "${options.server}" carried no code`);
+    await inStorePhase(() => auth(provider, { ...common, authorizationCode: code, ...(iss === undefined ? {} : { iss }) }));
   } finally {
     await redirect.close();
   }

@@ -1,11 +1,10 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionOption } from '@momonga/protocol';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon, ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import type { ApprovalView, RunView } from '../client/views.ts';
-import { connectRuntime } from '../run/open-session.ts';
+import { connectRuntime, connectSessionRuntime } from '../run/open-session.ts';
 import { watchRun } from '../run/headless.ts';
 import type { OutputFormat } from '../run/headless.ts';
 import { activeRunIdOf, latestRunIdOf, runTreeOf } from './targets.ts';
@@ -20,8 +19,8 @@ export class UnknownOption extends Error {
 export type AttachOptions = { runId?: string; format: OutputFormat; after: number; verbose: boolean; interrupt: AbortSignal };
 
 export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: AttachOptions): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
-  const client = connectRuntime(paths);
+  await ensureSessionDaemon(ports, paths);
+  const client = connectSessionRuntime(ports, paths);
   try {
     const runId = options.runId ?? (await latestRunIdOf(client, ports.cwd));
     return await watchRun(ports, paths, { client, runId, format: options.format, verbose: options.verbose, after: options.after, interrupt: options.interrupt });
@@ -31,7 +30,7 @@ export const attachRun = async (ports: CliPorts, paths: MomongaPaths, options: A
 };
 
 export const cancelRun = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     const target = runId ?? (await activeRunIdOf(client, ports.cwd));
@@ -53,7 +52,7 @@ export const pendingLines = (approval: ApprovalView, agent?: string): string =>
 export const approvalLine = (depth: number, approvalId: string, title: string): string => `${'  '.repeat(depth)}approval ${approvalId}  ${escapeTerminalLine(title)}`;
 
 export const approve = async (ports: CliPorts, paths: MomongaPaths, approvalId: string | undefined, option: string | undefined): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     if (approvalId === undefined) {
@@ -92,7 +91,7 @@ const runLine = ({ run, depth }: { run: RunView; depth: number }): string =>
   `${'  '.repeat(depth)}${run.id}  ${run.status}${run.agent === undefined ? '' : `  (subagent ${escapeTerminalLine(run.agent)})`}`;
 
 export const showStatus = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     const tree = await runTreeOf(client, runId ?? (await latestRunIdOf(client, ports.cwd)));

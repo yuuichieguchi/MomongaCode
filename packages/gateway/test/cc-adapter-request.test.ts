@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { keyAuthSource, unauthenticatedSource } from '@momonga/gateway';
 import type { AdapterRequest } from '@momonga/protocol';
 import { CC_CAPABILITIES, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, terminalOf, userText, MODEL_FRAMING } from './cc-support.ts';
 
@@ -112,15 +113,15 @@ describe('chat-completions request mapping', () => {
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
   });
 
-  it('sends a bearer Authorization header only when apiKey returns a value', async () => {
+  it('sends a bearer Authorization header from a key source and none from the unauthenticated source', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const seen: unknown[] = [];
     await collect(
       makeAdapter(fake, {
-        apiKey: (target) => {
+        authSource: keyAuthSource(async (target) => {
           seen.push(target);
           return API_KEY;
-        },
+        }),
       }),
       { model: 'system', input: [userText('hi')] },
     );
@@ -128,7 +129,7 @@ describe('chat-completions request mapping', () => {
     expect(seen).toContainEqual({ name: 'fm', model: 'system' });
 
     const bare = await startFake({ scenario: 'tools-ok' });
-    await collect(makeAdapter(bare, { apiKey: () => undefined }), { model: 'system', input: [userText('hi')] });
+    await collect(makeAdapter(bare, { authSource: unauthenticatedSource }), { model: 'system', input: [userText('hi')] });
     expect(bare.requests.at(-1)?.headers['authorization']).toBeUndefined();
   });
 
@@ -137,7 +138,7 @@ describe('chat-completions request mapping', () => {
       scenario: 'tools-ok',
       script: [{ kind: 'error', status: 400, body: { error: { message: 'bad request', type: 'invalid_request_error', param: null, code: null } } }],
     });
-    const adapter = makeAdapter(fake, { apiKey: () => API_KEY });
+    const adapter = makeAdapter(fake, { authSource: keyAuthSource(async () => API_KEY) });
     const { error } = await collect(adapter, { model: 'system', input: [userText('hi')] });
     expect(error).toBeDefined();
     expect(String(error)).not.toContain(API_KEY);

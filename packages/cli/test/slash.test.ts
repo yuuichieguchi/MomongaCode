@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryView, SkillView } from '@momonga/protocol';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
 import { skillCommands } from '../src/tui/commands/skills.ts';
-import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, parseSlash, slashCompletion } from '../src/tui/slash.ts';
+import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
+import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, helpText, newlineHelpLines, parseSlash } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackendOptions } from './fake-backend.ts';
+import { fixedKeyBindings } from '../src/tui/keys/store.ts';
+import { NO_A11Y } from '../src/tui/screen/a11y.ts';
 
 describe('parseSlash', () => {
   it.each([
@@ -26,6 +29,23 @@ const unusedShell: SlashContext['shell'] = {
   run: async () => 0,
 };
 
+const unusedScreen: SlashContext['screen'] = { current: () => 'fullscreen', set: async () => undefined };
+
+const unusedDisplay: SlashContext['display'] = {
+  theme: () => 'dark',
+  previewTheme: () => undefined,
+  storeTheme: async () => undefined,
+  notify: () => 'off',
+  storeNotify: async () => undefined,
+  a11y: () => NO_A11Y,
+  storedA11y: () => false,
+  storeA11y: async () => undefined,
+  pick: async () => undefined,
+};
+
+const unusedOverlays: SlashContext['overlays'] = { choose: async () => undefined, promptText: async () => undefined };
+const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
+
 const unusedAutoMode: SlashContext['autoMode'] = {
   check: async () => ({ measurement: 'passed' }),
   status: async () => ({ measurement: 'not_measured' }),
@@ -40,8 +60,10 @@ describe('registry', () => {
     expect(registry.find('nope')).toBeUndefined();
   });
 
-  it('offers at least help, clear, mode, model and exit', () => {
-    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'clear', 'mode', 'model', 'exit']));
+  it('offers at least help, mode, model and exit, and clear and resume in the default set', () => {
+    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'mode', 'model', 'exit']));
+    expect(DEFAULT_SLASH_COMMANDS.map((command) => command.name)).toEqual(expect.arrayContaining(['clear', 'resume']));
+    expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('new')?.name).toBe('clear');
   });
 });
 
@@ -51,21 +73,30 @@ describe('built-in commands', () => {
     const modes: string[] = [];
     const models: string[] = [];
     const context: SlashContext = {
-      mode: 'default',
+      mode: 'manual',
       modelAlias: 'default',
       bypassAllowed: false,
       autoAvailable: false,
       commands: BUILTIN_SLASH_COMMANDS,
       backend: fakeBackend(backendOptions),
       startRun: async () => undefined,
+      compact: async () => undefined,
       info: (text) => void infos.push(text),
-      clear: () => void infos.push('cleared'),
+      sessions: { startNew: async () => void infos.push('new session'), resume: async (id) => void infos.push(`resumed ${id}`), now: () => 0, columns: () => 80 },
       exit: () => void infos.push('exited'),
       setMode: async (mode) => void modes.push(mode),
       setModel: async (alias) => void models.push(alias),
       background: (_label, work) => work(new AbortController().signal),
       autoMode: unusedAutoMode,
       shell: unusedShell,
+      screen: unusedScreen,
+      keys: DEFAULT_KEY_TABLE,
+      negotiation: 'unknown',
+      display: unusedDisplay,
+      keyBindings: unusedKeyBindings,
+      overlays: unusedOverlays,
+      refusedWhileRunning: () => false,
+      status: () => [],
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -83,7 +114,7 @@ describe('built-in commands', () => {
   it('/mode lists auto when a classifier is configured', async () => {
     const { context, infos } = contextOf({ autoAvailable: true });
     await run('mode', '', context);
-    expect(infos[0]).toBe('permission mode: default (available: default, acceptEdits, plan, auto)');
+    expect(infos[0]).toBe('permission mode: manual (available: manual, acceptEdits, plan, auto)');
   });
 
   it('/mode sets a known mode and refuses an unknown one', async () => {
@@ -91,7 +122,15 @@ describe('built-in commands', () => {
     await run('mode', 'acceptEdits', context);
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
-    expect(infos).toEqual(['unknown permission mode turbo; available: default, acceptEdits, plan']);
+    expect(infos).toEqual(['unknown permission mode turbo; available: manual, acceptEdits, plan']);
+  });
+
+  it('/mode manual sets the asking mode, and /mode default is refused with the list of valid modes', async () => {
+    const { context, infos, modes } = contextOf({ mode: 'plan' });
+    await run('mode', 'manual', context);
+    await run('mode', 'default', context);
+    expect(modes).toEqual(['manual']);
+    expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan']);
   });
 
   it('/model without an argument lists the aliases with the current one marked and says when a switch applies', async () => {
@@ -116,11 +155,13 @@ describe('built-in commands', () => {
     expect(infos[0]).toContain('/model [alias]  list the model aliases with the current one marked, or switch the model from the next task');
   });
 
-  it('/clear and /exit call their hooks', async () => {
+  it('/clear, /resume <id> and /exit call their hooks', async () => {
     const { context, infos } = contextOf();
-    await run('clear', '', context);
+    const all = createSlashRegistry(DEFAULT_SLASH_COMMANDS);
+    await all.find('clear')?.run('', context);
+    await all.find('resume')?.run('0123456789abcdef', context);
     await run('quit', '', context);
-    expect(infos).toEqual(['cleared', 'exited']);
+    expect(infos).toEqual(['new session', 'resumed 0123456789abcdef', 'exited']);
   });
 });
 
@@ -152,7 +193,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
   const runs: { text: string; skill?: string }[] = [];
   const backend = fakeBackend(backendOptions);
   const context: SlashContext = {
-    mode: 'default',
+    mode: 'manual',
     modelAlias: 'default',
     bypassAllowed: false,
     autoAvailable: false,
@@ -160,30 +201,73 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     backend,
     info: (text) => void infos.push(text),
     startRun: async (text, options) => void runs.push({ text, ...options }),
-    clear: () => undefined,
+    compact: async () => undefined,
+    sessions: { startNew: async () => undefined, resume: async () => undefined, now: () => 0, columns: () => 80 },
     exit: () => undefined,
     setMode: async () => undefined,
     setModel: async () => undefined,
     background: (_label, work) => work(new AbortController().signal),
     autoMode: unusedAutoMode,
     shell: unusedShell,
+    screen: unusedScreen,
+    keys: DEFAULT_KEY_TABLE,
+    negotiation: 'unknown',
+    display: unusedDisplay,
+    keyBindings: unusedKeyBindings,
+    overlays: unusedOverlays,
+    refusedWhileRunning: () => false,
+    status: () => [],
   };
   return { context, infos, runs, backend };
 };
 
-describe('slashCompletion', () => {
-  const commands = createSlashRegistry([...BUILTIN_SLASH_COMMANDS, ...skillCommands([PDF, PR], new Set()).commands]).list();
+describe('/help', () => {
+  const commands = createSlashRegistry([...BUILTIN_SLASH_COMMANDS, ...skillCommands([PDF], new Set()).commands]).list();
+  const help = (negotiation: Parameters<typeof helpText>[0]['negotiation'], screen: 'fullscreen' | 'scrollback' = 'fullscreen'): string[] => helpText({ commands, keys: DEFAULT_KEY_TABLE, negotiation, screen }).split('\n');
 
-  it('lists every command that starts with what was typed and completes the longest common prefix', () => {
-    expect(slashCompletion('/', commands)?.names).toEqual(['help', 'clear', 'mode', 'model', 'exit', 'pdf', 'pr-review']);
-    expect(slashCompletion('/p', commands)).toEqual({ names: ['pdf', 'pr-review'], completed: '/p' });
-    expect(slashCompletion('/pr', commands)).toEqual({ names: ['pr-review'], completed: '/pr-review ' });
+  it.each(['kitty', 'proven'] as const)('names shift+enter for a new line once the terminal reports it (%s)', (negotiation) => {
+    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual(['shift+enter or ctrl+j: new line', 'alt+enter: new line where the terminal sends Alt as Escape', '\\ then enter: new line']);
   });
 
-  it('offers nothing for text that is not a bare command name or has no match', () => {
-    expect(slashCompletion('/pdf summarize', commands)).toBeUndefined();
-    expect(slashCompletion('hello', commands)).toBeUndefined();
-    expect(slashCompletion('/zzz', commands)).toBeUndefined();
+  it.each(['unknown', 'plain', 'modify-other-keys'] as const)('names only ctrl+j while shift+enter is not proven (%s)', (negotiation) => {
+    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual([
+      'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)',
+      'alt+enter: new line where the terminal sends Alt as Escape',
+      '\\ then enter: new line',
+    ]);
+  });
+
+  it('groups the commands of the registry, the keys of the table and the mouse actions', () => {
+    const lines = help('unknown');
+    expect(lines.filter((line) => !line.startsWith('  '))).toEqual(['Commands', 'Keys', 'Mouse']);
+    expect(lines.slice(1, lines.indexOf('Keys'))).toEqual(commands.map((command) => `  /${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`));
+    for (const line of ['  ctrl+c: cancel the run or clear the input; twice on an empty input to exit', '  ctrl+d: twice on an empty input to exit', '  ctrl+r: search the history', '  ctrl+g: edit the draft in $VISUAL or $EDITOR', '  ctrl+o: show or fold the detail', '  shift+tab: cycles the mode', '  esc: stops the run', '  pageup: scroll up half a screen', '  ctrl+home: go to the top', '  ctrl+l: repaint the screen'])
+      expect(lines).toContain(line);
+    expect(lines.join('\n')).not.toContain('backslash+enter');
+  });
+
+  it('lists every key of the editor, the viewport and the screen that the table holds, and no key of a list', () => {
+    const lines = help('kitty');
+    const keyLines = lines.slice(lines.indexOf('Keys') + 1, lines.indexOf('Mouse'));
+    const expected = DEFAULT_KEY_TABLE.rows().filter((row) => ['chat', 'viewport', 'global'].includes(row.context) && row.id !== 'prompt.newline');
+    expect(keyLines).toHaveLength(expected.length + 3);
+    for (const row of expected) expect(keyLines).toContain(`  ${DEFAULT_KEY_TABLE.hintFor(row.id)}: ${row.description}`);
+    expect(keyLines.join('\n')).not.toContain('complete the highlighted command');
+  });
+
+  it('lists the viewport keys and the mouse only in the full screen', () => {
+    const lines = help('unknown', 'scrollback');
+    expect(lines).not.toContain('Mouse');
+    expect(lines).not.toContain('  pageup: scroll up half a screen');
+    expect(help('unknown')).toContain('  wheel: scroll');
+    expect(help('unknown')).toContain('  click in the input: place the caret');
+  });
+
+  it('is what the command prints', async () => {
+    const infos: string[] = [];
+    const { context } = contextWith();
+    await createSlashRegistry(BUILTIN_SLASH_COMMANDS).find('help')?.run('', { ...context, commands, negotiation: 'kitty', info: (text) => void infos.push(text) });
+    expect(infos).toEqual([helpText({ commands, keys: DEFAULT_KEY_TABLE, negotiation: 'kitty', screen: 'fullscreen' })]);
   });
 });
 

@@ -1,14 +1,15 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import type { ServiceTimers } from '../service/timers.ts';
+import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { readPins } from '../worker/pins.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
@@ -16,12 +17,14 @@ import { MemoryEvidenceError, bindMemoryEvidence, readGitHead, runFactsOf } from
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
+import { outputBoundOf } from '../worker/output-bound.ts';
 
 export type ReflectorOptions = {
   store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts'>;
   gateway: Pick<GatewayPort, 'stream' | 'capabilities'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification' | 'memory'>;
   clock: Clock;
+  role: Pick<RolePort, 'refresh'>;
   isIdle(): boolean;
   evidenceRun: (project: string) => EvidenceRun;
   maxAttempts: number;
@@ -175,15 +178,20 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const capabilities = await gateway.capabilities(alias, { signal });
+    const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
+    if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection target ${alias} reports no structured output` });
+      return;
+    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }],
-      text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } },
+      text: { format },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },
-      max_output_tokens: Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities)),
+      ...outputBoundOf(capabilities, Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities))),
       store: false,
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },
@@ -259,6 +267,11 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
           recordUnrecorded(ledger, error);
           store.reflection.release(job.runId);
           throw error;
+        }
+        if ((await retireDecisionOf(error, options.role)) === 'retire-yield') {
+          recordUnrecorded(ledger, error);
+          store.reflection.release(job.runId);
+          return 'idle';
         }
         const attempts = store.reflection.get(job.runId)?.attempts ?? job.attempts;
         const reason = error instanceof Error ? error.message : String(error);

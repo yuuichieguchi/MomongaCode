@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./child-process": "./src/child-process.ts",
+    "./first-generation": "./src/first-generation.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",

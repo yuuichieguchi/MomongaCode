@@ -33,7 +33,7 @@ import {
 } from './inherit-fixtures.ts';
 import type { InheritedEvent, Outcome } from './inherit-fixtures.ts';
 
-const FINAL_DEFAULT = { kind: 'final', currentMode: 'default' } as const;
+const FINAL_DEFAULT = { kind: 'final', currentMode: 'manual' } as const;
 const CANCELLED: Outcome = { status: 'CANCELLED' };
 
 const project = (state: RunState, outcome: Outcome, kind: Parameters<typeof projectInheritance>[2] = FINAL_DEFAULT): InheritedEvent =>
@@ -50,7 +50,7 @@ const answered = (mode: PermissionMode | undefined): RunState =>
   foldOf([task('Say hello'), ...claimed(mode), requested(1), responded(1, [assistantItem('m1', 'hello')]), ended('COMPLETED')]);
 
 const danglingSource = (extra: readonly RunEventPayload[], end: RunEventPayload): RunState =>
-  foldOf([task('Write both'), ...claimed('default'), requested(1), responded(1, [callItem('c1'), callItem('c2')]), ...extra, end]);
+  foldOf([task('Write both'), ...claimed('manual'), requested(1), responded(1, [callItem('c1'), callItem('c2')]), ...extra, end]);
 
 const withdrawn = (reason: 'withdrawn' | 'expired'): RunEventPayload[] => [
   toolCall('c1'),
@@ -68,7 +68,7 @@ const withdrawn = (reason: 'withdrawn' | 'expired'): RunEventPayload[] => [
 
 describe('projectInheritance: a completed conversation', () => {
   it('carries the history, the seqs, the source mode and no synthetic entry', () => {
-    const state = answered('default');
+    const state = answered('manual');
     const payload = project(state, { status: 'COMPLETED' });
     expect(payload).toEqual({
       type: 'context.inherited',
@@ -83,13 +83,13 @@ describe('projectInheritance: a completed conversation', () => {
       evicted: [],
       closures: [],
       markers: [],
-      fromMode: 'default',
-      mode: 'default',
+      fromMode: 'manual',
+      mode: 'manual',
       digest: inheritedDigest({
         history: state.history,
         nextItemSeq: 3,
         evicted: [],
-        mode: 'default',
+        mode: 'manual',
         workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       }),
     });
@@ -97,7 +97,7 @@ describe('projectInheritance: a completed conversation', () => {
   });
 
   it('carries the task of the source run as the first inherited message', () => {
-    const state = answered('default');
+    const state = answered('manual');
     expect(state.workingFacts.taskText).toBe('Say hello');
     const payload = project(state, { status: 'COMPLETED' });
     expect(payload.workingFacts?.messages).toEqual([{ text: 'Say hello', seq: 0 }]);
@@ -111,7 +111,7 @@ describe('projectInheritance: a completed conversation', () => {
 
   it('carries the working facts of the source run with every entry marked as inherited', () => {
     const state = {
-      ...answered('default'),
+      ...answered('manual'),
       workingFacts: {
         written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 12 }],
         commands: [{ command: 'make lint', failed: true, exitCode: 2, seq: 14 }],
@@ -142,7 +142,7 @@ describe('projectInheritance: a completed conversation', () => {
       status: 'completed' as const,
     });
     const sizes = [1, 10, 100, 1000].map((count) => {
-      const state = foldOf([task('Read them'), ...claimed('default'), requested(1), responded(1, Array.from({ length: count }, (_unused, index) => readItem(index))), ended('COMPLETED')]);
+      const state = foldOf([task('Read them'), ...claimed('manual'), requested(1), responded(1, Array.from({ length: count }, (_unused, index) => readItem(index))), ended('COMPLETED')]);
       expect(state.workingFacts).not.toHaveProperty('touched');
       const payload = project(state, { status: 'COMPLETED' });
       expect(payload.workingFacts).not.toHaveProperty('touched');
@@ -154,7 +154,7 @@ describe('projectInheritance: a completed conversation', () => {
   it('carries the summary, the evicted ids and the output handles', () => {
     const state = foldOf([
       task('Read it'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       responded(1, [assistantItem('m0', 'earlier')]),
       { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'the summary'), summary: 'the summary', replacedThroughSeq: 2 },
@@ -233,7 +233,7 @@ describe('projectInheritance: closures for dangling calls', () => {
   });
 
   it('throws InheritanceError previous_run_inconsistent when an output has no call', () => {
-    const state = answered('default');
+    const state = answered('manual');
     const broken: RunState = { ...state, history: [...state.history, { seq: 3, item: { type: 'function_call_output', call_id: 'ghost', output: 'x' }, callId: 'ghost' }], nextItemSeq: 4 };
     expect(() => project(broken, { status: 'COMPLETED' })).toThrow(expect.objectContaining({ name: 'InheritanceError', code: 'previous_run_inconsistent' }));
   });
@@ -252,7 +252,7 @@ describe('projectInheritance: the partial assistant message', () => {
   const streamed = (end: RunEventPayload): RunState =>
     foldOf([
       task('Explain'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'm1', text: 'Hel' },
       { type: 'agent.thought.delta', step: 1, attempt: 1, itemId: 'r1', text: 'thinking' },
@@ -278,7 +278,7 @@ describe('projectInheritance: the partial assistant message', () => {
   });
 
   it('projects no partial message for a thought-only stream, and marks the unanswered task', () => {
-    const state = foldOf([task('Explain'), ...claimed('default'), requested(1), { type: 'agent.thought.delta', step: 1, attempt: 1, itemId: 'r1', text: 'thinking' }, ended('CANCELLED')]);
+    const state = foldOf([task('Explain'), ...claimed('manual'), requested(1), { type: 'agent.thought.delta', step: 1, attempt: 1, itemId: 'r1', text: 'thinking' }, ended('CANCELLED')]);
     expect(state.streaming).toEqual({ step: 1, attempt: 1, seen: true, items: [] });
     const payload = project(state, CANCELLED);
     expect(payload.partial).toBeUndefined();
@@ -289,7 +289,7 @@ describe('projectInheritance: the partial assistant message', () => {
   it('projects no partial message after model.stream.restarted discarded the text', () => {
     const state = foldOf([
       task('Explain'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'm1', text: 'stale' },
       { type: 'model.stream.restarted', step: 1, attempt: 1 },
@@ -304,7 +304,7 @@ describe('projectInheritance: the partial assistant message', () => {
   it('places a partial message after a tool output without an adjacent assistant item', () => {
     const state = foldOf([
       task('Explain'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       responded(1, [callItem('c1')]),
       toolCall('c1'),
@@ -322,7 +322,7 @@ describe('projectInheritance: the partial assistant message', () => {
 
 describe('projectInheritance: interruption markers', () => {
   it('marks a claimed run cancelled before its first response', () => {
-    const state = foldOf([task('Do it'), ...claimed('default'), ended('CANCELLED')]);
+    const state = foldOf([task('Do it'), ...claimed('manual'), ended('CANCELLED')]);
     const payload = project(state, CANCELLED);
     expect(payload.history).toEqual([{ seq: 1, item: taskItem('Do it') }, markerEntry(2, MARKER_TEXT.userInterrupted)]);
     expect(payload.markers).toEqual([{ seq: 2, kind: 'interrupted' }]);
@@ -347,7 +347,7 @@ describe('projectInheritance: interruption markers', () => {
         { seq: 2, item: assistantItem('m1', 'answer') },
       ],
       nextItemSeq: 3,
-      mode: 'default',
+      mode: 'manual',
     });
     const state = foldOf([task('Cancelled early'), inherited, { type: 'run.status', from: 'QUEUED', to: 'CANCELLING' }, { type: 'run.status', from: 'CANCELLING', to: 'CANCELLED' }]);
     const payload = project(state, CANCELLED);
@@ -376,7 +376,7 @@ describe('projectInheritance: interruption markers', () => {
     ['stopped at max_steps after its summary', ended('STOPPED', 'max_steps'), { status: 'STOPPED', stopReason: 'max_steps' }],
     ['cancelled after a complete answer', ended('CANCELLED'), CANCELLED],
   ])('adds no marker after a complete assistant message of a run %s', (_label, end, outcome) => {
-    const state = foldOf([task('Say hello'), ...claimed('default'), requested(1), responded(1, [assistantItem('m1', 'hello')]), end]);
+    const state = foldOf([task('Say hello'), ...claimed('manual'), requested(1), responded(1, [assistantItem('m1', 'hello')]), end]);
     const payload = project(state, outcome);
     expect(payload.history).toEqual(state.history);
     expect(payload.markers).toEqual([]);
@@ -385,7 +385,7 @@ describe('projectInheritance: interruption markers', () => {
   it('adds no interruption marker for a summary-only source', () => {
     const state = foldOf([
       task('Say hello'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       responded(1, [assistantItem('m1', 'hello')]),
       { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'all of it'), summary: 'all of it', replacedThroughSeq: 2 },
@@ -403,7 +403,7 @@ describe('projectInheritance: interruption markers', () => {
 
 describe('projectInheritance: pinned_overflow', () => {
   it('replaces the task of a step-0 pinned_overflow run in place by the dropped marker, with no other marker', () => {
-    const state = foldOf([task('x'.repeat(50)), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'.repeat(50)), ...claimed('manual'), ended('FAILED', 'pinned_overflow')]);
     expect(state.step).toBe(0);
     const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.history).toEqual([markerEntry(1, MARKER_TEXT.dropped)]);
@@ -421,9 +421,9 @@ describe('projectInheritance: pinned_overflow', () => {
         { seq: 2, item: assistantItem('m1', 'answer') },
       ],
       nextItemSeq: 3,
-      mode: 'default',
+      mode: 'manual',
     });
-    const state = foldOf([task('x'.repeat(50)), inherited, ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'.repeat(50)), inherited, ...claimed('manual'), ended('FAILED', 'pinned_overflow')]);
     expect(state.taskSeq).toBe(3);
     const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.history).toEqual([...inherited.history, markerEntry(3, MARKER_TEXT.dropped)]);
@@ -434,7 +434,7 @@ describe('projectInheritance: pinned_overflow', () => {
   it('keeps the task and every item when pinned_overflow happened after the first model request', () => {
     const state = foldOf([
       task('Write'),
-      ...claimed('default'),
+      ...claimed('manual'),
       requested(1),
       responded(1, [callItem('c1')]),
       toolCall('c1'),
@@ -458,12 +458,12 @@ describe('projectInheritance: skills of a pinned_overflow run', () => {
     fromLastSeq: 5,
     history: [{ seq: 1, item: taskItem('first') }],
     nextItemSeq: 2,
-    mode: 'default',
+    mode: 'manual',
     activatedSkills: [{ name: 'pdf', content: 'pdf body' }],
   });
 
   it('drops the skills a step-0 pinned_overflow run brought itself and keeps the ones it inherited', () => {
-    const state = foldOf([task('x'), carriedPdf, skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'), carriedPdf, skill('huge'), ...claimed('manual'), ended('FAILED', 'pinned_overflow')]);
     expect(state.activatedSkills.map((entry) => entry.name)).toEqual(['pdf', 'huge']);
     const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: ['pdf'] });
     expect(payload.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body' }]);
@@ -471,38 +471,38 @@ describe('projectInheritance: skills of a pinned_overflow run', () => {
   });
 
   it('carries no skill forward when a first run brought the only one', () => {
-    const state = foldOf([task('x'), skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'), skill('huge'), ...claimed('manual'), ended('FAILED', 'pinned_overflow')]);
     const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.activatedSkills).toBeUndefined();
     expectWellFormed(payload);
   });
 
   it('keeps every skill when pinned_overflow happened after the first model request', () => {
-    const state = foldOf([task('x'), skill('big'), ...claimed('default'), requested(1), responded(1, [assistantItem('m1', 'hi')]), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'), skill('big'), ...claimed('manual'), requested(1), responded(1, [assistantItem('m1', 'hi')]), ended('FAILED', 'pinned_overflow')]);
     const payload = project(state, { status: 'FAILED', errorCode: 'pinned_overflow', carriedSkills: [] });
     expect(payload.activatedSkills).toEqual([{ name: 'big', content: 'big body' }]);
   });
 
   it('refuses to project a step-0 pinned_overflow run whose carried skills are unknown', () => {
-    const state = foldOf([task('x'), skill('huge'), ...claimed('default'), ended('FAILED', 'pinned_overflow')]);
+    const state = foldOf([task('x'), skill('huge'), ...claimed('manual'), ended('FAILED', 'pinned_overflow')]);
     expect(() => project(state, { status: 'FAILED', errorCode: 'pinned_overflow' })).toThrow('the skills carried into a step-0 pinned_overflow run are not known');
   });
 });
 
 describe('projectInheritance: the mode', () => {
   it('appends the mode_changed marker last, after the interruption marker, when the final mode differs', () => {
-    const state = foldOf([task('Do it'), ...claimed('default'), ended('CANCELLED')]);
+    const state = foldOf([task('Do it'), ...claimed('manual'), ended('CANCELLED')]);
     const payload = project(state, CANCELLED, { kind: 'final', currentMode: 'plan' });
     expect(payload.history).toEqual([
       { seq: 1, item: taskItem('Do it') },
       markerEntry(2, MARKER_TEXT.userInterrupted),
-      markerEntry(3, modeChangedText('default', 'plan')),
+      markerEntry(3, modeChangedText('manual', 'plan')),
     ]);
     expect(payload.markers).toEqual([
       { seq: 2, kind: 'interrupted' },
       { seq: 3, kind: 'mode_changed' },
     ]);
-    expect(payload.fromMode).toBe('default');
+    expect(payload.fromMode).toBe('manual');
     expect(payload.mode).toBe('plan');
     expect(payload.nextItemSeq).toBe(4);
     expectWellFormed(payload);
@@ -536,9 +536,9 @@ describe('projectInheritance: the mode', () => {
   });
 
   it('never emits mode_changed in an intermediate projection and carries the source mode', () => {
-    const known = project(answered('default'), { status: 'COMPLETED' }, { kind: 'intermediate' });
+    const known = project(answered('manual'), { status: 'COMPLETED' }, { kind: 'intermediate' });
     expect(known.markers).toEqual([]);
-    expect(known.mode).toBe('default');
+    expect(known.mode).toBe('manual');
     const unknown = project(answered(undefined), { status: 'COMPLETED' }, { kind: 'intermediate' });
     expect(unknown.mode).toBeUndefined();
     expect(unknown.digest).toBe(inheritedDigest(unknown));
@@ -546,7 +546,7 @@ describe('projectInheritance: the mode', () => {
 
   it('changes the digest when only the mode differs', () => {
     const state = answered(undefined);
-    const asDefault = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'default' });
+    const asDefault = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'manual' });
     const asPlan = project(state, { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
     expect(asPlan.history).toEqual(asDefault.history);
     expect(asPlan.digest).not.toBe(asDefault.digest);
@@ -570,7 +570,7 @@ describe('projectInheritance: determinism and wording', () => {
     for (const outcome of outcomes) {
       for (const state of [
         danglingSource([toolCall('c1'), toolCall('c2'), { type: 'tool.started', callId: 'c1', idemKey: 'k-c1' }], ended('CANCELLED')),
-        foldOf([task('Do it'), ...claimed('default'), ended('CANCELLED')]),
+        foldOf([task('Do it'), ...claimed('manual'), ended('CANCELLED')]),
       ]) {
         const payload = project(state, outcome, { kind: 'final', currentMode: 'plan' });
         for (const entry of payload.history.filter((candidate) => candidate.seq >= state.nextItemSeq)) {
@@ -589,7 +589,7 @@ describe('projectInheritance: determinism and wording', () => {
 
 describe('applyInheritance', () => {
   it('rebases the task after the inherited entries and records the inheritance', () => {
-    const payload = project(answered('default'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
+    const payload = project(answered('manual'), { status: 'COMPLETED' }, { kind: 'final', currentMode: 'plan' });
     const fresh = foldOf([task('And again')], NEXT_RUN);
     const next = applyInheritance(fresh, payload as never);
     expect(next.history).toEqual([...payload.history, { seq: payload.nextItemSeq, item: taskItem('And again') }]);

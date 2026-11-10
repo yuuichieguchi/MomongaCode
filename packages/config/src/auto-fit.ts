@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, isRecord, nodeFileSystem, readProbeKeyComponents, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { BinaryHashCache, HeldHostReadings, HostExec } from '@momonga/foundation';
-import { managedServerOf } from '@momonga/protocol';
-import type { AutoClassifierView, ManagedServerDescription } from '@momonga/protocol';
+import type { AutoClassifierView } from '@momonga/protocol';
+import { registeredServer } from './server-registry.ts';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
 import { ConfigError } from './config-error.ts';
 import { isAbsentPathError } from './json-file.ts';
@@ -84,7 +84,6 @@ export const classifierIdentityOf = (target: ResolvedModelTarget, probeKey: Know
 export type ClassifierProbeKeys = ReadonlyMap<string, ProbeKey>;
 
 export type ClassifierKeyPorts = {
-  servers: readonly ManagedServerDescription[];
   exec: HostExec;
   hashes: BinaryHashCache;
   host?: HeldHostReadings;
@@ -103,7 +102,7 @@ export const readClassifierProbeKeys = async (models: ResolvedModels, alias: str
   for (const name of aliasMembersOf(models, alias)) {
     const target = models.targets[name] as ResolvedModelTarget;
     if (target.adapter !== 'managed') continue;
-    const description = managedServerOf(ports.servers, target.server);
+    const description = registeredServer(models.servers, target.server);
     if (description === undefined) throw new ConfigError(`the target ${name} names the managed server ${target.server}, which is not registered`);
     const readings = await readProbeKeyComponents({
       identity: description.identity,

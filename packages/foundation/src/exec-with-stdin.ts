@@ -5,14 +5,28 @@ export const createExecWithStdin =
   (env: Readonly<Record<string, string>> | undefined): SecretProcessPort =>
   (file, args, stdin, signal) =>
     new Promise((resolve, reject) => {
+      signal.throwIfAborted();
       const child = spawn(file, [...args], { ...(env === undefined ? {} : { env: { ...env } }), stdio: ['pipe', 'pipe', 'pipe'], signal });
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
+      const fail = (error: unknown): void => {
+        signal.removeEventListener('abort', leaveChildBehind);
+        reject(signal.aborted ? signal.reason : error);
+      };
+      const leaveChildBehind = (): void => {
+        reject(signal.reason);
+        child.unref();
+        child.stdin.destroy();
+        child.stdout.destroy();
+        child.stderr.destroy();
+      };
+      signal.addEventListener('abort', leaveChildBehind, { once: true });
       child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
       child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-      child.stdin.on('error', reject);
-      child.once('error', reject);
+      child.stdin.on('error', fail);
+      child.once('error', fail);
       child.once('close', (code) => {
+        signal.removeEventListener('abort', leaveChildBehind);
         resolve({
           exitCode: code ?? 1,
           stdout: Buffer.concat(stdout).toString('utf8'),

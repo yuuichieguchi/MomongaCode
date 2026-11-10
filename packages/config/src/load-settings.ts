@@ -21,8 +21,8 @@ import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
-import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -48,6 +48,7 @@ export type ResolvedSettings = {
   mcp: McpSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
+  tui: ResolvedTuiSettings;
   gateway: GatewayStopValues;
   runtime: RuntimeSettings;
   sandbox: SandboxSetting;
@@ -140,7 +141,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
-    credentials: { env: [], keep: [], valuePatterns: [] },
+    credentials: { env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false },
     hooks: {},
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
@@ -148,6 +149,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     mcp: {},
     models,
     autoUpdates: true,
+    tui: defaultTuiSettings(),
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
     runtime: {},
     sandbox: defaultSandboxSetting(),
@@ -169,6 +171,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       mcpServers,
       mcp,
       autoUpdates,
+      tui,
       gateway,
       runtime,
       sandbox,
@@ -202,6 +205,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     merged.credentials.env.push(...(credentials?.env ?? []));
     merged.credentials.keep.push(...(credentials?.keep ?? []));
     merged.credentials.valuePatterns.push(...(credentials?.valuePatterns ?? []));
+    if (credentials?.plaintextTokenFiles !== undefined) merged.credentials.plaintextTokenFiles = credentials.plaintextTokenFiles;
     for (const [event, groups] of Object.entries(hooks ?? {})) {
       const key = event as keyof HooksSettings;
       merged.hooks[key] = [...(merged.hooks[key] ?? []), ...groups];
@@ -213,6 +217,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     Object.assign(merged.mcpServers, mcpServers);
     Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
+    if (tui !== undefined) merged.tui = { ...merged.tui, ...tui };
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };
     if (sandbox !== undefined) merged.sandbox = sandbox;

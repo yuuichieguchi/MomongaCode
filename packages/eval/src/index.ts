@@ -52,8 +52,8 @@ export {
   failedWithCleanup,
 } from './context-live.ts';
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
-export { parsePolicyOverlay } from './context-policy.ts';
-export type { PolicyOverlay } from './context-policy.ts';
+export { parsePolicyOverlay, policyDifferences, resolvePolicyOverlay } from './context-policy.ts';
+export type { PolicyOverlay, ResolvedPolicy } from './context-policy.ts';
 export { compactionFactsOf, goldRangesOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 export type { CompactionFacts, GoldRange, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
 export { QUALITY_METRICS } from './context-quality.ts';
@@ -74,7 +74,8 @@ export {
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
 export { CONTEXT_GATE_NAMES, GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
 export type { ContextComparison, ContextGateName, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
-export type { RatioMetric } from './token-metrics.ts';
+export { uncachedInputOf } from './token-metrics.ts';
+export type { CaseTokenTotals, RatioMetric } from './token-metrics.ts';
 export { contrastiveCasesOf } from './context-report.ts';
 export type { ContrastiveCase } from './context-report.ts';
 export {

@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedTarget } from '@momonga/gateway';
+import { describe, expect, it, vi } from 'vitest';
+import { createChatCompletionsAdapter, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ManagedServer } from '@momonga/gateway';
 import type { KnownProbeKey } from '@momonga/config';
 import { TARGET_PROBING } from '@momonga/protocol';
@@ -13,10 +13,12 @@ import { fmRecordKey, fmTargetBase, probingAnswer, recordKeyOptions } from './fm
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const servingFake = (socketPath: string): ManagedServer => ({
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath }),
+  start: async () => ({ kind: 'unix', path: socketPath }),
+  ensureRunning: async () => ({ kind: 'unix', path: socketPath }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 });
@@ -38,7 +40,7 @@ const unprobedFm = async (toolCallingSetting: 'auto' | 'native') => {
     }),
     toolCallingSetting,
   });
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return { fake, managed, starts };
 };
@@ -56,7 +58,7 @@ describe('an fm target with no probe record', () => {
   });
 });
 
-describe('every other auto target with a probe and no probe record', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('every other auto target with a probe and no probe record', () => {
   it('answers a chat-completions target 503 target_probing and sends nothing upstream', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

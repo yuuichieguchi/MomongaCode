@@ -1,14 +1,10 @@
-import type { JsonLogger, LogLevel } from '@momonga/foundation';
+import type { EventPayload, JsonLogger, LogLevel, LogValue, ReservedLogKey } from '@momonga/foundation';
 import type { SupervisorExitReason, SupervisorPhase } from '@momonga/protocol';
 import type { HeldSource, SpawnReason } from './child-manager.ts';
 import type { ChildRole } from './launcher.ts';
 import type { StopMode, StopReason } from './restart-policy.ts';
 
-export type ReservedLogKey = 'ts' | 'level' | 'service' | 'pid' | 'msg' | 'runId' | 'workerId' | 'traceId' | 'step' | 'count' | 'ids' | 'err';
-
-export type LogValue = string | number | boolean | null;
-
-export type EventPayload = Readonly<Record<string, LogValue>> & { readonly [K in ReservedLogKey]?: never };
+export type { EventPayload, LogValue, ReservedLogKey };
 
 export type SupervisorLogEvent = {
   readonly level: LogLevel;
@@ -53,17 +49,23 @@ export const childStderr = defineEvent<RawRecord>('child.stderr', 'warn');
 export const childStdout = defineEvent<RawRecord>('child.stdout', 'info');
 export const supervisorBackgroundFailed = defineEvent<{ source: string }>('supervisor.background_failed', 'error');
 export const supervisorBackgroundTransient = defineEvent<{ source: string }>('supervisor.background_transient', 'warn');
-export const settingsChanged = defineEvent<{ models: boolean; sandbox: boolean; telemetry: boolean; network: boolean }>('settings.changed', 'info');
-export const settingsEvaluated = defineEvent<{ modelsChanged: boolean; sandboxChanged: boolean; roles: string }>('settings.evaluated', 'info');
+export const settingsChanged = defineEvent<Record<string, never>>('settings.changed', 'info');
 export const settingsInvalid = defineEvent<{ detail: string; action: 'keep-running-children-hold-spawns' }>('settings.invalid', 'warn');
 export const settingsReadFailed = defineEvent<{ detail: string }>('settings.read_failed', 'warn');
 export const settingsWarning = defineEvent<{ detail: string }>('settings.warning', 'warn');
-export const planBegin = defineEvent<{ roles: string; planned: number }>('plan.begin', 'info');
-export const planEnd = defineEvent<{ roles: string; planned: number }>('plan.end', 'info');
+export const settingsRecordFailed = defineEvent<{ detail: string }>('settings.record_failed', 'warn');
 export const orphansWaiting = defineEvent<{ markers: number; holders: number }>('orphans.waiting', 'info');
 export const orphansReaping = defineEvent<{ holders: number }>('orphans.reaping', 'warn');
 export const orphansReaped = defineEvent<{ reaped: number; kept: number }>('orphans.reaped', (payload) => (payload.kept > 0 ? 'warn' : 'info'));
 export const orphansWarning = defineEvent<{ detail: string; marker?: string }>('orphans.warning', 'warn');
+export const startAbandoned = defineEvent<{ generation: number; reason: string }>('start.abandoned', 'warn');
+export const startSuperseded = defineEvent<{ generation: number; current: number }>('start.superseded', 'info');
+export const startUnpromoted = defineEvent<{ generation: number; reason: string }>('start.unpromoted', 'warn');
+export const generationPromoted = defineEvent<{ generation: number; version: string; startToPromotedMs: number }>('generation.promoted', 'info');
+export const generationRetiring = defineEvent<{ generation: number; current: number | null }>('generation.retiring', 'info');
+export const generationEnded = defineEvent<{ generation: number; liveMs: number }>('generation.ended', 'info');
+export const generationSuccessor = defineEvent<{ generation: number; successor: number | null; version: string; outcome: string }>('generation.successor', (payload) => (payload.outcome === 'started' || payload.outcome === 'joined' ? 'info' : 'warn'));
+export const generationMany = defineEvent<{ live: number }>('generation.many', 'warn');
 export const shutdownBegin = defineEvent<{ mode: 'close' | 'abort' }>('shutdown.begin', 'info');
 export const shutdownStep = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'info');
 export const shutdownStepBound = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'warn');
@@ -89,16 +91,22 @@ export const SUPERVISOR_EVENTS = {
   'supervisor.background_failed': supervisorBackgroundFailed,
   'supervisor.background_transient': supervisorBackgroundTransient,
   'settings.changed': settingsChanged,
-  'settings.evaluated': settingsEvaluated,
+  'settings.record_failed': settingsRecordFailed,
   'settings.invalid': settingsInvalid,
   'settings.read_failed': settingsReadFailed,
   'settings.warning': settingsWarning,
-  'plan.begin': planBegin,
-  'plan.end': planEnd,
   'orphans.waiting': orphansWaiting,
   'orphans.reaping': orphansReaping,
   'orphans.reaped': orphansReaped,
   'orphans.warning': orphansWarning,
+  'start.abandoned': startAbandoned,
+  'start.superseded': startSuperseded,
+  'start.unpromoted': startUnpromoted,
+  'generation.promoted': generationPromoted,
+  'generation.retiring': generationRetiring,
+  'generation.ended': generationEnded,
+  'generation.successor': generationSuccessor,
+  'generation.many': generationMany,
   'shutdown.begin': shutdownBegin,
   'shutdown.step': shutdownStep,
   'shutdown.end': shutdownEnd,

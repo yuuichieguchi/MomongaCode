@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 import { createLockCapability } from '../../src/platform/lock-capability.ts';
 import { createMarker } from '../../src/platform/marker-file.ts';
 import { defaultProcessInspector } from '../../src/platform/process-inspector.ts';
@@ -12,14 +12,14 @@ const children: Array<ReturnType<typeof spawn>> = [];
 const homes: string[] = [];
 
 const makeSocketBindableHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-')));
+  const home = createTempDir({ asHome: true });
   homes.push(home);
   return home;
 };
 
-afterEach(() => {
+afterEach(async () => {
   for (const child of children.splice(0)) child.kill('SIGKILL');
-  for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+  for (const home of homes.splice(0)) await removeTempDir(home);
 });
 
 describe.runIf(process.platform === 'darwin')('F: the default inspector carries the lock capability', () => {

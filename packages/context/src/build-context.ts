@@ -45,6 +45,7 @@ import type {
 } from './types.ts';
 
 const BLOB_MEDIA_TYPE = 'text/plain';
+const MANUAL_COMPACTION_GAIN = 1;
 
 type OutputState = {
   original: FunctionCallOutputInputItem;
@@ -944,7 +945,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
             },
           };
     }
-    const item = summaryItemTokensFor(summaryCap) + (await workingStateGrowth());
+    const growth = await workingStateGrowth();
+    const item = summaryItemTokensFor(summaryCap) + growth;
     const layersOnly = (await countInput(layers)).inputTokens;
     const previousSummary = summaryItems.length === 0 ? 0 : (await countInput([...layers, ...summaryItems])).inputTokens - layersOnly;
     const taskTokens = floorTokens - layersOnly;
@@ -990,6 +992,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
           summaryTokenCap: summaryCap,
           pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
           notices: protectionNotices,
+          tokens: { input: total.inputTokens, replaced: region, workingStateGrowth: growth },
         },
       };
     }
@@ -1071,7 +1074,12 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   notices.push(...protectionNotices);
 
-  const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
+  const hint =
+    input.compactNow === true
+      ? await compactionFor('forced', MANUAL_COMPACTION_GAIN)
+      : levelIndex === 0 && total.inputTokens > highMark
+        ? await compactionFor('proactive', 0)
+        : undefined;
   const finalInput = assemble();
   const arrivalsStart = cachePrefix ? head.pinnedLayers.length + (memoryMessage === undefined ? 0 : 1) : layers.length - head.arrivals.length;
   const zones: ContextZones = {

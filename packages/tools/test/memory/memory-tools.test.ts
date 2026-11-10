@@ -50,7 +50,7 @@ const fakePort = (found: MemoryView[] = []) => {
 const toolSet = async (port: MemoryStorePort, trusted = true) => toolSetOf(...createMemoryTools({ port, trusted }));
 
 describe('memory tools', () => {
-  it('asks for approval before saving in the default mode, naming no path', async () => {
+  it('asks for approval before saving in manual mode, naming no path', async () => {
     const { port, saved } = fakePort();
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(

@@ -1,12 +1,14 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { secretKeyFile } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FOUNDATION_ENTRY = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'index.ts')).href;
 
@@ -79,7 +81,7 @@ describe('secretKeyFile', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['gateway.key', 'gateway.key.deadbeef.tmp']);
   });
 
-  it('gives concurrent creators in separate processes the same key', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('gives concurrent creators in separate processes the same key', async () => {
     const dir = makeDir();
     const keyPath = path.join(dir, 'gateway.key');
     const results = await Promise.all(Array.from({ length: 6 }, () => createInChild(keyPath)));

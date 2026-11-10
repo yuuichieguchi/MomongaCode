@@ -102,7 +102,7 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
       const owner = await realUidOf(pid);
       if (owner === undefined || owner !== uid) return absent;
       if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
-      scan.report?.({ pid, command: stat.command, startedAt: await startedMsOf(stat.startTicks) });
+      scan.report?.({ pid, command: stat.command, startedAt: stat.startTicks });
       return absent;
     }
   };
@@ -145,7 +145,7 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
         untilAborted(signal, async () => {
           const stat = await statOf(pid);
           if (stat === undefined) return { kind: 'gone' };
-          return { kind: 'value', value: await startedMsOf(stat.startTicks) };
+          return { kind: 'value', value: stat.startTicks };
         }),
       ),
     holdersOf: (marker, { signal }, onUninspectable) =>

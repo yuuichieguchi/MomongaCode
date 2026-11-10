@@ -3,12 +3,14 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
-import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretUnavailableError, SocketPathUnsupportedError, momongaLayout } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
-import type { PublicRunEvent } from '@momonga/protocol';
+import { FM_SERVER } from '@momonga/protocol';
+import type { OutputFormatterName, PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
 
 vi.mock('@momonga/runtime', () => {
   throw new Error('the eval host loaded the runtime; the command supplies what the host needs from it');
@@ -54,7 +56,7 @@ const declaredTarget = { adapter: 'chat-completions', model: 'm', provider: 'p',
 
 const userModels = (): UserModels => ({
   declared: { aliases: { default: ['t'], other: ['u'] }, targets: { t: declaredTarget, u: { ...declaredTarget, model: 'other' } } },
-  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {}, billingChanges: [], headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 },
+  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {}, billingChanges: [], headersTimeoutMs: 300_000, idleTimeoutMs: 300_000, servers: { [FM_SERVER.id]: FM_SERVER } },
 });
 
 const caseOf = (id: string, compaction: 'on' | 'off') => ({
@@ -62,7 +64,7 @@ const caseOf = (id: string, compaction: 'on' | 'off') => ({
   scenario: 'a',
   compaction,
   input: 'work on a',
-  permissionMode: 'default',
+  permissionMode: 'manual',
   onAsk: 'reject_once',
   runs: 1,
   minPassRate: 1,
@@ -81,9 +83,9 @@ type Behaviour = {
   failSessionOnRoot?: number;
   hang?: boolean;
   failStartOnRoot?: number;
-  rootLength?: number;
   secrets?: Record<string, string>;
   staleRoots?: { root: string; owner: number; home?: string; holder?: number; held?: boolean }[];
+  refusesSockets?: (root: string) => boolean;
   unreadableRoots?: string[];
   legacyRoots?: string[];
   canonicalPrefix?: string;
@@ -112,6 +114,7 @@ const harness = (behaviour: Behaviour = {}) => {
   const roots = new Map<string, { removed: boolean; settings?: string; pid?: number; cwd?: string }>();
   const alive = new Set<number>();
   const terminated: number[] = [];
+  const measuredSockets: { root: string; generation: number }[] = [];
   const stopped: string[] = [];
   const memories: unknown[] = [];
   const trusted: string[] = [];
@@ -164,7 +167,7 @@ const harness = (behaviour: Behaviour = {}) => {
       return { PATH: '/usr/bin' };
     },
     makeRoot: async () => {
-      const root = `/tmp/mc-${'x'.repeat(behaviour.rootLength ?? 6)}${roots.size}`;
+      const root = `/tmp/mc-xxxxxx${roots.size}`;
       roots.set(root, { removed: false });
       return root;
     },
@@ -173,7 +176,7 @@ const harness = (behaviour: Behaviour = {}) => {
     readSecret: async (name) => {
       secretReads.push(name);
       const value = behaviour.secrets?.[name];
-      if (value === undefined) throw new Error(`no such secret ${name}`);
+      if (value === undefined) throw new SecretUnavailableError(name, 44, 'the fake store has no such secret');
       return value;
     },
     copyProbeRecord: async (source, paths) => void probeCopies.push(`${source.target} ${source.server} ${source.binary} -> ${paths.probe}`),
@@ -202,15 +205,18 @@ const harness = (behaviour: Behaviour = {}) => {
       holders.set(root, nextPid);
       if (behaviour.failStartOnRoot === roots.size) throw new Error('the supervisor exited before it was ready');
       state.pid = nextPid;
-      return nextPid;
     },
-    daemonHolder: async (paths: MomongaPaths) => {
-      for (const [root, pid] of holders) if (paths.root === `${root}/.momonga`) return pid;
-      return undefined;
+    refuseUnfitSockets: async (paths, generation) => {
+      measuredSockets.push({ root: paths.root, generation });
+      if (behaviour.refusesSockets?.(paths.root) === true) throw new SocketPathUnsupportedError(`Unix socket path ${paths.root}/run/g${generation}/supervisor.sock: the kernel refused to bind it`);
     },
-    terminate: async (pid) => {
-      terminated.push(pid);
-      alive.delete(pid);
+    terminate: async (paths: MomongaPaths) => {
+      for (const [root, pid] of holders) {
+        if (paths.root !== `${root}/.momonga`) continue;
+        holders.delete(root);
+        terminated.push(pid);
+        alive.delete(pid);
+      }
     },
     remove: async (directory) => {
       removedDirectories.push(directory);
@@ -234,7 +240,7 @@ const harness = (behaviour: Behaviour = {}) => {
     }
     if (stale.held === true) lock.holdExternally(`${stale.root}${HOME_SIDECAR_SUFFIX}`, stale.owner);
   }
-  return { lock, effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
+  return { lock, effects, sessionRoots, roots, alive, terminated, measuredSockets, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -245,6 +251,7 @@ const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Param
   limits: { maxTotalTokens: 1000, defaultTimeoutMs: 60_000 },
   reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
   codeDigest: CALLER_CODE_DIGEST,
+  interrupt: new AbortController().signal,
   ...extra,
 });
 
@@ -347,22 +354,18 @@ describe('a live context run', () => {
   });
 
   it('measures the sockets on the canonical path of the home, the one the supervisor builds them from', async () => {
-    const limit = socketPathLimit('darwin');
-    const probe = '/tmp/mc-0';
-    const suffix = Math.max(...Object.values(generationLayout(probe, FIRST_GENERATION, 'darwin').sockets).map((socket) => Buffer.byteLength(socket))) - Buffer.byteLength(probe);
-    const canonicalPrefix = '/private';
-    const rootLength = limit - 1 - suffix - Buffer.byteLength('/tmp/mc-') - 1;
-    const plain = harness({ rootLength });
+    const plain = harness();
     await runContextLive(plain.effects, input());
-    expect(plain.roots.size).toBe(2);
-    const canonical = harness({ rootLength, canonicalPrefix });
-    await expect(runContextLive(canonical.effects, input())).rejects.toThrow(new RegExp(`${canonicalPrefix}/tmp/mc-.*must be shorter than ${limit} bytes`));
+    expect(plain.measuredSockets.map((measured) => measured.generation)).toEqual([FIRST_GENERATION, FIRST_GENERATION]);
+    expect(plain.measuredSockets.every((measured) => measured.root.startsWith('/tmp/mc-'))).toBe(true);
+    const canonical = harness({ canonicalPrefix: '/private', refusesSockets: (root) => root.startsWith('/private/') });
+    await expect(runContextLive(canonical.effects, input())).rejects.toThrow(/the sockets of the temporary home do not fit: Unix socket path \/private\/tmp\/mc-.*; the benchmark needs a shorter temporary directory/);
     noDaemonLeft(canonical);
   });
 
-  it('refuses a temporary home whose sockets would not fit and removes it', async () => {
-    const context = harness({ rootLength: 90 });
-    await expect(runContextLive(context.effects, input())).rejects.toThrow(/must be shorter than 104 bytes/);
+  it('refuses a temporary home whose sockets the host does not bind and removes it', async () => {
+    const context = harness({ refusesSockets: () => true });
+    await expect(runContextLive(context.effects, input())).rejects.toThrow(/the sockets of the temporary home do not fit/);
     expect(context.alive.size).toBe(0);
     noDaemonLeft(context);
   });
@@ -587,34 +590,108 @@ describe('the isolation of a case', () => {
     expect(env).toEqual({ PATH: '/usr/bin', HOME: '/tmp/mc-abc123', UPSTREAM_KEY: 'k' });
   });
 
-  it('accepts a short temporary home and refuses a long one, with the limit of the platform', () => {
-    expect(() => assertSocketsFit('/tmp/mc-abc123', 'darwin')).not.toThrow();
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'darwin')).toThrow(/shorter than 104 bytes on darwin/);
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'linux')).not.toThrow();
+  it('accepts a temporary home whose sockets the host binds, and refuses one the bind measurement refuses, with the measured evidence', async () => {
+    const paths = momongaLayout('/tmp/mc-abc123', 'darwin', {});
+    const measured: [string, number][] = [];
+    await expect(assertSocketsFit(paths, async (given, generation) => void measured.push([given.root, generation]))).resolves.toBeUndefined();
+    expect(measured).toEqual([['/tmp/mc-abc123/.momonga', 1]]);
+
+    const refusal = new SocketPathUnsupportedError('Unix socket path /tmp/mc-abc123/.momonga/run/g1/supervisor.sock: the kernel refused to bind a Unix socket path of 104 bytes');
+    const failure = await assertSocketsFit(paths, async () => {
+      throw refusal;
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ContextHostError);
+    expect((failure as Error).message).toBe(`the sockets of the temporary home do not fit: ${refusal.message}; the benchmark needs a shorter temporary directory`);
+
+    const other = new Error('disk gone');
+    await expect(
+      assertSocketsFit(paths, async () => {
+        throw other;
+      }),
+    ).rejects.toBe(other);
   });
 });
 
-describe('the identity a live run stamps on its transcripts', () => {
+const RESOLVED_ON = {
+  context: { adaptiveBudget: true, autoCompact: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
+  tools: { conciseDescriptions: true, deferral: true },
+  memory: { reflection: { enabled: true }, repositoryFacts: true },
+};
+
+describe('the identity a live run stamps on its transcripts (design core-on 3.2, test 9)', () => {
   const HEAD_CODE = 'b'.repeat(64);
 
-  it('records the --settings overlay and the code digest of the CLI in every transcript', async () => {
+  it('records the --settings overlay resolved over the defaults, and the code digest of the CLI, in every transcript', async () => {
     const context = harness();
     const stored: Transcript[] = [];
-    const policy = { context: { cachePrefix: true } };
+    const policy = { context: { cachePrefix: false } };
     const transcripts = await runContextLive(context.effects, input({ policy, codeDigest: HEAD_CODE, onTranscript: async (transcript) => void stored.push(transcript) }));
     expect(transcripts).toHaveLength(2);
     for (const transcript of [...transcripts, ...stored]) {
-      expect(transcript.policy).toEqual(policy);
+      expect(transcript.policy).toEqual({ ...RESOLVED_ON, context: { ...RESOLVED_ON.context, cachePrefix: false } });
       expect(transcript.codeDigest).toBe(HEAD_CODE);
     }
   });
 
-  it('records an empty policy without an overlay', async () => {
+  it('records the resolved on policy without an overlay', async () => {
     const context = harness();
     const transcripts = await runContextLive(context.effects, input({ codeDigest: HEAD_CODE }));
     expect(transcripts.map((transcript) => [transcript.policy, transcript.codeDigest])).toEqual([
-      [{}, HEAD_CODE],
-      [{}, HEAD_CODE],
+      [RESOLVED_ON, HEAD_CODE],
+      [RESOLVED_ON, HEAD_CODE],
     ]);
+  });
+});
+
+describe('a live context run on a plan alias reads the model list of the relaying gateway (K4)', () => {
+  const settled = (running: Promise<unknown>): Promise<'settled'> =>
+    running.then(
+      () => 'settled' as const,
+      () => 'settled' as const,
+    );
+
+  it('reads the listing once on the relay socket and gives every case home the context window and output limit of the listing', async (testContext) => {
+    const gateway = await serveModelsListing(testContext, [listingEntry('default', { [PLAN_TARGET]: LISTED_PLAN })]);
+    const context = harness();
+    await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath }));
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
+    const targets = [...context.roots.values()].map((state) => (JSON.parse(state.settings ?? '{}') as { models?: { targets?: Record<string, { socketPath?: string; capabilities?: Record<string, unknown> }> } }).models?.targets?.[PLAN_TARGET]);
+    expect(targets.map((target) => ({ socketPath: target?.socketPath, contextWindow: target?.capabilities?.['contextWindow'], maxOutputTokens: target?.capabilities?.['maxOutputTokens'] }))).toEqual([
+      { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
+      { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
+    ]);
+  });
+
+  it('waits for the listing under the interrupt of the command and opens no home when it is interrupted', async (testContext) => {
+    const gateway = await serveModelsListing(testContext, 'never');
+    const context = harness();
+    const interrupt = new AbortController();
+    const running = runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath, interrupt: interrupt.signal }));
+    expect(await Promise.race([gateway.firstRequest, settled(running)])).toBe('requested');
+    const reason = new Error('interrupted');
+    interrupt.abort(reason);
+    expect(await running.catch((error: unknown) => error)).toBe(reason);
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
+    expect(context.roots.size).toBe(0);
+  });
+
+  it('rejects with the error of the gateway client and opens no home when the relaying gateway is not running', async (testContext) => {
+    const absent = absentGatewaySocket(testContext);
+    const expected = await modelsFailureOn(absent);
+    const context = harness();
+    const failure = await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => absent })).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(expected.constructor);
+    expect((failure as Error).message).toBe(expected.message);
+    expect(context.roots.size).toBe(0);
+  });
+
+  it('asks for no relay socket and no listing when the alias has no plan target', async () => {
+    const context = harness();
+    let asked = 0;
+    await runContextLive(context.effects, input({ planRelaySocket: async () => {
+      asked += 1;
+      throw new Error('a run without a plan target asked for the relay socket');
+    } }));
+    expect(asked).toBe(0);
   });
 });

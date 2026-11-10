@@ -14,11 +14,15 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
   const run = path.join(root, 'run');
   const state = path.join(root, 'state');
   return {
+    home,
     root,
     settingsFile: path.join(root, 'settings.json'),
+    keybindingsFile: path.join(root, 'keybindings.json'),
     run,
     current: path.join(run, 'current'),
     generationLock: path.join(run, 'generation.lock'),
+    generationCounter: path.join(run, 'generation.counter'),
+    jobs: path.join(run, 'jobs'),
     callLocks: path.join(run, 'call-locks'),
     grepArguments: path.join(run, 'grep-arguments'),
     lockProof: path.join(run, 'lock-proof'),
@@ -44,6 +48,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     planSessions: path.join(state, 'plan-sessions'),
     planHost: path.join(state, 'plan-host.json'),
     planActive: path.join(state, 'plan-active.json'),
+    planCatalog: path.join(state, 'plan-catalog'),
     logs: path.join(root, 'logs'),
     logFiles: {
       supervisor: path.join(root, 'logs', 'supervisor.log'),

@@ -9,6 +9,8 @@ import type { ToolPolicy } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
+import { holdSandbox } from './held-sandbox.ts';
+import type { Sandbox } from '@momonga/sandbox';
 
 export const HOOK_CONTEXT_PREFIX = 'hook context';
 
@@ -24,10 +26,11 @@ export const hookRunContextFor = (
   session: HeldSession,
   hooks: HooksSettings,
   policy: ToolPolicy,
+  sandbox: Sandbox,
   report: (execution: HookExecution) => void,
 ): HookRunContext => ({
   hooks,
-  sandbox: ctx.options.tools.sandbox,
+  sandbox,
   sandboxPolicy: policy.sandboxPolicy,
   env: policy.env,
   shellHost: ctx.options.tools.shellHost,
@@ -43,17 +46,23 @@ export const hookRunContextFor = (
   clock: ctx.options.clock,
   signal: ctx.control.signal,
   deadlineAt: ctx.run.deadlineAt,
+  started: (start) => ctx.journal.append([{ type: 'hook.started', ...start }]),
   report,
 });
 
 type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; session: HeldSession };
 
-const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promise<LifecycleHooks> => {
-  const session = sessionOf(ctx);
-  const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
-  const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
-  const executions: HookExecution[] = [];
-  return { context: hookRunContextFor(ctx, session, hooks, policy, (execution) => executions.push(execution)), executions, session };
+const withLifecycleHooks = async <T>(ctx: ClaimContext, hooks: HooksSettings, work: (lifecycle: LifecycleHooks) => Promise<T>): Promise<T> => {
+  const held = await holdSandbox(ctx.options.tools.sandboxes, ctx.control.signal);
+  try {
+    const session = sessionOf(ctx);
+    const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
+    const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
+    const executions: HookExecution[] = [];
+    return await work({ context: hookRunContextFor(ctx, session, hooks, policy, held.sandbox, (execution) => executions.push(execution)), executions, session });
+  } finally {
+    held.done();
+  }
 };
 
 const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean => (ctx.journal.state.hookCompletions[event] ?? 0) > 0;
@@ -73,7 +82,7 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
   const wantsSessionStart = ctx.run.ordinal === 1 && selectHookCommands(hooks, 'SessionStart', 'startup').length > 0 && !alreadyRan(ctx, 'SessionStart');
   const wantsPrompt = selectHookCommands(hooks, 'UserPromptSubmit', undefined).length > 0 && !alreadyRan(ctx, 'UserPromptSubmit');
   if (!wantsSessionStart && !wantsPrompt) return 'continue';
-  const lifecycle = await lifecycleHooksFor(ctx, hooks);
+  return withLifecycleHooks(ctx, hooks, async (lifecycle) => {
   if (wantsSessionStart) {
     const started = await runSessionStart(lifecycle.context, 'startup');
     ctx.journal.append([...lifecycle.executions.splice(0).map(hookCompleted), ...contextMessage('SessionStart', started.context)]);
@@ -87,6 +96,7 @@ export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
     if (result.blocked !== undefined) return ctx.terminals.finish('FAILED', { error: { code: USER_PROMPT_BLOCKED_CODE, message: result.blocked } });
   }
   return 'continue';
+  });
 };
 
 export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'allow'> => {
@@ -101,7 +111,7 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
     ]);
     return 'allow';
   }
-  const lifecycle = await lifecycleHooksFor(ctx, hooks);
+  return withLifecycleHooks(ctx, hooks, async (lifecycle) => {
   const result = await runStop(lifecycle.context, continuations > 0);
   if (result.halt !== undefined) {
     ctx.journal.append([
@@ -113,4 +123,5 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
   const feedback: RunEventPayload[] = result.continueWith === undefined ? [] : [{ type: 'user.message', text: `${STOP_HOOK_FEEDBACK_PREFIX}${result.continueWith}` }];
   ctx.journal.append([...lifecycle.executions.map(hookCompleted), ...feedback]);
   return result.continueWith === undefined ? 'allow' : 'continue';
+  });
 };

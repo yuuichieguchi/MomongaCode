@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, PinnedOverflowError, PinnedRoomError, buildContext, createTokenMeter } from '@momonga/context';
 import type { BuiltContext, HistoryItem } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem } from '@momonga/protocol';
 import { DEFAULT_KEEP_RECENT_STEPS, protectionRungsOf, shapeOf } from '../src/levels.ts';
 import { MODEL, argsCall, assistant, capabilitiesFor, fakeBlobs, fakeReader, inputFor, output, seeded, shapeCounter, sourcesWith, user } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const specsDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
 const specText = fs.readFileSync(path.join(specsDir, 'RequestPrefix.tla'), 'utf8');
@@ -189,5 +192,5 @@ describe('buildContext conforms to the eviction and reference rules of RequestPr
     expect(omittedBuilds).toBeGreaterThan(0);
     expect(referenceBuilds).toBeGreaterThan(0);
     expect(partialBuilds, 'builds that evict some gainful outputs and keep another').toBeGreaterThan(0);
-  }, 120_000);
+  });
 });

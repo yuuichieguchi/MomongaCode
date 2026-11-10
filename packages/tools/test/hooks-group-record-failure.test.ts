@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, createProcessInspector, hostInspectorPorts } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -9,6 +9,8 @@ import type { Sandbox } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const NOT_AN_ATTEMPT_RECORD = 'not an attempt record\n';
 const notProved = { of: async () => 'unenforced' as const, contradicted: () => undefined };
@@ -55,7 +57,7 @@ const markerCorruptingSandbox = (inner: Sandbox, corrupted: string[]): Sandbox =
   },
 });
 
-describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('a hook whose process group cannot be recorded into its marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('a hook whose process group cannot be recorded into its marker', () => {
   it('still waits for the hook to exit, settles its marker with the group held in memory, stops what outlived it, and reports the failed record once', async () => {
     const markerDir = path.join(dir, 'markers');
     fs.mkdirSync(markerDir, { recursive: true });
@@ -73,10 +75,11 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('a
       projectDir: dir,
       markerDir,
       runId: 'run-1',
-      session: { id: 's1', permissionMode: 'default' },
+      session: { id: 's1', permissionMode: 'manual' },
       clock: { now: () => Date.now() },
       signal: new AbortController().signal,
       deadlineAt: Date.now() + 60_000,
+      started: () => undefined,
       report: (execution: HookExecution) => void executions.push(execution),
       inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(), capability: notProved } as never),
     } as HookRunContext;

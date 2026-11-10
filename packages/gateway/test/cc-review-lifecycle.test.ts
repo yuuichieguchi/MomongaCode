@@ -1,9 +1,10 @@
+import { fixedRolePort } from '@momonga/foundation';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget } from '@momonga/gateway';
+import { createChatCompletionsAdapter, createManagedServer, createGateway, createManagedTarget, unauthenticatedSource } from '@momonga/gateway';
 import type { ExecResult, ManagedServer, ManagedServerTimers, ProviderAdapter } from '@momonga/gateway';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -100,13 +101,13 @@ const managedFm = async () => {
     toolCallingSetting: 'native',
   });
   const clock = createFakeClock(START_MS);
-  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
+  const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   return { managed, adapter, children, fmServe };
 };
 
 describe('managed endpoint', () => {
   it('asks fm serve to be running on every resolve instead of caching the first endpoint', async () => {
-    const ensureRunning = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/s.sock' }));
+    const ensureRunning = vi.fn(async () => ({ kind: 'unix' as const, path: '/s.sock' }));
     const fmServe: ManagedServer = { restarts: 0, start: ensureRunning, ensureRunning, stop: async () => undefined, health: async () => ({ ok: true }) };
     const managed = await createManagedTarget({
       ...fmTargetBase(),
@@ -167,6 +168,7 @@ describe('adapter and gateway shutdown', () => {
     const socketPath = path.join(dir, 'gw.sock');
     const clock = createFakeClock(START_MS);
     const gateway = await createGateway({
+      role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
       config: buildConfig({
@@ -196,7 +198,7 @@ describe('count-tokens', () => {
     await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, FM_CURRENCY);
     return createManagedTarget({
       ...fmTargetBase(),
-      server: { restarts: 0, start: async () => ({ kind: 'unix', socketPath: '/s' }), ensureRunning: async () => ({ kind: 'unix', socketPath: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
+      server: { restarts: 0, start: async () => ({ kind: 'unix', path: '/s' }), ensureRunning: async () => ({ kind: 'unix', path: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
       binary: '/usr/bin/fm',
       exec: async (_file: string, _args: readonly string[], _stdin: string, signal: AbortSignal) => {
         signals.push(signal);
@@ -233,7 +235,7 @@ describe('count-tokens', () => {
 describe('closed adapter', () => {
   it('rejects create after close without resolving an endpoint', async () => {
     const resolveEndpoint = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/never.sock' }));
-    const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
+    const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint,
       capabilities: async () => {
         throw new Error('unused');

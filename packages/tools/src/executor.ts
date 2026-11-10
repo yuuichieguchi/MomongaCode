@@ -8,7 +8,7 @@ import { createMarkerSettle } from './marker-settle.ts';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, PathResolution, ProcessGroupPort, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
-import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
+import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem, PolicyTool } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
@@ -21,6 +21,7 @@ import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
+import { RetiringYield } from './ports.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { callStopOf } from './call-stop.ts';
@@ -156,6 +157,7 @@ export type ToolExecutorOptions = {
   maxParallel?: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
+  earlierMarkerDirs?: () => Promise<readonly string[]>;
   owners?: MarkerOwners;
   callLockDir: string;
   kernelLock?: KernelLockMechanism;
@@ -174,13 +176,21 @@ export type AbandonOutcome = { idemKey: string; callId: string; outcome: 'unknow
 
 export type ReleaseTarget = { callId: string; name: string; idemKey: string };
 
+export type PolicyFacts = Pick<ExecutionBatchInput, 'mode' | 'home' | 'roots' | 'readRoots' | 'tmpDir' | 'env' | 'session' | 'signal' | 'rules' | 'sandboxPolicy'>;
+
+export type UserSubject = { tool: 'Read'; path: string } | { tool: 'Bash'; command: string };
+
+export type UserPolicyFacts = Omit<PolicyFacts, 'mode'>;
+
+export type UserPolicy = { userRefusal(subject: UserSubject, facts: UserPolicyFacts): Promise<string | undefined> };
+
 export type ToolExecutor = {
   runBatch(input: BatchInput): Promise<CallOutcome[]>;
   abandon(targets: readonly AbandonTarget[], options: { signal: AbortSignal }): Promise<AbandonOutcome[]>;
   release(targets: readonly ReleaseTarget[], options: { toolSet: () => Promise<ToolSet>; signal: AbortSignal }): Promise<void>;
 };
 
-export type InspectableToolExecutor = ToolExecutor & { inFlightKeys(): ReadonlySet<string> };
+export type InspectableToolExecutor = ToolExecutor & UserPolicy & { inFlightKeys(): ReadonlySet<string> };
 
 type ExecutionPlan = {
   kind: 'execution';
@@ -312,7 +322,7 @@ const requireResolvable = (entry: string): void => {
   }
 };
 
-const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
+const createWriteGuard = (batch: Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'>): ((subject: PermissionSubject, cwd: string) => string | undefined) => {
   batch.sandboxPolicy.writableRoots.forEach(canonicalPath);
   const layout = momongaLayout(batch.home);
   const homeGuards = new Set([layout.root, layout.keychains]);
@@ -349,7 +359,20 @@ type BatchAccess = ReadAccessMatcher & {
   isWritable: (absolute: string) => boolean;
 };
 
-const rootsOf = (batch: BatchCore): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
+const accessOf = (facts: Pick<ExecutionBatchInput, 'sandboxPolicy' | 'home' | 'tmpDir'>): BatchAccess => {
+  const { writableRoots } = facts.sandboxPolicy;
+  const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: facts.sandboxPolicy.fileRules.entries }));
+  return { ...createReadAccessMatcher(facts.sandboxPolicy), writeDeniedPath: createWriteGuard(facts), isWritable };
+};
+
+const USER_CALL_ID = 'user';
+const USER_MODE: PermissionMode = 'bypassPermissions';
+const USER_TOOLS: Readonly<Record<UserSubject['tool'], PolicyTool>> = {
+  Read: { name: 'Read', kind: 'read', sideEffect: 'read_only', subjectKind: 'path' },
+  Bash: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
+};
+
+const rootsOf = (batch: Pick<BatchCore, 'roots' | 'tmpDir'>): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
 const subjectContextOf = (batch: BatchCore): SubjectContext => ({
   cwd: batch.session.cwd,
@@ -597,6 +620,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(result.backend === undefined ? {} : { backend: result.backend }),
+      ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
+      ...(result.added === undefined ? {} : { added: result.added }),
+      ...(result.removed === undefined ? {} : { removed: result.removed }),
+      ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };
@@ -626,12 +653,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const globBudget = globBudgetMs({ leaseMs: options.leaseMs, heartbeatMs: options.heartbeatMs });
 
   const evaluatePolicy = async (
-    call: ToolCall,
-    tool: AnyTool,
+    call: Pick<ToolCall, 'callId'>,
+    tool: PolicyTool,
     subject: PermissionSubject,
     access: BatchAccess,
-    batch: ExecutionBatchInput,
-  ): Promise<{ outcome: CallOutcome } | { decision: Decision }> => {
+    batch: PolicyFacts,
+  ): Promise<{ outcome: ResultOutcome } | { decision: Decision }> => {
     const cwd = batch.session.cwd;
     const shown = (absolute: string): string => displayToolPath(batch.session.workingDirectory, absolute);
     const blockedPath = readDeniedPath(subject, access, cwd);
@@ -1120,8 +1147,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
-    const marker = path.join(options.processMarkerDir, key);
+  const reapEarlierMarker = async (marker: string, key: string, pgid: number | undefined, signal: AbortSignal): Promise<boolean> => {
     let reaped: ReapReport;
     try {
       reaped = await reapMarkedProcessesWithReport({
@@ -1152,7 +1178,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
     }
-    return { stopped: reaped.stopped };
+    return reaped.stopped;
+  };
+
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, pgid, signal);
+    if (options.earlierMarkerDirs !== undefined) {
+      for (const directory of await options.earlierMarkerDirs()) {
+        if (directory === options.processMarkerDir) continue;
+        stopped = (await reapEarlierMarker(path.join(directory, key), key, pgid, signal)) || stopped;
+      }
+    }
+    return { stopped };
   };
 
   type Resumed = { kind: 'reconciled'; result: ReconcileResult } | { kind: 'outcome'; outcome: CallOutcome };
@@ -1331,6 +1368,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
               return await tool.execute(target.input, executionCtx, prepared);
             } catch (error) {
               if (error instanceof ToolInputRequired) return error;
+              if (error instanceof RetiringYield) throw error;
               const retryable =
                 error instanceof TransientToolError &&
                 tool.sideEffect === 'read_only' &&
@@ -1499,9 +1537,19 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {
       throw new SandboxPolicyError('file_rules_stale', 'the sandbox policy was built from different permission rules, roots or session tmp dir than this batch');
     }
-    const { writableRoots } = given.sandboxPolicy;
-    const isWritable = writableCheckOf(writableAreaOf({ writableRoots, entries: given.sandboxPolicy.fileRules.entries }));
-    return { batch: given, access: { ...createReadAccessMatcher(given.sandboxPolicy), writeDeniedPath: createWriteGuard(given), isWritable } };
+    return { batch: given, access: accessOf(given) };
+  };
+
+  const userRefusal: UserPolicy['userRefusal'] = async (subject, facts) => {
+    const verdict = await evaluatePolicy(
+      { callId: USER_CALL_ID },
+      USER_TOOLS[subject.tool],
+      subject.tool === 'Read' ? { kind: 'path', tool: subject.tool, paths: [subject.path], access: 'read' } : { kind: 'command', tool: subject.tool, command: subject.command },
+      accessOf(facts),
+      { ...facts, mode: USER_MODE },
+    );
+    if ('outcome' in verdict) return verdict.outcome.result.denial?.reason ?? verdict.outcome.result.output;
+    return verdict.decision.source === 'protected' ? verdict.decision.reason : undefined;
   };
 
   const runBatch = async (given: BatchInput): Promise<CallOutcome[]> => {
@@ -1674,5 +1722,5 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     await Promise.all(targets.map((target) => releaseTarget(target, loadOnce, signal)));
   };
 
-  return { runBatch, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
+  return { runBatch, userRefusal, abandon, release, inFlightKeys: () => new Set(activeKeys.keys()) };
 };

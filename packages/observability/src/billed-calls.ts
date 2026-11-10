@@ -2,6 +2,7 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import { priceCall } from './cost.ts';
 import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
+import type { PriceNotRecorded, UnpricedCode, UsageSource } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -16,12 +17,12 @@ export type BilledCall = {
   model: string;
   billing: CallBilling;
   startMs: number;
-  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: PricedCall;
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  price: PricedCall | PriceNotRecorded;
 };
 
 export type BilledCallWire = Omit<BilledCall, 'price' | 'spanId'> & {
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
 };
 
 export type BilledCallsCursor = { run: number; after: number };
@@ -35,11 +36,17 @@ export const RUNLESS = '';
 export const isBilledChat = (span: SpanRecord): boolean =>
   span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat && span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined;
 
-const optionalNumber = (span: SpanRecord, key: string): number => {
+const reportedNumber = (span: SpanRecord, key: string): number | undefined => {
   const value = span.attributes[key];
-  if (value === undefined) return 0;
+  if (value === undefined) return undefined;
   if (typeof value !== 'number') throw new TypeError(`chat span ${span.spanId} attribute ${key} must be a number`);
   return value;
+};
+
+const usageSourceOf = (span: SpanRecord): UsageSource | undefined => {
+  const value = optionalString(span, MOMONGA_ATTRIBUTES.usageSource);
+  if (value === undefined || value === 'reported' || value === 'estimated') return value;
+  throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.usageSource} must be reported or estimated, got ${value}`);
 };
 
 const optionalString = (span: SpanRecord, key: string): string | undefined => {
@@ -54,17 +61,23 @@ const billingOf = (span: SpanRecord): CallBilling => {
   return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
 };
 
+export const billedUsageOf = (span: SpanRecord): BilledCall['usage'] => {
+  const cachedInputTokens = reportedNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS);
+  return {
+    inputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS) ?? 0,
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    cacheWriteInputTokens: reportedNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens) ?? 0,
+    outputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS) ?? 0,
+    reasoningTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS) ?? 0,
+  };
+};
+
 export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable): BilledCall => {
   const provider = optionalString(span, A.ATTR_GEN_AI_PROVIDER_NAME) ?? '';
   const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
   const billing = billingOf(span);
-  const usage = {
-    inputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS),
-    cachedInputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS),
-    cacheWriteInputTokens: optionalNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens),
-    outputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS),
-    reasoningTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS),
-  };
+  const usage = billedUsageOf(span);
+  const usageSource = usageSourceOf(span);
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
   const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);
@@ -81,14 +94,7 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
     billing,
     startMs: span.startMs,
     usage,
-    price: priceCall({
-      provider,
-      model,
-      billing,
-      usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteInputTokens: usage.cacheWriteInputTokens },
-      at: new Date(span.startMs),
-      table,
-    }),
+    price: usageSource === undefined ? { kind: 'not_recorded' } : priceCall({ provider, model, billing, usageSource, usage, at: new Date(span.startMs), table }),
   };
 };
 

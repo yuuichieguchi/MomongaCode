@@ -15,16 +15,16 @@ const READ_ONLY_LIST = /\(([^)]*)\)/;
 const EDIT_LIST = /filesystem commands (.*?) inside the workspace/;
 
 describe('model-facing mode texts name exactly the approvable programs (3.12)', () => {
-  it('names the read-only set in the default and plan texts and the edit set in the acceptEdits text', () => {
+  it('names the read-only set in the manual and plan texts and the edit set in the acceptEdits text', () => {
     const approvedOn = (platform: NodeJS.Platform, approval: 'read-only' | 'edit'): string[] =>
       commandSpecsFor(platform).all.filter((model) => model.approval === approval).flatMap((model) => model.names);
     const readOnly = [...new Set([...approvedOn('darwin', 'read-only'), ...approvedOn('linux', 'read-only')])];
     const edit = approvedOn('darwin', 'edit');
     expect(readOnly.length).toBeGreaterThan(0);
     expect(edit.length).toBeGreaterThan(0);
-    expect(MODE_RULE.default).toContain('ps on Linux');
+    expect(MODE_RULE.manual).toContain('ps on Linux');
     expect(readOnly.filter((name) => !approvedOn('darwin', 'read-only').includes(name))).toEqual(['ps']);
-    expect(new Set(listed(MODE_RULE.default, READ_ONLY_LIST))).toEqual(new Set(readOnly));
+    expect(new Set(listed(MODE_RULE.manual, READ_ONLY_LIST))).toEqual(new Set(readOnly));
     expect(new Set(listed(MODE_RULE.plan, READ_ONLY_LIST))).toEqual(new Set(readOnly));
     expect(new Set(listed(MODE_RULE.acceptEdits, EDIT_LIST))).toEqual(new Set(edit));
   });

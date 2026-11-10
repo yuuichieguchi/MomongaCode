@@ -1,29 +1,30 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SessionTmpDirError, ensureMomongaDirs, ensureSessionTmpDir, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
+import type { TempDirOptions } from '@momonga/testkit';
 
 const tempDirs: string[] = [];
 const lockedDirs: string[] = [];
 const RUNNING_AS_ROOT = process.getuid?.() === 0;
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
   for (const dir of lockedDirs.splice(0)) fs.chmodSync(dir, 0o700);
-  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of tempDirs.splice(0)) await removeTempDir(dir);
 });
 
-const makeDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+const makeDir = (options: TempDirOptions = {}): string => {
+  const dir = createTempDir(options);
   tempDirs.push(dir);
   return dir;
 };
 
 const preparedPaths = async (): Promise<MomongaPaths> => {
-  const paths = momongaPaths(makeDir('mm-home-'), 'darwin', {});
+  const paths = momongaPaths(makeDir({ asHome: true }), 'darwin', {});
   await ensureMomongaDirs(paths);
   return paths;
 };
@@ -31,7 +32,7 @@ const preparedPaths = async (): Promise<MomongaPaths> => {
 describe('ensureSessionTmpDir', () => {
   it('creates the session dir under tmp.sessions with mode 0700 and returns it', async () => {
     const paths = await preparedPaths();
-    const dir = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir } = await ensureSessionTmpDir(paths, 'session-1');
     const expected = path.join(paths.tmp.sessions, 'session-1');
     expect(fs.realpathSync(dir)).toBe(fs.realpathSync(expected));
     const stat = fs.lstatSync(expected);
@@ -41,16 +42,16 @@ describe('ensureSessionTmpDir', () => {
 
   it('is idempotent and keeps existing contents', async () => {
     const paths = await preparedPaths();
-    const first = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: first } = await ensureSessionTmpDir(paths, 'session-1');
     fs.writeFileSync(path.join(first, 'keep'), 'kept');
-    const second = await ensureSessionTmpDir(paths, 'session-1');
+    const { dir: second } = await ensureSessionTmpDir(paths, 'session-1');
     expect(second).toBe(first);
     expect(fs.readFileSync(path.join(second, 'keep'), 'utf8')).toBe('kept');
   });
 
   it('refuses a symlink at the session dir path and leaves its target untouched', async () => {
     const paths = await preparedPaths();
-    const outside = makeDir('mm-outside-');
+    const outside = makeDir();
     fs.chmodSync(outside, 0o755);
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'session-1'));
     await expect(ensureSessionTmpDir(paths, 'session-1')).rejects.toThrow();
@@ -78,7 +79,7 @@ describe('ensureSessionTmpDir', () => {
 
   it('refuses a session dir whose canonical path leaves the canonical sessions root through a symlinked parent', async () => {
     const paths = await preparedPaths();
-    const outside = makeDir('mm-outside-');
+    const outside = makeDir();
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'link'));
     await expect(ensureSessionTmpDir(paths, 'link/session-1')).rejects.toThrow();
     expect(fs.readdirSync(outside)).toEqual([]);
@@ -86,7 +87,7 @@ describe('ensureSessionTmpDir', () => {
 
   it('refuses a sessions root that is a symlink to another dir', async () => {
     const paths = await preparedPaths();
-    const outside = makeDir('mm-outside-');
+    const outside = makeDir();
     fs.rmSync(paths.tmp.sessions, { recursive: true });
     fs.symlinkSync(outside, paths.tmp.sessions);
     await expect(ensureSessionTmpDir(paths, 'session-1')).rejects.toThrow();
@@ -115,7 +116,7 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
 describe('ensureSessionTmpDir error classes', () => {
   it('a session dir replaced by a symlink throws SessionTmpDirError', async () => {
     const paths = await preparedPaths();
-    const outside = makeDir('mm-outside-');
+    const outside = makeDir();
     fs.symlinkSync(outside, path.join(paths.tmp.sessions, 'session-1'));
     const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
     expect(error).toBeInstanceOf(SessionTmpDirError);
@@ -124,7 +125,7 @@ describe('ensureSessionTmpDir error classes', () => {
 
   it('a sessions root replaced by a symlink throws SessionTmpDirError', async () => {
     const paths = await preparedPaths();
-    const outside = makeDir('mm-outside-');
+    const outside = makeDir();
     fs.rmSync(paths.tmp.sessions, { recursive: true });
     fs.symlinkSync(outside, paths.tmp.sessions);
     const error = await rejectionOf(ensureSessionTmpDir(paths, 'session-1'));
@@ -143,7 +144,7 @@ describe('ensureSessionTmpDir error classes', () => {
     const paths = await preparedPaths();
     const directory = path.join(paths.tmp.sessions, 'session-1');
     fs.mkdirSync(directory, { mode: 0o700 });
-    const elsewhere = makeDir('mm-elsewhere-');
+    const elsewhere = makeDir();
     const alias = path.join(elsewhere, 'alias');
     fs.symlinkSync(directory, alias);
     const realRealpath = fsp.realpath;

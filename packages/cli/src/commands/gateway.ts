@@ -1,13 +1,13 @@
-import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
+import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
-import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { withinCommandLimit } from '../command-limit.ts';
+import { restartGeneration } from '../daemon/ensure-daemon.ts';
+import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { processOutboundNetwork } from '../network.ts';
+import { withOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
@@ -26,12 +26,13 @@ export class NotAProbeableTarget extends Error {
 
 export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
 
-const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
-  const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
-  if (stopped) {
-    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
-    ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
-  }
+export const RESTART_STARTED_TEXT = (version: string): string => `started a new daemon (v${version}) so that the gateway reads the record; work in the old one keeps running.`;
+
+export const RESTART_NOTHING_SERVING_TEXT = 'no daemon is running; the record is read when it starts.';
+
+export const restartDaemon = async (ports: Pick<CliPorts, 'stdout'> & DaemonPorts, paths: MomongaPaths, options: Parameters<typeof restartGeneration>[2] = {}): Promise<void> => {
+  const outcome = await restartGeneration(ports, paths, options);
+  ports.stdout.write(`${outcome.kind === 'started' ? RESTART_STARTED_TEXT(outcome.version) : RESTART_NOTHING_SERVING_TEXT}\n`);
 };
 
 export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
@@ -39,13 +40,14 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'managed') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
+  if (configured?.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, network));
+  if (configured?.adapter === 'ollama') return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, target, configured, options, settings.models.dialects, network));
   throw new NotAProbeableTarget(target, targets);
 };
 
 const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrupt: AbortSignal): Promise<string | undefined> => {
-  if (target.apiKeySecret !== undefined) return ports.secretStore().read(target.apiKeySecret, interrupt);
+  const { apiKeySecret } = target;
+  if (apiKeySecret !== undefined) return withinCommandLimit(interrupt, (signal) => ports.secretStore().read(apiKeySecret, signal));
   if (target.apiKeyEnv === undefined) return undefined;
   const value = ports.env[target.apiKeyEnv];
   if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the target cannot be probed`);
@@ -171,10 +173,11 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
   const configured: ManagedConfig | undefined = targets[target]?.adapter === 'managed' ? (targets[target] as ManagedConfig) : undefined;
   if (configured === undefined) throw new NotAProbeableTarget(target, targets);
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
-  const description = managedServerOf(MANAGED_SERVERS, configured.server);
+  const description = registeredServer(settings.models.servers, configured.server);
   if (description === undefined) throw new NotAProbeableTarget(target, targets);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
+    platform: ports.platform,
     instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target }),
     description,
     target,

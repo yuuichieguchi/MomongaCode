@@ -20,7 +20,7 @@ const bash = (command: string, spec: Spec = {}) => {
   return decide({
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command },
-    mode: spec.mode ?? 'default',
+    mode: spec.mode ?? 'manual',
     rules: [
       ...(spec.allow ?? []).map((t) => make('allow', t)),
       ...(spec.ask ?? []).map((t) => make('ask', t)),
@@ -194,7 +194,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const outside = touch(path.join(layout.outside, 'a.ts'));
     fs.symlinkSync(outside, path.join(layout.project, 'link.ts'));
     const decision = (file: string) =>
-      decide({ tool: WRITE, subject: subject(file), mode: 'default', rules: [rule], roots, fileRules: fileRulesFor([rule], roots), home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET }).kind;
+      decide({ tool: WRITE, subject: subject(file), mode: 'manual', rules: [rule], roots, fileRules: fileRulesFor([rule], roots), home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET }).kind;
     expect(decision(inside)).toBe('allow');
     expect(decision(outside)).toBe('ask');
     expect(decision(path.join(layout.project, 'link.ts'))).toBe('ask');
@@ -208,7 +208,7 @@ describe('S2 and S1: slash-less patterns and case', () => {
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [file], access: 'read' };
     const roots = [layout.project];
     const decision = (rule: PermissionRule) =>
-      decide({ tool: READ, subject, mode: 'default', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([rule], roots, null, ruleEnforcementOf('none')) });
+      decide({ tool: READ, subject, mode: 'manual', rules: [rule], roots, home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor(roots), protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([rule], roots, null, ruleEnforcementOf('none')) });
     expect(decision(make('deny', 'Read(.env)'))).toMatchObject({ kind: 'deny', source: 'rule' });
     expect(decision(make('ask', 'Read(.env)'))).toMatchObject({ kind: 'ask', source: 'rule' });
     expect(decision(make('allow', 'Read(.env)'))).toMatchObject({ kind: 'allow', source: 'rule' });
@@ -233,7 +233,7 @@ describe('read tool sanity', () => {
     const layout = makeLayout();
     const file = touch(path.join(layout.project, 'f'));
     expect(
-      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'default', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([], [layout.project]) }).kind,
+      decide({ tool: READ, subject: { kind: 'path', tool: 'Read', paths: [file], access: 'read' }, mode: 'manual', rules: [], roots: [layout.project], home: layout.home, cwd: layout.project, fs: fakeFs(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([layout.project]), protectedSet: EMPTY_PROTECTED_SET, fileRules: fileRulesFor([], [layout.project]) }).kind,
     ).toBe('allow');
   });
 });
@@ -248,13 +248,13 @@ describe('S8: sed -i follows the resolved sed (3.5, revision 25)', () => {
 
   it.each(NON_APPLE.flatMap(([label, programs]) => FORMER_DENIES.map((command) => [command, label, programs] as const)))('%s with %s is denied by the union reading', (command, _label, programs) => {
     const row = commandRow(command, { rules: DENY, fs: () => ({ programs }) });
-    expect(kindIn(row, 'default')).toBe('deny');
+    expect(kindIn(row, 'manual')).toBe('deny');
     expect(kindIn(row, 'bypassPermissions')).toBe('deny');
   });
 
   it.each(FORMER_DENIES)('%s with /usr/bin/sed has no target on Darwin: asks in default, allowed in bypass', (command) => {
     const row = commandRow(command, { rules: DENY, fs: () => ({ programs: { sed: '/usr/bin/sed' } }) });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
     expect(kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 
@@ -265,7 +265,7 @@ describe('S8: sed -i follows the resolved sed (3.5, revision 25)', () => {
     ['sed -i .bak s/a/b/ .git/config', { sed: '/opt/homebrew/bin/sed' }],
   ] as const)('%s is denied whatever sed resolves to (%o)', (command, programs) => {
     const row = commandRow(command, { rules: DENY, fs: () => ({ programs }) });
-    expect(kindIn(row, 'default')).toBe('deny');
+    expect(kindIn(row, 'manual')).toBe('deny');
     expect(kindIn(row, 'bypassPermissions')).toBe('deny');
   });
 
@@ -276,6 +276,6 @@ describe('S8: sed -i follows the resolved sed (3.5, revision 25)', () => {
       fs: () => ({ programs: { sed: '/opt/homebrew/bin/sed' } }),
       prepare: (layout) => void touch(path.join(layout.project, '.git', 'HEAD')),
     });
-    for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) expect(kindIn(row, mode)).toBe('prot');
+    for (const mode of ['manual', 'acceptEdits', 'bypassPermissions'] as const) expect(kindIn(row, mode)).toBe('prot');
   });
 });

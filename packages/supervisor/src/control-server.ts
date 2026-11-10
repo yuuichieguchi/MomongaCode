@@ -1,6 +1,6 @@
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { listenUnix, parseOutsideJson, parseStopValues, startDeadlineSignal } from '@momonga/foundation';
+import { CREDENTIAL_CAPABILITY_HEADER, listenUnix, parseOutsideJson, parseStopValues, startDeadlineSignal } from '@momonga/foundation';
 import type { KernelLockMechanism, StopValues } from '@momonga/foundation';
 import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
 import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
@@ -12,8 +12,11 @@ export type ShutdownResponseWriter = {
   end(body: string): unknown;
 };
 
+export type CredentialAnswer = { kind: 'value'; value: string } | { kind: 'refused' } | { kind: 'unset' };
+
 export type ControlHandlerOptions = {
   health(): SupervisorHealth;
+  credential(name: string, capability: string | undefined): CredentialAnswer;
   onShutdownRequested(values?: StopValues): void;
   onIgnoredStopValues?(reason: string): void;
 };
@@ -32,6 +35,8 @@ export type ControlServer = {
 };
 
 const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
+
+const CREDENTIALS_PATH = '/v1/credentials/';
 
 export const respondShutdown = (response: ShutdownResponseWriter, onShutdownRequested: () => void): void => {
   const body = JSON.stringify({ phase: 'draining' } satisfies SupervisorShutdownResponse);
@@ -97,6 +102,25 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
         return;
       }
       respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET, HEAD' });
+      return;
+    }
+    if (pathname.startsWith(CREDENTIALS_PATH)) {
+      if (method !== 'GET') {
+        respondError(request, response, 405, { message: `${method} is not allowed on ${pathname}`, type: 'invalid_request', code: 'method_not_allowed' }, { allow: 'GET' });
+        return;
+      }
+      const name = decodeURIComponent(pathname.slice(CREDENTIALS_PATH.length));
+      const given = request.headers[CREDENTIAL_CAPABILITY_HEADER];
+      const answer = options.credential(name, typeof given === 'string' ? given : undefined);
+      if (answer.kind === 'value') {
+        respondJson(request, response, 200, { name, value: answer.value });
+        return;
+      }
+      if (answer.kind === 'refused') {
+        respondError(request, response, 403, { message: 'no credential is handed over on this request', type: 'invalid_request', code: 'credential_refused' });
+        return;
+      }
+      respondError(request, response, 404, { message: `the variable ${name} is unset or empty in the environment the daemon started with`, type: 'not_found', code: 'credential_not_set' });
       return;
     }
     if (pathname === '/v1/shutdown') {

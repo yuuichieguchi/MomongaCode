@@ -12,9 +12,9 @@ import type { SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
-import { MANAGED_SERVERS } from '@momonga/protocol';
-import type { ManagedServerDescription } from '@momonga/protocol';
-import type { ResolvedModels } from './models.ts';
+import { PLAN_PROFILES } from './plan-profiles.ts';
+import { serverRegistryOf } from './server-registry.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
@@ -65,6 +65,8 @@ const assertRipgrepSetting = (value: unknown, file: string): void => {
   throw new ConfigError(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`);
 };
 
+const USER_ONLY_TUI_KEYS = ['screen', 'mouse', 'copyOnSelect'] as const;
+
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
 
@@ -84,7 +86,7 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   }
 
   if (settings.credentials !== undefined) {
-    warnings.push(`${source}: credentials is only honored in user settings; discarded`);
+    for (const key of Object.keys(settings.credentials)) warnings.push(`${source}: credentials.${key} is only honored in user settings; discarded`);
     delete restricted.credentials;
   }
 
@@ -156,6 +158,16 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.autoMode;
   }
 
+  if (settings.tui !== undefined) {
+    const kept = { ...settings.tui };
+    for (const key of USER_ONLY_TUI_KEYS) {
+      if (kept[key] === undefined) continue;
+      warnings.push(`${source}: tui.${key} is only honored in user settings; discarded`);
+      delete kept[key];
+    }
+    restricted.tui = kept;
+  }
+
   return restricted;
 };
 
@@ -199,6 +211,9 @@ const readLayer = async (
   }
 };
 
+export const repositoryLayerFrom = (document: unknown, file: string, origin: RuleOrigin, root: string, warnings: string[]): Layer | undefined =>
+  buildLayer({ found: true, value: document }, file, origin, root, root, true, warnings);
+
 export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
 
 export const userSettingsFile = (home: string): string => layoutOf(home).settingsFile;
@@ -214,12 +229,13 @@ export const readUserJsonFile = (home: string): JsonFile => {
 
 export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
 
-export const userLayerFrom = (home: string, read: JsonFile, managedServers: readonly ManagedServerDescription[] = MANAGED_SERVERS): UserLayer => {
+export const userLayerFrom = (home: string, read: JsonFile, planProfiles: PlanProfiles = PLAN_PROFILES): UserLayer => {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
-    const models = resolveModels(layer?.settings.models, { source: file, home, warnings, managedServers });
+    const declared = layer?.settings.models;
+    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles });
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);

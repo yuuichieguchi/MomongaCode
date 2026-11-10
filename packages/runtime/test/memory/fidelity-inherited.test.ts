@@ -4,8 +4,9 @@ import { FIDELITY_EVENT_TYPES, createFidelityFold } from '../../src/memory/fidel
 import { enqueue, mustClaim, rawDb } from '../../../store/test/helpers.ts';
 import { deniedCall, fidelityEnv, modelSaid, reconciledCall, startedCall, unfinishedCall } from './fidelity-fixture.ts';
 import type { Claim } from './fidelity-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 300_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const TOKEN = 'make deploy-staging';
 
@@ -21,7 +22,7 @@ type Env = ReturnType<typeof fidelityEnv>;
 const inheriting = async (env: Env, events: readonly RunEventPayload[], input: string, outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
   const run = enqueue(env.store, env.session.id, input);
   const claim = mustClaim(env.store, 'w1');
-  expect(await env.store.inheritContext(claim, { mode: 'default', facts: env.store.journalFacts })).toEqual({ kind: 'inherited' });
+  expect(await env.store.inheritContext(claim, { mode: 'manual', facts: env.store.journalFacts })).toEqual({ kind: 'inherited' });
   const appended = env.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: { ...RUN_PINS } }, ...events]);
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
   const patch = outcome === 'FAILED' ? { error: { code: 'fixture', message: 'fixture failure' } } : {};

@@ -1,11 +1,15 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, loadSettings, systemFileLockPorts } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeDir, makeTree } from './helpers.ts';
+
+const NEVER_ABORTED = new AbortController().signal;
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const git = (cwd: string, ...args: string[]): void => {
   execFileSync('git', ['-c', 'user.name=test', '-c', 'user.email=test@example.invalid', '-c', 'init.defaultBranch=main', ...args], {
@@ -22,7 +26,7 @@ const repository = (root: string): string => {
 };
 
 const persist = (home: string, projectDir: string, rule: string): Promise<void> =>
-  appendPermissionRule({ ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow' });
+  appendPermissionRule({ ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow', signal: NEVER_ABORTED });
 
 const localRules = async (home: string, projectDir: string): Promise<PermissionRule[]> => {
   const trust = { isTrusted: (): boolean => true };
@@ -32,7 +36,7 @@ const localRules = async (home: string, projectDir: string): Promise<PermissionR
 
 const ruleTexts = (rules: readonly PermissionRule[]): string[] => rules.map((rule) => rule.text);
 
-describe('allow_always grants key on the worktree root', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('allow_always grants key on the worktree root', () => {
   it('applies a rule persisted from a subdirectory when the session starts at the repository root', async () => {
     const tree = makeTree();
     const repo = repository(tree.project);

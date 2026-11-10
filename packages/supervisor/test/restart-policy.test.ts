@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markerReapClockBoundMs } from '@momonga/foundation';
+import { EXIT_RETIRED, markerReapClockBoundMs } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childRestartBoundMs, classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY, backoffDelay, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from '../src/restart-policy.ts';
 import type { ExitClassification, StopReason } from '../src/restart-policy.ts';
@@ -25,7 +25,6 @@ describe('classifyExit', () => {
   it('classifyExit table', () => {
     const stopRows: [StopReason, ExitClassification][] = [
       ['shutdown', { class: 'requested', reason: 'requested' }],
-      ['plan-restart', { class: 'plan-stopped', reason: 'requested' }],
       ['startup-timeout', { class: 'failure', reason: 'startup-timeout' }],
       ['ready-mismatch', { class: 'failure', reason: 'protocol-violation' }],
     ];
@@ -62,14 +61,6 @@ describe('decideAfterExit', () => {
       const classified = classifyExit({ ...exit, stop: 'shutdown' });
       expect(classified.class).toBe('requested');
       expect(decide(classified)).toEqual({ next: 'stopped' });
-    }
-  });
-
-  it('plan stop never yields backoff', () => {
-    for (const exit of ANY_EXITS) {
-      const classified = classifyExit({ ...exit, stop: 'plan-restart' });
-      expect(classified.class).toBe('plan-stopped');
-      for (const failures of [0, 3, 50]) expect(decide(classified, failures)).toEqual({ next: 'plan-stopped' });
     }
   });
 
@@ -114,6 +105,13 @@ describe('decideAfterExit', () => {
     for (const failures of [0, 5, 100]) expect(decide(classified, failures, () => 0.999)).toEqual({ next: 'waiting-lock' });
   });
 
+  it('79 is the retire exit: class retired, reason retired, and the child is never restarted (20.1)', () => {
+    const exit = classifyExit({ code: EXIT_RETIRED, signal: null, stop: undefined });
+    expect(EXIT_RETIRED).toBe(79);
+    expect(exit).toEqual({ class: 'retired', reason: 'retired' });
+    expect(decideAfterExit({ exit, consecutiveFailures: 0, policy: DEFAULT_RESTART_POLICY, random: () => 0.5 })).toEqual({ next: 'stopped' });
+  });
+
   it('78 yields held-config', () => {
     const classified = classifyExit({ code: 78, signal: null, stop: undefined });
     for (const failures of [0, 5]) expect(decide(classified, failures, () => 0.999)).toEqual({ next: 'held-config' });
@@ -151,9 +149,8 @@ describe('backoff', () => {
 });
 
 describe('stop reason rank', () => {
-  it('shutdown outranks plan-restart, which outranks the startup reasons', () => {
-    expect(stopReasonRank('shutdown')).toBe(3);
-    expect(stopReasonRank('plan-restart')).toBe(2);
+  it('shutdown outranks the startup reasons', () => {
+    expect(stopReasonRank('shutdown')).toBe(2);
     expect(stopReasonRank('startup-timeout')).toBe(1);
     expect(stopReasonRank('ready-mismatch')).toBe(1);
   });

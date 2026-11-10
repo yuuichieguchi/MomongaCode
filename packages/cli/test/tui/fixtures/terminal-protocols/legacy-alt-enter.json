@@ -1,0 +1,30 @@
+{
+  "name": "legacy-alt-enter",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b0d",
+  "events": [
+    {
+      "type": "key",
+      "name": "enter",
+      "ctrl": false,
+      "alt": true,
+      "shift": false
+    }
+  ],
+  "splitAfterEscape": [
+    {
+      "type": "key",
+      "name": "escape",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    },
+    {
+      "type": "key",
+      "name": "enter",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

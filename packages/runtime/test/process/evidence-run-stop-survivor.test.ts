@@ -13,6 +13,7 @@ import type { LaunchOptions } from '../../../sandbox/src/process.ts';
 import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import type { EvidenceRunnerOptions } from '../../src/process/evidence-run.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 type MarkerGroupApi = { readMarkerGroup(marker: string): Promise<number | undefined> };
 
@@ -76,8 +77,7 @@ const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives:
     paths,
     home,
     fs: fakePolicyFilesystem(),
-    enforcement: ruleEnforcementOf('none'),
-    sandbox,
+    sandboxes: fixedSandboxBindings(sandbox),
     env: { PATH: '/usr/bin' },
     reap: { inspector, groupPort, timing, killGraceMs: KILL_GRACE_MS },
   } as EvidenceRunnerOptions;

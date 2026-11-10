@@ -1,14 +1,16 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, groupAlive, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { START_MS, createRun, createSession, trackGroup, writeUserSettings } from './helpers.ts';
-import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged } from './run-helpers.ts';
+import { RUNTIME_VERSION, captureStream, failureOf, hookLogger, isLockFree, launchRuntime, modelSettings, prepareStack, readDb, startRuntimeProcess, stepsLogged, prepareGeneration, scopedPaths } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ lookupError: undefined as Error | undefined }));
 
@@ -34,7 +36,6 @@ vi.mock('@momonga/store', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const SEED_MS = START_MS;
 
 beforeEach(() => {
@@ -58,7 +59,7 @@ const spawnHolder = (marker: string, content?: (pid: number) => string): number 
 };
 
 const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRuntimeStore>) => void): Promise<void> => {
-  await ensureMomongaDirs(temp.paths);
+  await prepareGeneration(temp);
   const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock: createFakeClock(SEED_MS), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
   try {
     seed(store);
@@ -70,10 +71,10 @@ const seedStore = async (temp: RunHome, seed: (store: ReturnType<typeof openRunt
 const keyOf = (letter: string): string => letter.repeat(64);
 
 describe('startup marker reaping through startRuntimeProcess (real processes, system timers)', () => {
-  it('reaps MCP markers left by a killed instance at start', PROCESS_TIMEOUT, async () => {
+  it('reaps MCP markers left by a killed instance at start', async () => {
     const stack = await prepareStack();
-    await ensureMomongaDirs(stack.temp.paths);
-    const marker = path.join(stack.temp.paths.markers.mcp, 'fx-left-behind');
+    await prepareGeneration(stack.temp);
+    const marker = path.join(scopedPaths(stack.temp).markers.mcp, 'fx-left-behind');
     const pgid = spawnHolder(marker, (pid) => `${pid}\n`);
     expect(await groupExists(pgid)).toBe(true);
     const launched = await launchRuntime(stack.temp);
@@ -82,10 +83,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('tool markers are reaped at start by record state: every held marker is reaped whatever its row says, holder-less markers are deleted', PROCESS_TIMEOUT, async () => {
+  it('tool markers are reaped at start by record state: every held marker is reaped whatever its row says, holder-less markers are deleted', async () => {
     const stack = await prepareStack();
-    await ensureMomongaDirs(stack.temp.paths);
-    const markers = stack.temp.paths.markers.tools;
+    await prepareGeneration(stack.temp);
+    const markers = scopedPaths(stack.temp).markers.tools;
     const holders: Record<string, number> = {};
     await seedStore(stack.temp, (store) => {
       const expiresAt = SEED_MS + 30 * 86_400_000;
@@ -117,9 +118,9 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(fs.readdirSync(markers)).toEqual([]);
   });
 
-  it('marks a job a dead runtime left running unknown, and reaps its process group, before the service and the workers start', PROCESS_TIMEOUT, async () => {
+  it('marks a job a dead runtime left running unknown, and reaps its process group, before the service and the workers start', async () => {
     const stack = await prepareStack();
-    await ensureMomongaDirs(stack.temp.paths);
+    await prepareGeneration(stack.temp);
     const jobId = 'bash_dead00000000';
     const idemKey = keyOf('j');
     let pgid: number | undefined;
@@ -127,7 +128,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
       store.idempotency.begin(idemKey, { expiresAt: SEED_MS + 30 * 86_400_000, meta: { job: true } });
       const session = createSession(store, stack.temp.project);
       store.jobs.start({ id: jobId, idemKey, sessionId: session.id, runId: createRun(store, session.id), callId: 'c', command: 'sleep 30' });
-      pgid = spawnHolder(path.join(stack.temp.paths.markers.tools, idemKey));
+      pgid = spawnHolder(path.join(scopedPaths(stack.temp).markers.tools, idemKey));
       store.jobs.attachProcess(jobId, pgid);
     });
     const seen: Record<string, { status: string | undefined; alive: Promise<boolean> }> = {};
@@ -142,10 +143,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(settled).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
   });
 
-  it('a store error during tool-marker reaping fails startup before any process is signalled and unwinds', PROCESS_TIMEOUT, async () => {
+  it('a store error during tool-marker reaping fails startup before any process is signalled and unwinds', async () => {
     const stack = await prepareStack();
-    await ensureMomongaDirs(stack.temp.paths);
-    const holder = spawnHolder(path.join(stack.temp.paths.markers.tools, keyOf('f')));
+    await prepareGeneration(stack.temp);
+    const holder = spawnHolder(path.join(scopedPaths(stack.temp).markers.tools, keyOf('f')));
     const injected = Object.assign(new Error('database disk image is malformed'), { code: 'ERR_SQLITE_ERROR', errcode: 11 });
     control.lookupError = injected;
     const logger = hookLogger(() => undefined);
@@ -183,7 +184,7 @@ const trackedHolder = (context: CleanupContext, marker: string): number => {
 type Seeded = { runId: string; pgid: number; lastClaimAt: number };
 
 const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLetterInSeed: boolean): Promise<Seeded> => {
-  await ensureMomongaDirs(temp.paths);
+  await prepareGeneration(temp);
   const clock = createFakeClock(SEED_MS);
   const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: LEASE_MS, maxAttempts: MAX_ATTEMPTS, maxTotalAttempts: 20 });
   try {
@@ -207,7 +208,7 @@ const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLett
       if (store.getRun(runId)?.deadLetter !== true) throw new Error('the seed did not dead-letter the run');
     }
     store.idempotency.begin(DEAD_LETTER_KEY, { expiresAt: clock.now() + 30 * 86_400_000, meta: { tool: 'Bash', runId } });
-    const pgid = trackedHolder(context, path.join(temp.paths.markers.tools, DEAD_LETTER_KEY));
+    const pgid = trackedHolder(context, path.join(scopedPaths(temp).markers.tools, DEAD_LETTER_KEY));
     store.idempotency.attachProcess(DEAD_LETTER_KEY, { pgid, startedAt: clock.now() });
     return { runId, pgid, lastClaimAt };
   } finally {
@@ -222,10 +223,10 @@ const deadLetterOf = (temp: RunHome, runId: string): { status: string; dead_lett
   readDb<{ status: string; dead_letter: number }>(temp.paths.databases.runtime, 'SELECT status, dead_letter FROM runs WHERE id = ?', runId)[0];
 
 describe('dead-lettered runs: real holders (§8)', () => {
-  it('a real holder of a run that is not dead-lettered is killed at start too, because no owner lives after a restart', PROCESS_TIMEOUT, async (context) => {
+  it('a real holder of a run that is not dead-lettered is killed at start too, because no owner lives after a restart', async (context) => {
     const temp = trackedRunHome(context);
     const { pgid } = await seedTakenOverRun(context, temp, false);
-    const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
+    const marker = path.join(scopedPaths(temp).markers.tools, DEAD_LETTER_KEY);
 
     const launched = await launchRuntime(temp);
 
@@ -235,10 +236,10 @@ describe('dead-lettered runs: real holders (§8)', () => {
     expect(idempotencyState(temp)).toBe('PENDING');
   });
 
-  it('a real holder of a run dead-lettered before launch is killed at start', PROCESS_TIMEOUT, async (context) => {
+  it('a real holder of a run dead-lettered before launch is killed at start', async (context) => {
     const temp = trackedRunHome(context);
     const { runId, pgid } = await seedTakenOverRun(context, temp, true);
-    const marker = path.join(temp.paths.markers.tools, DEAD_LETTER_KEY);
+    const marker = path.join(scopedPaths(temp).markers.tools, DEAD_LETTER_KEY);
     expect(deadLetterOf(temp, runId)).toEqual({ status: 'FAILED', dead_letter: 1 });
 
     const launched = await launchRuntime(temp);

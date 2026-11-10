@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { tokensForText } from '@momonga/protocol';
-import { GatewayRequestError } from '@momonga/runtime';
-import { MODEL_ALIAS, OTHER_ALIAS, expectError, expectSchema, startService } from './helpers.ts';
+import { TARGET_PROBING, TARGET_PROBING_MESSAGE, tokensForText } from '@momonga/protocol';
+import { GatewayRequestError, ModelUnlistedError } from '@momonga/runtime';
+import { MODEL_ALIAS, OTHER_ALIAS, defaultModelCapabilities, expectError, expectSchema, startService } from './helpers.ts';
 
 const textRule = (project: string, overrides: Record<string, unknown> = {}) => ({
   kind: 'constraint',
@@ -50,6 +50,32 @@ describe('rules api', () => {
     expect(added.status).toBe(500);
     const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
     expect(listed.json.facts).toEqual([]);
+  });
+
+  it('adding a rule with one alias unavailable measures the others and names the unavailable one in warnings', async () => {
+    const capabilitiesOf = async (alias: string) => {
+      if (alias === OTHER_ALIAS) throw new ModelUnlistedError({ status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: 'no numbers for a' });
+      return defaultModelCapabilities();
+    };
+    const env = await startService({ fakeTimers: true, capabilitiesOf });
+    const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
+    const tokens = tokensForText('never touch production');
+    expect(added.status).toBe(201);
+    expect(added.json.size).toEqual([{ target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
+    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model alias ${OTHER_ALIAS}: no numbers for a`]);
+  });
+
+  it('the same for a probing alias', async () => {
+    const capabilitiesOf = async (alias: string) => {
+      if (alias === OTHER_ALIAS) throw new ModelUnlistedError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: TARGET_PROBING_MESSAGE });
+      return defaultModelCapabilities();
+    };
+    const env = await startService({ fakeTimers: true, capabilitiesOf });
+    const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
+    const tokens = tokensForText('never touch production');
+    expect(added.status).toBe(201);
+    expect(added.json.size).toEqual([{ target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
+    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model alias ${OTHER_ALIAS}: ${TARGET_PROBING_MESSAGE}`]);
   });
 
   it('refuses a repeat of a live fact with the id of the existing one, and stores nothing', async () => {

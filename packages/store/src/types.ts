@@ -13,8 +13,13 @@ import type {
   ElicitationRequestView,
   JobStatus,
   ImageAttachment,
+  MessageAttachment,
+  UserShellRecord,
+  InboxDelivery,
+  InboxState,
   PermissionMode,
   PermissionOption,
+  PlanAccountRef,
   RunEvent,
   RunEventPayload,
   RunState,
@@ -64,7 +69,7 @@ export type CreateSessionInput = {
   mcpServers?: SessionMcpServers;
 };
 
-export type RunError = { code: string; message: string };
+export type RunError = { code: string; message: string; plan?: PlanAccountRef };
 
 export type HistoryMode = 'inherit' | 'fresh';
 
@@ -111,7 +116,30 @@ export type CreateRunInput = {
   history?: HistoryMode;
   skill?: { name: string; content: string };
   images?: ImageAttachment[];
+  attachments?: MessageAttachment[];
 };
+
+export type UserShellStore = {
+  record(sessionId: string, record: UserShellRecord): { kind: 'recorded' } | NotFound;
+  pending(sessionId: string): UserShellRecord[];
+  runActive(sessionId: string): boolean;
+};
+
+export type InboxRow = {
+  id: string;
+  sessionId: string;
+  delivery: InboxDelivery;
+  text: string;
+  images?: ImageAttachment[];
+  seq: number;
+  state: InboxState;
+  createdAt: number;
+  settledAt: number | null;
+};
+
+export type QueuedRunTerms = { timeoutMs: number; limits: Record<string, unknown> };
+
+export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; run: QueuedRunTerms };
 
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';
 
@@ -128,6 +156,18 @@ export type LeaseLost = { kind: 'lease_lost' };
 export type Conflict = { kind: 'conflict'; reason?: string };
 
 export type NotFound = { kind: 'not_found' };
+
+export type InboxAddResult = { kind: 'added'; row: InboxRow; pending: InboxRow[] } | NotFound | { kind: 'full' };
+export type InboxWithdrawResult = { kind: 'withdrawn' | 'already_delivered'; row: InboxRow; pending: InboxRow[] } | NotFound;
+export type InboxDeliverResult = { kind: 'ok'; delivered: InboxRow[] } | LeaseLost;
+
+export type InboxStore = {
+  add(sessionId: string, input: InboxAddInput): InboxAddResult;
+  withdraw(id: string): InboxWithdrawResult;
+  list(sessionId: string): InboxRow[];
+  deliverSteering(claim: Claim): InboxDeliverResult;
+  successorOf(runId: string): Run | undefined;
+};
 
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
@@ -568,6 +608,7 @@ export type RuntimeStore = {
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): void;
+  pruneFidelityVerdicts(bound: number): number;
   readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
@@ -644,6 +685,8 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
+  inbox: InboxStore;
+  userShell: UserShellStore;
   memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;
@@ -663,6 +706,7 @@ export type RuntimeStoreOptions = {
   leaseMs: number;
   maxAttempts: number;
   maxTotalAttempts: number;
+  generation?: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
   preparer?: ContributionPreparer;
   onDecode?: (rows: number, bytes: number) => void;
@@ -770,9 +814,12 @@ export type Job = {
   lastRead?: { call: string; from: number };
   startedAt: number;
   endedAt?: number;
+  ownerGeneration?: number;
+  killRequestedAt?: number;
+  outputPath?: string;
 };
 
-export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string };
+export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string; ownerGeneration?: number; outputPath?: string };
 
 export type JobOutputRef = { handle: string; start: number; total: number };
 
@@ -789,6 +836,8 @@ export type JobStore = {
   listForSession(sessionId: string): Job[];
   finish(id: string, result: JobResult): FinishJobResult;
   advanceRead(id: string, offset: number, call: string): void;
+  requestKill(id: string): boolean;
+  clearOutputPath(id: string): void;
 };
 
 export type ChildRunInput = {

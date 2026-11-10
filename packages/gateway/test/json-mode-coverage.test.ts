@@ -5,6 +5,7 @@ import { createFakeClock, createFakeTimers, startFakeChatCompletions } from '@mo
 import { createReasoningOriginCodec } from '../src/core/reasoning-origin.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import { createRouter } from '../src/core/router.ts';
+import { listAlias } from '../src/server/capability-listing.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
@@ -105,7 +106,7 @@ describe('an alias over several targets reports the JSON-only mode every target 
       redactor: createRedactor({ credentials: [] }),
       reasoningOrigin: createReasoningOriginCodec(HMAC_KEY),
     });
-    return (await router.aliasCapabilitiesOf('fast')) as Capabilities;
+    return (await listAlias(router, 'fast', new AbortController().signal)).capabilities as Capabilities;
   };
 
   it('is json_object when every target has it, and absent when one target is unmeasured', async () => {

@@ -17,7 +17,7 @@ const activationToolSet = async (): Promise<ToolSet> => {
 };
 
 const descriptionFor = (set: ToolSet, conciseDescriptions: boolean): string => {
-  const options = { mode: 'default', rules: [], conciseDescriptions } as Parameters<ToolSet['forModel']>[0];
+  const options = { mode: 'manual', rules: [], conciseDescriptions } as Parameters<ToolSet['forModel']>[0];
   const tool = set.forModel(options).find((entry) => entry.name === ACTIVATE_SKILL_TOOL_NAME);
   if (tool === undefined) throw new Error('the activation tool is not offered');
   return tool.description ?? '';

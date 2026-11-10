@@ -1,15 +1,20 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Duplex, Readable } from 'node:stream';
 import { createStopValuesReader, stopValuesOfSettings } from '@momonga/config';
-import type { ResolvedSettings, StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
+import type { StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
   claimLockForChild,
   formatStopMessage,
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
+  managedServerStopBoundMs,
   parseReadyLine,
   reapMarkerDirectory,
   runtimeAbortStopBudgetMs,
   runtimeStopBudgetMs,
+  CREDENTIAL_CAPABILITY_ENV,
+  SETTINGS_APPLIED_ENV,
+  generationLayout,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
@@ -40,12 +45,10 @@ import type { SupervisorLogEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { openDaemonMarker, reapDaemonMarker } from './orphans.ts';
 import type { DaemonMarker, MarkerPorts } from './orphans.ts';
-import { digestsOf } from './plan.ts';
-import type { SettingsDigests } from './plan.ts';
 import { watchLock } from './lock-watch.ts';
 import type { ExternalProbe, LockWatch } from './lock-watch.ts';
 import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank } from './restart-policy.ts';
-import type { ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
+import type { ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 
 export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
 
@@ -71,7 +74,9 @@ export type SpawnPort = (command: string, args: readonly string[], options: Spaw
 
 export type ChildState = SupervisorChildState;
 
-export type SpawnReason = 'initial' | 'backoff' | 'lock-free' | 'held-retry' | 'settings-change' | 'plan';
+const CAPABILITY_BYTES = 32;
+
+export type SpawnReason = 'initial' | 'backoff' | 'lock-free' | 'held-retry' | 'settings-change';
 
 export type HeldSource = 'child-exit' | 'settings';
 
@@ -105,6 +110,8 @@ export type ChildManagerOptions = {
   markerPorts?: MarkerPorts;
   stopValues?: StopValuesReader;
   isDraining(): boolean;
+  isRetiring(): boolean;
+  onRetiredExit(): void;
   onBackgroundError(error: unknown, source: string): void;
   onTransientError(error: unknown, source: string): void;
   onVersionMismatch(mismatch: ChildVersionMismatch): void;
@@ -115,15 +122,15 @@ export type ChildManager = {
   readonly role: ChildRole;
   state(): ChildState;
   health(): SupervisorChildHealth;
-  isPlanStopped(): boolean;
-  appliedDigests(): SettingsDigests | undefined;
   spawnWith(snapshot: UserSettingsSnapshot, reason: SpawnReason): void;
   spawnFresh(reason: SpawnReason): void;
   failWithoutProcess(reason: 'settings-read-failed'): void;
-  planStart(): void;
   retryHeld(): void;
+  holdsCapability(given: string): boolean;
   stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult>;
   enterDraining(): void;
+  enterRetiring(): void;
+  hasEnded(): boolean;
   unreapedMarkers(): readonly string[];
   inFlightReaps(): ReadonlyMap<string, Promise<{ removed: boolean }>>;
   awaitLeave(from: ChildState, options: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState>;
@@ -157,6 +164,7 @@ type Life = {
   exited: boolean;
   abandoned: boolean;
   failed: boolean;
+  capability: string | undefined;
   timers: Partial<Record<LifeTimerName, unknown>>;
 };
 
@@ -183,11 +191,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   let generation = 0;
   let launches = 0;
   let consecutiveFailures = 0;
-  let planStopped = false;
   let leaked = false;
   let current: Life | undefined;
-  let appliedSettings: ResolvedSettings | undefined;
   let lastExit: LastExit | undefined;
+  const capabilityHolders = new Set<Life>();
   let readyAt: number | undefined;
   let heldReason: string | undefined;
   let lastLoggedHeldReason: string | undefined;
@@ -200,6 +207,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const inFlightReaps = new Map<string, Promise<{ removed: boolean }>>();
   const leaveWaiters = new Set<{ from: ChildState; settle: () => void }>();
   let lastSkippedNames = '';
+  let heldForVersion = false;
+
+  const startsNothing = (): boolean => options.isDraining() || options.isRetiring() || heldForVersion;
 
   const setState = (next: ChildState): void => {
     state = next;
@@ -243,7 +253,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const beginAttempt = (): void => {
     clearScheduled();
     generation += 1;
-    planStopped = false;
     leaked = false;
   };
 
@@ -265,7 +274,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const armedGeneration = generation;
     heldTimer = schedule('held-retry-timer', options.heldRetryMs, () => {
       heldTimer = undefined;
-      if (options.isDraining() || generation !== armedGeneration) return;
+      if (startsNothing() || generation !== armedGeneration) return;
       spawnFresh('held-retry');
     });
   };
@@ -287,7 +296,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const armedGeneration = generation;
     backoffTimer = schedule('backoff-timer', delayMs, () => {
       backoffTimer = undefined;
-      if (options.isDraining() || generation !== armedGeneration) return;
+      if (startsNothing() || generation !== armedGeneration) return;
       spawnFresh('backoff');
     });
     log(childBackoff({ child: role, delayMs, consecutiveFailures }));
@@ -296,7 +305,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const enterWaitingLock = (): void => {
     setState('waiting-lock');
     const armedGeneration = generation;
-    const isStale = (): boolean => options.isDraining() || generation !== armedGeneration;
+    const isStale = (): boolean => startsNothing() || generation !== armedGeneration;
     lockWatch = watchLock({
       role,
       lockPath: options.endpoint.lockPath,
@@ -332,10 +341,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     switch (decision.next) {
       case 'stopped':
         setState('stopped');
-        return;
-      case 'plan-stopped':
-        setState('stopped');
-        planStopped = true;
         return;
       case 'backoff':
         enterBackoff(decision.delayMs);
@@ -383,7 +388,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     recordFailureWithoutProcess(reason, stopReason);
   };
 
-  const spawnProcess = (snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>, handoff: LockHandoff | undefined): { marker: DaemonMarker; handle: ChildHandle } => {
+  const spawnProcess = (
+    snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>,
+    handoff: LockHandoff | undefined,
+  ): { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined } => {
     const skippedNames: string[] = [];
     const resolved = resolveLaunch({
       role,
@@ -398,15 +406,16 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
           : runtimeEnv(merged, snapshot.settings).env,
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
+    const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
     const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
-        env: handoff === undefined ? resolved.env : { ...resolved.env, ...handoff.env },
+        env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
         detached: true,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });
-      return { marker, handle };
+      return { marker, handle, capability: spawnCapability };
     } catch (error) {
       marker.closeFd();
       marker.remove();
@@ -441,6 +450,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (fields.service === role && fields.pid === life.pid) {
       if (fields.version !== options.version) {
         log(childVersionMismatch({ child: role, childPid: life.pid ?? null, childVersion: fields.version, supervisorVersion: options.version }));
+        heldForVersion = true;
+        void stop('ready-mismatch', 'term');
         options.onVersionMismatch({ role, childVersion: fields.version });
         return true;
       }
@@ -473,8 +484,14 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     ];
   };
 
+  const endCapability = (life: Life): void => {
+    life.capability = undefined;
+    capabilityHolders.delete(life);
+  };
+
   const failLifeWithoutProcess = (life: Life, error: NodeJS.ErrnoException): void => {
     life.failed = true;
+    endCapability(life);
     clearLifeTimers(life);
     destroyStreams(life);
     life.marker.remove();
@@ -518,17 +535,25 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const reapManagedServers = async (life: Life): Promise<void> => {
     if (!runsManagedServers(role)) return;
     const values = life.stopValues ?? stopValuesReader.read();
-    await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
-      dir: options.paths.markers.targets,
-      killGraceMs: values.managedServerStopGraceMs,
-      label: 'managed server',
-      occasion: 'shutdown',
-      onWarning: (detail) => log(settingsWarning({ detail })),
-    });
+    const reapStop = new AbortController();
+    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerStopBoundMs(values.managedServerStopGraceMs));
+    try {
+      await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
+        dir: options.paths.markers.targets,
+        killGraceMs: values.managedServerStopGraceMs,
+        label: 'managed server',
+        occasion: 'shutdown',
+        onWarning: (detail) => log(settingsWarning({ detail })),
+        signal: reapStop.signal,
+      });
+    } finally {
+      options.timers.clearTimeout(bound);
+    }
   };
 
   const handleExit = async (life: Life, exit: ChildExit): Promise<void> => {
     life.exited = true;
+    endCapability(life);
     life.killStop.abort();
     clearLifeTimers(life);
     if (life.abandoned) {
@@ -547,7 +572,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       if (current === life) current = undefined;
       return;
     }
-    const classification = classifyExit({ code: exit.code, signal: exit.signal, stop: life.stopReason });
+    const exitClass = classifyExit({ code: exit.code, signal: exit.signal, stop: life.stopReason });
+    const classification: ExitClassification = heldForVersion && life.stopReason === 'ready-mismatch' ? { class: exitClass.class, reason: 'version-mismatch' } : exitClass;
     lastExit = { code: exit.code, signal: exit.signal, at: isoOf(clock.now()), reason: classification.reason };
     readyAt = undefined;
     if (current === life) current = undefined;
@@ -566,6 +592,15 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       setState('stopped');
       return;
     }
+    if (heldForVersion) {
+      setState('held-version');
+      return;
+    }
+    if (classification.class === 'retired') options.onRetiredExit();
+    if (options.isRetiring()) {
+      setState('stopped');
+      return;
+    }
     applyDecision(decideAfterExit({ exit: classification, consecutiveFailures, policy: options.restart, random: options.random }), life.lastStderrLine);
   };
 
@@ -575,7 +610,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const launch = (snapshot: UserSettingsSnapshot, reason: SpawnReason): void => {
-    if (options.isDraining()) return;
+    if (startsNothing()) return;
     beginAttempt();
     if ('error' in snapshot) {
       hold(snapshot.error.message, 'settings');
@@ -595,10 +630,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     }
     const handoff = claim.kind === 'claimed' ? claim.handoff : undefined;
     launches += 1;
-    appliedSettings = snapshot.settings;
     heldReason = undefined;
     readyAt = undefined;
-    let started: { marker: DaemonMarker; handle: ChildHandle };
+    let started: { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined };
     try {
       started = spawnProcess(snapshot, handoff);
     } catch (error) {
@@ -607,7 +641,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       return;
     }
     handoff?.closeParentCopy();
-    const { marker, handle } = started;
+    const { marker, handle, capability } = started;
     marker.closeFd();
     const life: Life = {
       handle,
@@ -628,8 +662,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       exited: false,
       abandoned: false,
       failed: false,
+      capability,
       timers: {},
     };
+    if (capability !== undefined) capabilityHolders.add(life);
     current = life;
     setState('starting');
     handle.onSpawnError((error) => onHandleError(life, error));
@@ -643,7 +679,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   function spawnFresh(reason: SpawnReason): void {
-    if (options.isDraining()) return;
+    if (startsNothing()) return;
     let snapshot: UserSettingsSnapshot;
     try {
       snapshot = options.settings.snapshot();
@@ -662,7 +698,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     generation += 1;
     leaked = true;
     setState('stopped');
-    planStopped = life.stopReason === 'plan-restart';
     unreaped.add(life.marker.path);
     log(childUnkillable({ child: role, childPid: life.pid ?? null }));
     settleStop(life, { killed: true, leaked: true });
@@ -712,13 +747,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const stopWithoutProcess = (reason: StopReason): ChildStopResult => {
-    if (reason !== 'plan-restart') {
-      clearScheduled();
-      if (state !== 'stopped') {
-        generation += 1;
-        setState('stopped');
-      }
-      planStopped = false;
+    clearScheduled();
+    if (state !== 'stopped') {
+      generation += 1;
+      setState('stopped');
     }
     return { killed: false, leaked };
   };
@@ -767,6 +799,13 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (liveLife() === undefined) setState('stopped');
   };
 
+  const enterRetiring = (): void => {
+    clearScheduled();
+    if (liveLife() === undefined && state !== 'held-version') setState('stopped');
+  };
+
+  const ENDED_STATES: ReadonlySet<ChildState> = new Set<ChildState>(['pending', 'stopped', 'held-version']);
+
   const awaitLeave = (from: ChildState, leaveOptions: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState> =>
     new Promise<ChildState>((resolve) => {
       if (state !== from || leaveOptions.signal.aborted) {
@@ -806,25 +845,29 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     role,
     state: () => state,
     health,
-    isPlanStopped: () => planStopped,
-    appliedDigests: (): SettingsDigests | undefined => (appliedSettings === undefined ? undefined : digestsOf(appliedSettings)),
     spawnWith: launch,
     spawnFresh,
     failWithoutProcess: (reason) => {
       beginAttempt();
       recordFailureWithoutProcess(reason);
     },
-    planStart: () => {
-      if (options.isDraining() || !planStopped) return;
-      spawnFresh('plan');
+    holdsCapability: (given) => {
+      const offered = Buffer.from(given);
+      return [...capabilityHolders].some((life) => {
+        if (life.capability === undefined) return false;
+        const expected = Buffer.from(life.capability);
+        return offered.length === expected.length && timingSafeEqual(offered, expected);
+      });
     },
     retryHeld: () => {
-      if (options.isDraining() || state !== 'held-config') return;
+      if (startsNothing() || state !== 'held-config') return;
       consecutiveFailures = 0;
       spawnFresh('settings-change');
     },
     stop,
     enterDraining,
+    enterRetiring,
+    hasEnded: () => ENDED_STATES.has(state) && liveLife() === undefined,
     unreapedMarkers: () => [...unreaped],
     inFlightReaps: () => inFlightReaps,
     awaitLeave,

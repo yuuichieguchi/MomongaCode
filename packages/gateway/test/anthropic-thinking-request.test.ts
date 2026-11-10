@@ -1,3 +1,4 @@
+import { keyAuthSource } from '@momonga/gateway';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter } from '@momonga/gateway';
 import type { AdapterCompactRequest, Capabilities, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
@@ -45,7 +46,7 @@ const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<t
   registerCleanup(() => fake.close());
   const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    apiKey: async () => FAKE_API_KEY,
+    authSource: keyAuthSource(async () => FAKE_API_KEY),
     capabilities: async () => withReasoning(reasoning),
     clock: createFakeClock(START_MS),
     apiVersion: '2026-10-21',

@@ -91,23 +91,23 @@ describe('B4 forms and unresolvable targets', () => {
 
   it.each(FORMS)('%s with a deny rule asks in default and acceptEdits and is allowed in bypass', (command, rules) => {
     const row = commandRow(command, { rules });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
     expect(kindIn(row, 'acceptEdits')).toBe('ask');
     expect(kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 
   it.each(FORMS)('%s without a deny rule asks in default and is allowed in bypass', (command) => {
     const row = commandRow(command);
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
     expect(kindIn(row, 'bypassPermissions')).toBe('allow');
   });
 
   it.each(['C1', 'C2'])('%s names other-user-home in the reason of its ask', (id) => {
-    expect(decideRow(rowById(id), 'default').reason).toContain('other-user-home');
+    expect(decideRow(rowById(id), 'manual').reason).toContain('other-user-home');
   });
 
   it('C4 names other-user-home in the reason of its ask', () => {
-    expect(decideRow(rowById('C4'), 'default').reason).toContain('other-user-home');
+    expect(decideRow(rowById('C4'), 'manual').reason).toContain('other-user-home');
   });
 });
 
@@ -125,7 +125,7 @@ describe('5.11 bypass adds no decision for unresolvable targets', () => {
   it.each([...['C1', 'C2', 'C3'].map((id) => rowById(id)), ...B4_FORMS.map((command) => commandRow(command, { rules: [['deny', 'Write(~/.bashrc)']] }))])(
     '$id asks and never denies in default and acceptEdits',
     (row) => {
-      expect(kindIn(row, 'default')).toBe('ask');
+      expect(kindIn(row, 'manual')).toBe('ask');
       expect(kindIn(row, 'acceptEdits')).toBe('ask');
     },
   );

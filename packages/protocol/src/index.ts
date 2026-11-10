@@ -35,6 +35,10 @@ export type {
   NeedsProbe,
   Probing,
   ProbingCapabilities,
+  NotListedCapabilities,
+  TargetHealthReason,
+  Unavailable,
+  UnavailableCapabilities,
   ToolCallingMode,
   ToolCallingState,
   ToolCallingSetting,
@@ -122,32 +126,57 @@ export {
   acceptedReasoningEfforts,
   clampReasoningEffort,
   outputTokensFor,
+  maxOutputTokensFor,
   thinkingBudgetFor,
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
   JSON_MODES,
   agentReadiness,
+  isNotListedCapabilities,
   isProbingCapabilities,
   isToolCallingState,
+  isUnavailableCapabilities,
+  notListedMessage,
   readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
 export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
-export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
-export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
-export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
+export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
+export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
+export type { ManagedDeclarableField, ManagedEndpointForm, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
   BREAKER_VERDICTS,
+  USAGE_LIMIT_CODES,
+  USAGE_LIMIT_CODE,
+  WORKSPACE_USAGE_LIMIT_CODE,
+  USAGE_PAUSED_CODE,
+  PLAN_STORE_UNREADABLE_CODE,
+  PLAN_STORE_UNWRITABLE_CODE,
+  PLAN_HOST_IDENTITY_UNAVAILABLE_CODE,
+  PLAN_CREDENTIAL_UNAVAILABLE_CODE,
+  PLAN_ACCOUNT_NOT_SELECTABLE_CODE,
+  PLAN_SIGN_IN_PENDING_CODE,
+  PLAN_SIGN_OUT_IN_PROGRESS_CODE,
+  CAPABILITIES_UNKNOWN_CODE,
+  PLAN_CODES,
+  PLAN_HEALTH_REASONS,
+  PLAN_REVOCATIONS,
   CREDENTIAL_EFFECTS,
   ERROR_FALLBACKS,
   PLAN_ACCOUNT_STATES,
   PLAN_API_PREFIX,
   PLAN_ROUTES,
   PLAN_SIGN_IN_FAILURES,
+  PLAN_SIGN_IN_FAILURE_RULES,
+  ID_TOKEN_CHECKS,
+  SIGN_IN_REQUIRED_CODE,
+  PLAN_USE_NOT_ENABLED_CODE,
+  PLAN_NOT_ELIGIBLE_CODE,
 } from './plan-api.ts';
 export type {
   BreakerVerdict,
@@ -157,9 +186,11 @@ export type {
   ErrorRule,
   ErrorRules,
   PlanAccountRef,
+  PlanHealthReason,
   PlanAccountState,
   PlanAccountView,
   PlanAccountsResponse,
+  PlanListProblem,
   PlanActiveRequest,
   PlanActiveResponse,
   PlanCatalogEntry,
@@ -170,11 +201,18 @@ export type {
   PlanSignInBeginRequest,
   PlanSignInBeginResponse,
   PlanSignInCancelRequest,
+  PlanSignInCancelResponse,
+  PlanSignInFailureRule,
+  PlanResumeResponse,
+  PlanHostResetResponse,
+  PlanModelsRequest,
+  IdTokenCheck,
   PlanSignInCompleteRequest,
   PlanSignInCompleteResponse,
   PlanSignInFailure,
   PlanSignOutRequest,
   PlanSignOutResponse,
+  PlanRevocation,
   PlanTargetRequest,
   PlanTargetResponse,
 } from './plan-api.ts';
@@ -280,9 +318,10 @@ export type {
   UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
-export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
-export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, modelKindOf } from './run-api.ts';
-export type { ModelKind } from './run-api.ts';
+export { DAEMON_CURRENT_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export type { DaemonCurrentFrame } from './run-api.ts';
+export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
+export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
@@ -301,7 +340,6 @@ export type {
   CostFallbackView,
   CostTotalsView,
   RoleCostView,
-  FallbackCauseView,
   GatewayCostReportView,
   JsonSchema,
   McpAuthState,
@@ -325,7 +363,8 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export { jsonReplyPathFor } from './json-reply-path.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledDetail,
   BilledCallsCursorView,
@@ -336,11 +375,16 @@ export type {
   UnjoinedView,
   CostBreakdownView,
   ModelCost,
+  ModelPricing,
+  PriceNotRecorded,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
   TokenAnatomyLayers,
   UnpricedCallView,
+  InconsistentUsageView,
+  UnpricedCode,
+  UnpricedOutcome,
 } from './token-anatomy.ts';
 export {
   DEFAULT_MEMORY_KIND,
@@ -399,7 +443,9 @@ export type {
 } from './governance.ts';
 export { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 export type { ContextChargePurpose, ContributionKind, SummaryFidelity, SummarySectionCoverage, SummarySource } from './context-record.ts';
-export { imageDataUrl, userMessageContent } from './user-content.ts';
+export { attachedFileText, attachmentText, imageDataUrl, userMessageContent, userShellText } from './user-content.ts';
+export type { UserMessageExtras } from './user-content.ts';
+export { imageMediaTypeOf } from './image-media.ts';
 export { escapeXmlAttribute, escapeXmlText } from './xml.ts';
 export { SKILL_CONTENT_CLOSE_TAG, skillContentOpenTag } from './skill-content.ts';
 export {
@@ -431,10 +477,10 @@ export {
   hookMatcherMatches,
   hookTimeoutMs,
 } from './hooks.ts';
-export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
+export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -443,7 +489,14 @@ export type {
   ElicitationRequestView,
   JobStatus,
   ImageAttachment,
+  AttachedFilePart,
+  AttachmentNotePart,
+  MessageAttachment,
+  UserShellRecord,
   ImageMediaType,
+  InboxDelivery,
+  InboxRowView,
+  InboxState,
   ModelResponse,
   PendingCallStatus,
   PermissionMode,
@@ -463,12 +516,13 @@ export type {
   SideEffect,
   StopReason,
   TerminalStatus,
+  DiffHunk,
   ToolAwait,
   ToolKind,
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -524,7 +578,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -543,7 +597,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { JsonReplyPath, MomongaResponseExtension } from './open-responses.ts';
+export type { JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -562,6 +616,7 @@ export type {
   ReasoningOrigin,
   RenderWireOptions,
   ToolChoiceWire,
+  UpstreamFailureFacts,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
@@ -576,3 +631,6 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
+export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
+export { planAccountRefOf } from './plan-account.ts';

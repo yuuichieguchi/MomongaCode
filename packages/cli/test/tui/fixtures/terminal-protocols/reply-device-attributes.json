@@ -1,0 +1,15 @@
+{
+  "name": "reply-device-attributes",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b3f313b3263",
+  "events": [
+    {
+      "type": "report",
+      "kind": "device-attributes",
+      "attributes": [
+        1,
+        2
+      ]
+    }
+  ]
+}

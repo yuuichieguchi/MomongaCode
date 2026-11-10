@@ -16,6 +16,9 @@ import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
 import { heldSessionOf } from './known.ts';
+import type { HeldSession } from './known.ts';
+import { holdSandbox } from './held-sandbox.ts';
+import type { HeldSandbox } from './held-sandbox.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -73,6 +76,10 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
           ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+          ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
+          ...(result.added === undefined ? {} : { added: result.added }),
+          ...(result.removed === undefined ? {} : { removed: result.removed }),
+          ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
         }
       : {
           type: 'tool.reconciled',
@@ -164,7 +171,7 @@ const persistRule = async (
   if (resolution.rulePersisted === true) return;
   const rule = requireSuggestedRule(callId, call);
   journal.verifyLease();
-  await options.settings.appendRule(session, { effect, rule });
+  await options.settings.appendRule(session, { effect, rule }, ctx.control.signal);
   const persisted: RunEventPayload = { type: 'approval.rule.persisted', approvalId, effect, rule };
   journal.append(
     effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.`, code: 'allow_rule_saved' }] : [persisted],
@@ -217,13 +224,23 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
 
   const step = journal.state.step;
   if (ctx.control.yieldRequested()) return ctx.terminals.yieldLease();
+  const held = await holdSandbox(options.tools.sandboxes, ctx.control.signal);
+  try {
+    return await runBatchOn(ctx, held, session, calls, step);
+  } finally {
+    held.done();
+  }
+};
+
+const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSession, calls: ToolCall[], step: number): Promise<Flow> => {
+  const { options, journal, run } = ctx;
   const rules = await permissionRulesFor(options, session);
-  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories });
+  const policy = await options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
   const hookSettings = await options.settings.hooks(session);
   const hasToolHooks = hookSettings.PreToolUse !== undefined || hookSettings.PostToolUse !== undefined;
   const toolHooks = hasToolHooks
     ? createToolHooks(
-        hookRunContextFor(ctx, session, hookSettings, policy, (execution) => journal.append([{ type: 'hook.completed', ...execution }])),
+        hookRunContextFor(ctx, session, hookSettings, policy, held.sandbox, (execution) => journal.append([{ type: 'hook.completed', ...execution }])),
       )
     : undefined;
   const classifier = session.permissionMode === 'auto' ? createAutoClassifier(ctx, options.tools.sessionState(session).cwd, step) : undefined;
@@ -248,7 +265,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       tmpDir: policy.tmpDir,
       env: policy.env,
       session: options.tools.sessionState(session),
-      sandbox: options.tools.sandbox,
+      sandbox: held.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
       ripgrep: options.tools.ripgrepLocator(policy.env),
       workTreeObserver: options.tools.workTreeObserver(session, options.settings.trusted(session)),
@@ -271,7 +288,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         if (existing !== undefined) return { traceparent: existing.traceparent };
         const toolName = journal.state.pendingCalls[callId]?.name;
         if (toolName === undefined) throw new Error(`unknown tool call ${callId}`);
-        const span = options.tracer.startToolSpan(ctx.agentSpan, { runId: run.id, step, callId, toolName, toolType: 'function' });
+        const span = ctx.tracer.startToolSpan(ctx.agentSpan, { runId: run.id, step, callId, toolName, toolType: 'function' });
         spans.set(callId, span);
         return { traceparent: span.traceparent };
       },

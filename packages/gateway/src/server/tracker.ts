@@ -1,6 +1,7 @@
 export type RequestTracker = {
   begin(): () => void;
   idle(): Promise<void>;
+  active(): number;
 };
 
 export const createRequestTracker = (): RequestTracker => {
@@ -21,6 +22,7 @@ export const createRequestTracker = (): RequestTracker => {
         }
       };
     },
+    active: () => active,
     idle: () => (active === 0 ? Promise.resolve() : new Promise<void>((resolve) => idleWaiters.push(resolve))),
   };
 };

@@ -6,16 +6,20 @@ import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts'
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
+import { BILLING_CHANGE_REASONS } from './fallback-cause.ts';
+import type { FallbackCause } from './fallback-cause.ts';
+import { TARGET_BILLINGS } from './capabilities.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
-import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
+import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
-import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
+import { UNPRICED_CODES } from './token-anatomy.ts';
+import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -79,6 +83,41 @@ const imageAttachment = closed(
 );
 
 const imageSummary = closed({ mediaType: enumOf(IMAGE_MEDIA_TYPES), byteLength: nonNegativeInteger }, ['mediaType', 'byteLength']);
+
+const PROMPT_TEXT: JsonSchema = { type: 'string', minLength: 1, maxLength: PROMPT_TEXT_MAX_CHARS };
+
+const userShellRecord = closed({ command: string, exitCode: nullable(integer), output: string, include: boolean }, ['command', 'exitCode', 'output', 'include']);
+
+const attachmentSummary: JsonSchema = {
+  anyOf: [
+    closed({ type: constant('attached_file'), path: string, lines: nonNegativeInteger }, ['type', 'path', 'lines']),
+    closed({ type: constant('attachment_note'), path: string, shown: string }, ['type', 'path', 'shown']),
+  ],
+};
+
+export type AttachmentSummary = { type: 'attached_file'; path: string; lines: number } | { type: 'attachment_note'; path: string; shown: string };
+
+export const attachmentSummaryOf = (part: MessageAttachment): AttachmentSummary =>
+  part.type === 'attached_file'
+    ? { type: 'attached_file', path: part.path, lines: part.content === '' ? 0 : part.content.split('\n').length }
+    : { type: 'attachment_note', path: part.path, shown: part.shown };
+
+const inboxRowView = closed(
+  {
+    id: string,
+    sessionId: string,
+    delivery: enumOf(INBOX_DELIVERIES),
+    text: PROMPT_TEXT,
+    images: { type: 'array', items: imageSummary },
+    seq: { type: 'integer', minimum: 1 },
+    state: enumOf(INBOX_STATES),
+    createdAt: integer,
+    settledAt: nullable(integer),
+  },
+  ['id', 'sessionId', 'delivery', 'text', 'seq', 'state', 'createdAt', 'settledAt'],
+);
+
+const inboxPending: JsonSchema = { type: 'array', items: inboxRowView, maxItems: INBOX_MAX_PENDING };
 
 export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
@@ -194,11 +233,21 @@ const tokenAnatomy = closed(
 
 const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
 
+const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
+
+const unpricedCounts = closed(Object.fromEntries(UNPRICED_CODES.map((code) => [code, { type: 'integer', minimum: 1 }])), []);
+
+const atMostOneOf = (keys: readonly string[]): JsonSchema => ({ not: { properties: Object.fromEntries(keys.map((key) => [key, anything])), required: keys } });
+
+const withOnePriceOutcome = (schema: JsonSchema): JsonSchema => ({ ...schema, ...atMostOneOf(['cost', 'unpriced']) });
+
 const callTiming = closed({ firstEventMs: nonNegativeInteger, durationMs: nonNegativeInteger }, ['durationMs']);
 
-const billedDetail = closed(
-  { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, timing: callTiming },
-  [],
+const billedDetail = withOnePriceOutcome(
+  closed(
+    { responseId: string, cachedInputTokens: nonNegativeInteger, cacheWriteInputTokens: nonNegativeInteger, cost: modelCost, unpriced: unpricedOutcome, timing: callTiming },
+    [],
+  ),
 );
 
 const recoveryEpisodeView = closed(
@@ -264,10 +313,14 @@ type EnvelopeKey = keyof PublicRunEnvelope;
 type PayloadSchema<Type> = {
   properties: { [Key in Exclude<PublicPayloadKeys<Type>, EnvelopeKey>]: JsonSchema } & { [Key in Extract<PublicPayloadKeys<Type>, EnvelopeKey>]?: JsonSchema };
   required: readonly PublicPayloadKeys<Type>[];
+  exclusive?: readonly PublicPayloadKeys<Type>[];
 };
 
 const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
-  'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
+  'user.message': {
+    properties: { text: string, images: { type: 'array', items: imageSummary }, source: enumOf(INBOX_DELIVERIES), attachments: { type: 'array', items: attachmentSummary }, shell: { type: 'array', items: userShellRecord } },
+    required: ['text'],
+  },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
   'attempt.failed': { properties: { attempt: integer, code: string, retryAt: integer, limit: integer }, required: ['attempt', 'code', 'retryAt', 'limit'] },
   'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
@@ -308,7 +361,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
           ),
-          momonga: closed({ cacheWriteInputTokens: nonNegativeInteger, cost: modelCost }, []),
+          momonga: withOnePriceOutcome(closed({ cacheWriteInputTokens: nonNegativeInteger, cacheReadNotReported: { type: 'boolean', const: true }, cost: modelCost, unpriced: unpricedOutcome }, [])),
           timing: callTiming,
         },
         ['status', 'output', 'usage'],
@@ -359,6 +412,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['callId', 'subjectDigest', 'outcome'],
   },
+  'tool.permission.classifying': { properties: { callId: string, subjectDigest: string }, required: ['callId', 'subjectDigest'] },
+  'hook.started': { properties: { event: enumOf(HOOK_EVENTS), command: string, callId: string }, required: ['event', 'command'] },
   'hook.completed': {
     properties: {
       hookEvent: enumOf(HOOK_EVENTS),
@@ -414,6 +469,10 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
+      hunks: { type: 'array', items: closed({ oldStart: integer, newStart: integer, lines: { type: 'array', items: string } }, ['oldStart', 'newStart', 'lines']) },
+      added: integer,
+      removed: integer,
+      diffOmitted: string,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -473,6 +532,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   },
   'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
   'model.changed': { properties: { modelAlias: { type: 'string', minLength: 1 }, previousModelAlias: { type: 'string', minLength: 1 } }, required: ['modelAlias', 'previousModelAlias'] },
+  'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
+  user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
@@ -487,10 +548,12 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       cachedInputTokens: nonNegativeInteger,
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
+      unpriced: unpricedOutcome,
       timing: callTiming,
       target: string,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
+    exclusive: ['cost', 'unpriced'],
   },
   'context.compacted': {
     properties: {
@@ -499,6 +562,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       source: enumOf(SUMMARY_SOURCES),
       fidelity: summaryFidelity,
       guidelineVersion: nonNegativeInteger,
+      tokensBefore: nonNegativeInteger,
+      tokensAfter: nonNegativeInteger,
     },
     required: ['summary', 'replacedThroughSeq'],
   },
@@ -519,6 +584,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['items'],
   },
+  'context.compacting': { properties: { step: nonNegativeInteger, attempt: integer }, required: ['attempt'] },
   'context.compaction_rejected': { properties: { attempt: integer }, required: [] },
   'context.inherited': {
     properties: {
@@ -563,17 +629,22 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
 };
 
 const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
-  const { properties, required } = PAYLOAD_SCHEMAS[type];
-  if (type === 'mode.changed' || type === 'model.changed') {
+  const schema: PayloadSchema<typeof type> = PAYLOAD_SCHEMAS[type];
+  const { properties, required } = schema;
+  const exclusive = schema.exclusive === undefined ? {} : atMostOneOf(schema.exclusive);
+  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed' || type === 'user_shell') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
     );
   }
-  return closed(
-    { id: integer, runId: string, sessionId: string, seq: integer, step: nonNegativeInteger, createdAt: integer, type: constant(type), ...properties },
-    ['id', 'runId', 'sessionId', 'seq', 'createdAt', 'type', ...required],
-  );
+  return {
+    ...closed(
+      { id: integer, runId: string, sessionId: string, seq: integer, step: nonNegativeInteger, createdAt: integer, type: constant(type), ...properties },
+      ['id', 'runId', 'sessionId', 'seq', 'createdAt', 'type', ...required],
+    ),
+    ...exclusive,
+  };
 };
 
 export const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
@@ -604,15 +675,19 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
+  cacheReadNotReportedCalls: nonNegativeInteger,
+  cacheReadUnpricedCalls: nonNegativeInteger,
   planCalls: nonNegativeInteger,
   planInputTokens: nonNegativeInteger,
   planOutputTokens: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
-  cachedInputTokens: nonNegativeInteger,
-  amount: { type: 'number', minimum: 0 },
+  cachedInputTokens: nullable(nonNegativeInteger),
+  amount: nullable({ type: 'number', minimum: 0 }),
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
+  unpriced: unpricedCounts,
+  priceNotRecordedCalls: nonNegativeInteger,
 };
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
@@ -622,7 +697,14 @@ const runTracePrefix = closed(
   ['preservedItems', 'toolsChanged', 'causes'],
 );
 
-const fallbackCauseSchema = closed({ target: string, code: nullable(string), message: string }, ['target', 'code', 'message']);
+const fallbackCauseBase = { target: string, code: nullable(string), message: string };
+
+const fallbackCauseSchema: JsonSchema = {
+  oneOf: [
+    closed({ ...fallbackCauseBase, fromBilling: enumOf(TARGET_BILLINGS), toBilling: enumOf(TARGET_BILLINGS), reason: enumOf(BILLING_CHANGE_REASONS) }, ['target', 'code', 'message', 'fromBilling', 'toBilling', 'reason']),
+    closed(fallbackCauseBase, ['target', 'code', 'message']),
+  ],
+};
 
 const costFallbackProperties: Record<string, JsonSchema> = {
   fallbackCalls: nonNegativeInteger,
@@ -704,13 +786,14 @@ const costBreakdownView = closed(
     billed: closed(
       {
         inputTokens: nonNegativeInteger,
-        uncachedInputTokens: nonNegativeInteger,
-        cacheReadTokens: nonNegativeInteger,
-        cacheWriteTokens: nonNegativeInteger,
+        reportedInputTokens: nullable(nonNegativeInteger),
+        uncachedInputTokens: nullable(nonNegativeInteger),
+        cacheReadTokens: nullable(nonNegativeInteger),
+        cacheWriteTokens: nullable(nonNegativeInteger),
         outputTokens: nonNegativeInteger,
         reasoningTokens: nonNegativeInteger,
       },
-      ['inputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
+      ['inputTokens', 'reportedInputTokens', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens', 'reasoningTokens'],
     ),
     cacheHitRatio: nullable({ type: 'number' }),
     cacheBreaks: causeCounts,
@@ -724,20 +807,24 @@ const costBreakdownView = closed(
         ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
       ),
     },
-    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger }, ['amount', 'currency', 'unpricedCalls']),
+    cost: closed(
+      { amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, unpriced: unpricedCounts, priceNotRecordedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } },
+      ['amount', 'currency', 'unpricedCalls', 'unpriced', 'priceNotRecordedCalls', 'priceVersions'],
+    ),
     plan: closed({ calls: nonNegativeInteger, inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger }, ['calls', 'inputTokens', 'outputTokens']),
     unpriced: {
       type: 'array',
-      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, code: enumOf(UNPRICED_CODES), reason: string }, ['runId', 'provider', 'model', 'code', 'reason']),
     },
     inconsistentUsage: {
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    cacheReadNotReported: nonNegativeInteger,
     callsWithoutResponseId: nonNegativeInteger,
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'cacheReadNotReported', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -927,7 +1014,8 @@ export type RunTraceSummary = {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens: number | null;
+  cacheReadNotReportedCalls: number;
   errorCount: number;
   durationMs: number;
   chatResults: { step: number; attempt: number; finishReasons: string[] }[];
@@ -980,9 +1068,7 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
-export type FallbackCauseView = { target: string; code: string | null; message: string };
-
-export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
+export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCause[] };
 
 export type RoleCostView = {
   fallbackCalls?: number;
@@ -991,15 +1077,19 @@ export type RoleCostView = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  cacheReadNotReportedCalls: number;
+  cacheReadUnpricedCalls: number;
   planCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
-  cachedInputTokens: number;
-  amount: number;
+  cachedInputTokens: number | null;
+  amount: number | null;
   currency: 'USD';
   priceVersions: string[];
+  unpriced: Partial<Record<UnpricedCode, number>>;
+  priceNotRecordedCalls: number;
 };
 
 export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
@@ -1073,9 +1163,16 @@ export type RunHealth = {
   apiVersion: 1;
   pid: number;
   startedAt: string;
-  state: 'running' | 'draining';
+  state: 'running' | 'retiring' | 'draining';
+  role?: 'starting' | 'serving' | 'retiring';
+  steps?: number;
+  jobs?: number;
   sandbox: 'seatbelt' | 'bubblewrap' | 'none';
 };
+
+export const DAEMON_CURRENT_EVENT = 'daemon.current';
+
+export type DaemonCurrentFrame = { generation: number; version: string };
 
 const runView = closed(
   {
@@ -1084,7 +1181,7 @@ const runView = closed(
     ordinal: integer,
     status: storedEnumOf(RUN_STATUSES),
     stopReason: storedEnumOf(STOP_REASONS),
-    error: closed({ code: string, message: string }, ['code', 'message']),
+    error: closed({ code: string, message: string, plan: closed({ profile: string, account: string }, ['profile', 'account']) }, ['code', 'message']),
     usage,
     step: nonNegativeInteger,
     limits: runLimits,
@@ -1119,6 +1216,24 @@ const runView = closed(
   ],
 );
 
+export const INBOX_WITHDRAW_OUTCOMES = ['withdrawn', 'already_delivered'] as const;
+
+export type InboxWithdrawOutcome = (typeof INBOX_WITHDRAW_OUTCOMES)[number];
+
+export type InboxResponse = { pending: InboxRowView[] };
+
+export type UserShellRequest = { command: string; include: boolean };
+
+export type CompactSessionRequest = { instructions?: string };
+
+export type UserShellPendingResponse = { pending: UserShellRecord[] };
+
+export type UserShellFrame = { type: 'output'; text: string } | { type: 'refused'; reason: string } | { type: 'exit'; record: UserShellRecord };
+
+export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
+
+export type InboxWithdrawResponse = { outcome: InboxWithdrawOutcome; row: InboxRowView; pending: InboxRowView[] };
+
 export const RUN_API_SCHEMAS = {
   CreateSessionRequest: root(
     closed(
@@ -1137,17 +1252,34 @@ export const RUN_API_SCHEMAS = {
   CreateRunRequest: root(
     closed(
       {
-        input: { type: 'string', minLength: 1, maxLength: 1_000_000 },
+        input: PROMPT_TEXT,
         limits: runLimits,
         timeoutMs: boundedInteger(1000, 7 * DAY_MS),
         history: historyMode,
         skill: { type: 'string', minLength: 1 },
         images: { type: 'array', items: imageAttachment },
+        attachMentions: boolean,
       },
       ['input'],
     ),
   ),
+  CompactSessionRequest: root(closed({ instructions: PROMPT_TEXT }, [])),
+  UserShellRequest: root(closed({ command: { type: 'string', minLength: 1, maxLength: USER_SHELL_COMMAND_CHARS }, include: boolean }, ['command', 'include'])),
+  UserShellPendingResponse: root(closed({ pending: { type: 'array', items: userShellRecord } }, ['pending'])),
+  UserShellFrame: root({
+    anyOf: [
+      closed({ type: constant('output'), text: string }, ['type', 'text']),
+      closed({ type: constant('refused'), reason: string }, ['type', 'reason']),
+      closed({ type: constant('exit'), record: userShellRecord }, ['type', 'record']),
+    ],
+  }),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
+  AddInboxRequest: root(closed({ delivery: enumOf(INBOX_DELIVERIES), text: PROMPT_TEXT, images: { type: 'array', items: imageAttachment } }, ['delivery', 'text'])),
+  InboxRowView: root(inboxRowView),
+  InboxResponse: root(closed({ pending: inboxPending }, ['pending'])),
+  InboxAddResponse: root(closed({ row: inboxRowView, pending: inboxPending }, ['row', 'pending'])),
+  InboxWithdrawResponse: root(closed({ outcome: enumOf(INBOX_WITHDRAW_OUTCOMES), row: inboxRowView, pending: inboxPending }, ['outcome', 'row', 'pending'])),
+  RunSuccessorResponse: root(closed({ successor: nullable(runView) }, ['successor'])),
   McpAuthorizationView: root(
     closed(
       {
@@ -1208,7 +1340,10 @@ export const RUN_API_SCHEMAS = {
         apiVersion: { type: 'integer', const: 1 },
         pid: integer,
         startedAt: string,
-        state: enumOf(['running', 'draining']),
+        state: enumOf(['running', 'retiring', 'draining']),
+        role: enumOf(['starting', 'serving', 'retiring']),
+        steps: integer,
+        jobs: integer,
         sandbox: enumOf(['seatbelt', 'bubblewrap', 'none']),
       },
       ['status', 'version', 'apiVersion', 'pid', 'startedAt', 'state', 'sandbox'],
@@ -1279,7 +1414,8 @@ export const RUN_API_SCHEMAS = {
             toolCalls: nonNegativeInteger,
             inputTokens: nonNegativeInteger,
             outputTokens: nonNegativeInteger,
-            cachedInputTokens: nonNegativeInteger,
+            cachedInputTokens: nullable(nonNegativeInteger),
+            cacheReadNotReportedCalls: nonNegativeInteger,
             errorCount: nonNegativeInteger,
             durationMs: nonNegativeInteger,
             chatResults: {
@@ -1287,7 +1423,7 @@ export const RUN_API_SCHEMAS = {
               items: closed({ step: nonNegativeInteger, attempt: integer, finishReasons: { type: 'array', items: string } }, ['step', 'attempt', 'finishReasons']),
             },
           },
-          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'errorCount', 'durationMs', 'chatResults'],
+          ['steps', 'chatCalls', 'toolCalls', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheReadNotReportedCalls', 'errorCount', 'durationMs', 'chatResults'],
         ),
         spans: {
           type: 'array',
@@ -1431,10 +1567,10 @@ type ReducedEventType =
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
-  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
+  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery; attachments?: AttachmentSummary[]; shell?: UserShellRecord[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
-  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
+  | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number; tokensBefore?: number; tokensAfter?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
       type: 'context.inherited';
@@ -1511,6 +1647,9 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         type: event.type,
         text: event.text,
         ...(event.images === undefined ? {} : { images: event.images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }),
+        ...(event.source === undefined ? {} : { source: event.source }),
+        ...(event.attachments === undefined ? {} : { attachments: event.attachments.map(attachmentSummaryOf) }),
+        ...(event.shell === undefined ? {} : { shell: event.shell }),
       };
     case 'model.requested':
       return {
@@ -1533,6 +1672,8 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         ...(event.source === undefined ? {} : { source: event.source }),
         ...(event.fidelity === undefined ? {} : { fidelity: event.fidelity }),
         ...(event.guidelineVersion === undefined ? {} : { guidelineVersion: event.guidelineVersion }),
+        ...(event.tokensBefore === undefined ? {} : { tokensBefore: event.tokensBefore }),
+        ...(event.tokensAfter === undefined ? {} : { tokensAfter: event.tokensAfter }),
       };
     case 'context.compaction_rejected':
       return { ...envelope, type: event.type, ...(event.attempt === undefined ? {} : { attempt: event.attempt }) };

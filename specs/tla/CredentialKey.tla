@@ -1,0 +1,303 @@
+---------------------------- MODULE CredentialKey ----------------------------
+EXTENDS Naturals, Sequences, FiniteSets
+
+\* Actors derived from packages/foundation/src/encrypted-credential-store.ts: readNamedKey is called from keyForWriting (point "fast"),
+\* createKey step read_marker_again (point "locked") and keyForReading (the Readers point); store.write only in createKey step write_os_item
+\* (point "creating"). The marker, the OS item and the key-creation lock are written only by createKey. Readers change no modelled variable.
+\* Not modelled, with the reason: the per-record file lock and in-process queue (credential-store.ts, file-lock.ts) are held by the caller of
+\* encode/decode around these steps and only remove interleavings of writers of the same record key; the key-creation lock never waits on
+\* them (no lock cycle), so every safety property proved without them holds with them. Record removal and plain record reads only shrink or
+\* observe records. The readiness probe reads and changes nothing. momonga secret set refuses credential-key- names, so it cannot touch the key.
+
+CONSTANTS Writers, Readers, MaxNames, MaxCrash, Attempts, Toggles, CanRemove, OsStore, Variant
+
+ASSUME Variant \in {"decided", "noLock", "recordBeforeKey", "markerBeforeKey", "recreateOnReadFailure", "plaintextFallback", "noExit", "failWritesMarker", "failWritesRecord"}
+ASSUME MaxNames \in Nat \ {0}
+ASSUME MaxCrash \in Nat
+ASSUME Attempts \in Nat \ {0}
+ASSUME Toggles \in Nat
+ASSUME CanRemove \in BOOLEAN
+ASSUME OsStore \in BOOLEAN
+
+KeyPrefix == "credential-key-"
+MarkerFile == "credential-key.json"
+LockName == "credential-key.lock"
+CreationSteps == <<"read_marker_again", "write_os_item", "write_marker">>
+
+ASSUME Head(CreationSteps) = "read_marker_again"
+
+ActionOfStep == [s \in {"write_os_item", "write_marker"} |-> IF s = "write_os_item" THEN "os" ELSE "marker"]
+
+DecidedOrder == [i \in 1..Len(Tail(CreationSteps)) |-> ActionOfStep[Tail(CreationSteps)[i]]] \o <<"unlock">>
+
+Names == 1..MaxNames
+
+VARIABLES marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed, rpc
+
+vars == <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed, rpc>>
+
+Order ==
+    CASE Variant = "markerBeforeKey" -> <<"marker", "os", "unlock">>
+      [] Variant = "recordBeforeKey" -> <<"rec0", "os", "marker", "unlock">>
+      [] OTHER -> DecidedOrder
+
+Init ==
+    /\ marker = 0
+    /\ items = {}
+    /\ ever = {}
+    /\ records = {}
+    /\ lock = 0
+    /\ nextName = 0
+    /\ pc = [p \in Writers |-> "idle"]
+    /\ ix = [p \in Writers |-> 1]
+    /\ base = [p \in Writers |-> 0]
+    /\ gen = [p \in Writers |-> 0]
+    /\ key = [p \in Writers |-> 0]
+    /\ todo = [p \in Writers |-> Attempts]
+    /\ crashes = 0
+    /\ optIn = FALSE
+    /\ toggled = 0
+    /\ removed = FALSE
+    /\ rpc = [r \in Readers |-> "idle"]
+
+Start(p) ==
+    /\ pc[p] = "idle"
+    /\ todo[p] > 0
+    /\ todo' = [todo EXCEPT ![p] = @ - 1]
+    /\ pc' = [pc EXCEPT ![p] = "fast"]
+    /\ UNCHANGED <<rpc, marker, items, ever, records, lock, nextName, ix, base, gen, key, crashes, optIn, toggled, removed>>
+
+ReadKeyOf(p, m) ==
+    IF m \in items
+    THEN /\ key' = [key EXCEPT ![p] = m]
+         /\ pc' = [pc EXCEPT ![p] = "rec"]
+    ELSE /\ pc' = [pc EXCEPT ![p] = "done"]
+         /\ UNCHANGED key
+
+Fast(p) ==
+    /\ pc[p] = "fast"
+    /\ IF optIn
+       THEN /\ pc' = [pc EXCEPT ![p] = "rec"]
+            /\ UNCHANGED <<base, key>>
+       ELSE IF ~OsStore
+            THEN IF Variant = "plaintextFallback"
+                 THEN /\ pc' = [pc EXCEPT ![p] = "rec"]
+                      /\ UNCHANGED <<base, key>>
+                 ELSE /\ pc' = [pc EXCEPT ![p] = "done"]
+                      /\ UNCHANGED <<base, key>>
+            ELSE IF marker /= 0
+                 THEN IF Variant = "recreateOnReadFailure" /\ marker \notin items
+                      THEN /\ base' = [base EXCEPT ![p] = marker]
+                           /\ pc' = [pc EXCEPT ![p] = "gen"]
+                           /\ UNCHANGED key
+                      ELSE /\ ReadKeyOf(p, marker)
+                           /\ UNCHANGED base
+                 ELSE IF Variant = "noLock"
+                      THEN /\ base' = [base EXCEPT ![p] = 0]
+                           /\ pc' = [pc EXCEPT ![p] = "gen"]
+                           /\ UNCHANGED key
+                      ELSE /\ pc' = [pc EXCEPT ![p] = "locking"]
+                           /\ UNCHANGED <<base, key>>
+    /\ UNCHANGED <<rpc, marker, items, ever, records, lock, nextName, ix, gen, todo, crashes, optIn, toggled, removed>>
+
+Lock(p) ==
+    /\ pc[p] = "locking"
+    /\ lock = 0
+    /\ lock' = p
+    /\ pc' = [pc EXCEPT ![p] = "locked"]
+    /\ UNCHANGED <<rpc, marker, items, ever, records, nextName, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+Reread(p) ==
+    /\ pc[p] = "locked"
+    /\ IF marker /= 0
+       THEN /\ lock' = 0
+            /\ ReadKeyOf(p, marker)
+            /\ UNCHANGED base
+       ELSE /\ base' = [base EXCEPT ![p] = 0]
+            /\ pc' = [pc EXCEPT ![p] = "gen"]
+            /\ UNCHANGED <<lock, key>>
+    /\ UNCHANGED <<rpc, marker, items, ever, records, nextName, ix, gen, todo, crashes, optIn, toggled, removed>>
+
+Gen(p) ==
+    /\ pc[p] = "gen"
+    /\ nextName < MaxNames
+    /\ nextName' = nextName + 1
+    /\ gen' = [gen EXCEPT ![p] = nextName + 1]
+    /\ ix' = [ix EXCEPT ![p] = 1]
+    /\ pc' = [pc EXCEPT ![p] = "creating"]
+    /\ UNCHANGED <<rpc, marker, items, ever, records, lock, base, key, todo, crashes, optIn, toggled, removed>>
+
+Creating(p) ==
+    /\ pc[p] = "creating"
+    /\ LET step == Order[ix[p]]
+       IN /\ CASE step = "os" ->
+                    /\ items' = items \cup {gen[p]}
+                    /\ ever' = ever \cup {gen[p]}
+                    /\ UNCHANGED <<marker, records, lock, key, pc>>
+               [] step = "marker" ->
+                    /\ marker' = gen[p]
+                    /\ UNCHANGED <<items, ever, records, lock, key, pc>>
+               [] step = "rec0" ->
+                    /\ records' = records \cup {[key |-> gen[p], kind |-> "enc"]}
+                    /\ UNCHANGED <<marker, items, ever, lock, key, pc>>
+               [] step = "unlock" ->
+                    /\ lock' = IF lock = p THEN 0 ELSE lock
+                    /\ key' = [key EXCEPT ![p] = gen[p]]
+                    /\ pc' = [pc EXCEPT ![p] = "rec"]
+                    /\ UNCHANGED <<marker, items, ever, records>>
+          /\ ix' = [ix EXCEPT ![p] = @ + 1]
+    /\ UNCHANGED <<rpc, nextName, base, gen, todo, crashes, optIn, toggled, removed>>
+
+Rec(p) ==
+    /\ pc[p] = "rec"
+    /\ pc' = [pc EXCEPT ![p] = "idle"]
+    /\ IF optIn \/ (Variant = "plaintextFallback" /\ key[p] = 0)
+       THEN records' = records \cup {[key |-> 0, kind |-> "plain"]}
+       ELSE IF key[p] /= 0 /\ key[p] \in items
+            THEN records' = records \cup {[key |-> key[p], kind |-> "enc"]}
+            ELSE records' = records
+    /\ key' = [key EXCEPT ![p] = 0]
+    /\ UNCHANGED <<rpc, marker, items, ever, lock, nextName, ix, base, gen, todo, crashes, optIn, toggled, removed>>
+
+Finish(p) ==
+    /\ pc[p] = "done"
+    /\ pc' = [pc EXCEPT ![p] = "idle"]
+    /\ key' = [key EXCEPT ![p] = 0]
+    /\ UNCHANGED <<rpc, marker, items, ever, records, lock, nextName, ix, base, gen, todo, crashes, optIn, toggled, removed>>
+
+Crash(p) ==
+    /\ pc[p] /= "idle"
+    /\ crashes < MaxCrash
+    /\ crashes' = crashes + 1
+    /\ pc' = [pc EXCEPT ![p] = "idle"]
+    /\ lock' = IF lock = p THEN 0 ELSE lock
+    /\ key' = [key EXCEPT ![p] = 0]
+    /\ UNCHANGED <<rpc, marker, items, ever, records, nextName, ix, base, gen, todo, optIn, toggled, removed>>
+
+UserRemovesItem(n) ==
+    /\ CanRemove
+    /\ n \in items
+    /\ items' = items \ {n}
+    /\ removed' = TRUE
+    /\ UNCHANGED <<rpc, marker, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled>>
+
+UserRemovesMarker ==
+    /\ CanRemove
+    /\ marker /= 0
+    /\ marker' = 0
+    /\ removed' = TRUE
+    /\ UNCHANGED <<rpc, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled>>
+
+UserTogglesPlaintext ==
+    /\ toggled < Toggles
+    /\ toggled' = toggled + 1
+    /\ optIn' = ~optIn
+    /\ UNCHANGED <<rpc, marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, removed>>
+
+FailsOs == Variant /= "noExit"
+
+OsPoints == <<"fast", "locked", "creating">>
+
+OsGuard(p) ==
+    CASE pc[p] = "fast" -> ~optIn /\ marker /= 0
+      [] pc[p] = "locked" -> marker /= 0
+      [] pc[p] = "creating" -> Order[ix[p]] = "os"
+      [] OTHER -> FALSE
+
+OsTouching(p) ==
+    /\ OsStore
+    /\ pc[p] \in {OsPoints[i] : i \in 1..Len(OsPoints)}
+    /\ OsGuard(p)
+
+OsFail(p) ==
+    /\ FailsOs
+    /\ OsTouching(p)
+    /\ pc' = [pc EXCEPT ![p] = "done"]
+    /\ lock' = IF lock = p THEN 0 ELSE lock
+    /\ marker' = IF Variant = "failWritesMarker" /\ pc[p] = "creating" THEN gen[p] ELSE marker
+    /\ records' = IF Variant = "failWritesRecord" /\ pc[p] = "creating"
+                  THEN records \cup {[key |-> gen[p], kind |-> "enc"]}
+                  ELSE records
+    /\ UNCHANGED <<rpc, items, ever, nextName, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+OsFailAfterWrite(p) ==
+    /\ Variant \notin {"noExit", "failWritesMarker", "failWritesRecord"}
+    /\ OsStore
+    /\ pc[p] = "creating"
+    /\ Order[ix[p]] = "os"
+    /\ items' = items \cup {gen[p]}
+    /\ ever' = ever \cup {gen[p]}
+    /\ pc' = [pc EXCEPT ![p] = "done"]
+    /\ lock' = IF lock = p THEN 0 ELSE lock
+    /\ UNCHANGED <<rpc, marker, records, nextName, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+RStart(r) ==
+    /\ rpc[r] = "idle"
+    /\ rpc' = [rpc EXCEPT ![r] = "reading"]
+    /\ UNCHANGED <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+RRead(r) ==
+    /\ rpc[r] = "reading"
+    /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+    /\ UNCHANGED <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+RFail(r) ==
+    /\ FailsOs
+    /\ OsStore
+    /\ rpc[r] = "reading"
+    /\ marker /= 0
+    /\ rpc' = [rpc EXCEPT ![r] = "idle"]
+    /\ UNCHANGED <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+Next ==
+    \/ \E r \in Readers : RStart(r) \/ RRead(r) \/ RFail(r)
+    \/ \E p \in Writers : Start(p) \/ Fast(p) \/ Lock(p) \/ Reread(p) \/ Gen(p) \/ Creating(p) \/ Rec(p) \/ Finish(p) \/ Crash(p) \/ OsFail(p) \/ OsFailAfterWrite(p)
+    \/ \E n \in Names : UserRemovesItem(n)
+    \/ UserRemovesMarker
+    \/ UserTogglesPlaintext
+
+Spec == Init /\ [][Next]_vars
+
+TypeOK ==
+    /\ marker \in 0..MaxNames
+    /\ items \subseteq Names
+    /\ ever \subseteq Names
+    /\ items \subseteq ever
+    /\ lock \in {0} \cup Writers
+    /\ rpc \in [Readers -> {"idle", "reading"}]
+    /\ \A r \in records : r.kind \in {"enc", "plain"}
+
+RecordsReadable ==
+    ~removed =>
+        \A r \in records : r.kind = "enc" => (r.key = marker /\ r.key \in items)
+
+KeyBeforeRecord ==
+    \A r \in records : r.kind = "enc" => r.key \in ever
+
+MarkerImpliesKey ==
+    marker /= 0 => (marker \in ever /\ (~removed => marker \in items))
+
+UnreadableNeverRecreates ==
+    \A p \in Writers : pc[p] = "creating" => base[p] = 0
+
+MarkerWrittenOnce ==
+    [][marker' /= marker => (marker = 0 \/ marker' = 0)]_vars
+
+NoPlaintextUnlessOptIn ==
+    [][\A r \in records' \ records : r.kind = "plain" => optIn]_vars
+
+OsWaitHasExit ==
+    /\ \A p \in Writers : OsTouching(p) => ENABLED OsFail(p)
+    /\ \A r \in Readers : (OsStore /\ rpc[r] = "reading" /\ marker /= 0) => ENABLED RFail(r)
+
+DoneReleasesLock ==
+    \A p \in Writers : pc[p] = "done" => lock /= p
+
+FailureLeavesNoTrace ==
+    [][\A p \in Writers :
+        (pc[p] \in {"fast", "locked", "creating"} /\ pc'[p] = "done") => (records' = records /\ marker' = marker)]_vars
+
+ReaderChangesNothing ==
+    [][rpc' /= rpc => <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>' = <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>]_vars
+
+===============================================================================

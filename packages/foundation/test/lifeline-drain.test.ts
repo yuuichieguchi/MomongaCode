@@ -1,10 +1,12 @@
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { STOP_MESSAGE_MAX_BYTES, formatStopMessage } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CHILD = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'lifeline-drain-child.ts');
 const REPORT_DEADLINE_MS = 10_000;
@@ -43,7 +45,7 @@ const start = async (context: CleanupContext) => {
 
 const MESSAGE = formatStopMessage({ closeGraceMs: 4321, managedServerStopGraceMs: 12, drainTimeoutMs: 34, mcpCloseGraceMs: 56 });
 
-describe('the lifeline watcher over a real pipe (the delivered-but-unread order at the signal is covered by the fake-watcher test in daemon-entry-stop-values.test.ts)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the lifeline watcher over a real pipe (the delivered-but-unread order at the signal is covered by the fake-watcher test in daemon-entry-stop-values.test.ts)', () => {
   it('after a drain begun on SIGTERM, every line written before the signal has been delivered, including lines written while the reader was blocked', async (context) => {
     const reader = await start(context);
     const noise = Array.from({ length: 200 }, (_, index) => `noise ${index}`).join('\n');

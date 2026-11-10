@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { SecretUnavailableError } from '@momonga/foundation';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { OperationLimitError, SecretUnavailableError, StoreCallEndedError, operationLimit } from '@momonga/foundation';
+import { KEYCHAIN_BACKEND } from '@momonga/foundation/secret-store';
 import type { SecretStore } from '@momonga/foundation';
 import { createSecretResolver } from '../src/secrets.ts';
 
@@ -98,5 +99,119 @@ describe('secret resolver', () => {
     const value = await pending;
     expect(heard).toEqual(['k=value-0005']);
     expect(value).toBe('value-0005');
+  });
+});
+
+describe('secret resolver waiters under the limit of their request', () => {
+  const REQUEST_LIMIT_MS = 300_000;
+  const LIMIT_SENTENCE =
+    'the read of the secret "k" did not finish within the request limit of 300000 ms; the Keychain may be waiting for an answer in a window on your screen: answer it or unlock the login keychain';
+
+  const settled = <T>(pending: Promise<T>): { state(): 'pending' | 'fulfilled' | 'rejected'; error(): unknown } => {
+    let state: 'pending' | 'fulfilled' | 'rejected' = 'pending';
+    let error: unknown;
+    pending.then(
+      () => {
+        state = 'fulfilled';
+      },
+      (failure: unknown) => {
+        state = 'rejected';
+        error = failure;
+      },
+    );
+    return { state: () => state, error: () => error };
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('a waiter that leaves on a limit gets a StoreCallEndedError', async () => {
+    vi.useFakeTimers();
+    const { store } = controlledStore();
+    const resolver = createSecretResolver(store, KEYCHAIN_BACKEND);
+    const limit = operationLimit(NEVER_ABORTED, REQUEST_LIMIT_MS, 'the request limit');
+
+    const waiting = settled(resolver.read('k', limit.signal));
+    await vi.advanceTimersByTimeAsync(REQUEST_LIMIT_MS - 1);
+    expect(waiting.state()).toBe('pending');
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(waiting.state()).toBe('rejected');
+    const failure = waiting.error() as StoreCallEndedError;
+    expect(failure).toBeInstanceOf(StoreCallEndedError);
+    expect(failure.message).toBe(LIMIT_SENTENCE);
+    expect(failure.call).toEqual({ action: 'read', name: 'k', backend: KEYCHAIN_BACKEND });
+    expect(failure.limit).toBe(limit.signal.reason);
+    limit.dispose();
+  });
+
+  it('a shared read ends only when its last waiter has left', async () => {
+    vi.useFakeTimers();
+    const SECOND_ARRIVES_AFTER_MS = 100_000;
+    const { store, reads } = controlledStore();
+    const resolver = createSecretResolver(store, KEYCHAIN_BACKEND);
+
+    const firstLimit = operationLimit(NEVER_ABORTED, REQUEST_LIMIT_MS, 'the request limit');
+    const first = settled(resolver.read('k', firstLimit.signal));
+    await vi.advanceTimersByTimeAsync(SECOND_ARRIVES_AFTER_MS);
+    const secondLimit = operationLimit(NEVER_ABORTED, REQUEST_LIMIT_MS, 'the request limit');
+    const second = settled(resolver.read('k', secondLimit.signal));
+    expect(reads).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(REQUEST_LIMIT_MS - SECOND_ARRIVES_AFTER_MS);
+    expect(first.state()).toBe('rejected');
+    expect(first.error()).toBeInstanceOf(StoreCallEndedError);
+    expect((first.error() as Error).message).toBe(LIMIT_SENTENCE);
+    expect(second.state()).toBe('pending');
+    expect(reads[0]?.signal.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(SECOND_ARRIVES_AFTER_MS);
+    expect(second.state()).toBe('rejected');
+    expect(second.error()).toBeInstanceOf(StoreCallEndedError);
+    expect((second.error() as StoreCallEndedError).limit).toBe(secondLimit.signal.reason);
+    expect(reads[0]?.signal.aborted).toBe(true);
+    expect(reads[0]?.signal.reason).toBeInstanceOf(OperationLimitError);
+    expect(reads[0]?.signal.reason).toBe(secondLimit.signal.reason);
+    expect([...resolver.resolved()]).toEqual([]);
+
+    const third = resolver.read('k', NEVER_ABORTED);
+    expect(reads).toHaveLength(2);
+    reads[1]?.resolve('value-0006');
+    expect(await third).toBe('value-0006');
+    firstLimit.dispose();
+    secondLimit.dispose();
+  });
+
+  it("a read aborted by every waiter aborts the resolver's controller", async () => {
+    const { store, reads } = controlledStore();
+    const resolver = createSecretResolver(store, KEYCHAIN_BACKEND);
+    const first = new AbortController();
+    const second = new AbortController();
+    const firstReason = new Error('first left');
+    const secondReason = new Error('second left');
+    const leaving = resolver.read('k', first.signal);
+    const staying = resolver.read('k', second.signal);
+
+    first.abort(firstReason);
+    await expect(leaving).rejects.toBe(firstReason);
+    expect(reads[0]?.signal.aborted).toBe(false);
+    second.abort(secondReason);
+    await expect(staying).rejects.toBe(secondReason);
+
+    expect(reads[0]?.signal.aborted).toBe(true);
+    expect(reads[0]?.signal.reason).toBe(secondReason);
+  });
+
+  it('a client disconnect reaches the caller as the reason itself', async () => {
+    const { store } = controlledStore();
+    const resolver = createSecretResolver(store, KEYCHAIN_BACKEND);
+    const request = new AbortController();
+    const disconnected = new Error('the client disconnected');
+
+    const waiting = resolver.read('k', request.signal);
+    request.abort(disconnected);
+
+    await expect(waiting).rejects.toBe(disconnected);
   });
 });

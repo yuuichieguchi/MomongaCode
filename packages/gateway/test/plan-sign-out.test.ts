@@ -21,7 +21,7 @@ const harness = async (options: Parameters<typeof startHarness>[0] = {}): Promis
 
 const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'generation', 'profile', 'state', 'subject', 'version', 'welcomeShown'];
 
-const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
+const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
 
 const discoveryServer = async (document: (issuer: string) => Record<string, unknown>): Promise<string> => {
   let origin = '';
@@ -79,7 +79,7 @@ describe('sign-out (F11, I-C10)', () => {
     const signedOut = (await readRecord(h, 'work'))?.['generation'] as number;
     expect(signedOut).toBeGreaterThanOrEqual(Math.max(...seen));
     const again = await signInAtFake(h, { clientId: signIn.clientId });
-    expect(await h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens })).toMatchObject({ outcome: 'signed_in' });
+    expect(await h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens }, new AbortController().signal)).toMatchObject({ outcome: 'signed_in' });
     const reinstalled = await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
     expect(reinstalled.generation).toBeGreaterThan(Math.max(...seen, signedOut));
     expect((await readRecord(h, 'work'))?.['generation']).toBe(reinstalled.generation);

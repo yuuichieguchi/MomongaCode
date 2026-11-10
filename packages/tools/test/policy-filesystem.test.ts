@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { MAX_POINTER_FILE_BYTES } from '@momonga/foundation';
 import { createPolicyFilesystem } from '@momonga/tools';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const requireNonRoot = (): void => {
   if (process.getuid?.() === 0) throw new Error('this test needs a non-root user');
@@ -266,7 +268,7 @@ describe('readNoFollow', () => {
   });
 });
 
-describe('expandGlob', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('expandGlob', () => {
   const noAbort = new AbortController().signal;
   const filesystem = () => {
     const host = createPolicyFilesystem();

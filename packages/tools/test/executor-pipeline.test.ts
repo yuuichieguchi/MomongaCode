@@ -61,7 +61,7 @@ describe('executor pipeline early exits', () => {
     const expected = decide({
       tool: { name: 'Bash', ...BASH },
       subject,
-      mode: 'default',
+      mode: 'manual',
       rules,
       roots: [harness.layout.project],
       fileRules: computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none')),
@@ -91,7 +91,7 @@ describe('executor pipeline early exits', () => {
     const decision = decide({
       tool: { name: 'Bash', ...BASH },
       subject,
-      mode: 'default',
+      mode: 'manual',
       rules: [],
       roots: [harness.layout.project],
       fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')),

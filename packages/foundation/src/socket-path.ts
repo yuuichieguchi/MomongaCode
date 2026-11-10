@@ -15,6 +15,12 @@ const PIPE_PATH = /^\\\\[.?]\\pipe\\/;
 
 export const isPipePath = (candidate: string): boolean => PIPE_PATH.test(candidate);
 
+export type EndpointForm = 'unix' | 'pipe';
+
+const ENDPOINT_FORMS_OF_PATH_FLAVOUR: Readonly<Record<'filesystem' | 'pipe', readonly EndpointForm[]>> = { filesystem: ['unix'], pipe: ['pipe'] };
+
+export const endpointFormsOfSocket = (hostSocketPath: string): readonly EndpointForm[] => ENDPOINT_FORMS_OF_PATH_FLAVOUR[isPipePath(hostSocketPath) ? 'pipe' : 'filesystem'];
+
 export const socketPathLimit = (platform: NodeJS.Platform): number => (platform === 'linux' ? LINUX_SOCKET_PATH_LIMIT : SOCKET_PATH_LIMIT);
 
 export const pipePathFor = (home: string, name: string): string => {
@@ -74,10 +80,27 @@ const bindThenClose: SocketBind = (socketPath) =>
     });
   });
 
-let socketPathProbe = createSocketPathProbe(bindThenClose);
+let hostBind: SocketBind = bindThenClose;
+
+let socketPathProbe = createSocketPathProbe(hostBind);
 
 export const setSocketBind = (bind: SocketBind | undefined): void => {
-  socketPathProbe = createSocketPathProbe(bind ?? bindThenClose);
+  hostBind = bind ?? bindThenClose;
+  socketPathProbe = createSocketPathProbe(hostBind);
+};
+
+export type SocketBindRefusal = { byteLength: number; directory: string; code: string };
+
+export const socketBindRefusalOf = async (socketPath: string): Promise<SocketBindRefusal | undefined> => {
+  const directory = path.dirname(socketPath);
+  const byteLength = Buffer.byteLength(socketPath);
+  try {
+    await hostBind(probePathOfLength(directory, byteLength));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) return { byteLength, directory, code };
+  }
+  return undefined;
 };
 
 export class SocketPathUnsupportedError extends Error {}

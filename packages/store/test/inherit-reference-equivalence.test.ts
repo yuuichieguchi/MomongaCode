@@ -21,13 +21,14 @@ import {
   withReader,
 } from './support/reference.ts';
 import type { ChainBuilder, ReferenceHarness, WindowEntry } from './support/reference.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 300_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = 40;
 const CHAIN_LENGTHS = [1, 1, 2, 2, 3, 10] as const;
 
-const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder, mode: PermissionMode = 'default'): Promise<Run> => {
+const inheritingChild = async (h: ReferenceHarness, b: ChainBuilder, mode: PermissionMode = 'manual'): Promise<Run> => {
   const child = b.createRun('the child task');
   const claim = b.claimNext(child.id);
   const result = await b.inherit(claim, mode);
@@ -99,7 +100,7 @@ describe('R2: the reference resolves to the history the copy held, over seeded c
       for (let index = 0; index < length; index += 1) {
         await generatedRun(h, b, random, index, { fresh: index === 0, oldShape: index === oldShapeAt });
       }
-      const mode: PermissionMode = random.chance(0.3) ? 'acceptEdits' : 'default';
+      const mode: PermissionMode = random.chance(0.3) ? 'acceptEdits' : 'manual';
       const child = await inheritingChild(h, b, mode);
       assertEquivalent(h, child, mode, `seed ${seed}`);
       for (const windowTokens of [1, 7, 60]) assertBounded(h, child, windowTokens, `seed ${seed} window ${windowTokens}`);
@@ -113,7 +114,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const b = chainBuilder(h);
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'completed');
+    assertEquivalent(h, child, 'manual', 'completed');
   });
 
   it('a mode change adds a mode_changed marker to synthesised', async () => {
@@ -132,7 +133,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     await answeredRun(h, b, 'Again', (claim) => b.openCall(claim, false), { ending: { to: 'CANCELLED' } });
     await answeredRun(h, b, 'Stream', (claim) => b.partial(claim), { ending: { to: 'FAILED', code: 'server_error' } });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'closures and partial');
+    assertEquivalent(h, child, 'manual', 'closures and partial');
   });
 
   it('a task the user cancelled in the queue is not a link, and is omitted', async () => {
@@ -140,7 +141,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const b = chainBuilder(h);
     const first = b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     b.text(claim);
     const retracted = b.createRun('Never mind this');
     const requested = await h.store.requestCancel(retracted.id);
@@ -150,7 +151,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     });
     await b.end(claim, { to: 'COMPLETED' });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'retracted');
+    assertEquivalent(h, child, 'manual', 'retracted');
     const event = referenceOf(h.store, child.id);
     expect(event.via).toEqual([]);
     expect(JSON.stringify(event)).not.toContain('Never mind this');
@@ -161,14 +162,14 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const b = chainBuilder(h);
     const first = b.createRun('Say hello', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     b.text(claim);
     const timedOut = b.createRun('Too late', { timeoutMs: 1000 });
     h.clock.advance(2000);
     expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([timedOut.id]);
     await b.end(claim, { to: 'COMPLETED' });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'via');
+    assertEquivalent(h, child, 'manual', 'via');
     const event = referenceOf(h.store, child.id);
     expect(event.via.map((link) => link.runId)).toEqual([timedOut.id]);
     expect(event.via[0]).toMatchObject({ runId: timedOut.id, omitSeqs: [], synthesised: [] });
@@ -185,7 +186,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     const event = referenceOf(h.store, child.id);
     expect(event.omitSeqs).toEqual([3]);
     expect(event.synthesised).toContainEqual(markerEntry(3, MARKER_TEXT.dropped));
-    assertEquivalent(h, child, 'default', 'dropped');
+    assertEquivalent(h, child, 'manual', 'dropped');
   });
 
   it('a compaction in a later run whose cut lies inside an earlier run stops the walk at floorSeq', async () => {
@@ -201,7 +202,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
       b.text(claim);
     });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'compaction across runs');
+    assertEquivalent(h, child, 'manual', 'compaction across runs');
     const window = windowOf(h, child.id);
     expect(window.entries.every((entry: WindowEntry) => entry.seq > 3)).toBe(true);
     expect(window.summary?.replacedThroughSeq).toBe(3);
@@ -217,7 +218,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
       b.text(claim);
     }, { fresh: true });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'rejected');
+    assertEquivalent(h, child, 'manual', 'rejected');
     expect(windowOf(h, child.id).summary?.item).toEqual({ type: 'message', role: 'user', content: 'rejected summary through 2' });
   });
 
@@ -230,7 +231,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     }, { fresh: true });
     await answeredRun(h, b, 'two', (claim) => b.evict(claim, callId, 750));
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'cross-run truncation');
+    assertEquivalent(h, child, 'manual', 'cross-run truncation');
     expect(windowOf(h, child.id).entries).toContainEqual({ seq: 3, callId, handle: h.store.blobs.handleFor(`out ${callId} ${'o'.repeat(3000)}`), tokens: 750 });
   });
 
@@ -240,7 +241,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     await answeredRun(h, b, 'one', (claim) => b.text(claim), { fresh: true });
     await answeredRun(h, b, 'two', (claim) => b.text(claim), { oldShape: true });
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'old-shape source');
+    assertEquivalent(h, child, 'manual', 'old-shape source');
   });
 
   it('a chain of 10 references resolves without re-copying', async () => {
@@ -249,7 +250,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     await answeredRun(h, b, 'run 0', (claim) => b.tool(claim, { evict: true }), { fresh: true });
     for (let index = 1; index < 10; index += 1) await answeredRun(h, b, `run ${index}`, (claim) => b.tool(claim, { evict: index % 2 === 0 }));
     const child = await inheritingChild(h, b);
-    assertEquivalent(h, child, 'default', 'chain of 10');
+    assertEquivalent(h, child, 'manual', 'chain of 10');
   });
 });
 

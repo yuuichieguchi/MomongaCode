@@ -86,7 +86,7 @@ describe('context.compaction_rejected fold', () => {
 });
 
 describe('run.started mode fold', () => {
-  const started = (attempt: number, mode: 'default' | 'plan' | 'acceptEdits' | undefined, pins: Record<string, unknown>): RunEventPayload => ({
+  const started = (attempt: number, mode: 'manual' | 'plan' | 'acceptEdits' | undefined, pins: Record<string, unknown>): RunEventPayload => ({
     type: 'run.started',
     attempt,
     now: attempt,
@@ -95,7 +95,7 @@ describe('run.started mode fold', () => {
   });
 
   it('sets the mode from the claim and lets the latest claim win while pins stay first-wins', () => {
-    const state = foldPayloads([{ type: 'user.message', text: 'go' }, started(1, 'default', { model: 'a' }), started(2, 'plan', { model: 'b' })]);
+    const state = foldPayloads([{ type: 'user.message', text: 'go' }, started(1, 'manual', { model: 'a' }), started(2, 'plan', { model: 'b' })]);
     expect(state.mode).toBe('plan');
     expect(state.pins).toEqual({ model: 'a' });
     expect(state.attempt).toBe(2);

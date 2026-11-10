@@ -24,12 +24,11 @@ import {
 import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { decodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
-import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory, currentSocketResolver, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths, OwnedDirectory } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
@@ -56,7 +55,7 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 };
 
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
@@ -94,7 +93,7 @@ export type EvaluateContextOptions = {
   seed?: number;
   report?: string;
   settings?: string;
-  interrupt?: AbortSignal;
+  interrupt: AbortSignal;
 };
 
 const seedOfTranscripts = (transcripts: readonly Transcript[]): number | undefined => {
@@ -112,7 +111,7 @@ const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
+  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal },
 ): Promise<Transcript[]> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.mkdir(options.record);
@@ -124,11 +123,12 @@ const runContextLiveCommand = async (
     policy: options.policy,
     codeDigest: await codeDigestOfRunningProcess(),
     models: loadUserModels({ home: ports.home }),
+    planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
     onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
-    ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+    interrupt: options.interrupt,
     ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
   });
 };

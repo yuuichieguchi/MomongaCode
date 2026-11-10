@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const setup = async () => {
   const dir = makeHome();
@@ -18,6 +20,7 @@ const setup = async () => {
 };
 
 const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] = []) => ({
+  platform: process.platform,
   paths: context.paths,
   instance: context.instance,
   description: FM_SERVER,
@@ -34,7 +37,7 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   onWarning: (message: string) => void warnings.push(message),
 });
 
-describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('probeManagedFm', () => {
   it('serves fm on its own instance socket, probes it and records the report under its probe key', async () => {
     const context = await setup();
 
@@ -46,6 +49,15 @@ describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(['native', 'constrained', 'none']).toContain(result.toolCalling);
     expect(await loadProbeRecord(context.paths.probe, key, FM_CURRENCY, 'apple')).toEqual(result.report);
     expect(fs.existsSync(context.instance.socketPath)).toBe(false);
+  });
+
+  it('reads the probe key on the OS it is given and records nothing when that OS has no build reader', async () => {
+    const context = await setup();
+
+    const failure = await probeManagedFm({ ...options(context), platform: 'aix' }).catch((error: unknown) => error);
+
+    expect(String(failure)).toContain('no OS build reader exists on aix');
+    expect(fs.existsSync(context.paths.probe) ? fs.readdirSync(context.paths.probe).filter((name) => name.endsWith('.json')) : []).toEqual([]);
   });
 
   it('records nothing and reports the remedy when fm is not licensed', async () => {

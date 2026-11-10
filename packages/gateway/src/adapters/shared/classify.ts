@@ -1,8 +1,10 @@
 import { TRANSIENT_REQUEST_STATUSES, findOutboundError, isRetryableHttp } from '@momonga/foundation';
 import type { OutboundConnectionError } from '@momonga/foundation';
 import { PRECONDITION_FAILED_CODE, TARGET_NOT_READY } from '@momonga/protocol';
-import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
+import type { ClassifiedError, ErrorBody, ErrorMatch, ErrorRule, ErrorRules } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
+import { retryableFailureOf } from '../../core/breaker-verdict.ts';
+import { PlanCredentialError, credentialErrorType } from '../../plan/auth-source.ts';
 import {
   CONTEXT_WINDOW_EXCEEDED,
   CompactionReplyError,
@@ -101,18 +103,68 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   return { retryable: false, error: body('server_error', 'unexpected_status', error.message) };
 };
 
+type UpstreamFacts = { status: number | null; code: string | null };
+
+const ruleFor = (rules: ErrorRules, facts: UpstreamFacts): { rule: ErrorRule; by: ErrorMatch['kind'] } | undefined => {
+  const { code, status } = facts;
+  const byCode = code === null ? undefined : rules.find((rule) => rule.match.kind === 'code' && rule.match.codes.includes(code));
+  if (byCode !== undefined) return { rule: byCode, by: 'code' };
+  const byStatus = status === null ? undefined : rules.find((rule) => rule.match.kind === 'status' && rule.match.status === status);
+  return byStatus === undefined ? undefined : { rule: byStatus, by: 'status' };
+};
+
+const ruleMessage = (rule: ErrorRule, by: ErrorMatch['kind'], code: string | null, requestIds: Record<string, string>): string => {
+  const upstreamCode = by === 'status' && code !== null ? ` (upstream code ${code})` : '';
+  const [requestId] = Object.values(requestIds);
+  return `${rule.message}${upstreamCode}.${requestId === undefined ? '' : ` Request id: ${requestId}`}`;
+};
+
+const ruledError = (matched: { rule: ErrorRule; by: ErrorMatch['kind'] }, facts: UpstreamFacts, requestIds: Record<string, string>, param: string | null): ClassifiedError => {
+  const { rule, by } = matched;
+  return {
+    retryable: rule.retryable,
+    verdict: rule.verdict,
+    fallback: rule.fallback,
+    credential: rule.credential,
+    error: body(rule.type, rule.code, ruleMessage(rule, by, facts.code, requestIds), rule.keepParam === true ? param : null),
+  };
+};
+
+const retryAfterOf = (error: UpstreamHttpError): { retryAfterMs?: number } => (error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs });
+
+const classifyUpstreamHttp = (error: UpstreamHttpError, rules: ErrorRules): ClassifiedError => {
+  const facts: UpstreamFacts = { status: error.status, code: error.upstreamCode };
+  const { shape } = error;
+  const matched = ruleFor(rules, facts);
+  const classified = matched === undefined ? classifyHttp(error) : { ...ruledError(matched, facts, shape?.requestIds ?? {}, shape?.param ?? null), ...retryAfterOf(error) };
+  if (shape === undefined) return classified;
+  return { ...classified, upstream: { status: error.status, bodyKeys: shape.bodyKeys, code: error.upstreamCode, requestIds: shape.requestIds } };
+};
+
+const classifyStream = (error: StreamFailure, rules: ErrorRules): ClassifiedError => {
+  const facts: UpstreamFacts = { status: null, code: error.code === '' ? null : error.code };
+  const matched = ruleFor(rules, facts);
+  if (matched !== undefined) return ruledError(matched, facts, {}, null);
+  return { retryable: retryableFailureOf(error.errorType, error.code), error: body(error.errorType, error.code, error.message) };
+};
+
 export const createUpstreamClassifier =
-  (label: string) =>
+  (label: string, rules: ErrorRules = []) =>
   (error: unknown): ClassifiedError => {
-    if (error instanceof UpstreamHttpError) return classifyHttp(error);
+    if (error instanceof UpstreamHttpError) return classifyUpstreamHttp(error, rules);
     if (error instanceof CompactionReplyError) {
       return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
     }
     if (error instanceof UpstreamStall) {
       return { retryable: true, stalled: true, error: body(error.errorType, error.code, error.message) };
     }
-    if (error instanceof StreamFailure) {
-      return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
+    if (error instanceof StreamFailure) return classifyStream(error, rules);
+    if (error instanceof PlanCredentialError) {
+      return {
+        retryable: error.retryable,
+        ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+        error: body(credentialErrorType(error.code), error.code, error.message),
+      };
     }
     if (error instanceof TargetNotReadyError) {
       return { retryable: false, error: body('invalid_request', TARGET_NOT_READY, error.message) };

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, fixedRolePort, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -34,6 +34,7 @@ import type { FakeToolbox } from './fake-tools.ts';
 import { createFakeTracer } from './fake-tracer.ts';
 import type { FakeTracer } from './fake-tracer.ts';
 import { MODEL_ALIAS, resetResponseIds } from './scripts.ts';
+import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -279,7 +280,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const session: Session = store.createSession({
     cwd: project,
     env: { PATH: '/usr/bin:/bin', LANG: 'C' },
-    permissionMode: options.mode ?? 'default',
+    permissionMode: options.mode ?? 'manual',
     modelAlias: MODEL_ALIAS,
   });
 
@@ -308,7 +309,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       return snapshotTools([...toolList(), ...additionalTools]);
     },
     executor,
-    sandbox: fakeSandbox,
+    sandboxes: fixedSandboxBindings(fakeSandbox),
     ripgrepLocator: (env) => createHostRipgrepLocator({ setting: pinnedRipgrepPath(), env }),
     shellHost: nodeShellHost(),
     markerDir: markers,
@@ -339,9 +340,10 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
-      tracer,
+      tracers: fixedTracers(tracer),
       clock,
       workerId,
+      role: fixedRolePort('serving'),
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: process.platform,

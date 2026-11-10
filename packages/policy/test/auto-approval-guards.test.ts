@@ -13,6 +13,6 @@ describe('4.3 review-2 guard rows', () => {
 
 describe('substitution bodies are analysed with the approval rules', () => {
   it.each(['S1', 'S2', 'S3'])('%s asks in default, plan and acceptEdits', (id) => {
-    for (const mode of ['default', 'plan', 'acceptEdits'] as const) expect(kindIn(rowById(id), mode)).toBe('ask');
+    for (const mode of ['manual', 'plan', 'acceptEdits'] as const) expect(kindIn(rowById(id), mode)).toBe('ask');
   });
 });

@@ -8,6 +8,8 @@ import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, spawnTracked,
 import type { CleanupContext } from '@momonga/testkit';
 import type { TrackedChild } from '@momonga/testkit';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const CHILD = path.join(FIXTURES, 'lifeline-child.ts');
 const MIDDLE = path.join(FIXTURES, 'lifeline-middle.ts');
@@ -56,7 +58,7 @@ const watching = async (child: TrackedChild, output: Output, marker = 'watching'
   if (!output.lines().includes(marker)) throw new Error(`the lifeline child exited with ${child.exitCode} before printing ${marker}: ${output.stderr()}`);
 };
 
-describe('watchLifeline with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('watchLifeline with real processes', () => {
   it('EOF when the parent end closes', async (context) => {
     const { child, output, lifeline } = startChild(context);
     await watching(child, output);

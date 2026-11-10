@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, reapMarkerDirectory } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -9,6 +9,8 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 let dir = '';
 
@@ -48,10 +50,11 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
     projectDir: dir,
     markerDir,
     runId: 'run-1',
-    session: { id: 's1', permissionMode: 'default' },
+    session: { id: 's1', permissionMode: 'manual' },
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 60_000,
+    started: () => undefined,
     report: (execution) => executions.push(execution),
     ...overrides,
   };
@@ -60,7 +63,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
 
 const call = { callId: 'c1', toolName: 'Bash', input: { command: 'ls' } };
 
-describe('PreToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('PreToolUse hook processes', () => {
   it('delivers the Claude Code input shape on stdin and the project directory in the environment', async () => {
     const out = path.join(dir, 'stdin.json');
     const { context } = contextFor(settings('PreToolUse', `cat > ${out}; echo "$MOMONGA_PROJECT_DIR" > ${out}.env`, 'Bash'));
@@ -68,7 +71,7 @@ describe('PreToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({
       session_id: 's1',
       cwd: dir,
-      permission_mode: 'default',
+      permission_mode: 'manual',
       hook_event_name: 'PreToolUse',
       tool_name: 'Bash',
       tool_input: { command: 'ls' },
@@ -195,7 +198,7 @@ describe('PreToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
   });
 });
 
-describe('updated input, halting and process markers', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('updated input, halting and process markers', () => {
   it('returns an updated input with the decision', async () => {
     const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: 'ls -la' } } });
     const { context, executions } = contextFor(settings('PreToolUse', `echo '${json}'`));
@@ -243,14 +246,14 @@ describe('updated input, halting and process markers', { timeout: REAL_PROCESS_T
     }
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     const markerDir = path.join(dir, 'markers');
-    await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
+    await reapMarkerDirectory({ dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
     expect(() => process.kill(pid, 0)).toThrow();
     controller.abort();
     await pending;
   });
 });
 
-describe('PostToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('PostToolUse hook processes', () => {
   it('returns stderr of an exit 2 hook, a block reason and additional context as feedback', async () => {
     const json = JSON.stringify({ decision: 'block', reason: 'tests fail', hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: 'see log' } });
     const { context } = contextFor({
@@ -266,7 +269,7 @@ describe('PostToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
   });
 });
 
-describe('prompt, start and stop hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('prompt, start and stop hooks', () => {
   it('blocks a prompt on exit 2 and on a block decision', async () => {
     const exit2 = contextFor(settings('UserPromptSubmit', 'echo "no secrets" >&2; exit 2'));
     expect(await runUserPromptSubmit(exit2.context, 'p')).toEqual({ blocked: 'no secrets', context: [] });
@@ -311,5 +314,41 @@ describe('prompt, start and stop hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     const { context, executions } = contextFor(settings('SessionStart', 'echo bad >&2; exit 2'));
     expect((await runSessionStart(context, 'startup')).context).toEqual([]);
     expect(executions[0]).toMatchObject({ outcome: 'error', exitCode: 2, message: 'bad' });
+  });
+});
+
+describe('the start of each hook command is announced (design-screens 6.1.1, hook.started)', () => {
+  it('calls started with the hook event, the command and the call id before the command runs, once per command', async () => {
+    const out = path.join(dir, 'ran.txt');
+    const first = `test -e ${out} || echo first-saw-nothing >> ${out}.order`;
+    const hooks: HooksSettings = { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: first }, { type: 'command', command: 'true' }] }] };
+    const seen: { start: unknown; reported: number }[] = [];
+    const { context, executions } = contextFor(hooks, { started: (start) => void seen.push({ start, reported: executions.length }) });
+
+    await createToolHooks(context).preToolUse(call);
+
+    expect(seen).toEqual([
+      { start: { event: 'PreToolUse', command: first, callId: 'c1' }, reported: 0 },
+      { start: { event: 'PreToolUse', command: 'true', callId: 'c1' }, reported: 0 },
+    ]);
+    expect(executions).toHaveLength(2);
+  });
+
+  it('announces a lifecycle hook without a call id', async () => {
+    const seen: unknown[] = [];
+    const { context } = contextFor(settings('Stop', 'true'), { started: (start) => void seen.push(start) });
+
+    await runStop(context, false);
+
+    expect(seen).toEqual([{ event: 'Stop', command: 'true' }]);
+  });
+
+  it('announces nothing when no command matches', async () => {
+    const seen: unknown[] = [];
+    const { context } = contextFor(settings('PreToolUse', 'true', 'Write'), { started: (start) => void seen.push(start) });
+
+    await createToolHooks(context).preToolUse(call);
+
+    expect(seen).toEqual([]);
   });
 });

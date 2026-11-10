@@ -335,15 +335,15 @@ describe('X4 Human Intervention Rate', () => {
       [T0 + 30, terminal('COMPLETED')],
     ];
     const rows = [
-      fold('asked', at(permissionRequested('c1')), { mode: 'default' }),
-      fold('classified', at(permissionClassifiedAllow('c1')), { mode: 'default' }),
+      fold('asked', at(permissionRequested('c1')), { mode: 'manual' }),
+      fold('classified', at(permissionClassifiedAllow('c1')), { mode: 'manual' }),
       fold('elicited', at(elicitationRequested('c1')), { mode: 'bypassPermissions' }),
       fold('authorized', at(authorizationRequired()), { mode: 'bypassPermissions' }),
       fold('none', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]], { mode: 'bypassPermissions' }),
     ];
     const indicators = indicatorsOf(aggregate(rows, { groupBy: 'mode' }));
     expect(indicators.total.intervention).toEqual({ k: 3, n: 5 });
-    expect(indicators.groups['default']?.intervention).toEqual({ k: 1, n: 2 });
+    expect(indicators.groups['manual']?.intervention).toEqual({ k: 1, n: 2 });
     expect(indicators.groups['bypassPermissions']?.intervention).toEqual({ k: 2, n: 3 });
   });
 

@@ -89,8 +89,8 @@ describe('acp: momonga acp', () => {
       agentCapabilities: { loadSession: true, mcpCapabilities: { http: true, sse: false }, promptCapabilities: { embeddedContext: true } },
     });
     const created = await acp.agent.request('session/new', { cwd: project, mcpServers: [] });
-    expect(created.modes?.currentModeId).toBe('default');
-    expect(created.modes?.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan']);
+    expect(created.modes?.currentModeId).toBe('manual');
+    expect(created.modes?.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan']);
     await acp.agent.request('session/set_mode', { sessionId: created.sessionId, modeId: 'acceptEdits' });
 
     const result = await acp.agent.request('session/prompt', textPrompt(created.sessionId, 'Update the greeting'));

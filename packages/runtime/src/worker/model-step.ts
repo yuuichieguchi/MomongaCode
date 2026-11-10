@@ -1,10 +1,13 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, wireUsageOf } from '@momonga/protocol';
+import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
+import { responseFailureDisposition, terminalOf } from './gateway-policy.ts';
+import { outputBoundOf } from './output-bound.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
 import { loopSignatureOf } from './loop-detection.ts';
@@ -125,11 +128,13 @@ const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'e
 
 const billedExtensionOf = (extension: MomongaResponseExtension | undefined): ModelResponse['momonga'] => {
   if (extension === undefined) return undefined;
-  const { cacheWriteInputTokens, cost } = extension;
-  if (cacheWriteInputTokens === undefined && cost === undefined) return undefined;
+  const { cacheWriteInputTokens, cacheReadNotReported } = extension;
+  const outcome = priceOutcomeOf(extension);
+  if (cacheWriteInputTokens === undefined && cacheReadNotReported === undefined && Object.keys(outcome).length === 0) return undefined;
   return {
     ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
-    ...(cost === undefined ? {} : { cost }),
+    ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
+    ...outcome,
   };
 };
 
@@ -148,7 +153,8 @@ const handleResult = async (
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
-    return terminals.finish('FAILED', { error: { code: result.code, message: result.message } });
+    const terminal = terminalOf(responseFailureDisposition(result));
+    return terminals.finish(terminal.to, terminal.patch);
   }
   const { response, incomplete } = result;
   const usage = response.usage;
@@ -180,11 +186,7 @@ const handleResult = async (
               inputTokens: usage.input_tokens,
               outputTokens: usage.output_tokens,
               totalTokens: usage.total_tokens,
-              responseId: response.id,
-              cachedInputTokens: usage.input_tokens_details.cached_tokens,
-              ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
-              ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
-              timing,
+              ...billedDetailOf(usage, response.momonga, timing, response.id),
               ...answeredTarget,
             },
           ]),
@@ -226,7 +228,7 @@ const handleResult = async (
           input_tokens: usage.input_tokens,
           output_tokens: usage.output_tokens,
           total_tokens: usage.total_tokens,
-          input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens },
+          input_tokens_details: wireUsageOf(usage).usage.input_tokens_details,
           output_tokens_details: { reasoning_tokens: usage.output_tokens_details.reasoning_tokens },
         },
         ...(billed === undefined ? {} : { momonga: billed }),
@@ -242,7 +244,7 @@ const handleResult = async (
     },
   ];
   if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
-    const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
+    const failed = fallback.fallbackCauses.map(describeFallbackCause);
     recorded.push({
       type: 'notice',
       level: 'warning',
@@ -378,7 +380,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     ...(summarising ? { tool_choice: 'none' as const } : ctx.toolLess ? {} : { tool_choice: 'auto' as const }),
     ...(ctx.capabilities.parallelToolCalls === undefined || ctx.toolLess ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
     ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
-    max_output_tokens: built.maxOutputTokens,
+    ...outputBoundOf(ctx.capabilities, built.maxOutputTokens),
     store: false,
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },

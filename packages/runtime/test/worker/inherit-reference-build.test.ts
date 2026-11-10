@@ -12,8 +12,9 @@ import { callsStep, textStep } from './scripts.ts';
 import { envNeutralJson, requestInputs, settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, newFactsTrace, plantOldShapeChild, tracedStore } from './inherit-reference-support.ts';
 import type { FactsTrace } from './inherit-reference-support.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 600_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Shape = 'copy' | 'reference';
 
@@ -54,9 +55,9 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
   for (let heavy = 0; heavy < heavyRuns; heavy += 1) {
     const run = b.createRun(`heavy ${heavy}`);
     const claim = b.claimNext(run.id);
-    if (shape === 'copy') b.inheritOldShape(claim, 'default');
-    else await b.inherit(claim, 'default');
-    b.started(claim, 'default');
+    if (shape === 'copy') b.inheritOldShape(claim, 'manual');
+    else await b.inherit(claim, 'manual');
+    b.started(claim, 'manual');
     for (let step = 0; step < 6; step += 1) {
       b.text(claim, 6_000);
       b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
@@ -146,7 +147,7 @@ describe('known differences of 13.7, pinned as stated', () => {
     const b = builderOf(env);
     const first = b.createRun('Big history', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     for (let step = 0; step < 30; step += 1) b.text(claim, 2_000);
     await b.end(claim, { to: 'COMPLETED' });
     const child = b.createRun('Next');
@@ -163,7 +164,7 @@ describe('known differences of 13.7, pinned as stated', () => {
     const b = builderOf(env);
     const first = b.createRun('Corrupt early', { history: 'fresh' });
     const claim = b.claimNext(first.id);
-    b.started(claim, 'default');
+    b.started(claim, 'manual');
     const callId = b.tool(claim);
     for (let step = 0; step < 30; step += 1) b.text(claim, 2_000);
     await b.end(claim, { to: 'COMPLETED' });
@@ -187,7 +188,7 @@ describe('known differences of 13.7, pinned as stated', () => {
       const b = builderOf(env);
       const first = b.createRun('Write it', { history: 'fresh' });
       const claim = b.claimNext(first.id);
-      b.started(claim, 'default');
+      b.started(claim, 'manual');
       const callId = b.tool(claim, { evict: true, withTokens: false });
       b.text(claim);
       b.compact(claim, 3);

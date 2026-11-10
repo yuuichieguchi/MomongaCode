@@ -1,13 +1,16 @@
-import { execFileSync, spawn } from 'node:child_process';
-import type { SpawnOptions } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
+import type { SpawnOptions } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GroupMembersReader } from '@momonga/foundation';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FAKE_BWRAP = `#!/bin/sh
 while [ "$1" != "--" ]; do
@@ -49,7 +52,7 @@ const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
 const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
-describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
     const git = path.join(work, '.git');
     fs.symlinkSync('.git', git);
@@ -166,15 +169,21 @@ shift
 exec "$@"
 `;
 
-const psGroupMembers = (pgid: number): number[] =>
-  execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+const psRows = (): Array<{ pid: number; groupId: number; startTicks: bigint }> =>
+  execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
     .split('\n')
     .flatMap((line) => {
-      const [pid, group] = line.trim().split(/\s+/).map(Number);
-      return pid !== undefined && group === pgid ? [pid] : [];
+      const row = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+      const startMs = row === null ? Number.NaN : Date.parse(row[3] as string);
+      return row === null || Number.isNaN(startMs) ? [] : [{ pid: Number(row[1]), groupId: Number(row[2]), startTicks: BigInt(startMs) }];
     });
 
-describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+const psGroupMembers: GroupMembersReader = {
+  members: (pgid) => psRows().flatMap(({ pid, groupId, startTicks }) => (groupId === pgid ? [{ pid, startTicks }] : [])),
+  statOf: (pid) => psRows().find((row) => row.pid === pid),
+};
+
+describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', () => {
   const GRACE_MS = 300;
 
   const cancelAfterReady = async (script: (ready: string) => string): Promise<{ elapsedMs: number; exit: Awaited<ReturnType<typeof run>> }> => {
@@ -221,7 +230,7 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     const controller = new AbortController();
     const proc = monitored.spawn({ argv: ['/bin/sh', '-c', 'sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin', SETUP_GATE: gate } }, policy([]), controller.signal);
     const finished = run(proc);
-    await waitFor(() => psGroupMembers(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
+    await waitFor(() => psGroupMembers.members(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
     const abortedAt = Date.now();
     controller.abort();
     const exit = await finished;

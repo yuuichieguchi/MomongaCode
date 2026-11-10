@@ -1,5 +1,5 @@
-import { execFile, spawn } from 'node:child_process';
-import type { StdioOptions } from 'node:child_process';
+import { execFile, spawn } from '@momonga/testkit/child-process';
+import type { StdioOptions } from '@momonga/testkit/child-process';
 import os from 'node:os';
 
 const PROBE = 'for fd in 3 4; do if (: <&$fd) 2>/dev/null; then echo fd$fd; fi; done';

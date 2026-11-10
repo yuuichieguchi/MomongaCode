@@ -1,0 +1,14 @@
+{
+  "name": "xterm-modify-other-keys-shift-enter",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b32373b323b31337e",
+  "events": [
+    {
+      "type": "key",
+      "name": "enter",
+      "ctrl": false,
+      "alt": false,
+      "shift": true
+    }
+  ]
+}

@@ -17,6 +17,7 @@ import type { UserDialects } from '../../dialect/choice.ts';
 import type { KeywordSupport } from '../../dialect/keyword-support.ts';
 import type { EnvelopeShape } from '../../probe/envelope.ts';
 import type { ErrorVocabulary } from '../shared/vocabulary.ts';
+import type { AdapterAuth } from '../shared/auth.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
@@ -30,7 +31,7 @@ export type ChatCompletionsAdapterOptions = {
   constructSupport?: (target: AdapterTarget) => ConstructSupport | undefined;
   envelopeShape?: (target: AdapterTarget) => EnvelopeShape;
   userDialects?: UserDialects;
-  apiKey?: (target: AdapterTarget, signal: AbortSignal) => string | undefined | Promise<string | undefined>;
+  authSource: AdapterAuth;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;

@@ -37,6 +37,7 @@ const CLOSURE_TEXT = {
   approvalTimeout: 'Not run: approval for this tool call was not given in time.',
   loop: 'Not run: the previous request was stopped because the same tool call kept repeating.',
   timeout: 'Not run: the previous request ran out of time before this tool call ran.',
+  usageLimit: 'Not run: the previous request stopped because the usage allowance was reached before this tool call ran.',
   failed: 'Not run: the previous request ended with an error before this tool call ran.',
   other: 'Not run: the previous request was stopped before this tool call ran.',
 } as const;
@@ -49,7 +50,7 @@ const MARKER_TEXT = {
 } as const;
 
 const MODE_RULE: Record<PermissionMode, string> = {
-  default:
+  manual:
     "File changes and commands need the user's approval unless an allow rule covers them; read-only commands (ls, cat, echo, pwd, head, tail, grep, find, wc, which, diff, stat, du, cd, file, sort, ps on Linux and read-only git) run without asking.",
   acceptEdits:
     'File edits and the filesystem commands mkdir, touch, rm, rmdir, mv, cp and sed inside the workspace are accepted without asking, and read-only commands run without asking; other actions still need approval unless an allow rule covers them.',
@@ -71,6 +72,8 @@ const notExecutedText = (outcome: InheritanceOutcome): string => {
       return CLOSURE_TEXT.loop;
     case 'timeout':
       return CLOSURE_TEXT.timeout;
+    case 'usage_limit':
+      return CLOSURE_TEXT.usageLimit;
     default:
       return CLOSURE_TEXT.other;
   }

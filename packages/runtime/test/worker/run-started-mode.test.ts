@@ -23,13 +23,13 @@ describe('run.started records the permission mode', () => {
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    expect(env.fold(run.id).mode).toBe('default');
+    expect(env.fold(run.id).mode).toBe('manual');
 
     env.setMode('plan');
     await env.resolveApproval(run.id, 'allow_once');
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
 
-    expect(env.ofType(run.id, 'run.started').map((event) => event.mode)).toEqual(['default', 'plan']);
+    expect(env.ofType(run.id, 'run.started').map((event) => event.mode)).toEqual(['manual', 'plan']);
     const state = env.fold(run.id);
     expect(state.mode).toBe('plan');
     expect(state.pins).toEqual(env.ofType(run.id, 'run.started')[0]?.pins);

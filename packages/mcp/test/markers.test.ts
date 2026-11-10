@@ -1,12 +1,13 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { findHolders } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const SSH_AGENT = '/usr/bin/ssh-agent';
 const AGENT_CLOSE_GRACE_MS = 200;
 
@@ -20,7 +21,7 @@ const markerSetup = () => {
 const markerFiles = (dir: string): string[] => fs.readdirSync(dir).map((name) => path.join(dir, name));
 
 describe('MCP stdio transport markers', () => {
-  it('creates a 0600 marker before spawn, passes it as fd 3 and writes the pid', PROCESS_TIMEOUT, async () => {
+  it('creates a 0600 marker before spawn, passes it as fd 3 and writes the pid', async () => {
     const { dir, markers } = markerSetup();
     const { transport, request } = await startRaw({ config: rawConfig(), markers });
     const { pid } = (await request('pid')) as { pid: number };
@@ -54,7 +55,7 @@ describe('MCP stdio transport markers', () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
-  it('a clean close removes the marker', PROCESS_TIMEOUT, async () => {
+  it('a clean close removes the marker', async () => {
     const { dir, markers, warnings } = markerSetup();
     const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: 200 });
     const { pid } = (await request('pid')) as { pid: number };
@@ -67,7 +68,7 @@ describe('MCP stdio transport markers', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('close sweeps a setsid grandchild that still holds the marker', PROCESS_TIMEOUT, async () => {
+  it('close sweeps a setsid grandchild that still holds the marker', async () => {
     const { dir, markers } = markerSetup();
     const readyFile = path.join(makeDir(), 'setsid.pid');
     const transport = createTransport({
@@ -93,7 +94,7 @@ describe('MCP stdio transport markers', () => {
   });
 
   describe.runIf(process.platform === 'linux' && fs.existsSync(SSH_AGENT))('with a real ssh-agent, which is non-dumpable and belongs to the current user', () => {
-    it('close completes, names an agent that started after the marker as one that could not be inspected, and keeps the marker', PROCESS_TIMEOUT, async () => {
+    it('close completes, names an agent that started after the marker as one that could not be inspected, and keeps the marker', async () => {
       const { dir, markers, warnings } = markerSetup();
       const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: AGENT_CLOSE_GRACE_MS });
       const { pid } = (await request('pid')) as { pid: number };
@@ -113,7 +114,7 @@ describe('MCP stdio transport markers', () => {
     });
   });
 
-  it('a server that exits on its own has its marker removed', PROCESS_TIMEOUT, async () => {
+  it('a server that exits on its own has its marker removed', async () => {
     const { dir, markers } = markerSetup();
     const { transport, closes } = await startRaw({ config: rawConfig(), markers, closeGraceMs: 200 });
     expect(markerFiles(dir)).toHaveLength(1);
@@ -125,7 +126,7 @@ describe('MCP stdio transport markers', () => {
     expect(fs.readdirSync(dir)).toEqual([]);
   });
 
-  it('without markers there is no fd 3 and no marker file', PROCESS_TIMEOUT, async () => {
+  it('without markers there is no fd 3 and no marker file', async () => {
     const parent = makeDir();
     const transport = createTransport({ config: { command: '/bin/sleep', args: ['30'] }, projectDir: parent, closeGraceMs: 200 });
     await transport.start();
@@ -136,7 +137,7 @@ describe('MCP stdio transport markers', () => {
     expect(fs.readdirSync(parent)).toEqual([]);
   });
 
-  it('with markers a server that never touches fd 3 still holds the marker as fd 3', PROCESS_TIMEOUT, async () => {
+  it('with markers a server that never touches fd 3 still holds the marker as fd 3', async () => {
     const { dir, markers } = markerSetup();
     const transport = createTransport({ config: { command: '/bin/sleep', args: ['30'] }, markers, closeGraceMs: 200 });
     await transport.start();

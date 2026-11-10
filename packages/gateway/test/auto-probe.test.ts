@@ -1,19 +1,21 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, createJsonLogger, FIRST_GENERATION, managedInstancePaths, momongaPaths, readMarkerGroup } from '@momonga/foundation';
 import { FM_SERVER, TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { readFileTool } from './cc-support.ts';
 import { fmRecordKey } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type ProbeServer = 'stall' | 'fail' | 'complete';
 
@@ -82,6 +84,7 @@ const setup = async (options: SetupOptions = {}) => {
       : [];
   registerCleanup(() => killGroupsForCleanup(launched().map((record) => record.pid)));
   const probes = (): DumpRecord[] => launched().filter((record) => path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
+  const servings = (): DumpRecord[] => launched().filter((record) => !path.basename(record.argv[record.argv.indexOf('--socket') + 1] ?? '').startsWith('_probe-'));
   const handle = await launchGateway({
     generation: FIRST_GENERATION,
     home,
@@ -103,7 +106,7 @@ const setup = async (options: SetupOptions = {}) => {
   const replaceBinary = (): void => {
     fs.appendFileSync(fm.binaryPath, `\n// ${createHash('sha256').update(String(fs.statSync(fm.binaryPath).size)).digest('hex')}\n`);
   };
-  return { fm, home, host, logLines, handle, client, probeDir, keyNow, send, sendRaw, recordExists, anyRecord, replaceBinary, probes };
+  return { fm, home, host, logLines, handle, client, probeDir, keyNow, send, sendRaw, recordExists, anyRecord, replaceBinary, probes, servings };
 };
 
 const expectProbing = (response: { status: number; body: { error: { code: string; message: string } } }): void => {
@@ -114,9 +117,9 @@ const expectProbing = (response: { status: number; body: { error: { code: string
 
 const probeStarted = (gateway: Awaited<ReturnType<typeof setup>>, count = 1) => until(() => gateway.probes().length === count, `probe fm serve number ${count} to start`);
 
-describe('the automatic probe of an fm target with no probe record', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the automatic probe of an fm target with no probe record', () => {
   describe('P3 NoRecordGets503 and RetryAfterIsHonest', () => {
-    it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key', async () => {
+    it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key without holding the key lock during the flight', async () => {
       const gateway = await setup();
 
       const raw = await gateway.sendRaw(true);
@@ -125,7 +128,8 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       expectProbing(response);
       expect(raw.headers['retry-after']).toBe('120');
       await probeStarted(gateway);
-      await expect(acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm')).rejects.toBeInstanceOf(ProbeInProgressError);
+      const free = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
+      free.release();
     });
   });
 
@@ -189,14 +193,15 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       expect(gateway.probes()).toHaveLength(1);
     });
 
-    it('refuses the momonga gateway probe command while the gateway measures the same key, without starting fm', async () => {
+    it('runs the momonga gateway probe command beside the gateway flight of the same key, on its own instance, and records its measurement', async () => {
       const gateway = await setup();
       expectProbing(await gateway.send(true));
       await probeStarted(gateway);
       const paths = momongaPaths(gateway.home, process.platform, {});
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]);
 
-      const failure = await probeManagedFm({
+      const outcome = await probeManagedFm({
+        platform: process.platform,
         paths,
         instance,
         description: FM_SERVER,
@@ -213,20 +218,23 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
         onWarning: () => undefined,
       }).catch((error: unknown) => error);
 
-      expect(failure).toBeInstanceOf(ProbeInProgressError);
-      expect(fs.existsSync(instance.socketPath)).toBe(false);
+      expect(outcome).not.toBeInstanceOf(Error);
+      expect(gateway.probes()).toHaveLength(1);
+      expect(gateway.recordExists()).toBe(true);
+      expect(fs.readdirSync(gateway.probeDir).filter((name) => name.endsWith('.tmp'))).toEqual([]);
     });
 
-    it('starts no probe in the gateway while another process holds the probe lock of the key, and starts one after it is released', async () => {
-      const gateway = await setup();
+    it('starts the gateway flight while another process holds the key lock, and writes the record only after the lock is released', async () => {
+      const gateway = await setup({ probe: 'complete' });
       const held = await acquireProbeLock(gateway.probeDir, lockKeyOf(gateway.keyNow()), 'fm');
 
       expectProbing(await gateway.send(true));
-      expect(gateway.probes()).toEqual([]);
+      await probeStarted(gateway);
+      await until(async () => !isAlive(gateway.probes()[0]?.pid ?? 0), 'the probe server of the flight to stop');
+      expect(gateway.recordExists()).toBe(false);
 
       held.release();
-      expectProbing(await gateway.send(true));
-      await probeStarted(gateway);
+      await until(gateway.recordExists, 'the probe record is written');
     });
 
     it('refuses a second holder of the same key in the same process', async () => {
@@ -251,7 +259,7 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
   });
 
   describe('P5 FailedWritesNothing and P9 NoProbeInBackoff', () => {
-    it('writes no record when the probe fails, answers 503 with the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
+    it('writes no record when the probe fails, answers 503 target_probe_failed with the cause and the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
       const clock = createFakeClock(START_MS);
       const gateway = await setup({ clock, probe: 'fail' });
       expectProbing(await gateway.send(false));
@@ -260,7 +268,10 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       clock.advance(30_000);
 
       const inside = await gateway.sendRaw(false);
-      expectProbing(await readJson(inside));
+      const failed = await readJson(inside);
+      expect(failed.status).toBe(503);
+      expect(failed.body.error.code).toBe('target_probe_failed');
+      expect(failed.body.error.message).toMatch(/^measuring this model failed: \S/);
       expect(inside.headers['retry-after']).toBe('90');
       expect(gateway.probes()).toHaveLength(1);
       expect(gateway.anyRecord()).toBe(false);
@@ -290,16 +301,26 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
   });
 
   describe('P6 RecordMatchesKey', () => {
-    it('sees a replaced binary at the next request through its file identity, and probes the new key', async () => {
+    it('keeps answering from the start key while its instance runs after the binary is replaced, and probes the new key when the instance next starts (19.11-a)', async () => {
       const gateway = await setup({ probe: 'complete' });
       expectProbing(await gateway.send(false));
       await until(gateway.recordExists, 'the probe record is written');
       expect((await gateway.send(false)).status).toBe(200);
       const before = gateway.keyNow();
+      const serving = gateway.servings();
+      expect(serving).toHaveLength(1);
 
       gateway.replaceBinary();
 
       expect(gateway.keyNow().digest).not.toBe(before.digest);
+      expect((await gateway.send(false)).status).toBe(200);
+      expect(gateway.probes()).toHaveLength(1);
+      expect(gateway.recordExists()).toBe(false);
+
+      const child = (serving[0] as DumpRecord).pid;
+      process.kill(child, 'SIGKILL');
+      await until(() => !isAlive(child), 'the serving child to end');
+
       expectProbing(await gateway.send(false));
       await until(gateway.recordExists, 'the probe record of the new key is written');
       expect(gateway.probes()).toHaveLength(2);
@@ -341,8 +362,16 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       const markers = path.join(gateway.home, '.momonga', 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', '_probe-fm');
 
       expectProbing(await gateway.send(false));
-      await until(() => fs.existsSync(markers) && fs.readdirSync(markers).length === 1, 'the probe fm serve is marked');
-      const pgid = await readMarkerGroup(path.join(markers, fs.readdirSync(markers)[0] as string));
+      const markerFile = (): string | undefined => {
+        if (!fs.existsSync(markers)) return undefined;
+        const entries = fs.readdirSync(markers);
+        return entries.length === 1 ? path.join(markers, entries[0] as string) : undefined;
+      };
+      await until(async () => {
+        const file = markerFile();
+        return file !== undefined && (await readMarkerGroup(file)) !== undefined;
+      }, 'the probe marker records the process group of the probe fm serve');
+      const pgid = await readMarkerGroup(markerFile() as string);
       if (pgid === undefined) throw new Error('the probe marker records no process group');
       registerCleanup(() => killGroupsForCleanup([pgid]));
 
@@ -365,6 +394,7 @@ type InstanceProbeOptions = {
   dir: string;
   measure: (signal: AbortSignal) => Promise<Report>;
   retryAfterMs: number;
+  clock: { now(): number };
   onNotice: (text: string) => void;
 };
 
@@ -400,6 +430,7 @@ const setupInstance = () => {
       return next.promise;
     },
     retryAfterMs: RETRY_AFTER_MS,
+    clock: { now: () => 0 },
     onNotice: (text) => notices.push(text),
   });
   return { probe, notices, pending, dir };

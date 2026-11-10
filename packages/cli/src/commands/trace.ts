@@ -1,10 +1,9 @@
-import { currentSocketResolver, describeFallbackCause } from '@momonga/foundation';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries } from '@momonga/protocol';
-import type { FallbackCauseView, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
+import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries, describeFallbackCause, isFallbackCauseList } from '@momonga/protocol';
+import type { FallbackCause, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -13,11 +12,13 @@ import { latestRunIdOf } from './targets.ts';
 const childrenOf = (spans: readonly RunTraceSpan[], parent: string | null): RunTraceSpan[] =>
   spans.filter((span) => span.parentSpanId === parent).sort((left, right) => left.startMs - right.startMs);
 
-const fallbackCausesOf = (span: RunTraceSpan): FallbackCauseView[] => {
+const fallbackCausesOf = (span: RunTraceSpan): FallbackCause[] => {
   const value = span.attributes[MOMONGA_ATTRIBUTES.fallbackCauses];
   if (value === undefined) return [];
   if (typeof value !== 'string') throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must be a string`);
-  return JSON.parse(value) as FallbackCauseView[];
+  const causes: unknown = JSON.parse(value);
+  if (!isFallbackCauseList(causes)) throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must hold a list of fallback causes`);
+  return causes;
 };
 
 const chatDetail = (span: RunTraceSpan): string => {
@@ -76,7 +77,7 @@ export const renderTrace = (trace: RunTraceView, usage: UsageReport): string => 
 };
 
 export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: string | undefined, json: boolean): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const client = connectRuntime(paths);
   try {
     const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));

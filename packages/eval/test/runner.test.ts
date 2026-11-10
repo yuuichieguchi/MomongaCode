@@ -53,7 +53,7 @@ describe('runDataset', () => {
       { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', runs: 3, graders: [{ kind: 'finalTextEquals', text: 'hi' }] })] },
       { ...shared(scripted.api), onTranscript: async (transcript) => void stored.push(`${transcript.caseId}.${transcript.runIndex}`) },
     );
-    expect(scripted.sessions).toEqual(['default', 'default', 'default']);
+    expect(scripted.sessions).toEqual(['manual', 'manual', 'manual']);
     expect(stored).toEqual(['answer.0', 'answer.1', 'answer.2']);
     expect(report.cases[0]?.passRate).toMatchObject({ successes: 3, trials: 3 });
     expect(report.passed).toBe(true);

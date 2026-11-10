@@ -1,0 +1,10 @@
+export const MAX_SEQUENCE_BYTES = 256;
+export const PASTE_MAX_BYTES = 1024 * 1024;
+export const PASTE_ABANDON_BYTES = 8 * 1024 * 1024;
+export const KITTY_FLAGS = 7;
+export const MIN_COLUMNS = 20;
+export const MIN_ROWS = 6;
+export const PASTE_TOO_LARGE_NOTICE = 'The paste was larger than 1 MiB and was not inserted.';
+export const NO_FULLSCREEN_NOTICE = 'This terminal does not support the full screen; using its own history.';
+export const WINDOW_TOO_SMALL = 'Window too small';
+export const HANDOVER_TERMINAL_ENV = 'MOMONGA_HANDOVER_TERMINAL';

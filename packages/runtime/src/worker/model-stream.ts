@@ -1,7 +1,7 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ResponseResource, StreamEvent, Usage } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, PlanAccountRef, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
-import { carriesOutput } from '@momonga/protocol';
+import { carriesOutput, planAccountRefOf, reportedCachedTokensOf } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
@@ -12,7 +12,7 @@ const FLUSH_BYTES = 1024;
 
 export type ModelResult =
   | { kind: 'response'; response: ResponseResource; incomplete: boolean }
-  | { kind: 'failed'; code: string; message: string; retryable: boolean };
+  | { kind: 'failed'; code: string; message: string; retryable: boolean; plan?: PlanAccountRef };
 
 type DeltaType = 'agent.message.delta' | 'agent.thought.delta';
 
@@ -83,18 +83,39 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
       return { kind: 'response', response: event.response, incomplete: false };
     case 'response.incomplete':
       return { kind: 'response', response: event.response, incomplete: true };
-    case 'response.failed':
-      return { kind: 'failed', code: event.response.error.code, message: event.response.error.message, retryable: event.response.momonga?.retryable === true };
+    case 'response.failed': {
+      const plan = planAccountRefOf(event.response.error.plan);
+      return {
+        kind: 'failed',
+        code: event.response.error.code,
+        message: event.response.error.message,
+        retryable: event.response.momonga?.retryable === true,
+        ...(plan === undefined ? {} : { plan }),
+      };
+    }
     default:
       return undefined;
   }
 };
 
-export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
+export const cachedInputOf = (usage: Usage, extension: { cacheReadNotReported?: true } | undefined): { cachedInputTokens?: number } => {
+  const cachedInputTokens = reportedCachedTokensOf(usage, extension);
+  return cachedInputTokens === undefined ? {} : { cachedInputTokens };
+};
+
+export type BilledExtension = { cacheReadNotReported?: true; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome };
+
+export const priceOutcomeOf = (extension: BilledExtension | undefined): { cost: ModelCost } | { unpriced: UnpricedOutcome } | Record<string, never> => {
+  if (extension?.cost !== undefined) return { cost: extension.cost };
+  if (extension?.unpriced !== undefined) return { unpriced: extension.unpriced };
+  return {};
+};
+
+export const billedDetailOf = (usage: Usage | null, extension: BilledExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
   responseId,
-  ...(usage === null ? {} : { cachedInputTokens: usage.input_tokens_details.cached_tokens }),
+  ...(usage === null ? {} : cachedInputOf(usage, extension)),
   ...(extension?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: extension.cacheWriteInputTokens }),
-  ...(extension?.cost === undefined ? {} : { cost: extension.cost }),
+  ...priceOutcomeOf(extension),
   timing,
 });
 

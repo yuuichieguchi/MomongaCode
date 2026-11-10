@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import { SandboxPolicyError, buildSeatbeltProfile, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { makeTempDir } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const created: string[] = [];
 
@@ -78,7 +80,7 @@ describe('SandboxPolicyError codes from buildSeatbeltProfile', () => {
   });
 });
 
-describe.runIf(process.platform === 'darwin')('SandboxPolicyError codes from the seatbelt spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('SandboxPolicyError codes from the seatbelt spawn', () => {
   it('writable_root_missing for a writable root that does not exist', () => {
     const dirs = base();
     const sandbox = createSeatbeltSandbox({ tmpRoot: dirs.spawnTmp, killGraceMs: 300 });

@@ -1,5 +1,7 @@
 import type { SchemaNarrowing } from './dialect.ts';
-import type { ModelCost } from './token-anatomy.ts';
+import type { FallbackCause } from './fallback-cause.ts';
+import type { PlanAccountRef } from './plan-account.ts';
+import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
 
@@ -38,7 +40,7 @@ export type StreamEventType = (typeof OPEN_RESPONSES_STREAM_EVENT_TYPES)[number]
 export type TerminalStreamEventType = (typeof TERMINAL_STREAM_EVENT_TYPES)[number];
 export type ErrorType = (typeof ERROR_TYPES)[number];
 
-export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null };
+export type ErrorBody = { message: string; type: ErrorType; param: string | null; code: string | null; plan?: PlanAccountRef };
 export type ErrorEnvelope = { error: ErrorBody };
 
 export type Annotation = { type: string; [key: string]: unknown };
@@ -195,11 +197,26 @@ export type Usage = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
-  input_tokens_details: { cached_tokens: number };
+  input_tokens_details: { cached_tokens?: number };
   output_tokens_details: { reasoning_tokens: number };
 };
 
-export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
+export const cachedDetailOf = (cachedTokens: number | undefined): Usage['input_tokens_details'] =>
+  cachedTokens === undefined ? {} : { cached_tokens: cachedTokens };
+
+export type WireUsage = Omit<Usage, 'input_tokens_details'> & { input_tokens_details: { cached_tokens: number } };
+
+export const wireUsageOf = (usage: Usage): { usage: WireUsage; cacheReadNotReported?: true } =>
+  usage.input_tokens_details.cached_tokens === undefined
+    ? { usage: { ...usage, input_tokens_details: { cached_tokens: 0 } }, cacheReadNotReported: true }
+    : { usage: { ...usage, input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens } } };
+
+export const reportedCachedTokensOf = (
+  usage: { input_tokens_details?: { cached_tokens?: number } },
+  extension: { cacheReadNotReported?: true } | undefined,
+): number | undefined => (extension?.cacheReadNotReported === true ? undefined : usage.input_tokens_details?.cached_tokens);
+
+export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number; plan?: PlanAccountRef };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
@@ -213,13 +230,15 @@ export type MomongaResponseExtension = {
   counter: string;
   attempts: number;
   fallbackFrom?: string[];
-  fallbackCauses?: { target: string; code: string | null; message: string }[];
+  fallbackCauses?: FallbackCause[];
   schemaNarrowings?: SchemaNarrowing[];
   jsonReply?: JsonReplyPath;
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
+  cacheReadNotReported?: true;
   cost?: ModelCost;
+  unpriced?: UnpricedOutcome;
   retryable?: boolean;
 };
 
@@ -382,7 +401,7 @@ export const carriesOutput = (event: StreamEvent): boolean =>
   event.type === 'response.function_call_arguments.delta' ||
   (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
-export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
+export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string; instructions?: string };
 
 export type CompactRequest = {
   model: string;
@@ -399,5 +418,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
-  momonga?: { target: string; cacheWriteInputTokens?: number; cost?: ModelCost };
+  momonga: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
 };

@@ -98,6 +98,19 @@
 (*     next) and by a give-up earlier in this refresh. dCause is always the *)
 (*     server code (LegacyCause = TRUE restores the old behaviour:         *)
 (*     refresh_interrupted whenever dPend is set)                          *)
+(*   - a sign-out left unfinished is resumed in the code only when         *)
+(*     something loads the account (a request, a listing, the start of a   *)
+(*     sign-in); no timer does it. SoReload is weakly fair in the model, so*)
+(*     SigningOutResolves holds in the code only if such a load happens    *)
+(*   - after SoAbort the code drops its memory copy and reads the record   *)
+(*     again from the disk at the next load; the model keeps the memory    *)
+(*     copy. The two are equal because the signing_out write               *)
+(*     (packages/gateway/src/plan/session.ts:757) precedes every point at  *)
+(*     which a sign-out can be aborted (session.ts:763-774, the revocation,*)
+(*     is the first)                                                       *)
+(*   - pause and resume write the record through the persist steps: they   *)
+(*     can set the dirty flag or store_unwritable with no token change. The*)
+(*     paused field of the record is abstracted away                       *)
 (* Counters bound every fault: crashes, answers given up, disconnects,     *)
 (* sign-ins, sign-outs, failed persists, spurious 401, failed revocations. *)
 (*                                                                         *)
@@ -192,6 +205,11 @@
 (*                               written: PersistBeforeForget refuted      *)
 (*   PlanCredential.signOutNoWait  sign-out does not wait for the mutex:   *)
 (*                               SignOutFinal refuted                      *)
+(*   PlanCredential.signOutAbort  a sign-out ended without an outcome   *)
+(*                               is resumed at the next load:              *)
+(*                               SigningOutResolves holds                  *)
+(*   PlanCredential.signOutNoReload  nothing resumes it: SigningOutResolves *)
+(*                               refuted                                   *)
 (*   PlanCredential.noCoalesceGen     a 401 on an older generation forces  *)
 (*                               a refresh: Coalesced refuted              *)
 (*   PlanCredential.noCoalesceForced  a 401 on the current generation      *)
@@ -235,7 +253,7 @@ EXTENDS Integers, FiniteSets, Sequences
 CONSTANTS
     Reqs, SecondReqs, SecondAcct,
     MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut,
-    MaxPersistFail, MaxReject, MaxRevokeFail,
+    MaxPersistFail, MaxReject, MaxRevokeFail, MaxSoAbort, ResumeAtLoad,
     UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent,
     PinIdentity, GateConfirm, MaxResend,
     MaxDetFail, MaxUnreadable, RefreshWhenUnwritable, UnreadableAsSignIn,
@@ -249,8 +267,8 @@ AcctSub == [a \in Accts |-> IF a = "a1" THEN "s1" ELSE "s2"]
 AcctClient == [a \in Accts |-> IF a = "a1" THEN 1 ELSE 2]
 ReqAcct == [r \in Reqs |-> IF r \in SecondReqs THEN "a2" ELSE "a1"]
 
-ASSUME \A c \in {MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut, MaxPersistFail, MaxReject, MaxRevokeFail} : c \in Nat
-ASSUME \A c \in {UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent, PinIdentity, GateConfirm} : c \in BOOLEAN
+ASSUME \A c \in {MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut, MaxPersistFail, MaxReject, MaxRevokeFail, MaxSoAbort} : c \in Nat
+ASSUME \A c \in {UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent, PinIdentity, GateConfirm, ResumeAtLoad} : c \in BOOLEAN
 ASSUME \A c \in {MaxResend, MaxDetFail, MaxUnreadable} : c \in Nat
 ASSUME \A c \in {RefreshWhenUnwritable, UnreadableAsSignIn} : c \in BOOLEAN
 ASSUME LegacyCause \in BOOLEAN
@@ -278,7 +296,7 @@ VARIABLES
     rph, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres,
     inPh, inCand, inSrc, outPh, prPh,
     clock,
-    crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads,
+    crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts,
     unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut,
     noadopts, dropped, silentRot, dInt, rint
 
@@ -289,7 +307,7 @@ netVars == <<net, pktN>>
 lockVars == <<holder, waitq>>
 reqVars == <<rph, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres>>
 actVars == <<inPh, inCand, inSrc, outPh, prPh>>
-budgetVars == <<crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads>>
+budgetVars == <<crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts>>
 ghostVars == <<unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
 extraVars == <<noadopts, dropped, silentRot, dInt, rint>>
 vars == <<diskVars, memVars, srvVars, netVars, lockVars, reqVars, actVars, clock, budgetVars, ghostVars, extraVars>>
@@ -339,7 +357,7 @@ Init ==
     /\ prPh = [a \in Accts |-> "none"]
     /\ clock = 0
     /\ crashes = 0 /\ giveups = 0 /\ discs = 0 /\ signins = 0
-    /\ signouts = 0 /\ pfails = 0 /\ rejects = 0 /\ rvfails = 0 /\ detFails = 0 /\ unreads = 0
+    /\ signouts = 0 /\ pfails = 0 /\ rejects = 0 /\ rvfails = 0 /\ detFails = 0 /\ unreads = 0 /\ soAborts = 0
     /\ unreadMark = [a \in Accts |-> FALSE]
     /\ slack = [a \in Accts |-> [t \in Toks |-> 0]]
     /\ acked = [a \in Accts |-> {}]
@@ -525,7 +543,7 @@ ReqGiveUp(r) ==
                             ELSE Finish(r, "unavailable") /\ UNCHANGED <<rgen, startedAfterOut>>
                      ELSE Finish(r, "rejected") /\ UNCHANGED <<rgen, startedAfterOut>>
         /\ rint' = Set(rint, r, TRUE)
-        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rretried, actVars, clock, unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, crashes, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, noadopts, dropped, silentRot, dInt>>
+        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rretried, actVars, clock, unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, crashes, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts, noadopts, dropped, silentRot, dInt>>
 
 ReqRetry(r) ==
     LET a == ReqAcct[r]
@@ -540,7 +558,7 @@ ReqRetry(r) ==
         /\ rph' = Set(rph, r, "send")
         /\ rtry' = Set(rtry, r, rtry[r] + 1)
         /\ rint' = Set(rint, r, TRUE)
-        /\ UNCHANGED <<diskVars, memVars, srvVars, pktN, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut, crashes, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, noadopts, dropped, silentRot, dInt>>
+        /\ UNCHANGED <<diskVars, memVars, srvVars, pktN, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut, crashes, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts, noadopts, dropped, silentRot, dInt>>
 
 ReqWeak(r) ==
     LET a == ReqAcct[r]
@@ -623,12 +641,12 @@ ReqPersist(r) ==
           /\ mUnwr' = Set(mUnwr, a, TRUE)
           /\ detFails' = IF mUnwr[a] THEN detFails ELSE detFails + 1
           /\ UNCHANGED <<dState, dGen, dRt, dCause, dPend, dIss, pfails>>
-    /\ UNCHANGED <<dSub, dClient, dFam, mForced, srvVars, netVars, rpur, rtok, rtry, rpkt, rgot, rres, actVars, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, unreads, unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
+    /\ UNCHANGED <<dSub, dClient, dFam, mForced, srvVars, netVars, rpur, rtok, rtry, rpkt, rgot, rres, actVars, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, unreads, soAborts, unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
 
 ReqResult(r) ==
     LET a == ReqAcct[r] IN
     /\ rph[r] = "inflight"
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rtry, rpkt, rgot, rgen, actVars, clock, crashes, giveups, discs, signins, signouts, pfails, rvfails, detFails, unreads, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rtry, rpkt, rgot, rgen, actVars, clock, crashes, giveups, discs, signins, signouts, pfails, rvfails, detFails, unreads, soAborts, ghostVars>>
     /\ \/ /\ Finish(r, "served") /\ UNCHANGED <<waitq, rretried, rejects>>
        \/ /\ sRev[a] \/ rejects < MaxReject
           /\ rejects' = IF sRev[a] THEN rejects ELSE rejects + 1
@@ -668,7 +686,7 @@ SiStart(a) ==
     /\ inPh' = Set(inPh, a, "want")
     /\ Enqueue(a, "in")
     /\ signins' = signins + 1
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, outPh, prPh, clock, crashes, giveups, discs, signouts, pfails, rejects, rvfails, detFails, unreads, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, outPh, prPh, clock, crashes, giveups, discs, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts, ghostVars>>
 
 SiGrant(a) ==
     /\ inPh[a] = "want" /\ CanTake(a, "in")
@@ -706,7 +724,7 @@ SoStart(a) ==
     /\ outPh' = Set(outPh, a, "want")
     /\ signouts' = signouts + 1
     /\ IF SignOutWaits THEN Enqueue(a, "out") ELSE UNCHANGED waitq
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, pfails, rejects, rvfails, detFails, unreads, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, pfails, rejects, rvfails, detFails, unreads, soAborts, ghostVars>>
 
 SoGrant(a) ==
     /\ outPh[a] = "want"
@@ -732,7 +750,7 @@ SoRevoke(a) ==
           /\ rvfails' = rvfails + 1
           /\ outConfirmed' = Set(outConfirmed, a, "no")
           /\ UNCHANGED sRev
-    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, signouts, pfails, rejects, detFails, unreads>>
+    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, signouts, pfails, rejects, detFails, unreads, soAborts>>
     /\ UNCHANGED <<unreadMark, slack, acked, badSend, forcedCnt, soDone, lossKind, startedAfterOut>>
 
 SoClear(a) ==
@@ -749,6 +767,22 @@ SoClear(a) ==
     /\ outPh' = Set(outPh, a, "none")
     /\ IF SignOutWaits THEN Release(a) ELSE UNCHANGED lockVars
     /\ UNCHANGED <<dGen, dIss, dSub, dClient, dFam, mGen, mIss, mForced, mUnwr, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, budgetVars, unreadMark, slack, acked, badSend, forcedCnt, outConfirmed, startedAfterOut>>
+
+SoAbort(a) ==
+    /\ outPh[a] \in {"revoke", "clear"} /\ soAborts < MaxSoAbort
+    /\ soAborts' = soAborts + 1
+    /\ outPh' = Set(outPh, a, "none")
+    /\ IF SignOutWaits THEN Release(a) ELSE UNCHANGED lockVars
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads, ghostVars>>
+
+SoReload(a) ==
+    /\ ResumeAtLoad
+    /\ dState[a] = "signing_out" /\ mState[a] = "signing_out" /\ outPh[a] = "none"
+    /\ IF SignOutWaits /\ UseMutex
+        THEN holder[a] = None /\ holder' = [holder EXCEPT ![a] = "out"] /\ UNCHANGED waitq
+        ELSE UNCHANGED lockVars
+    /\ outPh' = Set(outPh, a, IF dRt[a] = 0 THEN "clear" ELSE "revoke")
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, budgetVars, ghostVars>>
 
 -----------------------------------------------------------------------------
 (* Persist retry *)
@@ -787,7 +821,7 @@ PrWrite(a) ==
           /\ mUnwr' = Set(mUnwr, a, TRUE)
           /\ detFails' = IF mUnwr[a] THEN detFails ELSE detFails + 1
           /\ UNCHANGED <<dState, dGen, dRt, dCause, dPend, dIss, mDirty, pfails>>
-    /\ UNCHANGED <<dSub, dClient, dFam, mState, mGen, mRt, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, inSrc, outPh, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, unreads, ghostVars>>
+    /\ UNCHANGED <<dSub, dClient, dFam, mState, mGen, mRt, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, inSrc, outPh, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, unreads, soAborts, ghostVars>>
 
 -----------------------------------------------------------------------------
 (* Faults *)
@@ -796,7 +830,7 @@ Disc(a) ==
     /\ discs < MaxDisc
     /\ discs' = discs + 1
     /\ sRev' = Set(sRev, a, TRUE)
-    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, actVars, clock, crashes, giveups, signins, signouts, pfails, rejects, rvfails, detFails, unreads, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, actVars, clock, crashes, giveups, signins, signouts, pfails, rejects, rvfails, detFails, unreads, soAborts, ghostVars>>
 
 Crash ==
     /\ crashes < MaxCrash
@@ -826,7 +860,7 @@ Crash ==
     /\ inPh' = [a \in Accts |-> "none"]
     /\ prPh' = [a \in Accts |-> "none"]
     /\ forcedCnt' = [a \in Accts |-> [g \in Gens |-> 0]]
-    /\ UNCHANGED <<diskVars, srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, inCand, inSrc, clock, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails>>
+    /\ UNCHANGED <<diskVars, srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, inCand, inSrc, clock, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, soAborts>>
     /\ UNCHANGED <<badSend, soDone, outConfirmed, lossKind, startedAfterOut>>
 
 AllDone == \A r \in Reqs : rph[r] = "done"
@@ -839,7 +873,7 @@ Next ==
                        \/ ReqForget(r) \/ ReqPersist(r) \/ ReqResult(r) \/ ForceGrant(r))
                        \/ ReqPend(r) \/ ReqRecv(r) \/ ReqGiveUp(r) \/ ReqRetry(r) \/ ReqWeak(r)
     \/ \E p \in net : Deliver(p)
-    \/ \E a \in Accts : Quiet(SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a)
+    \/ \E a \in Accts : Quiet(SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a) \/ SoAbort(a) \/ SoReload(a)
                         \/ PrStart(a) \/ PrGrant(a) \/ PrWrite(a) \/ Disc(a))
     \/ Quiet(Crash)
     \/ Terminated
@@ -850,7 +884,7 @@ Fairness ==
                        /\ WF_vars(Quiet(ReqResult(r))) /\ WF_vars(Quiet(ForceGrant(r))) /\ WF_vars(ReqWeak(r))
     /\ WF_vars(\E p \in net : Deliver(p))
     /\ \A a \in Accts : WF_vars(Quiet(SiGrant(a))) /\ WF_vars(Quiet(SiInstall(a))) /\ WF_vars(Quiet(SoGrant(a))) /\ WF_vars(Quiet(SoRevoke(a)))
-                        /\ WF_vars(Quiet(SoClear(a))) /\ WF_vars(Quiet(PrGrant(a))) /\ WF_vars(Quiet(PrWrite(a)))
+                        /\ WF_vars(Quiet(SoClear(a))) /\ WF_vars(Quiet(SoReload(a))) /\ WF_vars(Quiet(PrGrant(a))) /\ WF_vars(Quiet(PrWrite(a)))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -924,6 +958,8 @@ SignOutRevokesFamily ==
     \A a \in Accts : (soDone[a] /\ outConfirmed[a] = "yes") => sRev[a]
 
 Settles == \A r \in Reqs : rph[r] # "idle" ~> rph[r] = "done"
+
+SigningOutResolves == \A a \in Accts : dState[a] = "signing_out" ~> dState[a] # "signing_out"
 
 AllServed == <>(\A r \in Reqs : rres[r] = "served")
 

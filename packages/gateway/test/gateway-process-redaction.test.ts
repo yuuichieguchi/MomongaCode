@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClient, decodeSse, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import {
   REDACTED,
@@ -21,6 +21,8 @@ import {
   expectRedacted,
 } from './credential-support.ts';
 import { placeFakeFm } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const body = { model: 'fast', input: userInput('hi') };
@@ -63,18 +65,19 @@ const startKeyedStack = async (
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', routes: [{ match: () => true, reply }] });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) } },
   });
   const log = captureLog();
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   let closed = false;
   registerCleanup(
     context,
@@ -125,7 +128,7 @@ const sseFramesOf = async (client: UdsClient, payload: unknown): Promise<string[
   return frames;
 };
 
-describe('T1: a 401 echo of the configured key', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T1: a 401 echo of the configured key', () => {
   it.for([false, true])('is redacted in the response with stream %s, and logs and DB bytes stay clean', async (stream, context) => {
     const stack = await startKeyedStack(context, echo401(`Incorrect API key provided: ${TEST_API_KEY}`));
     const response = await post(stack.client, { ...body, stream });
@@ -161,7 +164,7 @@ describe('T1: a 401 echo of the configured key', { timeout: REAL_PROCESS_TEST_TI
   });
 });
 
-describe('T2: no cut before redaction, and the 64 KiB read drops a cut token', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T2: no cut before redaction, and the 64 KiB read drops a cut token', () => {
   it('redacts a key at character 485 of a 700-character non-JSON body and keeps the rest of the body', async (context) => {
     const tail = 'END-OF-BODY';
     const raw = `${'w'.repeat(484)}${TEST_API_KEY}${'w'.repeat(183)}${tail}`;
@@ -192,7 +195,7 @@ describe('T2: no cut before redaction, and the 64 KiB read drops a cut token', {
   });
 });
 
-describe('T2: the 64 KiB read drops a cut token that carries an escape', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T2: the 64 KiB read drops a cut token that carries an escape', () => {
   it('drops a key echoed with \\/ escapes when the cut lands after the escape', async (context) => {
     const key = 'momonga/test/api-key-01';
     const echoed = key.replaceAll('/', '\\/');
@@ -211,8 +214,8 @@ describe('T2: the 64 KiB read drops a cut token that carries an escape', { timeo
   });
 });
 
-describe('T3: upstream text inside the stream', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('keeps a mid-stream {"error":…} chunk text out of the output (P3a stays closed)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async (context) => {
+describe('T3: upstream text inside the stream', () => {
+  it('keeps a mid-stream {"error":…} chunk text out of the output (P3a stays closed)', async (context) => {
     const upstreamText = `upstream said ${TEST_API_KEY}`;
     const reply: FakeScriptedReply = {
       kind: 'raw-sse',
@@ -252,7 +255,7 @@ describe('T3: upstream text inside the stream', { timeout: REAL_PROCESS_TEST_TIM
   });
 });
 
-describe('T4: compaction over the process gateway', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T4: compaction over the process gateway', () => {
   it('redacts the 401 echo on /v1/responses/compact', async (context) => {
     const stack = await startKeyedStack(context, echo401(`Incorrect API key provided: ${TEST_API_KEY}`));
     const response = await stack.client.request({
@@ -299,6 +302,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     return killGroupsForCleanup(pids);
   });
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], keyed: ['cc'] },
@@ -306,7 +310,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     },
   });
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),
@@ -315,7 +319,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     ...(options.execWithStdin === undefined ? {} : { execWithStdin: options.execWithStdin }),
     stdout: { write: () => true },
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: captureLog() }),
-  });
+  }));
   registerCleanup(
     context,
     async () => {
@@ -328,7 +332,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   return { client };
 };
 
-describe('T5: fm text with a configured key on another target', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('T5: fm text with a configured key on another target', () => {
   it('redacts the fm license output in GET /v1/momonga/health', async (context) => {
     const exec: FmStackOptions['exec'] = async (file, args) =>
       args[0] === 'license' ? { exitCode: 1, stdout: `license status: ${TEST_API_KEY}`, stderr: '' } : fakeExec(file, args);

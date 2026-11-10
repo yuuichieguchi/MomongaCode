@@ -1,4 +1,4 @@
-import { execFile, execFileSync, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawnSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -190,7 +190,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
 
   afterAll(async () => {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   type Run = { readonly code: number; readonly stdout: string; readonly stderr: string };

@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { FunctionCallItem, ItemField, MessageItem, ResponseResource, RunEventPayload, StreamEvent, Usage } from '@momonga/protocol';
+import type { FunctionCallItem, ItemField, MessageItem, PlanAccountRef, ResponseResource, RunEventPayload, StreamEvent, Usage } from '@momonga/protocol';
 import { responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { ScriptStep } from './fake-gateway.ts';
@@ -120,9 +120,9 @@ export const incompleteStep = (output: ItemField[], reason = 'max_output_tokens'
   ...autoFlag(usage),
 });
 
-export const failedStep = (code: string, type: 'server_error' | 'model_error' | 'too_many_requests' = 'server_error'): ScriptStep => {
+export const failedStep = (code: string, type: 'server_error' | 'model_error' | 'too_many_requests' = 'server_error', plan?: PlanAccountRef): ScriptStep => {
   const base = responseResource({ id: nextResponseId(), model: MODEL_ALIAS, status: 'failed' });
-  const error = { code, message: `upstream failed with ${code}`, type };
+  const error = { code, message: `upstream failed with ${code}`, type, ...(plan === undefined ? {} : { plan }) };
   return {
     events: numbered([created(), { type: 'response.failed', sequence_number: 0, response: { ...base, error } }]),
   };

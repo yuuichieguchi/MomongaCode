@@ -39,7 +39,7 @@ const input = (layout: Layout, tool: PolicyTool, subject: PermissionSubject, mod
 const writeSubject = (tool: string, target: string): PermissionSubject => ({ kind: 'path', tool, paths: [target], access: 'write' });
 
 describe('protected paths', () => {
-  it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)('asks before writing inside a protected directory in %s mode', (mode) => {
+  it.each(['manual', 'acceptEdits', 'bypassPermissions'] as const)('asks before writing inside a protected directory in %s mode', (mode) => {
     const { layout, gitDir } = setup();
     const target = path.join(gitDir, 'config');
     const decision = decide(input(layout, WRITE, writeSubject('Write', target), mode, [gitDir]));
@@ -48,7 +48,7 @@ describe('protected paths', () => {
     expect(decision.reason).toContain(gitDir);
   });
 
-  it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)('asks before editing a protected file itself in %s mode', (mode) => {
+  it.each(['manual', 'acceptEdits', 'bypassPermissions'] as const)('asks before editing a protected file itself in %s mode', (mode) => {
     const { layout, settingsFile } = setup();
     const decision = decide(input(layout, EDIT, writeSubject('Edit', settingsFile), mode, [settingsFile]));
     expect(decision).toMatchObject({ kind: 'ask', source: 'protected' });
@@ -90,14 +90,14 @@ describe('protected paths', () => {
   it('does not let allow rules override the protected ask', () => {
     const { layout, gitDir } = setup();
     const rules = [ruleIn(layout)('allow', 'Write'), ruleIn(layout)('allow', `Write(/${gitDir}/**)`)];
-    const decision = decide(input(layout, WRITE, writeSubject('Write', path.join(gitDir, 'config')), 'default', [gitDir], { rules }));
+    const decision = decide(input(layout, WRITE, writeSubject('Write', path.join(gitDir, 'config')), 'manual', [gitDir], { rules }));
     expect(decision).toMatchObject({ kind: 'ask', source: 'protected' });
   });
 
   it('leaves reads of protected paths unaffected', () => {
     const { layout, gitDir } = setup();
     const subject: PermissionSubject = { kind: 'path', tool: 'Read', paths: [path.join(gitDir, 'config')], access: 'read' };
-    expect(decide(input(layout, READ, subject, 'default', [gitDir]))).toMatchObject({ kind: 'allow', source: 'mode' });
+    expect(decide(input(layout, READ, subject, 'manual', [gitDir]))).toMatchObject({ kind: 'allow', source: 'mode' });
   });
 
   it('behaves as before when no protected paths are given', () => {
@@ -158,7 +158,7 @@ describe('protected paths', () => {
       return evil;
     };
 
-    it.each(['default', 'acceptEdits', 'bypassPermissions'] as const)('asks for a dangling symlink into a protected directory in %s mode', (mode) => {
+    it.each(['manual', 'acceptEdits', 'bypassPermissions'] as const)('asks for a dangling symlink into a protected directory in %s mode', (mode) => {
       const { layout, gitDir } = setup();
       const evil = dangling(layout, gitDir);
       expect(decide(input(layout, WRITE, writeSubject('Write', evil), mode, [gitDir]))).toMatchObject({ kind: 'ask', source: 'protected' });
@@ -197,12 +197,12 @@ describe('protected paths', () => {
       expect(viaLink.source).not.toBe('protected');
     });
 
-    it('asks for a dangling symlink whose target is outside the roots in default mode', () => {
+    it('asks for a dangling symlink whose target is outside the roots in manual mode', () => {
       const { layout, gitDir } = setup();
       const { link, target } = danglingOutside(layout);
-      const viaLink = decide(input(layout, WRITE, writeSubject('Write', link), 'default', [gitDir]));
+      const viaLink = decide(input(layout, WRITE, writeSubject('Write', link), 'manual', [gitDir]));
       expect(viaLink.kind).toBe('ask');
-      expect(verdict(viaLink)).toEqual(verdict(decide(input(layout, WRITE, writeSubject('Write', target), 'default', [gitDir]))));
+      expect(verdict(viaLink)).toEqual(verdict(decide(input(layout, WRITE, writeSubject('Write', target), 'manual', [gitDir]))));
     });
 
     it('fails closed for a symlink loop', () => {

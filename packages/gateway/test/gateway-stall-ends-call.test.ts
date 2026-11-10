@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OutboundConnectionError } from '@momonga/foundation';
-import { createOpenResponsesAdapter } from '@momonga/gateway';
+import { createOpenResponsesAdapter, unauthenticatedSource } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
 import { createFakeClock, openResponsesStream, openResponsesTextReply, openingEvents, startFakeOpenResponses } from '@momonga/testkit';
 import type { FakeTimers, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
@@ -36,7 +36,7 @@ const openingThenSilence = (): FakeUpstreamReply => {
 const startUpstream = async (script: FakeUpstreamReply[]) => {
   const fake = await startFakeOpenResponses({ script });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ authSource: unauthenticatedSource,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
