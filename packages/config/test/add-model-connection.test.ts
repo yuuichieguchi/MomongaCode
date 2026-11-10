@@ -54,14 +54,11 @@ describe('addModelConnection, the one writer of a chosen local model', () => {
     expect(target?.['capabilities']).toMatchObject({ contextWindow: 32768, maxOutputTokens: 8192 });
   });
 
-  it('writes a managed-server description as adapter managed with its server id and no numbers, never adapter fm', async () => {
+  it('writes a managed-server description as exactly adapter managed, its server id and maxConcurrency 1, with no model and never adapter fm', async () => {
     const file = settingsFileIn();
-    const written = await addModelConnection(file, { kind: 'managed', server: 'fm', model: 'fm' });
+    const written = await addModelConnection(file, { kind: 'managed', server: 'fm' });
     const target = read(file).models.targets[written.target];
-    expect(target?.['adapter']).toBe('managed');
-    expect(target?.['server']).toBe('fm');
-    expect(target?.['maxConcurrency']).toBe(1);
-    expect(target).not.toHaveProperty('capabilities');
+    expect(target).toEqual({ adapter: 'managed', server: 'fm', maxConcurrency: 1 });
     expect(fs.readFileSync(file, 'utf8')).not.toMatch(/"adapter"\s*:\s*"fm"/);
   });
 
@@ -98,7 +95,7 @@ describe('addModelConnection, the one writer of a chosen local model', () => {
     const file = settingsFileIn();
     const ollamaTarget = (await addModelConnection(file, ollama('o-model', 4096))).target;
     const openaiTarget = (await addModelConnection(file, { kind: 'server', baseUrl: 'http://127.0.0.1:1234', shape: 'openai', model: 'c-model', contextWindow: 4096 })).target;
-    const managedTarget = (await addModelConnection(file, { kind: 'managed', server: 'fm', model: 'fm' })).target;
+    const managedTarget = (await addModelConnection(file, { kind: 'managed', server: 'fm' })).target;
     const pick = (target: Record<string, unknown> | undefined) => ({ billing: target?.['billing'], maxConcurrency: target?.['maxConcurrency'], provider: target?.['provider'] });
     const targets = read(file).models.targets;
     expect(pick(targets[ollamaTarget])).toEqual({ billing: 'local', maxConcurrency: 1, provider: undefined });

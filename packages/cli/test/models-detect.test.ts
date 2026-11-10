@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
-import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
+import { FM_SERVER, LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS } from '@momonga/protocol';
 import { detectModels, formatDetected } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
+
+vi.mock('../src/local-managed-ports.ts', () => ({
+  localManagedPorts: () => ({
+    servers: MANAGED_SERVERS,
+    exec: async (_file: string, args: readonly string[]) => (args.join(' ') === 'license --status' ? { exitCode: 69, stdout: '', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' }),
+    exists: async (file: string) => file === FM_SERVER.binary.defaultPath,
+  }),
+}));
 
 const SETTINGS_FILE = '/home/u/.momonga/settings.json';
 
@@ -44,13 +52,22 @@ describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
     expect(formatDetected([], SETTINGS_FILE)).toContain(SETTINGS_FILE);
   });
 
-  it('prints the servers as JSON', async () => {
+  it('prints the servers as JSON, the managed servers found on the host after the endpoints', async () => {
     const written: string[] = [];
     const [first] = LOCAL_SERVER_CANDIDATES;
     const served = answering({ [`${first}/v1/models`]: { data: [{ id: 'served' }] } });
 
     await detectModels(portsOf(written), pathsOf, { typed: [], json: true, interrupt: new AbortController().signal, fetch: served.fetch });
 
-    expect(JSON.parse(written.join(''))).toEqual([{ baseUrl: first, shape: 'openai', models: [{ id: 'served', tools: 'unknown' }] }]);
+    expect(JSON.parse(written.join(''))).toEqual([
+      { baseUrl: first, shape: 'openai', models: [{ id: 'served', tools: 'unknown' }] },
+      {
+        shape: 'managed',
+        id: 'fm',
+        provider: 'apple',
+        binary: '/usr/bin/fm',
+        refused: { message: 'the Apple Foundation Models licence has not been accepted', remedy: 'sudo fm license' },
+      },
+    ]);
   });
 });

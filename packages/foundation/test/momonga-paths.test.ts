@@ -44,6 +44,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     planSessions: path.join(state, 'plan-sessions'),
     planHost: path.join(state, 'plan-host.json'),
     planActive: path.join(state, 'plan-active.json'),
+    planCatalog: path.join(state, 'plan-catalog'),
     logs: path.join(root, 'logs'),
     logFiles: {
       supervisor: path.join(root, 'logs', 'supervisor.log'),

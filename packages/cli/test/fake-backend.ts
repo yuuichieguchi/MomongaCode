@@ -103,6 +103,7 @@ const NO_PLAN: PlanGatewayClient = {
   signOut: noPlanRoute('sign-out'),
   setActive: noPlanRoute('accounts/active'),
   resume: noPlanRoute('accounts/resume'),
+  resetHost: noPlanRoute('host/reset'),
   accountModels: noPlanRoute('accounts/models'),
   addTarget: noPlanRoute('accounts/targets'),
 };

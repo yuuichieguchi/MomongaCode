@@ -115,6 +115,7 @@ describe('the plan admin routes', () => {
       accountResume: '/accounts/:account/resume',
       accountModels: '/accounts/:account/models',
       accountTargets: '/accounts/:account/targets',
+      hostReset: '/host/reset',
     });
   });
 

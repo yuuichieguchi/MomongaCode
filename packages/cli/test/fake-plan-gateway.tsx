@@ -114,6 +114,17 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     },
     resume: async (label, request) => {
       called(`accounts/${label}/resume`, request);
+      const resumed = accounts.some((existing) => existing.label === label && existing.paused !== undefined);
+      accounts = accounts.map((existing) => {
+        if (existing.label !== label) return existing;
+        const { paused: _paused, ...rest } = existing;
+        return rest;
+      });
+      return { resumed };
+    },
+    resetHost: async () => {
+      called('host/reset', {});
+      return { hostId: 'host-reset-1' };
     },
     accountModels: async (label) => {
       called(`accounts/${label}/models`);
