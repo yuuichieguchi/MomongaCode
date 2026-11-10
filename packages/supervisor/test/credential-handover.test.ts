@@ -6,6 +6,7 @@ import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, createUdsClien
 import { registerCleanup } from '@momonga/testkit';
 import { chatTarget, fakeSettingsWatch, pump, pumpUntil, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, SimpleResponse } from './fixtures/p3-harness.ts';
+import { testHostPath } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -20,7 +21,7 @@ type Watched = Harness & { watch: FakeSettingsWatch; startEnv: Record<string, st
 
 const watched = async (context: CleanupContext): Promise<Watched> => {
   const watch = fakeSettingsWatch();
-  const startEnv: Record<string, string> = { PATH: '/usr/bin:/bin', LANG: 'C', [DECLARED_LATER]: ADDED_KEY_VALUE, [NEVER_DECLARED]: UNDECLARED_VALUE };
+  const startEnv: Record<string, string> = { PATH: testHostPath('/usr/bin:/bin'), LANG: 'C', [DECLARED_LATER]: ADDED_KEY_VALUE, [NEVER_DECLARED]: UNDECLARED_VALUE };
   let home = '';
   const h = await startHarness(context, {
     prepare: (prepared) => {

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation';
 
-export const TEST_SECRET_PROGRAMS_ENV = 'MOMONGA_TEST_SECRET_PROGRAMS';
+import { fakeSecretProgramsBin } from './secret-store-env-check.ts';
+
+export { TEST_SECRET_PROGRAMS_ENV, fakeSecretProgramsBin } from './secret-store-env-check.ts';
 
 const FAKE_PROGRAM_MAIN = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-secret-program-main.ts');
 
@@ -43,10 +45,5 @@ export const removeFakeSecretPrograms = (root: string): void => {
   fs.rmSync(root, { recursive: true, force: true });
 };
 
-export const fakeSecretProgramsBin = (env: Readonly<Record<string, string | undefined>> = process.env): string => {
-  const bin = env[TEST_SECRET_PROGRAMS_ENV];
-  if (bin === undefined || bin === '') throw new Error(`${TEST_SECRET_PROGRAMS_ENV} is not set; the test run's global setup installs the fake secret store programs`);
-  return bin;
-};
 
 export const testHostPath = (base: string = MINIMAL_CHILD_PATH): string => `${fakeSecretProgramsBin()}${path.delimiter}${base}`;

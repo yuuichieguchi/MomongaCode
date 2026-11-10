@@ -10,6 +10,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          setupFiles: ['test/support/child-process-guard.ts'],
           globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
         },
@@ -19,6 +20,7 @@ export default defineConfig({
         test: {
           name: 'packaging',
           include: ['scripts/**/*.test.ts'],
+          setupFiles: ['test/support/child-process-guard.ts'],
           globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/leak-guard.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
@@ -30,6 +32,7 @@ export default defineConfig({
         test: {
           name: 'e2e',
           include: ['e2e/**/*.test.ts'],
+          setupFiles: ['test/support/child-process-guard.ts'],
           globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
