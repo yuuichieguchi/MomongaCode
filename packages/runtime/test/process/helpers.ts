@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
@@ -12,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, fakeReapTiming, killGroupsForCleanup, removeTempDir } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -42,34 +41,23 @@ afterEach(async () => {
 
 export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup);
 
+export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
+  onCleanup(closeOnceStarted(started));
+  return started;
+};
+
 export type TempHome = { root: string; home: string; paths: MomongaPaths; project: string; dbPath: string };
 
 export const makeTempHome = async (): Promise<TempHome> => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mh-')));
-  onCleanup(() => {
-    restoreModes(root);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const home = path.join(root, 'h');
-  fs.mkdirSync(home, { mode: 0o700 });
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const paths = momongaPaths(home, process.platform, {});
   await ensureMomongaDirs(paths);
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   return { root, home, paths, project, dbPath: path.join(root, 's.db') };
-};
-
-const restoreModes = (directory: string): void => {
-  let entries: fs.Dirent[];
-  try {
-    fs.chmodSync(directory, 0o700);
-    entries = fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) restoreModes(path.join(directory, entry.name));
-  }
 };
 
 export const makeDir = (base: string, ...parts: string[]): string => {

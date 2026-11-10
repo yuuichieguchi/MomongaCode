@@ -1,11 +1,10 @@
 import fs from 'node:fs';
 import type net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, assertSocketPathLength, ensureMomongaDirs, generationLayout, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
-import { realProcessTestSignal } from '@momonga/testkit';
+import { createTempDir, realProcessTestSignal, removeTempDir } from '@momonga/testkit';
 import type { CommandRunner } from '@momonga/foundation';
 
 describe('win32 layout', () => {
@@ -104,7 +103,7 @@ describe('windows private directories', () => {
       scripts.push(Buffer.from(args[args.length - 1] as string, 'base64').toString('utf16le'));
       return { exitCode: 0, stdout: report(), stderr: '' };
     };
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-win-'));
+    const base = createTempDir({ asHome: true });
     try {
       const layout = momongaLayout(base, 'darwin', {});
       await ensureMomongaDirs(layout, { platform: 'win32', run, env: { SystemRoot: 'C:\\Windows' } });
@@ -114,7 +113,7 @@ describe('windows private directories', () => {
       expect(scripts[0]).toContain(layout.root);
       expect(scripts[1]).toContain(layout.cacheBase);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await removeTempDir(base);
     }
     expect(win32Layout('C:\\Users\\Alice').root).toBe('C:\\Users\\Alice\\.momonga');
   });
@@ -126,45 +125,45 @@ describe('windows private directories', () => {
       scripts.push(Buffer.from(args[args.length - 1] as string, 'base64').toString('utf16le'));
       return { exitCode: 0, stdout: reports.shift() as string, stderr: '' };
     };
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-win-'));
+    const base = createTempDir({ asHome: true });
     try {
       await ensureMomongaDirs(momongaLayout(base, 'darwin', {}), { platform: 'win32', run, env: { SystemRoot: 'C:\\Windows' } });
       expect(scripts.filter((script) => script.includes('Set-Acl'))).toHaveLength(2);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await removeTempDir(base);
     }
   });
 
   it('fails when the restricted tree still grants access to another principal', async () => {
     const run: CommandRunner = async () => ({ exitCode: 0, stdout: report({ foreign: ['S-1-1-0'] }), stderr: '' });
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-win-'));
+    const base = createTempDir({ asHome: true });
     try {
       await expect(ensureMomongaDirs(momongaLayout(base, 'darwin', {}), { platform: 'win32', run, env: { SystemRoot: 'C:\\Windows' } })).rejects.toThrow('S-1-1-0');
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await removeTempDir(base);
     }
   });
 
   it('refuses a tree owned by someone else', async () => {
     const run: CommandRunner = async () => ({ exitCode: 0, stdout: report({ owner: 'S-1-5-21-2' }), stderr: '' });
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-win-'));
+    const base = createTempDir({ asHome: true });
     try {
       await expect(ensureMomongaDirs(momongaLayout(base, 'darwin', {}), { platform: 'win32', run, env: { SystemRoot: 'C:\\Windows' } })).rejects.toThrow('owned by S-1-5-21-2');
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await removeTempDir(base);
     }
   });
 });
 
 describe('windows session temporary directories', () => {
   const withSessions = async (body: (layout: ReturnType<typeof momongaLayout>, base: string) => Promise<void>): Promise<void> => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-win-'));
+    const base = createTempDir({ asHome: true });
     try {
       const layout = momongaLayout(base, 'darwin', {});
       fs.mkdirSync(layout.tmp.sessions, { recursive: true });
       await body(layout, base);
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      await removeTempDir(base);
     }
   };
 

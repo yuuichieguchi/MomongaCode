@@ -162,8 +162,8 @@ describe('discovery against a spec directory', () => {
     writeFile(path.join(root, 'Tiny.broken.cfg'), cfgFor('Small'));
   });
 
-  afterEach(() => {
-    removeTempRoot(root);
+  afterEach(async () => {
+    await removeTempRoot(root);
   });
 
   it('finds no problem when the manifest and the disk agree', () => {
@@ -275,8 +275,8 @@ describe('running tlc.sh under the harness', () => {
     root = createTempRoot();
   });
 
-  afterEach(() => {
-    removeTempRoot(root);
+  afterEach(async () => {
+    await removeTempRoot(root);
   });
 
   it('runs TLC on half the cores, rounded up', () => {
@@ -423,8 +423,8 @@ describe('the CPU budget of the harness', () => {
     root = createTempRoot();
   });
 
-  afterEach(() => {
-    removeTempRoot(root);
+  afterEach(async () => {
+    await removeTempRoot(root);
   });
 
   const standIn = (name: string, lines: readonly string[]): string => {

@@ -58,7 +58,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
     });
 
   beforeAll(async () => {
-    root = fs.realpathSync(createTempRoot());
+    root = createTempRoot({ asHome: true });
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
     paths = momongaLayout(root);
@@ -100,7 +100,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
   afterAll(async () => {
     if (binary !== '') await run('daemon', 'stop');
     await upstream.close();
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   it('prints its version on a PATH that contains no node', async () => {

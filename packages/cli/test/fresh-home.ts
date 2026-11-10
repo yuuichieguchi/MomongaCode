@@ -1,16 +1,14 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach } from 'vitest';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 
 const homes: string[] = [];
 
-afterEach(() => {
-  for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+afterEach(async () => {
+  for (const home of homes.splice(0)) await removeTempDir(home);
 });
 
 export const freshHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
+  const home = createTempDir({ asHome: true });
   homes.push(home);
   return home;
 };

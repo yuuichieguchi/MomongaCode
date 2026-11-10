@@ -1,11 +1,10 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, closeOnceStarted, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
@@ -32,11 +31,13 @@ type Context = {
 };
 
 let context: Context;
+let suiteHome: string | undefined;
+let startedGateway: Promise<Awaited<ReturnType<typeof startGatewayProcess>>> | undefined;
 
 beforeAll(async () => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gm-'));
-  fs.chmodSync(home, 0o700);
+  const home = createTempDir({ asHome: true });
+  suiteHome = home;
   const fake = await startFakeChatCompletions({ scenario: 'json-schema-only', script: [] });
   const root = path.join(home, '.momonga');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -59,18 +60,18 @@ beforeAll(async () => {
     }),
     { mode: 0o600 },
   );
-  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
+  startedGateway = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
+  const gateway = await startedGateway;
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   context = { home, fake, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 
 afterAll(async () => {
-  if (context === undefined) return;
-  await context.client.destroy().catch(() => {});
-  await context.gateway.close();
-  await context.fake.close();
-  context.restoreStdout();
-  fs.rmSync(context.home, { recursive: true, force: true });
+  await context?.client.destroy().catch(() => {});
+  if (startedGateway !== undefined) await closeOnceStarted(startedGateway)();
+  await context?.fake.close();
+  context?.restoreStdout();
+  if (suiteHome !== undefined) await removeTempDir(suiteHome);
 });
 
 const userItem = (text: string): InputItem => ({ type: 'message', role: 'user', content: [{ type: 'input_text', text }] });

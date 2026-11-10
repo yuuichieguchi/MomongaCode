@@ -7,7 +7,7 @@ import { createJsonLogger, createUdsClient, inspectProcessLock, systemClock, FIR
 import type { TextStream } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, createGateway, startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
@@ -105,14 +105,14 @@ const closeQuietly = async (handle: GatewayProcess): Promise<void> => {
 };
 
 const start = async (context: CleanupContext, options: Parameters<typeof startGatewayProcess>[0]): Promise<GatewayProcess> => {
-  const handle = await startGatewayProcess({ stdout: capture(), ...options });
+  const handle = await ownedStart(context, startGatewayProcess({ stdout: capture(), ...options }));
   registerCleanup(context, () => closeQuietly(handle));
   return handle;
 };
 
 const rejectionOf = async (context: CleanupContext, promise: Promise<GatewayProcess>): Promise<unknown> => {
   try {
-    const handle = await promise;
+    const handle = await ownedStart(context, promise);
     registerCleanup(context, () => closeQuietly(handle));
   } catch (error) {
     return error;

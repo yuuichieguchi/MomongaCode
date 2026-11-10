@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SocketPathUnsupportedError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths, setSocketBind } from '@momonga/foundation';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
 
 const REALISTIC_HOME = '/Users/alexandra-wilkinson';
 
@@ -51,7 +51,7 @@ describe('generation-scoped sockets and locks', () => {
 });
 
 describe('ensureGenerationDirs', () => {
-  const temporaryHome = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-gen-')));
+  const temporaryHome = (): string => createTempDir({ asHome: true });
 
   it('creates run/g<N> private and probes each socket path of that generation', async () => {
     const home = temporaryHome();
@@ -73,7 +73,7 @@ describe('ensureGenerationDirs', () => {
       );
     } finally {
       setSocketBind(undefined);
-      fs.rmSync(home, { recursive: true, force: true });
+      await removeTempDir(home);
     }
   });
 
@@ -91,7 +91,7 @@ describe('ensureGenerationDirs', () => {
       expect((error as Error).message).toMatch(/must be shorter than \d+ bytes/);
     } finally {
       setSocketBind(undefined);
-      fs.rmSync(home, { recursive: true, force: true });
+      await removeTempDir(home);
     }
   });
 });

@@ -1,12 +1,11 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import { momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { probeOllamaTarget, startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, closeOnceStarted, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
@@ -32,9 +31,8 @@ afterEach(async () => {
 });
 
 const makeHome = (): string => {
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gm-'));
-  fs.chmodSync(home, 0o700);
-  closers.push(() => fs.rmSync(home, { recursive: true, force: true }));
+  const home = createTempDir({ asHome: true });
+  closers.push(() => removeTempDir(home));
   return home;
 };
 
@@ -47,8 +45,9 @@ const writeTarget = (home: string, target: Record<string, unknown>): void => {
 const launch = async (home: string) => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   closers.push(() => stdout.mockRestore());
-  const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
-  closers.push(() => gateway.close());
+  const started = startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
+  closers.push(closeOnceStarted(started));
+  const gateway = await started;
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION });
   closers.push(() => client.destroy().catch(() => {}));
   return client;

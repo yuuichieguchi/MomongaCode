@@ -469,7 +469,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     } finally {
       await viaLink.close();
     }
-    const upper = path.join(stack.temp.root, 'H');
+    const upper = path.join(path.dirname(stack.temp.home), path.basename(stack.temp.home).toUpperCase());
     if (fs.existsSync(upper)) {
       const viaCase = await startRuntimeProcess({ generation: FIRST_GENERATION, home: upper, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
       try {

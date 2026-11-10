@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { shortTempBase } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, createTempDir, removeTempDir, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
@@ -24,9 +23,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-const freshDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(shortTempBase(process.platform), prefix)));
-  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+const freshShortDir = (): string => {
+  const dir = createTempDir({ asHome: true });
+  cleanups.push(() => removeTempDir(dir));
   return dir;
 };
 
@@ -64,8 +63,8 @@ const runCli = async (home: string, args: readonly string[], overrides: Partial<
 
 describe('gateway probe on a HOME that has never run momonga', () => {
   it('creates the private ~/.momonga tree before fm serve is started on its socket under it, and completes the probe', async () => {
-    const home = freshDir('mm-home-');
-    const fm = await createFakeFm({ dir: freshDir('mm-fm-') });
+    const home = freshShortDir();
+    const fm = await createFakeFm({ dir: freshShortDir() });
     fm.configure({ serve: { scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' } });
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
     fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
@@ -80,7 +79,7 @@ describe('gateway probe on a HOME that has never run momonga', () => {
   });
 
   it('brings an existing ~/.momonga that holds only the settings to the private tree before probing a chat-completions target', async () => {
-    const home = freshDir('mm-home-');
+    const home = freshShortDir();
     const upstream: FakeChatCompletionsServer = await startFakeChatCompletions({ scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' });
     cleanups.push(() => upstream.close());
     const root = path.join(home, '.momonga');
