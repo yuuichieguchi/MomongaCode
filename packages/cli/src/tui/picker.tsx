@@ -2,16 +2,23 @@ import { Box, Text } from 'ink';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { PASTE_LABEL } from '../plan/sign-in.ts';
 import type { EditorState } from './editor.ts';
+import { joinHint } from './select.tsx';
+import type { SelectRow, SelectSpec } from './select.tsx';
 
-export type PickRow = { readonly label: string; readonly disabled?: boolean };
+export type PickRow = SelectRow;
 
-export type PickRequest = {
-  readonly title?: string;
-  readonly lines?: readonly string[];
-  readonly rows: readonly PickRow[];
-  readonly hint?: string;
-  readonly confirm?: (row: PickRow) => string;
-};
+export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape'>>;
+
+const FILTER_FROM_ROWS = 10;
+
+export const pickerSpec = (request: PickRequest): SelectSpec => ({
+  initial: 0,
+  decideOn: 'immediate',
+  escape: 'back',
+  ...request,
+  interrupt: 'back',
+  filter: request.rows.length >= FILTER_FROM_ROWS,
+});
 
 export type TextRequest = {
   readonly title: string;
@@ -48,9 +55,11 @@ export type OverlayPorts = {
   loading(title: string): void;
 };
 
-const PICK_HINT = 'up/down and enter to choose, esc to go back';
+const WAITING_HINT = joinHint(['enter submits the pasted URL', 'ctrl+y copies the sign-in URL', 'esc cancels']);
 
-const WAITING_HINT = 'enter submits the pasted URL · ctrl+y copies the sign-in URL · esc cancels';
+const TEXT_HINT = joinHint(['enter to confirm', 'esc: go back']);
+
+export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
 
 function WaitingScreen({ overlay, editor }: { overlay: WaitingOverlay; editor: EditorState }) {
   if (overlay.delivered) {
@@ -78,27 +87,8 @@ function WaitingScreen({ overlay, editor }: { overlay: WaitingOverlay; editor: E
   );
 }
 
-const rowText = (row: PickRow, index: number, selected: boolean): string => `${selected ? '›' : ' '} ${index + 1}. ${escapeTerminalLine(row.label)}${row.disabled === true ? ' (unavailable)' : ''}`;
-
-export function OverlayView({ overlay, selected, confirming, editor }: { overlay: Overlay; selected: number; confirming: number | undefined; editor: EditorState }) {
+export function OverlayView({ overlay, editor }: { overlay: PanelOverlay; editor: EditorState }) {
   switch (overlay.kind) {
-    case 'pick': {
-      const { request } = overlay;
-      const pending = confirming === undefined ? undefined : request.rows[confirming];
-      return (
-        <Box flexDirection="column">
-          {request.title === undefined ? null : <Text bold>{escapeTerminalLine(request.title)}</Text>}
-          {(request.lines ?? []).map((line, index) => (
-            <Text key={`line-${index}`}>{escapeTerminalLine(line)}</Text>
-          ))}
-          {request.rows.map((row, index) => (
-            <Text key={`row-${index}`}>{rowText(row, index, index === selected)}</Text>
-          ))}
-          {pending === undefined || request.confirm === undefined ? null : <Text color="yellow">{escapeTerminalLine(request.confirm(pending))}</Text>}
-          <Text dimColor>{request.hint ?? PICK_HINT}</Text>
-        </Box>
-      );
-    }
     case 'text':
       return (
         <Box flexDirection="column">
@@ -108,7 +98,7 @@ export function OverlayView({ overlay, selected, confirming, editor }: { overlay
           ))}
           <Text>{`> ${escapeTerminalLine(editor.text)}`}</Text>
           {overlay.error === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.error)}</Text>}
-          <Text dimColor>enter to confirm, esc to go back</Text>
+          <Text dimColor>{TEXT_HINT}</Text>
         </Box>
       );
     case 'loading':

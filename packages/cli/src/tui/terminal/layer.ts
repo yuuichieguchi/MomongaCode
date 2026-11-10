@@ -1,10 +1,11 @@
 import { MIN_COLUMNS, MIN_ROWS, NO_FULLSCREEN_NOTICE, PASTE_TOO_LARGE_NOTICE } from './constants.ts';
 import type { TerminalEvent } from './events.ts';
-import { enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
+import { BACKGROUND_QUERY, enterSequenceOf, inTableOrder, LEAVE_EVERY_MODE, leaveSequenceOf, QUERY_BATCH } from './modes.ts';
 import type { ScreenMode, TerminalModeName } from './modes.ts';
 import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, NEWLINE_HINT, synchronizedOutputReported } from './negotiation.ts';
 import type { NegotiationState, NewlineHint } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
+import { titleSequence } from './title.ts';
 
 export type TerminalSize = { columns: number; rows: number };
 
@@ -70,6 +71,7 @@ export type TerminalLayer = {
   enable(mode: TerminalModeName): void;
   disable(mode: TerminalModeName): void;
   setScreen(screen: ScreenMode): void;
+  setTitle(title: string): void;
   handoverTerminal(): HandoverTerminal;
   state(): TerminalState;
   subscribe(listener: () => void): () => void;
@@ -94,6 +96,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
   let fullscreenRefusalApplied = false;
   let stopResizeListening: (() => void) | undefined;
   let hooked = false;
+  let title: string | undefined;
 
   const snapshotOf = (): TerminalState => ({
     screen,
@@ -156,6 +159,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
       host.off('SIGCONT', onContinue);
       setRaw(true);
       enter(saved);
+      if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
       publish();
       request({ type: 'redraw' });
     };
@@ -208,6 +212,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     const delivered: TerminalEvent[] = [];
     for (const event of parser.push(chunk)) {
       absorb(event);
+      if (event.type === 'focus' && event.direction === 'in' && enabled.has('focus')) output.writeSync(BACKGROUND_QUERY);
       if (isTooSmall(size) && !isCtrl(event, 'c')) continue;
       if (event.type === 'paste' && event.overflow) request({ type: 'notice', text: PASTE_TOO_LARGE_NOTICE });
       else if (isCtrl(event, 'z')) suspend();
@@ -287,6 +292,12 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
       publish();
     },
     setScreen,
+    setTitle: (next) => {
+      title = next;
+      enter(['title']);
+      output.writeSync(titleSequence(next));
+      publish();
+    },
     handoverTerminal: () => ({ screen, modes: inTableOrder(enabled) }),
     state: () => snapshot,
     subscribe: (listener) => {

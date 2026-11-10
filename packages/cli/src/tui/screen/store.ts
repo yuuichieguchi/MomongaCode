@@ -1,13 +1,18 @@
 import type { RunStatus } from '@momonga/protocol';
 import type { AttemptFailed } from '../../retry-wait.ts';
-import type { Entry, PendingApproval, PendingElicitation, Subagent, Usage } from '../transcript.ts';
+import type { Entry, PendingApproval, PendingElicitation, RunPhase, RunningTool, Subagent, Usage } from '../transcript.ts';
 
 export type StoreEntry = { readonly id: number; readonly version: number; readonly entry: Entry };
 
 export type TranscriptState = {
   runId: string | undefined;
   runStatus: RunStatus | undefined;
-  waiting: string | undefined;
+  phase: RunPhase | undefined;
+  runningTools: readonly RunningTool[];
+  openThought: string | undefined;
+  newestThought: string | undefined;
+  thoughtWindow: number;
+  answeringTarget: string | undefined;
   lastFailure: AttemptFailed | undefined;
   approval: PendingApproval | undefined;
   queuedApprovals: readonly PendingApproval[];
@@ -21,10 +26,17 @@ export type TranscriptState = {
 
 export const EMPTY_USAGE: Usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
 
+export const MIN_THOUGHT_WINDOW = 1;
+
 export const initialState: TranscriptState = {
   runId: undefined,
   runStatus: undefined,
-  waiting: undefined,
+  phase: undefined,
+  runningTools: [],
+  openThought: undefined,
+  newestThought: undefined,
+  thoughtWindow: MIN_THOUGHT_WINDOW,
+  answeringTarget: undefined,
   lastFailure: undefined,
   approval: undefined,
   queuedApprovals: [],
@@ -64,6 +76,8 @@ const settled = (entry: Entry): boolean => {
       return !entry.open;
     case 'tool':
       return entry.status === 'completed' || entry.status === 'failed' || entry.status === 'unknown';
+    case 'thought':
+      return entry.endedAt !== undefined;
     case 'plan':
       return false;
     default:
@@ -159,7 +173,7 @@ export const createTranscriptStore = (): TranscriptStore => {
       firstId = nextId;
       entries = [];
       positions = new Map();
-      state = initialState;
+      state = { ...initialState, thoughtWindow: state.thoughtWindow };
       settledPrefix = 0;
       openKey = undefined;
       epoch += 1;

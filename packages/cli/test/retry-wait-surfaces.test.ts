@@ -59,7 +59,7 @@ const transcriptOf = (payloads: readonly Record<string, unknown>[]): Folded => {
 
 const shownBy = (transcript: Folded): string[] => [
   ...transcript.entries.flatMap((entry) => ('text' in entry ? [entry.text] : [])),
-  ...(transcript.waiting === undefined ? [] : [transcript.waiting]),
+  ...(transcript.phase === undefined ? [] : [transcript.phase.text]),
 ];
 
 beforeEach(() => {
@@ -117,11 +117,12 @@ describe('the TUI shows the wait of a QUEUED run (decision 67)', () => {
   it('shows the last failure of the run when it failed more than once', () => {
     const transcript = transcriptOf([earlier, toQueued, toRunning, unreachable, toQueued]);
     expect(shownBy(transcript).some((text) => text.includes(UNREACHABLE_LINE))).toBe(true);
-    expect(transcript.waiting ?? '').not.toContain('attempt 2 of 20');
+    expect(transcript.phase?.text ?? '').not.toContain('attempt 2 of 20');
   });
 
-  it('no longer holds the wait in the footer once the run is claimed again', () => {
+  it('no longer holds the wait in the waiting row once the run is claimed again', () => {
     const transcript = transcriptOf([unreachable, toQueued, toRunning]);
-    expect(transcript.waiting ?? '').not.toContain(UNREACHABLE_LINE);
+    expect(transcript.phase).toBeUndefined();
+    expect(transcript.entries).toEqual([]);
   });
 });

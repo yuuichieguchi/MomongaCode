@@ -5,7 +5,7 @@ import type { AliasCapabilities, MomongaModelEntry, PermissionMode, PlanAccountR
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
-import { readinessNoticeOf } from '../readiness.ts';
+import { followMeasurement, readinessNoticeOf } from '../readiness.ts';
 import { describeRunEnd } from '../run/headless.ts';
 import { accountsOf, profileOf } from '../plan/accounts.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
@@ -29,18 +29,22 @@ import { HistoryView } from './screen/history-view.tsx';
 import { InputBox, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
 import { allocate, panelRowsCap } from './screen/layout.ts';
-import { COMPLETION_ROWS, CompletionMenu, INVITATION_ROWS, InvitationMenu } from './screen/menu.tsx';
+import { useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { SubagentRows } from './screen/subagents.tsx';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
-import { usePrompts } from './screen/use-prompts.tsx';
+import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
-import { WaitingRow, waitingText } from './screen/waiting-row.tsx';
-import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
+import type { ScreenTimers } from './screen/timers.ts';
+import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
+import type { WaitingPhase } from './screen/waiting-row.tsx';
+import { createSlashRegistry, parseSlash } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import type { ScreenMode } from './terminal/modes.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, nextMode, sessionTokens, subagentEnded, subagentStarted } from './transcript.ts';
+import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance } from './screen/theme.ts';
+import type { ColourHost } from './screen/theme.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf, toggleNewestThought } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 
 export type TuiOutcome = { error?: Error };
@@ -58,7 +62,9 @@ export type AppProps = {
   autoMode?: AutoModePort;
   shell?: ShellPort;
   copyOnSelect?: boolean;
+  colour?: ColourHost;
   now(): number;
+  timers: ScreenTimers;
   onExit(outcome: TuiOutcome): void;
 };
 
@@ -97,10 +103,12 @@ export function App(props: AppProps) {
   const { stdout } = useStdout();
   const terminalState = useSyncExternalStore(terminal.subscribe, terminal.state);
   const { columns, rows } = terminalState.size;
+  applyAppearance(appearanceOf(props.colour ?? UNREPORTED_COLOUR_HOST, terminalState.backgroundColor));
   const [store] = useState(createTranscriptStore);
   useSyncExternalStore(store.subscribe, store.version);
   const transcript = store.state();
-  const { now } = props;
+  const { now, timers } = props;
+  const [openedAt] = useState(now);
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
   const ownTasks = useRef<BackgroundTasks>(props.tasks ?? createBackgroundTasks());
   const tasks = props.tasks ?? ownTasks.current;
@@ -133,7 +141,10 @@ export function App(props: AppProps) {
   const [notices, setNotices] = useState<readonly string[]>([]);
   const capabilities: AliasCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
-  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectingSince, setReconnectingSince] = useState<number | undefined>(undefined);
+  const [measuringSince, setMeasuringSince] = useState<number | undefined>(undefined);
+  const [commands, setCommands] = useState<readonly WaitingPhase[]>([]);
+  const stopMeasuring = useRef<(() => void) | undefined>(undefined);
   const [switching, setSwitching] = useState(false);
   const [historyGeneration, setHistoryGeneration] = useState(0);
   const [panelRows, setPanelRows] = useState<number | undefined>(undefined);
@@ -187,11 +198,11 @@ export function App(props: AppProps) {
     append({ kind: 'notice', level: 'error', text: describeFailure(error) });
   };
 
-  const bannerOf = (shownModel: StartupBanner['model'], shownMode: string, shownNotices: readonly string[]): StartupBanner | undefined =>
-    props.startup === undefined ? undefined : { config: props.startup, model: shownModel, mode: shownMode, cwd: backend.cwd, notices: shownNotices };
+  const bannerOf = (shownModel: StartupBanner['model'], shownNotices: readonly string[]): StartupBanner | undefined =>
+    props.startup === undefined ? undefined : { config: props.startup, model: shownModel, cwd: backend.cwd, notices: shownNotices };
 
-  const showBanner = (shownModel: StartupBanner['model'], shownMode: string, shownNotices: readonly string[]): void => {
-    const banner = bannerOf(shownModel, shownMode, shownNotices);
+  const showBanner = (shownModel: StartupBanner['model'], shownNotices: readonly string[]): void => {
+    const banner = bannerOf(shownModel, shownNotices);
     if (banner === undefined) return;
     if (store.byKey(BANNER_KEY) === undefined) store.append({ kind: 'banner', banner }, BANNER_KEY);
     else store.change(BANNER_KEY, () => ({ kind: 'banner', banner }));
@@ -200,7 +211,7 @@ export function App(props: AppProps) {
   const resetTranscript = (): void => {
     store.reset();
     setHistoryGeneration((generation) => generation + 1);
-    if (aliasRef.current !== undefined) showBanner({ alias: aliasRef.current, targets: model?.targets }, mode, notices);
+    if (aliasRef.current !== undefined) showBanner(aliasRef.current, notices);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
@@ -222,9 +233,27 @@ export function App(props: AppProps) {
     note(autoModeNotice({ view, surface: 'tui' }));
   };
 
+  const endMeasuring = (): void => {
+    stopMeasuring.current?.();
+    stopMeasuring.current = undefined;
+    setMeasuringSince(undefined);
+  };
+
+  const modelUnread = (error: unknown): void => {
+    endMeasuring();
+    append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
+  };
+
   const showModel = (entry: MomongaModelEntry): void => {
+    endMeasuring();
     setModel(entry);
-    const text = readinessNoticeOf(agentReadiness(entry.capabilities));
+    const readiness = agentReadiness(entry.capabilities);
+    if (readiness.state === 'probing') {
+      setMeasuringSince(now());
+      stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, showModel, modelUnread);
+      return;
+    }
+    const text = readinessNoticeOf(readiness);
     if (text !== undefined) append({ kind: 'notice', level: 'warning', text });
   };
 
@@ -236,12 +265,10 @@ export function App(props: AppProps) {
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
     replaceEditor(emptyEditor(await backend.loadHistory()));
-    showBanner({ alias: session.modelAlias, targets: undefined }, session.permissionMode, []);
+    showBanner(session.modelAlias, []);
     showAutoNotice(session);
     setPhase({ kind: 'ready' });
-    void backend.model().then(showModel, (error: unknown) => {
-      append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
-    });
+    void backend.model().then(showModel, modelUnread);
     void backend.startupNotices().then(
       (found) => setNotices((previous) => [...previous, ...found]),
       (error: unknown) => {
@@ -275,9 +302,8 @@ export function App(props: AppProps) {
         ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
         : `model: ${session.modelAlias}; applies from the next task`,
     );
-    void backend.model().then(showModel, (error: unknown) => {
-      append({ kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` });
-    });
+    endMeasuring();
+    void backend.model().then(showModel, modelUnread);
   };
 
   const rememberProfiles = (listed: PlanAccountsResponse): void => {
@@ -319,6 +345,8 @@ export function App(props: AppProps) {
   const prompts = usePrompts({
     backend,
     store,
+    columns,
+    panelRows: panelRowsCap(rows),
     cancelNewest,
     reportError,
     fail,
@@ -421,22 +449,22 @@ export function App(props: AppProps) {
       const runAlias = aliasRef.current;
       const started = await backend.startRun(text, history, runOptions);
       runIdRef.current = started.id;
-      store.update({ runId: started.id, runStatus: 'QUEUED' });
+      runCreated(store, started.id, now());
       const run: RunView = await backend.follow(started.id, {
         onEvent: (frame) => {
-          setReconnecting(false);
+          setReconnectingSince(undefined);
           if (frame.data.type === 'model.responded' && frame.data.target !== undefined) setServedTarget(frame.data.target);
           foldEvent(store, frame.data);
         },
         onChildEvent: (frame, agent) => {
-          setReconnecting(false);
+          setReconnectingSince(undefined);
           foldChildEvent(store, frame.data, agent);
         },
         onChildStarted: (agent, runId) => subagentStarted(store, agent, runId, now()),
         onChildEnded: (_agent, runId) => subagentEnded(store, runId),
-        onReconnecting: () => setReconnecting(true),
+        onReconnecting: () => setReconnectingSince((since) => since ?? now()),
       });
-      setReconnecting(false);
+      setReconnectingSince(undefined);
       const stopped = run.error;
       if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && runAlias !== undefined) signInFailedRun.current = { text, options: runOptions, alias: runAlias };
       const plan = stopped?.plan;
@@ -447,6 +475,8 @@ export function App(props: AppProps) {
       if (!exiting.current) reportError(error);
     } finally {
       runIdRef.current = undefined;
+      setReconnectingSince(undefined);
+      runLeft(store);
       setBusyState(false);
     }
   };
@@ -486,8 +516,9 @@ export function App(props: AppProps) {
       },
       exit: () => finish({}),
       background: (label, work) => {
-        note(`${label}: running (esc cancels)`);
-        return tasks.run(work);
+        const command: WaitingPhase = { text: commandPhaseText(label), startedAt: now() };
+        setCommands((running) => [...running, command]);
+        return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== command)));
       },
       autoMode: props.autoMode ?? unavailableAutoMode,
       shell: props.shell ?? unavailableShell,
@@ -495,7 +526,7 @@ export function App(props: AppProps) {
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
-        note(`permission mode: ${session.permissionMode}`);
+        view.showToast(`permission mode: ${session.permissionMode}`);
         showAutoNotice(session);
       },
       setModel: applyModel,
@@ -561,13 +592,20 @@ export function App(props: AppProps) {
   };
 
 
-  const bannerTargets = model?.targets;
+  const unconnected = phase.kind === 'unconnected';
   const syncBanner = useEffectEvent((): void => {
-    if (alias !== undefined && store.byKey(BANNER_KEY) !== undefined) showBanner({ alias, targets: bannerTargets }, mode, notices);
+    if (alias === undefined ? unconnected : store.byKey(BANNER_KEY) !== undefined) showBanner(alias, notices);
   });
   useEffect(() => {
     syncBanner();
-  }, [alias, bannerTargets, mode, notices]);
+  }, [alias, notices, unconnected]);
+
+  useEffect(
+    () => () => {
+      stopMeasuring.current?.();
+    },
+    [],
+  );
 
   useEffect(
     () =>
@@ -596,6 +634,9 @@ export function App(props: AppProps) {
     { isActive: (phase.kind === 'ready' && transcript.approval === undefined) || overlay?.kind === 'waiting' },
   );
 
+  const slashMenu = useSlashMenu({ text: editor.text, commands: slash.list(), active: phase.kind === 'ready' || phase.kind === 'unconnected', height: rows });
+  const placeMenuText = (text: string): void => replaceEditor({ ...editorRef.current, text, cursor: text.length, historyIndex: undefined });
+
   const invitationShown = prompts.invitation !== undefined && overlay === undefined && !busy && editor.text === '';
 
   useInput((input, key) => {
@@ -604,7 +645,7 @@ export function App(props: AppProps) {
       return;
     }
     if (phase.kind === 'trust') {
-      prompts.trustKey(input, key);
+      prompts.trustKey(phase.path, input, key);
       return;
     }
     if (prompts.overlayKey(input, key)) return;
@@ -620,6 +661,14 @@ export function App(props: AppProps) {
       return;
     }
     if (prompts.runPromptKey(input, key)) return;
+    const menuAct = slashMenu.key(editorRef.current.text, input, key);
+    if (menuAct?.kind === 'handled') return;
+    if (menuAct !== undefined) placeMenuText(menuAct.text);
+    if (menuAct?.kind === 'complete') return;
+    if (key.ctrl && input === 'o') {
+      toggleNewestThought(store);
+      return;
+    }
     if (key.escape) {
       cancelNewest();
       return;
@@ -638,11 +687,7 @@ export function App(props: AppProps) {
       setAttachments(attachmentsRef.current.slice(0, -1));
       return;
     }
-    if (key.tab) {
-      const completion = slashCompletion(editorRef.current.text, slash.list());
-      if (completion !== undefined) replaceEditor({ ...editorRef.current, text: completion.completed, cursor: completion.completed.length, historyIndex: undefined });
-      return;
-    }
+    if (key.tab) return;
     const outcome = applyKey(editorRef.current, { ...key, input });
     if (outcome.submit !== undefined && alias === undefined && !outcome.submit.trim().startsWith('/')) {
       note(NO_MODEL_NOTE);
@@ -655,20 +700,29 @@ export function App(props: AppProps) {
     }
   });
 
-  const completion = phase.kind === 'ready' ? slashCompletion(editor.text, slash.list()) : undefined;
   const servedPlan = servedTarget === undefined || model?.targetBilling?.[servedTarget] !== 'plan' ? undefined : model.targetPlan?.[servedTarget];
   const servedProfile = servedPlan === undefined ? undefined : profiles.find((profile) => profile.id === servedPlan.profile);
   const planRow = phase.kind !== 'ready' || servedProfile === undefined ? undefined : `${alias ?? ''} · ${servedProfile.messages.planInUseLabel} · ${servedProfile.messages.manageUsageLabel}: ${servedProfile.usageUrl}`;
   const fullscreen = terminalState.screen === 'fullscreen';
-  const panel = prompts.panel({ trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready', panelRows: panelRowsCap(rows) });
+  const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
+  const panel = prompts.panel(panelFacts);
   const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
   const inputShown = (phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
-  const menuShown = inputShown && (invitationShown || completion !== undefined);
-  const waiting = waitingText({ starting: phase.kind === 'starting', waiting: phase.kind === 'ready' ? transcript.waiting : undefined, busy: phase.kind === 'ready' && busy, reconnecting: phase.kind === 'ready' && reconnecting });
+  const menuShown = inputShown && (invitationShown || slashMenu.open);
+  const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
+  const waiting = waitingOf({
+    startingSince: phase.kind === 'starting' ? openedAt : undefined,
+    prompting: transcript.approval !== undefined || transcript.elicitation !== undefined,
+    reconnectingSince: phase.kind === 'ready' ? reconnectingSince : undefined,
+    run: phase.kind === 'ready' ? shownRunPhase(transcript) : undefined,
+    command: commands.at(-1),
+    measuringSince: phase.kind === 'ready' ? measuringSince : undefined,
+    panelOwnsEscape: overlay !== undefined,
+  });
   const allocation = allocate(rows, {
     waiting: waiting === undefined ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
-    menu: !menuShown ? 0 : phase.kind === 'ready' && invitationShown ? INVITATION_ROWS : COMPLETION_ROWS,
+    menu: !menuShown ? 0 : invitationInMenu ? prompts.invitationRows : slashMenu.rows,
     subagents: transcript.subagents.length,
     footerSecond: !fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0,
     lines: inputShown ? attachments.length : 0,
@@ -688,6 +742,30 @@ export function App(props: AppProps) {
     reportError,
     keyFacts: () => ({ panelOpen: panel !== undefined, menuOpen: menuShown, inputEmpty: editorRef.current.text === '' }),
   });
+  usePromptPointer({
+    terminal,
+    active: fullscreen && !switching,
+    allocation,
+    panelOpen: shownPanel !== undefined,
+    menuOpen: menuShown,
+    panelPress: (row) => prompts.press(panelFacts, row),
+    panelWheel: (wheelRows) => prompts.wheel(panelFacts, wheelRows),
+    menuPress: (row) => {
+      if (invitationInMenu) {
+        prompts.invitationPress(row);
+        return;
+      }
+      const act = slashMenu.press(row, allocation.menu);
+      if (act?.kind === 'complete') placeMenuText(act.text);
+    },
+    menuWheel: (wheelRows) => {
+      if (!invitationInMenu) slashMenu.wheel(wheelRows);
+    },
+  });
+  const thoughtWindow = thoughtWindowOf(allocation.viewport);
+  useEffect(() => {
+    setThoughtWindow(store, thoughtWindow);
+  }, [store, thoughtWindow]);
   const footerFacts =
     phase.kind === 'ready' && overlay === undefined
       ? {
@@ -714,12 +792,12 @@ export function App(props: AppProps) {
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} />
         ),
-        menu: !menuShown ? null : phase.kind === 'ready' && invitationShown && prompts.invitation !== undefined ? <InvitationMenu invitation={prompts.invitation} selected={prompts.invitationIndex} /> : completion === undefined ? null : <CompletionMenu completion={completion} />,
-        waiting: waiting === undefined ? null : <WaitingRow text={waiting} />,
+        menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
+        waiting: waiting === undefined ? null : <WaitingRow waiting={waiting} now={now} timers={timers} />,
         lines: inputShown ? <AttachmentLines attachments={attachments} /> : null,
         input: inputShown ? <InputBox editor={editor} /> : null,
         footer: <Footer facts={footerFacts} unconnected={phase.kind === 'unconnected'} planRow={planRow} width={columns} rows={fullscreen ? allocation.footer : 2} />,
-        subagents: <SubagentRows subagents={transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} />,
+        subagents: <SubagentRows subagents={transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
       }}
     />
   );

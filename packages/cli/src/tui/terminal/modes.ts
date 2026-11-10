@@ -40,4 +40,6 @@ export const DECRQM_SYNCHRONIZED_OUTPUT = 2026;
 
 const decrqm = (mode: number): string => `${ESC}[?${mode}$p`;
 
-export const QUERY_BATCH = [`${ESC}[?u`, enterSequenceOf(['kitty-keys']), decrqm(DECRQM_ALT_SCREEN), decrqm(DECRQM_SGR_MOUSE), decrqm(DECRQM_BRACKETED_PASTE), decrqm(DECRQM_SYNCHRONIZED_OUTPUT), `${ESC}]11;?${ESC}\\`, `${ESC}[c`].join('');
+export const BACKGROUND_QUERY = `${ESC}]11;?${ESC}\\`;
+
+export const QUERY_BATCH = [`${ESC}[?u`, enterSequenceOf(['kitty-keys']), decrqm(DECRQM_ALT_SCREEN), decrqm(DECRQM_SGR_MOUSE), decrqm(DECRQM_BRACKETED_PASTE), decrqm(DECRQM_SYNCHRONIZED_OUTPUT), BACKGROUND_QUERY, `${ESC}[c`].join('');

@@ -119,7 +119,7 @@ describe('elicitation in the TUI', () => {
     backend.emit(requestInput('in1', 'c1', [URL_REQUEST]));
     await untilFrame(app, 'Sign in to continue');
     backend.emit(frame({ type: 'tool.elicitation.cancelled', inputId: 'in1', reason: 'expired' }));
-    const idle = await untilFrame(app, /^(?![\s\S]*asks for input)[\s\S]*working \(esc to cancel\)/);
+    const idle = await untilFrame(app, /^(?![\s\S]*asks for input)[\s\S]*running mcp__calc__ask \{\} \d+s · esc to cancel/);
     expect(idle).not.toContain('asks for input');
     app.unmount();
   });
@@ -141,7 +141,7 @@ describe('skills in the TUI', () => {
     const { backend, app } = await start({ skills: [PDF] });
     await untilFrame(app, 'mode: manual');
     await type(app, '/pd', '> /pd');
-    await untilFrame(app, '/pdf (tab completes)');
+    await untilFrame(app, '› /pdf <task>  Extract PDF text');
     app.stdin.write('\t');
     await untilFrame(app, '> /pdf');
     app.stdin.write('summarize report.pdf');

@@ -16,36 +16,46 @@ const config = (overrides: Partial<StartupConfig> = {}): StartupConfig => ({ ver
 const bannerRows = (output: string): string[] => output.split('\n').filter((row) => /[∩•░┬]/.test(row));
 
 describe('startup screen', () => {
-  it('shows the squirrel, the version, the model with its target, the mode and the shortened folder side by side', async () => {
-    const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', modelAlias: 'smart' }, targets: ['local-fm', 'cloud'] }, { startup: config() });
-    const screen = await untilFrame(app, 'smart → local-fm, cloud');
-    expect(screen).toContain('MomongaCode v1.2.3');
-    expect(screen).toContain('mode: manual');
-    expect(screen).toContain('~/projects/demo');
+  it('shows the squirrel, the version, the model by its name and the shortened folder side by side, and no mode line', async () => {
+    const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', modelAlias: 'smart' }, targets: ['local-fm', 'cloud'] }, { startup: config() }, { columns: 80, rows: 16 });
+    const screen = await untilFrame(app, 'mode: manual (shift+tab)');
+    const text = screen
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .split('\n')
+      .filter((row) => row.startsWith('│'))
+      .map((row) => row.slice(ART_WIDTH + ART_GAP + 2).replace(/ *│.*$/, ''));
+    expect(text.slice(0, 3)).toEqual(['MomongaCode v1.2.3', 'model: smart', '~/projects/demo']);
+    expect(screen).not.toContain('→');
+    expect(screen.split('mode: ')).toHaveLength(2);
     expect(screen).toContain('•ᴥ•');
     expect(screen).not.toContain('! ');
     app.unmount();
   });
 
-  it('keeps the model line to the alias until the gateway answers, and does not block the prompt', async () => {
+  it('shows the model line before the gateway answers, does not block the prompt and does not rewrite the line afterwards', async () => {
     const pending = Promise.withResolvers<void>();
     const { app } = await start({ modelPending: pending.promise }, { startup: config() });
     const before = await untilFrame(app, 'model: default');
-    expect(before).not.toContain('→');
     expect(before).toContain('mode: manual (shift+tab)');
     pending.resolve();
-    await untilFrame(app, 'model: default → primary');
+    const after = await untilFrame(app, 'context: 0%');
+    expect(after).toContain('model: default');
+    expect(after).not.toContain('→');
     app.unmount();
   });
 
+  it('says that no model is connected on the model line', () => {
+    expect(textLines(config(), undefined, '/Users/ada/p')).toEqual(['MomongaCode v1.2.3', 'model: not connected  (use /login)', '~/p']);
+  });
+
   it('drops the art, rather than wrapping it, below the width its own size and the text need', async () => {
-    const lines = textLines(config(), { alias: 'default', targets: ['primary'] }, 'default', '/Users/ada/p');
+    const lines = textLines(config(), 'default', '/Users/ada/p');
     const needed = ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => line.length)) + 4;
     expect(artFits(needed, lines)).toBe(true);
     expect(artFits(needed - 1, lines)).toBe(false);
 
     const { app } = await start({ session: { cwd: '/Users/ada/p' } }, { startup: config() }, { columns: needed - 1 + SCROLLBAR_COLUMNS });
-    const screen = await untilFrame(app, 'model: default → primary');
+    const screen = await untilFrame(app, 'model: default');
     expect(screen).not.toContain('•ᴥ•');
     app.unmount();
   });

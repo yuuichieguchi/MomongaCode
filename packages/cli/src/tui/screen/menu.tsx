@@ -1,32 +1,133 @@
+import { useReducer, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import { escapeTerminalLine } from '@momonga/protocol';
+import type { Key } from 'ink';
 import type { PlanProfileView } from '@momonga/protocol';
-import type { SlashCompletion } from '../slash.ts';
+import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
+import type { SelectSpec } from '../select.tsx';
+import type { SlashCommand } from '../slash.ts';
+import { menuRowsCap } from './layout.ts';
 
 export type Invitation = { profile: PlanProfileView };
 
-export const INVITATION_CHOICES = 2;
+const INVITATION_TITLE = 'New';
+const NOT_NOW = 'Not now';
 
-export const INVITATION_ROWS = 2 + INVITATION_CHOICES;
+export const INVITATION_ACCEPT = 0;
 
-export const COMPLETION_ROWS = 1;
+export const invitationSpec = (invitation: Invitation): SelectSpec => ({
+  title: INVITATION_TITLE,
+  lines: [invitation.profile.messages.inviteTitle],
+  rows: [{ label: invitation.profile.loginLabel }, { label: NOT_NOW }],
+  initial: INVITATION_ACCEPT,
+  decideOn: 'immediate',
+  escape: 'back',
+  interrupt: 'back',
+  filter: false,
+});
 
-export function CompletionMenu({ completion }: { completion: SlashCompletion }) {
-  return (
-    <Text dimColor wrap="truncate">
-      {completion.names.map((name) => `/${name}`).join('  ')} (tab completes)
-    </Text>
-  );
-}
+const COMPLETABLE = /^\/[^\s/]*$/;
+const MENU_FLOOR_ROWS = 3;
 
-export function InvitationMenu({ invitation, selected }: { invitation: Invitation; selected: number }) {
-  return (
-    <Box flexDirection="column">
-      <Text bold>New</Text>
-      <Text>{escapeTerminalLine(invitation.profile.messages.inviteTitle)}</Text>
-      {[invitation.profile.loginLabel, 'Not now'].map((label, index) => (
-        <Text key={label}>{`${index === selected ? '›' : ' '} ${index + 1}. ${escapeTerminalLine(label)}`}</Text>
-      ))}
-    </Box>
-  );
-}
+const windowRows = (rows: number): number => Math.max(MENU_FLOOR_ROWS, rows);
+
+const namesOf = (command: SlashCommand): readonly string[] => [command.name, ...(command.aliases ?? [])];
+
+export const slashMatches = (text: string, commands: readonly SlashCommand[]): SlashCommand[] | undefined => {
+  if (!COMPLETABLE.test(text)) return undefined;
+  const typed = text.slice(1).toLowerCase();
+  const rankOf = (command: SlashCommand): number => {
+    const names = namesOf(command).map((name) => name.toLowerCase());
+    if (names.includes(typed)) return 0;
+    if (names.some((name) => name.startsWith(typed))) return 1;
+    return names.some((name) => name.includes(typed)) ? 2 : 3;
+  };
+  return [0, 1, 2].flatMap((rank) => commands.filter((command) => rankOf(command) === rank));
+};
+
+export const noCommandsMatch = (text: string): string => `No commands match "${text}"`;
+
+const labelOf = (command: SlashCommand): string => `/${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`;
+
+const completedOf = (command: SlashCommand): string => `/${command.name} `;
+
+export type SlashMenuAct = { readonly kind: 'handled' } | { readonly kind: 'complete'; readonly text: string } | { readonly kind: 'run'; readonly text: string };
+
+export type SlashMenu = {
+  open: boolean;
+  rows: number;
+  key(text: string, input: string, key: Key): SlashMenuAct | undefined;
+  press(row: number, rows: number): SlashMenuAct | undefined;
+  wheel(rows: number): void;
+  view(rows: number): ReactNode;
+};
+
+type MenuState = { text: string; index: number; top: number; closed: boolean };
+
+export const useSlashMenu = (host: { text: string; commands: readonly SlashCommand[]; active: boolean; height: number }): SlashMenu => {
+  const held = useRef<MenuState>({ text: '', index: 0, top: 0, closed: false });
+  const [, redraw] = useReducer((count: number) => count + 1, 0);
+  const cap = Math.max(MENU_FLOOR_ROWS, menuRowsCap(host.height));
+
+  const stateFor = (text: string): MenuState => (held.current.text === text ? held.current : { text, index: 0, top: 0, closed: false });
+
+  const keep = (next: MenuState): void => {
+    held.current = next;
+    redraw();
+  };
+
+  const matchesFor = (text: string): SlashCommand[] | undefined => (host.active && !stateFor(text).closed ? slashMatches(text, host.commands) : undefined);
+
+  const shown = matchesFor(host.text);
+  const state = stateFor(host.text);
+
+  const moveTo = (text: string, index: number, count: number): void => keep({ ...stateFor(text), index, top: topFor(index, stateFor(text).top, count, cap) });
+
+  return {
+    open: shown !== undefined,
+    rows: shown === undefined ? 0 : Math.max(1, Math.min(shown.length, cap)),
+    key: (text, _input, key) => {
+      const matches = matchesFor(text);
+      if (matches === undefined) return undefined;
+      const current = stateFor(text);
+      const command = matches[current.index];
+      if (key.escape) {
+        keep({ ...current, closed: true });
+        return { kind: 'handled' };
+      }
+      if (key.upArrow || key.downArrow) {
+        if (matches.length > 0) moveTo(text, (current.index + (key.upArrow ? matches.length - 1 : 1)) % matches.length, matches.length);
+        return { kind: 'handled' };
+      }
+      if (key.tab && !key.shift) return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+      if (key.return && command !== undefined) return { kind: 'run', text: `/${command.name}` };
+      return undefined;
+    },
+    press: (row, rows) => {
+      if (shown === undefined) return undefined;
+      const span = spanAt(shown.length, state.top, windowRows(rows));
+      const lead = span.start > 0 ? 1 : 0;
+      const at = span.start + row - lead;
+      const command = row < lead || at >= span.end ? undefined : shown[at];
+      return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+    },
+    wheel: (rows) => {
+      if (shown === undefined || shown.length <= cap) return;
+      keep({ ...state, top: Math.max(0, Math.min(state.top + rows, shown.length - (cap - 1))) });
+    },
+    view: (rows) => {
+      if (shown === undefined) return null;
+      if (shown.length === 0) return <Text dimColor wrap="truncate">{noCommandsMatch(host.text)}</Text>;
+      const span = spanAt(shown.length, state.top, windowRows(rows));
+      return (
+        <Box flexDirection="column">
+          {span.start > 0 ? <MoreRow direction="up" count={span.start} /> : null}
+          {shown.slice(span.start, span.end).map((command, offset) => (
+            <ChoiceRow key={command.name} selected={span.start + offset === state.index} label={labelOf(command)} />
+          ))}
+          {span.end < shown.length ? <MoreRow direction="down" count={shown.length - span.end} /> : null}
+        </Box>
+      );
+    },
+  };
+};

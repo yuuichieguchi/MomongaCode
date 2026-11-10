@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import { characterEndAfter } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
 import { INPUT_BOX_FRAME_ROWS } from './constants.ts';
+import { borderOf } from './theme.ts';
 import { displayWidth } from './wrap.ts';
 
 const FIRST_PREFIX = '> ';
@@ -23,7 +24,7 @@ export function InputBox({ editor }: { editor: EditorState }) {
   const after = editor.text.slice(editor.cursor + (atCursor === '' || atCursor === '\n' ? 0 : atCursor.length));
   const lines = `${before}\u0000${cursorChar}\u0001${after}`.split('\n');
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" {...borderOf('border')} paddingX={1}>
       {lines.map((line, index) => {
         const open = line.indexOf('\u0000');
         const close = line.indexOf('\u0001');

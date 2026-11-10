@@ -9,6 +9,7 @@ import { inkInputOf } from '../../src/tui/terminal/ink-bridge.ts';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import { fakeBackend } from '../fake-backend.ts';
+import { systemTiming } from '@momonga/foundation';
 
 const ESC = '\u001b';
 
@@ -49,7 +50,7 @@ const startOnLayer = () => {
   const outcomes: TuiOutcome[] = [];
   const instance = render(
     <TerminalFrame layer={layer}>
-      <App backend={fakeBackend()} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} now={Date.now} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
+      <App backend={fakeBackend()} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
     </TerminalFrame>,
     { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false },
   );

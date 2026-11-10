@@ -5,9 +5,7 @@ import type { StyleToken } from './screen/tokens.ts';
 
 export type StartupConfig = { version: string; home: string; color: boolean };
 
-export type StartupModel = { alias: string; targets: readonly string[] | undefined };
-
-export type StartupBanner = { config: StartupConfig; model: StartupModel; mode: string; cwd: string; notices: readonly string[] };
+export type StartupBanner = { config: StartupConfig; model: string | undefined; cwd: string; notices: readonly string[] };
 
 type ArtPart = { text: string; token?: StyleToken };
 
@@ -33,19 +31,16 @@ export const shortenHome = (cwd: string, home: string): string => {
   return cwd.startsWith(`${home}${path.sep}`) ? `~${cwd.slice(home.length)}` : cwd;
 };
 
-export const textLines = (config: StartupConfig, model: StartupModel, mode: string, cwd: string): string[] => [
-  `MomongaCode v${config.version}`,
-  `model: ${model.alias}${model.targets === undefined ? '' : ` → ${model.targets.join(', ')}`}`,
-  `mode: ${mode}`,
-  shortenHome(cwd, config.home),
-];
+export const NOT_CONNECTED_MODEL = 'not connected  (use /login)';
+
+export const textLines = (config: StartupConfig, model: string | undefined, cwd: string): string[] => [`MomongaCode v${config.version}`, `model: ${model ?? NOT_CONNECTED_MODEL}`, shortenHome(cwd, config.home)];
 
 export const artFits = (columns: number, lines: readonly string[]): boolean =>
   columns >= ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => [...line].length)) + BOX_CHROME_COLUMNS;
 
 type Cell = { text: string; token?: StyleToken };
 
-const LINE_TOKENS: readonly (StyleToken | undefined)[] = ['bold', undefined, undefined, 'dim'];
+const LINE_TOKENS: readonly (StyleToken | undefined)[] = ['bold', undefined, 'dim'];
 
 const padded = (cells: readonly Cell[], width: number): Cell[] => {
   const used = cells.reduce((total, cell) => total + displayWidth(cell.text), 0);
@@ -63,9 +58,9 @@ const rowOf = (cells: readonly Cell[], color: boolean): Row => {
 };
 
 export const bannerRows = (banner: StartupBanner, columns: number): Row[] => {
-  const { config, model, mode, cwd, notices } = banner;
+  const { config, model, cwd, notices } = banner;
   const inner = Math.max(1, columns - BOX_CHROME_COLUMNS);
-  const lines = textLines(config, model, mode, cwd);
+  const lines = textLines(config, model, cwd);
   const art = artFits(columns, lines) ? ART : [];
   const textWidth = art.length === 0 ? inner : inner - ART_WIDTH - ART_GAP;
   const text: Cell[][] = lines.flatMap((line, index) => wrapLine(line, textWidth, { links: false }).map((row): Cell[] => [{ text: row.text, ...(LINE_TOKENS[index] === undefined ? {} : { token: LINE_TOKENS[index] }) }]));

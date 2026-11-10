@@ -21,6 +21,7 @@ export type Entry =
   | { kind: 'banner'; banner: StartupBanner }
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; itemId: string; text: string; open: boolean }
+  | { kind: 'thought'; itemId: string; text: string; startedAt: number; endedAt?: number; expanded: boolean; window: number }
   | { kind: 'tool'; callId: string; name: string; title: string; toolKind: ToolKind; rawInput: unknown; status: ToolStatus; output?: string; denial?: PermissionDenial }
   | { kind: 'plan'; entries: readonly PlanEntry[] }
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
@@ -35,11 +36,18 @@ export type PendingElicitation = { inputId: string; callId: string; server: stri
 
 export type Usage = { inputTokens: number; outputTokens: number; totalTokens: number };
 
+export type PhaseKind = 'queued' | 'model' | 'thinking' | 'responding' | 'tool' | 'classifying' | 'hook' | 'compacting' | 'retry' | 'awaited';
+
+export type RunPhase = { kind: PhaseKind; text: string; startedAt: number };
+
+export type RunningTool = { callId: string; title: string; startedAt: number };
+
 export type Subagent = { runId: string; agent: string; title: string | undefined; startedAt: number; awaitingApproval: boolean };
 
 export const BANNER_KEY = 'banner';
 const PLAN_KEY = 'plan';
 const itemKey = (itemId: string): string => `item:${itemId}`;
+const thoughtKey = (itemId: string): string => `thought:${itemId}`;
 const callKey = (callId: string): string => `call:${callId}`;
 const approvalKey = (approvalId: string): string => `approval:${approvalId}`;
 const inputKey = (inputId: string): string => `input:${inputId}`;
@@ -56,6 +64,31 @@ const closeAssistant = (store: TranscriptStore): void => {
   if (open === undefined) return;
   store.change(open, (entry) => (entry.kind === 'assistant' && entry.open ? { ...entry, open: false } : entry));
   store.setOpen(undefined);
+};
+
+const closeThought = (store: TranscriptStore, endedAt: number): void => {
+  const open = store.state().openThought;
+  if (open === undefined) return;
+  store.change(open, (entry) => (entry.kind === 'thought' ? { ...entry, endedAt } : entry));
+  store.update({ openThought: undefined });
+};
+
+export const toggleThought = (store: TranscriptStore, itemId: string): void => {
+  store.change(thoughtKey(itemId), (entry) => (entry.kind === 'thought' ? { ...entry, expanded: !entry.expanded } : entry));
+};
+
+export const toggleNewestThought = (store: TranscriptStore): void => {
+  const newest = store.state().newestThought;
+  if (newest !== undefined) store.change(newest, (entry) => (entry.kind === 'thought' ? { ...entry, expanded: !entry.expanded } : entry));
+};
+
+export const thoughtWindowOf = (viewportRows: number): number => Math.ceil(viewportRows / 3);
+
+export const setThoughtWindow = (store: TranscriptStore, window: number): void => {
+  const state = store.state();
+  if (state.thoughtWindow === window) return;
+  store.update({ thoughtWindow: window });
+  if (state.openThought !== undefined) store.change(state.openThought, (entry) => (entry.kind === 'thought' ? { ...entry, window } : entry));
 };
 
 const updateTool = (store: TranscriptStore, callId: string, change: (tool: ToolEntry) => ToolEntry): void => {
@@ -100,10 +133,21 @@ const retirePlan = (store: TranscriptStore, replacement: Entry): void => {
 
 const planText = (entries: readonly PlanEntry[]): string => entries.map((item) => `${item.status === 'completed' ? '[x]' : '[ ]'} ${item.content}`).join('\n');
 
-export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void => {
+const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
   const state = store.state();
   switch (event.type) {
+    case 'agent.thought.delta': {
+      const key = thoughtKey(event.itemId);
+      if (store.byKey(key) !== undefined) {
+        store.change(key, (entry) => (entry.kind === 'thought' ? { ...entry, text: entry.text + event.text } : entry));
+        return;
+      }
+      appendEntry(store, { kind: 'thought', itemId: event.itemId, text: event.text, startedAt: event.createdAt, expanded: false, window: state.thoughtWindow }, key);
+      store.update({ openThought: key, newestThought: key });
+      return;
+    }
     case 'agent.message.delta': {
+      closeThought(store, event.createdAt);
       const key = itemKey(event.itemId);
       if (store.byKey(key) !== undefined) {
         store.change(key, (entry) => (entry.kind === 'assistant' ? { ...entry, text: entry.text + event.text } : entry));
@@ -114,6 +158,7 @@ export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void =
       return;
     }
     case 'tool.call':
+      closeThought(store, event.createdAt);
       appendEntry(
         store,
         { kind: 'tool', callId: event.callId, name: event.name, title: event.title, toolKind: event.kind, rawInput: event.rawInput, status: 'requested' },
@@ -190,7 +235,9 @@ export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void =
       store.update({ usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens } });
       return;
     case 'model.responded':
-      store.update({ contextTokens: event.response.usage.total_tokens });
+      store.update({ contextTokens: event.response.usage.total_tokens, ...(event.target === undefined ? {} : { answeringTarget: event.target }) });
+      if (event.target !== undefined && state.answeringTarget !== undefined && state.answeringTarget !== event.target)
+        appendEntry(store, { kind: 'info', text: `model changed: ${state.answeringTarget} -> ${event.target}` });
       return;
     case 'context.compacted':
       appendEntry(store, { kind: 'notice', level: 'info', text: 'context compacted' });
@@ -201,29 +248,20 @@ export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void =
     case 'tool.loaded':
       appendEntry(store, { kind: 'info', text: `tools loaded: ${event.names.join(', ')}` });
       return;
-    case 'tool.waiting':
-      store.update({ waiting: event.awaits.kind === 'run' ? `subagent ${event.awaits.agent}` : `job ${event.awaits.jobId}` });
-      return;
     case 'attempt.failed':
       store.update({ lastFailure: event });
       return;
     case 'run.status': {
-      if (event.to === 'QUEUED' && state.lastFailure !== undefined) {
-        const text = describeRetryWait(state.lastFailure);
-        store.update({ runStatus: event.to, waiting: text });
-        appendEntry(store, { kind: 'notice', level: 'info', text });
-        return;
-      }
       if (!isTerminalStatus(event.to)) {
-        store.update({ runStatus: event.to, waiting: event.to === 'WAITING_TOOL' ? state.waiting : undefined });
+        store.update({ runStatus: event.to });
         return;
       }
+      closeThought(store, event.createdAt);
       closeAssistant(store);
       const plan = store.byKey(PLAN_KEY)?.entry;
       if (plan?.kind === 'plan') retirePlan(store, { kind: 'info', text: planText(plan.entries) });
       store.update({
         runStatus: event.to,
-        waiting: undefined,
         approval: undefined,
         queuedApprovals: [],
         elicitation: undefined,
@@ -237,6 +275,89 @@ export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void =
       return;
   }
 };
+
+export const WAITING_FOR_MODEL = 'waiting for the model';
+
+const toolsPhase = (tools: readonly RunningTool[]): RunPhase | undefined => {
+  const newest = tools.at(-1);
+  if (newest === undefined) return undefined;
+  return { kind: 'tool', text: `running ${newest.title}${tools.length > 1 ? ` +${tools.length - 1}` : ''}`, startedAt: newest.startedAt };
+};
+
+const awaitedText = (awaits: Extract<PublicRunEvent, { type: 'tool.waiting' }>['awaits']): string => (awaits.kind === 'run' ? `waiting for subagent ${awaits.agent}` : `waiting for job ${awaits.jobId}`);
+
+const foldPhase = (store: TranscriptStore, event: PublicRunEvent): void => {
+  const state = store.state();
+  const startedAt = event.createdAt;
+  const begin = (kind: PhaseKind, text: string): void => store.update({ phase: { kind, text, startedAt } });
+  const withTools = (runningTools: readonly RunningTool[]): void => store.update({ runningTools, phase: toolsPhase(runningTools) });
+  switch (event.type) {
+    case 'model.requested':
+    case 'model.stream.restarted':
+      begin('model', WAITING_FOR_MODEL);
+      return;
+    case 'agent.thought.delta':
+      if (state.phase?.kind !== 'thinking') begin('thinking', 'thinking');
+      return;
+    case 'agent.message.delta':
+      if (state.phase?.kind !== 'responding') begin('responding', 'responding');
+      return;
+    case 'tool.call':
+      withTools([...state.runningTools, { callId: event.callId, title: event.title, startedAt }]);
+      return;
+    case 'tool.completed':
+    case 'tool.reconciled':
+      withTools(state.runningTools.filter((tool) => tool.callId !== event.callId));
+      return;
+    case 'tool.permission.classifying':
+      begin('classifying', 'checking this call');
+      return;
+    case 'hook.started':
+      begin('hook', `running hook ${event.event}`);
+      return;
+    case 'context.compacting':
+      begin('compacting', 'compacting the conversation');
+      return;
+    case 'tool.waiting':
+      begin('awaited', awaitedText(event.awaits));
+      return;
+    case 'tool.permission.classified':
+    case 'hook.completed':
+    case 'context.compacted':
+    case 'context.compaction_rejected':
+    case 'model.responded':
+    case 'model.rejected':
+      withTools(state.runningTools);
+      return;
+    case 'attempt.failed':
+    case 'attempt.lost':
+      withTools([]);
+      return;
+    case 'run.status':
+      if (isTerminalStatus(event.to)) withTools([]);
+      else if (event.to === 'RUNNING') withTools(state.runningTools);
+      else if (event.to === 'QUEUED' && state.lastFailure !== undefined) store.update({ lastFailure: undefined, phase: { kind: 'retry', text: describeRetryWait(state.lastFailure), startedAt } });
+      else if (event.to === 'QUEUED') begin('queued', WAITING_FOR_MODEL);
+      return;
+    default:
+      return;
+  }
+};
+
+export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void => {
+  foldEntries(store, event);
+  foldPhase(store, event);
+};
+
+export const runCreated = (store: TranscriptStore, runId: string, startedAt: number): void => {
+  store.update({ runId, runStatus: 'QUEUED', phase: { kind: 'queued', text: WAITING_FOR_MODEL, startedAt } });
+};
+
+export const runLeft = (store: TranscriptStore): void => {
+  store.update({ phase: undefined, runningTools: [] });
+};
+
+export const shownRunPhase = (state: Pick<TranscriptState, 'phase' | 'approval' | 'elicitation'>): RunPhase | undefined => (state.approval !== undefined || state.elicitation !== undefined ? undefined : state.phase);
 
 const withSubagent = (store: TranscriptStore, runId: string, change: (subagent: Subagent) => Subagent): void => {
   const { subagents } = store.state();
@@ -273,7 +394,7 @@ const foldSubagent = (store: TranscriptStore, event: PublicRunEvent): void => {
 export const foldChildEvent = (store: TranscriptStore, event: PublicRunEvent, agent: string): void => {
   const child = asChildEvent(event, agent);
   if (child === undefined) return;
-  foldEvent(store, child);
+  foldEntries(store, child);
   foldSubagent(store, event);
 };
 

@@ -2,6 +2,8 @@ import { Text } from 'ink';
 import { useEffect, useState } from 'react';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { Subagent } from '../transcript.ts';
+import { every } from './timers.ts';
+import type { ScreenTimers } from './timers.ts';
 
 const TICK_MS = 1000;
 
@@ -15,14 +17,12 @@ export const subagentLines = (subagents: readonly Subagent[], rows: number, now:
   return shown.length === subagents.length ? lines : [...lines, `and ${subagents.length - shown.length} more`];
 };
 
-export function SubagentRows({ subagents, rows, now }: { subagents: readonly Subagent[]; rows: number; now: () => number }) {
+export type SubagentRowsProps = { subagents: readonly Subagent[]; rows: number; now(): number; timers: ScreenTimers };
+
+export function SubagentRows({ subagents, rows, now, timers }: SubagentRowsProps) {
   const [at, setAt] = useState(now);
   const running = subagents.length > 0;
-  useEffect(() => {
-    if (!running) return undefined;
-    const tick = setInterval(() => setAt(now()), TICK_MS);
-    return () => clearInterval(tick);
-  }, [running, now]);
+  useEffect(() => (running ? every(timers, TICK_MS, () => setAt(now())) : undefined), [running, now, timers]);
   return (
     <>
       {subagentLines(subagents, rows, Math.max(at, ...subagents.map((subagent) => subagent.startedAt))).map((line, index) => (

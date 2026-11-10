@@ -103,7 +103,7 @@ describe('the row cache', () => {
     const rows = cache.rowsOf(store.at(0), 12);
     expect(calls.map((entry) => entry.characters)).toEqual(['second paragraph grows'.length]);
     expect(rows).toEqual(createRowCache().rowsOf(store.at(0), 12));
-    expect(logicalText(rows)).toBe('first paragraph of the answer\n\n```\ncode\n\nstill code\n```\n\nsecond paragraph grows');
+    expect(logicalText(rows)).toBe('first paragraph of the answer\n\ncode\n\nstill code\n\nsecond paragraph grows');
   });
 
   it('gives the same rows for any way an answer is cut into deltas', () => {

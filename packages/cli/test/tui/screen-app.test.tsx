@@ -12,6 +12,7 @@ import type { KeyName, TerminalEvent } from '../../src/tui/terminal/events.ts';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
 import { runView } from '../fake-backend.ts';
 import { frame, runStarted, start } from '../tui-harness.tsx';
+import { manualClock } from './screen-clock.ts';
 
 const plain = { ctrl: false, alt: false, shift: false };
 const named = (name: KeyName, mods: Partial<typeof plain> = {}): TerminalEvent => ({ type: 'key', name, ...plain, ...mods });
@@ -21,7 +22,7 @@ const wheel = (button: 'wheel-up' | 'wheel-down'): TerminalEvent => ({ type: 'mo
 
 const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n');
 
-const IDLE = /^(?![\s\S]*working \(esc)[\s\S]*mode: manual/;
+const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: manual/;
 
 const numbered = (count: number, word = 'line'): string => Array.from({ length: count }, (_, index) => `${word} ${index}`).join('\n');
 
@@ -77,13 +78,14 @@ describe('the layout of the full screen', () => {
     app.unmount();
   });
 
-  it('puts a working row above the input while a run works and takes it from the viewport', async () => {
-    const { app, backend } = await start({}, {}, { columns: 60, rows: 12 });
+  it('puts the waiting row above the input while a run works and takes it from the viewport', async () => {
+    const clock = manualClock(5000);
+    const { app, backend } = await start({}, { now: clock.now, timers: clock.timers }, { columns: 60, rows: 12 });
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
-    const lines = linesOf(await untilFrame(app, 'working (esc to cancel)'));
+    const lines = linesOf(await untilFrame(app, 'esc to cancel'));
     expect(lines).toHaveLength(12);
-    expect(lines[7]).toBe('working (esc to cancel)');
+    expect(lines[7]).toBe('⠋ waiting for the model 0s · esc to cancel');
     expect(lines[8]).toMatch(/^╭─+╮$/);
     app.unmount();
   });
@@ -97,7 +99,7 @@ describe('the layout of the full screen', () => {
     const lines = linesOf(await untilFrame(app, 'Permission requested: Bash ls'));
     expect(lines).toHaveLength(16);
     expect(lines.filter((line) => line.includes('│ >'))).toEqual([]);
-    expect(lines.slice(9, 15).map((line) => line.replace(/^│ /, '').replace(/ *│$/, ''))).toEqual([expect.stringMatching(/^╭─+╮$/), 'Permission requested: Bash ls', 'asks', '1. Allow once', '1-1 or up/down and enter to choose, esc to cancel the run', expect.stringMatching(/^╰─+╯$/)]);
+    expect(lines.slice(9, 15).map((line) => line.replace(/^│ /, '').replace(/ *│$/, ''))).toEqual([expect.stringMatching(/^╭─+╮$/), 'Permission requested: Bash ls', 'asks', '› 1. Allow once', '1-9 or enter to choose · up/down to move · ctrl+c: cancel the run', expect.stringMatching(/^╰─+╯$/)]);
     expect(lines[15]).toContain('mode: manual');
     app.unmount();
   });
@@ -164,7 +166,7 @@ describe('the viewport on the screen', () => {
     await runStarted(backend, app, 'more');
     backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm2', text: 'fresh answer' }));
     await backend.called('openSession');
-    await untilFrame(app, 'working (esc to cancel)');
+    await untilFrame(app, 'esc to cancel');
     expect((linesOf(app.lastFrame())[0] ?? '').startsWith('line 28')).toBe(true);
     expect(app.lastFrame()).not.toContain('fresh answer');
     const marker = linesOf(app.lastFrame()).findIndex((line) => line.includes(JUMP_TO_BOTTOM));

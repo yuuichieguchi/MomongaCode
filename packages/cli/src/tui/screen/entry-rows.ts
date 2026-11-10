@@ -1,12 +1,14 @@
-import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import { escapeTerminalLine } from '@momonga/protocol';
 import { describeDenial } from '../../policy-messages.ts';
 import { bannerRows } from '../startup.tsx';
 import type { Entry, ToolEntry } from '../transcript.ts';
+import { inertText, markdownRows } from './markdown.ts';
 import type { StyleToken } from './tokens.ts';
+import { thoughtRows } from './thought.ts';
 import { withoutTabs, wrapText } from './wrap.ts';
 import type { Row } from './wrap.ts';
 
-export const shown = (text: string): string => withoutTabs(escapeTerminalBlock(text.replaceAll('\r\n', '\n')));
+export const shown = inertText;
 
 const FAILED_OUTPUT_LINES = 3;
 
@@ -36,7 +38,7 @@ const toolRows = (entry: ToolEntry, width: number): Row[] => [
   ...(entry.status === 'unknown' && entry.output !== undefined ? wrapText(shown(entry.output), width, { token: 'warning' }) : []),
 ];
 
-export const assistantTextRows = (text: string, width: number): Row[] => wrapText(shown(text), width);
+export const assistantTextRows = markdownRows;
 
 export const rowsOfEntry = (entry: Entry, width: number): Row[] => {
   switch (entry.kind) {
@@ -46,6 +48,8 @@ export const rowsOfEntry = (entry: Entry, width: number): Row[] => {
       return wrapText(shown(entry.text), width, { first: '> ', rest: '  ', token: 'user' });
     case 'assistant':
       return assistantTextRows(entry.text, width);
+    case 'thought':
+      return thoughtRows(entry, width);
     case 'tool':
       return toolRows(entry, width);
     case 'plan':

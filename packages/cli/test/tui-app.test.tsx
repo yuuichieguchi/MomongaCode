@@ -6,6 +6,7 @@ import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.t
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
 import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { systemTiming } from '@momonga/foundation';
 
 describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
@@ -19,7 +20,7 @@ describe('App startup', () => {
     const { backend, app } = await start({ trust: { path: '/work/project', decision: null } });
     await untilFrame(app, 'Do you trust the files in /work/project?');
     expect(backend.calls).toEqual(['boot']);
-    app.stdin.write('1');
+    app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
     expect(backend.calls).toEqual(['boot', 'trust:trusted', 'openSession']);
     app.unmount();
@@ -29,6 +30,8 @@ describe('App startup', () => {
     const { backend, app } = await start({ trust: { path: '/work/project', decision: null } });
     await untilFrame(app, 'Do you trust');
     app.stdin.write('2');
+    await untilFrame(app, '› 2. No, continue without its project settings');
+    app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: manual');
     expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
     app.unmount();
@@ -50,7 +53,7 @@ describe('App startup', () => {
   });
 });
 
-const IDLE = /^(?![\s\S]*working \(esc to cancel\))[\s\S]*mode: manual \(shift\+tab\)/;
+const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: manual \(shift\+tab\)/;
 
 describe('App run rendering', () => {
   it('streams assistant text, shows tool calls with their status and reports usage and context', async () => {
@@ -235,7 +238,7 @@ describe('App run rendering', () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'long task');
-    await untilFrame(app, 'working (esc to cancel)');
+    await untilFrame(app, /waiting for the model \d+s · esc to cancel/);
     app.stdin.write(KEYS.escape);
     await backend.called('cancel:run-1');
     app.unmount();
@@ -442,7 +445,7 @@ describe('App slash commands', () => {
       { name: 'review', description: 'review the diff', run: async (args) => void seen.push(args) },
     ]);
     const backend = fakeBackend();
-    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} initialMode={undefined} slash={registry} onExit={() => undefined} />);
+    const app = renderObservable(<App backend={backend} terminal={fakeScreenTerminal()} now={Date.now} timers={systemTiming} initialMode={undefined} slash={registry} onExit={() => undefined} />);
     await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);

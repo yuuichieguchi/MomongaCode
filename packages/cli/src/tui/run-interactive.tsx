@@ -1,5 +1,6 @@
 import { render } from 'ink';
 import path from 'node:path';
+import { systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -18,11 +19,13 @@ import { createBackgroundTasks } from './background-tasks.ts';
 import { defaultNoticeSources } from './notices.ts';
 import { MAX_FPS, SCREEN_SETTINGS } from './screen/constants.ts';
 import { createScreenInput } from './screen/input.ts';
+import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
 import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
 import { inkInputOf } from './terminal/ink-bridge.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
+import { titleOf } from './terminal/title.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
@@ -49,13 +52,16 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     onEvents: input.push,
   });
   layer.start();
+  layer.setTitle(titleOf(backend.cwd));
+  const noColor = noColorAsked(ports.env);
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           tasks={tasks}
+          timers={systemTiming}
           autoMode={autoMode}
           shell={shell}
           onExit={onExit}

@@ -9,6 +9,7 @@ import type { RowAllocation } from './layout.ts';
 import { createRowCache } from './row-cache.ts';
 import { createClickCounter, extractSelection, indexRangeOf, lineSelection, samePoint, wordSelection } from './selection.ts';
 import type { Point, Selection } from './selection.ts';
+import { toggleThought } from '../transcript.ts';
 import type { TranscriptStore } from './store.ts';
 import { clamped, FOLLOWING, moved, sourceOf, viewportMoveOf, windowOf } from './viewport.ts';
 import type { Position, ViewportMove, ViewSource, ViewWindow } from './viewport.ts';
@@ -29,7 +30,7 @@ export type TranscriptViewHost = {
   keyFacts(): ViewportKeyFacts;
 };
 
-export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined };
+export type TranscriptViewState = { source: ViewSource; window: ViewWindow; position: Position; selection: Selection | undefined; toast: string | undefined; showToast(text: string): void };
 
 type Drag = { anchor: Point; selecting: boolean };
 
@@ -127,7 +128,14 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
       return;
     }
     const point = pointAt(event);
-    const url = point === undefined ? undefined : linkAt(point);
+    if (point === undefined) return;
+    const index = source.indexOfId(point.entryId);
+    const clicked = index === undefined ? undefined : source.at(index).entry;
+    if (clicked?.kind === 'thought' && clicked.endedAt !== undefined && point.rowIndex === 0) {
+      toggleThought(store, clicked.itemId);
+      return;
+    }
+    const url = linkAt(point);
     if (url !== undefined) host.openLink(new URL(url));
   };
 
@@ -140,7 +148,6 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
   };
 
   const onKey = (event: KeyEvent): boolean => {
-    if (held.toast !== undefined) change({ toast: undefined });
     if (held.selection !== undefined) {
       if (isCopyKey(event)) {
         copySelection(held.selection);
@@ -162,6 +169,7 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
   };
 
   const onEvent = useEffectEvent((event: TerminalEvent): boolean => {
+    if (event.type === 'key' && held.toast !== undefined) change({ toast: undefined });
     if (!host.fullscreen) return false;
     if (event.type === 'mouse') {
       onMouse(event);
@@ -172,5 +180,5 @@ export const useTranscriptView = (host: TranscriptViewHost): TranscriptViewState
 
   useEffect(() => terminal.input.claim((event) => onEvent(event)), [terminal]);
 
-  return { source, window, position, selection: held.selection, toast: held.toast };
+  return { source, window, position, selection: held.selection, toast: held.toast, showToast: (text) => change({ toast: text }) };
 };

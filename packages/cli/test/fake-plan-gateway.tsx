@@ -22,6 +22,7 @@ import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { fakeScreenTerminal } from './tui/screen-fakes.ts';
+import { systemTiming } from '@momonga/foundation';
 
 const shipped = PLAN_PROFILES['chatgpt'];
 if (shipped === undefined) throw new Error('the chatgpt profile is not shipped');
@@ -211,14 +212,14 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   return backend;
 };
 
-export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill'> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill' | 'startup'> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakePlanBackend(options);
   const outcomes: TuiOutcome[] = [];
-  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  const app = renderObservable(<App backend={backend as TuiBackend} terminal={fakeScreenTerminal(screen)} now={Date.now} timers={systemTiming} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
   return { backend, app, outcomes };
 };
 
-const numberedRowOf = (frame: string, label: string): string | undefined => frame.split('\n').find((candidate) => /^\s*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));
+const numberedRowOf = (frame: string, label: string): string | undefined => frame.split('\n').find((candidate) => /^[\s│]*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));
 
 export const rowNumberOf = (frame: string, label: string): number => {
   const line = numberedRowOf(frame, label);

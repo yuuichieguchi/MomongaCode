@@ -25,14 +25,15 @@ describe('the transcript store', () => {
     const stop = store.subscribe((entryId, version) => told.push([entryId, version]));
     storeOf([call, { type: 'tool.started', callId: 'c1', idemKey: 'k' }], store);
     const entry = store.at(0);
-    expect(told).toEqual([
+    expect(told.filter(([entryId]) => entryId !== undefined)).toEqual([
       [entry.id, 0],
       [entry.id, 1],
     ]);
+    expect(told.filter(([entryId]) => entryId === undefined)).toEqual([[undefined, 2]]);
     const version = store.version();
     stop();
     storeOf([{ type: 'tool.completed', callId: 'c1', status: 'completed', output: '' }], store);
-    expect(told).toHaveLength(2);
+    expect(told).toHaveLength(3);
     expect(store.version()).toBeGreaterThan(version);
   });
 
@@ -52,7 +53,7 @@ describe('the transcript store', () => {
 
   it('counts the leading entries that can no longer change, and keeps the banner live while it is the only entry', () => {
     const store = createTranscriptStore();
-    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h', color: false }, model: { alias: 'a', targets: undefined }, mode: 'manual', cwd: '/h', notices: [] } }, 'banner');
+    appendEntry(store, { kind: 'banner', banner: { config: { version: '1', home: '/h', color: false }, model: 'a', cwd: '/h', notices: [] } }, 'banner');
     expect(store.settledCount()).toBe(0);
     storeOf([call], store);
     expect(store.settledCount()).toBe(1);
