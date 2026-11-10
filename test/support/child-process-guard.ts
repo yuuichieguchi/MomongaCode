@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { findProgramOnPath } from '@momonga/foundation/program-search';
 import { SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation/secret-store';
 import { INTERNAL_COMMANDS, SUPERVISED_ROLE_COMMANDS } from '../../packages/cli/src/daemon/launcher.ts';
-import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms } from '../../packages/testkit/src/secret-store-env-check.ts';
+import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
 type LauncherName = (typeof LAUNCHERS)[number];
@@ -43,11 +43,12 @@ const resolvedCommand = (command: string, env: ProcessEnv, cwd: unknown): string
 
 const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: unknown): string | undefined => {
   if (command === undefined || command === '') return undefined;
-  const resolved = resolvedCommand(command, env, cwd);
-  if (resolved === undefined) return undefined;
-  const programName = path.basename(resolved).replace(/\.[^.]+$/, '');
-  const named = SECRET_PROGRAM_NAMES.has(path.basename(resolved)) || SECRET_PROGRAM_NAMES.has(programName);
-  return named && !isInsideFakeSecretPrograms(resolved) ? resolved : undefined;
+  const found = resolvedCommand(command, env, cwd);
+  const real = found === undefined ? undefined : realFileOf(found);
+  if (real === undefined) return undefined;
+  const fileName = path.basename(real);
+  const named = SECRET_PROGRAM_NAMES.has(fileName) || SECRET_PROGRAM_NAMES.has(fileName.replace(/\.[^.]+$/, ''));
+  return named && !isInsideFakeSecretPrograms(real) ? real : undefined;
 };
 
 const GIVEN_STORE_COMMANDS: ReadonlySet<string> = new Set(Object.values(SUPERVISED_ROLE_COMMANDS));

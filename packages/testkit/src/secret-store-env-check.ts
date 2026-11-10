@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { SECRET_PROGRAM_ENV, secretStoreEnvFor } from '@momonga/foundation/secret-store';
 
@@ -11,8 +12,19 @@ export const fakeSecretProgramsBin = (env: ProcessEnv = process.env): string => 
   return bin;
 };
 
+export const realFileOf = (file: string): string | undefined => {
+  try {
+    return fs.realpathSync(file);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR' || code === 'ELOOP' || code === 'EACCES') return undefined;
+    throw error;
+  }
+};
+
 export const isInsideFakeSecretPrograms = (file: string): boolean => {
-  const relative = path.relative(fakeSecretProgramsBin(), file);
+  const bin = fakeSecretProgramsBin();
+  const relative = path.relative(realFileOf(bin) ?? bin, realFileOf(file) ?? file);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 };
 

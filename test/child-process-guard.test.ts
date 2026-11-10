@@ -5,7 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, minimalChildEnv } from '@momonga/foundation';
-import { productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
+import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
 import { INTERNAL_COMMANDS, SUPERVISED_ROLE_COMMANDS, selfInvocation } from '../packages/cli/src/daemon/launcher.ts';
@@ -84,6 +84,59 @@ describe('the worker guard refuses a launch of a real secret store program (i)',
 
   it('runs /bin/sh with MINIMAL_CHILD_PATH through the raw module', () => {
     expect(nodeChildProcess.spawnSync('/bin/sh', ['-c', 'true'], { env: { PATH: MINIMAL_CHILD_PATH } }).status).toBe(0);
+  });
+});
+
+describe('the worker guard classifies the real file behind a symbolic link', () => {
+  it('refuses a link with a harmless name that points at a program of a searched name outside the fake directory', async () => {
+    await expectRefusedBeforeLaunch(REAL_PROGRAM, (d) => {
+      const link = path.join(d.dir, 'harmless');
+      fs.symlinkSync(d.program, link);
+      return nodeChildProcess.spawnSync(link, []);
+    });
+  });
+
+  it('refuses that link when it is found by name through PATH', async () => {
+    await expectRefusedBeforeLaunch(REAL_PROGRAM, (d) => {
+      const bin = path.join(d.dir, 'linked-bin');
+      fs.mkdirSync(bin);
+      fs.symlinkSync(d.program, path.join(bin, 'harmless'));
+      return nodeChildProcess.spawnSync('harmless', [], { env: { PATH: bin } });
+    });
+  });
+
+  it('refuses an env whose MOMONGA_SECRET_PROGRAM is a link to a program outside the fake directory', async () => {
+    await expectRefusedBeforeLaunch(/\(ii\) its environment gives MOMONGA_SECRET_PROGRAM=/, (d) => {
+      const link = path.join(d.dir, 'given');
+      fs.symlinkSync(d.program, link);
+      return nodeChildProcess.spawnSync(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(d.marker)}, '')`], { env: { [SECRET_PROGRAM_ENV]: link } });
+    });
+  });
+
+  it('allows a link outside the fake directory that points into it', () => {
+    const dir = tempDir();
+    try {
+      const link = path.join(dir, 'security');
+      fs.symlinkSync(path.join(fakeSecretProgramsBin(), 'security'), link);
+      expect(secretStoreLaunchRefusal('spawn', [link, ['find-generic-password'], {}])).toBeUndefined();
+      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toBeUndefined();
+      expect(nodeChildProcess.spawnSync(link, ['find-generic-password', '-s', 'momonga', '-a', 'absent-item', '-w']).status).toBe(44);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not throw from the guard for a dangling link; the launch itself reports the missing file', () => {
+    const dir = tempDir();
+    try {
+      const link = path.join(dir, 'security');
+      fs.symlinkSync(path.join(dir, 'gone'), link);
+      expect(secretStoreLaunchRefusal('spawn', [link, [], {}])).toBeUndefined();
+      expect(secretStoreLaunchRefusal('spawn', [process.execPath, [], { env: { [SECRET_PROGRAM_ENV]: link } }])).toMatch(/\(ii\)/);
+      expect((nodeChildProcess.spawnSync(link, []).error as NodeJS.ErrnoException).code).toBe('ENOENT');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
