@@ -8,7 +8,7 @@ import type { EditorState } from '../editor.ts';
 import { joinHint } from '../select.tsx';
 import type { SelectLine, SelectSpec } from '../select.tsx';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
-import { InputBox } from './input-box.tsx';
+import { PanelInputBox } from './input-box.tsx';
 
 const shown = (text: string): string => escapeTerminalBlock(text.replaceAll('\r\n', '\n'));
 
@@ -115,7 +115,7 @@ export function ElicitationFields({ elicitation, title, editor, waiting }: { eli
         {flow.error === undefined ? null : <Text color="red">{shown(flow.error)}</Text>}
         <Text dimColor>{FIELD_HINT}</Text>
       </Box>
-      <InputBox editor={editor} />
+      <PanelInputBox editor={editor} />
     </Box>
   );
 }

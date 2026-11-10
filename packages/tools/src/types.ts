@@ -2,7 +2,7 @@ import type { CallStop } from './call-stop.ts';
 import type { Clock } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
-import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
+import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
@@ -37,6 +37,10 @@ export type ToolResult = {
   exitCode?: number;
   validatorFailure?: string;
   backend?: ToolBackend;
+  hunks?: DiffHunk[];
+  added?: number;
+  removed?: number;
+  diffOmitted?: string;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };

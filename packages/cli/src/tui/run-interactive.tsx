@@ -1,7 +1,10 @@
 import { render } from 'ink';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { systemTiming } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -16,16 +19,16 @@ import type { AutoModePort, ShellPort } from './slash.ts';
 import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from '../commands/auto-mode.ts';
 import { createTuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
+import { createExternalEditor } from './external-editor.ts';
 import { defaultNoticeSources } from './notices.ts';
 import { MAX_FPS, SCREEN_SETTINGS } from './screen/constants.ts';
 import { createScreenInput } from './screen/input.ts';
 import { colorLevelOfDepth, noColorAsked } from './screen/theme.ts';
 import { TerminalFrame } from './terminal/frame.tsx';
 import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
-import { inkInputOf } from './terminal/ink-bridge.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
-import { titleOf } from './terminal/title.ts';
+import type { TuiSettingsPort } from './screen/notify.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
@@ -40,8 +43,12 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
+  const tuiSettings: TuiSettingsPort = {
+    initial: (await loadUserSettings({ home: paths.home })).settings.tui,
+    save: (name, value, signal) => writeTuiSetting(paths.home, paths.settingsFile, name, value, { signal }),
+  };
   const inkStdin = createInkStdin();
-  const input = createScreenInput((events) => inkStdin.push(inkInputOf(events)));
+  const input = createScreenInput();
   const layer = createTerminalLayer({
     input: terminal.stdin,
     output: hostTerminalOutput(terminal.stdout),
@@ -52,18 +59,27 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     onEvents: input.push,
   });
   layer.start();
-  layer.setTitle(titleOf(backend.cwd));
+  const externalEditor = createExternalEditor({
+    env: ports.env,
+    temporaryDirectory: () => ports.files.mkdtemp(path.join(os.tmpdir(), 'momonga-draft-')),
+    writePrivate: (file, text) => ports.files.writeTextAtomically(file, text, 0o600),
+    read: (file) => ports.files.readText(file),
+    remove: (directory) => ports.files.rm(directory, { recursive: true }),
+    leaveScreen: layer.leaveForProgram,
+    launch: launchOnTerminal,
+  });
   const noColor = noColorAsked(ports.env);
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} copyOnSelect={SCREEN_SETTINGS.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           tasks={tasks}
           timers={systemTiming}
           autoMode={autoMode}
           shell={shell}
+          externalEditor={externalEditor}
           onExit={onExit}
         />
       </TerminalFrame>,
@@ -77,6 +93,18 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   await backend.close();
   return exitCodeOf(ports, refusalOf(outcome, paths));
 };
+
+const launchOnTerminal = (argv: readonly string[]): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const [program, ...args] = argv;
+    if (program === undefined) {
+      reject(new Error('no program to launch'));
+      return;
+    }
+    const child = spawn(program, args, { stdio: 'inherit' });
+    child.once('error', reject);
+    child.once('exit', () => resolve());
+  });
 
 const refusalOf = (outcome: TuiOutcome, paths: MomongaPaths): TuiOutcome =>
   outcome.error instanceof RunApiError && outcome.error.code === TARGET_NOT_READY ? { ...outcome, error: new Error(noTargetLines(outcome.error.reason, paths).join('\n')) } : outcome;

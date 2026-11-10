@@ -4,6 +4,10 @@ import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
 
+export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
+export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
+export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES } as const;
+
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 const STRING_MAP = { type: 'object', additionalProperties: { type: 'string' } } as const;
@@ -523,6 +527,11 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    tui: {
+      type: 'object',
+      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] } },
+      additionalProperties: false,
+    },
     gateway: {
       type: 'object',
       properties: {

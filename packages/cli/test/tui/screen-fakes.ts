@@ -5,6 +5,8 @@ import type { TranscriptState, TranscriptStore } from '../../src/tui/screen/stor
 import type { TerminalEvent } from '../../src/tui/terminal/events.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
 import type { ScreenMode } from '../../src/tui/terminal/modes.ts';
+import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
+import type { NegotiationState } from '../../src/tui/terminal/negotiation.ts';
 import { foldChildEvent, foldEvent } from '../../src/tui/transcript.ts';
 import type { Entry } from '../../src/tui/transcript.ts';
 
@@ -33,14 +35,20 @@ export type FakeScreenTerminal = ScreenTerminal & {
   resize(columns: number, rows: number): void;
   request(request: ScreenRequest): void;
   shrink(tooSmall: boolean): void;
+  negotiate(negotiation: NegotiationState): void;
   screens: ScreenMode[];
+  titles: string[];
+  bells: string[];
 };
 
 export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: number; rows?: number } = {}): FakeScreenTerminal => {
   const listeners = new Set<() => void>();
   const screenListeners = new Set<(request: ScreenRequest) => void>();
   const claims: ((event: TerminalEvent) => boolean)[] = [];
+  const observers = new Set<(event: TerminalEvent) => void>();
   const screens: ScreenMode[] = [];
+  const titles: string[] = [];
+  const bells: string[] = [];
   let state: TerminalState = {
     screen: given.screen ?? 'fullscreen',
     negotiation: 'unknown',
@@ -57,6 +65,20 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
   };
   return {
     screens,
+    titles,
+    bells,
+    setTitle: (title) => {
+      titles.push(title);
+    },
+    bell: () => {
+      bells.push(titles.at(-1) ?? '');
+    },
+    enable: (mode) => {
+      if (!state.enabled.includes(mode)) publish({ ...state, enabled: [...state.enabled, mode] });
+    },
+    disable: (mode) => {
+      if (state.enabled.includes(mode)) publish({ ...state, enabled: state.enabled.filter((name) => name !== mode) });
+    },
     state: () => state,
     subscribe: (listener) => {
       listeners.add(listener);
@@ -75,6 +97,12 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
       publish({ ...state, screen });
     },
     input: {
+      observe: (observer) => {
+        observers.add(observer);
+        return () => {
+          observers.delete(observer);
+        };
+      },
       claim: (handler) => {
         claims.unshift(handler);
         return () => {
@@ -82,9 +110,13 @@ export const fakeScreenTerminal = (given: { screen?: ScreenMode; columns?: numbe
         };
       },
     },
-    emit: (event) => claims.some((claim) => claim(event)),
+    emit: (event) => {
+      for (const observer of [...observers]) observer(event);
+      return claims.some((claim) => claim(event));
+    },
     resize: (columns, rows) => publish({ ...state, size: { columns, rows } }),
     shrink: (tooSmall) => publish({ ...state, tooSmall }),
+    negotiate: (negotiation) => publish({ ...state, negotiation, newlineHint: NEWLINE_HINT[negotiation] }),
     request: (request) => {
       for (const listener of [...screenListeners]) listener(request);
     },

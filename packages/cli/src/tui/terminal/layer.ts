@@ -5,7 +5,7 @@ import type { ScreenMode, TerminalModeName } from './modes.ts';
 import { advance, fullscreenRefused, modifyOtherKeysSent, modifyOtherKeysWanted, mouseReported, negotiationFrom, NEWLINE_HINT, synchronizedOutputReported } from './negotiation.ts';
 import type { NegotiationState, NewlineHint } from './negotiation.ts';
 import { createInputParser } from './parser.ts';
-import { titleSequence } from './title.ts';
+import { BEL, titleSequence } from './title.ts';
 
 export type TerminalSize = { columns: number; rows: number };
 
@@ -68,10 +68,12 @@ export type TerminalLayer = {
   close(): void;
   release(): void;
   suspend(): void;
+  leaveForProgram(): () => void;
   enable(mode: TerminalModeName): void;
   disable(mode: TerminalModeName): void;
   setScreen(screen: ScreenMode): void;
   setTitle(title: string): void;
+  bell(): void;
   handoverTerminal(): HandoverTerminal;
   state(): TerminalState;
   subscribe(listener: () => void): () => void;
@@ -154,14 +156,18 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     },
   }));
 
+  const reenter = (saved: readonly TerminalModeName[]): void => {
+    setRaw(true);
+    enter(saved);
+    if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
+    publish();
+    request({ type: 'redraw' });
+  };
+
   const resume = (saved: readonly TerminalModeName[]) => {
     const onContinue = (): void => {
       host.off('SIGCONT', onContinue);
-      setRaw(true);
-      enter(saved);
-      if (title !== undefined && enabled.has('title')) output.writeSync(titleSequence(title));
-      publish();
-      request({ type: 'redraw' });
+      reenter(saved);
     };
     return onContinue;
   };
@@ -226,6 +232,19 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     publish();
   };
 
+  const leaveForProgram = (): (() => void) => {
+    const saved = inTableOrder(enabled);
+    restore();
+    input.off('data', onData);
+    input.pause();
+    return () => {
+      if (!hooked) return;
+      input.on('data', onData);
+      input.resume();
+      reenter(saved);
+    };
+  };
+
   const hook = (): void => {
     if (hooked) return;
     hooked = true;
@@ -283,6 +302,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
     close,
     release: unhook,
     suspend,
+    leaveForProgram,
     enable: (mode) => {
       enter([mode]);
       publish();
@@ -298,6 +318,7 @@ export const createTerminalLayer = (options: TerminalLayerOptions): TerminalLaye
       output.writeSync(titleSequence(next));
       publish();
     },
+    bell: () => output.writeSync(BEL),
     handoverTerminal: () => ({ screen, modes: inTableOrder(enabled) }),
     state: () => snapshot,
     subscribe: (listener) => {

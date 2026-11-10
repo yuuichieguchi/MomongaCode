@@ -26,7 +26,10 @@ export type { AutoFitFailedBound, AutoFitKey, AutoFitKeyResult, AutoFitMeasureme
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
-export { MODEL_ROLES } from './settings-schema.ts';
+export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_THEMES } from './settings-schema.ts';
+export { writeTuiSetting } from './tui-settings.ts';
+export { defaultTuiSettings } from './settings.ts';
+export type { EditUserSettingsOptions } from './add-model-connection.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 export { aliasRoomVerdict } from './alias-room.ts';
 export type { AliasMember, AliasRoomVerdict } from './alias-room.ts';
@@ -108,6 +111,10 @@ export type {
   ResolvedTelemetrySettings,
   TelemetrySettings,
   GatewaySettings,
+  ResolvedTuiSettings,
+  TuiNotify,
+  TuiSettings,
+  TuiTheme,
   NetworkSettings,
 } from './settings.ts';
 export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';

@@ -28,11 +28,12 @@ export const footerRow = (facts: FooterFacts, width: number): string => {
 
 export const UNCONNECTED_FOOTER = 'no model connected · /login';
 
-export type FooterProps = { facts: FooterFacts | undefined; unconnected: boolean; planRow: string | undefined; width: number; rows: number };
+export type FooterProps = { facts: FooterFacts | undefined; hint: string | undefined; unconnected: boolean; planRow: string | undefined; width: number; rows: number };
 
 export const planRowFits = (planRow: string | undefined, width: number): boolean => planRow !== undefined && displayWidth(escapeTerminalLine(planRow)) <= width;
 
-export function Footer({ facts, unconnected, planRow, width, rows }: FooterProps) {
+export function Footer({ facts, hint, unconnected, planRow, width, rows }: FooterProps) {
+  const lone = facts === undefined ? (hint ?? (unconnected ? UNCONNECTED_FOOTER : undefined)) : undefined;
   return (
     <>
       {facts === undefined ? null : (
@@ -45,7 +46,11 @@ export function Footer({ facts, unconnected, planRow, width, rows }: FooterProps
           {escapeTerminalLine(planRow)}
         </Text>
       ) : null}
-      {unconnected ? <Text dimColor>{UNCONNECTED_FOOTER}</Text> : null}
+      {lone === undefined ? null : (
+        <Text dimColor wrap="truncate">
+          {lone}
+        </Text>
+      )}
     </>
   );
 }

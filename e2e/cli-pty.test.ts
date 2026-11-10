@@ -48,6 +48,8 @@ describe('cli: interactive TUI through a pty', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
 
     pty.write(KEYS.ctrlD);
+    await pty.waitFor('Press ctrl+d again to exit');
+    pty.write(KEYS.ctrlD);
     expect(await pty.exit()).toEqual({ code: 0, signal: null });
   });
 
@@ -86,6 +88,8 @@ describe('cli: interactive TUI through a pty', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('greeting = "hello, momonga"\n');
 
     pty.write(KEYS.ctrlD);
+    await pty.waitFor('Press ctrl+d again to exit');
+    pty.write(KEYS.ctrlD);
     expect(await pty.exit()).toEqual({ code: 0, signal: null });
   });
 
@@ -102,7 +106,7 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write('/help');
     await pty.waitFor('> /help');
     pty.write(KEYS.enter);
-    await pty.waitFor('Slash commands');
+    await pty.waitFor('Commands');
     for (const command of ['/help', '/clear', '/mode', '/exit']) expect(pty.sinceLastWrite()).toContain(command);
 
     pty.write('/mode plan');

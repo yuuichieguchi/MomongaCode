@@ -115,7 +115,7 @@ const withConnection = (document: Record<string, unknown>, file: string, connect
   return { written: { target: name, alias: name }, changed: true };
 };
 
-export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
+export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal?: AbortSignal };
 
 const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
   const read = await readJsonFile(settingsFile);
@@ -141,7 +141,7 @@ export const editUserSettings = async (
         if (!edit(document)) return;
         await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
       },
-      { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }) },
+      { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }), ...(options.signal === undefined ? {} : { signal: options.signal }) },
     ),
   );
 };

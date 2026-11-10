@@ -76,6 +76,10 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
           ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+          ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
+          ...(result.added === undefined ? {} : { added: result.added }),
+          ...(result.removed === undefined ? {} : { removed: result.removed }),
+          ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
         }
       : {
           type: 'tool.reconciled',

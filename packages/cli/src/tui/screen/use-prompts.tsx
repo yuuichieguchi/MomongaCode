@@ -83,7 +83,7 @@ export type Prompts = {
   wheel(facts: PanelFacts, rows: number): void;
 };
 
-type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; on(outcome: SelectOutcome): void };
+type Active = { owner: string; spec: SelectSpec; border: boolean; sending: boolean; on(outcome: SelectOutcome): void; highlighted?: (index: number) => void };
 
 const TRUST_OWNER = 'trust';
 
@@ -209,8 +209,10 @@ export const usePrompts = (host: PromptsHost): Prompts => {
   const detailOf = (active: Active): { owner: string; top: number } | undefined => (detail.current?.owner === active.owner ? detail.current : undefined);
 
   const apply = (active: Active, step: SelectStep): void => {
+    const before = stateOf(active).index;
     selection.current = { owner: active.owner, state: step.state };
     redraw();
+    if (step.state.index !== before) active.highlighted?.(step.state.index);
     if (step.outcome !== undefined) active.on(step.outcome);
   };
 
@@ -413,6 +415,7 @@ export const usePrompts = (host: PromptsHost): Prompts => {
     spec: pickerSpec(current.request),
     border: true,
     sending: false,
+    ...(current.request.onHighlight === undefined ? {} : { highlighted: current.request.onHighlight }),
     on: (outcome) => {
       if (outcome.kind === 'alt') return;
       closeOverlay();

@@ -27,6 +27,8 @@ const submit = async (pty: PtySession, text: string): Promise<void> => {
 
 const leave = async (pty: PtySession): Promise<void> => {
   pty.write(KEYS.ctrlD);
+  await pty.waitFor('Press ctrl+d again to exit');
+  pty.write(KEYS.ctrlD);
   expect(await pty.exit()).toEqual({ code: 0, signal: null });
 };
 

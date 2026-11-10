@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { assertReadAndUnchanged, assertSameLocation, looksBinary, regularFileProblem, updateLedgerAfterWrite, sha256OfFile, statIfExists, writeFileAtomically } from './files.ts';
+import { diffOfReplacements } from './applied-diff.ts';
+import type { TextReplacement } from './applied-diff.ts';
 import { numberedLines, splitLines } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { parsePreparedWrite, reconcileWrite } from './prepared.ts';
@@ -10,7 +12,7 @@ type EditInput = { file_path: string; old_string: string; new_string: string; re
 
 const CONTEXT_LINES = 4;
 
-type Replacement = { updated: string; firstStart: number; lastEnd: number };
+type Replacement = { updated: string; firstStart: number; lastEnd: number; replaced: TextReplacement[] };
 
 const occurrencesOf = (content: string, needle: string): number[] => {
   const found: number[] = [];
@@ -31,7 +33,7 @@ const replaceAt = (content: string, positions: readonly number[], oldString: str
     cursor = position + oldString.length;
   });
   updated += content.slice(cursor);
-  return { updated, firstStart, lastEnd };
+  return { updated, firstStart, lastEnd, replaced: positions.map((position) => ({ position, length: oldString.length, text: newString })) };
 };
 
 const computeReplacement = (content: string, input: EditInput, shown: string): Replacement => {
@@ -141,6 +143,7 @@ export const editTool = defineTool<EditInput>({
       output: `The file ${shown} has been updated. Here is the result of running cat -n on a snippet of the edited file:\n${snippetOf(replacement)}${warning === undefined ? '' : `\n${warning}`}`,
       content: [{ type: 'diff', path: plan.path, oldText: original, newText: replacement.updated }],
       files: [{ path: plan.path, sha256: plan.postHash, access: 'write' }],
+      ...diffOfReplacements(original, replacement.replaced),
     };
   },
   reconcile: async (input, record, ctx) => reconcileWrite(record, 'Edit', ctx, resolvedPathOf(ctx, input.file_path)),

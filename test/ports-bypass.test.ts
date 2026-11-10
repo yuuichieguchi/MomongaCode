@@ -79,6 +79,7 @@ const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/daemon-entry.ts': 'the composition root of every daemon process: host streams, signals and timers',
   'packages/cli/src/node-ports.ts': 'the composition root of the CLI ports',
   'packages/cli/src/update/node-ports.ts': 'the composition root of the update ports',
+  'packages/cli/src/tui/terminal/host.ts': 'the composition root of the terminal layer ports: the synchronous write to the terminal descriptor and the process signals',
   'packages/gateway/src/process-ports.ts': 'the composition root of the gateway process ports',
   'packages/runtime/src/process/start-runtime-process.ts': 'the composition root of the runtime process',
 };

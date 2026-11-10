@@ -344,7 +344,7 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await type(app, '/hel', '> /hel');
     await untilFrame(app, '› /help');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'Slash commands');
+    await untilOutput(app, 'Commands\n');
     app.unmount();
   });
 

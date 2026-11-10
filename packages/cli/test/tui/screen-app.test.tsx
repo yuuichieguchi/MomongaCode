@@ -155,7 +155,8 @@ describe('the viewport on the screen', () => {
     expect(terminal.emit(named('end'))).toBe(true);
     await untilFrame(app, 'line 39');
     expect(app.lastFrame()).not.toContain(JUMP_TO_BOTTOM);
-    expect(terminal.emit(named('end'))).toBe(false);
+    terminal.emit(named('end'));
+    expect(app.lastFrame()).toContain('line 39');
     app.unmount();
   });
 
@@ -179,9 +180,15 @@ describe('the viewport on the screen', () => {
     const { app, terminal } = await startWith({ columns: 60, rows: 12 }, numbered(40));
     app.stdin.write('draft');
     await untilFrame(app, '> draft');
-    expect(terminal.emit(named('pageup'))).toBe(false);
-    expect(terminal.emit(named('end'))).toBe(false);
-    expect(terminal.emit(named('home', { ctrl: true }))).toBe(true);
+    terminal.emit(named('pageup'));
+    terminal.emit(named('home'));
+    app.stdin.write('X');
+    const edited = await untilFrame(app, '> Xdraft');
+    expect(edited).not.toContain('> go');
+    terminal.emit(named('end'));
+    app.stdin.write('Y');
+    await untilFrame(app, '> XdraftY');
+    terminal.emit(named('home', { ctrl: true }));
     await untilFrame(app, '> go');
     app.unmount();
   });
@@ -216,7 +223,8 @@ describe('selection and copy on the screen', () => {
     expect(linesOf(copied)[11]).toMatch(/^mode: manual \(shift\+tab\) · tokens: 0 · context: 0% +Copied 16 characters$/);
     expect(terminal.emit(named('escape'))).toBe(true);
     await untilFrame(app, 'ctrl+j: new line');
-    expect(terminal.emit(named('escape'))).toBe(false);
+    terminal.emit(named('escape'));
+    expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual([]);
     app.unmount();
   });
 
@@ -324,18 +332,17 @@ describe('the two screen modes', () => {
 });
 
 describe('the event path of the screen', () => {
-  it('hands an event to the newest claim first and forwards what nobody claims, in order', () => {
-    const forwarded: TerminalEvent[][] = [];
-    const input = createScreenInput((events) => forwarded.push([...events]));
+  it('hands an event to the newest claim first and drops what nobody claims', () => {
+    const input = createScreenInput();
     const seen: string[] = [];
     input.claim((event) => (seen.push('first'), event.type === 'mouse'));
     const stop = input.claim((event) => (seen.push('second'), event.type === 'key' && 'name' in event && event.name === 'pageup'));
     input.push([named('pageup'), typed('a'), mouse('press', 1, 1), typed('b')]);
-    expect(forwarded).toEqual([[typed('a'), typed('b')]]);
-    expect(seen.slice(0, 3)).toEqual(['second', 'second', 'first']);
+    expect(seen).toEqual(['second', 'second', 'first', 'second', 'first', 'second', 'first']);
     stop();
     input.push([named('pageup')]);
-    expect(forwarded.at(-1)).toEqual([named('pageup')]);
+    expect(seen.at(-1)).toBe('first');
+    expect(seen).toHaveLength(8);
   });
 });
 

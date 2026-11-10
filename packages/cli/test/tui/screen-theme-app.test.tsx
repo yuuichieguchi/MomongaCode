@@ -67,7 +67,7 @@ describe('colour on the screen', () => {
     const written = everythingWritten(app);
     expect(colourSequencesOf(written)).toEqual([]);
     expect(written).toContain('\u001b[1m');
-    expect(written).toContain('\u001b[7m');
+    expect(written).not.toContain('\u001b[7m');
     app.unmount();
   });
 

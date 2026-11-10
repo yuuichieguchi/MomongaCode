@@ -505,6 +505,7 @@ export type {
   SideEffect,
   StopReason,
   TerminalStatus,
+  DiffHunk,
   ToolAwait,
   ToolKind,
   ModelRejectionReason,

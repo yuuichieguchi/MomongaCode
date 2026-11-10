@@ -3,19 +3,29 @@ import type { TerminalLayer } from '../terminal/layer.ts';
 
 export type EventClaim = (event: TerminalEvent) => boolean;
 
+export type EventObserver = (event: TerminalEvent) => void;
+
 export type ScreenInput = {
   push(events: readonly TerminalEvent[]): void;
   claim(handler: EventClaim): () => void;
+  observe(observer: EventObserver): () => void;
 };
 
-export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen'> & { input: Pick<ScreenInput, 'claim'> };
+export type ScreenTerminal = Pick<TerminalLayer, 'state' | 'subscribe' | 'subscribeScreen' | 'setScreen' | 'setTitle' | 'bell' | 'enable' | 'disable'> & { input: Pick<ScreenInput, 'claim' | 'observe'> };
 
-export const createScreenInput = (forward: (events: readonly TerminalEvent[]) => void): ScreenInput => {
+export const createScreenInput = (): ScreenInput => {
   const claims: EventClaim[] = [];
+  const observers = new Set<EventObserver>();
   return {
+    observe: (observer) => {
+      observers.add(observer);
+      return () => {
+        observers.delete(observer);
+      };
+    },
     push: (events) => {
-      const unclaimed = events.filter((event) => !claims.some((claim) => claim(event)));
-      if (unclaimed.length > 0) forward(unclaimed);
+      for (const event of events) for (const observer of [...observers]) observer(event);
+      for (const event of events) claims.some((claim) => claim(event));
     },
     claim: (handler) => {
       claims.unshift(handler);

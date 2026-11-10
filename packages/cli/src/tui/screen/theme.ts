@@ -1,3 +1,6 @@
+import { TUI_THEMES } from '@momonga/config';
+import type { TuiTheme } from '@momonga/config';
+
 export type TextStyle = { color?: string; bold?: boolean; dimColor?: boolean; inverse?: boolean; underline?: boolean };
 
 export type Paint = { truecolor: string; ansi256: number };
@@ -47,6 +50,43 @@ export const STYLE = {
 export type StyleToken = keyof typeof STYLE;
 
 export const STYLE_TOKEN_NAMES = Object.keys(STYLE) as StyleToken[];
+
+export type StyleTable = Readonly<Record<StyleToken, TokenStyle>>;
+
+const SKY_BLUE: TokenStyle = { dark: { truecolor: '#56b4e9', ansi256: 74 }, light: { truecolor: '#0072b2', ansi256: 25 }, ansi16: 'blue', attrs: NONE };
+const ORANGE: TokenStyle = { dark: { truecolor: '#e69f00', ansi256: 178 }, light: { truecolor: '#a04700', ansi256: 130 }, ansi16: 'yellow', attrs: NONE };
+const PALE_BLUE: TokenStyle = { dark: { truecolor: '#9ad8ff', ansi256: 117 }, light: { truecolor: '#004a75', ansi256: 24 }, ansi16: 'cyan', attrs: NONE };
+const YELLOW: TokenStyle = { dark: { truecolor: '#f0e442', ansi256: 227 }, light: { truecolor: '#6b5900', ansi256: 58 }, ansi16: 'yellow', attrs: NONE };
+const REDDISH_PURPLE: TokenStyle = { dark: { truecolor: '#cc79a7', ansi256: 175 }, light: { truecolor: '#8f3f71', ansi256: 89 }, ansi16: 'magenta', attrs: NONE };
+
+const COLORBLIND_STYLE: StyleTable = {
+  ...STYLE,
+  user: SKY_BLUE,
+  accent: SKY_BLUE,
+  error: ORANGE,
+  warning: YELLOW,
+  success: PALE_BLUE,
+  'diff.added': SKY_BLUE,
+  'diff.removed': ORANGE,
+  code: REDDISH_PURPLE,
+  'choice.selected': { ...SKY_BLUE, attrs: { bold: true } },
+};
+
+export const THEME_IDS = TUI_THEMES;
+
+export type ThemeId = TuiTheme;
+
+export type ThemeSet = { background: 'reported' | 'dark' | 'light'; style: StyleTable };
+
+export const THEMES: Readonly<Record<ThemeId, ThemeSet>> = {
+  auto: { background: 'reported', style: STYLE },
+  dark: { background: 'dark', style: STYLE },
+  light: { background: 'light', style: STYLE },
+  'dark-colorblind': { background: 'dark', style: COLORBLIND_STYLE },
+  'light-colorblind': { background: 'light', style: COLORBLIND_STYLE },
+};
+
+export const isThemeId = (value: string): value is ThemeId => THEME_IDS.some((id) => id === value);
 
 export type Background = 'dark' | 'light' | 'unknown';
 
@@ -105,17 +145,34 @@ export const appearanceOf = (host: ColourHost, backgroundReply: string | undefin
 const ANSI16_LEVEL = 1;
 const ANSI256_LEVEL = 2;
 
-const colorOf = (style: TokenStyle, appearance: Appearance): string | undefined => {
+const colorOf = (style: TokenStyle, appearance: Appearance, theme: ThemeSet): string | undefined => {
   if (appearance.noColor || appearance.level < ANSI16_LEVEL) return undefined;
-  if (appearance.background === 'unknown' || appearance.level === ANSI16_LEVEL) return style.ansi16;
-  const paint = style[appearance.background];
+  const background = theme.background === 'reported' ? appearance.background : theme.background;
+  if (background === 'unknown' || appearance.level === ANSI16_LEVEL) return style.ansi16;
+  const paint = style[background];
   if (paint === undefined) return undefined;
   return appearance.level === ANSI256_LEVEL ? `ansi256(${paint.ansi256})` : paint.truecolor;
 };
 
-export const styleOfToken = (token: StyleToken, appearance: Appearance): TextStyle => {
-  const style: TokenStyle = STYLE[token];
-  const color = colorOf(style, appearance);
+let current: Appearance = appearanceOf(UNREPORTED_COLOUR_HOST, undefined);
+let shownTheme: ThemeId = 'auto';
+
+export const applyAppearance = (next: Appearance): void => {
+  current = next;
+};
+
+export const currentAppearance = (): Appearance => current;
+
+export const applyTheme = (next: ThemeId): void => {
+  shownTheme = next;
+};
+
+export const currentTheme = (): ThemeId => shownTheme;
+
+export const styleOfToken = (token: StyleToken, appearance: Appearance, theme: ThemeId = shownTheme): TextStyle => {
+  const set = THEMES[theme];
+  const style = set.style[token];
+  const color = colorOf(style, appearance, set);
   return {
     ...(color === undefined ? {} : { color }),
     ...(style.attrs.bold === true ? { bold: true } : {}),
@@ -125,17 +182,9 @@ export const styleOfToken = (token: StyleToken, appearance: Appearance): TextSty
   };
 };
 
-let current: Appearance = appearanceOf(UNREPORTED_COLOUR_HOST, undefined);
+export const styleOf = (tokens: readonly StyleToken[], appearance: Appearance = current, theme: ThemeId = shownTheme): TextStyle => Object.assign({}, ...tokens.map((token) => styleOfToken(token, appearance, theme)));
 
-export const applyAppearance = (next: Appearance): void => {
-  current = next;
-};
-
-export const currentAppearance = (): Appearance => current;
-
-export const styleOf = (tokens: readonly StyleToken[], appearance: Appearance = current): TextStyle => Object.assign({}, ...tokens.map((token) => styleOfToken(token, appearance)));
-
-export const borderOf = (token: StyleToken, appearance: Appearance = current): { borderColor?: string } => {
-  const { color } = styleOfToken(token, appearance);
+export const borderOf = (token: StyleToken, appearance: Appearance = current, theme: ThemeId = shownTheme): { borderColor?: string } => {
+  const { color } = styleOfToken(token, appearance, theme);
   return color === undefined ? {} : { borderColor: color };
 };

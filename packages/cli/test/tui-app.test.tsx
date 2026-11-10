@@ -67,7 +67,7 @@ describe('App run rendering', () => {
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Glob', kind: 'search', title: 'Glob *.ts', rawInput: {} }));
     await untilFrame(app, '· Glob *.ts');
     backend.emit(frame({ type: 'tool.started', callId: 'c1', idemKey: 'k' }));
-    await untilFrame(app, '… Glob *.ts');
+    await untilFrame(app, '⠋ Glob *.ts · 0s');
     backend.emit(frame({ type: 'tool.completed', callId: 'c1', status: 'completed', output: 'a.ts' }));
     await untilOutput(app, '✓ Glob *.ts');
     backend.emit(frame({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1500, output_tokens: 100, total_tokens: 1600 } } }));
@@ -313,18 +313,19 @@ describe('App input', () => {
     app.stdin.write(KEYS.ctrlC);
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'Slash commands');
+    await untilOutput(app, 'Commands\n');
     expect(backend.recorded).toEqual(['/help']);
     app.unmount();
   });
 
-  it('refuses a second message while a run is active and says how to cancel', async () => {
+  it('keeps a second message in the input while a run is active and says how to stop the run', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'a task is running; press esc to cancel it');
+    const shown = await untilFrame(app, 'A task is running. Esc stops it.');
+    expect(shown).toContain('> two');
     expect(backend.started).toHaveLength(1);
     app.unmount();
   });
@@ -336,8 +337,8 @@ describe('App slash commands', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
-    const output = await untilOutput(app, 'Slash commands');
-    for (const name of ['/help', '/clear', '/mode', '/model [alias]', '/exit']) expect(output).toContain(name);
+    const output = await untilOutput(app, 'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)');
+    for (const name of ['Commands', '/help', '/clear', '/mode', '/model [alias]', '/exit', 'Keys', 'Mouse']) expect(output).toContain(name);
     app.unmount();
   });
 
@@ -421,9 +422,11 @@ describe('App slash commands', () => {
     expect(await exited).toEqual({});
   });
 
-  it('ctrl+d leaves the application when the input is empty', async () => {
+  it('ctrl+d leaves the application at the second press when the input is empty', async () => {
     const { app, exited } = await start();
     await untilFrame(app, 'mode: manual');
+    app.stdin.write(KEYS.ctrlD);
+    await untilFrame(app, 'Press ctrl+d again to exit');
     app.stdin.write(KEYS.ctrlD);
     expect(await exited).toEqual({});
   });

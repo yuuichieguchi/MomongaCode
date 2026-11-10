@@ -9,7 +9,12 @@ import type { ElicitationFlow } from '../elicit/flow.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
+import { isRecord } from '@momonga/foundation';
+import { appliedDiffOf } from './screen/diff.ts';
+import type { AppliedDiff, DiffFields } from './screen/diff.ts';
 import { EMPTY_USAGE } from './screen/store.ts';
+import { tailOf } from './screen/tool-view.ts';
+import type { OutputTail } from './screen/tool-view.ts';
 import type { TranscriptState, TranscriptStore } from './screen/store.ts';
 import type { StartupBanner } from './startup.tsx';
 
@@ -22,7 +27,21 @@ export type Entry =
   | { kind: 'user'; text: string }
   | { kind: 'assistant'; itemId: string; text: string; open: boolean }
   | { kind: 'thought'; itemId: string; text: string; startedAt: number; endedAt?: number; expanded: boolean; window: number }
-  | { kind: 'tool'; callId: string; name: string; title: string; toolKind: ToolKind; rawInput: unknown; status: ToolStatus; output?: string; denial?: PermissionDenial }
+  | {
+      kind: 'tool';
+      callId: string;
+      name: string;
+      title: string;
+      toolKind: ToolKind;
+      rawInput: unknown;
+      status: ToolStatus;
+      calledAt: number;
+      shownAt: number;
+      output?: string;
+      tail?: OutputTail;
+      diff?: AppliedDiff;
+      denial?: PermissionDenial;
+    }
   | { kind: 'plan'; entries: readonly PlanEntry[] }
   | { kind: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
   | { kind: 'info'; text: string }
@@ -95,6 +114,34 @@ const updateTool = (store: TranscriptStore, callId: string, change: (tool: ToolE
   store.change(callKey(callId), (entry) => (entry.kind === 'tool' ? change(entry) : entry));
 };
 
+const withOutput = (tool: ToolEntry, output: string, shownAt: number): ToolEntry => {
+  const { tail: _tail, diff: _diff, ...rest } = tool;
+  const tail = tailOf(output);
+  return { ...rest, output, shownAt, ...(tail === undefined ? {} : { tail }) };
+};
+
+const shownPathOf = (tool: ToolEntry): string => tool.title.slice(tool.title.indexOf(`${tool.name} `) + tool.name.length + 1);
+
+const withDiff = (tool: ToolEntry, fields: DiffFields): ToolEntry => {
+  const diff = appliedDiffOf(shownPathOf(tool), fields);
+  return diff === undefined ? tool : { ...tool, diff };
+};
+
+const reportedText = (content: readonly unknown[]): string =>
+  content
+    .map((item) => {
+      const inner = isRecord(item) && item['type'] === 'content' ? item['content'] : undefined;
+      const text = isRecord(inner) && inner['type'] === 'text' ? inner['text'] : undefined;
+      return typeof text === 'string' ? text : '';
+    })
+    .join('');
+
+export const tickRunningTools = (store: TranscriptStore, now: number): void => {
+  for (const { callId } of store.state().runningTools) {
+    updateTool(store, callId, (tool) => (tool.status !== 'running' || Math.floor((now - tool.calledAt) / 1000) === Math.floor((tool.shownAt - tool.calledAt) / 1000) ? tool : { ...tool, shownAt: now }));
+  }
+};
+
 export const withElicitationFlow = (store: TranscriptStore, flow: ElicitationFlow, submitted = false): void => {
   const { elicitation } = store.state();
   if (elicitation !== undefined) store.update({ elicitation: { ...elicitation, flow, submitted } });
@@ -161,7 +208,7 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       closeThought(store, event.createdAt);
       appendEntry(
         store,
-        { kind: 'tool', callId: event.callId, name: event.name, title: event.title, toolKind: event.kind, rawInput: event.rawInput, status: 'requested' },
+        { kind: 'tool', callId: event.callId, name: event.name, title: event.title, toolKind: event.kind, rawInput: event.rawInput, status: 'requested', calledAt: event.createdAt, shownAt: event.createdAt },
         callKey(event.callId),
       );
       return;
@@ -209,10 +256,16 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       appendEntry(store, { kind: 'notice', level: 'warning', text: escapeTerminalLine(mcpAuthorizationNotice(event.server)) });
       return;
     case 'tool.started':
-      updateTool(store, event.callId, (tool) => ({ ...tool, status: 'running' }));
+      updateTool(store, event.callId, (tool) => ({ ...tool, status: 'running', shownAt: event.createdAt }));
+      return;
+    case 'tool.updated':
+      updateTool(store, event.callId, (tool) => withOutput(tool, reportedText(event.content), tool.shownAt));
       return;
     case 'tool.completed':
-      updateTool(store, event.callId, (tool) => ({ ...tool, status: event.status, output: event.output, ...(event.denial === undefined ? {} : { denial: event.denial }) }));
+      updateTool(store, event.callId, (tool) => {
+        const ended: ToolEntry = { ...withOutput(tool, event.output, event.createdAt), status: event.status, ...(event.denial === undefined ? {} : { denial: event.denial }) };
+        return event.status === 'completed' ? withDiff(ended, event) : ended;
+      });
       return;
     case 'hook.completed':
       appendEntry(store, { kind: 'notice', level: hookLevel(event), text: describeHook(event).map(escapeTerminalLine).join('\n') });
@@ -222,9 +275,8 @@ const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
       return;
     case 'tool.reconciled':
       updateTool(store, event.callId, (tool) => ({
-        ...tool,
+        ...withOutput(tool, event.output, event.createdAt),
         status: event.outcome === 'unknown' ? 'unknown' : event.outcome === 'already_applied' ? 'completed' : 'failed',
-        output: event.output,
       }));
       return;
     case 'plan.updated':

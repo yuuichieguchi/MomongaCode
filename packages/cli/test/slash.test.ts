@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryView, SkillView } from '@momonga/protocol';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
 import { skillCommands } from '../src/tui/commands/skills.ts';
-import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, parseSlash, slashCompletion } from '../src/tui/slash.ts';
+import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
+import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, helpText, newlineHelpLines, parseSlash } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackendOptions } from './fake-backend.ts';
@@ -27,6 +28,15 @@ const unusedShell: SlashContext['shell'] = {
 };
 
 const unusedScreen: SlashContext['screen'] = { current: () => 'fullscreen', set: async () => undefined };
+
+const unusedDisplay: SlashContext['display'] = {
+  theme: () => 'dark',
+  previewTheme: () => undefined,
+  storeTheme: async () => undefined,
+  notify: () => 'off',
+  storeNotify: async () => undefined,
+  pick: async () => undefined,
+};
 
 const unusedAutoMode: SlashContext['autoMode'] = {
   check: async () => ({ measurement: 'passed' }),
@@ -69,6 +79,9 @@ describe('built-in commands', () => {
       autoMode: unusedAutoMode,
       shell: unusedShell,
       screen: unusedScreen,
+      keys: DEFAULT_KEY_TABLE,
+      negotiation: 'unknown',
+      display: unusedDisplay,
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -179,23 +192,60 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     autoMode: unusedAutoMode,
     shell: unusedShell,
     screen: unusedScreen,
+    keys: DEFAULT_KEY_TABLE,
+    negotiation: 'unknown',
+    display: unusedDisplay,
   };
   return { context, infos, runs, backend };
 };
 
-describe('slashCompletion', () => {
-  const commands = createSlashRegistry([...BUILTIN_SLASH_COMMANDS, ...skillCommands([PDF, PR], new Set()).commands]).list();
+describe('/help', () => {
+  const commands = createSlashRegistry([...BUILTIN_SLASH_COMMANDS, ...skillCommands([PDF], new Set()).commands]).list();
+  const help = (negotiation: Parameters<typeof helpText>[0]['negotiation'], screen: 'fullscreen' | 'scrollback' = 'fullscreen'): string[] => helpText({ commands, keys: DEFAULT_KEY_TABLE, negotiation, screen }).split('\n');
 
-  it('lists every command that starts with what was typed and completes the longest common prefix', () => {
-    expect(slashCompletion('/', commands)?.names).toEqual(['help', 'clear', 'mode', 'model', 'exit', 'pdf', 'pr-review']);
-    expect(slashCompletion('/p', commands)).toEqual({ names: ['pdf', 'pr-review'], completed: '/p' });
-    expect(slashCompletion('/pr', commands)).toEqual({ names: ['pr-review'], completed: '/pr-review ' });
+  it.each(['kitty', 'proven'] as const)('names shift+enter for a new line once the terminal reports it (%s)', (negotiation) => {
+    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual(['shift+enter or ctrl+j: new line', 'alt+enter: new line where the terminal sends Alt as Escape', '\\ then enter: new line']);
   });
 
-  it('offers nothing for text that is not a bare command name or has no match', () => {
-    expect(slashCompletion('/pdf summarize', commands)).toBeUndefined();
-    expect(slashCompletion('hello', commands)).toBeUndefined();
-    expect(slashCompletion('/zzz', commands)).toBeUndefined();
+  it.each(['unknown', 'plain', 'modify-other-keys'] as const)('names only ctrl+j while shift+enter is not proven (%s)', (negotiation) => {
+    expect(newlineHelpLines(DEFAULT_KEY_TABLE, negotiation)).toEqual([
+      'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)',
+      'alt+enter: new line where the terminal sends Alt as Escape',
+      '\\ then enter: new line',
+    ]);
+  });
+
+  it('groups the commands of the registry, the keys of the table and the mouse actions', () => {
+    const lines = help('unknown');
+    expect(lines.filter((line) => !line.startsWith('  '))).toEqual(['Commands', 'Keys', 'Mouse']);
+    expect(lines.slice(1, lines.indexOf('Keys'))).toEqual(commands.map((command) => `  /${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`));
+    for (const line of ['  ctrl+c: cancel the run or clear the input; twice on an empty input to exit', '  ctrl+d: twice on an empty input to exit', '  ctrl+r: search the history', '  ctrl+g: edit the draft in $VISUAL or $EDITOR', '  ctrl+o: show or fold the detail', '  shift+tab: cycles the mode', '  esc: stops the run', '  pageup: scroll up half a screen', '  ctrl+home: go to the top', '  ctrl+l: repaint the screen'])
+      expect(lines).toContain(line);
+    expect(lines.join('\n')).not.toContain('backslash+enter');
+  });
+
+  it('lists every key of the editor, the viewport and the screen that the table holds, and no key of a list', () => {
+    const lines = help('kitty');
+    const keyLines = lines.slice(lines.indexOf('Keys') + 1, lines.indexOf('Mouse'));
+    const expected = DEFAULT_KEY_TABLE.rows().filter((row) => ['chat', 'viewport', 'global'].includes(row.context) && row.id !== 'prompt.newline');
+    expect(keyLines).toHaveLength(expected.length + 3);
+    for (const row of expected) expect(keyLines).toContain(`  ${DEFAULT_KEY_TABLE.hintFor(row.id)}: ${row.description}`);
+    expect(keyLines.join('\n')).not.toContain('complete the highlighted command');
+  });
+
+  it('lists the viewport keys and the mouse only in the full screen', () => {
+    const lines = help('unknown', 'scrollback');
+    expect(lines).not.toContain('Mouse');
+    expect(lines).not.toContain('  pageup: scroll up half a screen');
+    expect(help('unknown')).toContain('  wheel: scroll');
+    expect(help('unknown')).toContain('  click in the input: place the caret');
+  });
+
+  it('is what the command prints', async () => {
+    const infos: string[] = [];
+    const { context } = contextWith();
+    await createSlashRegistry(BUILTIN_SLASH_COMMANDS).find('help')?.run('', { ...context, commands, negotiation: 'kitty', info: (text) => void infos.push(text) });
+    expect(infos).toEqual([helpText({ commands, keys: DEFAULT_KEY_TABLE, negotiation: 'kitty', screen: 'fullscreen' })]);
   });
 });
 

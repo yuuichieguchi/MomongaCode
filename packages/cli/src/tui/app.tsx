@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, useInput, usePaste, useStdout } from 'ink';
+import { useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, isNotListedCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import type { RunView, SessionView } from '../client/views.ts';
@@ -19,32 +19,41 @@ import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
 import type { StartupBanner, StartupConfig } from './startup.tsx';
 import { skillCommands } from './commands/skills.ts';
-import { applyKey, emptyEditor } from './editor.ts';
+import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, isEditorAction, placeCaret, placeText, withHistory } from './editor.ts';
 import type { EditorState } from './editor.ts';
+import { EDITOR_UNSET_HINT } from './external-editor.ts';
+import type { ExternalEditorPort } from './external-editor.ts';
+import { legacyKeyOf } from './keys/legacy.ts';
+import { DEFAULT_KEY_TABLE } from './keys/table.ts';
+import type { ActionId, KeyContext, KeyTable } from './keys/table.ts';
 import { AttachmentLines } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
 import { SCREEN_SETTINGS } from './screen/constants.ts';
 import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
 import { HistoryView } from './screen/history-view.tsx';
-import { InputBox, inputRowsOf } from './screen/input-box.tsx';
+import { InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
-import { allocate, panelRowsCap } from './screen/layout.ts';
-import { useSlashMenu } from './screen/menu.tsx';
+import { allocate, panelRowsCap, regionAt } from './screen/layout.ts';
+import { isMenuAction, useSlashMenu } from './screen/menu.tsx';
 import { Screen } from './screen/screen.tsx';
 import { createTranscriptStore } from './screen/store.ts';
 import { SubagentRows } from './screen/subagents.tsx';
 import { SCROLLBAR_COLUMNS, TranscriptView } from './screen/transcript-view.tsx';
 import { usePromptPointer, usePrompts } from './screen/use-prompts.tsx';
+import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, parseSlash } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
+import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
-import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance } from './screen/theme.ts';
-import type { ColourHost } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf, toggleNewestThought } from './transcript.ts';
+import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
+import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
+import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
+import type { ColourHost, ThemeId } from './screen/theme.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 
 export type TuiOutcome = { error?: Error };
@@ -61,8 +70,11 @@ export type AppProps = {
   tasks?: BackgroundTasks;
   autoMode?: AutoModePort;
   shell?: ShellPort;
+  keys?: KeyTable;
+  externalEditor?: ExternalEditorPort;
   copyOnSelect?: boolean;
   colour?: ColourHost;
+  tuiSettings?: TuiSettingsPort;
   now(): number;
   timers: ScreenTimers;
   onExit(outcome: TuiOutcome): void;
@@ -83,6 +95,26 @@ const unavailableShell: ShellPort = {
   },
 };
 
+const unavailableExternalEditor: ExternalEditorPort = {
+  edit() {
+    return Promise.reject(new Error('the external editor is not available in this interface'));
+  },
+};
+
+export const STILL_STARTING_HINT = 'Still starting. Your text is kept.';
+export const TASK_RUNNING_HINT = 'A task is running. Esc stops it.';
+export const EXIT_ARM_MS = 3000;
+export const HISTORY_SEARCH_TITLE = 'History';
+
+export const exitHint = (key: string): string => `Press ${key} again to exit`;
+
+type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
+
+const MENU_CONTEXTS: readonly KeyContext[] = ['menu'];
+const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
+
+const isTyped = (event: KeyEvent): event is KeyEvent & { text: string } => 'text' in event && !event.ctrl && !event.alt;
+
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
 const NO_MODEL_NOTE = 'No model is connected. Use /login to connect one.';
@@ -100,10 +132,15 @@ const errorOf = (error: unknown): Error => (error instanceof Error ? error : new
 export function App(props: AppProps) {
   const { backend, terminal, onExit } = props;
   const { exit, waitUntilRenderFlush } = useApp();
-  const { stdout } = useStdout();
+  const { stdout, write: writeThroughInk } = useStdout();
   const terminalState = useSyncExternalStore(terminal.subscribe, terminal.state);
   const { columns, rows } = terminalState.size;
   applyAppearance(appearanceOf(props.colour ?? UNREPORTED_COLOUR_HOST, terminalState.backgroundColor));
+  const tuiSettings = props.tuiSettings ?? UNSTORED_TUI_SETTINGS;
+  const [theme, setTheme] = useState<ThemeId>(tuiSettings.initial.theme);
+  const [previewedTheme, setPreviewedTheme] = useState<ThemeId | undefined>(undefined);
+  const [notify, setNotify] = useState<NotifyMode>(tuiSettings.initial.notify);
+  applyTheme(previewedTheme ?? theme);
   const [store] = useState(createTranscriptStore);
   useSyncExternalStore(store.subscribe, store.version);
   const transcript = store.state();
@@ -160,6 +197,17 @@ export function App(props: AppProps) {
   const aliasRef = useRef<string | undefined>(undefined);
   const signInFailedRun = useRef<{ text: string; options: StartRunOptions; alias: string } | undefined>(undefined);
   const busyRef = useRef(false);
+  const keys = props.keys ?? DEFAULT_KEY_TABLE;
+  const externalEditor = props.externalEditor ?? unavailableExternalEditor;
+  const [hint, setHint] = useState<string | undefined>(undefined);
+  const armedExit = useRef<{ action: ExitAction; timer: unknown } | undefined>(undefined);
+  const attention = useAttention({
+    terminal,
+    cwd: backend.cwd,
+    working: busy,
+    prompting: phase.kind === 'trust' || transcript.approval !== undefined || transcript.elicitation !== undefined,
+    notify,
+  });
 
   const setBusyState = (value: boolean): void => {
     busyRef.current = value;
@@ -264,7 +312,8 @@ export function App(props: AppProps) {
     setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
-    replaceEditor(emptyEditor(await backend.loadHistory()));
+    const history = await backend.loadHistory();
+    replaceEditor(withHistory(editorRef.current, history));
     showBanner(session.modelAlias, []);
     showAutoNotice(session);
     setPhase({ kind: 'ready' });
@@ -435,8 +484,18 @@ export function App(props: AppProps) {
     void boot();
   }, [backend]);
 
+  const disarmExit = (): void => {
+    const armed = armedExit.current;
+    if (armed === undefined) return;
+    timers.clearTimeout(armed.timer);
+    armedExit.current = undefined;
+    setHint(undefined);
+  };
+
   const runPrompt = async (text: string, options: StartRunOptions = {}): Promise<void> => {
     setBusyState(true);
+    disarmExit();
+    attention.runEnded(undefined);
     signInFailedRun.current = undefined;
     const sent = attachmentsRef.current;
     setAttachments([]);
@@ -465,6 +524,7 @@ export function App(props: AppProps) {
         onReconnecting: () => setReconnectingSince((since) => since ?? now()),
       });
       setReconnectingSince(undefined);
+      attention.runEnded(run.status === 'COMPLETED' ? 'done' : run.status === 'FAILED' ? 'error' : undefined);
       const stopped = run.error;
       if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && runAlias !== undefined) signInFailedRun.current = { text, options: runOptions, alias: runAlias };
       const plan = stopped?.plan;
@@ -472,6 +532,7 @@ export function App(props: AppProps) {
       else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
       else if (run.status !== 'COMPLETED') append({ kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') });
     } catch (error) {
+      attention.runEnded('error');
       if (!exiting.current) reportError(error);
     } finally {
       runIdRef.current = undefined;
@@ -502,8 +563,8 @@ export function App(props: AppProps) {
       backend,
       info: note,
       startRun: async (task, runOptions) => {
-        if (busy) {
-          note('a task is running; press esc to cancel it');
+        if (busyRef.current) {
+          setHint(TASK_RUNNING_HINT);
           return;
         }
         await runPrompt(task, runOptions);
@@ -523,6 +584,22 @@ export function App(props: AppProps) {
       autoMode: props.autoMode ?? unavailableAutoMode,
       shell: props.shell ?? unavailableShell,
       screen: { current: () => terminal.state().screen, set: switchScreen },
+      keys,
+      negotiation: terminal.state().negotiation,
+      display: {
+        theme: () => theme,
+        previewTheme: setPreviewedTheme,
+        storeTheme: async (chosen, signal) => {
+          await tuiSettings.save('theme', chosen, signal);
+          setTheme(chosen);
+        },
+        notify: () => notify,
+        storeNotify: async (chosen, signal) => {
+          await tuiSettings.save('notify', chosen, signal);
+          setNotify(chosen);
+        },
+        pick: overlayPorts.pick,
+      },
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
@@ -544,8 +621,8 @@ export function App(props: AppProps) {
       await runSlash(text);
       return;
     }
-    if (busy) {
-      note('a task is running; press esc to cancel it');
+    if (busyRef.current) {
+      setHint(TASK_RUNNING_HINT);
       return;
     }
     if (alias === undefined) {
@@ -617,88 +694,144 @@ export function App(props: AppProps) {
 
   const imageInput = capabilities?.imageInput === true;
 
-  usePaste(
-    (text) => {
-      if (prompts.overlay?.kind === 'waiting') {
-        prompts.paste(text);
-        return;
-      }
-      const paths = imageInput ? pastedImagePaths(text) : undefined;
-      if (paths !== undefined) {
-        attach(paths).catch(reportError);
-        return;
-      }
-      if (prompts.paste(text)) return;
-      replaceEditor(applyKey(editorRef.current, { input: text }).state);
-    },
-    { isActive: (phase.kind === 'ready' && transcript.approval === undefined) || overlay?.kind === 'waiting' },
-  );
-
   const slashMenu = useSlashMenu({ text: editor.text, commands: slash.list(), active: phase.kind === 'ready' || phase.kind === 'unconnected', height: rows });
-  const placeMenuText = (text: string): void => replaceEditor({ ...editorRef.current, text, cursor: text.length, historyIndex: undefined });
+  const placeMenuText = (text: string): void => replaceEditor(placeText(editorRef.current, text));
 
   const invitationShown = prompts.invitation !== undefined && overlay === undefined && !busy && editor.text === '';
 
-  useInput((input, key) => {
-    if (phase.kind === 'starting') {
-      if (key.ctrl && input === 'c') finish({});
-      return;
-    }
-    if (phase.kind === 'trust') {
-      prompts.trustKey(phase.path, input, key);
-      return;
-    }
-    if (prompts.overlayKey(input, key)) return;
-    if (phase.kind === 'welcome') return;
-    if (!busy && editorRef.current.text === '' && prompts.invitationKey(input, key)) return;
-    if (input !== '' && !key.ctrl && !key.meta) {
-      typedRef.current = true;
-      prompts.dismissInvitation();
-    }
-    if (key.tab && key.shift) {
-      if (alias === undefined) return;
-      cycleMode();
-      return;
-    }
-    if (prompts.runPromptKey(input, key)) return;
-    const menuAct = slashMenu.key(editorRef.current.text, input, key);
-    if (menuAct?.kind === 'handled') return;
-    if (menuAct !== undefined) placeMenuText(menuAct.text);
-    if (menuAct?.kind === 'complete') return;
-    if (key.ctrl && input === 'o') {
-      toggleNewestThought(store);
-      return;
-    }
-    if (key.escape) {
-      cancelNewest();
-      return;
-    }
-    if (key.ctrl && input === 'c') {
-      if (busy) cancelNewest();
-      else if (editorRef.current.text === '') finish({});
-      else replaceEditor(emptyEditor(editorRef.current.history));
-      return;
-    }
-    if (key.ctrl && input === 'd' && editorRef.current.text === '') {
+  const exitOnSecondPress = (action: ExitAction): void => {
+    if (armedExit.current?.action === action) {
+      disarmExit();
       finish({});
       return;
     }
-    if ((key.backspace || key.delete) && editorRef.current.text === '' && attachmentsRef.current.length > 0) {
-      setAttachments(attachmentsRef.current.slice(0, -1));
+    armedExit.current = { action, timer: timers.setTimeout(disarmExit, EXIT_ARM_MS) };
+    setHint(exitHint(keys.hintFor(action)));
+  };
+
+  useEffect(
+    () => () => {
+      if (armedExit.current !== undefined) timers.clearTimeout(armedExit.current.timer);
+    },
+    [timers],
+  );
+
+  const searchHistory = async (): Promise<void> => {
+    const entries = editorRef.current.history.toReversed();
+    if (entries.length === 0) return;
+    const chosen = await overlayPorts.pick({ title: HISTORY_SEARCH_TITLE, rows: entries.map((entry) => ({ label: entry.replaceAll('\n', ' ') })), decideOn: 'enter', filter: true });
+    const entry = chosen === undefined ? undefined : entries[chosen];
+    if (entry !== undefined) replaceEditor(placeText(editorRef.current, entry));
+  };
+
+  const editExternally = async (): Promise<void> => {
+    const outcome = await externalEditor.edit(expandedText(editorRef.current));
+    if (outcome.kind === 'unset') setHint(EDITOR_UNSET_HINT);
+    else replaceEditor(placeText(editorRef.current, outcome.text));
+  };
+
+  const onEnter = (): void => {
+    const outcome = enterOf(editorRef.current);
+    if (outcome.kind === 'blank') return;
+    if (outcome.kind === 'newline') {
+      replaceEditor(outcome.state);
       return;
     }
-    if (key.tab) return;
-    const outcome = applyKey(editorRef.current, { ...key, input });
-    if (outcome.submit !== undefined && alias === undefined && !outcome.submit.trim().startsWith('/')) {
+    const command = outcome.text.trim().startsWith('/');
+    if (phase.kind === 'starting') {
+      setHint(STILL_STARTING_HINT);
+      return;
+    }
+    if (!command && busyRef.current) {
+      setHint(TASK_RUNNING_HINT);
+      return;
+    }
+    if (!command && alias === undefined) {
       note(NO_MODEL_NOTE);
       return;
     }
     replaceEditor(outcome.state);
-    if (outcome.submit !== undefined) {
-      backend.recordHistory(outcome.submit).catch(reportError);
-      submitSafely(outcome.submit);
+    backend.recordHistory(outcome.text).catch(reportError);
+    submitSafely(outcome.text);
+  };
+
+  const onEditorAction = (action: ActionId | undefined, event: KeyEvent): void => {
+    const starting = phase.kind === 'starting';
+    const working = busyRef.current || commands.length > 0;
+    const current = editorRef.current;
+    if (action === 'prompt.submit') onEnter();
+    else if (action === 'transcript.detail') {
+      if (!starting) toolView.showNewest();
+    } else if (action === 'run.stop') {
+      if (working) cancelNewest();
+    } else if (action === 'prompt.interrupt') {
+      if (starting) finish({});
+      else if (working) cancelNewest();
+      else if (current.text === '') exitOnSecondPress(action);
+      else replaceEditor(emptyEditor(current.history));
+    } else if (action === 'prompt.exit') {
+      if (current.text !== '') replaceEditor(applyAction(current, 'editor.deleteAfter'));
+      else if (!starting) exitOnSecondPress(action);
+    } else if (action === 'history.search') runFlow(searchHistory);
+    else if (action === 'editor.external') runFlow(editExternally);
+    else if (action === 'screen.repaint') writeThroughInk('');
+    else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
+    else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
+    else if (action === undefined && isTyped(event)) replaceEditor(insertText(current, event.text));
+  };
+
+  const onKey = (event: KeyEvent): void => {
+    const action = keys.actionOf(EDITOR_CONTEXTS, event);
+    if (armedExit.current === undefined || armedExit.current.action !== action) {
+      disarmExit();
+      setHint(undefined);
     }
+    const { input, key } = legacyKeyOf(event);
+    if (phase.kind === 'trust') {
+      prompts.trustKey(phase.path, input, key);
+      return;
+    }
+    if (toolView.key(input, key)) return;
+    if (prompts.overlayKey(input, key)) return;
+    if (phase.kind === 'welcome') return;
+    if (!busy && editorRef.current.text === '' && prompts.invitationKey(input, key)) return;
+    if (isTyped(event)) {
+      typedRef.current = true;
+      prompts.dismissInvitation();
+    }
+    if (action === 'mode.cycle') {
+      if (alias !== undefined) cycleMode();
+      return;
+    }
+    if (prompts.runPromptKey(input, key)) return;
+    const menuAction = keys.actionOf(MENU_CONTEXTS, event);
+    const menuAct = isMenuAction(menuAction) ? slashMenu.act(editorRef.current.text, menuAction) : undefined;
+    if (menuAct?.kind === 'handled') return;
+    if (menuAct !== undefined) placeMenuText(menuAct.text);
+    if (menuAct?.kind === 'complete') return;
+    onEditorAction(action, event);
+  };
+
+  const onPaste = (text: string): void => {
+    if (prompts.paste(text)) return;
+    if (phase.kind === 'trust' || phase.kind === 'welcome' || overlay !== undefined || transcript.approval !== undefined) return;
+    disarmExit();
+    setHint(undefined);
+    const paths = imageInput ? pastedImagePaths(text) : undefined;
+    if (paths !== undefined) {
+      attach(paths).catch(reportError);
+      return;
+    }
+    replaceEditor(insertPaste(editorRef.current, text));
+  };
+
+  const onTyped = useEffectEvent((event: TerminalEvent): boolean => {
+    if (event.type === 'paste') onPaste(event.text);
+    else if (event.type === 'key') onKey(event);
+    return event.type === 'paste' || event.type === 'key';
   });
+
+  useEffect(() => terminal.input.claim((event) => onTyped(event)), [terminal]);
 
   const servedPlan = servedTarget === undefined || model?.targetBilling?.[servedTarget] !== 'plan' ? undefined : model.targetPlan?.[servedTarget];
   const servedProfile = servedPlan === undefined ? undefined : profiles.find((profile) => profile.id === servedPlan.profile);
@@ -707,7 +840,7 @@ export function App(props: AppProps) {
   const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
   const panel = prompts.panel(panelFacts);
   const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
-  const inputShown = (phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
+  const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
   const menuShown = inputShown && (invitationShown || slashMenu.open);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
   const waiting = waitingOf({
@@ -740,7 +873,18 @@ export function App(props: AppProps) {
     copy: (text) => backend.copyToClipboard(text),
     openLink: (url) => backend.openUrl(url, undefined, (message) => reportError(new Error(message))),
     reportError,
-    keyFacts: () => ({ panelOpen: panel !== undefined, menuOpen: menuShown, inputEmpty: editorRef.current.text === '' }),
+    keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: menuShown, inputEmpty: editorRef.current.text === '' }),
+  });
+  const toolView = useToolView({
+    store,
+    terminal,
+    now,
+    timers,
+    frame: { width: transcriptWidth, rows: fullscreen ? allocation.viewport : panelRowsCap(rows), border: false },
+    yielded: panel !== undefined || switching,
+    window: fullscreen && !switching ? view.window : undefined,
+    allocation,
+    reportError,
   });
   usePromptPointer({
     terminal,
@@ -762,6 +906,16 @@ export function App(props: AppProps) {
       if (!invitationInMenu) slashMenu.wheel(wheelRows);
     },
   });
+  const onInputPress = useEffectEvent((event: TerminalEvent): boolean => {
+    if (!fullscreen || switching || panel !== undefined || !inputShown) return false;
+    if (event.type !== 'mouse' || event.kind !== 'press' || event.button !== 'left') return false;
+    const hit = regionAt(allocation, event.row);
+    if (hit?.region !== 'input') return false;
+    const offset = inputOffsetAt(editorRef.current, columns, inputContentRows(allocation.input), hit.row, event.col);
+    if (offset !== undefined) replaceEditor(placeCaret(editorRef.current, offset));
+    return true;
+  });
+  useEffect(() => terminal.input.claim((event) => onInputPress(event)), [terminal]);
   const thoughtWindow = thoughtWindowOf(allocation.viewport);
   useEffect(() => {
     setThoughtWindow(store, thoughtWindow);
@@ -773,7 +927,7 @@ export function App(props: AppProps) {
           tokens: sessionTokens(transcript),
           contextPercent: contextPercentOf(transcript.contextTokens, capabilities?.contextWindow),
           imageInput,
-          right: view.toast ?? newlineHintText(terminalState.newlineHint),
+          right: hint ?? view.toast ?? newlineHintText(terminalState.newlineHint),
         }
       : undefined;
 
@@ -783,11 +937,13 @@ export function App(props: AppProps) {
       columns={columns}
       rows={rows}
       allocation={allocation}
-      panel={panel}
+      panel={panel ?? (fullscreen || !toolView.shown ? undefined : toolView.view)}
       panelRows={panelRows}
       onPanelRows={setPanelRows}
       regions={{
-        transcript: fullscreen ? (
+        transcript: fullscreen && toolView.shown ? (
+          toolView.view
+        ) : fullscreen ? (
           <TranscriptView window={view.window} height={allocation.viewport} width={transcriptWidth} entries={store.count()} following={view.position.following} selection={view.selection} />
         ) : (
           <HistoryView key={historyGeneration} store={store} source={view.source} />
@@ -795,8 +951,8 @@ export function App(props: AppProps) {
         menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
         waiting: waiting === undefined ? null : <WaitingRow waiting={waiting} now={now} timers={timers} />,
         lines: inputShown ? <AttachmentLines attachments={attachments} /> : null,
-        input: inputShown ? <InputBox editor={editor} /> : null,
-        footer: <Footer facts={footerFacts} unconnected={phase.kind === 'unconnected'} planRow={planRow} width={columns} rows={fullscreen ? allocation.footer : 2} />,
+        input: inputShown ? <InputBox editor={editor} columns={columns} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
+        footer: <Footer facts={footerFacts} hint={hint} unconnected={phase.kind === 'unconnected'} planRow={planRow} width={columns} rows={fullscreen ? allocation.footer : 2} />,
         subagents: <SubagentRows subagents={transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
       }}
     />

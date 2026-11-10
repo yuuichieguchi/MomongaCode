@@ -102,6 +102,8 @@ export const JOB_STATUSES = ['running', 'exited', 'killed', 'unknown'] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+export type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
+
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
 export type InheritedCopyPayload = {
@@ -200,6 +202,10 @@ export type RunEventPayload =
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
+      hunks?: DiffHunk[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }
   | { type: 'tool.loaded'; names: string[] }
   | { type: 'tool.offered'; names: string[] }

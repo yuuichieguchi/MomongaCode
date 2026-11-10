@@ -17,7 +17,7 @@ const DA1_REPLY = `${ESC}[?1;2c`;
 const MOUSE_REPLY = `${ESC}[?1006;2$y`;
 const ENTER_MOUSE = `${ESC}[?1000;1002;1006h`;
 const ENTER_MODIFY_OTHER_KEYS = `${ESC}[>4;2m`;
-const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;0t`;
+const LEAVE_ALL = `${ESC}[?1049l${ESC}[?1000;1002;1006l${ESC}[?2004l${ESC}[?1004l${ESC}[<u${ESC}[>4m${ESC}[23;2t`;
 
 const plain = { ctrl: false, alt: false, shift: false };
 
@@ -118,7 +118,7 @@ describe('the mode table', () => {
       { name: 'focus', enter: `${ESC}[?1004h`, leave: `${ESC}[?1004l` },
       { name: 'kitty-keys', enter: `${ESC}[>7u`, leave: `${ESC}[<u` },
       { name: 'modify-other-keys', enter: `${ESC}[>4;2m`, leave: `${ESC}[>4m` },
-      { name: 'title', enter: `${ESC}[22;0t`, leave: `${ESC}[23;0t` },
+      { name: 'title', enter: `${ESC}[22;2t`, leave: `${ESC}[23;2t` },
     ]);
     expect(LEAVE_EVERY_MODE).toBe(LEAVE_ALL);
   });
@@ -387,7 +387,7 @@ describe('suspend', () => {
     expect(t.log).toEqual([`write:${LEAVE_ALL}`, 'raw:false', 'kill:SIGSTOP']);
     t.log.length = 0;
     t.raise('SIGCONT');
-    expect(t.log).toEqual(['raw:true', `write:${ESC}[?1049h${ESC}[?1000;1002;1006h${ESC}[?2004h${ESC}[?1004h${ESC}[>7u${ESC}[>4;2m${ESC}[22;0t`]);
+    expect(t.log).toEqual(['raw:true', `write:${ESC}[?1049h${ESC}[?1000;1002;1006h${ESC}[?2004h${ESC}[?1004h${ESC}[>7u${ESC}[>4;2m${ESC}[22;2t`]);
     expect(t.requests).toEqual([{ type: 'redraw' }]);
     expect(t.listening('SIGCONT')).toBe(false);
     t.feed('a');

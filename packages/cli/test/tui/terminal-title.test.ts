@@ -2,12 +2,12 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import type { ProcessEvent } from '../../src/tui/terminal/layer.ts';
-import { BACKGROUND_QUERY, QUERY_BATCH } from '../../src/tui/terminal/modes.ts';
-import { TITLE_MAX_CHARACTERS, titleOf, titleSequence } from '../../src/tui/terminal/title.ts';
+import { BACKGROUND_QUERY, QUERY_BATCH, TERMINAL_MODES } from '../../src/tui/terminal/modes.ts';
+import { TITLE_MAX_CHARACTERS, TITLE_STATES, titleOf, titleSequence, titleStateOf } from '../../src/tui/terminal/title.ts';
 
 const ESC = '\u001b';
-const PUSH_TITLE = `${ESC}[22;0t`;
-const POP_TITLE = `${ESC}[23;0t`;
+const PUSH_TITLE = `${ESC}[22;2t`;
+const POP_TITLE = `${ESC}[23;2t`;
 const FOCUS_IN = `${ESC}[I`;
 
 const fakes = () => {
@@ -54,20 +54,52 @@ const fakes = () => {
 };
 
 describe('the text of the terminal title', () => {
-  it('names the product and the project folder', () => {
-    expect(titleOf('/Users/ada/src/momonga-demo')).toBe('momonga · momonga-demo');
-    expect(titleSequence('momonga · x')).toBe(`${ESC}]2;momonga · x${ESC}\\`);
+  it.each(TITLE_STATES)('names the product, the project folder and the state %s', (state) => {
+    expect(titleOf('/Users/ada/src/momonga-demo', state)).toBe(`momonga · momonga-demo · ${state}`);
   });
 
-  it('removes what a terminal would act on', () => {
-    expect(titleOf(`/srv/a${ESC}]0;pwn\u0007b\u009b2J‮c\n\td`)).toBe('momonga · a]0;pwnb2Jcd');
+  it('has exactly the five states of the design', () => {
+    expect(TITLE_STATES).toEqual(['ready', 'working', 'waiting for you', 'done', 'error']);
   });
 
-  it('is cut to its bound', () => {
-    const title = titleOf(`/srv/${'字'.repeat(300)}`);
+  it('is written with OSC 2', () => {
+    expect(titleSequence('momonga · x · ready')).toBe(`${ESC}]2;momonga · x · ready${ESC}\\`);
+  });
+
+  it('removes what a terminal would act on from a hostile folder name', () => {
+    expect(titleOf(`/srv/a${ESC}]0;pwn\u0007b\u009b2J\u202ec\n\td`, 'working')).toBe('momonga · a]0;pwnb2Jcd · working');
+    expect(titleOf(`/srv/x${ESC}\\${ESC}]52;c;AAAA${ESC}\\`, 'done')).not.toContain(ESC);
+  });
+
+  it.each(TITLE_STATES)('is cut to its bound in the folder name, so the state %s stays whole', (state) => {
+    const title = titleOf(`/srv/${'字'.repeat(300)}`, state);
     expect([...title]).toHaveLength(TITLE_MAX_CHARACTERS);
     expect(TITLE_MAX_CHARACTERS).toBe(120);
     expect(title.startsWith('momonga · 字')).toBe(true);
+    expect(title.endsWith(`字 · ${state}`)).toBe(true);
+  });
+});
+
+describe('the state the title names', () => {
+  const idle = { working: false, prompting: false, lastRun: undefined } as const;
+
+  it('is ready when nothing runs and no run has ended', () => {
+    expect(titleStateOf(idle)).toBe('ready');
+  });
+
+  it('is working while a run works', () => {
+    expect(titleStateOf({ ...idle, working: true })).toBe('working');
+    expect(titleStateOf({ ...idle, working: true, lastRun: 'error' })).toBe('working');
+  });
+
+  it('is waiting for you while an approval, a question or trust is open, also during a run', () => {
+    expect(titleStateOf({ ...idle, prompting: true })).toBe('waiting for you');
+    expect(titleStateOf({ working: true, prompting: true, lastRun: 'done' })).toBe('waiting for you');
+  });
+
+  it('is done or error after the last run, by how it ended', () => {
+    expect(titleStateOf({ ...idle, lastRun: 'done' })).toBe('done');
+    expect(titleStateOf({ ...idle, lastRun: 'error' })).toBe('error');
   });
 });
 
@@ -83,6 +115,19 @@ describe('the title in the terminal layer', () => {
     t.layer.restore();
     expect(t.writes.join('')).toContain(POP_TITLE);
     expect(t.layer.state().enabled).not.toContain('title');
+  });
+
+  it('pushes and pops the title stack with the bytes of the design', () => {
+    expect(PUSH_TITLE).toBe(`${ESC}[22;2t`);
+    expect(TERMINAL_MODES.find((mode) => mode.name === 'title')).toEqual({ name: 'title', enter: PUSH_TITLE, leave: POP_TITLE });
+  });
+
+  it('rings the bell with one BEL', () => {
+    const t = fakes();
+    t.layer.start();
+    t.writes.length = 0;
+    t.layer.bell();
+    expect(t.writes).toEqual(['\u0007']);
   });
 
   it('does not save the title twice', () => {

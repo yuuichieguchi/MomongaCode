@@ -40,6 +40,7 @@ describe('SETTINGS_SCHEMA', () => {
         'sandbox',
         'telemetry',
         'tools',
+        'tui',
         'verification',
       ].sort(),
     );

@@ -46,7 +46,7 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     await runStarted(backend, app, 'go');
     failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE);
     await choose(app, 'Enable ChatGPT plan use');
-    const sentenceScreen = await untilRow(app, 'Enable ChatGPT plan use', CHATGPT.messages.description);
+    const sentenceScreen = await untilRow(app, CHATGPT.messages.apiKeyLabel, CHATGPT.messages.description);
     expect(rowNumberOf(sentenceScreen, 'Enable ChatGPT plan use')).toBe(1);
     expect(rowNumberOf(sentenceScreen, CHATGPT.messages.apiKeyLabel)).toBe(2);
     await choose(app, 'Enable ChatGPT plan use');

@@ -1,7 +1,6 @@
 import { useReducer, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
-import type { Key } from 'ink';
 import type { PlanProfileView } from '@momonga/protocol';
 import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
 import type { SelectSpec } from '../select.tsx';
@@ -53,10 +52,16 @@ const completedOf = (command: SlashCommand): string => `/${command.name} `;
 
 export type SlashMenuAct = { readonly kind: 'handled' } | { readonly kind: 'complete'; readonly text: string } | { readonly kind: 'run'; readonly text: string };
 
+export const MENU_ACTIONS = ['menu.up', 'menu.down', 'menu.complete', 'menu.run', 'menu.close'] as const;
+
+export type MenuAction = (typeof MENU_ACTIONS)[number];
+
+export const isMenuAction = (action: string | undefined): action is MenuAction => MENU_ACTIONS.some((known) => known === action);
+
 export type SlashMenu = {
   open: boolean;
   rows: number;
-  key(text: string, input: string, key: Key): SlashMenuAct | undefined;
+  act(text: string, action: MenuAction): SlashMenuAct | undefined;
   press(row: number, rows: number): SlashMenuAct | undefined;
   wheel(rows: number): void;
   view(rows: number): ReactNode;
@@ -86,22 +91,21 @@ export const useSlashMenu = (host: { text: string; commands: readonly SlashComma
   return {
     open: shown !== undefined,
     rows: shown === undefined ? 0 : Math.max(1, Math.min(shown.length, cap)),
-    key: (text, _input, key) => {
+    act: (text, action) => {
       const matches = matchesFor(text);
       if (matches === undefined) return undefined;
       const current = stateFor(text);
       const command = matches[current.index];
-      if (key.escape) {
+      if (action === 'menu.close') {
         keep({ ...current, closed: true });
         return { kind: 'handled' };
       }
-      if (key.upArrow || key.downArrow) {
-        if (matches.length > 0) moveTo(text, (current.index + (key.upArrow ? matches.length - 1 : 1)) % matches.length, matches.length);
+      if (action === 'menu.up' || action === 'menu.down') {
+        if (matches.length > 0) moveTo(text, (current.index + (action === 'menu.up' ? matches.length - 1 : 1)) % matches.length, matches.length);
         return { kind: 'handled' };
       }
-      if (key.tab && !key.shift) return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
-      if (key.return && command !== undefined) return { kind: 'run', text: `/${command.name}` };
-      return undefined;
+      if (action === 'menu.complete') return command === undefined ? { kind: 'handled' } : { kind: 'complete', text: completedOf(command) };
+      return command === undefined ? undefined : { kind: 'run', text: `/${command.name}` };
     },
     press: (row, rows) => {
       if (shown === undefined) return undefined;

@@ -598,6 +598,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...(result.backend === undefined ? {} : { backend: result.backend }),
+      ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
+      ...(result.added === undefined ? {} : { added: result.added }),
+      ...(result.removed === undefined ? {} : { removed: result.removed }),
+      ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };

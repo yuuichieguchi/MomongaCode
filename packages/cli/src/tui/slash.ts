@@ -3,7 +3,11 @@ import type { PermissionMode } from '@momonga/protocol';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
 import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
+import type { DisplayPort } from './commands/theme.ts';
 import type { TuiBackend } from './backend.ts';
+import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
+import { NEWLINE_HINT } from './terminal/negotiation.ts';
+import type { NegotiationState } from './terminal/negotiation.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 
 export type AutoModePort = {
@@ -32,6 +36,9 @@ export type SlashContext = ModeAvailability & {
   readonly autoMode: AutoModePort;
   readonly shell: ShellPort;
   readonly screen: ScreenPort;
+  readonly keys: KeyTable;
+  readonly negotiation: NegotiationState;
+  readonly display: DisplayPort;
 };
 
 export type SlashCommand = {
@@ -53,26 +60,6 @@ export const createSlashRegistry = (commands: readonly SlashCommand[]): SlashReg
   find: (name) => commands.find((command) => command.name === name || command.aliases?.includes(name) === true),
 });
 
-export type SlashCompletion = { names: readonly string[]; completed: string };
-
-const COMPLETABLE = /^\/[^\s/]*$/;
-
-const commonPrefix = (names: readonly string[]): string =>
-  names.reduce((prefix, name) => {
-    let length = 0;
-    while (length < prefix.length && prefix[length] === name[length]) length += 1;
-    return prefix.slice(0, length);
-  });
-
-export const slashCompletion = (text: string, commands: readonly SlashCommand[]): SlashCompletion | undefined => {
-  if (!COMPLETABLE.test(text)) return undefined;
-  const typed = text.slice(1);
-  const names = commands.map((command) => command.name).filter((name) => name.startsWith(typed));
-  if (names.length === 0) return undefined;
-  const [only] = names;
-  return { names, completed: names.length === 1 && only !== undefined ? `/${only} ` : `/${commonPrefix(names)}` };
-};
-
 export type ParsedSlash = { name: string; args: string };
 
 export const parseSlash = (line: string): ParsedSlash | undefined => {
@@ -82,20 +69,57 @@ export const parseSlash = (line: string): ParsedSlash | undefined => {
   return { name: match[1] as string, args: (match[2] ?? '').trim() };
 };
 
+const NEWLINE: ActionId = 'prompt.newline';
+const NEEDS_REPORT = /(^|\+)shift\+/;
+const SENT_AS_ESCAPE = /(^|\+)alt\+/;
+const KEY_JOIN = ' or ';
+const HELP_CONTEXTS: Readonly<Record<ScreenMode, readonly KeyContext[]>> = { fullscreen: ['chat', 'viewport', 'global'], scrollback: ['chat', 'global'] };
+const MOUSE_HELP: Readonly<Record<ScreenMode, readonly string[]>> = {
+  fullscreen: ['wheel: scroll', 'drag: select', 'double click: select a word', 'triple click: select a line', 'click on a link: open it', 'click in the input: place the caret', 'click on a menu row: complete it'],
+  scrollback: [],
+};
+
+export const newlineHelpLines = (keys: KeyTable, negotiation: NegotiationState): string[] => {
+  const description = keys.rows().find((row) => row.id === NEWLINE)?.description;
+  const reported = NEWLINE_HINT[negotiation] === 'shift+enter';
+  const all = keys.keysFor(NEWLINE);
+  const escaped = all.filter((spec) => SENT_AS_ESCAPE.test(spec));
+  const direct = all.filter((spec) => !SENT_AS_ESCAPE.test(spec));
+  const unproven = reported ? [] : direct.filter((spec) => NEEDS_REPORT.test(spec));
+  const acting = (spec: KeySpec): boolean => direct.includes(spec) && !unproven.includes(spec);
+  return [
+    `${keys.hintFor(NEWLINE, acting)}: ${description}${unproven.length === 0 ? '' : ` (${unproven.join(KEY_JOIN)} works only if this terminal reports it; this one has not)`}`,
+    ...escaped.map((spec) => `${spec}: ${description} where the terminal sends Alt as Escape`),
+    `\\ then ${keys.hintFor('prompt.submit')}: ${description}`,
+  ];
+};
+
+export type HelpFacts = { commands: readonly SlashCommand[]; keys: KeyTable; negotiation: NegotiationState; screen: ScreenMode };
+
+const indented = (lines: readonly string[]): string[] => lines.map((line) => `  ${line}`);
+
+export const helpText = ({ commands, keys, negotiation, screen }: HelpFacts): string => {
+  const contexts = HELP_CONTEXTS[screen];
+  const keyLines = keys
+    .rows()
+    .filter((row) => contexts.includes(row.context))
+    .flatMap((row) => (row.id === NEWLINE ? newlineHelpLines(keys, negotiation) : [`${keys.hintFor(row.id)}: ${row.description}`]));
+  const mouse = MOUSE_HELP[screen];
+  return [
+    'Commands',
+    ...indented(commands.map((command) => `/${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`)),
+    'Keys',
+    ...indented(keyLines),
+    ...(mouse.length === 0 ? [] : ['Mouse', ...indented(mouse)]),
+  ].join('\n');
+};
+
 const help: SlashCommand = {
   name: 'help',
   needsSession: false,
-  description: 'list the slash commands and key bindings',
+  description: 'list the commands, the keys and the mouse actions',
   run: async (_args, context) => {
-    context.info(
-      [
-        'Slash commands',
-        ...context.commands.map((command) => `  /${command.name}${command.usage === undefined ? '' : ` ${command.usage}`}  ${command.description}`),
-        'Keys',
-        '  enter submit, backslash+enter or ctrl+j new line, up/down history',
-        '  shift+tab cycle the permission mode, esc cancel the run, ctrl+d exit',
-      ].join('\n'),
-    );
+    context.info(helpText({ commands: context.commands, keys: context.keys, negotiation: context.negotiation, screen: context.screen.current() }));
   },
 };
 

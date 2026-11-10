@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import type { ReactNode } from 'react';
 import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import { styleOf as styleOfTokens } from './screen/theme.ts';
 import { withoutTabs, wrapLine } from './screen/wrap.ts';
 
 export type SelectRow = { readonly label: string; readonly disabled?: boolean; readonly separator?: boolean };
@@ -54,7 +55,6 @@ const LIST_FLOOR_ROWS = 3;
 const BORDER_ROWS = 2;
 const BORDER_COLUMNS = 4;
 const CONTINUATION = '  ';
-const CHOICE_SELECTED = { color: 'cyan', bold: true } as const;
 
 export const joinHint = (parts: readonly string[]): string => parts.join(HINT_SEPARATOR);
 
@@ -248,7 +248,7 @@ function Panel({ border, children }: { border: boolean; children: ReactNode }) {
 
 export function ChoiceRow({ selected, label, number, disabled }: { selected: boolean; label: string; number?: number; disabled?: boolean }) {
   return (
-    <Text wrap="truncate" {...(selected ? CHOICE_SELECTED : {})}>
+    <Text wrap="truncate" {...(selected ? styleOfTokens(['choice.selected']) : {})}>
       {`${selected ? SELECTED_MARKER : ' '} ${number === undefined ? '' : `${number}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`}
     </Text>
   );
@@ -277,8 +277,8 @@ export function SelectView({ spec, state, layout, border, sending, error }: Sele
         return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} label={row.label} {...(row.disabled === true ? { disabled: true } : {})} />;
       })}
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
-      {confirming === undefined || spec.confirm === undefined ? null : <Text color="yellow" wrap="truncate">{escapeTerminalLine(spec.confirm(confirming))}</Text>}
-      {error === undefined ? null : <Text color="red" wrap="truncate">{escapeTerminalLine(error)}</Text>}
+      {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming))}</Text>}
+      {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
       <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : selectHint(spec)}</Text>
     </Panel>
   );

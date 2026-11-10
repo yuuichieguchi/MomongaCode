@@ -1,3 +1,4 @@
+import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EntryIo } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
@@ -75,6 +76,9 @@ const slashContext = () => {
       return done;
     },
     shell: shellPort(),
+    screen: { current: () => 'fullscreen', set: async () => undefined },
+    keys: DEFAULT_KEY_TABLE,
+    negotiation: 'unknown',
   } as unknown as SlashContext;
   return { context, infos, backgrounds, controller };
 };

@@ -287,10 +287,10 @@ describe('the other entries of the transcript', () => {
     expect(texts(rows)).toEqual(['[x] read the ', 'code', '[~] write the ', 'long test', '[ ] ship **it**']);
   });
 
-  it('shows a tool as its status mark and title', () => {
-    const tool = { kind: 'tool', callId: 'c', name: 'Read', title: 'Read /a/b.ts', toolKind: 'read', rawInput: {} } as const;
+  it('shows a tool as its status mark and title, and a running tool with its whole elapsed seconds', () => {
+    const tool = { kind: 'tool', callId: 'c', name: 'Read', title: 'Read /a/b.ts', toolKind: 'read', rawInput: {}, calledAt: 1000, shownAt: 3999 } as const;
     const marks = (['requested', 'awaiting_approval', 'running', 'completed', 'failed', 'unknown'] as const).map((status) => texts(rowsOfEntry({ ...tool, status }, 40)));
-    expect(marks).toEqual([['· Read /a/b.ts'], ['! Read /a/b.ts'], ['… Read /a/b.ts'], ['✓ Read /a/b.ts'], ['✗ Read /a/b.ts'], ['? Read /a/b.ts']]);
+    expect(marks).toEqual([['· Read /a/b.ts'], ['! Read /a/b.ts'], ['⠹ Read /a/b.ts · 2s'], ['✓ Read /a/b.ts'], ['✗ Read /a/b.ts'], ['? Read /a/b.ts']]);
     expect(texts(rowsOfEntry({ ...tool, title: 'Read **/a**', status: 'completed' }, 8))).toEqual(['✓ Read ', '**/a**']);
   });
 });

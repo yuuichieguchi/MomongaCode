@@ -13,7 +13,7 @@ export const TERMINAL_MODES = [
   { name: 'focus', enter: `${ESC}[?1004h`, leave: `${ESC}[?1004l` },
   { name: 'kitty-keys', enter: `${ESC}[>${KITTY_FLAGS}u`, leave: `${ESC}[<u` },
   { name: 'modify-other-keys', enter: `${ESC}[>4;2m`, leave: `${ESC}[>4m` },
-  { name: 'title', enter: `${ESC}[22;0t`, leave: `${ESC}[23;0t` },
+  { name: 'title', enter: `${ESC}[22;2t`, leave: `${ESC}[23;2t` },
 ] as const;
 
 export type TerminalModeName = (typeof TERMINAL_MODES)[number]['name'];

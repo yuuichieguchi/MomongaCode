@@ -5,7 +5,6 @@ import { App } from '../../src/tui/app.tsx';
 import type { TuiOutcome } from '../../src/tui/app.tsx';
 import { createScreenInput } from '../../src/tui/screen/input.ts';
 import { TerminalFrame } from '../../src/tui/terminal/frame.tsx';
-import { inkInputOf } from '../../src/tui/terminal/ink-bridge.ts';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
 import { createTerminalLayer } from '../../src/tui/terminal/layer.ts';
 import { fakeBackend } from '../fake-backend.ts';
@@ -36,7 +35,7 @@ const startOnLayer = () => {
   const stdout = new FakeStdout();
   const control: string[] = [];
   const inkStdin = createInkStdin();
-  const input = createScreenInput((events) => inkStdin.push(inkInputOf(events)));
+  const input = createScreenInput();
   const layer = createTerminalLayer({
     input: { setRawMode: () => undefined, resume: () => undefined, pause: () => undefined, on: (event, listener) => terminalInput.on(event, listener), off: (event, listener) => terminalInput.off(event, listener) },
     output: { writeSync: (text) => control.push(text), size: () => ({ columns: stdout.columns, rows: stdout.rows }), onResize: () => () => undefined },
@@ -50,7 +49,7 @@ const startOnLayer = () => {
   const outcomes: TuiOutcome[] = [];
   const instance = render(
     <TerminalFrame layer={layer}>
-      <App backend={fakeBackend()} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
+      <App backend={fakeBackend()} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} now={Date.now} timers={systemTiming} initialMode={undefined} onExit={(outcome) => outcomes.push(outcome)} />
     </TerminalFrame>,
     { stdin: inkStdin.stream, stdout: stdout as unknown as NodeJS.WriteStream, exitOnCtrlC: false, patchConsole: false },
   );
@@ -73,6 +72,7 @@ describe('the existing screen on top of the terminal layer', () => {
     await app.shows('>');
     app.feed('hi');
     await app.shows('> hi');
+    await app.shows(`${ESC}[?25h`);
     app.feed(`${ESC}[13;2u`);
     app.feed('yo');
     await app.shows('yo');
@@ -82,10 +82,12 @@ describe('the existing screen on top of the terminal layer', () => {
     app.feed('\u0003');
     await cleared;
     app.feed('\u0003');
+    await app.shows('Press ctrl+c again to exit');
+    app.feed('\u0003');
     await vi.waitFor(() => expect(app.outcomes).toEqual([{}]), { timeout: 3000 });
     await app.instance.waitUntilExit();
     app.layer.close();
     expect(app.outcomes).toEqual([{}]);
-    expect(app.control.at(-1)).toBe(`${ESC}[?2004l${ESC}[<u`);
+    expect(app.control.at(-1)).toBe(`${ESC}[?2004l${ESC}[<u${ESC}[23;2t`);
   });
 });

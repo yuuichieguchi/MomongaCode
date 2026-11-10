@@ -251,6 +251,10 @@ describe('run event payloads', () => {
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
+      hunks?: { oldStart: number; newStart: number; lines: string[] }[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';

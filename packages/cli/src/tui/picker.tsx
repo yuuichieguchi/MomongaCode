@@ -7,17 +7,17 @@ import type { SelectRow, SelectSpec } from './select.tsx';
 
 export type PickRow = SelectRow;
 
-export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape'>>;
+export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void };
 
 const FILTER_FROM_ROWS = 10;
 
-export const pickerSpec = (request: PickRequest): SelectSpec => ({
+export const pickerSpec = ({ onHighlight: _onHighlight, ...request }: PickRequest): SelectSpec => ({
   initial: 0,
   decideOn: 'immediate',
   escape: 'back',
+  filter: request.rows.length >= FILTER_FROM_ROWS,
   ...request,
   interrupt: 'back',
-  filter: request.rows.length >= FILTER_FROM_ROWS,
 });
 
 export type TextRequest = {
