@@ -4,13 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
+import { CredentialStoreError, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import type { FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
 import type { PlanSessions, PlanSleep, PlanTokenResponse } from '../src/plan/session.ts';
+import type { PlanFetch } from '../src/plan/refresh.ts';
+import { createSerial } from '../src/plan/serial.ts';
+import type { Serial } from '../src/plan/serial.ts';
 
 export const START_MS = 1_800_000_000_000;
 export const PROFILE_ID = 'chatgpt';
@@ -40,6 +43,99 @@ export type TokenFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export type Gate = { held: Promise<void>; release(): void };
 
+export type ReachedGate = Gate & { reached: Promise<void> };
+
+export type FsGate = { reached: Promise<void>; release(): void; fail(error: Error): void };
+
+export type GatedMethod = 'readTextFile' | 'readOwnerOnlyTextFile' | 'mkdirPrivate' | 'rename';
+
+export type GatedFileSystem = { fileSystem: FileSystem; recorded: ReadonlyArray<{ method: GatedMethod; path: string }>; gate(method: GatedMethod, match: (path: string) => boolean): FsGate };
+
+type ArmedGate = { method: GatedMethod; match: (path: string) => boolean; arrive(): void; parked: Promise<void> };
+
+export const createGatedFileSystem = (base: FileSystem): GatedFileSystem => {
+  const armed: ArmedGate[] = [];
+  const recorded: Array<{ method: GatedMethod; path: string }> = [];
+  const parkIfArmed = async (method: GatedMethod, file: string): Promise<void> => {
+    recorded.push({ method, path: file });
+    const index = armed.findIndex((entry) => entry.method === method && entry.match(file));
+    if (index === -1) return;
+    const [entry] = armed.splice(index, 1);
+    entry?.arrive();
+    await entry?.parked;
+  };
+  const fileSystem: FileSystem = {
+    ...base,
+    readTextFile: async (file) => {
+      await parkIfArmed('readTextFile', file);
+      return base.readTextFile(file);
+    },
+    readOwnerOnlyTextFile: async (file, description, maxBytes) => {
+      await parkIfArmed('readOwnerOnlyTextFile', file);
+      return base.readOwnerOnlyTextFile(file, description, maxBytes);
+    },
+    mkdirPrivate: async (directory) => {
+      await parkIfArmed('mkdirPrivate', directory);
+      return base.mkdirPrivate(directory);
+    },
+    rename: async (from, to) => {
+      await parkIfArmed('rename', to);
+      return base.rename(from, to);
+    },
+  };
+  return {
+    fileSystem,
+    recorded,
+    gate: (method, match) => {
+      let arrive = (): void => undefined;
+      let release = (): void => undefined;
+      let fail = (_error: Error): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const parked = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        fail = reject;
+      });
+      armed.push({ method, match, arrive, parked });
+      return { reached, release, fail };
+    },
+  };
+};
+
+export type RecordingSerial = Serial & { runs: number; active: number; maxActive: number; started: number[]; finished: number[] };
+
+export const recordingSerial = (): RecordingSerial => {
+  const inner = createSerial();
+  const serial: RecordingSerial = {
+    runs: 0,
+    active: 0,
+    maxActive: 0,
+    started: [],
+    finished: [],
+    run: (work) => {
+      serial.runs += 1;
+      const index = serial.runs;
+      return inner.run(async () => {
+        serial.active += 1;
+        serial.maxActive = Math.max(serial.maxActive, serial.active);
+        serial.started.push(index);
+        try {
+          return await work();
+        } finally {
+          serial.active -= 1;
+          serial.finished.push(index);
+        }
+      });
+    },
+  };
+  return serial;
+};
+
+export const resettingFetch = (): PlanFetch => async () => {
+  throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+};
+
 export const TOKEN_ATTEMPT_BOUND_MS = 15_000;
 export const REVOCATION_ATTEMPT_BOUND_MS = 10_000;
 
@@ -54,12 +150,16 @@ export type Harness = {
   store: ListableCredentialStore;
   sessions: PlanSessions;
   sleeps: number[];
+  fileSystem: FileSystem;
   secrets: string[];
+  fed: Map<string, string[]>;
   warnings: string[];
   fetchUrls: string[];
   events: RecordedPlanEvent[];
   holdNextRefresh(): Gate;
   holdNextRevoke(): Gate;
+  holdNextBackoff(): ReachedGate;
+  failNextOutbound(error: Error): void;
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
@@ -80,7 +180,7 @@ export const profileFor = (auth: SiwcAuth): PlanProfile => {
 const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolean =>
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
-export const startHarness = async (options: { profile?: (auth: SiwcAuth) => PlanProfile } = {}): Promise<Harness> => {
+export const startHarness = async (options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial } = {}): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
@@ -96,6 +196,11 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   });
   const sleeps: number[] = [];
   const secrets: string[] = [];
+  const fed = new Map<string, string[]>();
+  const fileSystem = (options.wrapFileSystem ?? ((base: FileSystem) => base))(nodeFileSystem);
+  const backoffGates: ReachedGate[] = [];
+  const backoffArrivals: Array<() => void> = [];
+  const outboundFailures: Error[] = [];
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
   const events: RecordedPlanEvent[] = [];
@@ -136,20 +241,29 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: ListableCredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
     openPlanSessions({
       ...(lock === undefined ? {} : { lock }),
+      ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
       profiles: { [PROFILE_ID]: profile },
       paths,
       store: chosenStore,
-      fileSystem: nodeFileSystem,
+      fileSystem,
       accounts,
       clock,
       outbound: (signal, use) => {
+        const failure = outboundFailures.shift();
+        if (failure !== undefined) return Promise.reject(failure);
         signal.throwIfAborted();
         return use(fetchPort);
       },
       sleep: (ms, signal) => {
         if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
           sleeps.push(ms);
-          return Promise.resolve();
+          const backoff = backoffGates.shift();
+          if (backoff === undefined) return Promise.resolve();
+          backoffArrivals.shift()?.();
+          return new Promise<void>((resolve, reject) => {
+            void backoff.held.then(resolve);
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          });
         }
         return new Promise<void>((resolve, reject) => {
           const entry: PendingBound = { ms, resolve };
@@ -164,8 +278,9 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
           );
         });
       },
-      onSecret: (value) => {
-        secrets.push(value);
+      redact: (key, values) => {
+        fed.set(key, [...values]);
+        secrets.push(...values);
       },
       warn: (message) => {
         warnings.push(message);
@@ -182,8 +297,10 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     profile,
     store,
     sessions: await open(),
+    fileSystem,
     sleeps,
     secrets,
+    fed,
     warnings,
     fetchUrls,
     events,
@@ -196,6 +313,20 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       const gate = newGate();
       revokeGates.push(gate);
       return gate;
+    },
+    holdNextBackoff: () => {
+      const gate = newGate();
+      let arrive = (): void => undefined;
+      const reached = new Promise<void>((resolve) => {
+        arrive = resolve;
+      });
+      const held = { ...gate, reached };
+      backoffGates.push(held);
+      backoffArrivals.push(arrive);
+      return held;
+    },
+    failNextOutbound: (error) => {
+      outboundFailures.push(error);
     },
     pendingBounds: () => bounds.map((bound) => bound.ms),
     fireLatestBound: (ms) => {
@@ -291,6 +422,12 @@ export const readRecord = async (h: Harness, account: string): Promise<Record<st
   return raw === undefined ? undefined : (JSON.parse(raw) as Record<string, unknown>);
 };
 
+export const writeSigningOut = async (h: Harness, account: string): Promise<void> => {
+  const current = await readRecord(h, account);
+  if (current === undefined) throw new Error(`no record for ${account}`);
+  await h.store.write(recordKey(account), JSON.stringify({ ...current, state: 'signing_out' }));
+};
+
 export const rawRecord = (h: Harness, account: string): Promise<string | undefined> => h.store.read(recordKey(account));
 
 export const editRecord = async (h: Harness, account: string, change: (record: Record<string, unknown>) => Record<string, unknown>): Promise<void> => {
@@ -315,7 +452,7 @@ export const rotateAtFake = async (h: Harness, clientId: string, refreshToken: s
   if (response.status !== 200) throw new Error(`the fake refused the rotation: ${response.status}`);
 };
 
-export const failingWrites = (inner: ListableCredentialStore, fails: (value: string) => NodeJS.ErrnoException | undefined): ListableCredentialStore => ({
+export const failingWrites = (inner: ListableCredentialStore, fails: (value: string) => Error | undefined): ListableCredentialStore => ({
   read: (key) => inner.read(key),
   remove: (key) => inner.remove(key),
   write: (key, value) => {
@@ -344,6 +481,9 @@ export const failingWrites = (inner: ListableCredentialStore, fails: (value: str
 });
 
 export const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: simulated`), { code });
+
+export const storeKeyFailure = (): CredentialStoreError =>
+  new CredentialStoreError('store_unwritable', 'the credential key could not be read or created: simulated', { cause: new Error('simulated') });
 
 export const planError = async (promise: Promise<unknown>): Promise<{ code: string; retryable: boolean; message: string }> => {
   try {

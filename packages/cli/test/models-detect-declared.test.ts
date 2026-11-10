@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import { withTempDir } from '@momonga/testkit';
@@ -8,27 +8,16 @@ import type { CleanupContext } from '@momonga/testkit';
 import { detectModels } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
 
-vi.mock('@momonga/foundation', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@momonga/foundation')>();
-  const absent = (file: string): NodeJS.ErrnoException => Object.assign(new Error(`ENOENT: no such file or directory, stat '${file}'`), { code: 'ENOENT' });
-  return {
-    ...actual,
-    createHostExec: () => async (file: string) => {
-      throw new Error(`this test runs no host program; asked to run ${file}`);
-    },
-    nodeFileSystem: {
-      ...actual.nodeFileSystem,
-      stat: async (file: string) => {
-        if (file === FM_SERVER.binary.defaultPath) throw absent(file);
-        return actual.nodeFileSystem.stat(file);
-      },
-    },
-  };
-});
-
 const DECLARED_ID = 'workbench';
 
-const portsOf = (written: string[]): CliPorts => ({ stdout: { write: (text: string) => void written.push(text) } }) as unknown as CliPorts;
+const portsOf = (written: string[]): CliPorts =>
+  ({
+    stdout: { write: (text: string) => void written.push(text) },
+    exec: async (file: string) => {
+      throw new Error(`this test runs no host program; asked to run ${file}`);
+    },
+    files: { exists: async (file: string) => file !== FM_SERVER.binary.defaultPath && fs.existsSync(file) },
+  }) as unknown as CliPorts;
 
 const nothingAnswers = (async (input: string | URL | Request) => {
   throw new TypeError(`fetch failed: ${String(input)}`);

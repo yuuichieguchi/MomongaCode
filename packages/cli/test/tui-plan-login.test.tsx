@@ -3,7 +3,8 @@ import { runView } from './fake-backend.ts';
 import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { frame, runStarted } from './tui-harness.tsx';
-import { AUTHORIZATION_URL, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { authLogout } from '../src/commands/auth.ts';
+import { AUTHORIZATION_URL, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, fakePlanBackend, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -189,6 +190,30 @@ describe('/logout', () => {
     expect(bodyOf(backend, 'sign-out')).toEqual({ profile: 'chatgpt', account: 'work' });
     expect(backend.planCalls.filter((call) => call.route === 'sign-out')).toHaveLength(1);
     expect(outcomes).toEqual([]);
+    app.unmount();
+  });
+});
+
+describe('a command and the TUI print the same sign-out lines (P-C8)', () => {
+  it.each([
+    ['confirmed', ['Signed out work', 'Remote revocation confirmed.']],
+    ['unconfirmed', ['Signed out work', 'Remote revocation was not confirmed; disconnect the app in ChatGPT Settings: https://chatgpt.com/settings/usage']],
+  ] as const)('a command and the TUI print the same sign-out lines (%s)', async (revocation, lines) => {
+    const written: string[] = [];
+    const commandBackend = fakePlanBackend({ accounts: [account({ label: 'work' })], signOutRevocation: revocation });
+    const code = await authLogout({ stdout: { write: (text: string) => void written.push(text) }, stderr: { write: () => undefined }, plan: commandBackend.plan, isTerminal: false }, { account: 'work' });
+    expect(code).toBe(0);
+    expect(written.join('')).toBe(`${lines.join('\n')}\n`);
+
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', active: false })], signOutRevocation: revocation });
+    await ready(app);
+    await submitLine(app, '/logout');
+    await choose(app, 'work · ada@example.com');
+    await quiet();
+    app.stdin.write(KEYS.enter);
+    await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
+    const output = await untilOutput(app, lines[1]);
+    expect(output).toContain(lines[0]);
     app.unmount();
   });
 });

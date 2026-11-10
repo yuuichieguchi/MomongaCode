@@ -86,3 +86,25 @@ describe('ACP carries the readiness verdict', () => {
     await harness.peer.close();
   });
 });
+
+const UNAVAILABLE_MESSAGE =
+  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
+const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
+const UNAVAILABLE: Parameters<typeof agentReadiness>[0] = {
+  toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNAVAILABLE_MESSAGE, param: 'model' },
+  source: 'unprobed',
+};
+
+describe('ACP carries the reason of an alias the gateway lists as unavailable (G1)', () => {
+  it('an unavailable alias gets the warning notice M then R', NOTICE_BOUND, async () => {
+    const harness = startAgent(readinessDeps({ [SESSION.modelAlias]: agentReadiness(UNAVAILABLE) }));
+    await harness.peer.request('initialize', INITIALIZE);
+
+    await harness.peer.request('session/new', NEW_SESSION);
+
+    await untilNotice(harness, UNAVAILABLE_MESSAGE);
+    const notice = noticeTexts(harness).find((text) => text.includes(UNAVAILABLE_MESSAGE)) ?? '';
+    expect(notice).toContain(`${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}`);
+    await harness.peer.close();
+  });
+});

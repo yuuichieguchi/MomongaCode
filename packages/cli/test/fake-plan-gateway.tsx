@@ -61,6 +61,8 @@ export type FakePlanOptions = FakeBackendOptions & {
   listenerFails?: Error;
   startListener?: StartSignInListener;
   signInTimers?: SignInWaitTimers;
+  signOutRevocation?: 'confirmed' | 'unconfirmed';
+  resumeAnswer?: { resumed: boolean };
 };
 
 export type FakePlanBackend = FakeBackend & {
@@ -116,7 +118,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     signOut: async (request) => {
       called('sign-out', request);
       accounts = accounts.map((existing) => (existing.label === request.account ? { ...existing, state: 'registered', active: false } : existing));
-      return { revocation: 'confirmed', usageUrl: CHATGPT.usageUrl };
+      return { revocation: options.signOutRevocation ?? 'confirmed', usageUrl: CHATGPT.usageUrl };
     },
     setActive: async (request) => {
       called('accounts/active', request);
@@ -131,7 +133,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
         const { paused: _paused, ...rest } = existing;
         return rest;
       });
-      return { resumed };
+      return options.resumeAnswer ?? { resumed };
     },
     resetHost: async () => {
       called('host/reset', {});

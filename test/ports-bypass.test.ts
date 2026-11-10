@@ -16,7 +16,9 @@ type Token =
   | 'node:fs/promises'
   | 'execFileSync';
 
-type Counts = Partial<Record<Token, number>>;
+type CliToken = 'createHostExec' | 'nodeFileSystem' | 'process.env';
+
+type Counts = Partial<Record<Token | CliToken, number>>;
 
 const TOKENS: Readonly<Record<Token, RegExp>> = {
   setTimeout: /(?<![\w.$])setTimeout\(/g,
@@ -31,26 +33,34 @@ const TOKENS: Readonly<Record<Token, RegExp>> = {
   execFileSync: /(?<![\w.$])execFileSync\(/g,
 };
 
+const CLI_TOKENS: Readonly<Record<CliToken, RegExp>> = {
+  createHostExec: /(?<![\w.$])createHostExec\(/g,
+  nodeFileSystem: /(?<![\w.$])nodeFileSystem\b/g,
+  'process.env': /(?<![\w.$])process\.env\b/g,
+};
+
+const IMPORT_STATEMENT = /^\s*import\b[\s\S]*?\bfrom\s+['"][^'"]+['"];?/gm;
+
 const METHOD_SIGNATURE = /^\s*[\w$]+\(.*\)\s*:\s*[^=]+;\s*$/;
 
-const countBypasses = (source: string): Counts => {
-  const body = source
+const countBypasses = (source: string, tokens: Readonly<Partial<Record<Token | CliToken, RegExp>>> = TOKENS): Counts => {
+  const body = (tokens === TOKENS ? source : source.replace(IMPORT_STATEMENT, ''))
     .split('\n')
     .filter((line) => !METHOD_SIGNATURE.test(line))
     .join('\n');
   const counts: Counts = {};
-  for (const [token, pattern] of Object.entries(TOKENS) as Array<[Token, RegExp]>) {
+  for (const [token, pattern] of Object.entries(tokens) as Array<[Token | CliToken, RegExp]>) {
     const found = [...body.matchAll(pattern)].length;
     if (found > 0) counts[token] = found;
   }
   return counts;
 };
 
-const sourceFiles = (dir: string): string[] =>
+const sourceFiles = (dir: string, extension: RegExp = /\.ts$/): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return sourceFiles(full);
-    return entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts') ? [full] : [];
+    if (entry.isDirectory()) return sourceFiles(full, extension);
+    return extension.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 const productSources = (): string[] =>
@@ -59,7 +69,7 @@ const productSources = (): string[] =>
     .filter((name) => name !== 'testkit')
     .map((name) => path.join(ROOT, 'packages', name, 'src'))
     .filter((dir) => fs.existsSync(dir))
-    .flatMap(sourceFiles);
+    .flatMap((dir) => sourceFiles(dir));
 
 const ADAPTERS: Readonly<Record<string, string>> = {
   'packages/foundation/src/system-timing.ts': 'the one production Timing adapter over the host timers and clocks',
@@ -166,6 +176,20 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
 };
 
+const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
+  'packages/cli/src/commands/auto-mode.ts': { createHostExec: 1 },
+  'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
+  'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
+  'packages/cli/src/verify/host.ts': { nodeFileSystem: 4 },
+};
+
+const actualCliBypasses = (): Record<string, Counts> =>
+  Object.fromEntries(
+    sourceFiles(path.join(ROOT, 'packages', 'cli', 'src'), /\.tsx?$/)
+      .map((file) => [path.relative(ROOT, file).split(path.sep).join('/'), countBypasses(fs.readFileSync(file, 'utf8'), CLI_TOKENS)] as const)
+      .filter(([relative, counts]) => !(relative in ADAPTERS) && Object.keys(counts).length > 0),
+  );
+
 const actualBypasses = (): Record<string, Counts> =>
   Object.fromEntries(
     productSources()
@@ -198,5 +222,16 @@ describe('ports bypass scan', () => {
 
   it('the direct host calls outside the adapters are exactly the listed present bypasses', () => {
     expect(actualBypasses()).toEqual(PRESENT_BYPASSES);
+  });
+
+  it('the new tokens are counted', () => {
+    expect(countBypasses('const exec = createHostExec(minimalChildEnv(env));', CLI_TOKENS)).toEqual({ createHostExec: 1 });
+    expect(countBypasses('await nodeFileSystem.stat(file);', CLI_TOKENS)).toEqual({ nodeFileSystem: 1 });
+    expect(countBypasses("const home = process.env['HOME'];", CLI_TOKENS)).toEqual({ 'process.env': 1 });
+    expect(countBypasses("import {\n  nodeFileSystem,\n  createHostExec,\n} from '@momonga/foundation';", CLI_TOKENS)).toEqual({});
+  });
+
+  it("the CLI's direct createHostExec, nodeFileSystem and process.env uses outside the adapters are exactly the listed present bypasses", () => {
+    expect(actualCliBypasses()).toEqual(CLI_PRESENT_BYPASSES);
   });
 });

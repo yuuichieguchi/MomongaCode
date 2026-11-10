@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, readRecord, recordFileOf, signedIn, startHarness, CONDITION_WAIT } from './plan-support.ts';
+import { PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, readRecord, recordFileOf, signedIn, startHarness, CONDITION_WAIT } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -77,6 +77,7 @@ describe('startup of the session engine', () => {
     await h.reopen({ accounts: work });
     h.auth.scriptToken('refresh_token', [{ kind: 'error', code: 'invalid_grant' }]);
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
+    h.clock.advance(SKEW_MS);
     await source.rejected(installed?.['generation'] as number, new AbortController().signal);
     expect(source.status()).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant' });
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant', interrupted: true });

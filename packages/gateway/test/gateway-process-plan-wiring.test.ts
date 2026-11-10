@@ -69,19 +69,20 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
       secretStore: { kind: 'available', store: secretStore },
       plaintextTokenFiles: () => false,
     });
+    const clock = createFakeClock(Date.now());
     const sessions = await openPlanSessions({
       profiles: { [PROFILE_ID]: profile },
       paths: { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive },
       store,
       fileSystem: nodeFileSystem,
       accounts: [],
-      clock: createFakeClock(Date.now()),
+      clock,
       outbound: (signal, use) => {
         signal.throwIfAborted();
         return use((url, init) => fetch(url, init));
       },
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      onSecret: () => undefined,
+      redact: () => undefined,
       warn: () => undefined,
     });
     const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
@@ -89,9 +90,10 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
     await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
     await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens });
     await sessions.close();
+    clock.advance(60_000);
 
     writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: PROFILE_ID, account: 'work' } } } } });
-    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile } } as never);
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, clock } as never);
     const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
     const responses = [await ask(), await ask()];
 

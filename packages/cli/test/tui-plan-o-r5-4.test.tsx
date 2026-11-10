@@ -36,3 +36,15 @@ describe('resubmit after /login (O-R5-4 S1)', () => {
     app.unmount();
   });
 });
+
+describe('TUI resume honours the answer of the gateway (P-C8)', () => {
+  it('TUI resume honours resumed:false', async () => {
+    const { app } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', paused: {} })], resumeAnswer: { resumed: false } });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'Resume plan use for work');
+    const output = await untilOutput(app, 'work is not paused');
+    expect(output).not.toContain('work: plan use resumed');
+    app.unmount();
+  });
+});

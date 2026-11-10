@@ -43,8 +43,9 @@ type HarnessOptions = {
   listenerFails?: Error;
   callbackFails?: Error;
   cancelFails?: Error;
-  openFails?: Error;
 };
+
+type Launch = { url: URL; watch: AbortSignal | undefined; onFailure: ((message: string) => void) | undefined };
 
 const harness = (options: HarnessOptions = {}) => {
   const calls: Call[] = [];
@@ -52,6 +53,7 @@ const harness = (options: HarnessOptions = {}) => {
   const callback = deferred<URL>();
   const callbackSignals: AbortSignal[] = [];
   const opened: string[] = [];
+  const launches: Launch[] = [];
   let listenerStarts = 0;
   const plan = {
     accounts: async () => {
@@ -102,9 +104,10 @@ const harness = (options: HarnessOptions = {}) => {
     stderr,
     plan,
     startListener,
-    openUrl: async (url: URL) => {
+    openUrl: (url: URL, watch?: AbortSignal, onFailure?: (message: string) => void) => {
       opened.push(url.href);
-      if (options.openFails !== undefined) throw options.openFails;
+      launches.push({ url, watch, onFailure });
+      return Promise.resolve();
     },
     sandbox: async () => 'seatbelt' as const,
     signal: interrupt.signal,
@@ -115,7 +118,12 @@ const harness = (options: HarnessOptions = {}) => {
   };
   const routes = (): string[] => calls.map((call) => call.route);
   const shown = (): string => `${stdout.text()}${terminalText.join('')}`;
-  return { calls, routes, ports, stdin, interrupt, timers, callback, callbackSignals, opened, stdout, stderr, shown, listenerStarts: () => listenerStarts };
+  const failLaunch = (message: string): void => {
+    const onFailure = launches.at(-1)?.onFailure;
+    if (onFailure === undefined) throw new Error('no launch recorded with an onFailure callback');
+    onFailure(message);
+  };
+  return { calls, routes, ports, stdin, interrupt, timers, callback, callbackSignals, opened, launches, failLaunch, stdout, stderr, shown, listenerStarts: () => listenerStarts };
 };
 
 type Harness = ReturnType<typeof harness>;
@@ -132,7 +140,14 @@ const settled = <T>(promise: Promise<T>): { done(): boolean } => {
   return { done: () => finished };
 };
 
-const untilWaiting = (h: Harness): Promise<void> => eventually(() => h.routes().includes('sign-in/begin') && h.shown().includes(AUTHORIZATION_URL), 'the authorization URL to be shown');
+const untilWaiting = (h: Harness, options: { browser?: boolean } = {}): Promise<void> =>
+  options.browser === false
+    ? eventually(() => h.routes().includes('sign-in/begin') && h.shown().includes(AUTHORIZATION_URL), 'the authorization URL to be shown')
+    : eventually(() => h.routes().includes('sign-in/begin') && h.opened.length === 1, 'the browser to be started');
+
+const DESCRIPTION = CHATGPT.messages.description;
+const HINT = 'If no browser window opens, press Ctrl-C and run momonga auth login chatgpt --account work --no-browser to get the sign-in URL.';
+const LAUNCH_FAILED = (message: string): string => `Could not open the browser (${message}). Open the URL above to continue.\n`;
 
 const completions = (h: Harness): unknown[] => h.calls.filter((call) => call.route === 'sign-in/complete').map((call) => call.body);
 
@@ -286,21 +301,87 @@ describe('the bound, the interrupt and the failures of momonga auth login (O-R5-
   it('--no-browser prints the URL as one marked-sensitive line and opens nothing', async () => {
     const h = harness({ terminal: false });
     const exit = login(h, { provider: 'chatgpt', account: 'work', browser: false });
-    await untilWaiting(h);
+    await untilWaiting(h, { browser: false });
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n`);
+    expect(h.stdout.text()).not.toContain(HINT);
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
     expect(h.opened).toEqual([]);
     expect(h.stdout.text()).toContain(`${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n`);
   });
 
+  it('--no-browser in a terminal prints the URL block, then the paste prompt, and no hint', async () => {
+    const h = harness({ terminal: true });
+    const exit = login(h, { provider: 'chatgpt', account: 'work', browser: false });
+    await untilWaiting(h, { browser: false });
+    await eventually(() => h.stdout.text().includes(PASTE_PROMPT), 'the paste prompt');
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n${PASTE_PROMPT}\n`);
+    h.callback.resolve(new URL(CALLBACK_URL));
+    expect(await exit).toBe(0);
+  });
+
   it('a failed browser launch keeps the marked-sensitive URL and says so', async () => {
-    const h = harness({ terminal: false, openFails: new Error('no opener') });
+    const h = harness({ terminal: false });
+    const exit = login(h);
+    await untilWaiting(h);
+    h.failLaunch('no opener');
+    await eventually(() => h.stderr.text() !== '', 'the launch failure line');
+    expect(h.stdout.text().endsWith(`${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n`)).toBe(true);
+    expect(h.stderr.text()).toBe(LAUNCH_FAILED('no opener'));
+    h.callback.resolve(new URL(CALLBACK_URL));
+    expect(await exit).toBe(0);
+  });
+
+  it('a launcher that ends unsuccessfully after the wait began prints the block then', async () => {
+    const h = harness({ terminal: false });
+    const exit = login(h);
+    await untilWaiting(h);
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\n`);
+    h.failLaunch('/usr/bin/open exited with code 1');
+    await eventually(() => h.stderr.text() !== '', 'the launch failure line');
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\n${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n`);
+    expect(h.stderr.text()).toBe(LAUNCH_FAILED('/usr/bin/open exited with code 1'));
+    h.callback.resolve(new URL(CALLBACK_URL));
+    expect(await exit).toBe(0);
+  });
+
+  it('a launch failure reported after the sign-in has its value prints nothing', async () => {
+    const h = harness({ terminal: false });
     const exit = login(h);
     await untilWaiting(h);
     h.callback.resolve(new URL(CALLBACK_URL));
     expect(await exit).toBe(0);
-    expect(h.stdout.text()).toContain(`${SENSITIVE_LINE}\n${AUTHORIZATION_URL}\n`);
-    expect(h.stderr.text()).toContain('Could not open the browser (no opener). Open the URL above to continue.\n');
+    expect(h.launches).toHaveLength(1);
+    expect(h.launches[0]?.watch?.aborted).toBe(true);
+    expect(h.stdout.text()).not.toContain(AUTHORIZATION_URL);
+    expect(h.stderr.text()).toBe('');
+  });
+});
+
+describe('momonga auth login shows the authorization URL only for --no-browser or a failed launch (P-C1)', () => {
+  it('case 1: the URL is in neither stream and line H is the second stdout line', async () => {
+    const h = harness({ terminal: false });
+    const exit = login(h);
+    await untilWaiting(h);
+    await quiet();
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\n`);
+    expect(h.stderr.text()).toBe('');
+    expect(h.shown()).not.toContain(AUTHORIZATION_URL);
+    h.callback.resolve(new URL(CALLBACK_URL));
+    expect(await exit).toBe(0);
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\nSigned in as work (ada@example.com)\n`);
+    expect(h.shown()).not.toContain(AUTHORIZATION_URL);
+  });
+
+  it('case 1 in a terminal: the description, line H and the paste prompt, and no URL', async () => {
+    const h = harness({ terminal: true });
+    const exit = login(h);
+    await untilWaiting(h);
+    await eventually(() => h.stdout.text().includes(PASTE_PROMPT), 'the paste prompt');
+    expect(h.stdout.text()).toBe(`${DESCRIPTION}\n${HINT}\n${PASTE_PROMPT}\n`);
+    expect(h.shown()).not.toContain(AUTHORIZATION_URL);
+    h.callback.resolve(new URL(CALLBACK_URL));
+    expect(await exit).toBe(0);
   });
 });
 
@@ -347,12 +428,33 @@ describe('describeRunError for plan_use_not_enabled and plan_not_eligible in a h
 });
 
 describe('momonga auth status shows the files the gateway could not list (O-R5-6 D)', () => {
-  it('prints could not list <file name>: <cause> under the profile block', async () => {
+  const PROBLEM_LINE = '  could not list abc123.json: the file mode is 644';
+  const USAGE_LINE = `${CHATGPT.messages.manageUsageLabel}: ${CHATGPT.usageUrl}`;
+
+  it('prints could not list <file name>: <cause> after the profile block', async () => {
     const plan = {
       accounts: async () => ({ profiles: [CHATGPT], accounts: [account({ label: 'work' })], listProblems: [{ file: 'abc123.json', cause: 'the file mode is 644' }] }),
     } as unknown as PlanGatewayClient;
     const stdout = writer();
     expect(await authCommands.authStatus({ stdout, plan, models: async () => [] }, { json: false })).toBe(0);
-    expect(stdout.text().split('\n')).toContain('  could not list abc123.json: the file mode is 644');
+    const lines = stdout.text().split('\n');
+    expect(lines).toContain(PROBLEM_LINE);
+    expect(lines.indexOf(PROBLEM_LINE)).toBeGreaterThan(lines.indexOf(USAGE_LINE));
+  });
+
+  it('auth status with two providers prints each could-not-list line once, after the provider blocks', async () => {
+    const other = { ...CHATGPT, id: 'other', messages: { ...CHATGPT.messages, pickerLabel: 'Other plan' } };
+    const plan = {
+      accounts: async () => ({ profiles: [CHATGPT, other], accounts: [account({ label: 'work' })], listProblems: [{ file: 'abc123.json', cause: 'the file mode is 644' }] }),
+    } as unknown as PlanGatewayClient;
+    const stdout = writer();
+    expect(await authCommands.authStatus({ stdout, plan, models: async () => [] }, { json: false })).toBe(0);
+    const lines = stdout.text().split('\n');
+    expect(lines.filter((line) => line === PROBLEM_LINE)).toHaveLength(1);
+    const usageIndexes = lines.flatMap((line, index) => (line === USAGE_LINE ? [index] : []));
+    expect(usageIndexes).toHaveLength(2);
+    const problemIndex = lines.indexOf(PROBLEM_LINE);
+    expect(problemIndex).toBeGreaterThan(Math.max(...usageIndexes));
+    expect(problemIndex).toBeLessThan(lines.findIndex((line) => line.startsWith('model:')));
   });
 });

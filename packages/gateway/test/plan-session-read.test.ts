@@ -206,6 +206,36 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     expect(h.sessions.signedOutSource(PROFILE_ID).status()).toEqual({ state: 'absent' });
   });
 
+  it('while plan-active.json is damaged, health() of an unpinned source and of the signed-out source names store_unreadable with the cause', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    const expected = {
+      ok: false,
+      reason: 'store_unreadable',
+      detail: `the active plan account file ${h.paths.active} is not a JSON object`,
+      remediation: 'repair the plan session store for this account, then sign in again with /login in the app, or run `momonga auth login chatgpt --account <label>`',
+    };
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).health()).toEqual(expected);
+    expect(h.sessions.signedOutSource(PROFILE_ID).health()).toEqual(expected);
+  });
+
+  it('after a successful pointer write the same sources answer as before the damage', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    const unpinnedBefore = h.sessions.authSource({ profile: PROFILE_ID }).health();
+    const signedOutBefore = h.sessions.signedOutSource(PROFILE_ID).health();
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    await fs.writeFile(h.paths.active, '{}');
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).health()).toEqual(unpinnedBefore);
+    expect(h.sessions.signedOutSource(PROFILE_ID).health()).toEqual(signedOutBefore);
+  });
+
   for (const entry of damaged) {
     it(`${entry.name} is warned at open, an unpinned source fails plan_store_unreadable with the cause, a pinned source reads and selectActive does not overwrite it`, async () => {
       const h = await harness();

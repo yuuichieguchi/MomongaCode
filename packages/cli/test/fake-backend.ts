@@ -46,6 +46,7 @@ export type FakeBackend = TuiBackend & {
   readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
   readonly elicitationAnswers: { inputId: string; responses: Readonly<Record<string, ElicitationAnswerRecord>> }[];
   readonly openedUrls: string[];
+  readonly openUrlCalls: { url: URL; watch: AbortSignal | undefined; onFailure(message: string): void }[];
   readonly recorded: string[];
   emit(frame: RunEventFrame): void;
   finish(run: RunView): void;
@@ -114,6 +115,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[] = [];
   const elicitationAnswers: FakeBackend['elicitationAnswers'] = [];
   const openedUrls: string[] = [];
+  const openUrlCalls: FakeBackend['openUrlCalls'] = [];
   let memories: MemoryView[] = [...(options.memories ?? [])];
   let rules: GoverningFactView[] = [...(options.rules ?? [])];
   const recorded: string[] = [];
@@ -145,6 +147,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     started,
     elicitationAnswers,
     openedUrls,
+    openUrlCalls,
     recorded,
     called: (call) =>
       new Promise<void>((resolve) => {
@@ -206,9 +209,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       record(`elicit:${inputId}`);
       elicitationAnswers.push({ inputId, responses });
     },
-    openUrl: async (url) => {
-      if (options.openUrlFailure !== undefined) throw options.openUrlFailure;
+    openUrl: (url, watch, onFailure) => {
       openedUrls.push(url.href);
+      openUrlCalls.push({ url, watch, onFailure });
+      const failure = options.openUrlFailure;
+      if (failure !== undefined) queueMicrotask(() => onFailure(failure.message));
+      return Promise.resolve();
     },
     copyToClipboard: (text) => {
       record(`copy:${text}`);

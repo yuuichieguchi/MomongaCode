@@ -5,6 +5,7 @@ import { systemTiming } from '@momonga/foundation';
 import { authLogin, authLogout, authStatus, nextAccountLabel } from '../src/commands/auth.ts';
 import { describeRunError } from '../src/policy-messages.ts';
 import { SHELL_SLASH_COMMANDS } from '../src/tui/commands/shell-commands.ts';
+import { nodeFiles } from '../src/node-ports.ts';
 import { dismissNotice, readDismissedNotices } from '../src/tui/dismissed-notices.ts';
 import { AUTHORIZATION_URL, LISTENER_PORT, account, fakePlanBackend } from './fake-plan-gateway.tsx';
 import { freshHome } from './fresh-home.ts';
@@ -37,19 +38,19 @@ describe('state/dismissed-notices.json', () => {
   it('records a dismissal as { key: ISO time } with mode 0600 and reads it back', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'));
+    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'));
     const file = path.join(state, 'dismissed-notices.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ 'invite:chatgpt': '2026-11-10T01:02:03.000Z' });
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    expect(await readDismissedNotices(state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T01:02:03.000Z' });
+    expect(await readDismissedNotices(nodeFiles, state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T01:02:03.000Z' });
   });
 
   it('keeps earlier dismissals when another is added', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'));
-    await dismissNotice(state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'));
-    expect(await readDismissedNotices(state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T00:00:00.000Z', 'invite:other': '2026-11-11T00:00:00.000Z' });
+    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'));
+    await dismissNotice(nodeFiles, state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'));
+    expect(await readDismissedNotices(nodeFiles, state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T00:00:00.000Z', 'invite:other': '2026-11-11T00:00:00.000Z' });
   });
 
   it('ignores a file that cannot be parsed, with a warning', async () => {
@@ -57,14 +58,14 @@ describe('state/dismissed-notices.json', () => {
     fs.mkdirSync(state, { recursive: true });
     fs.writeFileSync(path.join(state, 'dismissed-notices.json'), '{not json');
     const warnings: string[] = [];
-    expect(await readDismissedNotices(state, (warning) => void warnings.push(warning))).toEqual({});
+    expect(await readDismissedNotices(nodeFiles, state, (warning) => void warnings.push(warning))).toEqual({});
     expect(warnings).toHaveLength(1);
   });
 
   it('reads an absent file as no dismissals and no warning', async () => {
     const state = path.join(freshHome(), 'state');
     const warnings: string[] = [];
-    expect(await readDismissedNotices(state, (warning) => void warnings.push(warning))).toEqual({});
+    expect(await readDismissedNotices(nodeFiles, state, (warning) => void warnings.push(warning))).toEqual({});
     expect(warnings).toEqual([]);
   });
 });
@@ -154,7 +155,10 @@ describe('momonga auth login', () => {
         stderr: err,
         plan: backend.plan,
         startListener: backend.startSignInListener,
-        openUrl: async (url: URL) => void opened.push(url.href),
+        openUrl: (url: URL) => {
+          opened.push(url.href);
+          return Promise.resolve();
+        },
         sandbox: async () => 'seatbelt' as const,
         signal: new AbortController().signal,
         timers: systemTiming,

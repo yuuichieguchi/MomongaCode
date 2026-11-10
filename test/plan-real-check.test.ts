@@ -119,6 +119,38 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(r3).toEqual({ step: 'R3', verdict: 'recorded', facts: { remainingMs: 61000, earliestRefreshAt: long, at } });
   });
 
+  it('R7 is failed with the new reason for a sign_out event with end interrupted and revocation none', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    fileLogger(home, createFakeClock(Date.now())).info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'none', end: 'interrupted', resumed: true } });
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['collect', '--home', home, '--report', report]);
+    expect(run.code).toBe(1);
+    expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({
+      step: 'R7',
+      verdict: 'failed',
+      facts: { revocation: 'none', end: 'interrupted', reason: 'the sign-out ended without a revocation outcome' },
+    });
+  });
+
+  it('an old sign_out line without end is read as cleared', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    fileLogger(home, createFakeClock(Date.now())).info('plan.sign_out', { data: { profile: PROFILE_ID, account: 'work', revocation: 'confirmed', resumed: false } });
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['collect', '--home', home, '--report', report]);
+    expect(run.code).toBe(1);
+    expect(readReport(report).steps.find((entry) => entry.step === 'R7')).toEqual({ step: 'R7', verdict: 'recorded', facts: { revocation: 'confirmed', end: 'cleared' } });
+  });
+
+  it('a home directory that does not exist does not crash the own-home check', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const missingUserHome = path.join(withTempDir(context), 'not-created');
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['collect', '--home', home, '--report', report], { ...process.env, HOME: missingUserHome });
+    expect(run.stderr).not.toContain('ENOENT');
+    expect(fs.existsSync(report)).toBe(true);
+    expect(run.code).toBe(1);
+  });
+
   it("--home equal to the user's home directory exits 2 with the refusal text", async (context) => {
     const userHome = withTempDir(context);
     const reports = withTempDir(context);

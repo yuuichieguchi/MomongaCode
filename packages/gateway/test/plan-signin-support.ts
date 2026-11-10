@@ -1,6 +1,6 @@
 import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
-import type { JsonLogger } from '@momonga/foundation';
+import type { JsonLogger, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
@@ -63,6 +63,7 @@ export type PlanGatewayOptions = {
   respond?: PlanResponsesOptions['respond'];
   catalogListKey?: string;
   catalogReply?: PlanResponsesOptions['catalogReply'];
+  planStore?: (store: ListableCredentialStore) => ListableCredentialStore;
 };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
@@ -112,7 +113,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
       },
     },
   });
-  const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }) });
+  const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }), ...(options.planStore === undefined ? {} : { planStore: options.planStore }) });
   const launch = async () => {
     const launched = await launchOnly();
     await publishCurrentGeneration(momongaPaths(home, process.platform, {}), {

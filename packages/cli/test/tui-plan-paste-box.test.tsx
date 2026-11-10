@@ -157,6 +157,24 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
     app.unmount();
   });
 
+  it('a loopback callback marks the screen delivered and Esc and Ctrl-C then send no cancel', async () => {
+    const held = new Promise<void>(() => undefined);
+    const { app, backend } = await startPlan({ accounts: [], callbackArrives: true, completeHeld: held });
+    await untilFrame(app, 'mode: default');
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'Continue with ChatGPT');
+    await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the delivery of the callback');
+    const frame = await untilFrame(app, 'Finishing the sign-in…');
+    expect(frame).not.toContain(PASTE_LABEL);
+    app.stdin.write(KEYS.escape);
+    await quiet();
+    app.stdin.write(KEYS.ctrlC);
+    await quiet();
+    expect(routesOf(backend)).not.toContain('sign-in/cancel');
+    expect(app.lastFrame() ?? '').toContain('Finishing the sign-in…');
+    app.unmount();
+  });
+
   it('ctrl+y asks the terminal to copy the sign-in URL through copyToClipboard and says so', async () => {
     const { app, backend } = await waitingScreen();
     app.stdin.write(CTRL_Y);

@@ -5,7 +5,7 @@ import type { AliasCapabilities, NeedsProbe, ToolCallingState } from '@momonga/p
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
-import { runHeadless } from '../src/run/headless.ts';
+import { EXIT_RUN_FAILED, runHeadless } from '../src/run/headless.ts';
 import type { HeadlessOptions } from '../src/run/headless.ts';
 import { frameOf } from './acp-harness.ts';
 import { SESSION, capabilitiesOf, runView } from './fake-backend.ts';
@@ -44,7 +44,10 @@ const NEEDS_PROBE: NeedsProbe = {
   remedy: 'run the tool-calling probe for local',
 };
 
-const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState) => {
+const headless = (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState) =>
+  headlessReading(context, { ...capabilitiesOf(), toolCalling }, 'text');
+
+const headlessReading = async (context: Parameters<typeof withTempDir>[0], capabilities: unknown, format: HeadlessOptions['format']) => {
   log.length = 0;
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
@@ -68,9 +71,9 @@ const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling:
   } as unknown as CliPorts;
   const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities> => {
     log.push(`capabilitiesOf:${alias}`);
-    return { ...capabilitiesOf(), toolCalling } as AliasCapabilities;
+    return capabilities as AliasCapabilities;
   };
-  const options = { prompt: 'explain the module', format: 'text', verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfAlias } as HeadlessOptions;
+  const options = { prompt: 'explain the module', format, verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfAlias } as HeadlessOptions;
   const code = await runHeadless(ports, paths, options);
   return { code, stderr: stderr.join(''), stdout: stdout.join('') };
 };
@@ -107,5 +110,34 @@ describe('headless asks capabilitiesOf(alias) at session open and shows the verd
     expect(noticeAt).toBeLessThan(log.indexOf('createRun'));
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('A plain answer.');
+  });
+});
+
+const UNAVAILABLE_MESSAGE =
+  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
+const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
+const UNAVAILABLE = {
+  toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNAVAILABLE_MESSAGE, param: 'model' },
+  source: 'unprobed',
+};
+
+describe('headless refuses an alias the gateway lists as unavailable before the run is created (G1)', () => {
+  it('an unavailable alias is refused before the run is created', async (context) => {
+    const result = await headlessReading(context, UNAVAILABLE, 'text');
+
+    expect(log).not.toContain('createRun');
+    expect(result.stderr).toBe(`momonga: target_not_ready: ${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}\n`);
+    expect(result.stdout).toBe('');
+    expect(result.code).toBe(EXIT_RUN_FAILED);
+  });
+
+  it('the refused JSON object is printed in json format', async (context) => {
+    const result = await headlessReading(context, UNAVAILABLE, 'json');
+
+    expect(log).not.toContain('createRun');
+    expect(result.stdout).toBe(
+      `${JSON.stringify({ type: 'result', subtype: 'error', is_error: true, result: '', error: { code: 'target_not_ready', message: `${UNAVAILABLE_MESSAGE}\n${UNAVAILABLE_REMEDY}` } })}\n`,
+    );
+    expect(result.code).toBe(EXIT_RUN_FAILED);
   });
 });

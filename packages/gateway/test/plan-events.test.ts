@@ -12,14 +12,12 @@ import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-
-
 const FIELDS: Readonly<Record<(typeof PLAN_EVENT_NAMES)[number], readonly string[]>> = {
   'plan.sign_in': ['profile', 'account', 'outcome', 'failure', 'endStep', 'durationMs', 'port', 'alg', 'kid', 'audShape', 'scope', 'earliestRefreshAt', 'claimNames'],
   'plan.refresh': ['profile', 'account', 'outcome', 'code', 'interrupted', 'attempts', 'latencyMs', 'remainingMs', 'earliestRefreshAt', 'at'],
   'plan.rejected': ['profile', 'account', 'generation', 'answer'],
-  'plan.sign_out': ['profile', 'account', 'revocation', 'resumed'],
-  'plan.pause': ['profile', 'account', 'code', 'until'],
+  'plan.sign_out': ['profile', 'account', 'revocation', 'resumed', 'end', 'code'],
+  'plan.pause': ['profile', 'account', 'code', 'until', 'saved'],
   'plan.catalog': ['profile', 'account', 'outcome', 'listed', 'usable', 'entryKeys', 'requestIdHeaders'],
 };
 
@@ -137,7 +135,9 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
       return token !== undefined && refused.has(token) ? ('expired' as const) : ('valid' as const);
     };
     const respond = (): FakeUpstreamReply => openResponsesTextReply(['hi']);
-    const observation = await observed({ verifyBearer, respond });
+    const clock = createFakeClock(Date.now());
+    const observation = await observed({ clock, verifyBearer, respond });
+    clock.advance(60_000);
     expect(await ask(observation.gateway)).toBe(200);
     const [event, ...rest] = named(observation.events, 'plan.rejected');
     expect(rest).toEqual([]);
@@ -149,19 +149,19 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     await observation.gateway.close();
   });
 
-  it('plan.sign_out carries exactly profile, account, revocation and resumed', async () => {
+  it('plan.sign_out carries exactly profile, account, revocation, resumed and end', async () => {
     const observation = await observed();
     expect((await observation.gateway.post(PLAN_ROUTES.signOut, { profile: PROFILE_ID, account: ACCOUNT })).status).toBe(200);
     await vi.waitFor(() => expect(named(observation.events, 'plan.sign_out')).toHaveLength(1), CONDITION_WAIT);
     const [event] = named(observation.events, 'plan.sign_out');
     if (event === undefined) throw new Error('no plan.sign_out event was written');
-    expect(presentKeys(event)).toEqual(['account', 'profile', 'resumed', 'revocation']);
-    expect(event.data).toEqual({ profile: PROFILE_ID, account: ACCOUNT, revocation: 'confirmed', resumed: false });
+    expect(presentKeys(event)).toEqual(['account', 'end', 'profile', 'resumed', 'revocation']);
+    expect(event.data).toEqual({ profile: PROFILE_ID, account: ACCOUNT, revocation: 'confirmed', resumed: false, end: 'cleared' });
     expectNoSecret(observation);
     await observation.gateway.close();
   });
 
-  it('plan.pause carries profile, account, code and, with a Retry-After, until', async () => {
+  it('plan.pause carries profile, account, code, saved and, with a Retry-After, until', async () => {
     const clock = createFakeClock(Date.now());
     const respond = (): FakeUpstreamReply => planErrorHttpReply('subscription_sharing_usage_limit_exceeded', { headers: { 'retry-after': '30' } });
     const observation = await observed({ clock, respond });
@@ -169,8 +169,8 @@ describe('O-R5-6 L10: the plan events, their fields and what they never carry', 
     const [event, ...rest] = named(observation.events, 'plan.pause');
     expect(rest).toEqual([]);
     if (event === undefined) throw new Error('no plan.pause event was written');
-    expect(presentKeys(event)).toEqual(['account', 'code', 'profile', 'until']);
-    expect(event.data).toMatchObject({ profile: PROFILE_ID, account: ACCOUNT, until: new Date(clock.now() + 30_000).toISOString() });
+    expect(presentKeys(event)).toEqual(['account', 'code', 'profile', 'saved', 'until']);
+    expect(event.data).toMatchObject({ profile: PROFILE_ID, account: ACCOUNT, saved: true, until: new Date(clock.now() + 30_000).toISOString() });
     expect(typeof event.data['code']).toBe('string');
     expectNoSecret(observation);
     await observation.gateway.close();

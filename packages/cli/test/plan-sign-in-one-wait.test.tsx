@@ -145,7 +145,7 @@ const startLogin = () => {
     stderr,
     plan: fake.plan,
     startListener: loopbackSignInListener(new AbortController().signal),
-    openUrl: async () => undefined,
+    openUrl: () => Promise.resolve(),
     sandbox: async () => 'seatbelt' as const,
     signal: new AbortController().signal,
     timers,
@@ -209,5 +209,56 @@ describe('the TUI prints the outcome of the wait as an info line (O-R5-6 J 3, J 
     await quiet();
     expect(routesOf(backend).filter((route) => route === 'sign-in/cancel')).toHaveLength(1);
     app.unmount();
+  });
+});
+
+const orderedSignIn = (winner: 'listener' | 'paste' | 'none') => {
+  const order: string[] = [];
+  const signInTimers = createFakeTimers(createFakeClock(START_MS));
+  const redirectUrl = 'http://127.0.0.1:49152/auth/callback';
+  const plan = {
+    signInBegin: async () => ({ attemptId: 'attempt-1', authorizationUrl: AUTHORIZATION_URL, state: 'st-1', expiresAt: '2026-11-10T00:05:00.000Z' }),
+    signInComplete: async () => {
+      order.push('complete');
+      return { outcome: 'signed_in', account: { profile: 'chatgpt', label: 'work', state: 'active', active: true, pinnedBy: [] }, firstSignIn: false };
+    },
+    signInCancel: async () => {
+      order.push('cancel');
+    },
+  } as unknown as PlanGatewayClient;
+  const ports = {
+    plan,
+    startListener: async () => ({
+      port: 49152,
+      redirectUrl,
+      callback: ({ signal }: { state: string; signal: AbortSignal }) =>
+        winner === 'listener' ? Promise.resolve(new URL(`${redirectUrl}?code=code-1&state=st-1`)) : waitForAbort(signal),
+      close: async () => undefined,
+    }),
+    authorize: async () => undefined,
+    pasted: (_state: string, signal: AbortSignal) => (winner === 'paste' ? Promise.resolve('https://elsewhere.example/x?code=pasted&state=st-1') : waitForAbort(signal)),
+    signal: new AbortController().signal,
+    timers: signInTimers,
+    delivered: () => void order.push('delivered'),
+  };
+  const outcome = signIn(ports, { profile: 'chatgpt', account: 'work', reconsent: false });
+  outcome.catch(() => undefined);
+  return { order, signInTimers, outcome };
+};
+
+describe('signIn tells its caller when a value is delivered (P-C2)', () => {
+  it.each(['listener', 'paste'] as const)('signIn calls delivered once for either source, before complete (%s wins)', async (winner) => {
+    const started = orderedSignIn(winner);
+    await started.outcome;
+    expect(started.order).toEqual(['delivered', 'complete']);
+  });
+
+  it('delivered is not called when the wait fails', async () => {
+    const started = orderedSignIn('none');
+    await eventually(() => started.signInTimers.pending().length === 1, 'the wait to start its clock');
+    started.signInTimers.advance(WAIT_MS);
+    const error = await failure(started.outcome);
+    expect(error).toBeInstanceOf(SignInExpiredError);
+    expect(started.order).toEqual(['cancel']);
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { PAUSE_CODE, PROFILE_ID, editRecord, planError, readRecord, signedIn, startHarness } from './plan-support.ts';
+import { PAUSE_CODE, PROFILE_ID, SKEW_MS, editRecord, planError, readRecord, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -93,6 +93,7 @@ describe('pause and rejected act on the account whose bearer the read served (I-
     expect(served.bearer).toBe(home.tokens.access_token);
     await pointTo(h, 'work');
     const workBefore = await readRecord(h, 'work');
+    h.clock.advance(SKEW_MS);
     expect(await unpinned.rejected(served.generation, signal())).toBe('renewed');
     expect(h.auth.calls.tokenRefreshToken).toBe(1);
     expect(h.auth.records.find((record) => record.form['grant_type'] === 'refresh_token')?.form['refresh_token']).toBe(home.tokens.refresh_token);

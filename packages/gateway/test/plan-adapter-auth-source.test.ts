@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter, keyAuthSource } from '@momonga/gateway';
-import { planProfileOf } from '@momonga/config';
-import type { Capabilities } from '@momonga/protocol';
 import {
-  PLAN_RESPONSES_PATH,
   UNCONFIGURED_NETWORK,
   UNDICI_DEFAULT_LIVENESS,
   anthropicTextReply,
@@ -14,64 +11,11 @@ import {
   startFakeAnthropic,
   startFakePlanResponses,
 } from '@momonga/testkit';
-import type { FakePlanResponses, FakeUpstreamReply } from '@momonga/testkit';
 import { applyCredentialEffect } from '../src/adapters/shared/auth.ts';
 import { PlanCredentialError } from '../src/plan/auth-source.ts';
-import type { AuthSource, PlanRead } from '../src/plan/auth-source.ts';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { bearerOf, fakeAuth, posts, startPlan } from './plan-auth-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
-
-const PLAN_CAPABILITIES: Capabilities = { ...REMOTE_CAPABILITIES, sampling: { accepts: 'none' }, outputBoundField: 'none', systemRole: 'developer', toolPlacement: 'additional_tools' };
-
-const bearerOf = (generation: number): string => `plan-access-generation-${generation}`;
-
-type FakeAuth = AuthSource & { rejectedCalls: number[]; pauses: Array<{ untilMs?: number; code: string }>; reads: number };
-
-const fakeAuth = (options: { renew: boolean; failRead?: PlanCredentialError }): FakeAuth => {
-  let generation = 1;
-  const auth: FakeAuth = {
-    rejectedCalls: [],
-    pauses: [],
-    reads: 0,
-    read: async (): Promise<PlanRead> => {
-      auth.reads += 1;
-      if (options.failRead !== undefined) throw options.failRead;
-      return { bearer: bearerOf(generation), generation };
-    },
-    rejected: async (seen) => {
-      auth.rejectedCalls.push(seen);
-      if (!options.renew || seen !== generation) return 'unchanged';
-      generation += 1;
-      return 'renewed';
-    },
-    pause: async (pause) => {
-      auth.pauses.push(pause);
-    },
-    resume: async () => {},
-    status: () => ({ state: 'active' }),
-    health: () => ({ ok: true }),
-  };
-  return auth;
-};
-
-const startPlan = async (auth: AuthSource, accepted: (bearer: string | undefined) => boolean, script: FakeUpstreamReply[]) => {
-  const fake = await startFakePlanResponses({ verifyBearer: (bearer) => (accepted(bearer) ? 'valid' : 'expired'), script });
-  registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
-    liveness: UNDICI_DEFAULT_LIVENESS,
-    resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: `${fake.origin}/v1`, network: UNCONFIGURED_NETWORK }),
-    capabilities: async () => PLAN_CAPABILITIES,
-    clock: createFakeClock(START_MS),
-    authSource: () => auth,
-    errorRules: planProfileOf('chatgpt').errorRules,
-  });
-  registerCleanup(() => adapter.close());
-  const harness = await startGateway({ adapters: { plan: adapter }, config: { aliases: { fast: ['plan'] }, targets: { plan: { model: 'plan-model', billing: 'plan' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } } });
-  const post = async () => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
-  return { fake, post };
-};
-
-const posts = (fake: FakePlanResponses) => fake.requests.filter((request) => request.method === 'POST' && request.path === PLAN_RESPONSES_PATH);
 
 describe('the open-responses adapter takes its bearer from the target AuthSource (P5a-w, M1)', () => {
   it('sends the bearer read from the AuthSource', async () => {

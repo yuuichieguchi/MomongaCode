@@ -359,7 +359,7 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
 });
 
 const UNKNOWN_CAPABILITIES_TEXT =
-  'the plan target gpt declares no contextWindow and maxOutputTokens, and the model list of its account reports none for plan-model; momonga models --catalog reads the list';
+  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
 
 const catalogEntry = (contextWindow: number) => ({ slug: 'plan-model', display_name: 'Plan Model', visibility: 'list', context_window: contextWindow });
 
@@ -474,8 +474,15 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const client = clientFor(gateway.socketPath);
     await signInAs(gateway, ACCOUNT);
     const before = await getJson(client, '/v1/momonga/models');
-    expect(before.status).toBe(412);
-    expect(before.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown' });
+    expect(before.status).toBe(200);
+    const unavailable = { toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNKNOWN_CAPABILITIES_TEXT, param: 'model' }, source: 'unprobed' };
+    const unlisted = (before.body.data as Array<{ targets: string[]; capabilities: { toolCalling: { message?: unknown } }; targetCapabilities: Record<string, unknown> }>).find((entry) => entry.targets.includes('gpt'));
+    expect(unlisted?.capabilities).toEqual(unavailable);
+    expect(unlisted?.targetCapabilities['gpt']).toEqual(unavailable);
+    expect(unlisted?.capabilities.toolCalling.message).toBe(UNKNOWN_CAPABILITIES_TEXT);
+    const refused = await askDefault(gateway);
+    expect(refused.status).toBe(412);
+    expect(refused.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown' });
     const healthBefore = await getJson(client, '/v1/momonga/health');
     expect(healthBefore.body.targets.gpt).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
@@ -547,6 +554,21 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(answered.body.error.code).toBe('plan_store_unreadable');
     expect(answered.body.error.message).toBe(cause);
     expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active' });
+    await gateway.close();
+  });
+
+  it('GET /v1/momonga/health shows the unpinned target ok false, reason store_unreadable while the file is damaged', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true });
+    await signInAs(gateway, ACCOUNT);
+    await gateway.close();
+    const pointer = momongaLayout(gateway.home).planActive;
+    fs.writeFileSync(pointer, '"x"');
+    await gateway.restart();
+    replaceSettings(gateway.home, unpinnedSettings(true));
+    const cause = `the active plan account file ${pointer} is not a JSON object`;
+    await askDefault(gateway);
+    const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
+    expect(health.body.targets.gpt).toMatchObject({ ok: false, reason: 'store_unreadable', detail: cause });
     await gateway.close();
   });
 

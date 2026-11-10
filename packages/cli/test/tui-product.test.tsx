@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView, ImageAttachment, SkillView } from '@momonga/protocol';
 import { maxDiffLines } from '../src/tui/diff.ts';
-import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
+import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 const FORM: ElicitationRequestView = {
@@ -85,7 +85,7 @@ describe('elicitation in the TUI', () => {
     app.unmount();
   });
 
-  it('keeps asking, and answers nothing, when the browser cannot be opened', async () => {
+  it('answers the URL elicitation and reports a failed browser launch as a notice', { timeout: 3 * FRAME_BOUND_MS }, async () => {
     const { backend, app } = await start({ openUrlFailure: new Error('no browser') });
     await untilFrame(app, 'mode: default');
     await runStarted(backend, app, 'ask');
@@ -93,8 +93,9 @@ describe('elicitation in the TUI', () => {
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
     await untilFrame(app, 'Sign in to continue');
     app.stdin.write('1');
-    await untilFrame(app, 'could not open the URL: no browser');
-    expect(backend.elicitationAnswers).toEqual([]);
+    const url = URL_REQUEST.mode === 'url' ? URL_REQUEST.url : '';
+    await untilOutput(app, `MCP server calc: Could not open the browser (no browser). Open this URL to continue: ${url}`);
+    expect(backend.elicitationAnswers).toEqual([{ inputId: 'in2', responses: { consent: { action: 'accept' } } }]);
     app.unmount();
   });
 

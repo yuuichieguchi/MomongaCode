@@ -1,25 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
-import { FM_SERVER, LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS } from '@momonga/protocol';
+import { FM_SERVER, LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import { detectModels, formatDetected } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { freshHome } from './fresh-home.ts';
-
-vi.mock('../src/local-managed-ports.ts', () => ({
-  localManagedPorts: () => ({
-    servers: MANAGED_SERVERS,
-    exec: async (_file: string, args: readonly string[]) => (args.join(' ') === 'license --status' ? { exitCode: 69, stdout: '', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' }),
-    exists: async (file: string) => file === FM_SERVER.binary.defaultPath,
-  }),
-}));
 
 const SETTINGS_FILE = '/home/u/.momonga/settings.json';
 
 const pathsOf = (): MomongaPaths => momongaLayout(freshHome());
 
-const portsOf = (written: string[]): CliPorts => ({ stdout: { write: (text: string) => void written.push(text) } }) as unknown as CliPorts;
+const portsOf = (written: string[]): CliPorts =>
+  ({
+    stdout: { write: (text: string) => void written.push(text) },
+    exec: async (_file: string, args: readonly string[]) => (args.join(' ') === 'license --status' ? { exitCode: 69, stdout: '', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' }),
+    files: { exists: async (file: string) => file === FM_SERVER.binary.defaultPath },
+  }) as unknown as CliPorts;
 
 const answering = (routes: Readonly<Record<string, unknown>>): { fetch: typeof fetch; asked: string[] } => {
   const asked: string[] = [];

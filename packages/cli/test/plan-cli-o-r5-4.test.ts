@@ -180,7 +180,7 @@ describe('momonga auth login with several profiles and no provider (O-R5-4 S11)'
           startListener: async () => {
             throw new Error('stop after the choice');
           },
-          openUrl: async () => undefined,
+          openUrl: () => Promise.resolve(),
           sandbox: async () => 'seatbelt',
           isTerminal: true,
           choose: async (_question: string, choices: readonly string[]) => {
@@ -198,7 +198,7 @@ describe('momonga auth login with several profiles and no provider (O-R5-4 S11)'
     const { plan } = fakePlan({ profiles, accounts: [] });
     const stderr = writer();
     const code = await authCommands
-      .authLogin({ stdout: writer(), stderr, plan, startListener: async () => ({}) as never, openUrl: async () => undefined, sandbox: async () => 'seatbelt', isTerminal: false } as never, {})
+      .authLogin({ stdout: writer(), stderr, plan, startListener: async () => ({}) as never, openUrl: () => Promise.resolve(), sandbox: async () => 'seatbelt', isTerminal: false } as never, {})
       .catch((error: unknown) => error);
     expect(code).toBe(2);
     expect(stderr.text()).toContain('name the provider to sign in to: momonga auth login <provider>; the providers are chatgpt, other');
