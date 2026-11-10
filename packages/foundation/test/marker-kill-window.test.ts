@@ -8,7 +8,7 @@ import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
 const RECORDED_GROUP = 525_252;
 const OWN_GROUP = 525_251;
 const HOLDER = 525_253;
-const HOLDER_STARTED_AT = 1_700_000_000;
+const HOLDER_STARTED_AT = 1_700_000_000n;
 
 const dirs: string[] = [];
 

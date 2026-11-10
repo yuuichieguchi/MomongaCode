@@ -10,8 +10,6 @@ import { generationLayout } from './momonga-paths.ts';
 import type { GenerationProcessRole, GenerationSockets, MomongaPaths } from './momonga-paths.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import { systemRandom } from './system-random.ts';
-import { readStopRecord } from './stop-record.ts';
-import type { StopValues } from './process-contract.ts';
 
 export type CurrentGeneration = { generation: number; version: string; sockets: GenerationSockets };
 
@@ -106,12 +104,6 @@ export const currentSocketResolver =
     (await requireCurrentGeneration(paths)).sockets[role];
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
-
-export const readCurrentStopRecord = async (paths: MomongaPaths): Promise<StopValues | undefined> => {
-  const current = await readCurrentGeneration(paths);
-  if (current === undefined) return undefined;
-  return readStopRecord(generationLayout(homeOf(paths), current.generation).stopRecord);
-};
 
 export class NoGenerationOfVersionError extends Error {
   readonly code = 'ENOENT';

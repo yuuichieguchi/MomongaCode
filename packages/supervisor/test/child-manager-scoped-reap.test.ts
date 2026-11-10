@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { KILL_CONFIRM_MS, momongaPaths, scopeToGeneration } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, momongaPaths, scopeToGeneration } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { afterMicrotasks, prepareGenerationForTest, withTempDir } from '@momonga/testkit';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 
-const VALUES: StopValues = { closeGraceMs: 1200, managedServerStopGraceMs: 300 };
+const VALUES: StopValues = { ...DEFAULT_STOP_VALUES, closeGraceMs: 1200, managedServerStopGraceMs: 300 };
 const SECOND_GENERATION = 2;
 
 describe('the reap of a gone gateway takes only the managed servers of its own generation (design-update 18.4 A16)', () => {

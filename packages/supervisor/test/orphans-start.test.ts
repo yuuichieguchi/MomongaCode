@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, canonicalPath, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, canonicalPath, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, orphanReapGraceMs, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { DAEMON_MARKER_KILL_GRACE_MS, ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { TEST_VERSION, captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
@@ -190,8 +190,8 @@ describe('reapOrphans', () => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-04'), '');
     const { calls, ports } = recorded({ findHolders: async () => [999_999] });
-    const bound = runtimeMaxCloseMs(30_000);
-    const { clock, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10 * bound });
+    const bound = runtimeMaxCloseMs(DEFAULT_STOP_VALUES);
+    const { clock, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10 * bound, predecessorStopValues: DEFAULT_STOP_VALUES });
     const result = reap();
     await until(() => calls.reap.length > 0, 250000);
     expect(clock.now()).toBeGreaterThanOrEqual(bound);
@@ -412,8 +412,9 @@ describe('reapOrphans', () => {
 
 describe('orphan reap at supervisor start', () => {
   it('reap shutdown bound relation', () => {
-    expect(ORPHAN_REAP_GRACE_MS + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES));
-    expect(ORPHAN_REAP_GRACE_MS).toBe(15_000);
+    const noDrain = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0 };
+    expect(orphanReapGraceMs(noDrain) + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(noDrain));
+    expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_095);
   });
 
   it('start reaps only the daemon markers of its own generation, before the first spawn, and reads no other generation (20.29)', async (context) => {

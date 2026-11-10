@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { RUNTIME_ENTRY_FLAGS } from '@momonga/runtime';
-import { BUILT_BINARY_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { fireTimer, launchRuntime, startStack, stepsLogged, timerIds, waitForCondition, waitForStatus, waitForTimer } from './run-helpers.ts';
 
@@ -51,7 +51,7 @@ vi.mock('../../src/process/mcp-admin.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const CLEAN = { clean: true, abandoned: [], stragglers: [] };
 const VALUES: StopValues = { ...DEFAULT_STOP_VALUES, closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, drainTimeoutMs: 4321, mcpCloseGraceMs: 50 };
 const DERIVED_TEARDOWN_MS = 10_000 + 6 * 50 + 10_075;
@@ -85,7 +85,7 @@ describe('the runtime drain is a stop value, not a spawn flag', () => {
 });
 
 describe('the runtime close takes the values its stop carries (fake timers, in-process gateway)', () => {
-  it('arms the drain at the carried drainTimeoutMs, and the run it cut is QUEUED', PROCESS_TIMEOUT, async () => {
+  it('arms the drain at the carried drainTimeoutMs, and the run it cut is QUEUED', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     const run = await runningRequest(stack, launched);
@@ -96,7 +96,7 @@ describe('the runtime close takes the values its stop carries (fake timers, in-p
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('at drain 0 the drain is decided by its timer at once and the runtime aborts its workers (R8)', PROCESS_TIMEOUT, async () => {
+  it('at drain 0 the drain is decided by its timer at once and the runtime aborts its workers (R8)', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     const run = await runningRequest(stack, launched);
@@ -107,7 +107,7 @@ describe('the runtime close takes the values its stop carries (fake timers, in-p
     expect(await waitForStatus(stack.temp, run.id, ['QUEUED', 'COMPLETED', 'FAILED'])).toBe('QUEUED');
   });
 
-  it('runs the teardown under runtimeTeardownBudgetMs of the carried MCP grace', PROCESS_TIMEOUT, async () => {
+  it('runs the teardown under runtimeTeardownBudgetMs of the carried MCP grace', async () => {
     control.holdCloseAll = true;
     const stack = await startStack();
     const launched = await launchFake(stack);
@@ -119,7 +119,7 @@ describe('the runtime close takes the values its stop carries (fake timers, in-p
     expect(await closing).toEqual(CLEAN);
   });
 
-  it('closes the session pools and the admin probe pools in parallel, each with the carried MCP grace', PROCESS_TIMEOUT, async () => {
+  it('closes the session pools and the admin probe pools in parallel, each with the carried MCP grace', async () => {
     control.holdCloseAll = true;
     control.holdAdminClose = true;
     const stack = await startStack();
@@ -133,7 +133,7 @@ describe('the runtime close takes the values its stop carries (fake timers, in-p
     expect(await closing).toEqual(CLEAN);
   });
 
-  it('an abort carries the MCP grace to the pool closes as well', PROCESS_TIMEOUT, async () => {
+  it('an abort carries the MCP grace to the pool closes as well', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     expect(await launched.handle.abort({ ...VALUES, mcpCloseGraceMs: 7 })).toEqual(CLEAN);

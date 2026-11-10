@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
-import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   HARNESS_GENERATION,

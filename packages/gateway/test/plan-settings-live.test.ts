@@ -5,7 +5,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile, PlanProfileOAuth } from '@momonga/config';
-import { FIRST_GENERATION, createFileCredentialStore, createUdsClient, credentialFileFor, fixedSocket, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, createFileCredentialStore, createUdsClient, credentialFileFor, fixedSocket, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
@@ -23,7 +23,7 @@ import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const NO_GRACE = { closeGraceMs: 0, managedServerStopGraceMs: 0 };
+const NO_GRACE = { ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 };
 const SPARE = 'spare';
 const AUTH_HOST = 'auth.example.test';
 const API_HOST = 'api.example.test';

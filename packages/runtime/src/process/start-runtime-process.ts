@@ -970,7 +970,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         }
         if (stepsInFlight() === 0) {
           toolRuntime.sessionStates.evictAll();
-          void toolRuntime.mcpPools.closeAll().catch(report);
+          void toolRuntime.mcpPools.closeAll(valuesOfStop(undefined).mcpCloseGraceMs).catch(report);
         }
         checkRetireExit();
       };

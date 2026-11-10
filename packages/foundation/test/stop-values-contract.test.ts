@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STOP_VALUES,
   MAXIMUM_STOP_VALUES,
-  READY_WAIT_WHEN_UNKNOWN_MS,
   SHUTDOWN_SETTING_LIMITS,
   STOP_MESSAGE_MAX_BYTES,
   STOP_VALUE_NAMES,
   STOP_WAIT_WHEN_UNKNOWN_MS,
-  daemonReadyBoundMs,
   daemonStopBoundMs,
   formatStopMessage,
   gatewayAbortBudgetMs,
@@ -72,20 +70,17 @@ describe('the derived MCP and runtime bounds (K = KILL_CONFIRM_MS = 5000, RUNTIM
     expect(runtimeTeardownBudgetMs(grace)).toBe(teardown);
   });
 
-  it('gives 64095, 69095, 34095, 98190 and 158190 at the defaults', () => {
+  it('gives 64095, 69095, 34095 and 98190 at the defaults', () => {
     expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_095);
     expect(runtimeStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(69_095);
     expect(orphanReapGraceMs(DEFAULT_STOP_VALUES)).toBe(34_095);
     expect(requirementOfStop(DEFAULT_STOP_VALUES)).toBe(98_190);
-    expect(daemonReadyBoundMs(DEFAULT_STOP_VALUES)).toBe(158_190);
   });
 
-  it('gives 508095, 208095, 716190 and 776190 at the maxima', () => {
+  it('gives 508095, 208095 and 716190 at the maxima', () => {
     expect(runtimeMaxCloseMs(MAXIMA)).toBe(508_095);
     expect(orphanReapGraceMs(MAXIMA)).toBe(208_095);
     expect(requirementOfStop(MAXIMA)).toBe(716_190);
-    expect(daemonReadyBoundMs(MAXIMA)).toBe(776_190);
-    expect(READY_WAIT_WHEN_UNKNOWN_MS).toBe(776_190);
   });
 
   it('takes the drain and the MCP grace from the values, and neither gateway value', () => {

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { REAP_POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, SHUTDOWN_DRAIN_BOUND_MS } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
@@ -90,7 +90,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     const controller = createShutdownController({
       runtime: fakeManager('runtime', []),
       gateway: fakeManager('gateway', []),
-      drainTimeoutMs: 0,
+      recordStop: async () => undefined,
       timers,
       logger: log.logger,
       beginDraining: () => launchController.abort(),
@@ -99,7 +99,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
       releaseLock: () => undefined,
       onFatal: () => undefined,
     });
-    const closing = settled<SupervisorCloseResult>(controller.close());
+    const closing = settled<SupervisorCloseResult>(controller.close(DEFAULT_STOP_VALUES));
     timers.advance(REAP_POLL_INTERVAL_MS);
     await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain', maxTurns: 20_000 });
     expect(clock.now()).toBeLessThanOrEqual(REAP_POLL_INTERVAL_MS);
@@ -117,7 +117,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     const controller = createShutdownController({
       runtime: fakeManager('runtime', ['/markers/runtime-a']),
       gateway: fakeManager('gateway', []),
-      drainTimeoutMs: 0,
+      recordStop: async () => undefined,
       timers,
       logger: log.logger,
       markerPorts: {
@@ -132,7 +132,7 @@ describe('T6 shutdown aborts the probes it waits for', () => {
       releaseLock: () => undefined,
       onFatal: () => undefined,
     });
-    const closing = settled<SupervisorCloseResult>(controller.close());
+    const closing = settled<SupervisorCloseResult>(controller.close(DEFAULT_STOP_VALUES));
     await waitFor(() => signals.length > 0, { description: 'step 4 started its reap' });
     expect(signals[0]).toBeInstanceOf(AbortSignal);
     expect(signals[0]?.aborted).toBe(false);

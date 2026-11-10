@@ -7,6 +7,8 @@ import type { FakePool } from './helpers.ts';
 
 type Status = Run['status'];
 
+const CLOSE_GRACE_MS = 40;
+
 const setup = () => {
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
@@ -36,7 +38,7 @@ const setup = () => {
       };
     },
   };
-  const cache = runtime.createMcpPoolCache({ store, notifier, timers, logger, report: reporter.report });
+  const cache = runtime.createMcpPoolCache({ store, notifier, timers, logger, report: reporter.report, readCloseGraceMs: () => CLOSE_GRACE_MS });
   const created: FakePool[] = [];
   const spec = (key: string, pool?: FakePool) => ({
     key,
@@ -280,7 +282,7 @@ describe('MCP pool cache (fake timers)', () => {
     t.cache.acquire('r1', t.spec('k'));
     const before = t.reads();
 
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
     t.wake('r1');
     t.timers.advance(POOL_REFERENCE_AUDIT_MS * 2);
     await flushMicrotasks();
@@ -301,7 +303,7 @@ describe('MCP pool cache (fake timers)', () => {
     expect(t.cache.size()).toBe(0);
 
     let settled = false;
-    const closing = t.cache.closeAll().then(() => {
+    const closing = t.cache.closeAll(CLOSE_GRACE_MS).then(() => {
       settled = true;
     });
     await flushMicrotasks(50);
@@ -325,7 +327,7 @@ describe('MCP pool cache (fake timers)', () => {
     await flushMicrotasks();
     expect(t.timers.pending().length).toBeGreaterThan(0);
 
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
 
     expect([a.closes, b.closes, c.closes]).toEqual([1, 1, 1]);
     expect(t.watcherCount()).toBe(0);
@@ -338,9 +340,9 @@ describe('MCP pool cache (fake timers)', () => {
     t.statuses.set('r1', 'RUNNING');
     const pool = t.cache.acquire('r1', t.spec('k')).pool as FakePool;
 
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
     const unwatches = t.unwatches();
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
 
     expect(pool.closes).toBe(1);
     expect(t.unwatches()).toBe(unwatches);
@@ -350,7 +352,7 @@ describe('MCP pool cache (fake timers)', () => {
   it('acquire after closeAll throws', async () => {
     const t = setup();
     t.statuses.set('r1', 'RUNNING');
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
 
     expect(() => t.cache.acquire('r1', t.spec('k'))).toThrow(new Error('the MCP pool cache is closed'));
     expect(t.created).toEqual([]);
@@ -365,7 +367,7 @@ describe('MCP pool cache (fake timers)', () => {
     expect(t.cache.release('r1')).toBe(true);
     expect(t.cache.release('r1')).toBe(false);
     expect(t.unwatches()).toBe(1);
-    await t.cache.closeAll();
+    await t.cache.closeAll(CLOSE_GRACE_MS);
     expect(t.cache.release('r1')).toBe(false);
   });
 

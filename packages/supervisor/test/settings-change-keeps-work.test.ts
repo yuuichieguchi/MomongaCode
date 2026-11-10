@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, runtimeStopBudgetMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
@@ -8,7 +8,7 @@ import type { FakeSettingsWatch, Harness, HarnessOptions } from './fixtures/p3-h
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const STOP_WOULD_COMPLETE_WITHIN_MS = runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS;
+const STOP_WOULD_COMPLETE_WITHIN_MS = runtimeStopBudgetMs(DEFAULT_STOP_VALUES);
 
 type Watched = Harness & { watch: FakeSettingsWatch };
 

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, generationLayout, readStopRecord, writeStopRecord } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, generationLayout, generationMemberOf, readStopRecord, writeStopRecord } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 
@@ -23,6 +23,11 @@ describe('the stop record of a generation', () => {
   it('is named stop-values.json, beside the sockets and the locks of the generation (design 4.3a)', () => {
     const layout = generationLayout('/Users/alice', 3, 'darwin');
     expect(layout.stopRecord).toBe('/Users/alice/.momonga/run/g3/stop-values.json');
+  });
+
+  it('is a known entry of the generation directory, with the staged names of its atomic write (update design 14.15)', () => {
+    expect(generationMemberOf('stop-values.json')).toEqual({ name: 'stop-values.json', kind: 'file', removal: 'always', hasAtomicTemporaries: true });
+    expect(generationMemberOf('.stop-values.json.0a1b2c3d.tmp')?.name).toBe('stop-values.json');
   });
 
   it('is one line of JSON holding the generation and the four values, mode 0600, with no temporary file left beside it', async (context) => {

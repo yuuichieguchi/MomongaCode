@@ -278,7 +278,6 @@ export {
   DEFAULT_STOP_VALUES,
   MARKER_REAP_GRACE_WINDOWS,
   MAXIMUM_STOP_VALUES,
-  READY_WAIT_WHEN_UNKNOWN_MS,
   ABORT_SETTLE_LIMIT_MS,
   SANDBOX_KILL_GRACE_MS,
   GROUP_POLL_INTERVAL_MS,
@@ -288,7 +287,6 @@ export {
   runtimeAbortStopBudgetMs,
   orphanReapGraceMs,
   requirementOfStop,
-  daemonReadyBoundMs,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
@@ -431,6 +429,5 @@ export { defineProductSchema, productErrorsText, productSchemas } from './produc
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
-export { readCurrentStopRecord } from './current-generation.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';

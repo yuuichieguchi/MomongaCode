@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, generationMarkerDirectories, momongaPaths } from '@momonga/foundation';
-import type { GenerationReaperOptions, MarkerKind, ReapMarkerDirectoryOptions } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, generationMarkerDirectories, momongaPaths, runtimeMaxCloseMs, writeStopRecord } from '@momonga/foundation';
+import type { GenerationReaperOptions, MarkerKind, ReapMarkerDirectoryOptions, StopValues } from '@momonga/foundation';
 import { createFakeClock, createFakeKernelLock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { DAEMON_MARKER_KILL_GRACE_MS } from '../src/constants.ts';
 import { DEAD_GENERATION_MARKER_KILL_GRACE_MS, createReaperPass, entryReaperPass } from '../src/reaper-pass.ts';
 import type { ReaperPassOptions } from '../src/reaper-pass.ts';
-import { captureLog } from './fixtures/p3-harness.ts';
+import { captureLog, createRealWorkScope, pumpUntil, settledFlag } from './fixtures/p3-harness.ts';
 
 const MANAGED_STOP_GRACE_MS = 7300;
 
@@ -39,7 +39,7 @@ const setup = (context: CleanupContext, overrides: Partial<ReaperPassOptions> = 
     },
     ...overrides,
   };
-  return { home, paths, log, reaps, options };
+  return { home, paths, log, reaps, options, clock, timers };
 };
 
 describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
@@ -122,5 +122,62 @@ describe('the reaper pass of the serving supervisor (20.61, 20.62)', () => {
       { label: 'tool', killGraceMs: DEAD_GENERATION_MARKER_KILL_GRACE_MS },
       { label: 'managed server', killGraceMs: MANAGED_STOP_GRACE_MS },
     ]);
+  });
+});
+
+describe('the wait of the reaper pass for a dead generation takes the values of that generation\'s stop (design-close-grace-settings 3.4 and 4.3, update design 14.15 and 20.16)', () => {
+  const PREDECESSOR: StopValues = { closeGraceMs: 1, managedServerStopGraceMs: 2, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
+  const HELD_FOREVER = 999_999;
+  const ORPHAN_POLL_MS = 250;
+
+  const daemonReapTime = async (context: CleanupContext, record: (stopRecord: string) => Promise<void>): Promise<number> => {
+    const daemonReapAt: number[] = [];
+    const s = setup(context, { orphanGraceMs: 10 * runtimeMaxCloseMs(MAXIMUM_STOP_VALUES), orphanPollMs: ORPHAN_POLL_MS });
+    const options: ReaperPassOptions = {
+      ...s.options,
+      markerPorts: {
+        findHolders: async () => [HELD_FOREVER],
+        reapMarkerDirectory: async (request) => {
+          if (request.label === 'daemon') daemonReapAt.push(s.clock.now());
+          return { reaped: 0, kept: 0 };
+        },
+      },
+    };
+    const layout = prepareGenerationForTest(s.home, 1, '1.2.3');
+    fs.writeFileSync(path.join(generationMarkerDirectories(s.paths, 1).daemons, 'runtime-old'), '', { mode: 0o600 });
+    await record(layout.stopRecord);
+    const realWork = createRealWorkScope();
+    const pass = settledFlag(realWork.run(() => createReaperPass(options)({ signal: new AbortController().signal })));
+    await pumpUntil(s.timers, () => pass.settled(), { realWork, maxMs: 2 * runtimeMaxCloseMs(MAXIMUM_STOP_VALUES), description: 'the reaper pass to settle' });
+    expect(daemonReapAt).toHaveLength(1);
+    return daemonReapAt[0] as number;
+  };
+
+  it('waits the runtime close bound of the values the dead generation recorded when its stop began', async (context) => {
+    const reapedAt = await daemonReapTime(context, (stopRecord) => writeStopRecord(stopRecord, 1, PREDECESSOR));
+    expect(runtimeMaxCloseMs(PREDECESSOR)).toBe(7000 + 6 * 40 + 28_095);
+    expect(reapedAt).toBeGreaterThanOrEqual(runtimeMaxCloseMs(PREDECESSOR));
+    expect(reapedAt).toBeLessThanOrEqual(runtimeMaxCloseMs(PREDECESSOR) + ORPHAN_POLL_MS);
+  });
+
+  it('waits the runtime close bound of the allowed maxima when the dead generation left no record', async (context) => {
+    const reapedAt = await daemonReapTime(context, async () => undefined);
+    expect(runtimeMaxCloseMs(MAXIMUM_STOP_VALUES)).toBe(508_095);
+    expect(reapedAt).toBeGreaterThanOrEqual(508_095);
+    expect(reapedAt).toBeLessThanOrEqual(508_095 + ORPHAN_POLL_MS);
+  });
+
+  it('waits the bound of the allowed maxima when the record is invalid or names another generation', async (context) => {
+    const reapedAt = await daemonReapTime(context, async (stopRecord) => fs.writeFileSync(stopRecord, `${JSON.stringify({ generation: 2, values: PREDECESSOR })}\n`, { mode: 0o600 }));
+    expect(reapedAt).toBeGreaterThanOrEqual(508_095);
+  });
+
+  it('removes the stop record with the directory of the dead generation, as one known entry of it', async (context) => {
+    const s = setup(context);
+    const layout = prepareGenerationForTest(s.home, 1, '1.2.3');
+    await writeStopRecord(layout.stopRecord, 1, PREDECESSOR);
+    await createReaperPass(s.options)({ signal: new AbortController().signal });
+    expect(s.log.withMsg('orphans.warning')).toEqual([]);
+    expect(fs.existsSync(layout.dir)).toBe(false);
   });
 });

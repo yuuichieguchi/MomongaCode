@@ -137,11 +137,7 @@ export const supervisorMaxCloseMs = (values: StopValues): number =>
 
 export const daemonStopBoundMs = (values: StopValues): number => supervisorMaxCloseMs(values) + ENTRY_HARD_EXIT_MARGIN_MS;
 
-export const daemonReadyBoundMs = (values: StopValues): number => requirementOfStop(values) + STARTUP_TIMEOUT_MS;
-
 export const STOP_WAIT_WHEN_UNKNOWN_MS = daemonStopBoundMs(MAXIMUM_STOP_VALUES);
-
-export const READY_WAIT_WHEN_UNKNOWN_MS = daemonReadyBoundMs(MAXIMUM_STOP_VALUES);
 
 export const stopWaitBoundMs = (reported: ReadonlyArray<number | undefined>): number =>
   reported.reduce<number>((largest, bound) => Math.max(largest, bound ?? STOP_WAIT_WHEN_UNKNOWN_MS), 0);

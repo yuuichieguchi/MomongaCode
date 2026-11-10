@@ -300,7 +300,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     ...(options.ensureSessionTmpDir === undefined ? {} : { ensureSessionTmpDir: options.ensureSessionTmpDir }),
   });
   onCleanup(async () => {
-    await toolRuntime.mcpPools.closeAll();
+    await toolRuntime.mcpPools.closeAll(0);
   });
   return { ...fixture, temp, cache, composition, toolRuntime, logger, reporter, pools, reapTiming };
 };
