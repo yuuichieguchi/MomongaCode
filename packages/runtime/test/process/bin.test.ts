@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, momongaPaths, fixedSocket } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, productTestEnv, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../../package.json' with { type: 'json' };
 import { writeUserSettings } from './helpers.ts';
@@ -16,7 +16,7 @@ const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(aux, 'up.sock')) });
-  return { home, paths: momongaPaths(home, process.platform, {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
+  return { home, paths: momongaPaths(home, process.platform, {}), env: productTestEnv({ PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux }) };
 };
 
 const msgs = (lines: ReadonlyArray<Record<string, unknown>>): unknown[] => lines.map((line) => line['msg']);

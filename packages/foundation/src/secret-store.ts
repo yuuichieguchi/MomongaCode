@@ -17,22 +17,25 @@ export type SecretProcessResult = { exitCode: number; stdout: string; stderr: st
 
 export type SecretProcessPort = (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => Promise<SecretProcessResult>;
 
-export type SecretBackend = { label: string; childEnvNames: readonly string[]; storeCommand(secretName: string): string };
+export type SecretBackend = { label: string; searchedProgram: string; childEnvNames: readonly string[]; storeCommand(secretName: string): string };
 
 export const KEYCHAIN_BACKEND: SecretBackend = {
   label: 'Keychain',
+  searchedProgram: 'security',
   childEnvNames: [],
   storeCommand: (secretName) => `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
 };
 
 export const SECRET_SERVICE_BACKEND: SecretBackend = {
   label: 'Secret Service',
+  searchedProgram: 'secret-tool',
   childEnvNames: ['DBUS_SESSION_BUS_ADDRESS'],
   storeCommand: (secretName) => `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${secretName}`,
 };
 
 export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
   label: 'Credential Manager',
+  searchedProgram: 'cmdkey',
   childEnvNames: ['SystemRoot'],
   storeCommand: (secretName) => `cmdkey /generic:${KEYCHAIN_SERVICE}/${secretName} /user:${KEYCHAIN_SERVICE} /pass`,
 };
@@ -231,16 +234,18 @@ const SECRET_BACKENDS: Readonly<Record<string, SecretBackendKind>> = {
   'credential-manager': { backend: CREDENTIAL_MANAGER_BACKEND, create: (run, program) => createCredentialManagerStore(run, { file: program, args: powershellArgs }) },
 };
 
+export const SECRET_STORE_SEARCHED_PROGRAMS: readonly string[] = Object.values(SECRET_BACKENDS).map((kind) => kind.backend.searchedProgram);
+
 type ChosenSecretStore = { kind: 'chosen'; id: string; program: string } | { kind: 'none'; reason: string };
 
 const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
-  const security = findProgramOnPath('security', env);
+  const security = findProgramOnPath(KEYCHAIN_BACKEND.searchedProgram, env);
   if (security !== undefined) return { kind: 'chosen', id: 'keychain', program: security };
-  const secretTool = findProgramOnPath('secret-tool', env);
+  const secretTool = findProgramOnPath(SECRET_SERVICE_BACKEND.searchedProgram, env);
   const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
   const hasSession = busAddress !== undefined && busAddress !== '';
   if (secretTool !== undefined && hasSession) return { kind: 'chosen', id: 'secret-service', program: secretTool };
-  if (findProgramOnPath('cmdkey', env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
+  if (findProgramOnPath(CREDENTIAL_MANAGER_BACKEND.searchedProgram, env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
   const secretServiceState =
     secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
   return { kind: 'none', reason: `security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };

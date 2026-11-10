@@ -13,7 +13,7 @@ import type { LedgerPorts } from './ledger.ts';
 import { killListedGroups, leakedTestkitEntries, leftoverEntries } from './teardown.ts';
 
 const DETACHED_GRANDCHILD_SCRIPT = [
-  "const child = require('node:child_process').spawn('sleep', ['30'], { detached: true, stdio: 'ignore' });",
+  "const child = require('@momonga/testkit/child-process').spawn('sleep', ['30'], { detached: true, stdio: 'ignore' });",
   'child.unref();',
   "process.stdout.write(String(child.pid) + '\\n');",
   'setInterval(() => {}, 1000);',

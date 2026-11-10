@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, generationLayout, groupAlive, isProcessAlive, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, testHostPath, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
@@ -47,13 +47,13 @@ describe('trackedSpawnPort', () => {
     const port = trackedSpawnPort(captured.context);
     const inGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=group'], {
       cwd: process.cwd(),
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: testHostPath('/usr/bin:/bin') },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });
     const ownGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=default'], {
       cwd: process.cwd(),
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: testHostPath('/usr/bin:/bin') },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });

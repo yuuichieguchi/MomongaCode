@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import { getEventListeners } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';

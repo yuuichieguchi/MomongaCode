@@ -8,6 +8,7 @@ import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
+import { testHostPath } from '@momonga/testkit';
 
 const LONG_HOME = `/${'h'.repeat(200)}`;
 
@@ -20,7 +21,7 @@ describe.skipIf(process.platform === 'win32')('daemon status on a home too long 
       ...nodePorts('9.9.9'),
       home: LONG_HOME,
       cwd: LONG_HOME,
-      env: { PATH: '/usr/bin:/bin', HOME: LONG_HOME },
+      env: { PATH: testHostPath('/usr/bin:/bin'), HOME: LONG_HOME },
       terminal: undefined,
       stdout: { write: (text) => void stdout.push(text) },
       stderr: { write: () => undefined },

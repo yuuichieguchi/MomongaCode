@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import { LSOF_PATH } from '@momonga/testkit';
 
 export const pollUntil = async (predicate: () => boolean | Promise<boolean>, timeoutMs: number, description: string): Promise<void> => {

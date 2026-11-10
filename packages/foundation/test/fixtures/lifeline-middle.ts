@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 
 const childScript = process.argv[2];
 if (childScript === undefined) throw new Error('usage: lifeline-middle.ts <child script>');

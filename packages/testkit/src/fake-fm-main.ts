@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from './child-process.ts';
 import fs from 'node:fs';
 import { countFakeTokens, startFakeChatCompletions } from './fake-chat-completions.ts';
 import type { FakeFmConfig } from './fake-fm.ts';
