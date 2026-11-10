@@ -186,6 +186,7 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/auto-mode.ts': { createHostExec: 1 },
   'packages/cli/src/daemon/ensure-daemon.ts': { nodeFileSystem: 1 },
   'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
+  'packages/cli/src/keeper/host.ts': { nodeFileSystem: 1 },
   'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
 };
 

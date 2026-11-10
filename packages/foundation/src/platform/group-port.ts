@@ -8,14 +8,39 @@ import type { ProcFs } from './procfs.ts';
 import { canStillRun } from './run-state.ts';
 import type { GroupReading, GroupStatesReader } from './run-state.ts';
 import { UnsupportedPlatformError } from './process-inspector.ts';
-import { createWindowsGroupControl } from './windows-inspector.ts';
+import { hostKeptGroups } from './windows-kept-groups.ts';
+import type { KeptGroupControl, KeptOpenRequest, KeptOpening, KeptProcess } from './windows-kept-groups.ts';
 
 export type GroupProbeOptions = { signal: AbortSignal | undefined };
 
+export type GroupSignals = readonly [NodeJS.Signals, ...NodeJS.Signals[]];
+
+export const POSIX_GROUP_SIGNALS = ['SIGTERM', 'SIGKILL'] as const satisfies GroupSignals;
+
+export const JOB_GROUP_SIGNALS = ['SIGTERM'] as const satisfies GroupSignals;
+
+export type GroupIdentity = 'holder' | 'job';
+
+export type GroupNames = {
+  nameOf(pgid: number): string | undefined;
+  recall(pgid: number, name: string): void;
+};
+
+export type GroupKeeper = {
+  open<P extends KeptProcess>(request: KeptOpenRequest<P>): KeptOpening<P>;
+};
+
 export interface ProcessGroupPort {
+  readonly signals?: GroupSignals;
+  readonly identity?: GroupIdentity;
+  readonly names?: GroupNames;
+  readonly keeper?: GroupKeeper;
+  ended?(pgid: number, options: GroupProbeOptions): Promise<void>;
   signal(pgid: number, signal: NodeJS.Signals, options: GroupProbeOptions): Promise<void>;
   alive(pgid: number, options: GroupProbeOptions): Promise<boolean>;
 }
+
+export const groupSignalsOf = (port: ProcessGroupPort): GroupSignals => port.signals ?? POSIX_GROUP_SIGNALS;
 
 const tolerated = (error: unknown): 'gone' | 'denied' | 'other' => {
   const code = (error as NodeJS.ErrnoException).code;
@@ -27,6 +52,8 @@ const tolerated = (error: unknown): 'gone' | 'denied' | 'other' => {
 export type PosixGroupHost = { kill: SignalSender; reading: GroupReading };
 
 export const createPosixGroupPort = ({ kill, reading }: PosixGroupHost): ProcessGroupPort => ({
+  signals: POSIX_GROUP_SIGNALS,
+  identity: 'holder',
   signal: async (pgid, signal) => {
     try {
       kill(-pgid, signal);
@@ -47,7 +74,7 @@ export const createPosixGroupPort = ({ kill, reading }: PosixGroupHost): Process
   },
 });
 
-export type GroupPortPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; procfs?: ProcFs; kill?: SignalSender };
+export type GroupPortPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; procfs?: ProcFs; kill?: SignalSender; kept?: KeptGroupControl };
 
 const unsupportedStates =
   (platform: NodeJS.Platform): GroupStatesReader =>
@@ -66,24 +93,31 @@ const groupReadingOf = (platform: NodeJS.Platform, ports: GroupPortPorts): Group
   }
 };
 
+export const createJobGroupPort = (kept: KeptGroupControl): ProcessGroupPort => ({
+  signals: JOB_GROUP_SIGNALS,
+  identity: 'job',
+  names: { nameOf: (pgid) => kept.nameOf(pgid), recall: (pgid, name) => kept.recall(pgid, name) },
+  keeper: kept,
+  ended: (pgid, options) => kept.ended(pgid, options),
+  signal: (pgid, _signal, options) => kept.terminate(pgid, options),
+  alive: async (pgid, options) => (await kept.members(pgid, options)).length > 0,
+});
+
 export const createProcessGroupPort = (platform: NodeJS.Platform, ports: GroupPortPorts): ProcessGroupPort => {
   if (platform !== 'win32') return createPosixGroupPort({ kill: ports.kill ?? hostSignalSender, reading: groupReadingOf(platform, ports) });
-  const control = createWindowsGroupControl({ run: ports.run, env: ports.env });
-  return {
-    signal: (pgid, _signal, options) => control.terminate(pgid, options),
-    alive: async (pgid, options) => (await control.members(pgid, options)).length > 0,
-  };
+  if (ports.kept === undefined) throw new Error('the Windows group port is built from the keeper client, and none was given');
+  return createJobGroupPort(ports.kept);
 };
 
 let hostPort: ProcessGroupPort | undefined;
 
 export const hostProcessGroupPort = (): ProcessGroupPort => {
-  hostPort ??= createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env });
+  hostPort ??= createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env, kept: hostKeptGroups() });
   return hostPort;
 };
 
 export const groupPortOf = (given: ProcessGroupPort | undefined, kill: SignalSender | undefined): ProcessGroupPort =>
-  given ?? (kill === undefined ? hostProcessGroupPort() : createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env, kill }));
+  given ?? (kill === undefined ? hostProcessGroupPort() : createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env, kill, kept: hostKeptGroups() }));
 
 export const hostSignalSender: SignalSender = (target, signal) => void process.kill(target, signal);
 

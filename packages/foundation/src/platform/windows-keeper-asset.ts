@@ -80,3 +80,10 @@ export const ensureBundledWindowsKeeper = async ({ asset, executablesRoot, rando
   if (!(await matches(files, final, sha256))) throw new WindowsKeeperDistributionError(`${final} changed after it was extracted and does not match the embedded keeper`);
   return final;
 };
+
+export const checkedWindowsKeeper =
+  (file: string, sha256: string, read: (file: string) => Uint8Array): (() => string) =>
+  () => {
+    if (sha256Hex(read(file)) !== sha256) throw new WindowsKeeperDistributionError(`${file} does not match the embedded keeper, so it was not started`);
+    return file;
+  };

@@ -180,3 +180,5 @@ export const nodeFileSystemSync: FileSystemSync = {
   linkSync: (from, to) => fs.linkSync(from, to),
   rmSync: (file) => fs.rmSync(file, { force: true }),
 };
+
+export const readFileBytesSync = (file: string): Uint8Array => fs.readFileSync(file);
