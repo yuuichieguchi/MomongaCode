@@ -44,8 +44,8 @@ describe('transcript codec', () => {
     expect(() => decodeTranscript(lines.join('\n'), 'bad.jsonl')).toThrow(/bad\.jsonl:3: not a public run event/);
   });
 
-  it('rejects a file without a transcript header', () => {
-    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/7 header/);
+  it('rejects a file without a transcript header, naming the design-core-on 3.2 transcript format', () => {
+    expect(() => decodeTranscript('{"type":"user.message"}\n', 'bad.jsonl')).toThrow(/first line must be a momonga-transcript\/8 header/);
   });
 
   it('refuses a version 1 transcript, which cannot say whether subagent runs were observed', () => {

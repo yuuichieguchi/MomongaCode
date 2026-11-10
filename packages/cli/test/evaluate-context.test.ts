@@ -285,9 +285,9 @@ describe('momonga eval context --settings', () => {
     await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
   });
 
-  it('refuses an overlay with a key outside the token design before any case runs, and names the file', async () => {
+  it('refuses an overlay with a non-core key (design-core-on 3.2, 3.5 item 2) before any case runs, and names the file', async () => {
     const { program, stored, completed } = harness();
-    stored.set('/w/bad.json', JSON.stringify({ context: { autoCompact: false } }));
+    stored.set('/w/bad.json', JSON.stringify({ tools: { ripgrep: 'system' } }));
     await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
     expect(completed).toEqual([]);
   });
