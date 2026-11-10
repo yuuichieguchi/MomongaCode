@@ -8,6 +8,7 @@ import type { UpdateSourceInputs } from './bundle.ts';
 import { SEA_TARGETS, ensureSeaNode, isSeaTargetName } from './node-runtime.ts';
 import type { SeaTargetName } from './node-runtime.ts';
 import { buildRipgrepAssets } from './ripgrep-release.ts';
+import { buildWindowsKeeperAssets } from './windows-keeper.ts';
 import { buildZ3Assets } from './z3-assets.ts';
 
 export const nodeCacheDir = `${repoRoot}.cache/node`;
@@ -35,7 +36,7 @@ export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwi
     ...(teamId === undefined ? {} : { teamId }),
     ...(releasePublicKey === undefined ? {} : { releasePublicKey }),
   });
-  const assets = { ...(await buildZ3Assets(workDir, import.meta.url)), ...(await buildRipgrepAssets(workDir, target)) };
+  const assets = { ...(await buildZ3Assets(workDir, import.meta.url)), ...(await buildRipgrepAssets(workDir, target)), ...(await buildWindowsKeeperAssets(workDir, target)) };
   const configPath = path.join(workDir, 'sea-config.json');
   fs.writeFileSync(
     configPath,

@@ -1,5 +1,5 @@
 import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
-import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
+import { canonicalJson, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
@@ -28,7 +28,8 @@ const toolRefusedInJournal = (ctx: ClaimContext, toolKey: string): boolean =>
   ctx.journal.state.notes.some((note) => note.code === TOOL_VALIDATOR_FAILED_CODE && note.toolKey === toolKey);
 
 const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { call_id: string; name: string; arguments: string }): Promise<RunEventPayload> => {
-  const rawInput = parseJsonOrText(item.arguments);
+  const parsed = parseBoundedJson(item.arguments);
+  const rawInput = parsed.kind === 'value' ? parsed.value : parsed.text;
   const tool = ctx.toolSet.get(item.name);
   const validation = tool === undefined || toolRefusedInJournal(ctx, toolRefusalKey(tool)) ? undefined : await validateToolInput(tool, rawInput, { signal: ctx.control.signal });
   const input = validation?.ok === true ? validation.value : undefined;
@@ -182,7 +183,7 @@ const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonl
   const call = calls.find((candidate) => candidate.callId === outcome.callId);
   if (call === undefined) return;
   spans.get(outcome.callId)?.recordToolContent({
-    arguments: typeof call.arguments === 'string' ? parseJsonOrText(call.arguments) : call.arguments,
+    arguments: typeof call.arguments === 'string' ? spanValueOfJsonText(call.arguments) : call.arguments,
     result: outcome.result.output,
   });
 };

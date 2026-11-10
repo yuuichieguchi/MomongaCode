@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, modeIsPrivate, nodeFileSystemSync, sha256Hex, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
@@ -36,14 +36,20 @@ const assertUtf8 = (bytes: Uint8Array): void => {
   }
 };
 
-const writeAtomically = (target: string, bytes: Uint8Array): void => {
-  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, target, bytes, { mode: BLOB_FILE_MODE });
+const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+const heldBytes = async (target: string): Promise<Uint8Array | undefined> => {
+  try {
+    return await nodeFileSystem.readFile(target);
+  } catch (error) {
+    if (isMissing(error)) return undefined;
+    throw error;
+  }
 };
 
-const holdsContent = (target: string, sha256: string, byteLength: number): boolean => {
-  if (!fs.existsSync(target)) return false;
-  if (fs.statSync(target).size !== byteLength) return false;
-  return sha256Hex(fs.readFileSync(target)) === sha256;
+const holdsContent = async (target: string, sha256: string, byteLength: number): Promise<boolean> => {
+  const held = await heldBytes(target);
+  return held !== undefined && held.length === byteLength && sha256Hex(held) === sha256;
 };
 
 const readLines = async (file: string, lineStart: number, lineEnd: number): Promise<string> => {
@@ -172,12 +178,14 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
 
   return {
     handleFor: (content) => handleOfBytes(Buffer.from(content, 'utf8')),
-    put: (data, options) => {
+    put: async (data, options) => {
       const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
       assertUtf8(bytes);
       const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
-      if (!holdsContent(target, sha256, bytes.length)) writeAtomically(target, bytes);
+      if (!(await holdsContent(target, sha256, bytes.length))) {
+        await writeFileAtomically(nodeFileSystem, systemRandom, target, bytes, { mode: BLOB_FILE_MODE });
+      }
       const lineCount = countLines(bytes);
       immediateTx(db, () => {
         insert.run({ sha256, byteLength: bytes.length, lineCount, mediaType: options.mediaType, createdAt: clock.now() });

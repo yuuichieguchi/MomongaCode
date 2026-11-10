@@ -331,7 +331,7 @@ export type BlobByteSlice = BlobSlice & { offset: number; length: number };
 
 export type BlobStore = {
   handleFor(content: string): string;
-  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): BlobRef;
+  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): Promise<BlobRef>;
   read(handle: string, range: BlobLineRange, scope?: BlobScope): Promise<BlobSlice>;
   read(handle: string, range: BlobByteRange, scope?: BlobScope): Promise<BlobByteSlice>;
 };

@@ -6,12 +6,12 @@ describe('blobs.handleFor', () => {
     ['ASCII text', 'plain text\nwith two lines'],
     ['multi-byte UTF-8', 'こんにちは 🌍 café'],
     ['the empty string', ''],
-  ])('returns the handle that put returns for %s', ([, text]) => {
+  ])('returns the handle that put returns for %s', async ([, text]) => {
     const { store } = harness();
 
     const handle = store.blobs.handleFor(text as string);
 
     expect(handle).toMatch(/^[0-9a-f]{64}$/);
-    expect(store.blobs.put(text as string, { mediaType: 'text/plain' }).handle).toBe(handle);
+    expect((await store.blobs.put(text as string, { mediaType: 'text/plain' })).handle).toBe(handle);
   });
 });
