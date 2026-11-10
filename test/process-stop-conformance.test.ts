@@ -198,13 +198,19 @@ describe('a stop whose listing fails ends with the outcome unlisted, as specs/tl
     expect(variants()).toEqual(expect.arrayContaining(['listFailAsUnconfirmed', 'listFailAsEmpty']));
   });
 
-  it('the code, like the model, ends a stop whose first listing fails with could not check, signals nothing and keeps the marker', async () => {
+  it('the code, like the model, ends a stop whose first listing fails with the whole could-not-check text, says no stop word as an outcome, signals nothing and keeps the marker', async () => {
     const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n } }, {});
     const failing = { ...scene.inspector, holdersOf: async () => ({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the listing was slow' } }) } as unknown as ProcessInspector;
     const marker = markerFile();
     const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: failing });
-    expect(result.output.startsWith('MomongaCode could not check whether a process started by the interrupted command is still running (')).toBe(true);
-    expect(result.output).not.toMatch(/no longer running|was stopped\.|Still running but/);
+    expect(result.output).toBe(
+      `MomongaCode could not check whether a process started by the interrupted command is still running (listing the holders of ${marker} failed (transient): the listing was slow). Nothing was stopped. The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
+    );
+    expect(result.outcome).toBe('unknown');
+    expect(['gone', 'terminated', 'killed', 'stopped']).not.toContain(result.outcome);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedHolders).toEqual([]);
+    expect(result.output).not.toMatch(/no longer running|The interrupted command was stopped|Still running but/);
     expect(scene.signals).toEqual([]);
     expect(fs.existsSync(marker)).toBe(true);
   });

@@ -23,7 +23,7 @@ const realMarker = (): string => {
 
 type Proc = { start: bigint; group: number; holds: boolean; survives?: NodeJS.Signals[] };
 
-type Hooks = { afterFirstHolders?: (procs: Map<number, Proc>) => void; afterFirstGroups?: (procs: Map<number, Proc>) => void; onFirstSleep?: (procs: Map<number, Proc>) => void };
+type Hooks = { beforeFirstHolders?: (procs: Map<number, Proc>) => void; afterFirstHolders?: (procs: Map<number, Proc>) => void; afterFirstGroups?: (procs: Map<number, Proc>) => void; onFirstSleep?: (procs: Map<number, Proc>) => void };
 
 const MARKER = '/momonga/run/g3/markers/g3/call-7f2a';
 const MARKER_NAME = 'call-7f2a';
@@ -43,6 +43,7 @@ const worldOf = (initial: Record<number, Proc>, hooks: Hooks = {}) => {
       return proc === undefined ? { kind: 'gone' } : { kind: 'value', value: proc.start };
     },
     holdersOf: async () => {
+      if (!holdersRead) hooks.beforeFirstHolders?.(procs);
       const value = holders();
       if (!holdersRead) {
         holdersRead = true;
@@ -124,20 +125,21 @@ describe('a group is signalled only when one entry is, at the signal, alive with
     expect(targetsOf(withSecond)).toContain(ENTRY);
   });
 
-  it('an entry that gave the marker up after the listing does not prove its group', async () => {
+  it("an entry that gave the marker up before the pass's listing does not prove its group", async () => {
     const world = worldOf(
       { [ENTRY]: { start: 100n, group: GROUP, holds: true }, [STRANGER]: { start: 120n, group: GROUP, holds: false } },
-      { afterFirstGroups: (procs) => void (procs.get(ENTRY)!.holds = false) },
+      { beforeFirstHolders: (procs) => void (procs.get(ENTRY)!.holds = false) },
     );
     await reconcile(world, GROUP);
     expect(targetsOf(world)).not.toContain(-GROUP);
+    expect(targetsOf(world)).not.toContain(ENTRY);
   });
 
-  it('a holder that left the group and closed the descriptor is not signalled, alone or through its old group', async () => {
+  it("a holder that left the group and closed the descriptor before the pass's listing is not signalled, alone or through its old group", async () => {
     const world = worldOf(
       { [ENTRY]: { start: 100n, group: GROUP, holds: true } },
       {
-        afterFirstGroups: (procs) => {
+        beforeFirstHolders: (procs) => {
           const entry = procs.get(ENTRY)!;
           entry.group = ENTRY;
           entry.holds = false;
@@ -229,19 +231,23 @@ describe('a holder signalled under its own proof must still hold the marker at t
 
   const reap = (world: World) => reapHolders({ marker: MARKER, killGraceMs: 100, kill: world.kill, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal });
 
-  it('does not signal a pid reused within the same start second by a process that does not hold the marker', async () => {
+  it("does not signal a pid reused within the same start second, before the pass's listing, by a process that does not hold the marker", async () => {
     const world = worldOf(
       { [HOLDER]: { start: SAME_SECOND, group: HOLDER, holds: true } },
-      { afterFirstHolders: (procs) => void procs.set(HOLDER, { start: SAME_SECOND, group: 70_100, holds: false }) },
+      { beforeFirstHolders: (procs) => void procs.set(HOLDER, { start: SAME_SECOND, group: 70_100, holds: false }) },
     );
     await reap(world);
     expect(targetsOf(world)).toEqual([]);
   });
 
-  it('does not signal a holder that closed the marker descriptor between the listing and the signal', async () => {
-    const world = worldOf({ [HOLDER]: { start: SAME_SECOND, group: HOLDER, holds: true } }, { afterFirstHolders: (procs) => void (procs.get(HOLDER)!.holds = false) });
+  it('the SIGKILL pass, which lists again, does not signal a holder that closed the marker descriptor between the SIGTERM pass and the SIGKILL pass', async () => {
+    const world = worldOf(
+      { [HOLDER]: { start: SAME_SECOND, group: HOLDER, holds: true, survives: ['SIGTERM'] } },
+      { onFirstSleep: (procs) => void (procs.get(HOLDER)!.holds = false) },
+    );
     await reap(world);
-    expect(targetsOf(world)).toEqual([]);
+    expect(world.sent).toContainEqual({ target: HOLDER, signal: 'SIGTERM' });
+    expect(world.sent).not.toContainEqual({ target: HOLDER, signal: 'SIGKILL' });
   });
 });
 
