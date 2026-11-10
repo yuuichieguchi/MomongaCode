@@ -68,6 +68,14 @@ export const permissionRequested = (callId: string): RunEventPayload => ({
   reason: 'ask',
 });
 
+export const unknownEffectRequested = (callId: string): RunEventPayload => ({
+  type: 'tool.unknown.requested',
+  approvalId: `u-${callId}`,
+  callIds: [callId],
+  options: [{ optionId: 'allow_once', name: 'Continue', kind: 'allow_once' }],
+  subjectDigest: 's'.repeat(64),
+});
+
 export const permissionClassifiedAllow = (callId: string): RunEventPayload => ({
   type: 'tool.permission.classified',
   callId,

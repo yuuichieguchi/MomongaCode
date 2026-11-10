@@ -18,6 +18,10 @@ export type RuleVerdict = {
   notProved: string[];
 };
 
+export type PutRuleVerdictRequest = { verdict: RuleVerdict };
+
+export const RULE_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+
 export type PinnedRuleVerdict = RuleVerdict & { fingerprint: string };
 
 const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');

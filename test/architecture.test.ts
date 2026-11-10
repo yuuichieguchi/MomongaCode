@@ -402,12 +402,12 @@ describe('architecture: the Z3 solver is loaded only through the verify engine',
     expect(importsZ3AsValue("import { openZ3 } from './engine.ts';")).toBe(false);
   });
 
-  it('only the policy verify command and the rule verifier of the runtime reach the verify package', () => {
+  it('only the policy verify command, the rule verifier of the runtime and its thread reach the verify package', () => {
     const importers = packageNames
       .flatMap((name) => listSourceFiles(path.join(packagesDir, name, 'src')))
       .filter((file) => /\bimport\s*\(\s*['"]@momonga\/verify['"]\s*\)/.test(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(root, file));
-    expect(importers).toEqual(['packages/cli/src/verify/host.ts', 'packages/runtime/src/process/rule-verifier.ts']);
+    expect(importers).toEqual(['packages/cli/src/verify/host.ts', 'packages/runtime/src/process/rule-verifier-thread.ts', 'packages/runtime/src/process/rule-verifier.ts']);
   });
 });
 

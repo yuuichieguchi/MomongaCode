@@ -38,6 +38,7 @@ export const FACTS_EVENT_TYPES = [
   'tool.completed',
   'tool.reconciled',
   'tool.permission.requested',
+  'tool.unknown.requested',
   'tool.elicitation.requested',
   'mcp.authorization.required',
 ] as const satisfies readonly RunEvent['type'][];
@@ -161,6 +162,7 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'tool.permission.requested':
+      case 'tool.unknown.requested':
         asked += 1;
         break;
       case 'tool.elicitation.requested':

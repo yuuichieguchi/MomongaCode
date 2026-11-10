@@ -3,7 +3,7 @@ import { setTimeout as sleepFor } from 'node:timers/promises';
 import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -180,6 +180,7 @@ export type RuntimeClient = {
   ruleHistory(id: string): Promise<GoverningFactView[]>;
   ignoreMarker(name: string): Promise<void>;
   policyGovernance(project: string): Promise<PolicyGovernanceResponse>;
+  putRuleVerdict(fingerprint: string, verdict: RuleVerdict): Promise<void>;
   guidelines(): Promise<GuidelinesResponse>;
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
   rollbackGuideline(version: number): Promise<GuidelineView>;
@@ -609,6 +610,10 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     return checkPolicyGovernance(body, `GET ${path}`);
   };
 
+  const putRuleVerdict = async (fingerprint: string, verdict: RuleVerdict): Promise<void> => {
+    await send('PUT', `/v1/policy/verdicts/${encodeURIComponent(fingerprint)}`, [204], { body: { verdict } satisfies PutRuleVerdictRequest });
+  };
+
   const costPath = (filter: CostFilter, format: 'json' | 'text'): string => `/v1/cost?${new URLSearchParams({ ...filter, format }).toString()}`;
 
   const guidelines = async (): Promise<GuidelinesResponse> => {
@@ -767,6 +772,7 @@ export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClien
     ruleHistory,
     ignoreMarker,
     policyGovernance,
+    putRuleVerdict,
     guidelines,
     adoptGuideline,
     rollbackGuideline,

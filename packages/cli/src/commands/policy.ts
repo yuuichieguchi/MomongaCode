@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { loadSettings, parseGovernanceRule } from '@momonga/config';
-import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
+import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf, ruleFingerprint } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
@@ -60,30 +60,36 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
     paths,
     options.secrets.map((text) => secretPathOf(home, text)),
   );
+  const request = {
+    rules: [...loaded.rules, ...governanceRules],
+    roots,
+    mode,
+    home,
+    cwd: ports.cwd,
+    protectedSet: protectedSetFor(roots, fs),
+    secretLocations,
+    enforcement: ruleEnforcementOf(loaded.settings.sandbox),
+  };
   const engine = await host.openSolver(verifier);
+  let report: Awaited<ReturnType<typeof verifier.verifyPermissions>>;
   try {
-    const report = await verifier.verifyPermissions(engine.api, {
-      rules: [...loaded.rules, ...governanceRules],
-      roots,
-      mode,
-      home,
-      cwd: ports.cwd,
-      protectedSet: protectedSetFor(roots, fs),
-      fs,
-      secretLocations,
-      exemptDirectory: null,
-      enforcement: ruleEnforcementOf(loaded.settings.sandbox),
-      budgetMs: VERIFY_BUDGET_MS,
-    });
-    const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;
-    ports.stdout.write(
-      options.json
-        ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
-        : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
-    );
-    if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
-    return report.exitCode;
+    report = await verifier.verifyPermissions(engine.api, { ...request, fs, exemptDirectory: null, budgetMs: VERIFY_BUDGET_MS });
   } finally {
     await engine.close();
   }
+  const hasGovernance = governance.rules.length > 0 || governance.textOnly.length > 0;
+  ports.stdout.write(
+    options.json
+      ? `${JSON.stringify(hasGovernance ? { ...report, governance } : report)}\n`
+      : `${verifier.formatReport(report)}\n${hasGovernance ? `${formatGovernanceVerification(governance, report.exitCode === 0)}\n` : ''}`,
+  );
+  if (loaded.warnings.length > 0) ports.stderr.write(policyWarningsText(loaded.warnings));
+  const solverVersion = await host.solverVersion(verifier);
+  const verdicts = connectRuntime(paths);
+  try {
+    await verdicts.putRuleVerdict(ruleFingerprint({ input: verifier.ruleVerifyInputOf(request), solverVersion }), verifier.verdictOfReport(report, solverVersion));
+  } finally {
+    await verdicts.close();
+  }
+  return report.exitCode;
 };

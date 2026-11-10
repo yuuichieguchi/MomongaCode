@@ -2,14 +2,21 @@ import type { RuleSolverHost, RuleSolverSource } from '../../src/process/rule-ve
 
 type Verifier = Awaited<ReturnType<RuleSolverHost['loadVerifier']>>;
 
-const provedVerifier = {
-  describeWitness: () => 'no witness',
+export const FAKE_SOLVER_VERSION = 'fake-solver 1';
+
+export const provedVerifier = {
   secretLocationsOf: () => [],
-  verifyPermissions: async () => ({ mode: 'manual', ruleCount: 0, solver: 'fake', results: [], mismatches: [], outsideProof: [], exitCode: 0 }),
+  ruleVerifyInputOf: (input: unknown) => input,
 } as unknown as Verifier;
 
+export const PROVED_THREAD_CODE = `
+const { parentPort, workerData } = require('node:worker_threads');
+parentPort.postMessage({ ok: true, verdict: { verdict: 'proved', solver: workerData.solverVersion, refuted: [], unknown: [], notProved: [] } });
+`;
+
 export const provedRuleSolver: RuleSolverSource = () => ({
-  solverVersion: async () => 'fake-solver 1',
+  solverVersion: async () => FAKE_SOLVER_VERSION,
   loadVerifier: async () => provedVerifier,
-  openSolver: async () => ({ api: {} as never, close: async () => undefined }),
+  recipe: async () => ({ kind: 'installed', entry: '/nowhere/z3.js' }),
+  threadCode: PROVED_THREAD_CODE,
 });

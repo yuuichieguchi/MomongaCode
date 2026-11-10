@@ -16,7 +16,8 @@ export const createRuleVerdictStore = (db: DatabaseSync, clock: Clock): RuleVerd
   const select = db.prepare('SELECT verdict_json, created_at FROM rule_verdicts WHERE fingerprint = :fingerprint');
   const insert = db.prepare(
     `INSERT INTO rule_verdicts (fingerprint, verdict_json, solver_version, created_at) VALUES (:fingerprint, :verdict, :solver, :createdAt)
-     ON CONFLICT (fingerprint) DO NOTHING`,
+     ON CONFLICT (fingerprint) DO UPDATE SET verdict_json = excluded.verdict_json, solver_version = excluded.solver_version, created_at = excluded.created_at
+     WHERE json_extract(rule_verdicts.verdict_json, '$.verdict') = 'unknown' AND json_extract(excluded.verdict_json, '$.verdict') <> 'unknown'`,
   );
   return {
     get: (fingerprint) => {

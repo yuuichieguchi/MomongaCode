@@ -1,5 +1,5 @@
 import type { PermissionRule } from '@momonga/config';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { ruleFingerprint } from '@momonga/foundation';
 import type { RuleEnforcement } from '@momonga/foundation';
 import { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, policyRefutedMessage, policyVerdictNotice } from '@momonga/protocol';
 import type { PinnedRuleVerdict, RunEventPayload, RunState } from '@momonga/protocol';
@@ -11,7 +11,7 @@ import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
 import type { WorkerOptions } from './types.ts';
 
-export const ruleFingerprint = (subject: { input: unknown; solverVersion: string }): string => sha256Hex(canonicalJson({ input: subject.input, solverVersion: subject.solverVersion }));
+export { ruleFingerprint };
 
 export type RuleVerdictSources = { options: Pick<WorkerOptions, 'store' | 'home' | 'ruleVerifier'>; control: Pick<ClaimControl, 'signal' | 'recordingRaised'> };
 

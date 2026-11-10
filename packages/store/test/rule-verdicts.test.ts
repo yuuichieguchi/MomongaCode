@@ -20,6 +20,20 @@ describe('store.ruleVerdicts', () => {
     expect(store.ruleVerdicts.get('b'.repeat(64))).toEqual({ fingerprint: 'b'.repeat(64), verdict: refuted, createdAt: START_MS + 5 });
   });
 
+  it('replaces a stored unknown by a later proved or refuted verdict, and never a proved or refuted one', () => {
+    const { store, clock } = harness();
+    const undecided: RuleVerdict = { ...proved, verdict: 'unknown', unknown: [{ property: 'verification', reason: 'the verification budget of 60000 ms was spent' }] };
+    store.ruleVerdicts.put('a'.repeat(64), undecided);
+    clock.advance(5);
+    store.ruleVerdicts.put('a'.repeat(64), { ...undecided, solver: 'other' });
+    expect(store.ruleVerdicts.get('a'.repeat(64))).toEqual({ fingerprint: 'a'.repeat(64), verdict: undecided, createdAt: START_MS });
+    store.ruleVerdicts.put('a'.repeat(64), proved);
+    expect(store.ruleVerdicts.get('a'.repeat(64))).toEqual({ fingerprint: 'a'.repeat(64), verdict: proved, createdAt: START_MS + 5 });
+    store.ruleVerdicts.put('a'.repeat(64), undecided);
+    store.ruleVerdicts.put('a'.repeat(64), refuted);
+    expect(store.ruleVerdicts.get('a'.repeat(64))?.verdict).toEqual(proved);
+  });
+
   it('writes the solver version column from the verdict', () => {
     const { store, dbPath } = harness();
     store.ruleVerdicts.put('a'.repeat(64), proved);

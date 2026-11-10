@@ -44,6 +44,7 @@ type RequestSchemaName =
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
   | 'AddRuleRequest'
+  | 'PutRuleVerdictRequest'
   | 'PromoteMemoryRequest'
   | 'AddMemoryRequest'
   | 'AdoptGuidelineRequest'
@@ -62,6 +63,7 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
+  PutRuleVerdictRequest: requestValidator(RUN_API_SCHEMAS.PutRuleVerdictRequest),
   PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
   AddMemoryRequest: requestValidator(RUN_API_SCHEMAS.AddMemoryRequest),
   AdoptGuidelineRequest: requestValidator(RUN_API_SCHEMAS.AdoptGuidelineRequest),

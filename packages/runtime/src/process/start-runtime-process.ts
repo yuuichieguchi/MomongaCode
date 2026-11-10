@@ -745,6 +745,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       host: options.ruleSolver === undefined ? installedRuleSolver(import.meta.url) : options.ruleSolver(paths),
       fs: createPolicyFilesystem(),
       paths,
+      timers,
     });
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {

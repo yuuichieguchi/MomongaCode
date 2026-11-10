@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, momongaPaths, ruleFingerprint } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningFactView, MemoryView, PolicyGovernanceResponse } from '@momonga/protocol';
 import { fakePolicyFilesystem, hostFilesystemOf, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
@@ -189,6 +189,13 @@ describe('momonga memory history', () => {
 describe('momonga policy verify', () => {
   const governance: PolicyGovernanceResponse = { rules: [{ id: 'g1', behavior: 'ask', rule: 'Bash(git push:*)' }], textOnly: [fact('g2')] };
 
+  const answering =
+    (body: PolicyGovernanceResponse) =>
+    ({ url, method }: Seen): Answer => {
+      if (method === 'PUT') return { status: 204, body: undefined };
+      return url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body };
+    };
+
   const hostCapturing = (exitCode = 0, status = 'proved') => {
     const requests: { rules: { text: string; effect: string; layer?: string }[] }[] = [];
     const host = {
@@ -199,7 +206,10 @@ describe('momonga policy verify', () => {
           return { exitCode, status };
         },
         formatReport: () => 'verification report',
+        ruleVerifyInputOf: (request: { rules: { text: string }[]; mode: string; secretLocations: unknown[] }) => ({ rules: request.rules.map((rule) => rule.text), mode: request.mode, secretLocations: request.secretLocations }),
+        verdictOfReport: (report: { status: string }, solver: string) => ({ verdict: report.status, solver, refuted: [], unknown: [], notProved: ['shell commands'] }),
       }),
+      solverVersion: async () => 'z3 9',
       loadPolicyFilesystem: async () => hostFilesystemOf(fakePolicyFilesystem()),
       openSolver: async () => ({ api: {}, close: async () => undefined }),
     } as unknown as PolicyVerifyHost;
@@ -207,12 +217,16 @@ describe('momonga policy verify', () => {
   };
 
   it('asks the runtime for the governance layer of this folder and verifies it with the rules of the settings', async (context) => {
-    const { paths, ports, seen, out } = await setup(context, ({ url }) =>
-      url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body: governance },
-    );
+    const { paths, ports, seen, out } = await setup(context, answering(governance));
     const { host, requests } = hostCapturing();
     expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(0);
-    expect(seen.map((entry) => entry.url)).toEqual([`/v1/trust?path=${encodeURIComponent(ports.cwd)}`, `/v1/policy/governance?project=${encodeURIComponent(ports.cwd)}`]);
+    const fingerprint = ruleFingerprint({ input: { rules: ['Bash(git push:*)'], mode: 'manual', secretLocations: [] }, solverVersion: 'z3 9' });
+    expect(seen.map((entry) => `${entry.method} ${entry.url}`)).toEqual([
+      `GET /v1/trust?path=${encodeURIComponent(ports.cwd)}`,
+      `GET /v1/policy/governance?project=${encodeURIComponent(ports.cwd)}`,
+      `PUT /v1/policy/verdicts/${fingerprint}`,
+    ]);
+    expect(JSON.parse(seen[2]?.body ?? '')).toEqual({ verdict: { verdict: 'proved', solver: 'z3 9', refuted: [], unknown: [], notProved: ['shell commands'] } });
     expect(requests[0]?.rules).toMatchObject([{ text: 'Bash(git push:*)', effect: 'ask', layer: 'governance' }]);
     expect(out.join('')).toContain('verification report');
     expect(out.join('')).toContain('g1: verified as ask Bash(git push:*)');
@@ -221,9 +235,7 @@ describe('momonga policy verify', () => {
 
   for (const status of ['refuted', 'unknown']) {
     it(`does not claim a rule was verified when the report says ${status}`, async (context) => {
-      const { paths, ports, out } = await setup(context, ({ url }) =>
-        url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body: governance },
-      );
+      const { paths, ports, out } = await setup(context, answering(governance));
       const { host } = hostCapturing(1, status);
       expect(await policyVerify(ports, paths, host, { json: false, secrets: [] })).toBe(1);
       expect(out.join('')).toContain('g1: included in the verification as ask Bash(git push:*), which did not prove');
@@ -232,9 +244,7 @@ describe('momonga policy verify', () => {
   }
 
   it('adds the governance answer to the JSON report only when there is one', async (context) => {
-    const { paths, ports, out } = await setup(context, ({ url }) =>
-      url.startsWith('/v1/trust') ? { status: 200, body: { trust: { path: 'x', decision: 'trusted' } } } : { status: 200, body: { rules: [], textOnly: [] } },
-    );
+    const { paths, ports, out } = await setup(context, answering({ rules: [], textOnly: [] }));
     const { host } = hostCapturing();
     await policyVerify(ports, paths, host, { json: true, secrets: [] });
     expect(JSON.parse(out.join(''))).toEqual({ exitCode: 0, status: 'proved' });

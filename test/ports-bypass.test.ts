@@ -90,7 +90,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/context.ts': { 'randomUUID': 1 },
   'packages/cli/src/eval/context-effects.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
   'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
-  'packages/cli/src/verify/host.ts': { 'node:fs/promises': 1 },
   'packages/config/src/append-rule.ts': { 'node:fs': 1 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 1 },
   'packages/config/src/auto-mode-dataset.ts': { 'node:fs': 1 },
@@ -177,6 +176,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/tools/src/policy-filesystem.ts': { 'setTimeout': 1, 'node:fs': 1 },
   'packages/tools/src/timers.ts': { 'setTimeout': 1 },
   'packages/tools/src/work-tree-observer.ts': { 'node:fs': 1 },
+  'packages/verify/src/distribution-files.ts': { 'node:fs/promises': 1 },
   'packages/verify/src/dialect-model/gate.ts': { 'Date.now': 4 },
   'packages/verify/src/dialect-model/harness.ts': { 'Date.now': 3 },
 };
@@ -186,7 +186,6 @@ const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/daemon/ensure-daemon.ts': { nodeFileSystem: 1 },
   'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
   'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
-  'packages/cli/src/verify/host.ts': { nodeFileSystem: 4 },
 };
 
 const actualCliBypasses = (): Record<string, Counts> =>

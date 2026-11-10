@@ -1,20 +1,22 @@
 import path from 'node:path';
 import { nodeFileSystem, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths, ProtectedSet } from '@momonga/foundation';
+import type { MomongaPaths } from '@momonga/foundation';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
-import type { RuleVerdict } from '@momonga/protocol';
-import type { RuleVerifierPort, RuleVerifyRequest } from '../ports.ts';
+import type { RuleVerifierPort } from '../ports.ts';
+import type { ServiceTimers } from '../service/timers.ts';
+import { RULE_VERIFIER_THREAD_CODE } from './rule-verifier-thread-code.generated.ts';
+import { verifyInThread } from './rule-verifier-thread-client.ts';
+import type { RuleSolverRecipe } from './rule-verifier-thread.ts';
 
 type VerifyModule = typeof import('@momonga/verify');
-type SolverEngine = Awaited<ReturnType<VerifyModule['openZ3']>>;
-type VerificationReport = Awaited<ReturnType<VerifyModule['verifyPermissions']>>;
-type SecretLocations = ReturnType<VerifyModule['secretLocationsOf']>;
+type RuleVerifyInput = Parameters<VerifyModule['ruleVerifyInputOf']>[0];
 
 export type RuleSolverHost = {
   solverVersion(): Promise<string>;
   loadVerifier(): Promise<VerifyModule>;
-  openSolver(verifier: VerifyModule): Promise<SolverEngine>;
+  recipe(verifier: VerifyModule): Promise<RuleSolverRecipe>;
+  threadCode?: string;
 };
 
 export type RuleSolverSource = (paths: Pick<MomongaPaths, 'executables'>) => RuleSolverHost;
@@ -36,54 +38,32 @@ export const installedRuleSolver = (from: string): RuleSolverHost => {
   return {
     loadVerifier,
     solverVersion: async () => installedVersionOf((await loadVerifier()).resolveInstalledZ3(from)),
-    openSolver: (verifier) => verifier.openZ3({ entry: verifier.resolveInstalledZ3(from) }),
+    recipe: async (verifier) => ({ kind: 'installed', entry: verifier.resolveInstalledZ3(from) }),
   };
-};
-
-type VerifyInput = RuleVerifyRequest & { protectedSet: ProtectedSet; secretLocations: SecretLocations };
-
-export const verdictOfReport = (verifier: Pick<VerifyModule, 'describeWitness'>, report: VerificationReport, solver: string): RuleVerdict => {
-  const refuted = report.results.flatMap((result) =>
-    result.verdict.status === 'refuted'
-      ? result.verdict.findings.map((finding) => ({
-          property: result.id,
-          subject: finding.subject,
-          message: finding.message,
-          ...(finding.counterexample === undefined ? {} : { counterexample: verifier.describeWitness(finding.counterexample.witness) }),
-        }))
-      : [],
-  );
-  const unknown = [
-    ...report.results.flatMap((result) => (result.verdict.status === 'unknown' ? [{ property: result.id, reason: result.verdict.reason }] : [])),
-    ...report.mismatches.map((mismatch) => ({
-      property: mismatch.property,
-      reason: `the model and the decision code disagree on ${verifier.describeWitness(mismatch.counterexample.witness)}`,
-    })),
-  ];
-  return { verdict: refuted.length > 0 ? 'refuted' : unknown.length > 0 ? 'unknown' : 'proved', solver, refuted, unknown, notProved: [...report.outsideProof] };
 };
 
 export type RuleVerifierDeps = {
   host: RuleSolverHost;
   fs: PolicyHostFilesystem;
   paths: Pick<MomongaPaths, 'root' | 'keychains'>;
+  timers: ServiceTimers;
 };
 
-export const createRuleVerifier = ({ host, fs: policyFilesystem, paths }: RuleVerifierDeps): RuleVerifierPort => {
+export const createRuleVerifier = ({ host, fs: policyFilesystem, paths, timers }: RuleVerifierDeps): RuleVerifierPort => {
   const prepared = new WeakSet<object>();
-  const preparedInput = (input: unknown): VerifyInput => {
+  const preparedInput = (input: unknown): RuleVerifyInput => {
     if (typeof input !== 'object' || input === null || !prepared.has(input)) throw new Error('the rule verifier was given an input it did not prepare');
-    return input as VerifyInput;
+    return input as RuleVerifyInput;
   };
   return {
     solverVersion: host.solverVersion,
     inputOf: async (request) => {
       const verifier = await host.loadVerifier();
-      const input: VerifyInput = {
+      const input = verifier.ruleVerifyInputOf({
         ...request,
         protectedSet: protectedSetFor(request.roots, policyFilesystem),
         secretLocations: verifier.secretLocationsOf(request.home, paths, []),
-      };
+      });
       prepared.add(input);
       return input;
     },
@@ -91,14 +71,11 @@ export const createRuleVerifier = ({ host, fs: policyFilesystem, paths }: RuleVe
       const request = preparedInput(input);
       signal.throwIfAborted();
       const verifier = await host.loadVerifier();
-      const solver = await host.solverVersion();
-      const engine = await host.openSolver(verifier);
-      try {
-        const report = await verifier.verifyPermissions(engine.api, { ...request, fs: policyFilesystem, exemptDirectory: null, budgetMs: RULE_VERIFY_BUDGET_MS });
-        return verdictOfReport(verifier, report, solver);
-      } finally {
-        await engine.close();
-      }
+      return verifyInThread(
+        { code: host.threadCode ?? RULE_VERIFIER_THREAD_CODE, timers },
+        { input: request, solver: await host.recipe(verifier), solverVersion: await host.solverVersion(), budgetMs: RULE_VERIFY_BUDGET_MS },
+        signal,
+      );
     },
   };
 };
