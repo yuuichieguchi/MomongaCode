@@ -5007,10 +5007,21 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 162751,
-      "measuredSeconds": 17.4,
-      "measuredCpuSeconds": 19.96,
-      "budgetCpuSeconds": 43
+      "distinctStates": 229927,
+      "measuredSeconds": 29.08,
+      "measuredCpuSeconds": 32.54,
+      "budgetCpuSeconds": 69
+    },
+    {
+      "config": "ModelRef.slash",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 225844,
+      "measuredSeconds": 26.1,
+      "measuredCpuSeconds": 29.43,
+      "budgetCpuSeconds": 62
     },
     {
       "config": "ModelRef.storeDisplay",
@@ -5021,10 +5032,24 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2771,
-      "measuredSeconds": 1.6,
-      "measuredCpuSeconds": 2.62,
+      "distinctStates": 1716,
+      "measuredSeconds": 1.59,
+      "measuredCpuSeconds": 2.57,
       "budgetCpuSeconds": 9
+    },
+    {
+      "config": "ModelRef.storedBareName",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRebind",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3699,
+      "measuredSeconds": 1.83,
+      "measuredCpuSeconds": 3.04,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "ModelRef.lastWins",
@@ -5035,9 +5060,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 7,
-      "measuredSeconds": 1.2,
-      "measuredCpuSeconds": 1.52,
+      "distinctStates": 8,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.56,
       "budgetCpuSeconds": 7
     },
     {
@@ -5049,10 +5074,24 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 6746,
-      "measuredSeconds": 1.79,
-      "measuredCpuSeconds": 2.9,
-      "budgetCpuSeconds": 9
+      "distinctStates": 11510,
+      "measuredSeconds": 2.36,
+      "measuredCpuSeconds": 3.63,
+      "budgetCpuSeconds": 11
+    },
+    {
+      "config": "ModelRef.noCascade",
+      "role": "evidence",
+      "expect": {
+        "violates": "WriterKeepsLoadable",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 240,
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 1.96,
+      "budgetCpuSeconds": 7
     }
   ]
 }
