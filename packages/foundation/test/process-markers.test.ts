@@ -127,8 +127,8 @@ const expectStopped = (output: string): void => {
 
 const expectLeftAlone = async (group: Group, result: { outcome: string; output: string }): Promise<void> => {
   expect(result.outcome).toBe('unknown');
-  expect(result.output).toMatch(/could not be verified/i);
-  expect(result.output).toContain(String(group.pgid));
+  expect(result.output).toMatch(/\(marker \S+\) may still be running/);
+  expect(result.output).toMatch(/run \/markers ignore \S+\./);
   expect(alive(-group.pgid)).toBe(true);
   expect(fs.existsSync(path.join(group.dir, 'term'))).toBe(false);
 };
@@ -316,7 +316,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(alive(-group.pgid)).toBe(true);
   });
 
-  it('reports a former holder that dropped the marker and stays alive in leftAlonePids', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('does not report a former holder that dropped the marker as a process left alone, and reports its group instead', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const fd = fs.openSync(marker, 'r');
@@ -333,7 +333,8 @@ describe('reconcileProcessGroup structured result', () => {
     const { signals, kill } = recordingKill();
     const result = await reconcileProcessGroup({ pgid: pid, marker }, { killGraceMs: 3000, kill });
     expect(signals.filter(([, signal]) => signal === 'SIGTERM')).toEqual([[-pid, 'SIGTERM']]);
-    expect(result.leftAlonePids).toContain(pid);
+    expect(result.leftAlonePids).not.toContain(pid);
+    expect(result.leftAloneGroup).toBe(pid);
     expect(alive(pid)).toBe(true);
     expect(holdersOf(marker)).toEqual([]);
   });

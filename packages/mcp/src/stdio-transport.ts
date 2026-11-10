@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, GroupNotStoppedError, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, GroupNotStoppedError, groupTerminationBoundMs, markerHoldersOutsideGroup, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type OutsideHolderListing, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -22,7 +22,7 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: number;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal }) => Promise<TerminateOutcome>;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; outsideHolders: OutsideHolderListing }) => Promise<TerminateOutcome>;
   timing?: DeadlineTiming;
 }
 
@@ -226,7 +226,10 @@ class StdioTransportImpl implements StdioTransport {
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
+          const { markerPath } = this;
+          const pgid = child.pid;
+          const outsideHolders: OutsideHolderListing = async () => (markerPath === undefined ? [] : markerHoldersOutsideGroup(markerPath, pgid, { signal: stopBound.signal }));
+          const outcome = await (this.options.terminate ?? terminateGroup)(pgid, { graceMs: this.closeGraceMs, signal: stopBound.signal, outsideHolders });
           if (outcome === 'unconfirmed') terminateFailure = { error: new GroupNotStoppedError(child.pid) };
         } catch (error) {
           terminateFailure = { error };

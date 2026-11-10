@@ -166,7 +166,7 @@ describe('the reap signals only a target proved ours by the same start time at t
   });
 
   it('killWithoutReproof: a holder whose pid is reused after the SIGTERM pass is not sent SIGKILL', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1 }, 200: { pgid: 200, holdsMarker: true, startMs: 2 } }, { 2: { 200: stranger(300) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1 }, 200: { pgid: 200, holdsMarker: true, startMs: 2 } }, { 3: { 200: stranger(300) } });
     await reconcile(scene);
     expect(scene.signals.filter(({ target }) => target === 200)).toEqual([{ target: 200, signal: 'SIGTERM' }]);
   });

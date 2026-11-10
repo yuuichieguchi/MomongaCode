@@ -262,7 +262,7 @@ describe('waitForGroupGone', () => {
 describe('terminateGroup', () => {
   it('ends a cooperative group with SIGTERM within the grace and reaps the grandchild', async () => {
     const group = await spawnGroup('normal');
-    const outcome = await terminateGroup(group.pgid, { graceMs: 5000 });
+    const outcome = await terminateGroup(group.pgid, { graceMs: 5000, outsideHolders: async () => [] });
     expect(outcome).toBe('terminated');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGTERM' });
     expect(await groupAlive(group.pgid)).toBe(false);
@@ -271,7 +271,7 @@ describe('terminateGroup', () => {
 
   it('escalates to SIGKILL after the grace when the group ignores SIGTERM', async () => {
     const group = await spawnGroup('ignore-term');
-    const outcome = await terminateGroup(group.pgid, { graceMs: 200 });
+    const outcome = await terminateGroup(group.pgid, { graceMs: 200, outsideHolders: async () => [] });
     expect(outcome).toBe('killed');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGKILL' });
     expect(await groupAlive(group.pgid)).toBe(false);
@@ -279,7 +279,7 @@ describe('terminateGroup', () => {
   });
 
   it('returns gone without signalling when the group no longer exists', async () => {
-    expect(await terminateGroup(reapedGroupId(), { graceMs: 100 })).toBe('gone');
+    expect(await terminateGroup(reapedGroupId(), { graceMs: 100, outsideHolders: async () => [] })).toBe('gone');
   });
 
   it('terminates a group whose readiness is signalled through a ready file', async () => {
@@ -306,7 +306,7 @@ describe('terminateGroup', () => {
         resolve();
       }
     });
-    expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
+    expect(await terminateGroup(pgid, { graceMs: 5000, outsideHolders: async () => [] })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
     expect(await groupAlive(pgid)).toBe(false);
   });
@@ -316,7 +316,7 @@ describe('terminateGroup', () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
-      const outcome = await terminateGroup(pgid, { graceMs: 50 }).catch((error: Error) => error.message);
+      const outcome = await terminateGroup(pgid, { graceMs: 50, outsideHolders: async () => [] }).catch((error: Error) => error.message);
       if (!(await settlesWithin(exited, LEADER_REAP_WAIT_MS))) outcomes.push(`${outcome} (leader not reaped)`);
       else outcomes.push((await groupAlive(pgid)) ? `${outcome} (group still alive)` : outcome);
       await killGroupsForCleanup([pgid]);

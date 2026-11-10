@@ -82,7 +82,7 @@ describe('a group is alive while a member remains that can still run (EPERM from
     const port = createProcessGroupPort('darwin', { run: psRunner(members, calls), env: {} });
     const { timing } = fakeTiming();
     const stop = new AbortController().signal;
-    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: stop })).toBe('killed');
+    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: stop, outsideHolders: async () => [] })).toBe('killed');
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((call) => call.options.signal === stop)).toBe(true);
   });
@@ -93,7 +93,7 @@ describe('a group is alive while a member remains that can still run (EPERM from
     const port = createProcessGroupPort('darwin', { run: psRunner(members, []), env: {} });
     expect(await port.alive(PGID, { signal: new AbortController().signal })).toBe(true);
     const fake = fakeTiming();
-    expect(await terminateGroup(PGID, { graceMs: 100, port, timing: fake.timing, signal: new AbortController().signal })).toBe('unconfirmed');
+    expect(await terminateGroup(PGID, { graceMs: 100, port, timing: fake.timing, signal: new AbortController().signal, outsideHolders: async () => [] })).toBe('unconfirmed');
     expect(fake.now()).toBeLessThanOrEqual(groupTerminationBoundMs(100));
   });
 
@@ -117,7 +117,7 @@ describe('a group is alive while a member remains that can still run (EPERM from
     fakeGroup(members, () => void members.splice(0));
     const port = createProcessGroupPort('darwin', { run: psRunner(members, []), env: {} });
     const fake = fakeTiming();
-    expect(await terminateGroup(PGID, { graceMs: 0, port, timing: fake.timing, signal: new AbortController().signal })).toBe('killed');
+    expect(await terminateGroup(PGID, { graceMs: 0, port, timing: fake.timing, signal: new AbortController().signal, outsideHolders: async () => [] })).toBe('killed');
     expect(fake.now()).toBeLessThanOrEqual(groupTerminationBoundMs(0));
   });
 });
@@ -196,7 +196,7 @@ describe('one liveness rule for every reader of a group (process-markers, Linux,
         return true;
       },
     };
-    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal })).toBe('unconfirmed');
+    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal, outsideHolders: async () => [] })).toBe('unconfirmed');
     expect(fake.now()).toBeLessThan(100);
   });
 
@@ -211,7 +211,7 @@ describe('one liveness rule for every reader of a group (process-markers, Linux,
         return true;
       },
     };
-    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal })).toBe('unconfirmed');
+    expect(await terminateGroup(PGID, { graceMs: 1000, port, timing: fake.timing, signal: controller.signal, outsideHolders: async () => [] })).toBe('unconfirmed');
     expect(fake.now()).toBeLessThan(100);
   });
 });

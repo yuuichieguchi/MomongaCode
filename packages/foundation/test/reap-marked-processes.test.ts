@@ -298,34 +298,12 @@ describe('reapMarkedProcesses', () => {
       expect(alive(-group.pgid)).toBe(true);
     });
 
-    it('leftAlonePids', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
-      const dir = makeDir();
-      const marker = makeMarker(dir);
-      const fd = fs.openSync(marker, 'r');
-      const ready = path.join(dir, 'ready');
-      const source = "const fs = require('node:fs'); process.on('SIGTERM', () => fs.closeSync(3)); fs.writeFileSync(process.env.READY_FILE, ''); setInterval(() => {}, 1 << 30);";
-      const child = spawn(process.execPath, ['-e', source], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd], env: { PATH: '/usr/bin:/bin', READY_FILE: ready } });
-      fs.closeSync(fd);
-      child.unref();
-      const pid = child.pid;
-      if (pid === undefined) throw new Error('spawn failed');
-      spawnedGroups.push(pid);
-      expect(await waitUntil(() => fs.existsSync(ready) && holdersOf(marker).includes(pid))).toBe(true);
-      const kill = (target: number, signal: NodeJS.Signals | 0): void => {
-        process.kill(target, signal);
-      };
-      const terminated = waitUntil(() => !holdersOf(marker).includes(pid));
-      const timing: ReapTiming = {
-        now: () => 0,
-        sleep: async () => {
-          await terminated;
-        },
-      };
+    it('leftAlonePids', async (context) => {
+      const marker = markerFile(withTempDir(context));
+      const world = processTable({ 200: { pgid: 200, holdsMarker: true, ignoresTerm: false, startUnreadable: true } }, {});
       const warnings: string[] = [];
-      const result = await reapMarkedProcesses({ marker, pgid: pid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing });
-      expect(result).toEqual({ removed: true });
-      expect(warnings).toContain(`mcp marker ${marker}: process ${pid} is still alive but could not be verified as belonging to this call, so it was left alone`);
-      expect(alive(pid)).toBe(true);
+      await reapMarkedProcesses({ marker, pgid: 100, killGraceMs: 1000, label: 'mcp', onWarning: (m) => warnings.push(m), kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+      expect(warnings).toContain(`mcp marker ${marker}: process 200 is still alive but could not be verified as belonging to this call, so it was left alone`);
     });
 
     it('unsignalled', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -1109,7 +1087,7 @@ describe('a holder the group read no longer finds is never signalled by its pid 
     const marker = markerFile(withTempDir(context));
     const world = processTable(
       { 100: { pgid: 100, holdsMarker: true, ignoresTerm: true }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: true } },
-      { 2: [200] },
+      { 4: [200] },
     );
     const fake = fakeTiming();
     await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fake.timing, inspector: world.inspector });

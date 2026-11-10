@@ -15,7 +15,9 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
-export type UninspectableProcess = { pid: number; command: string; startedAt: number };
+export type StartTime = number | bigint;
+
+export type UninspectableProcess = { pid: number; command: string; startedAt: StartTime };
 
 export type ProbeOptions = { signal: AbortSignal };
 
@@ -23,7 +25,7 @@ export type MarkerStateOptions = ProbeOptions & { mode?: MarkerMode };
 
 export interface ProcessInspector {
   readonly capability?: LockCapabilityProbe;
-  startTimeOf(pid: number, options: ProbeOptions): Promise<ProbeResult<number>>;
+  startTimeOf(pid: number, options: ProbeOptions): Promise<ProbeResult<StartTime>>;
   holdersOf(marker: string, options: ProbeOptions, onUninspectable?: (process: UninspectableProcess) => void): Promise<ProbeResult<number[]>>;
   groupsOf(pids: readonly number[], candidateGroups: readonly number[], options: ProbeOptions): Promise<ProbeResult<Map<number, number>>>;
   markerState(marker: string, options: MarkerStateOptions): Promise<MarkerState>;
