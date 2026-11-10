@@ -68,9 +68,8 @@ export const loadProbeRecord = async (dir: string, key: ManagedRecordKey, curren
     throw corruptRecord(file, target, 'not valid JSON', error);
   }
   if (!isRecord(parsed)) throw corruptRecord(file, target, 'not an object', new TypeError('record is not an object'));
-  if (typeof parsed['key'] !== 'string' || typeof parsed['descriptionDigest'] !== 'string') {
-    throw corruptRecord(file, target, 'missing key fields', new TypeError('key or descriptionDigest is missing'));
-  }
+  if (typeof parsed['key'] !== 'string') throw corruptRecord(file, target, 'missing key fields', new TypeError('key is missing'));
+  if (typeof parsed['descriptionDigest'] !== 'string') return null;
   const matching = recordForIdentity(parsed, { key: parsed['key'] }, { key: key.canonical });
   if (matching === null || matching['descriptionDigest'] !== currency.descriptionDigest || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];

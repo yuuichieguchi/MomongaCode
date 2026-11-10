@@ -112,7 +112,6 @@ export const createResponsesService = (services: GatewayServices, validator: Req
     signal: AbortSignal,
     connection: ConnectionResponses | undefined,
   ): Submission => {
-    pinned.router.targetsOf(body.model);
     const stream = body.stream === true;
 
     const key = parseIdempotencyKey(headers.idempotencyKey);
@@ -137,7 +136,7 @@ export const createResponsesService = (services: GatewayServices, validator: Req
             ...(headers.tracestate === undefined ? {} : { tracestate: headers.tracestate }),
           });
     const job: ResponseJob = {
-      alias: body.model,
+      model: pinned.router.resolveRequestModel(body.model, body.momonga?.exact_model === true),
       body,
       unknownFields: validator.unknownCreateFields(rawBody),
       clientInput: normalizeInput(body.input),

@@ -14,7 +14,7 @@ describe('gateway unavailable (system timers)', () => {
     const gateway = createGatewayClient({ resolveSocket: fixedSocket(path.join(layout.runDir, 'absent-gateway.sock')), clock, version: '0.0.0-test' });
     onCleanup(() => gateway.destroy());
     const ports = createFakePorts();
-    ports.modelAliases = async () => (await gateway.models()).map((model) => model.id);
+    ports.modelListing = () => gateway.listing({ signal: new AbortController().signal });
     const errors: unknown[] = [];
     const service = await launchService(serviceOptions({ store, clock, home: layout.home, socketPath: layout.socketPath, ports, notifier, errors }));
     onCleanup(() => service.close());

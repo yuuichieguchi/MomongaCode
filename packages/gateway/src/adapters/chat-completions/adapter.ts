@@ -87,7 +87,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const dialect = resolveDialect(options.schemaDialect(target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(target));
     if (mode === 'constrained') {
       return buildConstrainedBody(
-        resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)),
+        resolveToolChoice(request, allowedTools, target.display, toolChoiceWire(capabilities, target)),
         options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT,
         origin,
         dialect,
@@ -95,7 +95,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       );
     }
     const ledger = new RenderLedger();
-    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), origin, dialect, ledger), envelope: undefined, ledger };
+    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.display, toolChoiceWire(capabilities, target)), origin, dialect, ledger), envelope: undefined, ledger };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin, capabilities: Capabilities): ChatWire => {

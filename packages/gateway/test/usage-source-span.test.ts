@@ -18,8 +18,8 @@ const chatSpanOf = async (usage: ReturnType<typeof usageOf> | null) => {
   });
   registerCleanup(() => telemetry.shutdown());
   const adapter = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['ok'], usage }) }] });
-  const { client } = await startGateway({ adapters: { primary: adapter }, clock, telemetry, priceTable: definePriceTable([ENTRY]) });
-  const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }));
+  const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, clock, telemetry, priceTable: definePriceTable([ENTRY]) });
+  const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }));
   expect(response.status).toBe(200);
   await telemetry.forceFlush();
   const [span] = memory.getFinishedSpans().filter((finished) => finished.attributes['gen_ai.operation.name'] === 'chat');

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { imageCapability } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
-import { getJson, startGateway } from './gateway-helpers.ts';
+import { chainOfServers, getJson, startGateway } from './gateway-helpers.ts';
 
 const IMAGE_MODEL = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
@@ -60,30 +60,33 @@ const plain: Capabilities = { ...strong, toolCalling: 'none', tokenCounting: 'es
 
 const target = (capabilities: Capabilities) => ({ model: `model-${capabilities.source}`, maxConcurrency: capabilities.maxConcurrency });
 
-const startWith = () =>
-  startGateway({
-    adapters: {
-      strong: createScriptedAdapter({ calls: [], capabilities: strong }),
-      middle: createScriptedAdapter({ calls: [], capabilities: middle }),
-      weak: createScriptedAdapter({ calls: [], capabilities: weak }),
-      plain: createScriptedAdapter({ calls: [], capabilities: plain }),
-    },
-    config: {
-      aliases: { merged: ['strong', 'middle', 'weak'], single: ['middle'], none: ['strong', 'plain'], reversed: ['weak', 'strong'] },
-      targets: { strong: target(strong), middle: target(middle), weak: target(weak), plain: target(plain) },
-    },
-  });
+const SERVERS = { strong, middle, weak, plain };
 
-const capabilitiesOf = async (alias: string): Promise<Capabilities> => {
-  const { client } = await startWith();
+type Server = keyof typeof SERVERS;
+
+const MERGED: readonly Server[] = ['strong', 'middle', 'weak'];
+const SINGLE: readonly Server[] = ['middle'];
+const NONE: readonly Server[] = ['strong', 'plain'];
+const REVERSED: readonly Server[] = ['weak', 'strong'];
+
+const startWith = (members: readonly Server[]) => {
+  const chain = chainOfServers(Object.fromEntries(members.map((name) => [name, target(SERVERS[name])])));
+  return startGateway({
+    adapters: chain.keyed(Object.fromEntries(members.map((name) => [name, createScriptedAdapter({ calls: [], capabilities: SERVERS[name] })]))),
+    config: chain.config,
+  });
+};
+
+const capabilitiesOf = async (members: readonly Server[]): Promise<Capabilities> => {
+  const { client, model } = await startWith(members);
   const response = await getJson(client, '/v1/momonga/models');
   expect(response.status).toBe(200);
-  return response.body.data.find((entry: { id: string }) => entry.id === alias).capabilities;
+  return response.body.data.find((entry: { id: string }) => entry.id === model).capabilities;
 };
 
 describe('alias capabilities on /v1/momonga/models', () => {
   it('reports a conservative merge over every target of the alias', async () => {
-    expect(await capabilitiesOf('merged')).toEqual({
+    expect(await capabilitiesOf(MERGED)).toEqual({
       contextWindow: 4096,
       maxOutputTokens: 512,
       toolCalling: 'constrained',
@@ -100,40 +103,40 @@ describe('alias capabilities on /v1/momonga/models', () => {
   });
 
   it('carries the dialect id when every target of the alias agrees on it', async () => {
-    expect((await capabilitiesOf('none')).schemaDialect).toBe('json-schema-2020-12');
-    expect((await capabilitiesOf('reversed')).schemaDialect).toBe('json-schema-2020-12');
+    expect((await capabilitiesOf(NONE)).schemaDialect).toBe('json-schema-2020-12');
+    expect((await capabilitiesOf(REVERSED)).schemaDialect).toBe('json-schema-2020-12');
   });
 
   it('omits the dialect id when the targets of the alias disagree, with no marker in its place', async () => {
-    expect('schemaDialect' in (await capabilitiesOf('merged'))).toBe(false);
+    expect('schemaDialect' in (await capabilitiesOf(MERGED))).toBe(false);
   });
 
   it('ranks toolCalling none below constrained and tokenCounting estimated lowest', async () => {
-    const merged = await capabilitiesOf('none');
+    const merged = await capabilitiesOf(NONE);
     expect(merged.toolCalling).toBe('none');
     expect(merged.tokenCounting).toBe('estimated');
     expect(merged.source).toBe('declared');
   });
 
   it('takes source from the first target of the alias', async () => {
-    const merged = await capabilitiesOf('reversed');
+    const merged = await capabilitiesOf(REVERSED);
     expect(merged.source).toBe('unprobed');
     expect(merged.contextWindow).toBe(8192);
     expect(merged.structuredOutput).toBe('none');
   });
 
   it('reports a single-target alias unchanged', async () => {
-    expect(await capabilitiesOf('single')).toEqual(middle);
+    expect(await capabilitiesOf(SINGLE)).toEqual(middle);
   });
 });
 
 describe('target capabilities on /v1/momonga/models', () => {
   it('lists the own capabilities of every target of the alias, next to the merged ones', async () => {
-    const { client } = await startWith();
+    const { client, model } = await startWith(MERGED);
     const response = await getJson(client, '/v1/momonga/models');
-    const merged = response.body.data.find((entry: { id: string }) => entry.id === 'merged');
+    const merged = response.body.data.find((entry: { id: string }) => entry.id === model);
 
-    expect(merged.targetCapabilities).toEqual({ strong, middle, weak });
+    expect(merged.chain.map((member: { capabilities: Capabilities }) => member.capabilities)).toEqual([strong, middle, weak]);
     expect(merged.capabilities.contextWindow).toBe(4096);
   });
 });
@@ -146,14 +149,14 @@ describe('alias parallel tool call capability on /v1/momonga/models', () => {
 
   const parallelOf = async (first: Capabilities, second: Capabilities): Promise<boolean | undefined> => {
     const { client } = await startGateway({
-      adapters: { first: createScriptedAdapter({ calls: [], capabilities: first }), second: createScriptedAdapter({ calls: [], capabilities: second }) },
+      adapters: { 'scripted/model-first': createScriptedAdapter({ calls: [], capabilities: first }), 'scripted/model-second': createScriptedAdapter({ calls: [], capabilities: second }) },
       config: {
-        aliases: { both: ['first', 'second'] },
-        targets: { first: { model: 'model-first' }, second: { model: 'model-second' } },
+        chains: { 'scripted/model-first': ['scripted/model-first', 'scripted/model-second'] },
+        targets: { 'scripted/model-first': {}, 'scripted/model-second': {} },
       },
     });
     const response = await getJson(client, '/v1/momonga/models');
-    return response.body.data.find((entry: { id: string }) => entry.id === 'both').capabilities.parallelToolCalls;
+    return response.body.data.find((entry: { id: string }) => entry.id === 'scripted/model-first').capabilities.parallelToolCalls;
   };
 
   it('stays unknown when no target knows and none says false', async () => {
@@ -177,14 +180,14 @@ describe('alias image token model on /v1/momonga/models', () => {
 
   const mergedOf = async (first: Capabilities, second: Capabilities): Promise<Capabilities> => {
     const { client } = await startGateway({
-      adapters: { first: createScriptedAdapter({ calls: [], capabilities: first }), second: createScriptedAdapter({ calls: [], capabilities: second }) },
+      adapters: { 'scripted/model-first': createScriptedAdapter({ calls: [], capabilities: first }), 'scripted/model-second': createScriptedAdapter({ calls: [], capabilities: second }) },
       config: {
-        aliases: { both: ['first', 'second'] },
-        targets: { first: { model: 'model-first' }, second: { model: 'model-second' } },
+        chains: { 'scripted/model-first': ['scripted/model-first', 'scripted/model-second'] },
+        targets: { 'scripted/model-first': {}, 'scripted/model-second': {} },
       },
     });
     const response = await getJson(client, '/v1/momonga/models');
-    return response.body.data.find((entry: { id: string }) => entry.id === 'both').capabilities;
+    return response.body.data.find((entry: { id: string }) => entry.id === 'scripted/model-first').capabilities;
   };
 
   it('reports the smallest pixelsPerToken and the largest maxTokens when every target declares a model', async () => {

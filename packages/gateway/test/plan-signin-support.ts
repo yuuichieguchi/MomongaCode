@@ -5,7 +5,7 @@ import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { createFakeClock, createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, FakePlanResponses, FakeSecretStore, PlanResponsesOptions, SiwcAccessTokenForm, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { PROFILE_ID, profileFor } from './plan-support.ts';
 
 export const CALLBACK_PORT = 49152;
@@ -102,17 +102,14 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
   const secretStore = createFakeSecretStore({});
   writeSettings(home, {
     ...(options.plaintextTokenFiles === true ? { credentials: { plaintextTokenFiles: true } } : {}),
-    models: {
-      aliases: { default: 'gpt' },
-      targets: {
+    models: modelsOf({
         gpt: {
           adapter: 'open-responses',
           model: 'plan-model',
           ...(options.declaredCapabilities === false ? {} : { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } }),
           plan: options.pinned === false ? { profile: PROFILE_ID } : { profile: PROFILE_ID, account: ACCOUNT },
         },
-      },
-    },
+      }),
   });
   const launchOnly = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }), ...(options.logger === undefined ? {} : { logger: options.logger }), ...(options.planStore === undefined ? {} : { planStore: options.planStore }) });
   const launch = async () => {

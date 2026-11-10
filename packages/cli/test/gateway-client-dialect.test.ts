@@ -25,7 +25,9 @@ const capabilities = (schemaDialect: unknown): Record<string, unknown> => ({
 const serveModels = async (context: TestContext, schemaDialect: unknown): Promise<GatewayClient> => {
   const socketPath = path.join(withTempDir(context), 'g.sock');
   const listed = capabilities(schemaDialect);
-  const body = JSON.stringify({ data: [{ id: 'default', targets: ['local'], capabilities: listed, targetCapabilities: { local: listed } }] });
+  const model = 'local/served';
+  const member = { model, counter: '1'.repeat(64), billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: 'served', capabilities: listed };
+  const body = JSON.stringify({ object: 'list', data: [{ id: model, object: 'model', provider: 'local', ownName: 'served', billing: 'local', capabilities: listed, chain: [member] }], start: model, roles: {} });
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });
@@ -42,7 +44,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
 describe('the gateway client reads a dialect id as an open string', () => {
   it.for(['json-schema-2020-12', 'explicit-keys', 'strict-closed', 'inlined-subset', 'ordered-subset'])('accepts the dialect id %s', async (id, context) => {
     const client = await serveModels(context, id);
-    expect(await client.capabilitiesOf('default')).toMatchObject({ schemaDialect: id });
+    expect(await client.capabilitiesOf('local/served')).toMatchObject({ schemaDialect: id });
   });
 
   it.for([
@@ -51,6 +53,6 @@ describe('the gateway client reads a dialect id as an open string', () => {
     ['an absent value', undefined],
   ] as const)('refuses a model list whose dialect is %s', async ([_label, value], context) => {
     const client = await serveModels(context, value);
-    await expect(client.capabilitiesOf('default')).rejects.toThrow('not a model list');
+    await expect(client.capabilitiesOf('local/served')).rejects.toThrow('not a model list');
   });
 });

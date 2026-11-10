@@ -21,14 +21,14 @@ describe('the count of a constrained request against the prompt_tokens LM Studio
     const fake = await startFake({ scenario: 'json-schema-only', streamUsage: true, script: [lmStudioReply] });
     const harness = await startCcGateway({ lms: ccAdapterFor(fake, 'constrained', { contextWindow: LMSTUDIO_CONTEXT_WINDOW, maxOutputTokens: 1024 }) });
 
-    const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: 'fast', stream: true, store: false, ...recordedStepOne }));
+    const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: 'lms/system', stream: true, store: false, ...recordedStepOne }));
     const completed = frames.at(-1)?.data;
     expect(completed?.type).toBe('response.completed');
     expect(lastCompletionBody(fake).response_format?.type).toBe('json_schema');
     const reported = completed?.response.usage.input_tokens as number;
     expect(reported).toBe(LMSTUDIO_PROMPT_TOKENS);
 
-    const counted = (await readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: 'fast', ...recordedStepOne }))).body.input_tokens as number;
+    const counted = (await readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: 'lms/system', ...recordedStepOne }))).body.input_tokens as number;
     const margin = marginFloorFor(LMSTUDIO_CONTEXT_WINDOW) + errorBoundOfShape(ESTIMATED_ERROR_SHAPE, counted);
 
     expect(counted - reported).toBeLessThanOrEqual(margin);

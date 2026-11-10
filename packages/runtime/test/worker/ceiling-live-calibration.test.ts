@@ -23,7 +23,7 @@ const overheadTokens = async (): Promise<number> => {
   return inputTokensOf(body) - tokensOfText('x');
 };
 
-describe('the build ceiling of a claim resumed after the calibration of the alias targets changed', () => {
+describe('the build ceiling of a claim resumed after the calibration of the model targets changed', () => {
   it('reads the ratio from the claim listing and keeps the pinned window', async () => {
     const pinnedCeiling = inputCeilingFor(pinned());
     const liveCeiling = inputCeilingFor(capabilitiesFor(WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO }));
@@ -54,7 +54,7 @@ describe('the build ceiling of a claim resumed after the calibration of the alia
   });
 });
 
-describe('the tool floor of a claim resumed after the calibration of the alias targets changed', () => {
+describe('the tool floor of a claim resumed after the calibration of the model targets changed', () => {
   const FLOOR_WINDOW = 1500;
   const pinnedSmall = (): Capabilities => capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024 });
   const listedSmall = (): Capabilities => capabilitiesFor(2 * FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO });

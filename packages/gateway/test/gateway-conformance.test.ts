@@ -17,9 +17,9 @@ const stripIds = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (
 describe('POST /v1/responses conformance with the vendored Open Responses schema', () => {
   it('returns a non-stream body that validates as ResponseResource with gateway identity and the momonga extension', async () => {
     const primary = scriptedTwice();
-    const { client } = await startGateway({ adapters: { primary } });
-    const first = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
-    const second = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const first = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
+    const second = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
 
     expect(first.status).toBe(200);
     expect(first.headers['content-type']).toMatch(/^application\/json/);
@@ -32,15 +32,15 @@ describe('POST /v1/responses conformance with the vendored Open Responses schema
     expect(first.body.id).not.toBe(second.body.id);
     expect(outputText(first.body)).toBe('Hello, world');
     expect(first.body.usage).toEqual(usageOf(11, 3));
-    expect(first.body.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
+    expect(first.body.momonga).toEqual({ model: 'scripted/scripted-primary', target: 'scripted/scripted-primary', counter: counterForTest('scripted/scripted-primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
     expect(primary.calls).toHaveLength(2);
     expect(primary.calls[0]?.request.model).toBe('scripted-primary');
   });
 
   it('streams events that each validate, increase strictly, open with the lifecycle events, and end with one terminal event', async () => {
     const primary = scriptedTwice();
-    const { client } = await startGateway({ adapters: { primary } });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     const names = validator.streamEventSchemaNames();
 
     for (const frame of frames) {
@@ -58,16 +58,16 @@ describe('POST /v1/responses conformance with the vendored Open Responses schema
     const completed = frames.at(-1)?.data.response;
     expect(created.id).toMatch(/^resp_/);
     expect(completed.id).toBe(created.id);
-    expect(completed.momonga).toEqual({ alias: 'fast', target: 'primary', counter: counterForTest('primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
+    expect(completed.momonga).toEqual({ model: 'scripted/scripted-primary', target: 'scripted/scripted-primary', counter: counterForTest('scripted/scripted-primary'), attempts: 1, usageSource: 'reported', unpriced: { code: 'no_price_entry', reason: 'no price table' } });
     const deltas = frames.filter((frame) => frame.data.type === 'response.output_text.delta').map((frame) => frame.data.delta);
     expect(deltas.join('')).toBe('Hello, world');
   });
 
   it('assembles the non-stream body from the same event stream as the streamed response', async () => {
     const primary = scriptedTwice();
-    const { client } = await startGateway({ adapters: { primary } });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
-    const nonStream = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
+    const nonStream = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     const streamed = frames.at(-1)?.data.response;
     expect(stripIds(nonStream.body.output)).toEqual(stripIds(streamed.output));
     expect(nonStream.body.usage).toEqual(streamed.usage);
@@ -76,8 +76,8 @@ describe('POST /v1/responses conformance with the vendored Open Responses schema
 
   it('accepts a plain string input and passes it to the adapter as one user message', async () => {
     const primary = scriptedTwice();
-    const { client } = await startGateway({ adapters: { primary } });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: 'plain text' }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: 'plain text' }));
     expect(response.status).toBe(200);
     expect(primary.calls[0]?.request.input).toEqual([
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'plain text' }] },

@@ -126,7 +126,7 @@ describe('chat-completions request mapping', () => {
       { model: 'system', input: [userText('hi')] },
     );
     expect(fake.requests.at(-1)?.headers['authorization']).toBe(`Bearer ${API_KEY}`);
-    expect(seen).toContainEqual({ name: 'fm', model: 'system' });
+    expect(seen).toContainEqual({ name: 'fm', display: 'fm', model: 'system' });
 
     const bare = await startFake({ scenario: 'tools-ok' });
     await collect(makeAdapter(bare, { authSource: unauthenticatedSource }), { model: 'system', input: [userText('hi')] });
@@ -154,7 +154,7 @@ describe('chat-completions request mapping', () => {
         return CC_CAPABILITIES;
       },
     });
-    expect(await adapter.capabilities({ name: 'fm', model: 'system' })).toEqual(CC_CAPABILITIES);
-    expect(seen).toEqual([{ name: 'fm', model: 'system' }]);
+    expect(await adapter.capabilities({ name: 'fm', display: 'fm', model: 'system' })).toEqual(CC_CAPABILITIES);
+    expect(seen).toEqual([{ name: 'fm', display: 'fm', model: 'system' }]);
   });
 });

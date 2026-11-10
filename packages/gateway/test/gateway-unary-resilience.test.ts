@@ -4,8 +4,8 @@ import { ScriptedUpstreamError, createScriptedAdapter, waitFor } from '@momonga/
 import { expectErrorBody, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { BREAKER_OUT_OF_THE_WAY, BUDGET, DEFERRED_HEADER, driveTimers, sum } from './retry-support.ts';
 
-const compactBody = { model: 'fast', input: userInput('summarize') };
-const countBody = { model: 'fast', input: userInput('count') };
+const compactBody = { model: 'scripted/scripted-primary', input: userInput('summarize') };
+const countBody = { model: 'scripted/scripted-primary', input: userInput('count') };
 
 const failing = (status: number, retryAfterMs?: number) => {
   const base = createScriptedAdapter({ calls: [] });
@@ -33,7 +33,7 @@ describe('momonga-deadline-ms on unary endpoints', () => {
     ['/v1/momonga/count_tokens', countBody],
   ])('rejects a malformed deadline on %s', async (path, body) => {
     const { adapter } = failing(503);
-    const { client } = await startGateway({ adapters: { primary: adapter } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const response = await readJson(await postJson(client, path, body, { 'momonga-deadline-ms': 'soon' }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_deadline' });
@@ -44,7 +44,7 @@ describe('momonga-deadline-ms on unary endpoints', () => {
     ['/v1/momonga/count_tokens', countBody],
   ])('stops retrying %s with 504 when the next wait passes the deadline', async (path, body) => {
     const { adapter, attempts } = failing(429, 5000);
-    const { client, timers } = await startGateway({ adapters: { primary: adapter } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const response = await readJson(await postJson(client, path, body, { 'momonga-deadline-ms': '1000' }));
     expect(response.status).toBe(504);
     expectErrorBody(response.body, { type: 'server_error', code: 'deadline_exceeded' });
@@ -62,7 +62,7 @@ describe('momonga-deadline-ms on unary endpoints', () => {
         return new Promise((_, reject) => ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason)));
       },
     };
-    const { client, timers } = await startGateway({ adapters: { primary: adapter } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const pending = postJson(client, '/v1/responses/compact', compactBody, { 'momonga-deadline-ms': '1000' });
     await waitFor(() => seen !== undefined && timers.pending().some((timer) => timer.delayMs === 1000), { description: 'deadline timer' });
     timers.advance(1000);
@@ -76,7 +76,7 @@ describe('count_tokens uses the breaker and admission gate', () => {
   it('opens the breaker after a failing request, and a later request on the only target still reaches the adapter', async () => {
     const { adapter, attempts } = failing(503);
     const { client } = await startGateway({
-      adapters: { primary: adapter },
+      adapters: { 'scripted/scripted-primary': adapter },
       config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     const first = await readJson(await postJson(client, '/v1/momonga/count_tokens', countBody));
@@ -107,8 +107,8 @@ describe('count_tokens uses the breaker and admission gate', () => {
       },
     };
     const { client } = await startGateway({
-      adapters: { primary: adapter },
-      config: { targets: { primary: { model: 'scripted-primary', maxConcurrency: 1 } } },
+      adapters: { 'scripted/scripted-primary': adapter },
+      config: { targets: { 'scripted/scripted-primary': { maxConcurrency: 1 } } },
     });
     const one = postJson(client, '/v1/momonga/count_tokens', countBody);
     await waitFor(() => running === 1);
@@ -132,7 +132,7 @@ describe('the retry budget on unary endpoints', () => {
     ['/v1/momonga/count_tokens', countBody, 'count'],
   ] as const)('spends the whole 84 s budget on %s: 17 equal-jitter waits, 18 calls, then 502', async (path, body, kind) => {
     const { adapter, attempts } = failing(503);
-    const harness = await startGateway({ adapters: { primary: adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
     const pending = postJson(harness.client, path, body);
 
     const waits = await driveTimers(harness, [pending]);
@@ -150,7 +150,7 @@ describe('the retry budget on unary endpoints', () => {
     ['/v1/momonga/count_tokens', countBody, 'count'],
   ] as const)('returns a deferral on %s when a 429 asks for longer than the whole budget', async (path, body, kind) => {
     const { adapter, attempts } = failing(429, 100_000);
-    const harness = await startGateway({ adapters: { primary: adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
 
     const response = await readJson(await postJson(harness.client, path, body));
 

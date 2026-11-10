@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { PermissionOption } from '@momonga/protocol';
+import type { ModelViews, PermissionOption } from '@momonga/protocol';
 import { SESSION, runView } from './fake-backend.ts';
-import { INITIALIZE, MODEL_ALIASES, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, modelChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
+import { INITIALIZE, MODEL_OPTIONS, MODEL_VIEWS, OTHER_MODEL, conflict, errorOf, frameOf, labelsOf, modeChangedFrame, modelChangedFrame, notFound, resultOf, startAgent, updatesOf } from './acp-harness.ts';
 import type { EventPayload, Harness } from './acp-harness.ts';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import { DaemonUnreachable, retryAfterRestore } from '../src/run/follow.ts';
@@ -110,8 +110,8 @@ describe('session/new', () => {
           name: 'Model',
           category: 'model',
           type: 'select',
-          currentValue: SESSION.modelAlias,
-          options: MODEL_ALIASES.map((alias) => ({ value: alias, name: alias })),
+          currentValue: SESSION.model,
+          options: MODEL_OPTIONS,
         },
       ],
     });
@@ -866,34 +866,34 @@ describe('model selection', () => {
     category: 'model',
     type: 'select',
     currentValue,
-    options: MODEL_ALIASES.map((alias) => ({ value: alias, name: alias })),
+    options: MODEL_OPTIONS,
   });
 
   const configUpdates = (harness: Harness) => updatesOf(harness.peer.received).filter((update) => update.sessionUpdate === 'config_option_update');
 
-  it('offers the configured aliases as the model config option of a new session, the current one selected', async () => {
+  it('offers the configured models as the model config option of a new session, the current one selected', async () => {
     const harness = startAgent();
     await harness.peer.request('initialize', INITIALIZE);
 
     const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
 
-    expect(result.configOptions).toEqual([modelOption(SESSION.modelAlias)]);
+    expect(result.configOptions).toEqual([modelOption(SESSION.model)]);
     await harness.peer.close();
   });
 
-  it('offers it again when a session is loaded, with the alias the session has now', async () => {
+  it('offers it again when a session is loaded, with the model the session has now', async () => {
     const harness = startAgent();
-    harness.runtime.session = { ...SESSION, modelAlias: 'fm-large' };
+    harness.runtime.session = { ...SESSION, model: OTHER_MODEL };
     await harness.peer.request('initialize', INITIALIZE);
 
     const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, ...NEW_SESSION })) as { configOptions: unknown };
 
-    expect(result.configOptions).toEqual([modelOption('fm-large')]);
+    expect(result.configOptions).toEqual([modelOption(OTHER_MODEL)]);
     await harness.peer.close();
   });
 
   describe('when the model list cannot be read', () => {
-    const unreadable = (): Promise<readonly string[]> => Promise.reject(new Error('the gateway is down'));
+    const unreadable = (): Promise<ModelViews> => Promise.reject(new Error('the gateway is down'));
 
     const warningTexts = (harness: Harness): string[] =>
       updatesOf(harness.peer.received).flatMap(({ sessionUpdate, content }) =>
@@ -901,7 +901,7 @@ describe('model selection', () => {
       );
 
     it('creates the session without the model option and says why in a notice', async () => {
-      const harness = startAgent({ modelAliases: unreadable });
+      const harness = startAgent({ models: unreadable });
       await harness.peer.request('initialize', INITIALIZE);
 
       const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { sessionId: string; configOptions: unknown };
@@ -914,7 +914,7 @@ describe('model selection', () => {
     });
 
     it('loads the session without the model option and says why in a notice', async () => {
-      const harness = startAgent({ modelAliases: unreadable });
+      const harness = startAgent({ models: unreadable });
       await harness.peer.request('initialize', INITIALIZE);
 
       const result = resultOf(await harness.peer.request('session/load', { sessionId: SESSION.id, ...NEW_SESSION })) as { configOptions: unknown };
@@ -927,11 +927,11 @@ describe('model selection', () => {
 
     it('removes the option and says why when a model.changed event arrives and the list can no longer be read', async () => {
       let readable = true;
-      const harness = startAgent({ modelAliases: () => (readable ? Promise.resolve(MODEL_ALIASES) : unreadable()) });
+      const harness = startAgent({ models: () => (readable ? Promise.resolve(MODEL_VIEWS) : unreadable()) });
       await open(harness);
       readable = false;
 
-      harness.emitSessionEvent(modelChangedFrame(5, 'fm-large', SESSION.modelAlias));
+      harness.emitSessionEvent(modelChangedFrame(5, OTHER_MODEL, SESSION.model));
       await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'agent_message_chunk');
 
       expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [] }]);
@@ -945,20 +945,20 @@ describe('model selection', () => {
 
       const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { configOptions: unknown };
 
-      expect(result.configOptions).toEqual([modelOption(SESSION.modelAlias)]);
+      expect(result.configOptions).toEqual([modelOption(SESSION.model)]);
       expect(warningTexts(harness)).toEqual([]);
       await harness.peer.close();
     });
   });
 
-  it('switches the alias of the Run API session on session/set_config_option and answers the full option list', async () => {
+  it('switches the model of the Run API session on session/set_config_option and answers the full option list', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
 
-    const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'fm-large' }));
+    const response = resultOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: OTHER_MODEL }));
 
-    expect(response).toEqual({ configOptions: [modelOption('fm-large')] });
-    expect(harness.runtime.calls).toContain(`setModelAlias ${sessionId} fm-large`);
+    expect(response).toEqual({ configOptions: [modelOption(OTHER_MODEL)] });
+    expect(harness.runtime.calls).toContain(`setModel ${sessionId} ${OTHER_MODEL}`);
     await harness.peer.close();
   });
 
@@ -966,32 +966,33 @@ describe('model selection', () => {
     const harness = startAgent();
     await open(harness);
 
-    harness.emitSessionEvent(modelChangedFrame(5, 'fm-large', SESSION.modelAlias));
+    harness.emitSessionEvent(modelChangedFrame(5, OTHER_MODEL, SESSION.model));
     await harness.peer.untilReceived((message) => updatesOf([message])[0]?.sessionUpdate === 'config_option_update');
 
-    expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [modelOption('fm-large')] }]);
+    expect(configUpdates(harness)).toEqual([{ sessionUpdate: 'config_option_update', configOptions: [modelOption(OTHER_MODEL)] }]);
     await harness.peer.close();
   });
 
-  it('refuses an option it does not offer and an alias it does not list, without asking the Run API', async () => {
+  it('refuses an option it does not offer and a model it does not list, without asking the Run API', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
 
     const unknownOption = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'temperature', value: 'high' }));
-    const unknownAlias = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'not-an-alias' }));
+    const unknownModel = errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'not-a-model' }));
 
     expect(unknownOption.code).toBe(-32602);
-    expect(unknownAlias.code).toBe(-32602);
-    expect(harness.runtime.calls.some((call) => call.startsWith('setModelAlias'))).toBe(false);
+    expect(unknownModel.code).toBe(-32602);
+    expect(unknownModel.message).toContain('The model "not-a-model" is not one of the configured models: scripted-model, fm-large.');
+    expect(harness.runtime.calls.some((call) => call.startsWith('setModel'))).toBe(false);
     await harness.peer.close();
   });
 
   it('turns a refusal of the Run API into invalid params', async () => {
     const harness = startAgent();
     const sessionId = await open(harness);
-    harness.runtime.failures.set('setModelAlias', conflict('model_unavailable', 'the gateway lists no such alias'));
+    harness.runtime.failures.set('setModel', conflict('model_unavailable', 'the gateway lists no such model'));
 
-    expect(errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: 'fm-large' }))).toMatchObject({
+    expect(errorOf(await harness.peer.request('session/set_config_option', { sessionId, configId: 'model', value: OTHER_MODEL }))).toMatchObject({
       code: -32602,
       data: { code: 'model_unavailable' },
     });

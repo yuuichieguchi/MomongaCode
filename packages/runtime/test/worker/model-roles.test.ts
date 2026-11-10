@@ -31,7 +31,7 @@ const conversation = (): RunEventPayload[] => [
 
 const prepared = async (roles: Record<string, string> = {}) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-  env.settings.rolesValue = { ...roles };
+  env.gateway.roles = { ...roles };
   const run = env.enqueue('question one');
   await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
@@ -57,7 +57,7 @@ const changingOutage = (env: Env, change: () => void): void => {
 };
 
 describe('the compaction role', () => {
-  it('guards a role that is ignored: compaction is sent to the compaction alias while the steps keep the run alias', async () => {
+  it('guards a role that is ignored: compaction is sent to the compaction model while the steps keep the run model', async () => {
     const { env, run } = await prepared({ compaction: 'cheap' });
     await drive(env, run.id);
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -67,7 +67,7 @@ describe('the compaction role', () => {
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual(env.gateway.streams.map(() => undefined));
   });
 
-  it('guards a default that moves: with no compaction role the compaction goes to the run alias', async () => {
+  it('guards a default that moves: with no compaction role the compaction goes to the run model', async () => {
     const { env, run } = await prepared();
     await drive(env, run.id);
     expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['fm']);
@@ -79,7 +79,7 @@ describe('the compaction role', () => {
     expect(env.gateway.compacts.map((compact) => compact.request.model)).toEqual(['fm']);
   });
 
-  it('guards a summary cap the role alias cannot hold: the gateway refuses it, the deterministic summary is used, and the notice names the role and the alias', async () => {
+  it('guards a summary cap the role model cannot hold: the gateway refuses it, the deterministic summary is used, and the notice names the role and the model', async () => {
     const { env, run } = await prepared({ compaction: 'tiny' });
     env.gateway.compactHook = async (request) => {
       if (request.model !== 'tiny') return;
@@ -96,7 +96,7 @@ describe('the compaction role', () => {
     expect(notices[0]?.message).toContain('invalid_summary_cap');
   });
 
-  it('guards a notice that blames the role when none is set: a failure of the run alias does not mention models.roles.compaction', async () => {
+  it('guards a notice that blames the role when none is set: a failure of the run model does not mention models.roles.compaction', async () => {
     const { env, run } = await prepared();
     env.gateway.compactHook = async () => {
       throw new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_summary_cap', message: 'the summary cap exceeds what any target accepts' });
@@ -117,10 +117,10 @@ describe('the pinned roles', () => {
     for (const start of starts) expect(start.pins['roles']).toEqual({ compaction: 'cheap', reflection: 'judge' });
   });
 
-  it('guards a settings change mid-run: across a recovery the compaction keeps the alias pinned at start', async () => {
+  it('guards a settings change mid-run: across a recovery the compaction keeps the model pinned at start', async () => {
     const { env, run } = await prepared({ compaction: 'cheap' });
     changingOutage(env, () => {
-      env.settings.rolesValue = { compaction: 'other' };
+      env.gateway.roles = { compaction: 'other' };
     });
     await drive(env, run.id);
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -129,10 +129,10 @@ describe('the pinned roles', () => {
     expect(new Set(env.ofType(run.id, 'run.started').map((event) => JSON.stringify(event.pins['roles'])))).toEqual(new Set([JSON.stringify({ compaction: 'cheap' })]));
   });
 
-  it('guards a late role: a run that started without one keeps the run alias across a recovery after a role is set', async () => {
+  it('guards a late role: a run that started without one keeps the run model across a recovery after a role is set', async () => {
     const { env, run } = await prepared();
     changingOutage(env, () => {
-      env.settings.rolesValue = { compaction: 'cheap' };
+      env.gateway.roles = { compaction: 'cheap' };
     });
     await drive(env, run.id);
     expect(env.gateway.compacts.length).toBeGreaterThanOrEqual(2);
@@ -142,7 +142,7 @@ describe('the pinned roles', () => {
   it('guards a run that is not pinned: a run that starts after the change takes the new role', async () => {
     const { env, run } = await prepared({ compaction: 'cheap' });
     await drive(env, run.id);
-    env.settings.rolesValue = { compaction: 'other' };
+    env.gateway.roles = { compaction: 'other' };
     env.gateway.script.push(textStep('Second.'));
     const second = env.enqueue('Second task');
     await drive(env, second.id);
@@ -151,13 +151,14 @@ describe('the pinned roles', () => {
 
   const childOf = async (parentPins: Record<string, unknown>) => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-    env.settings.rolesValue = { compaction: 'cheap' };
+    env.gateway.roles = { compaction: 'cheap' };
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm', ...parentPins }, mode: 'default' }], 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
+    const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm', ...parentPins }, mode: 'default' }], 'hold');
+    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
-    env.settings.rolesValue = { compaction: 'other' };
+    env.gateway.roles = { compaction: 'other' };
+    env.gateway.listed.push('cheap');
     await env.seed(created.run.id, conversation(), 'release');
     env.gateway.compactSummaries.push(CLEAN);
     env.gateway.script.push(textStep('Child done.'));
@@ -173,7 +174,7 @@ describe('the pinned roles', () => {
     expect(await childOf({ roles: { compaction: 'cheap' } })).toEqual({ pins: [{ compaction: 'cheap' }], compactions: ['cheap'] });
   });
 
-  it('guards a child that picks up a role its parent never had: a parent with no roles gives the child none, so it compacts with its own alias', async () => {
+  it('guards a child that picks up a role its parent never had: a parent with no roles gives the child none, so it compacts with its own model', async () => {
     expect(await childOf({ roles: {} })).toEqual({ pins: [{}], compactions: ['fm'] });
   });
 });
@@ -181,7 +182,7 @@ describe('the pinned roles', () => {
 describe('the capability check of autoMode.classifier', () => {
   const autoSetup = async (classifier: string) => {
     const env = await makeEnv({ mode: 'auto' });
-    env.settings.classifierAlias = classifier;
+    env.settings.classifierModel = classifier;
     const target = path.join(env.project, 'out.txt');
     const write = callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]);
     return { env, target, write };
@@ -189,26 +190,26 @@ describe('the capability check of autoMode.classifier', () => {
 
   const VERDICT = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'writes a file the user asked for' });
 
-  it('guards a classifier alias that is ignored: the verdict is asked of the autoMode.classifier alias', async () => {
+  it('guards a classifier model that is ignored: the verdict is asked of the autoMode.classifier model', async () => {
     const { env, target, write } = await autoSetup('judge');
-    env.gateway.capabilitiesByAlias['judge'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    env.gateway.capabilitiesByModel['judge'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams[1]?.body.model).toBe('judge');
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual([undefined, 'classifier', undefined]);
-    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'judge' }]);
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', model: 'judge' }]);
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
-  it('guards a classifier refused for a capability it does not need: a classifier alias without structured output is asked like any other', async () => {
+  it('guards a classifier refused for a capability it does not need: a classifier model without structured output is asked like any other', async () => {
     const { env, target, write } = await autoSetup('judge');
-    env.gateway.capabilitiesByAlias['judge'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
+    env.gateway.capabilitiesByModel['judge'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams[1]?.body.model).toBe('judge');
-    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'judge' }]);
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', model: 'judge' }]);
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 });

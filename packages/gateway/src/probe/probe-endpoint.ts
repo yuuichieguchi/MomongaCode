@@ -63,8 +63,8 @@ export const endpointPrecondition = (target: string, upstream: UpstreamEndpoint,
     return {
       kind: 'refused',
       message: `the server does not list the model "${model}"`,
-      detail: 'GET /v1/models has no entry whose id is the model of the target',
-      remedy: `set the model of the target "${target}" to an id that GET /v1/models lists, or serve the model under that id`,
+      detail: 'GET /v1/models has no entry whose id is the id of the model',
+      remedy: `set the id of the model "${target}" to one that GET /v1/models lists, or serve the model under that id`,
     };
   },
 });

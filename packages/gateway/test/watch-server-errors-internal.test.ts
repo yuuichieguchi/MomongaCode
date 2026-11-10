@@ -26,7 +26,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       clock,
       timers: createFakeTimers(clock),
       dbPath: path.join(dir, 'state', 'gateway.db'),

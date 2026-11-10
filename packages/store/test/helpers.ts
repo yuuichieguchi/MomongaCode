@@ -128,7 +128,7 @@ export const rawDb = (dbPath: string): DatabaseSync => {
 };
 
 export const newSession = (store: RuntimeStore, cwd = '/work/a') =>
-  store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
+  store.createSession({ cwd, env: { PATH: '/usr/bin' }, permissionMode: 'default', model: 'fm' });
 
 export const TIMEOUT_MS = 3_600_000;
 export const DEADLINE_MS = START_MS + TIMEOUT_MS;

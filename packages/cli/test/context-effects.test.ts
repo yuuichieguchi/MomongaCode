@@ -133,8 +133,7 @@ describe('the environment of a session inside a case', () => {
       settingsFile,
       JSON.stringify({
         models: {
-          aliases: { default: ['t'] },
-          targets: { t: { adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', apiKeyEnv: 'UPSTREAM_VARIABLE', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
+          connections: [{ adapter: 'chat-completions', provider: 'p', baseUrl: 'https://upstream.invalid/v1', apiKeyEnv: 'UPSTREAM_VARIABLE', models: [{ id: 'm', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
         },
       }),
     );
@@ -197,22 +196,22 @@ describe('copyProbeRecord', () => {
     return `${key.digest}.json`;
   };
 
-  it.skipIf(process.platform !== 'darwin')('copies the record of the probe key of a managed target byte for byte, under the same key file name', async () => {
+  it.skipIf(process.platform !== 'darwin')('copies the record of the probe key of a managed server byte for byte, under the same key file name', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'state', 'probe');
     const binary = binaryIn(temporary());
     const name = recordNameFor(binary, 'system');
     const record = JSON.stringify({ key: 'k', descriptionDigest: 'd', report: { anything: true } });
     fs.writeFileSync(path.join(from, name), record);
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(true);
+    expect(await copyProbeRecord(nodeFiles, from, to, { model: 'apple/system', server: 'fm', binary, upstream: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(true);
     expect(fs.readFileSync(path.join(to, name), 'utf8')).toBe(record);
     expect(fs.statSync(path.join(to, name)).mode & 0o777).toBe(0o600);
   });
 
-  it('copies nothing when the person never probed the target, so the case sees the same answer', async () => {
+  it('copies nothing when the person never probed the model, so the case sees the same answer', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { model: 'apple/system', server: 'fm', binary: binaryIn(temporary()), upstream: 'system' }, { [FM_SERVER.id]: FM_SERVER }, process.platform, new AbortController().signal)).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 });

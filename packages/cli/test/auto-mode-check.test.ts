@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
+import type { UserModels } from '@momonga/config';
 import { autoFitDirectoryOf } from '@momonga/config';
 import { momongaPaths, nodeFileSystem, publishCurrentGeneration } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
@@ -12,50 +12,27 @@ import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_PO
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
 import type { AutoModeCheckPorts } from '../src/commands/auto-mode.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
-import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
+import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, PRODUCT_WRITTEN_PLAN_CONNECTION, absentGatewaySocket, listingEntry, modelsFailureOn, serveModelsListing } from './fake-models-listing.ts';
+import { userModelsOf } from './user-models.ts';
 
 const AUTO_MODE_RUNS = 148;
 
-const capabilities = (structuredOutput: 'none' | 'json_schema') => ({
-  contextWindow: 8192,
-  maxOutputTokens: 1024,
-  structuredOutput,
-  streaming: true,
-  stopSequences: true,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'estimated',
-  usageReported: true,
-  source: 'config',
-  maxConcurrency: 4,
-});
+const WORKER = 'worker-model';
+const GUARD = 'guard-model';
+const PLAIN = 'plain-model';
+const WORKER_MODEL = `p/${WORKER}`;
+const GUARD_MODEL = `p/${GUARD}`;
 
-const target = (model: string, structuredOutput: 'none' | 'json_schema'): ResolvedChatCompletionsTarget =>
-  ({
-    adapter: 'chat-completions',
-    model,
-    toolCalling: 'native',
-    provider: 'p',
-    baseUrl: 'http://127.0.0.1:8080/v1',
-    billing: 'local',
-    capabilities: capabilities(structuredOutput),
-    maxConcurrency: 4,
-    admissionTimeoutMs: 30000,
-  }) as unknown as ResolvedChatCompletionsTarget;
+const entry = (id: string, structuredOutput: 'none' | 'json_schema') => ({ id, capabilities: { contextWindow: 8192, maxOutputTokens: 1024, structuredOutput } });
 
-const declared = (model: string) => ({ adapter: 'chat-completions', model, provider: 'p', baseUrl: 'http://127.0.0.1:8080/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }) as const;
+const LOCAL_CONNECTION = {
+  adapter: 'chat-completions',
+  provider: 'p',
+  baseUrl: 'http://127.0.0.1:8080/v1',
+  models: [entry(WORKER, 'json_schema'), entry(GUARD, 'json_schema'), entry(PLAIN, 'none')],
+};
 
-const userModels = (): UserModels =>
-  ({
-    declared: { aliases: { worker: ['w'], guard: ['g'], plain: ['n'] }, targets: { w: declared('worker-model'), g: declared('guard-model'), n: declared('plain-model') } },
-    resolved: {
-      aliases: { worker: ['w'], guard: ['g'], plain: ['n'] },
-      targets: { w: target('worker-model', 'json_schema'), g: target('guard-model', 'json_schema'), n: target('plain-model', 'none') },
-      dialects: {},
-      roles: {},
-    },
-  }) as unknown as UserModels;
+const userModels = (): UserModels => userModelsOf({ connections: [LOCAL_CONNECTION] });
 
 const ALL_LABELLED_PATHS = 'creds.txt .zshrc .github/workflows/ci.yml .git/hooks/pre-commit notes.md CHANGELOG.md';
 
@@ -67,7 +44,7 @@ type Fake = {
   started: number[];
   terminated: number[];
   connected: string[];
-  sessions: { root: string; modelAlias: string | undefined }[];
+  sessions: { root: string; model: string | undefined }[];
   abortAt?: { stage: Stage; controller: AbortController };
 };
 
@@ -84,9 +61,9 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
   let streams = 0;
   const runtimeFor = (root: string): ContextRuntime =>
     ({
-      createSession: async (request: { modelAlias?: string }) => {
-        state.sessions.push({ root, modelAlias: request.modelAlias });
-        return { session: { id: `s-${root}`, modelAlias: request.modelAlias ?? 'unset' } };
+      createSession: async (request: { model?: string }) => {
+        state.sessions.push({ root, model: request.model });
+        return { session: { id: `s-${root}`, model: request.model ?? 'unset' } };
       },
       createRun: async () => ({ run: { id: `r-${root}` }, location: '' }),
       streamEvents: async function* (): AsyncGenerator<{ data: PublicRunEvent }> {
@@ -177,7 +154,7 @@ const portsFor = (effects: ContextHostEffects): { ports: AutoModeCheckPorts; out
   const ports: AutoModeCheckPorts = {
     effects,
     models: userModels(),
-    configuredClassifier: 'guard',
+    configuredClassifier: GUARD_MODEL,
     home,
     version: '0.0.0-test',
     now: () => Date.parse('2026-11-06T00:00:00.000Z'),
@@ -203,7 +180,7 @@ describe('auto-mode check over the embedded dataset', () => {
   it('runs each of the 148 runs in its own temporary home and daemon, and connects to no other daemon (N2)', async () => {
     const state = fake();
     const { ports } = portsFor(state.effects);
-    await autoModeCheck(ports, { classifier: 'guard', agent: 'worker' });
+    await autoModeCheck(ports, { classifier: GUARD, agent: WORKER });
     expect(state.roots.size).toBe(AUTO_MODE_RUNS);
     expect(state.started).toHaveLength(AUTO_MODE_RUNS);
     expect(new Set(state.sessions.map((session) => session.root)).size).toBe(AUTO_MODE_RUNS);
@@ -211,36 +188,36 @@ describe('auto-mode check over the embedded dataset', () => {
     noDaemonOrHomeLeft(state);
   });
 
-  it('writes autoMode.classifier and both aliases with their targets into the settings of every home (N1)', async () => {
+  it('writes autoMode.classifier and the models of the agent and of the classifier into the settings of every home (N1)', async () => {
     const state = fake();
     const { ports } = portsFor(state.effects);
-    await autoModeCheck(ports, { classifier: 'guard', agent: 'worker' });
+    await autoModeCheck(ports, { classifier: GUARD, agent: WORKER });
     expect(state.roots.size).toBe(AUTO_MODE_RUNS);
     for (const entry of state.roots.values()) {
-      const settings = JSON.parse(entry.settings ?? '{}') as { autoMode?: { classifier?: string }; models?: { aliases?: Record<string, unknown>; targets?: Record<string, unknown> } };
-      expect(settings.autoMode?.classifier).toBe('guard');
-      expect(settings.models?.aliases).toEqual({ worker: ['w'], guard: ['g'] });
-      expect(Object.keys(settings.models?.targets ?? {}).sort()).toEqual(['g', 'w']);
+      const settings = JSON.parse(entry.settings ?? '{}') as { autoMode?: { classifier?: string }; models?: { start?: string; connections?: { models?: { id?: string }[] }[] } };
+      expect(settings.autoMode?.classifier).toBe(GUARD_MODEL);
+      expect(settings.models?.start).toBe(WORKER_MODEL);
+      expect(settings.models?.connections?.map((connection) => connection.models?.map((model) => model.id))).toEqual([[WORKER, GUARD]]);
     }
   });
 
-  it('pins every created session to the agent alias', async () => {
+  it('pins every created session to the model of the agent', async () => {
     const state = fake();
     const { ports } = portsFor(state.effects);
-    await autoModeCheck(ports, { classifier: 'guard', agent: 'worker' });
+    await autoModeCheck(ports, { classifier: GUARD, agent: WORKER });
     expect(state.sessions).toHaveLength(AUTO_MODE_RUNS);
-    expect(state.sessions.filter((session) => session.modelAlias !== 'worker')).toEqual([]);
+    expect(state.sessions.filter((session) => session.model !== WORKER_MODEL)).toEqual([]);
   });
 
-  it('writes a did_not_pass record for a classifier that allowed every labelled call, with the agent alias recorded', async () => {
+  it('writes a did_not_pass record for a classifier that allowed every labelled call, with the model of the agent recorded', async () => {
     const state = fake();
     const { ports, home, output } = portsFor(state.effects);
-    const outcome = await autoModeCheck(ports, { classifier: 'guard', agent: 'worker' });
+    const outcome = await autoModeCheck(ports, { classifier: GUARD, agent: WORKER });
     expect(outcome.measurement).toBe('did_not_pass');
     const records = recordsIn(home);
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
-      agentAlias: 'worker',
+      agentModel: WORKER_MODEL,
       runs: AUTO_MODE_RUNS,
       falseAllow: { successes: 100, trials: 100 },
       falseBlock: { successes: 0, trials: 48 },
@@ -254,15 +231,15 @@ describe('auto-mode check over the embedded dataset', () => {
   it('defaults the classifier to the configured autoMode.classifier', async () => {
     const state = fake();
     const { ports } = portsFor(state.effects);
-    await autoModeCheck(ports, { agent: 'worker' });
+    await autoModeCheck(ports, { agent: WORKER });
     const settings = JSON.parse([...state.roots.values()][0]?.settings ?? '{}') as { autoMode?: { classifier?: string } };
-    expect(settings.autoMode?.classifier).toBe('guard');
+    expect(settings.autoMode?.classifier).toBe(GUARD_MODEL);
   });
 
   it('measures a classifier without structured output like any other: the check runs the whole dataset and writes a record', async () => {
     const state = fake();
     const { ports, home } = portsFor(state.effects);
-    const outcome = await autoModeCheck(ports, { classifier: 'plain', agent: 'worker' });
+    const outcome = await autoModeCheck(ports, { classifier: PLAIN, agent: WORKER });
     expect(outcome.measurement).not.toBe('unmeasurable');
     expect(state.started).toHaveLength(AUTO_MODE_RUNS);
     expect(recordsIn(home)).toHaveLength(1);
@@ -271,7 +248,7 @@ describe('auto-mode check over the embedded dataset', () => {
   it('prints the reason and writes nothing when no labelled decision was observed', async () => {
     const state = fake({ silent: true });
     const { ports, home, output } = portsFor(state.effects);
-    const outcome = await autoModeCheck(ports, { classifier: 'guard', agent: 'worker' });
+    const outcome = await autoModeCheck(ports, { classifier: GUARD, agent: WORKER });
     expect(outcome.measurement).toBe('unmeasurable');
     expect(output.join('')).toContain('no decision');
     expect(recordsIn(home)).toEqual([]);
@@ -284,7 +261,7 @@ describe('a check aborted by its signal leaves no daemon and no home behind (C1,
     const controller = new AbortController();
     const state = fake({ abortAt: { stage, controller } });
     const { ports, home } = portsFor(state.effects);
-    await expect(autoModeCheck(ports, { classifier: 'guard', agent: 'worker', signal: controller.signal })).rejects.toThrow();
+    await expect(autoModeCheck(ports, { classifier: GUARD, agent: WORKER, signal: controller.signal })).rejects.toThrow();
     expect(state.roots.size).toBeGreaterThan(0);
     expect(state.roots.size).toBeLessThan(AUTO_MODE_RUNS);
     noDaemonOrHomeLeft(state);
@@ -292,14 +269,7 @@ describe('a check aborted by its signal leaves no daemon and no home behind (C1,
   });
 });
 
-const withPlanAgent = (models: UserModels, plan: UserModels): UserModels => {
-  const user = models as unknown as { declared: { aliases: Record<string, string[]>; targets: Record<string, unknown> }; resolved: { aliases: Record<string, string[]>; targets: Record<string, unknown> } };
-  return {
-    ...user,
-    declared: { aliases: { ...user.declared.aliases, planner: [PLAN_TARGET] }, targets: { ...user.declared.targets, [PLAN_TARGET]: plan.declared.targets?.[PLAN_TARGET] } },
-    resolved: { ...user.resolved, aliases: { ...user.resolved.aliases, planner: [PLAN_TARGET] }, targets: { ...user.resolved.targets, [PLAN_TARGET]: plan.resolved.targets[PLAN_TARGET] } },
-  } as unknown as UserModels;
-};
+const withPlanAgent = (): UserModels => userModelsOf({ connections: [LOCAL_CONNECTION, PRODUCT_WRITTEN_PLAN_CONNECTION] });
 
 const publishGateGateway = async (home: string, gatewaySocket: string): Promise<void> => {
   fs.mkdirSync(path.dirname(momongaPaths(home).current), { recursive: true, mode: 0o700 });
@@ -311,34 +281,29 @@ const publishGateGateway = async (home: string, gatewaySocket: string): Promise<
   );
 };
 
-const RELAY_TARGET_KEYS = ['adapter', 'admissionTimeoutMs', 'billing', 'capabilities', 'maxConcurrency', 'model', 'provider', 'socketPath', 'toolCalling'];
+const RELAY_CONNECTION_KEYS = ['adapter', 'billing', 'models', 'provider', 'socketPath'];
+const RELAY_ENTRY_KEYS = ['admissionTimeoutMs', 'capabilities', 'id', 'maxConcurrency', 'toolCalling'];
 
-describe('auto-mode check with a plan alias relays through the gateway of the gate home (O-R5-6 J 7, P6.10, K4)', () => {
-  it('reads the listing of the gate home gateway once and writes the relay target with exactly the keys of the rule and the numbers of the listing into every case home', async (context) => {
-    const gateway = await serveModelsListing(context, [listingEntry('planner', { [PLAN_TARGET]: LISTED_PLAN })]);
+describe('auto-mode check with a plan model relays through the gateway of the gate home (O-R5-6 J 7, P6.10, K4)', () => {
+  it('reads the listing of the gate home gateway once and writes the relayed server with exactly the keys of the rule and the numbers of the listing into every case home', async (context) => {
+    const gateway = await serveModelsListing(context, [listingEntry(PLAN_TARGET, { [PLAN_TARGET]: LISTED_PLAN })]);
     const state = fake();
     const { ports, home } = portsFor(state.effects);
     await publishGateGateway(home, gateway.socketPath);
-    await autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner' });
+    await autoModeCheck({ ...ports, models: withPlanAgent() }, { classifier: GUARD, agent: PLAN_MODEL });
     expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
     expect(state.roots.size).toBe(AUTO_MODE_RUNS);
     for (const entry of state.roots.values()) {
-      const settings = JSON.parse(entry.settings ?? '{}') as { models?: { aliases?: Record<string, unknown>; targets?: Record<string, { capabilities?: Record<string, unknown> }> } };
-      expect(settings.models?.aliases).toEqual({ planner: [PLAN_TARGET], guard: ['g'] });
-      const target = settings.models?.targets?.[PLAN_TARGET];
-      expect(Object.keys(target ?? {}).sort()).toEqual(RELAY_TARGET_KEYS);
-      expect(target).toMatchObject({
-        adapter: 'open-responses',
-        model: PLAN_MODEL,
-        provider: 'chatgpt',
-        toolCalling: 'native',
-        socketPath: gateway.socketPath,
-        billing: 'plan',
-        maxConcurrency: 4,
-        admissionTimeoutMs: 30000,
-      });
-      expect(target?.capabilities).toMatchObject({ contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS });
-      expect(target?.capabilities).not.toHaveProperty('maxConcurrency');
+      const settings = JSON.parse(entry.settings ?? '{}') as { models?: { start?: string; connections?: (Record<string, unknown> & { models: Record<string, unknown>[] })[] } };
+      expect(settings.models?.start).toBe(PLAN_TARGET);
+      const relayed = settings.models?.connections?.find((connection) => connection['provider'] === 'chatgpt');
+      const model = relayed?.models[0];
+      expect(Object.keys(relayed ?? {}).sort()).toEqual(RELAY_CONNECTION_KEYS);
+      expect(Object.keys(model ?? {}).sort()).toEqual(RELAY_ENTRY_KEYS);
+      expect(relayed).toMatchObject({ adapter: 'open-responses', provider: 'chatgpt', socketPath: gateway.socketPath, billing: 'plan' });
+      expect(model).toMatchObject({ id: PLAN_MODEL, toolCalling: 'native', maxConcurrency: 4, admissionTimeoutMs: 30000 });
+      expect(model?.['capabilities']).toMatchObject({ contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS });
+      expect(model?.['capabilities']).not.toHaveProperty('maxConcurrency');
     }
   });
 
@@ -348,7 +313,7 @@ describe('auto-mode check with a plan alias relays through the gateway of the ga
     const { ports, home } = portsFor(state.effects);
     await publishGateGateway(home, gateway.socketPath);
     const controller = new AbortController();
-    const running = autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner', signal: controller.signal });
+    const running = autoModeCheck({ ...ports, models: withPlanAgent() }, { classifier: GUARD, agent: PLAN_MODEL, signal: controller.signal });
     const settled = running.then(
       () => 'settled' as const,
       () => 'settled' as const,
@@ -368,7 +333,7 @@ describe('auto-mode check with a plan alias relays through the gateway of the ga
     const state = fake();
     const { ports, home } = portsFor(state.effects);
     await publishGateGateway(home, absent);
-    const failure = await autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner' }).catch((error: unknown) => error);
+    const failure = await autoModeCheck({ ...ports, models: withPlanAgent() }, { classifier: GUARD, agent: PLAN_MODEL }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(expected.constructor);
     expect((failure as Error).message).toBe(expected.message);
     expect(state.roots.size).toBe(0);

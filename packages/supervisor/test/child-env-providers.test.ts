@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { secretStoreEnvFor } from '@momonga/foundation';
+import { modelSettings } from '@momonga/testkit';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -17,16 +18,15 @@ const settingsWithProviders = async () => {
     mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
     writeFileSync(
       path.join(home, '.momonga', 'settings.json'),
-      JSON.stringify({
-        models: {
-          aliases: { default: ['claude'] },
-          targets: {
-            claude: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'PROVIDER_ENV_ANTHROPIC', capabilities: CAPABILITIES },
-            router: { adapter: 'open-responses', provider: 'fake', model: 'm', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'PROVIDER_ENV_ROUTER', capabilities: CAPABILITIES },
-            stored: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.anthropic.com', apiKeySecret: STORED_SECRET_NAME, capabilities: CAPABILITIES },
-          },
-        },
-      }),
+      JSON.stringify(
+        modelSettings({
+          models: [
+            { adapter: 'anthropic', provider: 'claude', id: 'm', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'PROVIDER_ENV_ANTHROPIC', capabilities: CAPABILITIES },
+            { adapter: 'open-responses', provider: 'router', id: 'm', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'PROVIDER_ENV_ROUTER', capabilities: CAPABILITIES },
+            { adapter: 'anthropic', provider: 'stored', id: 'm', baseUrl: 'https://api.anthropic.com', apiKeySecret: STORED_SECRET_NAME, capabilities: CAPABILITIES },
+          ],
+        }),
+      ),
     );
     return (await loadUserSettings({ home })).settings;
   } finally {

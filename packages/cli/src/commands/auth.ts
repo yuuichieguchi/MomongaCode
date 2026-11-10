@@ -1,7 +1,10 @@
-import type { MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
+import { NO_MODEL_CONNECTED_TEXT, displayMapOf } from '@momonga/protocol';
+import type { MomongaModelList, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import type { OpenUrl } from '@momonga/foundation';
 import { couldNotOpenBrowser } from '../browser-text.ts';
+import { listingViewsOf } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
+import { listedModelOf } from './models.ts';
 import { createInterface } from 'node:readline';
 import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf, savedAccountAction } from '../plan/accounts.ts';
 import {
@@ -33,29 +36,22 @@ const accountLines = (account: PlanAccountView): string[] => [
   ...(account.cause === undefined ? [] : [`    cause: ${account.cause}`]),
 ];
 
-export type AuthStatusPorts = { stdout: Writer; plan: PlanGatewayClient; models(): Promise<readonly MomongaModelEntry[]> };
+export type AuthStatusPorts = { stdout: Writer; plan: PlanGatewayClient; listing(): Promise<MomongaModelList> };
 
-export const DEFAULT_ALIAS = 'default';
+export type ModelLine = { name: string; canon: string; billing: TargetBilling } | null;
 
-type ModelLine = { alias: string; targets: { name: string; billing: TargetBilling }[] } | null;
-
-const billingOf = (entry: MomongaModelEntry, target: string): TargetBilling => {
-  const billing = entry.targetBilling?.[target];
-  if (billing === undefined) throw new Error(`the gateway did not report the billing of the target ${target}`);
-  return billing;
+export const modelLineOf = (listing: MomongaModelList, named: string | undefined): ModelLine => {
+  const canon = named === undefined ? listing.start : listedModelOf(listing.data, named);
+  const entry = listing.data.find((model) => model.id === canon);
+  if (entry === undefined) return null;
+  return { name: displayMapOf(listingViewsOf(listing.data)).get(entry.id) ?? entry.id, canon: entry.id, billing: entry.billing };
 };
 
-export const modelLineOf = (models: readonly MomongaModelEntry[], alias: string): ModelLine => {
-  const entry = models.find((model) => model.id === alias);
-  return entry === undefined ? null : { alias, targets: entry.targets.map((name) => ({ name, billing: billingOf(entry, name) })) };
-};
+export const modelLineText = (line: ModelLine): string => (line === null ? `model: none (${NO_MODEL_CONNECTED_TEXT})` : `model: ${line.name} (${line.billing})`);
 
-export const modelLineText = (line: ModelLine): string =>
-  line === null ? 'model: none' : `model: ${line.alias} -> ${line.targets.map((target) => `${target.name} (${target.billing})`).join(', ')}`;
-
-export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; alias?: string }): Promise<number> => {
+export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; model?: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
-  const model = modelLineOf(await ports.models(), options.alias ?? DEFAULT_ALIAS);
+  const model = modelLineOf(await ports.listing(), options.model);
   if (options.json) {
     ports.stdout.write(`${JSON.stringify({ ...listed, model })}\n`);
     return 0;

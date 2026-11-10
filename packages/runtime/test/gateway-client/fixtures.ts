@@ -174,3 +174,29 @@ export const openSse = (response: http.ServerResponse): void => {
   response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
   response.flushHeaders();
 };
+
+export const LISTED_PROVIDER = 'fake';
+
+export const listedMember = (model: string, capabilities: unknown, counter: unknown = '1'.repeat(64)): Record<string, unknown> => ({
+  model,
+  counter,
+  billing: 'metered',
+  adapter: 'chat-completions',
+  answers: 'model',
+  upstream: model,
+  capabilities,
+});
+
+export const listedEntry = (id: string, capabilities: unknown, chain: readonly unknown[] = [listedMember(id, capabilities)]): Record<string, unknown> => ({
+  id,
+  object: 'model',
+  provider: LISTED_PROVIDER,
+  ownName: id,
+  billing: 'metered',
+  capabilities,
+  chain,
+});
+
+export const listingBody = (data: readonly unknown[], rest: Record<string, unknown> = {}): Record<string, unknown> => ({ object: 'list', data, start: null, roles: {}, ...rest });
+
+export const listedView = (id: string): Record<string, unknown> => ({ id, canon: id, provider: LISTED_PROVIDER, ownName: id });

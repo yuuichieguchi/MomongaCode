@@ -12,7 +12,7 @@ import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 import type { CompletionResponse } from '../adapters/shared/http-client.ts';
 import { gatewayErrorFromBody } from '../core/errors.ts';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
-import { reportedContextValue } from '../probe/run-probe.ts';
+import { reportedContextWindow } from '../probe/run-probe.ts';
 import type { AuthSource } from './auth-source.ts';
 import { PLAN_EVENT_INTERNAL, noPlanEvents } from './events.ts';
 import type { PlanEvents } from './events.ts';
@@ -91,7 +91,7 @@ const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
     for (const key of Object.keys(entry)) entryKeys.add(key);
     const label = entry[labelKey];
     const displayName = typeof label === 'string' && label !== '' ? label : slug;
-    const contextWindow = reportedContextValue(entry);
+    const contextWindow = reportedContextWindow(entry);
     return [contextWindow === undefined ? { slug, displayName, usable: false, reason: NO_REPORTED_WINDOW } : { slug, displayName, usable: true, contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }];
   });
   return { models, entryKeys: [...entryKeys].sort() };

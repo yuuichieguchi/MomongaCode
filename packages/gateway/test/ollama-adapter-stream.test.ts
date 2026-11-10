@@ -166,7 +166,7 @@ describe('ollama stream: cancellation', () => {
     const events: any[] = [];
     let failure: unknown;
     try {
-      for await (const event of adapter.create(request, await contextOf(adapter, { name: 'local', model: 'devstral-small-2' }, controller.signal))) {
+      for await (const event of adapter.create(request, await contextOf(adapter, { name: 'local', display: 'local', model: 'devstral-small-2' }, controller.signal))) {
         events.push(event);
         if (event.type === 'response.output_text.delta') controller.abort(new Error('the client went away'));
       }

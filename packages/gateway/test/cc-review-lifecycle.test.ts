@@ -23,7 +23,7 @@ const countTokensOf = (managed: { countTokens?: ManagedTarget['countTokens'] }):
 };
 
 const KEY: KnownProbeKey = fmRecordKey('ef'.repeat(32), '25A100');
-const userRequest = { model: 'fast', input: [{ type: 'message' as const, role: 'user' as const, content: 'x' }] };
+const userRequest = { model: 'scripted/scripted-primary', input: [{ type: 'message' as const, role: 'user' as const, content: 'x' }] };
 
 class Child extends EventEmitter {
   readonly signals: string[] = [];
@@ -70,7 +70,7 @@ const managedFm = async () => {
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
     description: FM_SERVER,
-    target: 'fm',
+    target: 'scripted/system',
     lockPath: `${socketPath}.lock`,
     readyTimeoutMs: 400,
     readStopGraceMs: () => 30,
@@ -142,10 +142,10 @@ describe('adapter and gateway shutdown', () => {
     const closes = vi.fn(async () => undefined);
     const other: ProviderAdapter = { ...createScriptedAdapter({ calls: [] }), close: closes };
     const { gateway } = await startGateway({
-      adapters: { fm: adapter, a: other, b: other },
+      adapters: { 'scripted/system': adapter, 'scripted/m': other, 'b/m': other },
       config: {
-        aliases: { fast: ['fm'], other: ['a', 'b'] },
-        targets: { fm: { model: 'system' }, a: { model: 'm' }, b: { model: 'm' } },
+        chains: { 'scripted/system': ['scripted/system'], 'scripted/m': ['scripted/m', 'b/m'] },
+        targets: { 'scripted/system': {}, 'scripted/m': {}, 'b/m': {} },
       },
     });
     await gateway.close();
@@ -170,10 +170,10 @@ describe('adapter and gateway shutdown', () => {
       random: () => 0.5,
       credentials: [],
       config: buildConfig({
-        aliases: { fast: ['a'], other: ['b'] },
-        targets: { a: { model: 'm' }, b: { model: 'm' } },
+        chains: { 'scripted/m': ['scripted/m'], 'b/m': ['b/m'] },
+        targets: { 'scripted/m': {}, 'b/m': {} },
       }),
-      adapters: { a: failing, b: { ...createScriptedAdapter({ calls: [] }), close: healthy } },
+      adapters: { 'scripted/m': failing, 'b/m': { ...createScriptedAdapter({ calls: [] }), close: healthy } },
       clock,
       timers: createFakeTimers(clock),
       dbPath: path.join(dir, 'state', 'gateway.db'),
@@ -212,19 +212,19 @@ describe('count-tokens', () => {
     const signals: AbortSignal[] = [];
     const managed = await calibrated(1.25, '20', signals);
     const controller = new AbortController();
-    await countTokensOf(managed)(TARGET, { model: 'fast', input: 'x' }, controller.signal);
+    await countTokensOf(managed)(TARGET, { model: 'scripted/scripted-primary', input: 'x' }, controller.signal);
     expect(signals).toEqual([controller.signal]);
   });
 
   it('rounds calibrated counts up', async () => {
     const managed = await calibrated(1.3, '21', []);
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'x' }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/scripted-primary', input: 'x' }, new AbortController().signal);
     expect(result.input_tokens).toBe(28);
   });
 
   it('does not round up floating point noise', async () => {
     const managed = await calibrated(1.1, '20', []);
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'x' }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/scripted-primary', input: 'x' }, new AbortController().signal);
     expect(result.input_tokens).toBe(22);
   });
 });

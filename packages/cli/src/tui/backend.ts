@@ -2,8 +2,8 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { currentSocketResolver, systemTiming } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
-import { addModelConnection, loadUserSettings } from '@momonga/config';
-import type { ModelConnection, WrittenConnection } from '@momonga/config';
+import { editModelsSettings, loadUserSettings } from '@momonga/config';
+import type { AddModelChoice } from '../commands/models.ts';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.ts';
 import { withIdentityReadFetch } from '../network.ts';
@@ -40,10 +40,10 @@ export type TuiBackend = {
   readonly cwd: string;
   boot(): Promise<TrustView>;
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
-  openSession(modelAlias?: string): Promise<SessionView>;
+  openSession(model?: string): Promise<SessionView>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
-  setModel(modelAlias: string): Promise<SessionView>;
+  setModel(model: string): Promise<SessionView>;
   autoModeAvailable(): Promise<boolean>;
   startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
@@ -73,7 +73,7 @@ export type TuiBackend = {
   startSignInListener: StartSignInListener;
   signInTimers: SignInWaitTimers;
   detectLocalServers(typed: readonly string[]): Promise<readonly LocalServerDetection[]>;
-  addModelConnection(connection: ModelConnection): Promise<WrittenConnection>;
+  addModelConnection(choice: AddModelChoice): Promise<{ model: string | undefined }>;
   dismissedNotices(): Promise<DismissedNotices>;
   dismissNotice(key: string): Promise<void>;
   close(): Promise<void>;
@@ -138,7 +138,7 @@ export const createTuiBackend = (
         detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers, ports) }),
       );
     },
-    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection),
+    addModelConnection: async (choice) => ({ model: (await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'addModel', choice }], { signal: closing.signal })).model }),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now())),
     boot: async () => {
@@ -149,14 +149,14 @@ export const createTuiBackend = (
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
     },
-    openSession: async (modelAlias) => {
-      const chosenAlias = modelAlias ?? options.modelAlias;
+    openSession: async (model) => {
+      const chosen = model ?? options.model;
       const created = await runtime().createSession({
         cwd: ports.cwd,
         env: await environmentSnapshot(ports),
         ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
-        ...(chosenAlias === undefined ? {} : { modelAlias: chosenAlias }),
+        ...(chosen === undefined ? {} : { model: chosen }),
       });
       session = created.session;
       return session;
@@ -166,8 +166,8 @@ export const createTuiBackend = (
       return session;
     },
     models: () => withGateway((gateway) => gateway.models()),
-    setModel: async (modelAlias) => {
-      session = await runtime().setModelAlias(current().id, modelAlias);
+    setModel: async (model) => {
+      session = await runtime().setModel(current().id, model);
       return session;
     },
     autoModeAvailable: () => autoModeConfigured(ports),
@@ -211,7 +211,7 @@ export const createTuiBackend = (
     retireRule: (id) => runtime().retireRule(id),
     ruleHistory: (id) => runtime().ruleHistory(id),
     ignoreMarker: (name) => runtime().ignoreMarker(name),
-    model: () => withGateway((gateway) => gateway.modelOf(current().modelAlias)),
+    model: () => withGateway((gateway) => gateway.modelOf(current().model)),
     startupNotices: async () => [...stopNotices.splice(0), ...(await Promise.all(noticeSources.map((source) => source({ runtime: runtime(), session: current() })))).flat()],
     readImage: (file) => readImageAttachment(ports.files, ports.cwd, file),
     loadHistory: () => history.load(),

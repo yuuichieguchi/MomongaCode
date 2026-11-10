@@ -83,8 +83,8 @@ const tracedGatewayOf = async (adapter: ProviderAdapter) => {
   const harness = await startGateway({
     clock,
     telemetry,
-    adapters: { only: adapter },
-    config: { aliases: { fast: ['only'] }, targets: { only: { model: 'system' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } },
+    adapters: { 'scripted/system': adapter },
+    config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} }, retry: { maxAttempts: 1, totalWaitMs: 1 } },
   });
   const attemptSpans = async () => {
     await telemetry.forceFlush();
@@ -111,7 +111,7 @@ describe('a constraining tool_choice the request tools cannot satisfy is an inva
   it.for(UNSATISFIABLE_CASES)('$kind $operation with $choice: 400 invalid_request at $param, nothing sent, no attempt span', async (testCase) => {
     const upstream = await testCase.start(testCase.path);
     const { harness, attemptSpans } = await tracedGatewayOf(upstream.adapter);
-    const body = { model: 'fast', input: userInput('hi'), ...testCase.fields, ...(testCase.stream ? { stream: true } : {}) };
+    const body = { model: 'scripted/system', input: userInput('hi'), ...testCase.fields, ...(testCase.stream ? { stream: true } : {}) };
     const raw = await postJson(harness.client, testCase.path, body);
     const response = testCase.stream && raw.status === 200 ? { status: raw.status, body: { frames: await readSse(raw) } as any } : await readJson(raw);
     expect({ status: response.status, code: response.body.error?.code, param: response.body.error?.param }).toEqual({
@@ -126,7 +126,7 @@ describe('a constraining tool_choice the request tools cannot satisfy is an inva
   it.for(GUARD_CASES)('$kind $operation with tool_choice $toolChoice and no tools still succeeds', async (testCase) => {
     const upstream = await testCase.start(testCase.path);
     const { harness } = await tracedGatewayOf(upstream.adapter);
-    const body = { model: 'fast', input: userInput('hi'), tool_choice: testCase.toolChoice, ...(testCase.stream ? { stream: true } : {}) };
+    const body = { model: 'scripted/system', input: userInput('hi'), tool_choice: testCase.toolChoice, ...(testCase.stream ? { stream: true } : {}) };
     const response = await postJson(harness.client, testCase.path, body);
     if (testCase.stream) {
       const frames = await readSse(response);
@@ -144,7 +144,7 @@ describe('the tool_choice refusal names the choice the client sent', () => {
     const upstream = await ollama();
     const { harness } = await tracedGatewayOf(upstream.adapter);
     const response = await readJson(
-      await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: [toolNamed('a')], tool_choice: { type: 'function', name: 'a' } }),
+      await postJson(harness.client, '/v1/responses', { model: 'scripted/system', input: userInput('hi'), tools: [toolNamed('a')], tool_choice: { type: 'function', name: 'a' } }),
     );
     expect(response.status).toBe(400);
     expect(response.body.error?.code).toBe('unsupported_tool_choice');

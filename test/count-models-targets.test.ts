@@ -16,11 +16,6 @@ const REMAINING: readonly Remaining[] = [
   { file: 'packages/cli/src/eval/context-host.ts', removedBy: 'N3a' },
   { file: 'packages/cli/src/readiness.ts', removedBy: 'N3a' },
   { file: 'packages/cli/src/tui/plan-flows.ts', removedBy: 'N3b' },
-  { file: 'packages/gateway/src/core/router.ts', removedBy: 'N1' },
-  { file: 'packages/gateway/src/process.ts', removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/config-check.ts', removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/gateway.ts', removedBy: 'N1' },
-  { file: 'packages/runtime/src/process/settings-port.ts', removedBy: 'N2' },
 ];
 
 const filesUnder = (directory: string): string[] =>

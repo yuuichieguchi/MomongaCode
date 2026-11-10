@@ -37,7 +37,7 @@ export const readFileTool = {
 
 export type UpstreamGateway = Harness & { fake: FakeUpstreamServer };
 
-const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
+const singleTarget = { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote' } } };
 
 export const startAnthropicGateway = async (
   options: Omit<FakeAnthropicOptions, 'apiKey'> & {
@@ -60,7 +60,7 @@ export const startAnthropicGateway = async (
   });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({
-    adapters: { remote: adapter },
+    adapters: { 'scripted/upstream-model': adapter },
     config: { ...singleTarget, ...options.config },
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
@@ -81,7 +81,7 @@ export const startOpenResponsesGateway = async (
   });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({
-    adapters: { remote: adapter },
+    adapters: { 'scripted/upstream-model': adapter },
     config: { ...singleTarget, ...options.config },
     ...(options.priceTable === undefined ? {} : { priceTable: options.priceTable }),
   });
@@ -99,7 +99,7 @@ export const specProblems = (frames: Array<{ data: any }>): string[] =>
 
 export const streamResponse = async (gateway: UpstreamGateway, body: Record<string, unknown> = {}) => {
   const frames = await readSse(
-    await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hello'), ...body }),
+    await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', stream: true, input: userInput('hello'), ...body }),
   );
   expect(specProblems(frames)).toEqual([]);
   return frames;

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { SchemaNarrowing, StreamEvent } from '@momonga/protocol';
 import { makeEnv } from './harness.ts';
-import { MODEL_ALIAS, callsStep, textStep } from './scripts.ts';
+import { MODEL_ID, callsStep, textStep } from './scripts.ts';
 import { PRIMARY_TARGET } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 
@@ -12,7 +12,7 @@ const answeredWith = (step: ScriptStep, target: string, schemaNarrowings: Schema
   events: step.events.map(
     (event): StreamEvent =>
       event.type === 'response.completed'
-        ? { ...event, response: { ...event.response, momonga: { alias: MODEL_ALIAS, usageSource: 'reported', target, attempts: 1, ...routing, schemaNarrowings } as never } }
+        ? { ...event, response: { ...event.response, momonga: { model: MODEL_ID, usageSource: 'reported', target, attempts: 1, ...routing, schemaNarrowings } as never } }
         : event,
   ),
 });
@@ -74,7 +74,7 @@ describe('a tool parameter the dialect narrowed', () => {
 
   it('tells the person again when another target answers with the same tool and path', async () => {
     const env = await makeEnv();
-    env.gateway.targetsByAlias[MODEL_ALIAS] = [PRIMARY_TARGET, SECONDARY_TARGET];
+    env.gateway.chainsByModel[MODEL_ID] = [PRIMARY_TARGET, SECONDARY_TARGET];
     const file = seededFile(env.project);
     env.gateway.script.push(answeredWith(readStep(file, 'call_n_3'), PRIMARY_TARGET, [OPTIONS]), answeredWith(textStep('Done.'), SECONDARY_TARGET, [OPTIONS], FALLBACK_FROM_PRIMARY));
     const run = env.enqueue('Work');

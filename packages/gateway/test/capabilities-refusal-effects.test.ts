@@ -10,7 +10,7 @@ import { START_MS, getJson, postJson, readJson, registerCleanup, startGateway, u
 import { CC_CAPABILITIES, makeAdapter, readFileTool, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
 
-type Harness = Awaited<ReturnType<typeof startGateway>>;
+type Harness = Awaited<ReturnType<typeof startGateway>> & { model: string };
 type Outcome = { kind: 'reject'; error: () => Error } | { kind: 'fulfil'; capabilities: Capabilities };
 type Target = { fake: FakeChatCompletionsServer; adapter: ProviderAdapter; resolver: { calls: number } };
 
@@ -25,7 +25,7 @@ const NO_SAMPLING: Capabilities = { ...CC_CAPABILITIES, sampling: { accepts: 'no
 const SEEING_NO_SAMPLING: Capabilities = { ...SEEING, sampling: { accepts: 'none' } };
 const NEEDS_PROBE: NeedsProbe = {
   state: 'needs_probe',
-  message: 'the target "a" sets toolCalling to auto, but no probe record exists',
+  message: 'the model "a" sets toolCalling to auto, but no probe record exists',
   evidence: 'no record for the a binary',
   remedy: 'run `momonga gateway probe a`',
 };
@@ -55,7 +55,10 @@ const targetOf = async (outcomes: readonly Outcome[], shape: (adapter: ChatCompl
 const RETRYING = { maxAttempts: 3, baseMs: 100, maxMs: 100, totalWaitMs: 1000 };
 const ONCE = { maxAttempts: 1, totalWaitMs: 1 };
 
+const canonOf = (server: string): string => `${server.toLowerCase()}/system`;
+
 const tracedGatewayOf = async (targets: Record<string, Target>, retry: Record<string, number> = ONCE) => {
+  const model = canonOf(Object.keys(targets)[0] as string);
   const clock = createFakeClock(START_MS);
   const memory = new InMemorySpanExporter();
   const telemetry = createTelemetry({
@@ -69,25 +72,25 @@ const tracedGatewayOf = async (targets: Record<string, Target>, retry: Record<st
   const harness = await startGateway({
     clock,
     telemetry,
-    adapters: Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.adapter])),
+    adapters: Object.fromEntries(Object.entries(targets).map(([name, target]) => [canonOf(name), target.adapter])),
     config: {
-      aliases: { fast: Object.keys(targets) },
-      targets: Object.fromEntries(Object.keys(targets).map((name) => [name, { model: 'system' }])),
+      chains: { [model]: Object.keys(targets).map(canonOf) },
+      targets: Object.fromEntries(Object.keys(targets).map((name) => [canonOf(name), {}])),
       retry,
       breaker: { failureThreshold: 1, openMs: 30_000 },
     },
   });
   const attemptSpansOf = async (name: string) => {
     await telemetry.forceFlush();
-    return memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat' && span.attributes['momonga.target'] === name);
+    return memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat' && span.attributes['momonga.target'] === canonOf(name));
   };
   const failedSpansOf = async (name: string) => (await attemptSpansOf(name)).filter((span) => span.status.code === ERROR_STATUS);
-  return { harness, attemptSpansOf, failedSpansOf };
+  return { harness: { ...harness, model }, attemptSpansOf, failedSpansOf };
 };
 
 const send = async (harness: Harness, path: string, body: Record<string, unknown>) => {
   let settled = false;
-  const pending = postJson(harness.client, path, body).finally(() => {
+  const pending = postJson(harness.client, path, { ...body, model: harness.model }).finally(() => {
     settled = true;
   });
   while (!settled) {
@@ -105,22 +108,22 @@ const failureOf = (response: { status: number; body: any }) => ({
   message: response.body.error?.message,
 });
 
-const breakerOf = async (harness: Harness, name: string) => (await getJson(harness.client, '/v1/momonga/health')).body.targets[name].breaker;
+const breakerOf = async (harness: Harness, name: string) => (await getJson(harness.client, '/v1/momonga/health')).body.models[canonOf(name)].breaker;
 
 const COMPACT_PATH = '/v1/responses/compact';
 const CREATE_PATH = '/v1/responses';
 const COUNT_PATH = '/v1/momonga/count_tokens';
-const compactBody = { model: 'fast', input: userInput('summarise this'), momonga: { max_summary_tokens: CAP } };
-const toolsBody = { model: 'fast', input: userInput('please read a'), tools: [readFileTool] };
+const compactBody = { input: userInput('summarise this'), momonga: { max_summary_tokens: CAP } };
+const toolsBody = { input: userInput('please read a'), tools: [readFileTool] };
 
 const causeOfRetryableFailure = async () => {
   const a = await targetOf([restarting]);
   const b = await targetOf([fulfil(CC_CAPABILITIES)]);
   const { harness } = await tracedGatewayOf({ a, b });
-  const response = await send(harness, CREATE_PATH, { model: 'fast', input: userInput('hi') });
+  const response = await send(harness, CREATE_PATH, { input: userInput('hi') });
   expect(response.status).toBe(200);
   const [cause] = response.body.momonga.fallbackCauses;
-  expect(cause.target).toBe('a');
+  expect(cause.target).toBe(canonOf('a'));
   return cause;
 };
 
@@ -147,9 +150,9 @@ describe('a refusal undoes only its own send', () => {
     expect(a.resolver.calls).toBe(3);
     expect(await failedSpansOf('a')).toHaveLength(1);
     expect(await breakerOf(harness, 'a')).toBe('open');
-    const followUp = await send(harness, CREATE_PATH, { model: 'fast', input: userInput('hi') });
+    const followUp = await send(harness, CREATE_PATH, { input: userInput('hi') });
     expect(followUp.status).toBe(200);
-    expect(followUp.body.momonga.target).toBe('b');
+    expect(followUp.body.momonga.target).toBe(canonOf('b'));
     expect(followUp.body.momonga.fallbackCauses).toEqual([expectedCause]);
   });
 
@@ -188,8 +191,8 @@ describe('a needsProbe target first resolved in an attempt fails the request wit
 });
 
 describe("narrowing's refusals carry into the attempt loop", () => {
-  const sampledImage = { model: 'fast', input: imageInput, temperature: 0.5 };
-  const sampled = { model: 'fast', input: userInput('hi'), temperature: 0.5 };
+  const sampledImage = { input: imageInput, temperature: 0.5 };
+  const sampled = { input: userInput('hi'), temperature: 0.5 };
 
   it('[A, B] A refused at sampling up front and B refused at images late answer as both refused up front', async () => {
     const reference = await tracedGatewayOf({ A: await targetOf([fulfil(SEEING_NO_SAMPLING)]), B: await targetOf([fulfil(CC_CAPABILITIES)]) });
@@ -209,8 +212,8 @@ describe("narrowing's refusals carry into the attempt loop", () => {
     const reference = await tracedGatewayOf({ A: await targetOf([fulfil(NO_SAMPLING)]), B: await targetOf([fulfil(NO_SAMPLING)]) });
     const expected = failureOf(await send(reference.harness, CREATE_PATH, sampled));
     expect(expected.code).toBe('sampling_not_accepted');
-    expect(String(expected.message)).toContain('"A"');
-    expect(String(expected.message)).toContain('"B"');
+    expect(String(expected.message)).toContain('"a/system"');
+    expect(String(expected.message)).toContain('"b/system"');
 
     const A = await targetOf([fulfil(NO_SAMPLING)]);
     const B = await targetOf([restarting, fulfil(NO_SAMPLING)]);
@@ -221,7 +224,7 @@ describe("narrowing's refusals carry into the attempt loop", () => {
 });
 
 describe('one failed attempt span per real failure, none per refusal, in compact', () => {
-  const plainCompact = { model: 'fast', input: userInput('summarise this') };
+  const plainCompact = { input: userInput('summarise this') };
 
   it('a counter failure while sizing produces exactly one failed attempt span', async () => {
     const a = await targetOf([fulfil(CC_CAPABILITIES)], (adapter) => adapter, {
@@ -270,7 +273,7 @@ describe('the admission predicate decides the summary cap and allowed_tools', ()
     const a = await targetOf([fulfil(SEEING_SMALL_CAP)]);
     const b = await targetOf([fulfil(SEEING)]);
     const { harness, attemptSpansOf } = await tracedGatewayOf({ a, b });
-    const response = await send(harness, COMPACT_PATH, { model: 'fast', input: imageInput, momonga: { max_summary_tokens: CAP } });
+    const response = await send(harness, COMPACT_PATH, { input: imageInput, momonga: { max_summary_tokens: CAP } });
     expect(response.status).toBe(200);
     expect(response.body.momonga?.fallbackFrom ?? []).not.toContain('a');
     expect(a.fake.requests).toHaveLength(0);
@@ -280,7 +283,6 @@ describe('the admission predicate decides the summary cap and allowed_tools', ()
 
   const toolNamed = (name: string) => ({ type: 'function' as const, name, parameters: { type: 'object', properties: {}, additionalProperties: false } });
   const allowedBody = {
-    model: 'fast',
     input: userInput('hi'),
     tools: [toolNamed('alpha'), toolNamed('beta'), toolNamed('gamma')],
     tool_choice: { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'alpha' }, { type: 'function', name: 'beta' }] },
@@ -294,7 +296,7 @@ describe('the admission predicate decides the summary cap and allowed_tools', ()
     expect(response.body.error ?? null).toBeNull();
     expect(response.status).toBe(200);
     if (path === CREATE_PATH) {
-      expect(response.body.momonga.target).toBe('y');
+      expect(response.body.momonga.target).toBe(canonOf('y'));
       expect(response.body.momonga.fallbackFrom ?? []).not.toContain('x');
     }
     expect(x.fake.requests).toHaveLength(0);

@@ -57,7 +57,7 @@ const fullRow = (runId: string, sessionId: string): RunFactsView => ({
   rootRunId: runId,
   sessionId,
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-  modelAlias: 'fm',
+  model: 'fm',
   mode: 'default',
   agent: 'build',
   origin: 'cli',

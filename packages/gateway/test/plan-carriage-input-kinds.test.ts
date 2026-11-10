@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CapabilityOverride } from '@momonga/protocol';
 import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import type { ScriptedAdapter } from '@momonga/testkit';
-import { postJson, readJson, startGateway } from './gateway-helpers.ts';
+import { chainOfServers, postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 const TEXT_AND_IMAGE: CapabilityOverride = { inputKinds: { content: [], tools: ['function', 'custom'] } };
 
@@ -22,11 +22,12 @@ const fileInput = [
 
 const startAlias = async (members: Record<string, CapabilityOverride>) => {
   const adapters = Object.fromEntries(Object.entries(members).map(([name, capabilities]) => [name, answering(`model-${name}`, capabilities)]));
+  const chain = chainOfServers(Object.fromEntries(Object.keys(members).map((name) => [name, { model: `model-${name}` }])));
   const harness = await startGateway({
-    adapters,
-    config: { aliases: { fast: Object.keys(members) }, targets: Object.fromEntries(Object.keys(members).map((name) => [name, { model: `model-${name}` }])) },
+    adapters: chain.keyed(adapters),
+    config: chain.config,
   });
-  return { adapters: adapters as Record<string, ScriptedAdapter>, post: async () => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: fileInput })) };
+  return { adapters: adapters as Record<string, ScriptedAdapter>, post: async () => readJson(await postJson(harness.client, '/v1/responses', { model: harness.model, input: fileInput })) };
 };
 
 describe('narrowing refuses a target whose inputKinds lack a content kind the request carries (P2 item 9, M3)', () => {

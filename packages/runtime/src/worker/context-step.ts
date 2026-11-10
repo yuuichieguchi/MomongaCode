@@ -36,6 +36,7 @@ import type { ClaimContext } from './claim-context.ts';
 import { requestKey } from '../model-key.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
 import type { WrapUpReason } from './wrap-up.ts';
+import { EXACT_MODEL } from './exact-model.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 
@@ -170,7 +171,7 @@ const offeredInputOf = (
   const input: BuildContextInput = {
     capabilities: ctx.capabilities,
     calibration: ctx.calibration,
-    model: ctx.alias,
+    model: ctx.model,
     sources: {
       systemPrompt: ctx.systemPrompt,
       tools: admittedTools === undefined ? candidates : [...admittedTools.tools, ...joined],
@@ -363,11 +364,11 @@ const deterministicCompaction = (plan: CompactionSource, guidelineVersion: numbe
 
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
-  const roleAlias = ctx.roles.compaction;
+  const roleModel = ctx.roles.compaction;
   const request: CompactRequest = {
-    model: roleAlias ?? ctx.alias,
+    model: roleModel ?? ctx.model,
     input: plan.input,
-    momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
+    momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }), ...EXACT_MODEL },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
   const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
@@ -390,7 +391,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     journal.append([
       noticeOf(
         'compaction_failed',
-        `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
+        `Compaction summary failed (${error.code}): ${error.message}${roleModel === undefined ? '' : ` [models.roles.compaction names the model ${ctx.display(roleModel)}]`}; the deterministic summary was used`,
       ),
       deterministicCompaction(plan, NO_ADOPTED_GUIDELINE),
       ...unrecordedNoticePayloads(ctx, plan.notices),

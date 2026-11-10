@@ -17,13 +17,14 @@ import {
   makeHome,
   spawnSleeper,
   writeSettings,
+  modelsOf
 } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION, inspectProcessLock } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const API_KEY_VALUE = 'momonga-test-api-key';
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'primary/system', input: userInput('hi') };
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 const completions = (fake: Awaited<ReturnType<typeof startFake>>) =>
@@ -32,7 +33,7 @@ const completions = (fake: Awaited<ReturnType<typeof startFake>>) =>
 const ccHome = async () => {
   const fake = await startFake({ scenario: 'tools-ok' });
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath) } } });
+  writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath) }) });
   return { fake, home };
 };
 
@@ -74,7 +75,7 @@ describe('startGatewayProcess', () => {
 
   it('raises ConfigError for invalid user settings, releases the lock and creates no database', async () => {
     const home = makeHome();
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
+    writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
     const paths = homePaths(home);
     const failure = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }).then(
       () => undefined,
@@ -153,7 +154,7 @@ describe('startGatewayProcess credentials', () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, {
-      models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { apiKeyEnv: 'MOMONGA_TEST_KEY' }) } },
+      models: modelsOf({ primary: ccTarget(fake.socketPath, { apiKeyEnv: 'MOMONGA_TEST_KEY' }) }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { MOMONGA_TEST_KEY: API_KEY_VALUE }), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
@@ -171,16 +172,13 @@ describe('startGatewayProcess credentials', () => {
     const backup = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, {
-      models: {
-        aliases: { fast: ['keyed', 'backup'] },
-        targets: { keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }), backup: ccTarget(backup.socketPath) },
-      },
+      models: modelsOf({ keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }), backup: ccTarget(backup.socketPath) }, { fallbackTo: ['backup'] }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, extraEnv), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(200);
-    expect(response.body.momonga.target).toBe('backup');
-    expect(response.body.momonga.fallbackFrom).toEqual(['keyed']);
+    expect(response.body.momonga.target).toBe('backup/system');
+    expect(response.body.momonga.fallbackFrom).toEqual(['keyed/system']);
     expect(completions(keyed)).toHaveLength(0);
     expect(completions(backup)).toHaveLength(1);
   });
@@ -189,7 +187,7 @@ describe('startGatewayProcess credentials', () => {
     const keyed = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, {
-      models: { aliases: { fast: ['keyed'] }, targets: { keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }) } },
+      models: modelsOf({ keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }) }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
@@ -204,14 +202,14 @@ describe('startGatewayProcess credentials', () => {
     const two = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, {
-      models: { aliases: { first: ['one'], second: ['two'] }, targets: { one: ccTarget(one.socketPath), two: ccTarget(two.socketPath) } },
+      models: modelsOf({ one: ccTarget(one.socketPath), two: ccTarget(two.socketPath) }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', { ...body, model: 'second' }))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', { ...body, model: 'two/system' }))).status).toBe(200);
     expect(completions(one)).toHaveLength(0);
     expect(completions(two)).toHaveLength(1);
-    expect((await readJson(await postJson(client, '/v1/responses', { ...body, model: 'first' }))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', { ...body, model: 'one/system' }))).status).toBe(200);
     expect(completions(one)).toHaveLength(1);
     expect(completions(two)).toHaveLength(1);
   });

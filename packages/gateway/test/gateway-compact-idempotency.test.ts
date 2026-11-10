@@ -50,7 +50,7 @@ const createGatedCompactAdapter = (summaries: Array<string | Error>, gated = tru
   };
 };
 
-const compactBody = { model: 'fast', input: userInput('summarise this conversation') };
+const compactBody = { model: 'scripted/scripted-primary', input: userInput('summarise this conversation') };
 const key = (value: string) => ({ 'idempotency-key': value });
 const DETACHED_MAX_MS = 1_800_000;
 const JOINER_DEADLINE_MS = 60_000;
@@ -68,7 +68,7 @@ const summaryOf = (resource: { output: Array<{ type: string; encrypted_content?:
 describe('gateway.db migration v2', () => {
   it('creates the compactions table with key, digest, resource_json, created_at and expires_at', async () => {
     const primary = createGatedCompactAdapter([]);
-    const { dbPath } = await startGateway({ adapters: { primary } });
+    const { dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const db = new DatabaseSync(dbPath, { readOnly: true });
     try {
       const columns = db.prepare('PRAGMA table_info(compactions)').all() as Array<{ name: string; pk: number }>;
@@ -85,7 +85,7 @@ describe('gateway.db migration v2', () => {
 describe('POST /v1/responses/compact with Idempotency-Key', () => {
   it('returns the stored resource for the same key and body without a second upstream call', async () => {
     const primary = createGatedCompactAdapter(['first summary', 'second summary'], false);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const first = await compact(client, 'cp-1');
     const second = await compact(client, 'cp-1');
     expect(first.status).toBe(200);
@@ -98,16 +98,16 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('treats a key-order-only difference in the body as the same digest', async () => {
     const primary = createGatedCompactAdapter(['canonical', 'unexpected'], false);
-    const { client } = await startGateway({ adapters: { primary } });
-    const first = await compact(client, 'cp-2', '{"model":"fast","input":"hello"}');
-    const second = await compact(client, 'cp-2', '{"input":"hello","model":"fast"}');
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const first = await compact(client, 'cp-2', '{"model":"scripted/scripted-primary","input":"hello"}');
+    const second = await compact(client, 'cp-2', '{"input":"hello","model":"scripted/scripted-primary"}');
     expect(second.body).toEqual(first.body);
     expect(primary.compactSignals).toHaveLength(1);
   });
 
   it('joins a concurrent duplicate onto the one in-flight call', async () => {
     const primary = createGatedCompactAdapter(['shared summary', 'unexpected']);
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release());
     const first = compact(client, 'cp-3');
     await waitFor(() => primary.compactSignals.length === 1, { description: 'first compact call' });
@@ -125,9 +125,9 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('rejects the same key with a different body with 422 idempotency_key_reused', async () => {
     const primary = createGatedCompactAdapter(['first', 'unexpected'], false);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await compact(client, 'cp-4')).status).toBe(200);
-    const reused = await compact(client, 'cp-4', { model: 'fast', input: userInput('a different conversation') });
+    const reused = await compact(client, 'cp-4', { model: 'scripted/scripted-primary', input: userInput('a different conversation') });
     expect(reused.status).toBe(422);
     expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
     expect(primary.compactSignals).toHaveLength(1);
@@ -135,7 +135,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('does not store a failed result, so a retry with the key calls upstream again', async () => {
     const primary = createGatedCompactAdapter([new Error('compact blew up'), 'recovered'], false);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await compact(client, 'cp-5')).status).not.toBe(200);
     const retried = await compact(client, 'cp-5');
     expect(retried.status).toBe(200);
@@ -145,7 +145,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('keeps running a keyed compaction after its client disconnects and stores the result', async () => {
     const primary = createGatedCompactAdapter(['detached summary', 'unexpected']);
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release());
     const raw = await openRawPost(socketPath, '/v1/responses/compact', compactBody, { headers: key('cp-6') });
     await waitFor(() => primary.compactSignals.length === 1, { description: 'compact call started' });
@@ -163,7 +163,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('still aborts an unkeyed compaction when its client disconnects', async () => {
     const primary = createGatedCompactAdapter(['never']);
-    const { socketPath } = await startGateway({ adapters: { primary } });
+    const { socketPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const raw = await openRawPost(socketPath, '/v1/responses/compact', compactBody);
     await waitFor(() => primary.compactSignals.length === 1);
     raw.socket.destroy();
@@ -173,13 +173,13 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('serves the stored resource after a gateway restart on the same database', async () => {
     const primary = createGatedCompactAdapter(['durable summary'], false);
-    const first = await startGateway({ adapters: { primary } });
+    const first = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const original = await compact(first.client, 'cp-7');
     expect(original.status).toBe(200);
     await first.gateway.close();
 
     const successor = createGatedCompactAdapter(['must not run'], false);
-    const second = await startGateway({ adapters: { primary: successor }, dir: first.dir, clock: first.clock });
+    const second = await startGateway({ adapters: { 'scripted/scripted-primary': successor }, dir: first.dir, clock: first.clock });
     const replayed = await compact(second.client, 'cp-7');
     expect(replayed.status).toBe(200);
     expect(replayed.body).toEqual(original.body);
@@ -188,7 +188,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('expires a stored compaction after idempotency.ttlMs', async () => {
     const primary = createGatedCompactAdapter(['before expiry', 'after expiry'], false);
-    const { client, clock } = await startGateway({ adapters: { primary }, config: { idempotency: { ttlMs: 60_000 } } });
+    const { client, clock } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { idempotency: { ttlMs: 60_000 } } });
     await compact(client, 'cp-8');
     clock.advance(59_999);
     expect(summaryOf((await compact(client, 'cp-8')).body)).toBe('before expiry');
@@ -199,7 +199,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('validates the stored resource on read and names the compactions table and key when it is malformed', async () => {
     const primary = createGatedCompactAdapter(['stored', 'unexpected'], false);
-    const { client, dbPath } = await startGateway({ adapters: { primary } });
+    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     await compact(client, 'cp-9');
     const db = new DatabaseSync(dbPath);
     try {
@@ -216,7 +216,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('keeps compactions without a key independent', async () => {
     const primary = createGatedCompactAdapter(['one', 'two'], false);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const one = await readJson(await postJson(client, '/v1/responses/compact', compactBody));
     const two = await readJson(await postJson(client, '/v1/responses/compact', compactBody));
     expect(summaryOf(one.body)).toBe('one');
@@ -256,7 +256,7 @@ describe('POST /v1/momonga/responses/cancel for keyed compactions', () => {
   it('aborts the in-flight compaction upstream, stores nothing, and a re-request runs fresh', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [{ kind: 'hang' }] });
     const primary = createUpstreamCompactAdapter(fake.socketPath);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => fake.close());
     const pending = compact(client, 'cp-cancel');
     await waitFor(() => fake.openConnections() === 1 && fake.requests.length === 1, { description: 'upstream compact call open' });
@@ -301,7 +301,7 @@ const createAbortIgnoringCompactAdapter = (): ProviderAdapter & { readonly signa
 describe('a cancelled keyed compaction stays tracked until it settles', () => {
   const startCancelled = async (keyValue: string) => {
     const primary = createAbortIgnoringCompactAdapter();
-    const harness = await startGateway({ adapters: { primary }, config: { closeGraceMs: 750 } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: 750 } });
     registerCleanup(() => primary.release());
     const raw = await openRawPost(harness.socketPath, '/v1/responses/compact', compactBody, { headers: key(keyValue) });
     await waitFor(() => primary.signals.length === 1, { description: 'compact call started' });
@@ -342,11 +342,11 @@ describe('a cancelled keyed compaction stays tracked until it settles', () => {
 describe('compact digest over the parsed request', () => {
   it('shares one stored result between bodies differing only in key order and whitespace, including nested items', async () => {
     const primary = createGatedCompactAdapter(['parsed digest', 'unexpected'], false);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const compact1 =
-      '{"model":"fast","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"instructions":"be brief"}';
+      '{"model":"scripted/scripted-primary","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}],"instructions":"be brief"}';
     const compact2 =
-      '{\n  "instructions" : "be brief",\n  "input" : [ { "content" : [ { "text" : "hi", "type" : "input_text" } ], "role" : "user", "type" : "message" } ],\n  "model" : "fast"\n}';
+      '{\n  "instructions" : "be brief",\n  "input" : [ { "content" : [ { "text" : "hi", "type" : "input_text" } ], "role" : "user", "type" : "message" } ],\n  "model" : "scripted/scripted-primary"\n}';
     const first = await compact(client, 'cp-gs1', compact1);
     const second = await compact(client, 'cp-gs1', compact2);
     expect(first.status).toBe(200);

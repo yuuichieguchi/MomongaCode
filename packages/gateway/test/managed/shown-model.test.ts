@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, homePaths, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, homePaths, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { saveFakeFmRecord } from '../fm-record-support.ts';
 import { makeReport } from '../report-fixture.ts';
@@ -24,10 +24,10 @@ const traceBytesUnder = (root: string): string => {
 const servedOnce = async (target: Record<string, unknown>, recorded: boolean): Promise<string> => {
   const fm = await createFakeFm({ dir: makeDir() });
   const home = makeHome();
-  writeSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native', ...target } }, aliases: { default: ['apple'] } } });
+  writeSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, toolCalling: 'native', ...target } }) });
   if (recorded) await saveFakeFmRecord(home, fm.binaryPath, makeReport(1, 1), typeof target['model'] === 'string' ? target['model'] : undefined);
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec } as GatewayProcessOptions);
-  const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hello') }));
+  const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'apple/system', input: userInput('hello') }));
   expect(answered.status).toBe(200);
   await handle.close();
   return traceBytesUnder(homePaths(home).root);

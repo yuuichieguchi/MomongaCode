@@ -1,19 +1,19 @@
 import type { RuntimeStore } from '@momonga/store';
 
-export type AliasChainInput = {
+export type ModelChainInput = {
   runId: string;
   sessionId: string;
   pinned: string;
   current: string;
 };
 
-export const aliasChainReaches = (store: Pick<RuntimeStore, 'readRunEventsOfTypes' | 'readModelChanges'>, input: AliasChainInput): boolean => {
+export const modelChainReaches = (store: Pick<RuntimeStore, 'readRunEventsOfTypes' | 'readModelChanges'>, input: ModelChainInput): boolean => {
   if (input.pinned === input.current) return true;
   const firstStart = store.readRunEventsOfTypes(input.runId, ['run.started'])[0];
   if (firstStart === undefined) return false;
-  let alias = input.pinned;
+  let model = input.pinned;
   for (const event of store.readModelChanges(input.sessionId, firstStart.id)) {
-    if (event.previousModelAlias === alias) alias = event.modelAlias;
+    if (event.previousModel === model) model = event.model;
   }
-  return alias === input.current;
+  return model === input.current;
 };

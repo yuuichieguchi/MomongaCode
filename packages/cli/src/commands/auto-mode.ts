@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { autoModeNotice } from '@momonga/protocol';
+import { NO_MODEL_CONNECTED_TEXT, autoModeNotice, displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -29,7 +29,7 @@ export type AutoModeCheckPorts = {
   write(text: string): void;
 };
 
-export type AutoModeCheckOptions = { classifier?: string; agent: string; signal?: AbortSignal };
+export type AutoModeCheckOptions = { classifier?: string; agent?: string; signal?: AbortSignal };
 
 export type AutoModeCheckOutcome = { measurement: 'passed' | 'did_not_pass' | 'unmeasurable' };
 
@@ -39,26 +39,33 @@ export type AutoModeStatusOptions = { classifier?: string; surface: AutoModeSurf
 
 export type AutoModeStatusOutcome = { measurement: 'passed' | 'did_not_pass' | 'not_measured' };
 
-const classifierOf = (configured: string | undefined, named: string | undefined): string => {
-  const classifier = named ?? configured;
-  if (classifier === undefined) throw new AutoModeCheckError('no classifier alias: name one, or set autoMode.classifier in the user settings');
-  return classifier;
+const typedModelOf = (models: UserModels, text: string): string => {
+  const { views } = models.resolved;
+  const resolution = resolveTypedModelRef(typedModelText(text), views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views);
+  return resolution.model.canon;
 };
 
-const requireDefinedClassifier = (models: UserModels, classifier: string): void => {
-  const members = models.resolved.aliases[classifier];
-  if (members === undefined) throw new AutoModeCheckError(`the alias ${classifier} is not defined in models.aliases`);
-  for (const name of [members].flat()) {
-    if (models.resolved.targets[name] === undefined) throw new AutoModeCheckError(`the alias ${classifier} names the target ${name}, which is not defined`);
-  }
+const classifierOf = (models: UserModels, configured: string | undefined, named: string | undefined): string => {
+  if (named !== undefined) return typedModelOf(models, named);
+  if (configured === undefined) throw new AutoModeCheckError('no classifier model: name one, or set autoMode.classifier in the user settings');
+  return configured;
 };
+
+const agentOf = (models: UserModels, named: string | undefined): string => {
+  if (named !== undefined) return typedModelOf(models, named);
+  if (models.resolved.start === undefined) throw new AutoModeCheckError(NO_MODEL_CONNECTED_TEXT);
+  return models.resolved.start;
+};
+
+const displayOf = (models: UserModels, canon: string): string => displayMapOf(models.resolved.views).get(canon) ?? canon;
 
 const classifierKeyOf = async (models: UserModels, classifier: string, platform: NodeJS.Platform, given: AbortSignal | undefined): Promise<AutoFitKey> => {
   const bound = AbortSignal.timeout(STARTUP_TIMEOUT_MS);
   const signal = given === undefined ? bound : AbortSignal.any([given, bound]);
   const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { exec: createHostExec(), hashes: createBinaryHashCache(), platform, signal });
   const result = autoFitKeyOf(models.resolved, classifier, await classifierCodeOf(), probeKeys);
-  if (result.kind === 'unknown') throw new AutoModeCheckError(`the classifier target ${result.target} has no probe key: its ${probeKeyComponentLabel(result.component)} could not be read (${result.reason})`);
+  if (result.kind === 'unknown') throw new AutoModeCheckError(`the classifier model ${displayOf(models, result.target)} has no probe key: its ${probeKeyComponentLabel(result.component)} could not be read (${result.reason})`);
   return result.key;
 };
 
@@ -77,13 +84,14 @@ const progressOf = (dataset: GoldenDataset, write: (text: string) => void): ((ca
 export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoModeCheckOptions): Promise<AutoModeCheckOutcome> => {
   const { signal } = options;
   signal?.throwIfAborted();
-  const classifier = classifierOf(ports.configuredClassifier, options.classifier);
-  requireDefinedClassifier(ports.models, classifier);
+  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
+  const agent = agentOf(ports.models, options.agent);
+  const classifierName = displayOf(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
-  const aliases = [options.agent, classifier];
-  const relay = needsPlanRelay(ports.models, aliases) ? await readPlanRelay(await currentSocketResolver(momongaPaths(ports.home), 'gateway')(), signal) : undefined;
-  const settings = liveSettingsFor(ports.models, aliases, relay);
+  const pinned = [agent, classifier];
+  const relay = needsPlanRelay(ports.models, pinned) ? await readPlanRelay(await currentSocketResolver(momongaPaths(ports.home), 'gateway')(), signal) : undefined;
+  const settings = liveSettingsFor(ports.models, pinned, relay);
   const credentialValues = await readCredentials(ports.effects, settings.credentials, signal ?? new AbortController().signal);
   const swept = await sweepStaleHomes(ports.effects);
   if (swept.unreadable > 0) ports.write(unreadableHomesNotice(swept.unreadable));
@@ -97,10 +105,10 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   });
   const base = { models: settings.models, ...(settings.sandbox === undefined ? {} : { sandbox: settings.sandbox }) };
   const progress = progressOf(dataset, ports.write);
-  ports.write(`auto-mode check: classifier ${classifier}, agent ${options.agent}, ${dataset.cases.reduce((total, golden) => total + golden.runs, 0)} runs, each in its own temporary home\n`);
+  ports.write(`auto-mode check: classifier ${classifierName}, agent ${displayOf(ports.models, agent)}, ${dataset.cases.reduce((total, golden) => total + golden.runs, 0)} runs, each in its own temporary home\n`);
   try {
     const report = await runDataset(dataset, {
-      modelAlias: options.agent,
+      modelAlias: agent,
       open: async (golden, runIndex) => {
         signal?.throwIfAborted();
         const home = await homes.open({
@@ -112,7 +120,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
       },
       onTranscript: async (run) => progress(run.caseId, run.runIndex),
     });
-    const record = autoGateRecordOf(report, { key, agentAlias: options.agent, recordedAt: new Date(ports.now()).toISOString(), version: ports.version });
+    const record = autoGateRecordOf(report, { key, agentModel: agent, recordedAt: new Date(ports.now()).toISOString(), version: ports.version });
     ports.write(`${formatReport(report)}\n`);
     if (record === undefined) {
       ports.write('the measurement could not be made: no decision of a labelled kind was observed, so no record was written\n');
@@ -122,8 +130,8 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
     const passed = autoGatePasses(record);
     ports.write(
       passed
-        ? `classifier ${classifier} passed: false allows ${record.falseAllow.successes}/${record.falseAllow.trials}, upper bound ${(record.falseAllow.high * 100).toFixed(1)}%\n`
-        : `classifier ${classifier} did not pass the measurement; auto mode stays selectable, and this is information, not a block\n`,
+        ? `classifier ${classifierName} passed: false allows ${record.falseAllow.successes}/${record.falseAllow.trials}, upper bound ${(record.falseAllow.high * 100).toFixed(1)}%\n`
+        : `classifier ${classifierName} did not pass the measurement; auto mode stays selectable, and this is information, not a block\n`,
     );
     return { measurement: passed ? 'passed' : 'did_not_pass' };
   } finally {
@@ -132,7 +140,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 };
 
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
-  const classifier = classifierOf(ports.configuredClassifier, options.classifier);
+  const classifier = classifierOf(ports.models, ports.configuredClassifier, options.classifier);
   const key = await classifierKeyOf(ports.models, classifier, ports.platform, undefined);
   const view = autoFitViewOf(classifier, key, await readAutoFitRecord(autoFitDirectoryOf(ports.home), key));
   ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);

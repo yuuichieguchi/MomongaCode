@@ -141,7 +141,7 @@ describe('open-responses relay through the gateway: tool calls', () => {
       script: [openResponsesTextReply(['x'])],
       capabilities: { ...REMOTE_CAPABILITIES, toolCalling: 'none' },
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', tools: [readFileTool], input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', tools: [readFileTool], input: userInput('hi') }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported' });
     expect(gateway.fake.requests).toEqual([]);
@@ -198,7 +198,7 @@ describe('open-responses relay through the gateway: terminal semantics', () => {
       script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])])],
       config: { retry: { totalWaitMs: 1 } },
     });
-    const reply = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hello') }));
+    const reply = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', stream: true, input: userInput('hello') }));
     expect(reply.status).toBe(502);
     expect(reply.body.error).toMatchObject({ code: 'server_error', message: expect.stringContaining('the model crashed') });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -272,7 +272,7 @@ describe('open-responses relay through the gateway: failures', () => {
     const gateway = await startOpenResponsesGateway({
       script: [openResponsesStream([openResponsesErrorFrame('invalid_request', 'bad_input', 'unknown parameter')], { done: false })],
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'bad_input' });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -299,7 +299,7 @@ describe('open-responses relay through the gateway: failures', () => {
       script: [openResponsesErrorReply(429, 'too_many_requests', 'rate_limited', 'slow down', { 'retry-after': '7' }), openResponsesErrorReply(429, 'too_many_requests', 'rate_limited', 'slow down', { 'retry-after': '7' })],
       config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
-    const pending = postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    const pending = postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') });
     let settled = false;
     const settle = (): void => {
       settled = true;
@@ -319,7 +319,7 @@ describe('open-responses relay through the gateway: failures', () => {
 
   it('answers an authentication failure with 401 authentication_failed and does not retry', async () => {
     const gateway = await startOpenResponsesGateway({ apiKey: BEARER_KEY, sentKey: 'or-wrong-key-00000000000000', script: [openResponsesTextReply(['unreachable'])] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(401);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'authentication_failed' });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -330,7 +330,7 @@ describe('open-responses relay through the gateway: failures', () => {
 describe('open-responses relay through the gateway: compaction', () => {
   it('summarises through the same streaming path', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['The user asked for X.'])] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
     expect(response.status).toBe(200);
     expect(response.body.output[0].type).toBe('compaction');
     const body = gateway.fake.requests[0]?.body as { instructions: string; input: Array<{ content: string }> };
@@ -340,7 +340,7 @@ describe('open-responses relay through the gateway: compaction', () => {
 
   it('estimates the usage of a summary from the prompt parts alone when the upstream reports none', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['The user asked for X.'], null)] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
     const sent = gateway.fake.requests[0]?.body as { instructions: string; input: unknown[]; max_output_tokens: number; include: string[] };
     expect(sent.max_output_tokens).toBeGreaterThan(0);
     const expected = wireTokensOf({ instructions: sent.instructions, input: sent.input });

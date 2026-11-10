@@ -142,20 +142,21 @@ describe('sessions', () => {
     expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ mcpServers: servers });
   });
 
-  it('switches the model alias of a session with a PATCH that carries nothing else, and returns the session', async (context) => {
-    const { client, seen } = await serve(context, () => json(200, { session: { ...SESSION, modelAlias: 'fm-large' } }));
+  it('switches the model of a session with a PATCH that carries nothing else, and returns the session', async (context) => {
+    const { client, seen } = await serve(context, () => json(200, { session: { ...SESSION, model: 'apple/fm-large' } }));
 
-    const session = await client.setModelAlias('session-1', 'fm-large');
+    const session = await client.setModel('session-1', 'fm-large');
 
     expect(`${seen[0]?.method} ${seen[0]?.url}`).toBe('PATCH /v1/sessions/session-1');
-    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ modelAlias: 'fm-large' });
-    expect(session.modelAlias).toBe('fm-large');
+    expect(JSON.parse(seen[0]?.body ?? '')).toEqual({ model: 'fm-large' });
+    expect(session.model).toBe('apple/fm-large');
   });
 
-  it('keeps the refusal of an alias the gateway does not list', async (context) => {
-    const { client } = await serve(context, () => json(400, { error: { type: 'invalid_request_error', code: 'invalid_request', message: 'unknown model alias nope', param: 'modelAlias' } }));
+  it('keeps the refusal of a model that is not configured', async (context) => {
+    const refusal = 'The model "nope" is not configured. Configured models: fm-large.';
+    const { client } = await serve(context, () => json(400, { error: { type: 'invalid_request_error', code: 'invalid_request', message: refusal, param: 'model' } }));
 
-    await expect(client.setModelAlias('session-1', 'nope')).rejects.toMatchObject({ status: 400, reason: expect.stringContaining('unknown model alias nope') });
+    await expect(client.setModel('session-1', 'nope')).rejects.toMatchObject({ status: 400, reason: refusal });
   });
 });
 

@@ -5,8 +5,8 @@ import { createFakeClock, createScriptedAdapter, textResponseEvents, usageOf } f
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 
 const aliasConfig = {
-  aliases: { fast: ['primary', 'secondary'] },
-  targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+  chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+  targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
   retry: { maxAttempts: 1, totalWaitMs: 1 },
 };
 
@@ -16,12 +16,12 @@ describe('a call answered by a target other than the first of its alias', () => 
     const secondary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-secondary', chunks: ['from secondary'], usage: usageOf(9, 3) }) }],
     });
-    const { client } = await startGateway({ adapters: { primary, secondary }, config: aliasConfig });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary }, config: aliasConfig });
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
 
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
-    expect(response.body.momonga.fallbackCauses).toEqual([{ target: 'primary', code: 'upstream_error', message: 'primary is down' }]);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
+    expect(response.body.momonga.fallbackCauses).toEqual([{ target: 'scripted/scripted-primary', name: 'scripted-primary', code: 'upstream_error', message: 'primary is down' }]);
   });
 
   it('records the target on every chat span and the causes on the span of the answering call', async () => {
@@ -39,18 +39,18 @@ describe('a call answered by a target other than the first of its alias', () => 
     const secondary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-secondary', chunks: ['from secondary'], usage: usageOf(9, 3) }) }],
     });
-    const { client } = await startGateway({ adapters: { primary, secondary }, clock, telemetry, config: aliasConfig });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary }, clock, telemetry, config: aliasConfig });
 
-    await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }));
+    await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } }));
     await telemetry.forceFlush();
 
     const chats = memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat');
-    const failed = chats.find((span) => span.attributes['momonga.target'] === 'primary');
-    const answered = chats.find((span) => span.attributes['momonga.target'] === 'secondary');
+    const failed = chats.find((span) => span.attributes['momonga.target'] === 'scripted/scripted-primary');
+    const answered = chats.find((span) => span.attributes['momonga.target'] === 'scripted/scripted-secondary');
     expect(failed?.attributes['error.type']).toBe('server_error');
     expect(failed?.attributes['momonga.failure_message']).toBe('primary is down');
     expect(answered?.attributes['momonga.fallback_causes']).toBe(
-      JSON.stringify([{ target: 'primary', code: 'upstream_error', message: 'primary is down' }]),
+      JSON.stringify([{ target: 'scripted/scripted-primary', name: 'scripted-primary', code: 'upstream_error', message: 'primary is down' }]),
     );
     expect(failed?.attributes['momonga.fallback_causes']).toBeUndefined();
   });

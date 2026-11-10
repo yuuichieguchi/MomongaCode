@@ -80,10 +80,10 @@ describe('toolUsageWindowOf', () => {
     env.clock.advance(1);
     const root = env.enqueue('Delegate', { history: 'fresh' });
     const rootClaim = await env.seed(root.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Read', 'Glob', 'Grep'])], 'hold');
-    const child = env.store.createChildRun({ parentRunId: root.id, parentCallId: 'call_child', input: 'Search', pins: {}, modelAlias: 'fm' });
+    const child = env.store.createChildRun({ parentRunId: root.id, parentCallId: 'call_child', input: 'Search', pins: {}, model: 'fm' });
     if (child.kind !== 'created') throw new Error(`child run was not created: ${child.kind}`);
     const childClaim = await env.seed(child.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Grep']), called('call_child_grep', 'Grep')], 'hold');
-    const grandchild = env.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'call_grandchild', input: 'List', pins: {}, modelAlias: 'fm' });
+    const grandchild = env.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'call_grandchild', input: 'List', pins: {}, model: 'fm' });
     if (grandchild.kind !== 'created') throw new Error(`grandchild run was not created: ${grandchild.kind}`);
     const grandchildClaim = await env.seed(grandchild.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Glob']), called('call_grandchild_glob', 'Glob')], 'hold');
     expect((await env.store.transition(grandchildClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');

@@ -6,7 +6,7 @@ import type { EndpointKey } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -14,7 +14,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const launchWith = async (target: Record<string, unknown>) => {
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: target } } });
+  writeSettings(home, { models: modelsOf({ local: target }) });
   const measured: EndpointKey[] = [];
   const pending = <T,>(key: EndpointKey): Promise<T> => {
     measured.push(key);

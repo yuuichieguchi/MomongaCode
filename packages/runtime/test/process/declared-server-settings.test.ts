@@ -5,13 +5,12 @@ import { launchRuntime, prepareStack } from './run-helpers.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('the runtime reads settings that declare a server (design-managed-servers 19.12, 19.14 item 4, reader R10; R-S19-24)', () => {
-  it('starts and answers health with a target of a declared server in the user settings', async () => {
+  it('starts and answers health with a model of a declared server in the user settings', async () => {
     const stack = await prepareStack();
     stack.settings({
       models: {
         servers: { loom: { command: '/opt/loom/bin/loom-server', args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { workbench: { adapter: 'managed', server: 'loom', model: 'fake-1' } },
-        aliases: { default: ['workbench'] },
+        connections: [{ adapter: 'managed', server: 'loom', models: [{ id: 'fake-1' }] }],
       },
     });
     const launched = await launchRuntime(stack.temp);

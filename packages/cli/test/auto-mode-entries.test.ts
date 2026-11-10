@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EntryIo } from '@momonga/foundation';
-import { RUNTIME_DEFAULTS } from '@momonga/runtime';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { DEFAULT_SLASH_COMMANDS } from '../src/tui/commands/index.ts';
@@ -102,9 +101,9 @@ describe('momonga auto-mode check and status', () => {
     expect(lastOptions(spies.check)['signal']).toBe(interrupt);
   });
 
-  it('defaults the agent outside the TUI to the runtime default model alias, and leaves the classifier to the settings', async () => {
+  it('leaves the agent outside the TUI to the model new sessions start with, and the classifier to the settings', async () => {
     await programWith(new AbortController().signal).parseAsync(['auto-mode', 'check'], { from: 'user' });
-    expect(lastOptions(spies.check)['agent']).toBe(RUNTIME_DEFAULTS.modelAlias);
+    expect(lastOptions(spies.check)['agent']).toBeUndefined();
     expect(lastOptions(spies.check)['classifier']).toBeUndefined();
   });
 

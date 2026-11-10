@@ -13,7 +13,7 @@ export type RunInfo = {
   deadlineAt?: number;
   step: number;
   tokensTotal: number;
-  modelAlias: string;
+  model: string;
   mode: PermissionMode;
   agent: string;
   origin: string;

@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
+import type { UserModels } from '@momonga/config';
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
-import { FM_SERVER } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+import { userModelsOf } from './user-models.ts';
 import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
 
 vi.mock('@momonga/runtime', () => {
@@ -25,39 +25,38 @@ const SCRIPTED_ANSWER = { target: 'scripted', adapter: 'chat-completions', upstr
 
 const CALLER_CODE_DIGEST = 'a'.repeat(64);
 
-const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
+const DECLARED_CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
+
+const PINNED = 'p/m';
+const OTHER = 'p/other';
+
+type Entry = Record<string, unknown>;
+
+const upstream = (connection: Entry = {}, entry: Entry = {}): Entry => ({
   adapter: 'chat-completions',
-  model: 'm',
-  toolCalling: 'native',
   provider: 'p',
   baseUrl: 'https://upstream.invalid/v1',
   apiKeyEnv: 'UPSTREAM_KEY',
-  billing: 'metered',
-  capabilities: {
-    contextWindow: 8192,
-    maxOutputTokens: 1024,
-    structuredOutput: 'none',
-    streaming: true,
-    stopSequences: true,
-    imageInput: false,
-    parallelToolCalls: false,
-    schemaDialect: 'json-schema-2020-12',
-    tokenCounting: 'estimated',
-    usageReported: true,
-    source: 'config',
-    maxConcurrency: 4,
-  },
-  maxConcurrency: 4,
-  admissionTimeoutMs: 30000,
-  ...overrides,
+  ...connection,
+  models: [
+    { id: 'm', capabilities: DECLARED_CAPABILITIES, ...entry },
+    { id: 'other', capabilities: DECLARED_CAPABILITIES },
+  ],
 });
 
-const declaredTarget = { adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', apiKeyEnv: 'UPSTREAM_KEY', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } as const;
+const userModels = (connection: Entry = upstream()): UserModels => userModelsOf({ connections: [connection] });
 
-const userModels = (): UserModels => ({
-  declared: { aliases: { default: ['t'], other: ['u'] }, targets: { t: declaredTarget, u: { ...declaredTarget, model: 'other' } } },
-  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {}, billingChanges: [], headersTimeoutMs: 300_000, idleTimeoutMs: 300_000, servers: { [FM_SERVER.id]: FM_SERVER } },
-});
+const withSecret = (): UserModels => userModels(upstream({ apiKeyEnv: undefined, apiKeySecret: 'work-key' }));
+
+const managedFm = (): UserModels => userModels({ adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', models: [{ id: 'system' }] });
+
+const FM_MODEL = 'apple/system';
+
+const autoToolCalling = (): UserModels => userModels(upstream({}, { toolCalling: 'auto' }));
+
+const connectionsOf = (settings: { models?: { connections?: Entry[] } }): Entry[] => settings.models?.connections ?? [];
+
+const entriesOf = (connection: Entry | undefined): Entry[] => (Array.isArray(connection?.['models']) ? (connection['models'] as Entry[]) : []);
 
 const caseOf = (id: string, compaction: 'on' | 'off') => ({
   id,
@@ -126,7 +125,7 @@ const harness = (behaviour: Behaviour = {}) => {
       createSession: async () => {
         counter += 1;
         if (behaviour.failSessionOnRoot === counter) throw new Error('the runtime refused the session');
-        return { session: { id: `s${counter}`, modelAlias: 'default' } };
+        return { session: { id: `s${counter}`, model: PINNED } };
       },
       createRun: async (_session: string, text: string) => {
         order.push('run');
@@ -178,7 +177,7 @@ const harness = (behaviour: Behaviour = {}) => {
       if (value === undefined) throw new Error(`no such secret ${name}`);
       return value;
     },
-    copyProbeRecord: async (source, paths) => void probeCopies.push(`${source.target} ${source.server} ${source.binary} -> ${paths.probe}`),
+    copyProbeRecord: async (source, paths) => void probeCopies.push(`${source.model} ${source.server} ${source.binary} -> ${paths.probe}`),
     copyEndpointProbeRecord: async (probe, paths) =>
       void endpointProbeCopies.push(`${probe.endpoint} ${probe.model} -> ${paths.probe}`),
     listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? []), ...(behaviour.legacyRoots ?? [])],
@@ -242,7 +241,7 @@ const harness = (behaviour: Behaviour = {}) => {
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
   dataset: dataset(),
   seed: 1,
-  alias: 'default',
+  model: PINNED,
   models: userModels(),
   limits: { maxTotalTokens: 1000, defaultTimeoutMs: 60_000 },
   reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
@@ -296,7 +295,11 @@ describe('a live context run', () => {
     noDaemonLeft(context);
     const settings = [...context.roots.values()].map((state) => JSON.parse(state.settings ?? '{}'));
     expect(settings.map((entry) => entry.context)).toEqual([{ autoCompact: true }, { autoCompact: false }]);
-    expect(settings[0]).toEqual({ models: { aliases: { default: ['t'] }, targets: { t: declaredTarget } }, context: { autoCompact: true } });
+    expect(settings[0]).toEqual({ models: liveSettingsFor(userModels(), [PINNED]).models, context: { autoCompact: true } });
+    expect(connectionsOf(settings[0])).toEqual([expect.objectContaining({ adapter: 'chat-completions', provider: 'p', baseUrl: 'https://upstream.invalid/v1', apiKeyEnv: 'UPSTREAM_KEY' })]);
+    expect(entriesOf(connectionsOf(settings[0])[0]).map((entry) => entry['id'])).toEqual(['m']);
+    expect(settings[0].models.start).toBe(PINNED);
+    expect(settings[0].models).not.toHaveProperty('targets');
   });
 
   it('trusts the workspace and seeds the memory through the run api, with paths relative to the workspace', async () => {
@@ -373,12 +376,7 @@ describe('a live context run', () => {
 describe('the settings, credentials and probe records of a live run', () => {
   const SECRET_VALUE = 'sk-secret-value-0123456789abcdef';
 
-  const secretModels = (): UserModels => {
-    const models = userModels();
-    models.resolved.targets['t'] = target({ apiKeySecret: 'work-key' });
-    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, apiKeyEnv: undefined, apiKeySecret: 'work-key' } as never };
-    return models;
-  };
+  const secretModels = withSecret;
 
   it('writes the sandbox of the person into every case settings file', async () => {
     const context = harness();
@@ -404,45 +402,34 @@ describe('the settings, credentials and probe records of a live run', () => {
     expect(context.roots.size).toBe(0);
   });
 
-  it('copies the probe record of a managed target into every case home', async () => {
-    const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
+  it('copies the probe record of a managed server into every case home', async () => {
     const context = harness();
-    await runContextLive(context.effects, input({ models }));
-    expect(context.probeCopies).toEqual(['t fm /usr/bin/fm -> /tmp/mc-xxxxxx0/.momonga/state/probe', 't fm /usr/bin/fm -> /tmp/mc-xxxxxx1/.momonga/state/probe']);
+    await runContextLive(context.effects, input({ models: managedFm(), model: FM_MODEL }));
+    expect(context.probeCopies).toEqual([`${FM_MODEL} fm /usr/bin/fm -> /tmp/mc-xxxxxx0/.momonga/state/probe`, `${FM_MODEL} fm /usr/bin/fm -> /tmp/mc-xxxxxx1/.momonga/state/probe`]);
   });
 
-  it('names the endpoint probe record of a chat-completions target with toolCalling auto', () => {
-    const models = userModels();
-    models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
-    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
-    const settings = liveSettingsFor(models, ['default']);
+  it('names the endpoint probe record of an OpenAI-compatible model with toolCalling auto', () => {
+    const settings = liveSettingsFor(autoToolCalling(), [PINNED]);
     expect(settings.endpointProbes).toEqual([{ endpoint: 'https://upstream.invalid/v1', model: 'm' }]);
-    expect(liveSettingsFor(userModels(), ['default']).endpointProbes).toEqual([]);
+    expect(liveSettingsFor(userModels(), [PINNED]).endpointProbes).toEqual([]);
   });
 
-  it('copies the endpoint probe record of an auto target into every case home', async () => {
-    const models = userModels();
-    models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
-    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
+  it('copies the endpoint probe record of an auto model into every case home', async () => {
     const context = harness();
-    await runContextLive(context.effects, input({ models }));
+    await runContextLive(context.effects, input({ models: autoToolCalling() }));
     expect(context.endpointProbeCopies).toEqual([
       'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx0/.momonga/state/probe',
       'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx1/.momonga/state/probe',
     ]);
   });
 
-  it('copies the endpoint probe record of an ollama target into every case home', async () => {
-    const models = userModels();
-    models.resolved.targets['t'] = { ...target(), adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', model: 'qwen3' } as never;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } as never };
+  it('copies the endpoint probe record of an Ollama model into every case home', async () => {
+    const models = userModels({ adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', models: [{ id: 'qwen3', capabilities: DECLARED_CAPABILITIES }] });
     const context = harness();
-    await runContextLive(context.effects, input({ models }));
+    await runContextLive(context.effects, input({ models, model: 'ollama/qwen3:latest' }));
     expect(context.endpointProbeCopies).toEqual([
-      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx0/.momonga/state/probe',
-      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx1/.momonga/state/probe',
+      'http://127.0.0.1:11434 qwen3:latest -> /tmp/mc-xxxxxx0/.momonga/state/probe',
+      'http://127.0.0.1:11434 qwen3:latest -> /tmp/mc-xxxxxx1/.momonga/state/probe',
     ]);
   });
 });
@@ -547,39 +534,32 @@ describe('a home left by a CLI that was killed', () => {
 });
 
 describe('the models of a live run', () => {
-  it('copies only the target definitions the alias reaches', () => {
-    expect(liveSettingsFor(userModels(), ['other']).models).toEqual({ aliases: { other: ['u'] }, targets: { u: userModels().declared.targets?.['u'] } });
+  it('copies only the models the chain of the pinned model reaches', () => {
+    const { models } = liveSettingsFor(userModels(), [OTHER]);
+    expect(entriesOf(connectionsOf({ models })[0]).map((entry) => entry['id'])).toEqual(['other']);
+    expect(models.start).toBe(OTHER);
   });
 
-  it('replaces the secret of a target by a generated environment variable name and keeps the secret name out of the settings', () => {
-    const models = userModels();
-    models.resolved.targets['t'] = target({ apiKeySecret: 'work-key' });
-    models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, apiKeySecret: 'work-key' } as never };
-    const settings = liveSettingsFor(models, ['default']);
+  it('replaces the secret of a server by a generated environment variable name and keeps the secret name out of the settings', () => {
+    const settings = liveSettingsFor(withSecret(), [PINNED]);
     expect(settings.credentials).toEqual([{ envName: 'MOMONGA_EVAL_KEY_0', secretName: 'work-key' }]);
     expect(JSON.stringify(settings.models)).not.toContain('work-key');
-    expect(settings.models.targets?.['t']).toMatchObject({ apiKeyEnv: 'MOMONGA_EVAL_KEY_0' });
+    expect(connectionsOf(settings)[0]).toMatchObject({ apiKeyEnv: 'MOMONGA_EVAL_KEY_0' });
   });
 
-  it('names the managed targets whose probe record a case needs, with the server, binary and model the probe key is read from', () => {
-    const models = userModels();
-    models.resolved.targets['t'] = { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
-    models.declared.targets = { ...models.declared.targets, t: { adapter: 'managed', server: 'fm' } };
-    const settings = liveSettingsFor(models, ['default']);
-    expect(settings.managedTargets).toEqual([{ target: 't', server: 'fm', binary: '/usr/bin/fm', model: 'system' }]);
-    expect(settings.models.targets?.['t']).toEqual({ adapter: 'managed', server: 'fm' });
+  it('names the managed servers whose probe record a case needs, with the server, binary and model the probe key is read from', () => {
+    const settings = liveSettingsFor(managedFm(), [FM_MODEL]);
+    expect(settings.managedTargets).toEqual([{ model: FM_MODEL, server: 'fm', binary: '/usr/bin/fm', upstream: 'system' }]);
+    expect(connectionsOf(settings)[0]).toMatchObject({ adapter: 'managed', server: 'fm', models: [expect.objectContaining({ id: 'system' })] });
   });
 
   it('carries the sandbox the person set, and none when the person set none', () => {
-    expect(liveSettingsFor({ ...userModels(), sandbox: 'none' }, ['default']).sandbox).toBe('none');
-    expect(liveSettingsFor(userModels(), ['default'])).not.toHaveProperty('sandbox');
+    expect(liveSettingsFor({ ...userModels(), sandbox: 'none' }, [PINNED]).sandbox).toBe('none');
+    expect(liveSettingsFor(userModels(), [PINNED])).not.toHaveProperty('sandbox');
   });
 
-  it('refuses an unknown alias and a target that is not declared', () => {
-    expect(() => liveSettingsFor(userModels(), ['missing'])).toThrow(/alias missing is not defined/);
-    const models = userModels();
-    models.declared.targets = {};
-    expect(() => liveSettingsFor(models, ['default'])).toThrow(ContextHostError);
+  it('refuses a model that is not configured with the sentence that lists the configured models', () => {
+    expect(() => liveSettingsFor(userModels(), ['p/missing'])).toThrow(new ContextHostError('The model "p/missing" is not configured. Configured models: m, other.'));
   });
 });
 
@@ -621,7 +601,7 @@ describe('the identity a live run stamps on its transcripts', () => {
   });
 });
 
-describe('a live context run on a plan alias reads the model list of the relaying gateway (K4)', () => {
+describe('a live context run on a plan model reads the model list of the relaying gateway (K4)', () => {
   const settled = (running: Promise<unknown>): Promise<'settled'> =>
     running.then(
       () => 'settled' as const,
@@ -629,12 +609,16 @@ describe('a live context run on a plan alias reads the model list of the relayin
     );
 
   it('reads the listing once on the relay socket and gives every case home the context window and output limit of the listing', async (testContext) => {
-    const gateway = await serveModelsListing(testContext, [listingEntry('default', { [PLAN_TARGET]: LISTED_PLAN })]);
+    const gateway = await serveModelsListing(testContext, [listingEntry(PLAN_TARGET, { [PLAN_TARGET]: LISTED_PLAN })]);
     const context = harness();
-    await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath }));
+    await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), model: PLAN_TARGET, planRelaySocket: async () => gateway.socketPath }));
     expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
-    const targets = [...context.roots.values()].map((state) => (JSON.parse(state.settings ?? '{}') as { models?: { targets?: Record<string, { socketPath?: string; capabilities?: Record<string, unknown> }> } }).models?.targets?.[PLAN_TARGET]);
-    expect(targets.map((target) => ({ socketPath: target?.socketPath, contextWindow: target?.capabilities?.['contextWindow'], maxOutputTokens: target?.capabilities?.['maxOutputTokens'] }))).toEqual([
+    const written = [...context.roots.values()].map((state) => {
+      const [connection] = connectionsOf(JSON.parse(state.settings ?? '{}') as { models?: { connections?: Entry[] } });
+      const capabilities = entriesOf(connection)[0]?.['capabilities'] as Entry | undefined;
+      return { socketPath: connection?.['socketPath'], contextWindow: capabilities?.['contextWindow'], maxOutputTokens: capabilities?.['maxOutputTokens'] };
+    });
+    expect(written).toEqual([
       { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
       { socketPath: gateway.socketPath, contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS },
     ]);
@@ -644,7 +628,7 @@ describe('a live context run on a plan alias reads the model list of the relayin
     const gateway = await serveModelsListing(testContext, 'never');
     const context = harness();
     const interrupt = new AbortController();
-    const running = runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => gateway.socketPath, interrupt: interrupt.signal }));
+    const running = runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), model: PLAN_TARGET, planRelaySocket: async () => gateway.socketPath, interrupt: interrupt.signal }));
     expect(await Promise.race([gateway.firstRequest, settled(running)])).toBe('requested');
     const reason = new Error('interrupted');
     interrupt.abort(reason);
@@ -657,18 +641,18 @@ describe('a live context run on a plan alias reads the model list of the relayin
     const absent = absentGatewaySocket(testContext);
     const expected = await modelsFailureOn(absent);
     const context = harness();
-    const failure = await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), planRelaySocket: async () => absent })).catch((error: unknown) => error);
+    const failure = await runContextLive(context.effects, input({ models: productWrittenPlanModels(testContext), model: PLAN_TARGET, planRelaySocket: async () => absent })).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(expected.constructor);
     expect((failure as Error).message).toBe(expected.message);
     expect(context.roots.size).toBe(0);
   });
 
-  it('asks for no relay socket and no listing when the alias has no plan target', async () => {
+  it('asks for no relay socket and no listing when the chain of the model has no plan model', async () => {
     const context = harness();
     let asked = 0;
     await runContextLive(context.effects, input({ planRelaySocket: async () => {
       asked += 1;
-      throw new Error('a run without a plan target asked for the relay socket');
+      throw new Error('a run without a plan model asked for the relay socket');
     } }));
     expect(asked).toBe(0);
   });

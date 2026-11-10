@@ -38,15 +38,15 @@ const serving = (model: string): ScriptedAdapter =>
 
 const startPair = async (first: ProviderAdapter, second: ProviderAdapter, breaker: { failureThreshold: number } = { failureThreshold: 5 }) => {
   const harness = await startGateway({
-    adapters: { first, second },
+    adapters: { 'scripted/model-first': first, 'scripted/model-second': second },
     config: {
-      aliases: { fast: ['first', 'second'] },
-      targets: { first: { model: 'model-first' }, second: { model: 'model-second' } },
+      chains: { 'scripted/model-first': ['scripted/model-first', 'scripted/model-second'] },
+      targets: { 'scripted/model-first': {}, 'scripted/model-second': {} },
       retry: { maxAttempts: 1, totalWaitMs: 1 },
       breaker,
     },
   });
-  return async () => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+  return async () => readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/model-first', input: userInput('hi') }));
 };
 
 describe('the alias walk reads fallback from the classified decision, not SKIPPABLE_CODES (P3, M4)', () => {
@@ -57,7 +57,7 @@ describe('the alias walk reads fallback from the classified decision, not SKIPPA
     const response = await post();
     expect(response.status).toBe(200);
     expect(second.calls).toHaveLength(1);
-    expect(response.body.momonga.fallbackCauses).toMatchObject([{ target: 'first', code: 'plan_rule_next' }]);
+    expect(response.body.momonga.fallbackCauses).toMatchObject([{ target: 'scripted/model-first', code: 'plan_rule_next' }]);
   });
 
   it('stops on the member when fallback is stop, even for a code that SKIPPABLE_CODES lists', async () => {
@@ -125,9 +125,9 @@ describe('a response.failed before output is decided by the adapter classifier (
         return ruled('too_many_requests', 'plan_usage_limit', { retryable: false, verdict: 'neutral', fallback: 'stop', credential: 'pause' });
       },
     };
-    const harness = await startGateway({ adapters: { only: adapter }, config: { aliases: { fast: ['only'] }, targets: { only: { model: 'upstream-model' } } } });
+    const harness = await startGateway({ adapters: { 'scripted/upstream-model': adapter }, config: { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': {} } } });
     let settled = false;
-    const pending = postJson(harness.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hi') }).then(readSse);
+    const pending = postJson(harness.client, '/v1/responses', { model: 'scripted/upstream-model', stream: true, input: userInput('hi') }).then(readSse);
     void pending.then(
       () => {
         settled = true;

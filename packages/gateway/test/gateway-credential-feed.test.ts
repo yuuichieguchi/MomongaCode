@@ -13,7 +13,7 @@ describe('credential feed', () => {
     let add: ((credential: string) => void) | undefined;
     await startGateway({
       dir,
-      adapters: { primary: adapter },
+      adapters: { 'scripted/scripted-primary': adapter },
       credentialFeed: (feed) => {
         listeningWhenSubscribed = fs.existsSync(socketPath);
         add = feed;

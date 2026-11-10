@@ -11,7 +11,7 @@ import { fatalStoreError } from './cancel-fixture.ts';
 import { deferred, within } from './deferred.ts';
 import { LEASE_MS, bodyDigest, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { MODEL_ALIAS, textStep } from './scripts.ts';
+import { MODEL_ID, textStep } from './scripts.ts';
 
 const ITEM_ID = 'msg_partial';
 
@@ -22,7 +22,7 @@ const untilAborted = (signal: AbortSignal): Promise<void> =>
   });
 
 const openingEvents = (chunks: readonly string[]): StreamEvent[] => [
-  { type: 'response.created', sequence_number: 0, response: responseResource({ id: 'resp_partial', model: MODEL_ALIAS, status: 'in_progress' }) },
+  { type: 'response.created', sequence_number: 0, response: responseResource({ id: 'resp_partial', model: MODEL_ID, status: 'in_progress' }) },
   {
     type: 'response.output_item.added',
     sequence_number: 1,

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
@@ -32,13 +32,10 @@ type Context = {
 
 let context: Context;
 
-const target = (socketPath: string) => ({
-  adapter: 'chat-completions',
-  provider: 'fake',
-  model: 'system',
-  socketPath,
-  capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
-});
+const PRIMARY = 'primary/system';
+const SECONDARY = 'secondary/system';
+
+const served = (provider: string, socketPath: string) => ({ provider, id: 'system', socketPath, capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } });
 
 beforeAll(async () => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
@@ -50,12 +47,7 @@ beforeAll(async () => {
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     path.join(root, 'settings.json'),
-    JSON.stringify({
-      models: {
-        aliases: { default: ['primary'], failover: ['primary', 'secondary'] },
-        targets: { primary: target(primary.socketPath), secondary: target(secondary.socketPath) },
-      },
-    }),
+    JSON.stringify(modelSettings({ models: [served('primary', primary.socketPath), served('secondary', secondary.socketPath)], fallback: [SECONDARY] })),
     { mode: 0o600 },
   );
   const gateway = await startGatewayProcess({
@@ -82,7 +74,7 @@ afterAll(async () => {
 describe('a silent upstream behind a real gateway and the real gateway client', () => {
   it('completes a call whose upstream is silent for longer than the client idle bound', async () => {
     const hold = context.primary.hold();
-    const pending = collect(context.client.stream(streamBody(), callOptions(fakeClock(), { idempotencyKey: 'silent-1' })));
+    const pending = collect(context.client.stream(streamBody(PRIMARY), callOptions(fakeClock(), { idempotencyKey: 'silent-1' })));
     await hold.waitForRequest();
     await delay(SILENCE_MS);
     hold.release();
@@ -92,9 +84,9 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
     expect(events.at(-1)?.type).toBe('response.completed');
   });
 
-  it('falls back to the next target after the first one stayed silent past the idle bound and then failed', async () => {
+  it('falls back to the next model of the fallback order after the first one stayed silent past the idle bound and then failed', async () => {
     const hold = context.primary.hold();
-    const pending = collect(context.client.stream({ ...streamBody(), model: 'failover' }, callOptions(fakeClock(), { idempotencyKey: 'silent-2' })));
+    const pending = collect(context.client.stream(streamBody(PRIMARY), callOptions(fakeClock(), { idempotencyKey: 'silent-2' })));
     await hold.waitForRequest();
     await delay(SILENCE_MS);
     hold.release();
@@ -103,12 +95,12 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
 
     const completed = events.at(-1);
     expect(completed?.type).toBe('response.completed');
-    expect(completed?.type === 'response.completed' ? completed.response.momonga?.fallbackFrom : undefined).toEqual(['primary']);
+    expect(completed?.type === 'response.completed' ? completed.response.momonga?.fallbackFrom : undefined).toEqual([PRIMARY]);
   });
 
   it('completes a compaction whose upstream is silent for longer than the client idle bound', async () => {
     const hold = context.primary.hold();
-    const pending = context.client.compact({ model: 'default', input: userInput('a long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-4' }));
+    const pending = context.client.compact({ model: PRIMARY, input: userInput('a long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-4' }));
     await hold.waitForRequest();
     await delay(SILENCE_MS);
     hold.release();
@@ -118,7 +110,7 @@ describe('a silent upstream behind a real gateway and the real gateway client', 
 
   it('streams the summary call to the upstream, so its liveness is per chunk', async () => {
     const before = context.primary.requests.length;
-    await context.client.compact({ model: 'default', input: userInput('another long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-5' }));
+    await context.client.compact({ model: PRIMARY, input: userInput('another long conversation') }, callOptions(fakeClock(), { idempotencyKey: 'silent-5' }));
 
     const sent = context.primary.requests.slice(before).filter((request) => request.path === '/v1/chat/completions');
     expect(sent).toHaveLength(1);

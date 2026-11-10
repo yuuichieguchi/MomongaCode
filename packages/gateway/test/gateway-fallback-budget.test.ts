@@ -9,12 +9,12 @@ const startTwo = async (primaryCalls: Parameters<typeof createScriptedAdapter>[0
   const primary = createScriptedAdapter({ timers, calls: primaryCalls });
   const secondary = createScriptedAdapter({ timers, calls: secondaryCalls });
   const harness = await startGateway({
-    adapters: { primary, secondary },
+    adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary },
     clock,
     timers,
     config: {
-      aliases: { fast: ['primary', 'secondary'] },
-      targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+      chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+      targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
       retry: BUDGET,
       breaker: BREAKER_OUT_OF_THE_WAY,
     },
@@ -39,7 +39,7 @@ describe('the budget bounds waits; the first send on a fallback target needs non
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('from secondary');
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
     expect(primary.calls).toHaveLength(1);
     expect(secondary.calls).toHaveLength(1);
   });

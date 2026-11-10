@@ -9,6 +9,7 @@ import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
 import { makeEnv, unavailableEvidenceRun } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { fakeViewsOf } from './fake-gateway.ts';
 
 const offeredTools = async (): Promise<readonly AnyTool[]> => {
   const env = await makeEnv();
@@ -46,7 +47,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
         settings: { trusted: () => env.settings.trustedValue },
-        runs: createChildRuns({ store: env.store, modelAliases: async () => ['fm'] }),
+        runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       }),
     }),
   );

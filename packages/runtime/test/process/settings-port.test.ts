@@ -44,15 +44,15 @@ describe('settings composition hooks and auto mode', () => {
 
   it('serves project hooks only once the folder is trusted and always serves the user classifier', async () => {
     const f = await makeRuntimeFixture();
-    writeUserSettings(f.temp.home, { hooks: stopHook('user-stop'), autoMode: { classifier: 'guard' } });
+    writeUserSettings(f.temp.home, { ...chatTargetSettings(DECLARED_CREDENTIAL), hooks: stopHook('user-stop'), autoMode: { classifier: 'x' } });
     writeProjectSettings(f.temp.project, { hooks: stopHook('project-stop'), autoMode: { classifier: 'attacker' } });
     const session = createSession(f.store, f.temp.project);
 
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop']);
     f.store.trust.set(f.temp.project, 'trusted');
     expect((await f.composition.settings.hooks(session)).Stop?.map((group) => group.hooks[0]?.command)).toEqual(['user-stop', 'project-stop']);
-    expect(f.composition.settings.autoModeClassifier()).toBe('guard');
-    expect((await f.composition.sessionCreateSettings(f.temp.project)).autoModeClassifier).toBe('guard');
+    expect(f.composition.settings.autoModeClassifier()).toBe('x');
+    expect((await f.composition.sessionCreateSettings(f.temp.project)).autoModeClassifier).toBe('fake/x');
   });
 
   it('serves the verification commands of the layers, the defaults when no layer names any', async () => {
@@ -72,10 +72,10 @@ describe('settings composition hooks and auto mode', () => {
     const f = await makeRuntimeFixture();
     const binary = path.join(makeDir(f.temp.home, 'bin'), 'fm');
     fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-    writeUserSettings(f.temp.home, { autoMode: { classifier: 'guard' }, models: { aliases: { guard: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary, toolCalling: 'native' } } } });
+    writeUserSettings(f.temp.home, { autoMode: { classifier: 'system' }, models: { connections: [{ adapter: 'managed', server: 'fm', binary, models: [{ id: 'system', toolCalling: 'native' }] }] } });
     const composition = runtime.createSettingsComposition({ home: f.temp.home, platform: 'aix', cache: makeCache(f.temp.home), store: f.store });
     const created = await composition.sessionCreateSettings(f.temp.project);
-    expect(created.autoModeClassifier).toBe('guard');
+    expect(created.autoModeClassifier).toBe('apple/system');
     expect(created.autoModeKey).toBeUndefined();
   });
 

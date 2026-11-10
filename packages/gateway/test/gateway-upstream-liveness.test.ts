@@ -25,22 +25,22 @@ const startSilentUpstream = async (script: FakeUpstreamReply[]) => {
   });
   registerCleanup(() => adapter.close());
   return startGateway({
-    adapters: { remote: adapter },
-    config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } },
+    adapters: { 'scripted/upstream-model': adapter },
+    config: { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } },
   });
 };
 
 describe('upstream liveness from models.headersTimeoutMs and models.idleTimeoutMs', () => {
   it('fails a request whose upstream accepts the connection and sends no headers past models.headersTimeoutMs', async () => {
     const harness = await startSilentUpstream([{ kind: 'hang' }]);
-    const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(reply.status).toBe(502);
     expect(reply.body.error.code).toBe('provider_unavailable');
   });
 
   it('answers a stream whose upstream goes silent past models.idleTimeoutMs after the opening events, before any output, with an HTTP error and no stream: opening events are not content', async () => {
     const harness = await startSilentUpstream([openingThenSilence()]);
-    const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), stream: true }));
     expect(reply.status).toBe(502);
     expect(reply.body.error.code).toBe('stream_interrupted');
   });

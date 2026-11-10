@@ -59,9 +59,9 @@ export const fmTargetBase = (target = 'fm'): Omit<ManagedTargetOptions, 'server'
   currency: FM_CURRENCY,
 });
 
-export const primed = async <Managed extends { capabilities: (target: { name: string; model: string }) => Promise<unknown> }>(managed: Promise<Managed>, target: string): Promise<Managed> => {
+export const primed = async <Managed extends { capabilities: (target: { name: string; display: string; model: string }) => Promise<unknown> }>(managed: Promise<Managed>, target: string): Promise<Managed> => {
   const ready = await managed;
-  await ready.capabilities({ name: target, model: target });
+  await ready.capabilities({ name: target, display: target, model: target });
   return ready;
 };
 

@@ -4,7 +4,7 @@ import { WORKING_FACT_KINDS, applyCapabilityOverride } from '@momonga/protocol';
 import { factKindsSentence } from '../src/adapters/shared/compact.ts';
 import type { CapabilityOverride, ToolCallingMode } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
-import { HMAC_KEY, startGateway } from './gateway-helpers.ts';
+import { HMAC_KEY, chainOfServers, startGateway } from './gateway-helpers.ts';
 import type { ConfigOverrides, Harness } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, makeAdapter } from './cc-support.ts';
 
@@ -82,19 +82,16 @@ export const ccAdapterFor = (
     capabilities: async () => applyCapabilityOverride({ ...CC_CAPABILITIES, toolCalling }, capabilities),
   });
 
+export const CC_MODEL = 'system';
+
+export const ccModelOf = (server: string): string => `${server}/${CC_MODEL}`;
+
 export const startCcGateway = (
   adapters: Record<string, ChatCompletionsAdapter>,
   config: ConfigOverrides = {},
 ): Promise<Harness> => {
-  const names = Object.keys(adapters);
-  return startGateway({
-    adapters,
-    config: {
-      aliases: { fast: names },
-      targets: Object.fromEntries(names.map((name) => [name, { model: 'system' }])),
-      ...config,
-    },
-  });
+  const chain = chainOfServers(Object.fromEntries(Object.keys(adapters).map((server) => [server, { model: CC_MODEL }])));
+  return startGateway({ adapters: chain.keyed(adapters), config: { ...chain.config, ...config } });
 };
 
 export const signedCompaction = (summary: string): { type: 'compaction'; encrypted_content: string } => {

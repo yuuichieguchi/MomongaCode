@@ -14,8 +14,8 @@ const withoutUsage = (step: ScriptStep): ScriptStep => ({
 describe('auto mode classifier reply without usage', () => {
   it('requeues the run, because the gateway delivered the reply and could not have retried it', async () => {
     const env = await makeEnv({ mode: 'auto' });
-    env.settings.classifierAlias = 'guard';
-    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
+    env.settings.classifierModel = 'guard';
+    env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
     const reply = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'ok' });
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]),

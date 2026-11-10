@@ -3,10 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
+
+const MODEL = 'fake/system';
 import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -42,14 +44,7 @@ beforeAll(async () => {
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     path.join(root, 'settings.json'),
-    JSON.stringify({
-      models: {
-        aliases: { default: ['primary'] },
-        targets: {
-          primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fake.socketPath, capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } },
-        },
-      },
-    }),
+    JSON.stringify(modelSettings({ models: [{ provider: 'fake', id: 'system', socketPath: fake.socketPath, capabilities: { contextWindow: 4096, maxOutputTokens: 1024 } }] })),
     { mode: 0o600 },
   );
   const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: GATEWAY_VERSION });
@@ -70,7 +65,7 @@ afterAll(async () => {
 describe('gateway client against a real gateway', () => {
   it('streams the response events in order and the fake receives the user input', async () => {
     const clock = fakeClock();
-    const events = await collect(context.client.stream(streamBody(), callOptions(clock, { idempotencyKey: 'real-stream-1' })));
+    const events = await collect(context.client.stream(streamBody(MODEL), callOptions(clock, { idempotencyKey: 'real-stream-1' })));
     const types = events.map((event) => event.type);
 
     expect(types.slice(0, 2)).toEqual(['response.created', 'response.in_progress']);
@@ -82,28 +77,27 @@ describe('gateway client against a real gateway', () => {
 
   it('lists the models with their capabilities', async () => {
     const listed = await context.client.models();
-    expect(listed.map((model) => model.id)).toEqual(['default']);
+    expect(listed.map((model) => model.id)).toEqual([MODEL]);
     const models = listed.flatMap((model) => ('probing' in model ? [] : [model]));
     expect(models[0]?.capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
-    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['capabilities', 'id', 'targetCapabilities', 'targetCounters', 'targets']);
-    expect(Object.keys(models[0]?.targetCapabilities ?? {})).toHaveLength(1);
-    expect(Object.keys(models[0]?.targetCounters ?? {})).toEqual(models[0]?.targets);
-    expect(Object.values(models[0]?.targetCounters ?? {})[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect(Object.keys(models[0] ?? {}).sort()).toEqual(['canon', 'capabilities', 'chain', 'id', 'ownName', 'provider']);
+    expect(models[0]?.chain.map((member) => member.model)).toEqual([models[0]?.id]);
+    expect(models[0]?.chain[0]?.counter).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('looks up the capabilities of a target of the alias', async () => {
+  it('looks up the capabilities of a member of the chain of the model', async () => {
     const [ready] = (await context.client.models()).flatMap((model) => ('probing' in model ? [] : [model]));
-    const [target] = Object.keys(ready?.targetCapabilities ?? {});
-    const capabilities = await context.client.capabilities('default', { signal: new AbortController().signal, target: String(target) });
+    const target = ready?.chain[0]?.model;
+    const capabilities = await context.client.capabilities(MODEL, { signal: new AbortController().signal, target: String(target) });
     expect(capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
   });
 
-  it('looks up capabilities by alias', async () => {
-    const capabilities = await context.client.capabilities('default', { signal: new AbortController().signal });
+  it('looks up capabilities by model', async () => {
+    const capabilities = await context.client.capabilities(MODEL, { signal: new AbortController().signal });
     expect(capabilities).toMatchObject({ contextWindow: 4096, maxOutputTokens: 1024 });
   });
 
-  it('synthesises model_not_found for an alias the gateway does not list', async () => {
+  it('synthesises model_not_found for a model the gateway does not list', async () => {
     const error = await settle(context.client.capabilities('missing', { signal: new AbortController().signal }));
     expectGatewayError(error, { status: 404, type: 'not_found', code: 'model_not_found' });
   });

@@ -7,7 +7,7 @@ import type { AdapterInputItem, AdapterTarget, Capabilities, InputItem, ToolCall
 import { UNDICI_DEFAULT_LIVENESS, createFakeClock } from '@momonga/testkit';
 import { meteredOutputFit } from '../../src/worker/output-fit.ts';
 
-const TARGET: AdapterTarget = { name: 'fm', model: 'system' };
+const TARGET: AdapterTarget = { name: 'apple/system', display: 'system', model: 'system' };
 const ITEM_CAP = 120;
 const CALL = { callId: 'call_grep_1', tool: 'Grep' } as const;
 const HARNESS_CALL = { callId: 'call_plan_1', tool: 'UpdatePlan' } as const;

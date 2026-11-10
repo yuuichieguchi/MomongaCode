@@ -11,7 +11,7 @@ const THROUGH_FIRST_DELTA = full.slice(0, 5);
 
 const startOne = (calls: Parameters<typeof createScriptedAdapter>[0]['calls']) => {
   const primary = createScriptedAdapter({ calls });
-  return { primary, started: startGateway({ adapters: { primary }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } }) };
+  return { primary, started: startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } }) };
 };
 
 describe('the gateway commits at the first event that carries output (R-b)', () => {

@@ -14,7 +14,7 @@ const BODIES: Record<Role, { path: string; body: unknown }> = {
     path: '/v1/health',
     body: { status: 'ok', version: '1.0.0', apiVersion: 1, pid: 4242, startedAt: '2026-11-09T00:00:00.000Z', state: 'running', sandbox: 'none' },
   },
-  gateway: { path: '/v1/momonga/models', body: { data: [] } },
+  gateway: { path: '/v1/momonga/models', body: { object: 'list', data: [], start: null, roles: {} } },
   supervisor: { path: '/v1/health', body: { status: 'ok', version: '1.0.0', pid: 4243, phase: 'running', children: [] } },
 };
 

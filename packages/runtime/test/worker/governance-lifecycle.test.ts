@@ -8,13 +8,14 @@ import type { AgentsPort, GovernancePort } from '@momonga/runtime';
 import { LEASE_MS, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { fakeViewsOf } from './fake-gateway.ts';
 
 const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
     settings: { trusted: () => env.settings.trustedValue },
-    runs: createChildRuns({ store: env.store, modelAliases: async () => ['fm'] }),
+    runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
   });
 
 const writeAgent = (env: Env, name: string, tools: string): void => {

@@ -59,7 +59,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
       toolCallingSetting: 'native',
       declaredModel: 'system',
     }),
-    'fm',
+    'scripted/system',
   );
   const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
@@ -107,9 +107,9 @@ describe('an upstream error event inside a 200 chat-completions stream', () => {
   it('surfaces fm reporting a transcript over its context size as a context_window_exceeded failure, the shape the Anthropic overflow takes', async () => {
     const upstream = await startFmStyleUpstream(FM_CONTEXT_OVERFLOW_ERROR);
     const adapter = await unprobedFmAdapter(upstream);
-    const { client } = await startGateway({ adapters: { fm: adapter }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
+    const { client } = await startGateway({ adapters: { 'scripted/system': adapter }, config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } } });
 
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', stream: true, input: [userText('hello')] }));
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/system', stream: true, input: [userText('hello')] }));
 
     const terminal = frames.at(-1)?.data;
     expect(terminal.type).toBe('response.failed');

@@ -386,7 +386,7 @@ describe('createManagedServer start', () => {
     await expect(server.start()).rejects.toMatchObject({
       name: 'ManagedServerError',
       reason: 'not_running',
-      message: 'the target "fm": the server could not be run: spawn /usr/bin/fm ENOENT',
+      message: 'the model "fm": the server could not be run: spawn /usr/bin/fm ENOENT',
     });
     expect(await server.health(asking())).toMatchObject({ ok: false, reason: 'not_running' });
     await server.start();
@@ -474,7 +474,7 @@ describe('createManagedServer socket ownership', () => {
     expect(await outcome).toMatchObject({
       name: 'ManagedServerError',
       reason: 'unhealthy',
-      message: 'the target "fm": the server was not ready before the request ended',
+      message: 'the model "fm": the server was not ready before the request ended',
     });
     expect(spawn).not.toHaveBeenCalled();
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
@@ -885,7 +885,7 @@ describe('createManagedServer bounds the wait after SIGKILL by stopGraceMs', () 
     await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
     manual.fire(GRACE_MS);
     await stopping;
-    expect(warnings).toEqual([`the target "fm": the server process was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
+    expect(warnings).toEqual([`the model "fm": the server process was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
     warnings.splice(0);
     expect(children[0]?.alive).toBe(true);
   });

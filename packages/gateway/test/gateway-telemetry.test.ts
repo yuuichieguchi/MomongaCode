@@ -25,11 +25,11 @@ describe('gateway telemetry', () => {
         { events: textResponseEvents({ model: 'scripted-primary', chunks: ['traced'], usage: usageOf(17, 5) }) },
       ],
     });
-    const { client, timers } = await startGateway({ adapters: { primary }, clock, telemetry, config: { retry: { maxAttempts: 2 } } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry, config: { retry: { maxAttempts: 2 } } });
     const pending = postJson(
       client,
       '/v1/responses',
-      { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-7', step: '4' } },
+      { model: 'scripted/scripted-primary', input: userInput('hi'), metadata: { run_id: 'run-7', step: '4' } },
       { traceparent: `00-${TRACE_ID}-${PARENT_SPAN_ID}-01` },
     );
     await waitFor(() => primary.calls.length === 1 && timers.pending().length > 0);
@@ -68,12 +68,12 @@ describe('gateway telemetry', () => {
     registerCleanup(() => telemetry.shutdown());
     const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['ok'], usage: usageOf(3, 1) }) }] });
     const { client } = await startGateway({
-      adapters: { primary },
+      adapters: { 'apple/scripted-primary': primary },
       clock,
       telemetry,
-      config: { targets: { primary: { model: 'scripted-primary', provider: 'apple' } } },
+      config: { targets: { 'apple/scripted-primary': {} } },
     });
-    expect((await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', { model: 'apple/scripted-primary', input: userInput('hi') }))).status).toBe(200);
     await telemetry.forceFlush();
     const [chat] = memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat');
     expect(chat?.attributes['gen_ai.provider.name']).toBe('apple');
@@ -95,9 +95,9 @@ describe('gateway telemetry message content', () => {
     });
     registerCleanup(() => telemetry.shutdown());
     const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['the answer'], usage: usageOf(3, 1) }) }] });
-    const { client } = await startGateway({ adapters: { primary }, clock, telemetry });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry });
     const body = {
-      model: 'fast',
+      model: 'scripted/scripted-primary',
       instructions: 'Be terse.',
       input: [
         { type: 'message', role: 'user', content: 'what is in a.txt?' },

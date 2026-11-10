@@ -559,7 +559,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         home: canonicalHome,
         fileSystem: createNodeSkillFileSystem(),
         settings: composition.settings,
-        runs: createChildRuns({ store, modelAliases: async () => (await gatewayClient.models()).map((model) => model.id) }),
+        runs: createChildRuns({ store, modelViews: async () => (await gatewayClient.listing({ signal: lifetime.signal })).views }),
       });
       return { composition, runtime, tracker, skills, memories, history, governance, agents, evidenceRunFor };
     });
@@ -616,8 +616,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         },
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
-        modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
-        modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
+        modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
+        modelCapabilities: (model, requestSignal) => gatewayClient.capabilities(model, { signal: requestSignal }),
         sessionCreateSettings: async (cwd, requestSignal) => {
           const admittedSettings = await settingsComposition.sessionCreateSettings(cwd);
           await settingsComposition.admitted(async () => (await sandboxes.admit(requestSignal)).release());

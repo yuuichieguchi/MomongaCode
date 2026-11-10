@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, homePaths, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -68,7 +68,7 @@ const startWith = async (telemetry?: Record<string, unknown>) => {
   const fake = await startFake({ scenario: 'tools-ok' });
   const home = makeHome();
   writeSettings(home, {
-    models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath) } },
+    models: modelsOf({ primary: ccTarget(fake.socketPath) }),
     ...(telemetry === undefined ? {} : { telemetry }),
   });
   captureStdout();

@@ -72,7 +72,7 @@ export const SERVER_KINDS: ServerKind[] = [
     argvOf: (socketPath) => ['run', '--socket', socketPath],
     readyPath: '/ready',
     refusingExec: async (_file, args) => (args[0] === 'check-env' ? answer(FAKE_SERVER_KEY_MISSING_EXIT, '', 'FAKE_KEY is not set') : answer(0)),
-    refusal: { message: `the target "workbench" is not ready: ${FAKE_SERVER_REFUSAL}`, remediation: FAKE_SERVER_REMEDY },
+    refusal: { message: `the model "workbench" is not ready: ${FAKE_SERVER_REFUSAL}`, remediation: FAKE_SERVER_REMEDY },
     metExec: async () => answer(0),
   },
   {
@@ -82,7 +82,7 @@ export const SERVER_KINDS: ServerKind[] = [
     argvOf: (socketPath) => ['serve', '--socket', socketPath],
     readyPath: '/health',
     refusingExec: async (_file, args) => (args[0] === 'license' ? answer(69, '', 'The license agreement has not been accepted.') : answer(0)),
-    refusal: { message: 'the target "apple" is not ready: the Apple Foundation Models licence has not been accepted', remediation: 'sudo fm license' },
+    refusal: { message: 'the model "apple" is not ready: the Apple Foundation Models licence has not been accepted', remediation: 'sudo fm license' },
     metExec: async () => answer(0),
   },
 ];

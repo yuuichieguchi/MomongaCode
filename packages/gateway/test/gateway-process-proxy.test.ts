@@ -6,7 +6,7 @@ import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
@@ -14,7 +14,7 @@ import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROXY_PASSWORD = 'proxy-password-0123456789';
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'primary/system', input: userInput('hi') };
 
 const echo401 = (message: string): FakeScriptedReply => ({
   kind: 'error',
@@ -109,7 +109,7 @@ describe('gateway: the proxy password is a credential', () => {
     registerCleanup(context, () => fake.close());
     const { client, log } = await startGateway(
       context,
-      { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath) } }, ...(network === undefined ? {} : { network }) },
+      { models: modelsOf({ primary: ccTarget(fake.socketPath) }), ...(network === undefined ? {} : { network }) },
       env,
     );
 
@@ -127,14 +127,13 @@ describe('gateway: a model call to a remote target goes through the configured p
     const proxy = await startRefusingProxy(context);
     const remote = {
       adapter: 'chat-completions',
-      provider: 'fake',
       model: 'system',
       baseUrl: 'https://model.example.test/v1',
       toolCalling: 'native',
       capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
     };
     const { client } = await startGateway(context, {
-      models: { aliases: { fast: ['primary'] }, targets: { primary: remote }, headersTimeoutMs: 300 },
+      models: modelsOf({ primary: remote }, { headersTimeoutMs: 300  }),
       network: { httpsProxy: `http://127.0.0.1:${proxy.port}` },
     });
 
@@ -166,7 +165,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', () 
     const startedAt = clock.now();
     const { client } = await startGateway(
       context,
-      { models: { aliases: { fast: ['primary'] }, targets: { primary: REMOTE_TARGET }, headersTimeoutMs: 300 }, network: { httpsProxy: `http://127.0.0.1:${proxy.port}` } },
+      { models: modelsOf({ primary: REMOTE_TARGET }, { headersTimeoutMs: 300  }), network: { httpsProxy: `http://127.0.0.1:${proxy.port}` } },
       { [ANTHROPIC_KEY_ENV]: 'test-anthropic-key-0123456789' },
       { clock, timers },
     );

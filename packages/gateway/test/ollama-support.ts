@@ -191,7 +191,7 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
   };
 };
 
-export const OLLAMA_TARGET: AdapterTarget = { name: 'local', model: OLLAMA_MODEL };
+export const OLLAMA_TARGET: AdapterTarget = { name: 'local', display: 'local', model: OLLAMA_MODEL };
 
 export const OLLAMA_CAPABILITIES: Capabilities = {
   contextWindow: 12288,

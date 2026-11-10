@@ -32,21 +32,6 @@ const OPERATIONS = [
 ] as const;
 
 const PENDING: readonly Pending[] = [
-  { form: 'momonga models add', removedBy: 'N3a' },
-  { form: 'momonga models add-program', removedBy: 'N3a' },
-  { form: 'momonga models billing', removedBy: 'N3a' },
-  { form: 'momonga models dialects', removedBy: 'N3a' },
-  { form: 'momonga models fallback', removedBy: 'N3a' },
-  { form: 'momonga models forget-program', removedBy: 'N3a' },
-  { form: 'momonga models name', removedBy: 'N3a' },
-  { form: 'momonga models remove', removedBy: 'N3a' },
-  { form: 'momonga models remove-server', removedBy: 'N3a' },
-  { form: 'momonga models role', removedBy: 'N3a' },
-  { form: 'momonga models set', removedBy: 'N3a' },
-  { form: 'momonga models set-program', removedBy: 'N3a' },
-  { form: 'momonga models set-server', removedBy: 'N3a' },
-  { form: 'momonga models start', removedBy: 'N3a' },
-  { form: 'momonga models timeouts', removedBy: 'N3a' },
   { form: '/config', removedBy: 'N3b' },
   { form: '/models billing', removedBy: 'N3b' },
   { form: '/models fallback', removedBy: 'N3b' },

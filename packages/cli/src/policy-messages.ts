@@ -49,7 +49,7 @@ export const describeHook = (event: HookCompleted, agent?: string): string[] => 
 export const classificationLevel = (event: Classified): Level => (event.failure === undefined ? 'info' : 'warning');
 
 export const describeClassification = (event: Classified, subject: string): string => {
-  const classifier = event.alias === undefined ? 'the classifier' : `classifier ${event.alias}`;
+  const classifier = event.model === undefined ? 'the classifier' : `classifier ${event.model}`;
   if (event.failure !== undefined) return `auto mode could not classify ${subject}, so it asks you: ${event.failure}`;
   const judged = `${classifier} judged ${subject} ${event.verdict ?? 'unclassified'}${event.confidence === undefined ? '' : ` with ${event.confidence} confidence`}`;
   const rationale = event.rationale === undefined ? '' : `: ${event.rationale}`;

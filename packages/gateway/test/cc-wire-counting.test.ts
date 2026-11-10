@@ -33,10 +33,10 @@ const gatewayFor = async (mode: ToolCallingMode): Promise<{ harness: Harness; fa
 };
 
 const count = async (harness: Harness, body: Record<string, unknown>) =>
-  readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: 'fast', ...body }));
+  readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: harness.model, ...body }));
 
 const sentWire = async (harness: Harness, fake: FakeChatCompletionsServer, body: Record<string, unknown>): Promise<unknown> => {
-  const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: 'fast', stream: true, store: false, ...body }));
+  const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: harness.model, stream: true, store: false, ...body }));
   expect(frames.at(-1)?.data.type).toBe('response.completed');
   return wireOf(lastCompletionBody(fake));
 };

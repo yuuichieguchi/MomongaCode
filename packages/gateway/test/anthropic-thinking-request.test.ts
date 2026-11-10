@@ -39,7 +39,7 @@ const sentFor = async (reasoning: ReasoningCapability | undefined, effort: Reaso
 
 const VISIBLE = 1000;
 
-const REMOTE_TARGET = { name: 'remote', model: 'remote-model' };
+const REMOTE_TARGET = { name: 'remote', display: 'remote', model: 'remote-model' };
 
 const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<typeof anthropicTextReply>) => {
   const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [reply] });
@@ -156,7 +156,7 @@ describe('anthropic thinking request from a declared budget form', () => {
 
   it('rejects minimal in a public request, since the Open Responses effort enum has no minimal', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: withReasoning(BUDGET) });
-    const response = await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), reasoning: { effort: 'minimal' } });
+    const response = await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), reasoning: { effort: 'minimal' } });
     expect(response.status).toBe(400);
     expect(sentBodies(gateway)).toEqual([]);
   });
@@ -211,7 +211,7 @@ describe('thinking in a tool loop on a target that declares the adaptive form', 
 
     await readSse(
       await postJson(gateway.client, '/v1/responses', {
-        model: 'fast',
+        model: 'scripted/upstream-model',
         stream: true,
         tools: [readFileTool],
         reasoning: { effort: 'medium', summary: null },

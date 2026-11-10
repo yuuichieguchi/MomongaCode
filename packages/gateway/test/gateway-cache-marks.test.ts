@@ -17,10 +17,10 @@ const tool = { type: 'function', name: 'read_file', description: 'Read', paramet
 describe('the gateway hands the cache marks and the key of a request to the adapter', () => {
   it('passes momonga.cache as cacheMarks and prompt_cache_key as promptCacheKey', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await readJson(
-      await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, tools: [tool], prompt_cache_key: KEY, momonga: { cache: MARKS } }),
+      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, tools: [tool], prompt_cache_key: KEY, momonga: { cache: MARKS } }),
     );
 
     expect(response.status).toBe(200);
@@ -31,10 +31,10 @@ describe('the gateway hands the cache marks and the key of a request to the adap
 
   it('passes marks without previousHistory unchanged, with no previousHistory added', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const marks = { stable: 1, fixed: 2, history: 5 };
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, momonga: { cache: marks } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, momonga: { cache: marks } }));
 
     expect(response.status).toBe(200);
     expect(primary.calls[0]?.request.cacheMarks).toEqual(marks);
@@ -43,9 +43,9 @@ describe('the gateway hands the cache marks and the key of a request to the adap
 
   it('gives the adapter neither marks nor key when the client sends none', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT }));
 
     expect(response.status).toBe(200);
     expect(primary.calls[0]?.request).not.toHaveProperty('cacheMarks');
@@ -56,20 +56,20 @@ describe('the gateway hands the cache marks and the key of a request to the adap
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'primary is down' } }] });
     const secondary = createScriptedAdapter({ calls: [answering('scripted-secondary')] });
     const { client } = await startGateway({
-      adapters: { primary, secondary },
+      adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary },
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+        chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+        targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
         retry: { maxAttempts: 1, totalWaitMs: 1 },
       },
     });
 
     const response = await readJson(
-      await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, prompt_cache_key: KEY, momonga: { cache: MARKS } }),
+      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, prompt_cache_key: KEY, momonga: { cache: MARKS } }),
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
     expect(primary.calls[0]?.request.cacheMarks).toEqual(MARKS);
     expect(secondary.calls[0]?.request.cacheMarks).toEqual(MARKS);
     expect(primary.calls[0]?.request.promptCacheKey).toBe(KEY);
@@ -94,9 +94,9 @@ describe('the gateway refuses marks that do not describe the input', () => {
 
   it.for(cases)('answers 400 invalid_request for $name, before any adapter is called', async ({ cache }) => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, momonga: { cache } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, momonga: { cache } }));
 
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body' });
@@ -106,9 +106,9 @@ describe('the gateway refuses marks that do not describe the input', () => {
 
   it('answers 400 invalid_request for an unknown key under momonga', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, momonga: { cache: MARKS, pin: true } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, momonga: { cache: MARKS, pin: true } }));
 
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_body', param: 'momonga.pin' });
@@ -117,10 +117,10 @@ describe('the gateway refuses marks that do not describe the input', () => {
 
   it('accepts marks equal to each other and to the input length', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const marks = { stable: 5, fixed: 5, previousHistory: 5, history: 5 };
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, momonga: { cache: marks } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, momonga: { cache: marks } }));
 
     expect(response.status).toBe(200);
     expect(primary.calls[0]?.request.cacheMarks).toEqual(marks);
@@ -128,10 +128,10 @@ describe('the gateway refuses marks that do not describe the input', () => {
 
   it('accepts all marks at zero', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const marks = { stable: 0, fixed: 0, history: 0 };
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: INPUT, momonga: { cache: marks } }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: INPUT, momonga: { cache: marks } }));
 
     expect(response.status).toBe(200);
     expect(primary.calls[0]?.request.cacheMarks).toEqual(marks);

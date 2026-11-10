@@ -1,7 +1,8 @@
 import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
-import type { EndpointProbeKey } from '@momonga/config';
+import type { EndpointProbeKey, ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
-import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
+import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
+import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -9,21 +10,39 @@ import type { CliPorts } from '../ports.ts';
 import { withOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
-type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
+type OllamaModel = Extract<ResolvedModel, { adapter: 'ollama' }>;
 
-type ManagedConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'managed' }>;
+type ManagedModel = Extract<ResolvedModel, { adapter: 'managed' }>;
 
-type ChatCompletionsConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'chat-completions' }>;
+type ChatCompletionsModel = Extract<ResolvedModel, { adapter: 'chat-completions' }>;
 
-export class NotAProbeableTarget extends Error {
-  constructor(target: string, known: Readonly<Record<string, { adapter: string }>>) {
-    const described = Object.entries(known).map(([name, entry]) => `${name} (${entry.adapter})`);
-    super(`the target "${target}" cannot be probed: it is not a managed server, chat-completions or ollama target; configured targets: ${described.length === 0 ? 'none' : described.join(', ')}`);
-    this.name = 'NotAProbeableTarget';
+type ProbeableModel = OllamaModel | ManagedModel | ChatCompletionsModel;
+
+export class NotAProbeableModel extends Error {
+  constructor(display: string, configured: readonly string[]) {
+    super(`The model "${display}" cannot be probed: it is not served by a managed server, an OpenAI-compatible server or an Ollama server. Configured models: ${configured.join(', ')}.`);
+    this.name = 'NotAProbeableModel';
   }
 }
 
 export type ProbeOptions = { samples?: number; interrupt: AbortSignal };
+
+export type ProbeSubject = { canon: string; display: string; model: ProbeableModel };
+
+const isProbeable = (model: ResolvedModel): model is ProbeableModel => model.adapter === 'managed' || model.adapter === 'chat-completions' || model.adapter === 'ollama';
+
+export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubject => {
+  const resolution = resolveTypedModelRef(typedModelText(text), models.views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, models.views);
+  const { canon } = resolution.model;
+  const displays = displayMapOf(models.views);
+  const display = displays.get(canon) ?? canon;
+  const model = models.models.get(canon);
+  if (model === undefined || !isProbeable(model)) throw new NotAProbeableModel(display, models.views.map((view) => displays.get(view.canon) ?? view.canon));
+  return { canon, display, model };
+};
+
+export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
 
 const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
   const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
@@ -33,21 +52,20 @@ const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void
   }
 };
 
-export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
+export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: string, options: ProbeOptions): Promise<number> => {
   const { settings } = await loadUserSettings({ home: ports.home });
-  const targets = settings.models.targets;
-  const configured = targets[target];
-  if (configured?.adapter === 'managed') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, network));
-  if (configured?.adapter === 'ollama') return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, target, configured, options, settings.models.dialects, network));
-  throw new NotAProbeableTarget(target, targets);
+  const subject = probeSubjectOf(settings.models, text);
+  const { model } = subject;
+  if (model.adapter === 'managed') return probeManaged(ports, paths, subject, model, settings, options);
+  if (model.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, subject, model, options, settings.models.dialects, network));
+  return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, subject, model, options, settings.models.dialects, network));
 };
 
-const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrupt: AbortSignal): Promise<string | undefined> => {
+const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsModel, interrupt: AbortSignal): Promise<string | undefined> => {
   if (target.apiKeySecret !== undefined) return ports.secretStore().read(target.apiKeySecret, interrupt);
   if (target.apiKeyEnv === undefined) return undefined;
   const value = ports.env[target.apiKeyEnv];
-  if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the target cannot be probed`);
+  if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the model cannot be probed`);
   return value;
 };
 
@@ -106,17 +124,17 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
     `  recorded in ${recordPath}`,
   ])}\n`;
 
-const endpointRecordKeyOf = (name: string, target: OllamaConfig | ChatCompletionsConfig): EndpointProbeKey => {
-  const key = probeRecordKeyOf(name, target.adapter === 'chat-completions' ? { ...target, toolCalling: 'auto' } : target);
-  if (key?.kind !== 'endpoint') throw new Error(`the target ${name} has no endpoint probe record key`);
+const endpointRecordKeyOf = (subject: ProbeSubject, target: OllamaModel | ChatCompletionsModel): EndpointProbeKey => {
+  const key = probeRecordKeyOf(subject.canon, target.adapter === 'chat-completions' ? { ...target, toolCalling: 'auto' } : target);
+  if (key?.kind !== 'endpoint') throw new Error(`the model ${subject.display} has no endpoint probe record key`);
   return key.key;
 };
 
 const probeChatCompletions = async (
   ports: CliPorts,
   paths: MomongaPaths,
-  name: string,
-  target: ChatCompletionsConfig,
+  subject: ProbeSubject,
+  target: ChatCompletionsModel,
   options: ProbeOptions,
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
@@ -125,7 +143,7 @@ const probeChatCompletions = async (
   const { report, toolCalling, key } = await probeEndpointTarget({
     probeRecordDir: paths.probe,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
-    key: endpointRecordKeyOf(name, target),
+    key: endpointRecordKeyOf(subject, target),
     model: target.model,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
     userDialects,
@@ -133,7 +151,7 @@ const probeChatCompletions = async (
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeEndpointText(name, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
+  ports.stdout.write(probeEndpointText(subject.display, key.endpoint, paths.probe, report, toolCalling, target.capabilities.outputBoundField));
   await restartDaemon(ports, paths);
   return 0;
 };
@@ -141,8 +159,8 @@ const probeChatCompletions = async (
 const probeOllama = async (
   ports: CliPorts,
   paths: MomongaPaths,
-  name: string,
-  target: OllamaConfig,
+  subject: ProbeSubject,
+  target: OllamaModel,
   options: ProbeOptions,
   userDialects: Record<string, DialectDefinition>,
   network: OutboundNetwork,
@@ -151,7 +169,7 @@ const probeOllama = async (
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
     upstream: reachableEndpoint(upstreamEndpointOf(target), network),
-    key: endpointRecordKeyOf(name, target),
+    key: endpointRecordKeyOf(subject, target),
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
     ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
@@ -159,25 +177,21 @@ const probeOllama = async (
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeOllamaText(name, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
+  ports.stdout.write(probeOllamaText(subject.display, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
   await restartDaemon(ports, paths);
   return 0;
 };
 
-export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: string, options: ProbeOptions): Promise<number> => {
-  const { settings } = await loadUserSettings({ home: ports.home });
-  const targets = settings.models.targets;
-  const configured: ManagedConfig | undefined = targets[target]?.adapter === 'managed' ? (targets[target] as ManagedConfig) : undefined;
-  if (configured === undefined) throw new NotAProbeableTarget(target, targets);
+const probeManaged = async (ports: CliPorts, paths: MomongaPaths, subject: ProbeSubject, configured: ManagedModel, settings: ResolvedSettings, options: ProbeOptions): Promise<number> => {
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
   const description = registeredServer(settings.models.servers, configured.server);
-  if (description === undefined) throw new NotAProbeableTarget(target, targets);
+  if (description === undefined) throw new Error(`the model ${subject.display} names the managed server ${configured.server}, which is not registered`);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
     platform: ports.platform,
-    instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target }),
+    instance: cliProbeInstance(paths, configured.provider),
     description,
-    target,
+    target: subject.canon,
     binary: configured.binary,
     readyTimeoutMs: configured.readyTimeoutMs,
     env: ports.env,
@@ -186,10 +200,10 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
-    ...(configured.model === undefined ? {} : { model: configured.model }),
+    model: configured.model,
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
-  ports.stdout.write(probeFmText(target, recordFile, report, toolCalling, configured.outputBoundField));
+  ports.stdout.write(probeFmText(subject.display, recordFile, report, toolCalling, configured.outputBoundField));
   return 0;
 };

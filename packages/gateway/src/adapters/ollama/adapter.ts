@@ -40,7 +40,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     const capabilities = ctx.capabilities;
     const ledger = new RenderLedger();
     const jsonReply = jsonReplyPlanOf(request, capabilities);
-    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, jsonReply, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, jsonReply, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;

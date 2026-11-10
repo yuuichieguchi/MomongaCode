@@ -13,7 +13,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
     random: () => 0.5,
     credentials: [],
     config: buildConfig(),
-    adapters: { primary: createScriptedAdapter({ calls: [] }) },
+    adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
     clock,
     timers: createFakeTimers(clock),
     dbPath: path.join(dir, 'state', 'gateway.db'),
@@ -52,7 +52,7 @@ describe('debug listener host', () => {
 describe('bearer scheme', () => {
   it('accepts a case-insensitive Bearer scheme', async () => {
     const { gateway } = await startGateway({
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       debugTcp: { host: '127.0.0.1', port: 0, token: 'momonga-debug-test-token' },
     });
     const agent = new Agent();
@@ -79,7 +79,7 @@ describe('readerStallMs', () => {
         random: () => 0.5,
         credentials: [],
         config,
-        adapters: { primary: createScriptedAdapter({ calls: [] }) },
+        adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
         clock,
         timers: createFakeTimers(clock),
         dbPath: path.join(dir, 'state', 'gateway.db'),

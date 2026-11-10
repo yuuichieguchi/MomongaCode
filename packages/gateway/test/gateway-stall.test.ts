@@ -14,7 +14,7 @@ const QUEUED_MESSAGE_BYTES = 900_000;
 
 const textCall = (text: string) => ({ events: textResponseEvents({ model: 'scripted-primary', chunks: [text] }) });
 
-const create = (extra: Record<string, unknown> = {}) => ({ type: 'response.create', model: 'fast', store: false, input: userInput('hi'), ...extra });
+const create = (extra: Record<string, unknown> = {}) => ({ type: 'response.create', model: 'scripted/scripted-primary', store: false, input: userInput('hi'), ...extra });
 
 const openSocket = (url: string): Promise<WebSocket> =>
   new Promise((resolve, reject) => {
@@ -43,7 +43,7 @@ const rawUpgrade = (socketPath: string, target: string): Promise<string> =>
 
 describe('WebSocket upgrade request target', () => {
   it.each(['//', '///', '/\\', '//v1/responses'])('refuses the malformed target %s with 404 and keeps serving', async (target) => {
-    const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     const received = await rawUpgrade(harness.socketPath, target);
     expect(received.startsWith('HTTP/1.1 404')).toBe(true);
     expect((await getJson(harness.client, '/v1/models')).status).toBe(200);
@@ -53,7 +53,7 @@ describe('WebSocket upgrade request target', () => {
 describe('a client that stops reading', () => {
   it('releases the target slot of a stalled WebSocket turn once the reader-stall bound passes', async () => {
     const adapter = createScriptedAdapter({ calls: [{ events: bigTextEvents(BIG_CHUNKS, BIG_CHUNK_BYTES) }, textCall('after')] });
-    const harness = await startGateway({ adapters: { primary: adapter }, config: { targets: { primary: { model: 'scripted-primary', maxConcurrency: 1 } } } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { targets: { 'scripted/scripted-primary': { maxConcurrency: 1 } } } });
     const socket = await openSocket(`ws+unix://${harness.socketPath}:/v1/responses`);
     socket.pause();
     socket.send(JSON.stringify(create()));
@@ -69,11 +69,11 @@ describe('a client that stops reading', () => {
 
   it('releases the target slot of a stalled unkeyed SSE stream once the reader-stall bound passes', async () => {
     const adapter = createScriptedAdapter({ calls: [{ events: bigTextEvents(BIG_CHUNKS, BIG_CHUNK_BYTES) }, textCall('after')] });
-    const harness = await startGateway({ adapters: { primary: adapter }, config: { targets: { primary: { model: 'scripted-primary', maxConcurrency: 1 } } } });
-    const first = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { targets: { 'scripted/scripted-primary': { maxConcurrency: 1 } } } });
+    const first = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     await first.next();
     harness.timers.advance(READER_STALL_MS);
-    const second = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const second = sseIterator(await postJson(harness.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     const types: string[] = [];
     for (let step = await second.next(); step.done !== true; step = await second.next()) types.push(step.value.data.type as string);
     expect(types).toContain('response.completed');
@@ -87,7 +87,7 @@ describe('WebSocket connection limit', () => {
     const adapter = createScriptedAdapter({ calls: [{ events: bigTextEvents(BIG_CHUNKS, BIG_CHUNK_BYTES) }] });
     const errors: unknown[] = [];
     const harness = await startGateway({
-      adapters: { primary: adapter },
+      adapters: { 'scripted/scripted-primary': adapter },
       config: { websocketConnectionMs: CONNECTION_LIMIT_MS },
       onError: (error) => errors.push(error),
     });
@@ -111,7 +111,7 @@ describe('WebSocket message queue', () => {
       resume.mockRestore();
     });
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('held'), gate: { name: 'held', afterEvents: 1 } }, textCall('next')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const socket = await openSocket(`ws+unix://${harness.socketPath}:/v1/responses`);
     socket.send(JSON.stringify(create()));
     await waitFor(() => adapter.calls.length === 1, { description: 'turn started' });

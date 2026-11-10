@@ -48,7 +48,7 @@ const contextFor = (state: RunState) => {
       instructionReader: { read: async () => undefined, exists: async () => false, realpath: async (target: string) => target },
     },
     run: { id: 'run_claim', sessionId: 'session_claim' },
-    alias: 'fm',
+    model: 'fm',
     capabilities,
     calibration: { tokenCounting: capabilities.tokenCounting },
     systemPrompt: SYSTEM_PROMPT,

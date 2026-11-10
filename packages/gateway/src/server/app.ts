@@ -12,7 +12,7 @@ import { withPinnedServices } from '../core/services.ts';
 import type { GatewayServices } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
-import { listAlias } from './capability-listing.ts';
+import { listModel } from './capability-listing.ts';
 import type { ErrorExit } from './error-exit.ts';
 import { collectTerminalResource } from './response-body.ts';
 import { compactSseResponse, sseResponse } from './sse.ts';
@@ -151,7 +151,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
       const list: ModelList = {
         object: 'list',
-        data: router.aliases().map((id) => ({ id, object: 'model', created: dependencies.startedAtSeconds, owned_by: 'momonga' })),
+        data: router.views().map((view) => ({ id: view.canon, object: 'model', created: dependencies.startedAtSeconds, owned_by: view.provider })),
       };
       return context.json(list);
     }),
@@ -160,24 +160,8 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   app.get('/v1/momonga/models', (context) => {
     const signal = requestSignalOf(context);
     return withPinnedServices(services, signal, async ({ router }) => {
-      const data = await Promise.all(
-        router.aliases().map(async (id) => {
-          const targets = router.targetsOf(id);
-          const planned = targets.flatMap((target) => (target.plan === undefined ? [] : [[target.name, target.plan] as const]));
-          const keyed = targets.flatMap((target) => (target.keyGroup === undefined ? [] : [[target.name, { group: target.keyGroup }] as const]));
-          const identity = {
-            id,
-            object: 'model' as const,
-            targets: targets.map((target) => target.name),
-            targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
-            targetBilling: Object.fromEntries(targets.map((target) => [target.name, target.billing])),
-            ...(planned.length === 0 ? {} : { targetPlan: Object.fromEntries(planned) }),
-            ...(keyed.length === 0 ? {} : { targetKey: Object.fromEntries(keyed) }),
-          };
-          return { ...identity, ...(await listAlias(router, id, signal)) };
-        }),
-      );
-      const list: MomongaModelList = { object: 'list', data };
+      const data = await Promise.all(router.models().map((model) => listModel(router, model, signal)));
+      const list: MomongaModelList = { object: 'list', data, start: router.start(), roles: router.roles() };
       return context.json(list);
     });
   });
@@ -284,7 +268,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         .catch(closedOr),
     ),
   );
-  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context), requestSignalOf(context))));
   app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
 
   return app;

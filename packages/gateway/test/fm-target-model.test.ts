@@ -10,7 +10,7 @@ import { TARGET_PROBING } from '@momonga/protocol';
 
 const RECORD_KEY: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
 const LISTED = 'listed-by-fm';
-const TARGET = { name: 'fm', model: 'label-in-the-gateway' };
+const TARGET = { name: 'fm', display: 'fm', model: 'label-in-the-gateway' };
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {

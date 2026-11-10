@@ -13,7 +13,7 @@ describe('sessions', () => {
       cwd: '/work/a',
       env: { PATH: '/usr/bin' },
       permissionMode: 'default',
-      modelAlias: 'fm',
+      model: 'fm',
       createdAt: START_MS,
     });
     expect(a.id).not.toBe(b.id);

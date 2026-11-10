@@ -128,7 +128,7 @@ describe('probe record failure handling', () => {
   });
 });
 
-const needsProbe = { state: 'needs_probe' as const, message: 'the target "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
+const needsProbe = { state: 'needs_probe' as const, message: 'the model "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
 
 describe('resolveToolCalling', () => {
   it('uses explicit native from config regardless of the record', () => {

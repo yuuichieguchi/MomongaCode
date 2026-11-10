@@ -59,7 +59,7 @@ describe('the injection report builder (design 4.4)', () => {
       rootRunId: runId,
       sessionId: 's',
       definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-      modelAlias: 'default',
+      model: 'default',
       mode: 'bypassPermissions',
       agent: 'main',
       origin: 'api',

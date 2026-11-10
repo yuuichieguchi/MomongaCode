@@ -27,17 +27,17 @@ const withClassifier = (adapter: ProviderAdapter): ProviderAdapter => ({
 });
 
 const config = { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 2, openMs: 30_000 } };
-const body = { model: 'fast', input: userInput('hi') };
-const partial = textResponseEvents({ model: 'scripted-primary', chunks: ['a', 'b'] }).slice(0, 5);
+const body = { model: 'scripted/scripted-primary', input: userInput('hi') };
+const partial = textResponseEvents({ model: 'scripted-primary', chunks: ['scripted/model-a', 'scripted/model-b'] }).slice(0, 5);
 
 const breakerAfter = async (calls: Array<{ events?: typeof partial; failure: { status: number; message: string } }>) => {
   const primary = withClassifier(createScriptedAdapter({ calls }));
-  const { client } = await startGateway({ adapters: { primary }, config });
+  const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config });
   for (let index = 0; index < calls.length; index += 1) {
     const response = await postJson(client, '/v1/responses', body);
     await response.text();
   }
-  return (await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker as string;
+  return (await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker as string;
 };
 
 const fail = (status: number, message: string) => ({ failure: { status, message } });
@@ -88,9 +88,9 @@ describe('breaker verdict after the first event', () => {
       },
     ];
     const primary = createScriptedAdapter({ calls: [{ events: refusal }, { events: refusal }, { events: refusal }] });
-    const { client } = await startGateway({ adapters: { primary }, config });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config });
     for (let index = 0; index < 3; index += 1) await readJson(await postJson(client, '/v1/responses', body));
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker).toBe('closed');
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker).toBe('closed');
   });
 
   it('opens on repeated in-stream failures with a non-neutral code', async () => {
@@ -106,9 +106,9 @@ describe('breaker verdict after the first event', () => {
       },
     ];
     const primary = createScriptedAdapter({ calls: [{ events: broken }, { events: broken }] });
-    const { client } = await startGateway({ adapters: { primary }, config });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config });
     for (let index = 0; index < 2; index += 1) await readJson(await postJson(client, '/v1/responses', body));
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker).toBe('open');
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker).toBe('open');
   });
 });
 
@@ -117,13 +117,13 @@ describe('one verdict per request and target', () => {
 
   const startThreeSends = async (calls: Parameters<typeof createScriptedAdapter>[0]['calls'], failureThreshold: number) => {
     const primary = createScriptedAdapter({ calls });
-    const harness = await startGateway({ adapters: { primary }, config: { retry: THREE_SENDS_BUDGET, breaker: { failureThreshold, openMs: 30_000 } } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: THREE_SENDS_BUDGET, breaker: { failureThreshold, openMs: 30_000 } } });
     const send = async () => {
       const pending = postJson(harness.client, '/v1/responses', body);
       await driveTimers(harness, [pending]);
       return readJson(await pending);
     };
-    const breaker = async () => (await getJson(harness.client, '/v1/momonga/health')).body.targets.primary.breaker as string;
+    const breaker = async () => (await getJson(harness.client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker as string;
     return { primary, send, breaker };
   };
 
@@ -165,21 +165,21 @@ describe('one verdict per request and target', () => {
     const a = createScriptedAdapter({ calls: [fail(503, 'a1'), fail(503, 'a2'), fail(503, 'a3'), fail(503, 'trial down'), ok('a back', 'model-a')] });
     const b = createScriptedAdapter({ calls: [ok('b one', 'model-b'), ok('b two', 'model-b')] });
     const harness = await startGateway({
-      adapters: { a, b },
+      adapters: { 'scripted/model-a': a, 'scripted/model-b': b },
       config: {
-        aliases: { fast: ['a', 'b'] },
-        targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
+        chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] },
+        targets: { 'scripted/model-a': {}, 'scripted/model-b': {} },
         retry: { maxAttempts: 3, baseMs: BASE_MS, maxMs: MAX_MS, totalWaitMs: 84_000 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
     });
-    const opening = postJson(harness.client, '/v1/responses', body);
+    const opening = postJson(harness.client, '/v1/responses', { ...body, model: 'scripted/model-a' });
     await driveTimers(harness, [opening]);
     expect(outputText((await readJson(await opening)).body)).toBe('b one');
-    expect((await getJson(harness.client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'open' });
+    expect((await getJson(harness.client, '/v1/momonga/health')).body.models['scripted/model-a']).toMatchObject({ breaker: 'open' });
 
     harness.clock.advance(10_000);
-    const trial = postJson(harness.client, '/v1/responses', body);
+    const trial = postJson(harness.client, '/v1/responses', { ...body, model: 'scripted/model-a' });
     let trialSettled = false;
     const settle = (): void => {
       trialSettled = true;
@@ -188,27 +188,27 @@ describe('one verdict per request and target', () => {
     await waitFor(() => trialSettled || harness.timers.pending().length > 0, { description: 'the trial request waiting to retry on a' });
     const settledBeforeRetry = trialSettled;
     const callsWhileTrialWaits = a.calls.length;
-    const concurrent = await readJson(await postJson(harness.client, '/v1/responses', body));
+    const concurrent = await readJson(await postJson(harness.client, '/v1/responses', { ...body, model: 'scripted/model-a' }));
     harness.timers.advance(harness.timers.pending().at(-1)?.delayMs ?? 0);
     const trialAnswer = await readJson(await trial);
 
     expect(settledBeforeRetry).toBe(false);
     expect(callsWhileTrialWaits).toBe(4);
     expect(outputText(concurrent.body)).toBe('b two');
-    expect(concurrent.body.momonga.fallbackFrom).toEqual(['a']);
+    expect(concurrent.body.momonga.fallbackFrom).toEqual(['scripted/model-a']);
     expect(trialAnswer.status).toBe(200);
     expect(outputText(trialAnswer.body)).toBe('a back');
     expect(a.calls).toHaveLength(5);
     expect(b.calls).toHaveLength(2);
-    expect((await getJson(harness.client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'closed' });
+    expect((await getJson(harness.client, '/v1/momonga/health')).body.models['scripted/model-a']).toMatchObject({ breaker: 'closed' });
   });
 });
 
 describe('the default breaker counts distinct requests', () => {
   it('stays closed after one request gives up on the target and opens after a second distinct request gives up there', async () => {
     const primary = createScriptedAdapter({ calls: [fail(503, 'first request'), fail(503, 'second request')] });
-    const harness = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: GATEWAY_CONFIG_DEFAULTS.breaker } });
-    const breaker = async () => (await getJson(harness.client, '/v1/momonga/health')).body.targets.primary.breaker as string;
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: GATEWAY_CONFIG_DEFAULTS.breaker } });
+    const breaker = async () => (await getJson(harness.client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker as string;
 
     expect((await readJson(await postJson(harness.client, '/v1/responses', body))).status).toBe(502);
     expect(await breaker()).toBe('closed');

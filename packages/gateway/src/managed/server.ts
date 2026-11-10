@@ -125,12 +125,12 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     options.spawn ??
     (options.markerDirectory === undefined
       ? (): ManagedChild => {
-          throw new Error(`the target "${target}": the server has no marker directory, so it cannot be launched`);
+          throw new Error(`the model "${target}": the server has no marker directory, so it cannot be launched`);
         }
       : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning }));
   const timers = options.timers ?? defaultTimers;
   const argv = argvOf(description, options.socketPath);
-  const said = (text: string): string => `the target "${target}": ${text}`;
+  const said = (text: string): string => `the model "${target}": ${text}`;
 
   let state: State = 'idle';
   let generation = 0;
@@ -196,7 +196,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     const byteLength = Buffer.byteLength(options.socketPath);
     const limit = socketPathLimit(process.platform);
     if (byteLength <= limit) return undefined;
-    return new TargetNotReadyError(said(`its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`));
+    return new TargetNotReadyError(said(`its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter server name`));
   };
 
   const occupied = (detail: string): ManagedServerError => new ManagedServerError('unhealthy', said('the server socket path is occupied'), detail);

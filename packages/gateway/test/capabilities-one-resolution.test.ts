@@ -27,7 +27,7 @@ const TWO_AUTO = {
 
 const listedNames = (body: any): string[] => (body?.tools ?? []).map((tool: any) => tool.function?.name ?? tool.name);
 
-const withReadFile = { model: 'fast', input: userInput('please read a'), tools: [readFileTool] };
+const withReadFile = { model: 'scripted/system', input: userInput('please read a'), tools: [readFileTool] };
 
 type Declaration = () => Promise<Capabilities>;
 
@@ -43,8 +43,8 @@ const startCc = async (options: {
   const fake = await startFake({ scenario: options.scenario, script: options.script });
   const adapter = makeAdapter(fake, { capabilities: options.capabilities ?? declared(options.own) });
   const { client } = await startGateway({
-    adapters: { fm: adapter },
-    config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system', ...(options.override === undefined ? {} : { capabilities: options.override }) } } },
+    adapters: { 'scripted/system': adapter },
+    config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': { ...(options.override === undefined ? {} : { capabilities: options.override }) } } },
   });
   return { fake, client };
 };
@@ -106,7 +106,7 @@ const countingDeclaration = (answers: (call: number) => Capabilities) => {
 const OPERATIONS = [
   { name: 'create', path: '/v1/responses', body: withReadFile },
   { name: 'count_tokens', path: '/v1/momonga/count_tokens', body: withReadFile },
-  { name: 'compact', path: '/v1/responses/compact', body: { model: 'fast', input: userInput('summarise this') } },
+  { name: 'compact', path: '/v1/responses/compact', body: { model: 'scripted/system', input: userInput('summarise this') } },
 ];
 
 describe('a request resolves the capabilities of each target it tries exactly once', () => {
@@ -143,9 +143,9 @@ describe('a request resolves the capabilities of each target it tries exactly on
     );
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('ok')] });
     const adapter = makeAdapter(fake, { capabilities: declaration.capabilities });
-    const { client } = await startGateway({ adapters: { fm: adapter }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
+    const { client } = await startGateway({ adapters: { 'scripted/system': adapter }, config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } } });
     callsAtStart = declaration.calls();
-    const created = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: TWO_AUTO }));
+    const created = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/system', input: userInput('hello'), tools: TOOLS, tool_choice: TWO_AUTO }));
     expectCompleted(created);
     expect(listedNames(completionBodies(fake)[0])).toEqual(['alpha', 'beta']);
   });
@@ -156,17 +156,17 @@ describe('a fallback attempt carries the capabilities of the target it falls bac
     const firstFake = await startFake({ scenario: 'tools-ok', script: [{ kind: 'error', status: 503, body: { error: { message: 'first is down' } } }] });
     const secondFake = await startFake({ scenario: 'tools-ok', script: [textReply('from second')] });
     const { client } = await startGateway({
-      adapters: { first: makeAdapter(firstFake), second: makeAdapter(secondFake) },
+      adapters: { 'first/system': makeAdapter(firstFake), 'second/system': makeAdapter(secondFake) },
       config: {
-        aliases: { fast: ['first', 'second'] },
+        chains: { 'first/system': ['first/system', 'second/system'] },
         targets: {
-          first: { model: 'system', capabilities: { outputBoundField: 'max_tokens' } },
-          second: { model: 'system', capabilities: { outputBoundField: 'max_completion_tokens' } },
+          'first/system': { capabilities: { outputBoundField: 'max_tokens' } },
+          'second/system': { capabilities: { outputBoundField: 'max_completion_tokens' } },
         },
         retry: { maxAttempts: 1, totalWaitMs: 1 },
       },
     });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hello'), max_output_tokens: 100 }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'first/system', input: userInput('hello'), max_output_tokens: 100 }));
     expectCompleted(response);
     expect(completionBodies(firstFake)).toHaveLength(1);
     expect(completionBodies(firstFake)[0].max_tokens).toBe(100);

@@ -16,7 +16,8 @@ import { nodeMarkerFiles } from '../../src/orphans.ts';
 import type { MarkerPorts } from '../../src/orphans.ts';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
-import { testHostPath } from '@momonga/testkit';
+import { modelSettings, testHostPath } from '@momonga/testkit';
+import type { ModelSpec } from '@momonga/testkit';
 
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
@@ -275,20 +276,23 @@ export const createFakeSpawn = (options: FakeSpawnOptions = {}): FakeSpawn => {
 
 export const CHAT_CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
 
-export const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  adapter: 'chat-completions',
-  provider: 'fake',
-  model: 'gpt-x',
+export const chatModel = (provider: string, overrides: { id?: string; apiKeyEnv?: string } = {}): ModelSpec => ({
+  provider,
+  id: overrides.id ?? 'gpt-x',
   baseUrl: 'https://api.example.com/v1',
   capabilities: CHAT_CAPABILITIES,
-  ...overrides,
+  ...(overrides.apiKeyEnv === undefined ? {} : { apiKeyEnv: overrides.apiKeyEnv }),
 });
 
-export const validSettings = (overrides: { model?: string; sandbox?: 'seatbelt' | 'none'; apiKeyEnv?: string; permissions?: unknown } = {}): Record<string, unknown> => ({
-  models: {
-    targets: { remote: chatTarget({ model: overrides.model ?? 'gpt-x', ...(overrides.apiKeyEnv === undefined ? {} : { apiKeyEnv: overrides.apiKeyEnv }) }) },
-    aliases: { default: 'remote' },
-  },
+export const REMOTE_PROVIDER = 'remote';
+
+export const validSettings = (overrides: { model?: string; sandbox?: 'seatbelt' | 'none'; apiKeyEnv?: string; permissions?: unknown; added?: readonly ModelSpec[] } = {}): Record<string, unknown> => ({
+  ...modelSettings({
+    models: [
+      chatModel(REMOTE_PROVIDER, { ...(overrides.model === undefined ? {} : { id: overrides.model }), ...(overrides.apiKeyEnv === undefined ? {} : { apiKeyEnv: overrides.apiKeyEnv }) }),
+      ...(overrides.added ?? []),
+    ],
+  }),
   ...(overrides.sandbox === undefined ? {} : { sandbox: overrides.sandbox }),
   ...(overrides.permissions === undefined ? {} : { permissions: overrides.permissions }),
 });

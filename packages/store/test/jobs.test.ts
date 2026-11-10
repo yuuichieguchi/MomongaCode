@@ -29,7 +29,7 @@ describe('background jobs', () => {
 
   it('files a job started in a child session under the root session', async () => {
     const { h, session, run } = setup();
-    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' });
+    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
     const { job } = startJob(h.store, child.session.id, child.run.id);
     expect(job.sessionId).toBe(session.id);
@@ -60,7 +60,7 @@ describe('background jobs', () => {
 
   it('wakes a run parked on the job, including one in a child session', async () => {
     const { h, session, run, claim } = setup();
-    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' });
+    const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
     await h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS);
     const childClaim = mustClaim(h.store, 'w2');

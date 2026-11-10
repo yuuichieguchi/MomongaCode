@@ -121,7 +121,7 @@ describe('momonga auth status', () => {
         account({ label: 'leaving', email: 'l@example.com', state: 'signing_out', active: false }),
       ],
     });
-    const code = await authStatus({ stdout: out, plan: backend.plan, models: async () => [] }, { json: false });
+    const code = await authStatus({ stdout: out, plan: backend.plan, listing: async () => ({ object: 'list', data: [], start: null, roles: {} } as const) }, { json: false });
     expect(code).toBe(0);
     const lines = out.written.join('').split('\n');
     const lineOf = (email: string): string => lines.find((line) => line.includes(email)) ?? '';
@@ -141,7 +141,7 @@ describe('momonga auth status', () => {
     expect(lines[brokenAt + 1]).toContain('bad tag');
     expect(out.written.join('').split('https://chatgpt.com/settings/usage')).toHaveLength(2);
     expect(out.written.join('')).toContain('https://chatgpt.com/settings/usage');
-    expect(lines.filter((line) => line.startsWith('model: '))).toEqual(['model: none']);
+    expect(lines.filter((line) => line.startsWith('model: '))).toEqual(['model: none (No model is connected. Use /login to connect one.)']);
   });
 });
 

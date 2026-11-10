@@ -30,9 +30,9 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const claim = await env.seed(
       run.id,
       [
-        { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' },
+        { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'default' },
         { type: 'attempt.lost', lastLiveAt: env.clock.now() - 5 },
-        { type: 'run.started', attempt: 2, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' },
+        { type: 'run.started', attempt: 2, now: env.clock.now(), pins: { model: 'fm' }, mode: 'default' },
         responded,
       ],
       'hold',
@@ -54,7 +54,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         deadlineAt: stored.deadlineAt,
         step: stored.step,
         tokensTotal: stored.usage.totalTokens,
-        modelAlias: 'fm',
+        model: 'fm',
         mode: 'default',
         agent: MAIN_AGENT,
         origin: stored.origin,
@@ -90,7 +90,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
-    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' }, responded], 'hold');
+    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm' }, mode: 'default' }, responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });

@@ -1,6 +1,6 @@
 import { COMPACTION_MIN_GAIN, ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities } from '@momonga/protocol';
+import type { ChainCapabilities, Capabilities } from '@momonga/protocol';
 import { omittedMarker } from './tool-output.ts';
 import type { Calibration, ContextBudget } from './types.ts';
 import { WORKING_STATE_MESSAGE_MIN_TOKENS } from './working-state.ts';
@@ -17,12 +17,12 @@ export const withCalibration = (capabilities: Capabilities, calibration: Calibra
   return { ...rest, tokenCounting: calibration.tokenCounting, ...(calibration.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: calibration.tokenErrorRatio }) };
 };
 
-const outputRoomFor = (capabilities: Capabilities & Pick<AliasCapabilities, 'unboundedOutputTokens'>): number => {
+const outputRoomFor = (capabilities: Capabilities & Pick<ChainCapabilities, 'unboundedOutputTokens'>): number => {
   if (capabilities.outputBoundField !== 'none') return outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, outputReserveFor(capabilities));
   return capabilities.unboundedOutputTokens ?? outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, undefined);
 };
 
-export const budgetFor = (capabilities: Capabilities & Pick<AliasCapabilities, 'unboundedOutputTokens'>, under: number): ContextBudget => {
+export const budgetFor = (capabilities: Capabilities & Pick<ChainCapabilities, 'unboundedOutputTokens'>, under: number): ContextBudget => {
   const W = capabilities.contextWindow;
   const R = outputRoomFor(capabilities);
   const margin = marginFloorFor(W) + under;

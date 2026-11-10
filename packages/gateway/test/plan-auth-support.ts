@@ -57,8 +57,8 @@ export const startPlan = async (auth: AuthSource, accepted: (bearer: string | un
     errorRules: planProfileOf('chatgpt').errorRules,
   });
   registerCleanup(() => adapter.close());
-  const harness = await startGateway({ adapters: { plan: adapter }, config: { aliases: { fast: ['plan'] }, targets: { plan: { model: 'plan-model', billing: 'plan' } }, retry } });
-  const post = async (extra: Record<string, unknown> = {}) => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...extra }));
+  const harness = await startGateway({ adapters: { 'scripted/plan-model': adapter }, config: { chains: { 'scripted/plan-model': ['scripted/plan-model'] }, targets: { 'scripted/plan-model': { billing: 'plan' } }, retry } });
+  const post = async (extra: Record<string, unknown> = {}) => readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/plan-model', input: userInput('hi'), ...extra }));
   return { fake, post, client: harness.client };
 };
 

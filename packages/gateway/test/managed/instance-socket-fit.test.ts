@@ -5,7 +5,7 @@ import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/founda
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -23,7 +23,7 @@ const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
 };
 
 const unfitText = (target: string, byteLength: number, limit: number): string =>
-  `the target "${target}": its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`;
+  `the model "${target}": its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter server name`;
 
 describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of 18.2.5 (design-managed-servers section 18, item 4)', () => {
   it('starts the gateway, answers the long-path target 412 target_not_ready with the 18.2.5 text, creates no socket or marker for it, and still serves the other target', async () => {
@@ -34,13 +34,10 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const longSocket = path.join(instanceSockets(home), `${longTarget}${FIRST_INCARNATION_SUFFIX}.sock`);
     expect(Buffer.byteLength(longSocket)).toBe(limit + 1);
     writeSettings(home, {
-      models: {
-        targets: {
-          [longTarget]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-          [FITTING_TARGET]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-        },
-        aliases: { default: [FITTING_TARGET], long: [longTarget] },
-      },
+      models: modelsOf({
+          [longTarget]: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+          [FITTING_TARGET]: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+        }),
     });
 
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });

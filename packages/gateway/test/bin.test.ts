@@ -6,7 +6,7 @@ import { FIRST_GENERATION, createUdsClient, momongaPaths, fixedSocket } from '@m
 import { REAL_PROCESS_TEST_TIMEOUT_MS, productTestEnv, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../package.json' with { type: 'json' };
-import { MINIMAL_PATH, ccTarget, writeSettings } from './gateway-process-helpers.ts';
+import { MINIMAL_PATH, ccTarget, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -14,7 +14,7 @@ const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/b
 const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
-  writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(path.join(aux, 'up.sock')) } } });
+  writeSettings(home, { models: modelsOf({ primary: ccTarget(path.join(aux, 'up.sock')) }) });
   return { home, paths: momongaPaths(home, process.platform, {}), env: productTestEnv({ PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux }) };
 };
 

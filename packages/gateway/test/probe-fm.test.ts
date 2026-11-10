@@ -15,7 +15,7 @@ const setup = async () => {
   const dir = makeHome();
   const fm = await createFakeFm({ dir });
   const paths = momongaPaths(dir, process.platform, {});
-  const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'apple' } as Parameters<typeof managedInstancePaths>[1]);
+  const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' });
   return { dir, binary: fm.binaryPath, paths, instance };
 };
 

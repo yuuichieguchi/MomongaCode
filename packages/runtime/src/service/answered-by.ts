@@ -12,8 +12,8 @@ export const answeredByOf = async (store: Pick<RuntimeStore, 'readRunEventsOfTyp
   const pins: Record<string, TargetPin> = readTargets(pinned);
   return (await store.answeringTargetsOf(runId)).map((target) => {
     if (target === UNKNOWN_ANSWERER) return { target, answers: UNKNOWN_ANSWERER };
-    const pin = pins[target];
-    if (pin === undefined) throw new Error(`run ${runId} was answered by target ${target}, which its pins do not list`);
+    const pin = Object.hasOwn(pins, target) ? pins[target] : undefined;
+    if (pin === undefined) return { target, answers: UNKNOWN_ANSWERER };
     return { target, adapter: pin.adapter, upstreamModel: pin.model, answers: pin.answers ?? UNKNOWN_ANSWERER };
   });
 };

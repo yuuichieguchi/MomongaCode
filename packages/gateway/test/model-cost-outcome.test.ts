@@ -11,7 +11,7 @@ const USAGE = { input_tokens: 10, output_tokens: 7, total_tokens: 17, input_toke
 const plainTurn = () =>
   anthropicStream([anthropicMessageStart({ input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
 
-const billed = (billing: 'local' | 'plan') => ({ targets: { remote: { model: 'upstream-model', kind: 'remote', billing } }, aliases: { fast: ['remote'] } });
+const billed = (billing: 'local' | 'plan') => ({ targets: { 'scripted/upstream-model': { kind: 'remote', billing } } });
 
 const outcomeOf = (billing: 'metered' | 'local' | 'plan' | 'unknown', table: ReturnType<typeof definePriceTable> | undefined) =>
   modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: USAGE, usageSource: 'reported', cacheWriteInputTokens: undefined, at: 0, table });

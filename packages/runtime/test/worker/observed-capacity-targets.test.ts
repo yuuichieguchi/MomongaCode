@@ -19,7 +19,7 @@ const observedEnv = async (targets: readonly string[]): Promise<Env> => {
   env.settings.contextValue = { ...env.settings.contextValue, observedCapacity: true };
   env.gateway.capabilitiesByTarget.set(PRIMARY_TARGET, exactTarget());
   env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedTarget());
-  env.gateway.targetsByAlias[env.session.modelAlias] = [...targets];
+  env.gateway.chainsByModel[env.session.model] = [...targets];
   env.gateway.countMethod = 'exact';
   return env;
 };
@@ -55,14 +55,14 @@ describe('a fallback meter is restored at claim start from its own counter event
     env.settings.contextValue = { ...env.settings.contextValue, observedCapacity: true };
     env.gateway.capabilitiesByTarget.set(PRIMARY_TARGET, exactTarget());
     env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedTarget());
-    env.gateway.targetsByAlias[env.session.modelAlias] = [FALLBACK_TARGET];
+    env.gateway.chainsByModel[env.session.model] = [FALLBACK_TARGET];
     env.gateway.script.push(textStep('Done.'), textStep('Again.'));
     const earlier = env.enqueue('Echo something');
     await env.runOnce(env.worker());
     expect(env.ofType(earlier.id, 'meter.observed')).toMatchObject([{ target: FALLBACK_TARGET, counter: fakeCounterOf(FALLBACK_TARGET) }]);
     const systemItem = canonicalJson(inputOf(env.gateway.streams[0]!.body)[0]);
 
-    env.gateway.targetsByAlias[env.session.modelAlias] = [PRIMARY_TARGET, FALLBACK_TARGET];
+    env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET, FALLBACK_TARGET];
     const countsBefore = env.gateway.counts.length;
     const later = env.enqueue('Echo something else');
     await env.runOnce(env.worker('worker-2'));

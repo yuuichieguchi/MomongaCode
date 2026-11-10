@@ -61,7 +61,7 @@ const ask = async (reply: FakeUpstreamReply, retry?: { maxAttempts: number; tota
   return plan.post();
 };
 
-const STREAM_REQUEST = { model: 'fast', input: userInput('hi'), stream: true };
+const STREAM_REQUEST = { model: 'scripted/plan-model', input: userInput('hi'), stream: true };
 
 const streamFrames = async (reply: FakeUpstreamReply, headers: Record<string, string> = {}) => {
   const plan = await startPlan(fakeAuth(), () => true, [reply]);

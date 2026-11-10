@@ -3,7 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { detectLocalServers } from '../src/index.ts';
+import { describeModel, detectLocalServers } from '../src/index.ts';
+import type { DetectFetch } from '../src/index.ts';
 import { PreconditionCancelledError } from '../src/managed/preconditions.ts';
 
 type Route = (body: string) => { status: number; json?: unknown };
@@ -45,7 +46,7 @@ const detect = (options: Record<string, unknown>) =>
   });
 
 describe('the detector fills the field its shape reports (O-R5-4 S10)', () => {
-  it('gives an Ollama model the trained context of the /api/show answer it already reads, and none when the answer carries no length', async () => {
+  it('gives a chosen Ollama model the ceiling and the tool capability of its /api/show answer, and no ceiling when the answer carries no length', async () => {
     const baseUrl = await serve({
       'GET /api/version': () => ({ status: 200, json: { version: '0.9.0' } }),
       'GET /api/tags': () => ({ status: 200, json: { models: [{ name: 'long:7b' }, { name: 'bare:3b' }] } }),
@@ -56,15 +57,21 @@ describe('the detector fills the field its shape reports (O-R5-4 S10)', () => {
           : { status: 200, json: { capabilities: ['completion'] } };
       },
     });
-    expect(await detect({ candidates: [baseUrl] })).toEqual([
-      {
-        baseUrl,
-        shape: 'ollama',
-        models: [
-          { id: 'long:7b', tools: 'yes', trainedContext: 131072 },
-          { id: 'bare:3b', tools: 'no' },
-        ],
-      },
+    const [found] = await detect({ candidates: [baseUrl] });
+    if (found === undefined || 'shape' in found) throw new Error('the Ollama fake was not found');
+    expect(found).toEqual({
+      kind: 'ollama',
+      provider: `ollama-127.0.0.1-${new URL(baseUrl).port}`,
+      address: baseUrl,
+      models: [
+        { id: 'long:7b', tools: 'unknown' },
+        { id: 'bare:3b', tools: 'unknown' },
+      ],
+    });
+    const described = await Promise.all(found.models.map((model) => describeModel({ server: found, model, signal: new AbortController().signal, fetch: fetch as DetectFetch })));
+    expect(described).toEqual([
+      { id: 'long:7b', tools: 'yes', ceiling: 131072 },
+      { id: 'bare:3b', tools: 'no' },
     ]);
   });
 
@@ -77,8 +84,9 @@ describe('the detector fills the field its shape reports (O-R5-4 S10)', () => {
     });
     expect(await detect({ candidates: [baseUrl] })).toEqual([
       {
-        baseUrl,
-        shape: 'openai',
+        kind: 'generic',
+        provider: `srv-127.0.0.1-${new URL(baseUrl).port}`,
+        address: `${baseUrl}/v1`,
         models: [
           { id: 'served', tools: 'unknown', contextWindow: 32768 },
           { id: 'quiet', tools: 'unknown' },

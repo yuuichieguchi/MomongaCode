@@ -237,7 +237,7 @@ describe('compaction transcript with images', () => {
 
 describe('image capability filter', () => {
   const imageBody = {
-    model: 'fast',
+    model: 'scripted/model-a',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'see' }, { type: 'input_image', image_url: PNG_URL }] }],
   };
 
@@ -245,8 +245,8 @@ describe('image capability filter', () => {
     const plain = createScriptedAdapter({ calls: [] });
     const seeing = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['seen'] }) }], capabilities: { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } });
     const { client } = await startGateway({
-      adapters: { a: plain, b: seeing },
-      config: { aliases: { fast: ['a', 'b'] }, targets: { a: { model: 'model-a' }, b: { model: 'model-b' } } },
+      adapters: { 'scripted/model-a': plain, 'scripted/model-b': seeing },
+      config: { chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] }, targets: { 'scripted/model-a': {}, 'scripted/model-b': {} } },
     });
     const response = await readJson(await postJson(client, '/v1/responses', imageBody));
     expect(response.status).toBe(200);
@@ -256,7 +256,7 @@ describe('image capability filter', () => {
 
   it('rejects with capability_unsupported when no target declares imageInput', async () => {
     const plain = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a: plain }, config: { aliases: { fast: ['a'] }, targets: { a: { model: 'model-a' } } } });
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': plain }, config: { chains: { 'scripted/model-a': ['scripted/model-a'] }, targets: { 'scripted/model-a': {} } } });
     const response = await readJson(await postJson(client, '/v1/responses', imageBody));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported' });
@@ -265,7 +265,7 @@ describe('image capability filter', () => {
 
   it('applies the same filter to count_tokens', async () => {
     const plain = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a: plain }, config: { aliases: { fast: ['a'] }, targets: { a: { model: 'model-a' } } } });
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': plain }, config: { chains: { 'scripted/model-a': ['scripted/model-a'] }, targets: { 'scripted/model-a': {} } } });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', imageBody));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported' });

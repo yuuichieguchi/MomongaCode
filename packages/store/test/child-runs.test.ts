@@ -4,7 +4,7 @@ import { parkWaitingHuman } from './approval-fixture.ts';
 import { DEADLINE_MS, START_MS, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 
 const spawn = (store: RuntimeStore, parent: Run, callId: string, input = 'child task') => {
-  const result = store.createChildRun({ parentRunId: parent.id, parentCallId: callId, input, pins: { agent: { name: 'helper' } }, modelAlias: 'fm' });
+  const result = store.createChildRun({ parentRunId: parent.id, parentCallId: callId, input, pins: { agent: { name: 'helper' } }, model: 'fm' });
   if (result.kind !== 'created' && result.kind !== 'existing') throw new Error(`expected a child run, got ${result.kind}`);
   return result;
 };
@@ -14,7 +14,7 @@ const runningParent = (h: ReturnType<typeof harness>, sessionOptions: { mode?: '
     cwd: '/work/a',
     env: { PATH: '/usr/bin' },
     permissionMode: sessionOptions.mode ?? 'default',
-    modelAlias: 'fm',
+    model: 'fm',
     bypassAllowed: true,
     additionalDirectories: ['/work/extra'],
   });
@@ -36,7 +36,7 @@ describe('createChildRun', () => {
       permissionMode: 'default',
       bypassAllowed: true,
       additionalDirectories: ['/work/extra'],
-      modelAlias: 'fm',
+      model: 'fm',
     });
     expect(run).toMatchObject({
       sessionId: childSession.id,
@@ -53,19 +53,19 @@ describe('createChildRun', () => {
     expect(h.store.readRunEvents(run.id, 0, 10).map((event) => event.type)).toEqual(['user.message']);
   });
 
-  it('gives the child the model alias it asks for', async () => {
+  it('gives the child the model it asks for', async () => {
     const h = harness();
     const { parent } = runningParent(h);
-    const result = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'other' });
-    expect(result.kind === 'created' && result.session.modelAlias).toBe('other');
+    const result = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, model: 'other' });
+    expect(result.kind === 'created' && result.session.model).toBe('other');
   });
 
-  it('gives the child the alias the caller names even when the session has another', async () => {
+  it('gives the child the model the caller names even when the session has another', async () => {
     const h = harness();
     const { session, parent } = runningParent(h);
-    h.store.setModelAlias(session.id, 'switched');
-    const result = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' });
-    expect(result.kind === 'created' && result.session.modelAlias).toBe('fm');
+    h.store.setModel(session.id, 'switched');
+    const result = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' });
+    expect(result.kind === 'created' && result.session.model).toBe('fm');
   });
 
   it('returns the existing child when the same tool call asks again', async () => {
@@ -82,11 +82,11 @@ describe('createChildRun', () => {
     const h = harness();
     const { parent } = runningParent(h);
     await h.store.requestCancel(parent.id);
-    expect(h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' })).toEqual({
+    expect(h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c', input: 'x', pins: {}, model: 'fm' })).toEqual({
       kind: 'parent_not_active',
       status: 'CANCELLING',
     });
-    expect(h.store.createChildRun({ parentRunId: 'nope', parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' })).toEqual({
+    expect(h.store.createChildRun({ parentRunId: 'nope', parentCallId: 'c', input: 'x', pins: {}, model: 'fm' })).toEqual({
       kind: 'parent_not_active',
       status: 'missing',
     });
@@ -96,7 +96,7 @@ describe('createChildRun', () => {
     const h = harness();
     const { session, parent } = runningParent(h);
     const { session: childSession, run: child } = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
-    const grandchild = h.store.createChildRun({ parentRunId: child.id, parentCallId: 'g', input: 'x', pins: {}, modelAlias: 'fm' });
+    const grandchild = h.store.createChildRun({ parentRunId: child.id, parentCallId: 'g', input: 'x', pins: {}, model: 'fm' });
     if (grandchild.kind !== 'created') throw new Error('expected a grandchild');
     expect(h.store.listSessions().map((entry) => entry.id)).toEqual([session.id]);
     expect(h.store.listSessions({ cwd: '/work/a' }).map((entry) => entry.id)).toEqual([session.id]);
@@ -156,7 +156,7 @@ describe('cancel cascade', () => {
     const h = harness();
     const { parent } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
-    const grandchild = h.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'g', input: 'x', pins: {}, modelAlias: 'fm' });
+    const grandchild = h.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'g', input: 'x', pins: {}, model: 'fm' });
     if (grandchild.kind !== 'created') throw new Error('expected a grandchild');
     await h.store.requestCancel(parent.id);
     expect(mustRun(h.store, child.run.id).status).toBe('CANCELLING');

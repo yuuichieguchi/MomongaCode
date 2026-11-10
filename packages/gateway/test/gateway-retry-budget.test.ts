@@ -30,7 +30,7 @@ type Primary = ReturnType<typeof createScriptedAdapter>;
 
 const startBudgeted = (primary: Primary, config: ConfigOverrides = {}, random?: () => number): Promise<Harness> =>
   startGateway({
-    adapters: { primary },
+    adapters: { 'scripted/scripted-primary': primary },
     config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY, ...config },
     ...(random === undefined ? {} : { random }),
   });
@@ -185,7 +185,7 @@ describe('the gateway retry budget', () => {
       timers,
       calls: [{ delayMs: 80_000, failure: { status: 503, message: 'hung, then down' } }, ...unavailable(10)],
     });
-    const harness = await startGateway({ adapters: { primary }, clock, timers, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, timers, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
     const pending = postJson(harness.client, '/v1/responses', request);
 
     const delays = await driveTimers(harness, [pending]);
@@ -231,8 +231,8 @@ describe('the breaker never cuts the budget', () => {
 
 describe('the spread across targets', () => {
   const twoTargets = {
-    aliases: { fast: ['primary', 'secondary'] },
-    targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+    chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+    targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
     retry: BUDGET,
     breaker: BREAKER_OUT_OF_THE_WAY,
   };
@@ -240,7 +240,7 @@ describe('the spread across targets', () => {
   it('retries the first target retry.maxAttempts times, then falls back, and the last target uses what is left of the budget', async () => {
     const primary = createScriptedAdapter({ calls: unavailable(3) });
     const secondary = createScriptedAdapter({ calls: [...unavailable(4), ok('from secondary', 'scripted-secondary')] });
-    const harness = await startGateway({ adapters: { primary, secondary }, config: twoTargets });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary }, config: twoTargets });
     const pending = postJson(harness.client, '/v1/responses', request);
 
     const waits = await driveTimers(harness, [pending]);
@@ -253,14 +253,14 @@ describe('the spread across targets', () => {
     expect(waits.slice(0, 2)).toEqual([375, 750]);
     expect(waits).toHaveLength(6);
     expect(sum(waits)).toBeLessThanOrEqual(TOTAL_WAIT_MS);
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
     expect(response.body.momonga.attempts).toBe(8);
   });
 
   it('falls back at once on a Retry-After above retry.maxMs when a later candidate exists, and the last target keeps retrying within the budget', async () => {
     const primary = createScriptedAdapter({ calls: rateLimited(1, 20_000) });
     const secondary = createScriptedAdapter({ calls: [...unavailable(3), ok('from secondary', 'scripted-secondary')] });
-    const harness = await startGateway({ adapters: { primary, secondary }, config: twoTargets });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary }, config: twoTargets });
     const pending = postJson(harness.client, '/v1/responses', request);
 
     const waits = await driveTimers(harness, [pending]);
@@ -271,6 +271,6 @@ describe('the spread across targets', () => {
     expect(primary.calls).toHaveLength(1);
     expect(secondary.calls).toHaveLength(4);
     expect(waits.every((wait) => wait <= MAX_MS)).toBe(true);
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
   });
 });

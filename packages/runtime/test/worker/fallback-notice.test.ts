@@ -8,11 +8,11 @@ const answeredBy = (step: ScriptStep, extension: Record<string, unknown>): Scrip
   ...step,
   events: step.events.map(
     (event): StreamEvent =>
-      event.type === 'response.completed' ? { ...event, response: { ...event.response, momonga: { alias: 'fm', usageSource: 'reported', ...extension } as never } } : event,
+      event.type === 'response.completed' ? { ...event, response: { ...event.response, momonga: { model: 'fm', usageSource: 'reported', ...extension } as never } } : event,
   ),
 });
 
-describe('a model call answered by a target other than the first of its alias', () => {
+describe('a model call answered by a target other than the first of its model', () => {
   it('tells the person which target failed and why', async () => {
     const env = await makeEnv();
     env.gateway.script.push(

@@ -6,7 +6,8 @@ import { createTokenMeter } from '@momonga/context';
 import { momongaPaths, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { probeOllamaTarget, startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
+import type { ModelSpec } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
@@ -14,7 +15,8 @@ import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const ALIAS = 'default';
+const OLLAMA_PROVIDER = 'ollama-fake';
+const OLLAMA_OWN_NAME = `${OLLAMA_MODEL}:latest`;
 const CONTEXT_WINDOW = 12288;
 
 const READ_TOOL: FunctionTool = {
@@ -38,10 +40,10 @@ const makeHome = (): string => {
   return home;
 };
 
-const writeTarget = (home: string, target: Record<string, unknown>): void => {
+const writeModel = (home: string, model: ModelSpec): void => {
   const root = path.join(home, '.momonga');
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ models: { aliases: { [ALIAS]: ['primary'] }, targets: { primary: target } } }), { mode: 0o600 });
+  fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(modelSettings({ models: [model] })), { mode: 0o600 });
 };
 
 const launch = async (home: string) => {
@@ -58,29 +60,22 @@ const chatCompletionsClient = async (toolCalling: 'native' | 'constrained') => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', script: [] });
   closers.push(() => fake.close());
   const home = makeHome();
-  writeTarget(home, {
-    adapter: 'chat-completions',
-    provider: 'fake',
-    model: 'system',
-    socketPath: fake.socketPath,
-    toolCalling,
-    capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 },
-  });
-  return launch(home);
+  writeModel(home, { provider: 'fake', id: 'system', socketPath: fake.socketPath, toolCalling, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
+  return { client: await launch(home), model: 'fake/system' };
 };
 
 const ollamaClient = async () => {
   const fake = await startFakeOllama({});
   const home = makeHome();
-  writeTarget(home, { adapter: 'ollama', model: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
+  writeModel(home, { adapter: 'ollama', provider: OLLAMA_PROVIDER, id: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
   await probeOllamaTarget({
-    key: { endpoint: fake.origin, model: OLLAMA_MODEL },
+    key: { endpoint: fake.origin, model: OLLAMA_OWN_NAME },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
-    model: OLLAMA_MODEL,
+    model: OLLAMA_OWN_NAME,
     contextWindow: CONTEXT_WINDOW,
   });
-  return launch(home);
+  return { client: await launch(home), model: `${OLLAMA_PROVIDER}/${OLLAMA_OWN_NAME}` };
 };
 
 type Client = Awaited<ReturnType<typeof launch>>;
@@ -92,7 +87,7 @@ const outputOf = (text: string): InputItem => ({ type: 'function_call_output', c
 const REPORTED = [userItem('please read a.txt'), readCall, outputOf('alpha '.repeat(40))];
 const EVICTED = [userItem('please read a.txt'), readCall, outputOf('[tool output omitted: 60 tokens; stored as h1; read it with ReadOutput]')];
 
-const splitCountOf = async (client: Client, tools: FunctionTool[]) => {
+const splitCountOf = async ({ client, model }: { client: Client; model: string }, tools: FunctionTool[]) => {
   const rejections: Rejection[] = [];
   const signal = new AbortController().signal;
   const counter = {
@@ -106,8 +101,8 @@ const splitCountOf = async (client: Client, tools: FunctionTool[]) => {
       }
     },
   };
-  const capabilities = await client.capabilities(ALIAS, { signal });
-  const meter = createTokenMeter({ counter, model: ALIAS, capabilities });
+  const capabilities = await client.capabilities(model, { signal });
+  const meter = createTokenMeter({ counter, model, capabilities });
   const first = await meter.count({ input: REPORTED, tools });
   meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens });
   const outcome = await meter.count({ input: EVICTED, tools }).then(

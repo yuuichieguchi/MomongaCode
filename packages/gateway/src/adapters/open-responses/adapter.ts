@@ -51,7 +51,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     const ledger = new RenderLedger();
     const jsonReply = jsonReplyPlanOf(request, capabilities);
     const body = {
-      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin, {
+      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin, {
         schemaDialect: capabilities.schemaDialect,
         ledger,
         jsonReply,

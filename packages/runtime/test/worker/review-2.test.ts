@@ -8,7 +8,7 @@ import { deferred, waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
 import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
-import { MODEL_ALIAS, functionCallItem, requestedOffering, textStep } from './scripts.ts';
+import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 const untilAborted = (signal: AbortSignal): Promise<void> =>
   new Promise<void>((resolve) => {
@@ -75,7 +75,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
 });
 
 const secondSessionRun = (env: Env) => {
-  const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: MODEL_ALIAS });
+  const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', model: MODEL_ID });
   return createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
 };
 

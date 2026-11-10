@@ -9,7 +9,8 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, modelSettings as settingsOfModels, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
+import type { ModelSpec } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
@@ -127,14 +128,10 @@ export const sessionEnvFor = (tempHome: string): Readonly<Record<string, string>
 
 const TARGET_CONTEXT_WINDOW = 8192;
 
-export const modelSettings = (fakeSocketPath: string, contextWindow: number = TARGET_CONTEXT_WINDOW): Record<string, unknown> => ({
-  models: {
-    aliases: { default: ['primary'] },
-    targets: {
-      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow, maxOutputTokens: 1024 } },
-    },
-  },
-});
+export const STACK_MODEL = 'fake/system';
+
+export const modelSettings = (fakeSocketPath: string, contextWindow: number = TARGET_CONTEXT_WINDOW, overrides: ModelSpec = {}): Record<string, unknown> =>
+  settingsOfModels({ models: [{ provider: 'fake', id: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow, maxOutputTokens: 1024 }, ...overrides }] });
 
 export type Stack = {
   temp: RunHome;

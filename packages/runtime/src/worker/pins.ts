@@ -1,6 +1,6 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { OUTPUT_FORMATTERS, TARGET_ANSWERS, agentReadiness, isToolCallingState } from '@momonga/protocol';
+import { OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isToolCallingState } from '@momonga/protocol';
 import type { Capabilities, OutputFormatterName, TargetAnswers } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
@@ -17,7 +17,7 @@ export type TokenPin = {
 export type TargetPin = { adapter: string; model: string; answers?: TargetAnswers };
 
 export type RunPins = {
-  modelAlias: string;
+  model: string;
   systemPromptDigest: string;
   toolSetDigest: string;
   capabilities: Capabilities;
@@ -32,11 +32,11 @@ export const readRoles = (value: unknown): ModelRoles => {
   if (value === undefined) return {};
   if (!isRecord(value)) throw new Error('the roles pinned for this run are malformed');
   const roles: ModelRoles = {};
-  for (const [role, alias] of Object.entries(value)) {
-    if (!(MODEL_ROLES as readonly string[]).includes(role) || typeof alias !== 'string' || alias === '') {
+  for (const [role, model] of Object.entries(value)) {
+    if (!(MODEL_ROLES as readonly string[]).includes(role) || typeof model !== 'string' || model === '') {
       throw new Error('the roles pinned for this run are malformed');
     }
-    roles[role as keyof ModelRoles] = alias;
+    roles[role as keyof ModelRoles] = model;
   }
   return roles;
 };
@@ -84,12 +84,12 @@ export const readTokenPin = (value: unknown): TokenPin => {
   };
 };
 
-export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { modelAlias: string; roles: ModelRoles } => {
+export const parentPinsOf = (store: Pick<RuntimeStore, 'readRunEventsOfTypes'>, runId: string): { model: string; roles: ModelRoles } => {
   const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
-  if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model alias and no roles`);
-  const modelAlias = started.pins['modelAlias'];
-  if (typeof modelAlias !== 'string') throw new Error(`run ${runId} recorded run.started without a model alias pin`);
-  return { modelAlias, roles: readRoles(started.pins['roles']) };
+  if (started === undefined || started.type !== 'run.started') throw new Error(`run ${runId} has not recorded run.started, so it has pinned no model and no roles`);
+  const model = decodeStoredModel(started.pins, STORED_MODEL_KEYS.pin);
+  if (model === undefined) throw new Error(`run ${runId} recorded run.started without a model pin`);
+  return { model, roles: readRoles(started.pins['roles']) };
 };
 
 const isCapabilities = (value: unknown): value is Capabilities =>
@@ -102,9 +102,10 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   isToolCallingState(value['toolCalling']);
 
 export const readPins = (value: Record<string, unknown>): RunPins => {
-  const { modelAlias, systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token } = value;
+  const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token } = value;
+  const model = decodeStoredModel(value, STORED_MODEL_KEYS.pin);
   if (
-    typeof modelAlias !== 'string' ||
+    model === undefined ||
     typeof systemPromptDigest !== 'string' ||
     typeof toolSetDigest !== 'string' ||
     !isCapabilities(capabilities) ||
@@ -118,7 +119,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     throw new Error(`the pins recorded for this run hold capabilities of a target that was not ready: ${readiness.message}`);
   }
   return {
-    modelAlias,
+    model,
     systemPromptDigest,
     toolSetDigest,
     capabilities,

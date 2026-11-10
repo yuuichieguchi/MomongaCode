@@ -55,7 +55,7 @@ describe('a response whose upstream sent no usage carries usage_not_reported', (
 describe('a compaction whose adapter estimated its usage carries usage_not_reported', () => {
   it('open-responses: the summary reported no usage', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['The user asked for X.'], null)], priceTable: TABLE });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
 
     expect(response.status).toBe(200);
     expect(response.body.momonga.unpriced).toMatchObject({ code: 'usage_not_reported' });
@@ -66,11 +66,11 @@ describe('a compaction whose adapter estimated its usage carries usage_not_repor
     const withoutUsage: FakeScriptedReply = { kind: 'stream', chunks: [{ delta: { role: 'assistant', content: 'The user asked for X.' } }, { delta: {}, finishReason: 'stop' }] };
     const fake = await startFake({ scenario: 'tools-ok', usageReported: false, script: [withoutUsage] });
     const gateway = await startGateway({
-      adapters: { remote: ccAdapterFor(fake) },
-      config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'system', kind: 'remote', billing: 'metered' } } },
+      adapters: { 'scripted/system': ccAdapterFor(fake) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': { kind: 'remote', billing: 'metered' } } },
       priceTable: definePriceTable([]),
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/system', input: userInput('do X') }));
 
     expect(response.status).toBe(200);
     expect(response.body.momonga.unpriced).toMatchObject({ code: 'usage_not_reported' });

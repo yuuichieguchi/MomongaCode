@@ -18,7 +18,7 @@ export const declaredDialectRefusal = (targetName: string, declared: DialectId |
   const detail = report.tried.find((attempt) => attempt.id === declared)?.detail;
   return needsProbeOf(
     targetName,
-    `the target "${targetName}" declares the schema dialect "${declared}", which the probe found the server does not accept`,
+    `the model "${targetName}" declares the schema dialect "${declared}", which the probe found the server does not accept`,
     `${subject} refused the declared dialect${detail === undefined ? '' : `: ${detail}`}`,
   );
 };

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { getJson } from './gateway-helpers.ts';
-import { clientFor, homePaths } from './gateway-process-helpers.ts';
+import { clientFor, homePaths, modelsOf } from './gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, begin, browse, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID } from './plan-support.ts';
@@ -27,7 +27,7 @@ const target = (account: string) => ({ adapter: 'open-responses', model: 'plan-m
 
 const APPLIED = {
   credentials: { plaintextTokenFiles: true },
-  models: { aliases: { default: ['gpt'] }, targets: { gpt: target(ACCOUNT), 'gpt-spare': target(SPARE) } },
+  models: modelsOf({ gpt: target(ACCOUNT), 'gpt-spare': target(SPARE) }),
 };
 
 const completeFor = async (gateway: PlanGateway, account: string) => {
@@ -44,17 +44,17 @@ describe('O-R5-6 L6: the routes that read plan targets take the D1 lease and rea
     expect((await getJson(clientFor(gateway.socketPath), '/v1/momonga/models')).status).toBe(200);
     const work = await completeFor(gateway, ACCOUNT);
     expect(work.status).toBe(200);
-    expect(work.body.account).toMatchObject({ label: ACCOUNT, pinnedBy: ['gpt'] });
+    expect(work.body.account).toMatchObject({ label: ACCOUNT, pinnedBy: ['gpt/plan-model'] });
 
     replaceSettingsText(gateway.home, '{ "models": ');
 
     const spare = await completeFor(gateway, SPARE);
     expect(spare.status).toBe(200);
-    expect(spare.body.account).toMatchObject({ label: SPARE, pinnedBy: ['gpt-spare'] });
+    expect(spare.body.account).toMatchObject({ label: SPARE, pinnedBy: ['gpt-spare/plan-model'] });
     const listed = await gateway.get(PLAN_ROUTES.accounts);
     expect(listed.status).toBe(200);
     const pinned = Object.fromEntries((listed.body.accounts as { label: string; pinnedBy: string[] }[]).map((entry) => [entry.label, entry.pinnedBy]));
-    expect(pinned).toEqual({ [ACCOUNT]: ['gpt'], [SPARE]: ['gpt-spare'] });
+    expect(pinned).toEqual({ [ACCOUNT]: ['gpt/plan-model'], [SPARE]: ['gpt-spare/plan-model'] });
     const resumed = await gateway.post(accountRoute(PLAN_ROUTES.accountResume, ACCOUNT), { profile: PROFILE_ID });
     expect(resumed.status).toBe(200);
 

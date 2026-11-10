@@ -1,21 +1,21 @@
 import type { Context } from 'hono';
 import type { Clock } from '@momonga/foundation';
 import { checkGoverningFact, normalizeTarget, overlappingEnforced, resolveGoverning, ruleSizeReport } from '@momonga/memory';
-import { enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
-import type { AddRuleRequest, Capabilities, GoverningFactView, PolicyGovernanceResponse, RuleAddResponse } from '@momonga/protocol';
+import { displayOf, enforcedBehaviorOf, tokensForText } from '@momonga/protocol';
+import type { AddRuleRequest, Capabilities, GoverningFactView, ModelView, ModelViews, PolicyGovernanceResponse, RuleAddResponse } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError } from '../gateway-client.ts';
 import { ruleParses } from '../governance/rules.ts';
 import { invalidRequest, notFound } from './errors.ts';
-import type { Handler, RouteRegistrar } from './app.ts';
+import type { Handler, ModelListing, RouteRegistrar } from './app.ts';
 import { canonicalProject } from './project-query.ts';
 import { JSON_MEDIA_TYPES, readJson, validateBody } from './request.ts';
 
 export type RuleRoutesDeps = {
   store: Pick<RuntimeStore, 'governing'>;
   clock: Clock;
-  modelAliases: () => Promise<readonly string[]>;
-  modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
+  modelListing: (signal: AbortSignal) => Promise<ModelListing>;
+  modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
 };
@@ -42,19 +42,20 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
     return fact;
   };
 
-  type AliasWindow = { measured: true; target: string; contextWindow: number } | { measured: false; warning: string };
+  type ModelWindow = { measured: true; target: string; contextWindow: number } | { measured: false; warning: string };
 
-  const windowOf = async (alias: string): Promise<AliasWindow> => {
+  const windowOf = async (view: ModelView, views: ModelViews): Promise<ModelWindow> => {
     try {
-      return { measured: true, target: alias, contextWindow: (await deps.modelCapabilities(alias, deps.closeSignal)).contextWindow };
+      return { measured: true, target: view.canon, contextWindow: (await deps.modelCapabilities(view.canon, deps.closeSignal)).contextWindow };
     } catch (error) {
       if (!(error instanceof ModelUnlistedError)) throw error;
-      return { measured: false, warning: `the size of this rule was not measured against the model alias ${alias}: ${error.message}` };
+      return { measured: false, warning: `the size of this rule was not measured against the model "${displayOf(view, views)}": ${error.message}` };
     }
   };
 
   const sizeOf = async (tokens: number): Promise<{ size: RuleAddResponse['size']; warnings: string[] }> => {
-    const windows = await Promise.all((await deps.modelAliases()).map(windowOf));
+    const { views } = await deps.modelListing(deps.closeSignal);
+    const windows = await Promise.all(views.map((view) => windowOf(view, views)));
     return {
       size: ruleSizeReport(tokens, windows.flatMap((window) => (window.measured ? [{ target: window.target, contextWindow: window.contextWindow }] : []))),
       warnings: windows.flatMap((window) => (window.measured ? [] : [window.warning])),

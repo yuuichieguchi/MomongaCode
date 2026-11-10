@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'scripted/scripted-primary', input: userInput('hi') };
 const key = { 'idempotency-key': 'k-usage-less' };
 
 describe('an upstream that answers without usage', () => {
@@ -10,7 +10,7 @@ describe('an upstream that answers without usage', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['no usage here'], usage: null }) }, { events: textResponseEvents({ model: 'scripted-primary', chunks: ['second call'] }) }],
     });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const first = await readJson(await postJson(client, '/v1/responses', body, key));
     const second = await readJson(await postJson(client, '/v1/responses', body, key));

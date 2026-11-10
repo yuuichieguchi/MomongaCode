@@ -10,6 +10,7 @@ import {
   keptSettingsDirectory,
   loadUserSettings,
   probeRecordKeyOf,
+  providerNameOf,
   readUserStopValues,
   registeredIds,
   registeredServer,
@@ -18,8 +19,8 @@ import {
   settingsInputsDigest,
   upstreamEndpointOf,
 } from '@momonga/config';
-import type { ResolvedSettings } from '@momonga/config';
-import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE } from '@momonga/protocol';
+import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
+import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf } from '@momonga/protocol';
 import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -100,7 +101,7 @@ import type { PlanOutbound, PlanScope } from './plan/outbound.ts';
 import type { PlanTargetRef } from './plan/api.ts';
 import type { ProbeOutputPolicy } from './probe/decide.ts';
 import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
-import { ANTHROPIC_PROVIDER_NAME, OLLAMA_PROVIDER_NAME, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
 import { invalidRequest, missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
@@ -184,15 +185,12 @@ const closeTogether = async (closing: readonly Promise<unknown>[]): Promise<void
   if (failures.length > 0) throw new AggregateError(failures, 'the gateway and its probes did not close cleanly');
 };
 
-type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
-type ResolvedTarget = ResolvedTargets[string];
+type ResolvedTarget = ResolvedModel;
 type PlanTarget = Extract<ResolvedTarget, { plan: unknown }>;
 type ServedTarget = Exclude<ResolvedTarget, PlanTarget>;
 type RemoteTarget = Exclude<ServedTarget, { adapter: 'managed' }>;
 type KeyedTarget = Exclude<RemoteTarget, { adapter: 'ollama' }>;
 type OllamaDetectable = Extract<RemoteTarget, { adapter: 'chat-completions' | 'open-responses' }>;
-
-const modelFieldOf = (model: string | undefined): { model?: string } => (model === undefined ? {} : { model });
 
 const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
 
@@ -267,7 +265,7 @@ const apiKeyReader = (
 
 const requiredKey = async (read: ReturnType<typeof apiKeyReader>, target: AdapterTarget, signal: AbortSignal): Promise<string> => {
   const key = await read(target, signal);
-  if (key === undefined) throw new Error(`the target "${target.name}" has no credential reference`);
+  if (key === undefined) throw new Error(`the model "${target.display}" has no credential reference`);
   return key;
 };
 
@@ -319,7 +317,7 @@ const requiredServer = (servers: ServerRegistry | undefined, id: string): Manage
 };
 
 type ManagedAdapterWiring = {
-  name: string;
+  display: string;
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
@@ -341,18 +339,13 @@ type ManagedAdapterWiring = {
   onWarning: (message: string) => void;
 };
 
-const listedModelOf = async (wiring: ManagedAdapterWiring, key: ManagedRecordKey, currency: ManagedRecordCurrency): Promise<string | undefined> => {
-  if (wiring.target.model !== undefined) return undefined;
-  const report = await loadProbeRecord(wiring.paths.probe, key, currency, wiring.name);
-  return report?.modelId;
-};
-
-type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined; listedModel: string | undefined };
+type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
-  const { name, target, description, paths } = wiring;
-  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', target: name, incarnation: wiring.incarnation });
-  const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', target: name });
+  const { display, target, description, paths } = wiring;
+  const { provider } = target;
+  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation });
+  const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider });
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
   const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
@@ -361,7 +354,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   let managed: ManagedTarget | undefined;
   const server = createManagedServer({
     description,
-    target: name,
+    target: display,
     binary: target.binary,
     socketPath: serving.socketPath,
     lockPath: serving.lockPath,
@@ -373,7 +366,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
     onChildStart: async (signal) => {
-      if (managed === undefined) throw new Error(`the server of the target ${name} started a child before its target was wired`);
+      if (managed === undefined) throw new Error(`the server of the model ${display} started a child before the model was wired`);
       await managed.childStarting(signal);
     },
     onChildExit: () => managed?.childExited(),
@@ -381,7 +374,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
   });
   const measure = measureManagedServer({
     description,
-    target: name,
+    target: display,
     binary: target.binary,
     instance: probing,
     readyTimeoutMs: target.readyTimeoutMs,
@@ -393,12 +386,12 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     timers: wiring.timers,
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
-    ...modelFieldOf(target.model),
+    model: target.model,
     ...spawnPort,
   });
   const subject = managedProbeSubject({
-    target: name,
-    precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
+    target: display,
+    precondition: managedPrecondition(description, display, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
     readKey: freshKey,
     keySignal: () => AbortSignal.timeout(wiring.requestLimitMs),
@@ -411,7 +404,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     binary: target.binary,
     exec: wiring.execWithStdin,
     probeRecordDir: paths.probe,
-    target: name,
+    target: display,
     requestLimitMs: wiring.requestLimitMs,
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
@@ -419,24 +412,23 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
     instanceProbe: (unknown) =>
       createInstanceProbe({
-        target: name,
+        target: display,
         unknown,
         dir: paths.probe,
         measure: (signal) => measure({ key: {}, signal }),
         retryAfterMs: PROBE_RETRY_AFTER_MS,
         onNotice: wiring.onWarning,
-        onFailure: (error) => wiring.onWarning(`the measurement of the target ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
+        onFailure: (error) => wiring.onWarning(`the measurement of the model ${display} failed: ${error instanceof Error ? error.message : String(error)}`),
       }),
     currency,
     ...(target.capabilities === undefined ? {} : { declaredCapabilities: target.capabilities }),
     toolCallingSetting: target.toolCalling,
     userDialects: wiring.userDialects,
-    ...(target.model === undefined ? {} : { declaredModel: target.model }),
+    declaredModel: target.model,
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
   const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.keySignal) : undefined;
-  if (startKey?.kind !== 'known') return { managed, probeKey: undefined, listedModel: undefined };
-  return { managed, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
+  return { managed, probeKey: startKey?.kind === 'known' ? startKey.canonical : undefined };
 };
 
 const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
@@ -445,14 +437,14 @@ const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects:
   ...(declaredDialect === undefined ? {} : { declaredDialect }),
 });
 
-const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {
-  const key = probeRecordKeyOf(name, target);
-  if (key?.kind !== 'endpoint') throw new Error(`the target ${name} has no endpoint probe record`);
+const endpointProbeKeyOf = (target: ResolvedTarget): EndpointProbeKey => {
+  const key = probeRecordKeyOf(target.canon, target);
+  if (key?.kind !== 'endpoint') throw new Error(`the model ${target.canon} has no endpoint probe record`);
   return key.key;
 };
 
 const createAutoChatCompletionsAdapter = async (
-  name: string,
+  display: string,
   target: Extract<RemoteTarget, { adapter: 'chat-completions' }>,
   readKey: ReturnType<typeof apiKeyReader>,
   probeRecordDir: string,
@@ -464,17 +456,18 @@ const createAutoChatCompletionsAdapter = async (
   probes: ProbeWiring,
 ) => {
   const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
-  const key = endpointProbeKeyOf(name, target);
+  const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
   const readRecord = async () => chatRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
   const loaded = await readRecord();
-  const apiKeyNow = (signal: AbortSignal) => readKey({ name, model: target.model }, signal);
+  const adapterTarget: AdapterTarget = { name: target.canon, display, model: target.model };
+  const apiKeyNow = (signal: AbortSignal) => readKey(adapterTarget, signal);
   const subject = endpointProbeSubject({
     target: endpointLockKeyOf(key).target,
     key,
     probeRecordDir,
-    precondition: endpointPrecondition(name, upstream, target.model, apiKeyNow),
+    precondition: endpointPrecondition(display, upstream, target.model, apiKeyNow),
     measure:
       (probes.measureEndpoint === undefined ? undefined : onRecordKey(probes.measureEndpoint)) ??
       (async (request) =>
@@ -489,7 +482,7 @@ const createAutoChatCompletionsAdapter = async (
   });
   const probed = createProbedEndpointTarget({
     outputPolicy: probes.outputPolicy,
-    targetName: name,
+    targetName: display,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
@@ -497,7 +490,7 @@ const createAutoChatCompletionsAdapter = async (
     readRecord,
     startProbe: () => probes.autoProbe.ensure(subject, endpointLockKeyOf(key)),
     readIdentity: async (fields, signal) => {
-      const apiKey = await readKey({ name, model: target.model }, signal);
+      const apiKey = await readKey(adapterTarget, signal);
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
     },
     saveRecord: (record) =>
@@ -524,7 +517,7 @@ const createAutoChatCompletionsAdapter = async (
 };
 
 const createProbedOllamaAdapter = async (
-  name: string,
+  display: string,
   target: Extract<RemoteTarget, { adapter: 'ollama' }>,
   probeRecordDir: string,
   clock: Clock,
@@ -534,7 +527,7 @@ const createProbedOllamaAdapter = async (
   probes: ProbeWiring,
 ) => {
   const upstream = reachableEndpoint(upstreamEndpointOf(target), network);
-  const key = endpointProbeKeyOf(name, target);
+  const key = endpointProbeKeyOf(target);
   const { endpoint } = key;
   const currency = dialectCurrencyOf(target.capabilities.schemaDialect, userDialects);
   const readRecord = async () => ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, currency), key);
@@ -556,7 +549,7 @@ const createProbedOllamaAdapter = async (
     currency,
   });
   const probed = createProbedOllamaTarget({
-    targetName: name,
+    targetName: display,
     endpoint,
     model: target.model,
     declared: declaredCapabilitiesOf(target, 'native'),
@@ -582,12 +575,12 @@ type Identification = (signal: AbortSignal) => Promise<void>;
 
 const UNIDENTIFIED = Symbol('unidentified');
 
-const ollamaIdentificationOf = (name: string, target: OllamaDetectable, network: OutboundNetwork): Identification => {
+const ollamaIdentificationOf = (display: string, target: OllamaDetectable, network: OutboundNetwork): Identification => {
   let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
   return async (signal) => {
     if (refusal === UNIDENTIFIED) {
       const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), signal);
-      refusal = isOllama ? ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
+      refusal = isOllama ? ollamaServerRefusal(display, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
     }
     if (refusal !== null) throw refusal;
   };
@@ -595,8 +588,8 @@ const ollamaIdentificationOf = (name: string, target: OllamaDetectable, network:
 
 const NO_IDENTIFICATION: Identification = async () => undefined;
 
-const identificationOf = (name: string, target: ServedTarget, network: OutboundNetwork): Identification =>
-  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(name, target, network) : NO_IDENTIFICATION;
+const identificationOf = (display: string, target: ServedTarget, network: OutboundNetwork): Identification =>
+  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(display, target, network) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
@@ -645,7 +638,7 @@ const planCapabilityNumbers = (target: PlanTarget, reported: PlanReported): Plan
 const declaresPlanNumbers = (target: PlanTarget): boolean => planCapabilityNumbers(target, () => undefined) !== undefined;
 
 const unknownCapabilitiesText = (target: PlanTarget): string =>
-  `the model ${target.model} cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list`;
+  `the model ${target.model} cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models catalog reads the list`;
 
 const planCapabilitiesOf = (target: PlanTarget, reported: PlanReported): Capabilities => {
   const { contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, ...rest } = target.capabilities;
@@ -660,9 +653,9 @@ const planHealthOf = (target: PlanTarget, auth: AuthSource, reported: PlanReport
   return { ok: false, reason: CAPABILITIES_UNKNOWN_CODE, detail: unknownCapabilitiesText(target) };
 };
 
-const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
+const createPlanAdapter = (target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
   const profile = profiles[target.plan.profile];
-  if (profile === undefined) throw new Error(`the plan target ${name} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
+  if (profile === undefined) throw new Error(`the plan model ${target.canon} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
   return createOpenResponsesAdapter({
     resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
     capabilities: async () => planCapabilitiesOf(target, reported),
@@ -675,35 +668,23 @@ const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, p
   });
 };
 
-const planTargetsOf = (settings: ResolvedSettings): Array<[string, PlanTarget]> =>
-  (Object.entries(settings.models.targets) as Array<[string, ResolvedTarget]>).flatMap(([name, target]): Array<[string, PlanTarget]> => ('plan' in target ? [[name, target]] : []));
+const planTargetsOf = (settings: ResolvedSettings): PlanTarget[] => [...settings.models.models.values()].flatMap((target): PlanTarget[] => ('plan' in target ? [target] : []));
 
 const planTargetRefsOf = (settings: ResolvedSettings): PlanTargetRef[] =>
-  planTargetsOf(settings).map(([name, target]) => ({ name, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }));
+  planTargetsOf(settings).map((target) => ({ name: target.canon, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }));
 
-const NOT_LISTED_YET = 'not listed yet';
-
-const providerNameOf = (target: ResolvedTarget, servers: ServerRegistry | undefined): string => {
-  switch (target.adapter) {
-    case 'managed':
-      return requiredServer(servers, target.server).provider;
-    case 'anthropic':
-      return ANTHROPIC_PROVIDER_NAME;
-    case 'chat-completions':
-    case 'open-responses':
-      return target.provider;
-    case 'ollama':
-      return OLLAMA_PROVIDER_NAME;
-  }
+const writtenProviderOf = (target: ResolvedTarget): string | undefined => {
+  const { provider: _provider, ...connection } = target;
+  return providerNameOf(connection, SERVER_KINDS) === target.provider ? undefined : target.provider;
 };
 
-const keyGroupOf = (target: ResolvedTarget, providerName: string): { keyGroup?: string } => {
+const keyGroupOf = (target: ResolvedTarget): { keyGroup?: string } => {
   const fields: Readonly<Record<string, unknown>> = target;
   if (fields['apiKeyEnv'] === undefined && fields['apiKeySecret'] === undefined) return {};
-  const provider = fields['provider'];
-  if (typeof provider === 'string' && provider !== '') return { keyGroup: provider };
+  const written = writtenProviderOf(target);
+  if (written !== undefined) return { keyGroup: written };
   const baseUrl = fields['baseUrl'];
-  return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : providerName };
+  return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : target.provider };
 };
 
 const planRefOf = (target: ResolvedTarget): { plan?: { profile: string; account?: string } } =>
@@ -711,44 +692,44 @@ const planRefOf = (target: ResolvedTarget): { plan?: { profile: string; account?
 
 const requiredCounter = (counters: Readonly<Record<string, string>>, name: string): string => {
   const counter = counters[name];
-  if (counter === undefined) throw new Error(`no counter was derived for the target ${name}`);
+  if (counter === undefined) throw new Error(`no counter was derived for the model ${name}`);
   return counter;
 };
 
+type ConfiguredTargets = GatewayConfig['models']['targets'];
+
 type UncountedGatewayConfig = Omit<GatewayConfig, 'models'> & {
-  models: Omit<GatewayConfig['models'], 'targets'> & { targets: Record<string, Omit<GatewayConfig['models']['targets'][string], 'counter'>> };
+  models: Omit<GatewayConfig['models'], 'targets'> & { targets: Record<string, Omit<ConfiguredTargets[string], 'counter'>> };
 };
 
-const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<string, string>>): GatewayConfig => ({
-  ...config,
-  models: {
-    ...config.models,
-    targets: Object.fromEntries(Object.entries(config.models.targets).map(([name, target]) => [name, { ...target, counter: requiredCounter(counters, name) }])),
-  },
-});
+const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<string, string>>): GatewayConfig => {
+  const { targets, ...rest } = config.models;
+  return {
+    ...config,
+    models: { ...rest, targets: Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, { ...target, counter: requiredCounter(counters, name) }])) },
+  };
+};
 
-export const gatewayConfigOf = (
-  targets: ResolvedTargets,
-  aliases: Record<string, string | string[]>,
-  servers?: ServerRegistry,
-  listedModels: ReadonlyMap<string, string> = new Map(),
-  billingChanges: GatewayConfig['models']['billingChanges'] = [],
-): UncountedGatewayConfig => ({
+export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chains' | 'start' | 'roles' | 'billingChanges'>): UncountedGatewayConfig => ({
   models: {
-    billingChanges,
-    aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
+    billingChanges: resolved.billingChanges,
+    chains: Object.fromEntries([...resolved.chains].map(([model, members]) => [model, [...members]])),
+    ...(resolved.start === undefined ? {} : { start: resolved.start }),
+    roles: resolved.roles,
     targets: Object.fromEntries(
-      Object.entries(targets).map(([name, target]) => [
-        name,
+      [...resolved.models].map(([canon, target]) => [
+        canon,
         {
           kind: target.adapter,
-          provider: providerNameOf(target, servers),
-          model: target.model ?? listedModels.get(name) ?? NOT_LISTED_YET,
+          provider: target.provider,
+          model: target.model,
+          ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
+          ...(target.answers === undefined ? {} : { answers: target.answers }),
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
           ...planRefOf(target),
-          ...keyGroupOf(target, providerNameOf(target, servers)),
+          ...keyGroupOf(target),
         },
       ]),
     ),
@@ -769,7 +750,6 @@ type TargetPart = {
   readonly key: string;
   readonly adapter: ProviderAdapter;
   readonly counter: string;
-  readonly listedModel: string | undefined;
   readonly managed?: ManagedPart;
   readonly closables: readonly Closable[];
 };
@@ -784,7 +764,7 @@ type ProcessEpoch = {
 
 const adapterClosable = (adapter: ProviderAdapter): Closable => ({ close: async (values) => adapter.close?.(values) });
 
-const unmanagedPart = (key: string, adapter: ProviderAdapter, counter: string): TargetPart => ({ key, adapter, counter, listedModel: undefined, closables: [adapterClosable(adapter)] });
+const unmanagedPart = (key: string, adapter: ProviderAdapter, counter: string): TargetPart => ({ key, adapter, counter, closables: [adapterClosable(adapter)] });
 
 export const startGatewayProcess = async (options: StartGatewayProcessOptions): Promise<GatewayProcess> => {
   const clock = options.clock ?? systemProcessPorts.clock;
@@ -936,8 +916,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       retryAfterMs: PROBE_RETRY_AFTER_MS,
       onEvent: (event) => {
-        if (event.kind === 'stopped') logger.info(`the automatic probe of the target ${event.target} was stopped`);
-        else logger.warn(`the automatic probe of the target ${event.target} failed and recorded nothing`, { err: event.error });
+        if (event.kind === 'stopped') logger.info(`the automatic probe of the model ${event.target} was stopped`);
+        else logger.warn(`the automatic probe of the model ${event.target} failed and recorded nothing`, { err: event.error });
       },
     });
     const probeServers = new Set<ManagedServer>();
@@ -1044,16 +1024,16 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     type EpochInputs = { plan: Readonly<Record<string, PlanInput>> };
     const planInputsOf = (current: ResolvedSettings): Record<string, PlanInput> =>
       Object.fromEntries(
-        planTargetsOf(current).map(([name, target]) => {
+        planTargetsOf(current).map((target) => {
           const served = servedOf(target);
           const reported = reportedOf(target, served);
-          return [name, { account: served.account, ...(reported === undefined ? {} : { reported }) }];
+          return [target.canon, { account: served.account, ...(reported === undefined ? {} : { reported }) }];
         }),
       );
     const epochInputsOf = (current: ResolvedSettings): EpochInputs => ({ ...derivedInputsOf('D1')(current), plan: planInputsOf(current) });
     const planComponentsOf = (name: string, target: PlanTarget, inputs: EpochInputs): { served: ServedAccount; reported?: ReportedNumbers } => {
       const input = Object.hasOwn(inputs.plan, name) ? inputs.plan[name] : undefined;
-      if (input === undefined) throw new Error(`the derivation inputs name no plan account for the target ${name}`);
+      if (input === undefined) throw new Error(`the derivation inputs name no plan account for the model ${name}`);
       return { served: { profile: target.plan.profile, account: input.account }, ...(input.reported === undefined ? {} : { reported: input.reported }) };
     };
     const planLoaded = new Set<string>();
@@ -1073,7 +1053,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
     const preparePlan = (current: ResolvedSettings): Promise<void> | undefined => {
       const pending = new Map(
-        planTargetsOf(current).flatMap(([, target]): Array<[string, { profile: string; account: string }]> => {
+        planTargetsOf(current).flatMap((target): Array<[string, { profile: string; account: string }]> => {
           const { profile, account } = servedOf(target);
           if (account === null) return [];
           const key = JSON.stringify([profile, account]);
@@ -1116,7 +1096,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
 
     const buildPart = async (
-      name: string,
+      display: string,
       target: ServedTarget,
       current: ResolvedSettings,
       outbound: OutboundNetwork,
@@ -1135,7 +1115,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           carried ??
           (await (async (): Promise<ManagedPart> => {
             const built = await createManagedCore({
-              name,
+              display,
               target,
               description: server,
               paths,
@@ -1150,7 +1130,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               readStopGraceMs,
               requestLimitMs: current.models.headersTimeoutMs,
               keySignal,
-              incarnation: nextIncarnation(name),
+              incarnation: nextIncarnation(target.provider),
               generation: options.generation,
               userDialects,
               onWarning: (message) => logger.warn(message),
@@ -1172,19 +1152,18 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           key: keys.part,
           adapter,
           counter: targetCounterOf({ target, server, codeDigest, outputPolicy, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
-          listedModel: core.listedModel,
           managed: core,
           closables: [adapterClosable(adapter), core.closable],
         };
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
+        const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
-      const identify = identificationOf(name, target, outbound);
+      const identify = identificationOf(display, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
+        const probed = await createAutoChatCompletionsAdapter(display, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
@@ -1214,7 +1193,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
 
     const buildPlanPart = (
-      name: string,
       target: PlanTarget,
       current: ResolvedSettings,
       outbound: OutboundNetwork,
@@ -1222,7 +1200,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       { served, reported }: { served: ServedAccount; reported?: ReportedNumbers },
     ): TargetPart => {
       const auth = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
-      const adapter = createPlanAdapter(name, target, auth, planProfiles, () => reported ?? undefined, {
+      const adapter = createPlanAdapter(target, auth, planProfiles, () => reported ?? undefined, {
         clock,
         userDialects: current.models.dialects,
         liveness: { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers },
@@ -1239,7 +1217,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
       try {
-        for (const [name, target] of Object.entries(current.models.targets) as Array<[string, ResolvedTarget]>) {
+        const displays = displayMapOf(current.models.views);
+        for (const [name, target] of current.models.models) {
+          const display = displays.get(name) ?? name;
           const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
           const plan = 'plan' in target ? planComponentsOf(name, target, inputs) : undefined;
           const keys = {
@@ -1265,8 +1245,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           const carriedCore = livePartsOf.find((part) => part.managed?.key === keys.core);
           const part =
             'plan' in target && plan !== undefined
-              ? buildPlanPart(name, target, current, outbound, keys.part, plan)
-              : await buildPart(name, target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
+              ? buildPlanPart(target, current, outbound, keys.part, plan)
+              : await buildPart(display, target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
           parts.set(name, part);
         }
@@ -1274,9 +1254,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         await Promise.all(built.map((closable) => closable.close(undefined)));
         throw error;
       }
-      const listedModels = new Map([...parts].flatMap(([name, part]): Array<[string, string]> => (part.listedModel === undefined ? [] : [[name, part.listedModel]])));
       const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
-      const config = withCounters(gatewayConfigOf(current.models.targets, current.models.aliases, current.models.servers, listedModels, current.models.billingChanges), counters);
+      const config = withCounters(gatewayConfigOf(current.models), counters);
       const adapters: Record<string, ProviderAdapter> = {};
       for (const [name, part] of parts) {
         adapters[name] = part.adapter;
@@ -1291,7 +1270,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         ...(previous === undefined ? {} : { previous: previous.gateway.router }),
         live: [...liveEpochs].map((epoch) => epoch.gateway.router),
       });
-      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
+      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current.models), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const epoch: ProcessEpoch = {
         gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },

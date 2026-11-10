@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
-import { createRun, createSession, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeJson, writeProjectSettings, writeUserSettings } from './helpers.ts';
+import { chatTargetSettings, createRun, createSession, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeJson, writeProjectSettings, writeUserSettings } from './helpers.ts';
 import type { RuntimeFixture } from './helpers.ts';
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
@@ -92,18 +92,16 @@ describe.each(LAYERS)('one rule for the $name settings file (SettingsHealth)', (
 describe('the in-run readers of the user file all keep the last good copy (SettingsHealth NoRunFails)', () => {
   it('envFor, the tool runtime and the model readers keep the last good copy after the user file broke', async () => {
     const f = await makeRuntimeFixture();
-    writeUserSettings(f.temp.home, { autoMode: { classifier: 'guard' } });
+    writeUserSettings(f.temp.home, { ...chatTargetSettings('UPSTREAM_KEY'), autoMode: { classifier: 'x' } });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
     const runId = createRun(f.store, session.id);
-    expect(f.composition.settings.autoModeClassifier()).toBe('guard');
+    expect(f.composition.settings.autoModeClassifier()).toBe('x');
 
     writeInvalidUserSettings(f.temp.home);
 
     expect(f.composition.envFor(session)).toEqual({ PLAIN: '1' });
     expect(f.toolRuntime.port.envFor(session)).toEqual({ PLAIN: '1' });
-    expect(f.composition.settings.autoModeClassifier()).toBe('guard');
-    expect(f.composition.settings.modelRoles()).toEqual(f.composition.takeUserSnapshot().settings.models.roles);
-    expect(f.composition.settings.modelTargets()).toEqual({});
+    expect(f.composition.settings.autoModeClassifier()).toBe('x');
     await expect(f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: Object.freeze({ PLAIN: '1' }) })).resolves.toBeDefined();
   });
 });

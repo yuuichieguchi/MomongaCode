@@ -22,7 +22,7 @@ const aliasEnv = async (): Promise<Env> => {
   const env = await makeEnv({ capabilities: mergedAlias() });
   env.gateway.capabilitiesByTarget.set(PRIMARY_TARGET, calibratedExactFirst());
   env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedFallback());
-  env.gateway.targetsByAlias[env.session.modelAlias] = [PRIMARY_TARGET, FALLBACK_TARGET];
+  env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET, FALLBACK_TARGET];
   env.gateway.countMethod = 'exact';
   return env;
 };
@@ -35,7 +35,7 @@ const measuredCount = async (): Promise<number> => {
   return inputTokensOf(env.gateway.streams[0]!.body);
 };
 
-describe('a configured tokenErrorRatio of the first target on a mixed alias', () => {
+describe('a configured tokenErrorRatio of the first target on a mixed model', () => {
   it('applies the calibration to the exact replies of that target when the merged counting is estimated', async () => {
     const count = await measuredCount();
     const reported = Math.floor(count * 0.85);

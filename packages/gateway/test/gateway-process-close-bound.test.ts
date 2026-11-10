@@ -11,7 +11,7 @@ import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/
 import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { saveFakeFmRecord } from './fm-record-support.ts';
 import { advanceToNextWait, openUnreadStream } from './gateway-support.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -55,7 +55,7 @@ const unkillableFmSpawn = (dir: string, clock: FakeClock, timers: FakeTimers, pr
           marker,
           pgid: pid,
           killGraceMs: graceMs,
-          label: 'fm',
+          label: 'fm/system',
           onWarning: () => undefined,
           kill: () => undefined,
           timing: drivenReapTiming(clock, timers),
@@ -85,10 +85,7 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   const fm = await createFakeFm({ dir: makeDir() });
   const home = makeHome();
   writeSettings(home, {
-    models: {
-      aliases: { default: ['fm'], other: ['spare'] },
-      targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath }, spare: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, model: 'spare-model' } },
-    },
+    models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath }, spare: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, model: 'spare-model' } }),
   });
   await saveFakeFmRecord(home, fm.binaryPath);
   const clock = createFakeClock(START_MS);
@@ -111,14 +108,14 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   });
   const client = clientFor(handle.socketPath);
 
-  const unread = await openUnreadStream(handle.socketPath, { model: 'default', input: userInput('hello fm'), stream: true });
+  const unread = await openUnreadStream(handle.socketPath, { model: 'fm/system', input: userInput('hello fm'), stream: true });
   registerCleanup(() => void unread.socket.destroy());
   const managedStreaming = (): boolean =>
     serves.managed.some((server) => server.requests.some((request) => request.path !== '/health')) &&
     timers.pending().some((timer) => timer.delayMs === GATEWAY_CONFIG_DEFAULTS.sseKeepAliveMs);
   while (!managedStreaming()) await advanceToNextWait(timers, POLLS, managedStreaming, 'the managed fm request to stream to a client that does not read');
 
-  const probing = readJson(await postJson(client, '/v1/responses', { model: 'other', input: userInput('hello spare') }));
+  const probing = readJson(await postJson(client, '/v1/responses', { model: 'spare/spare-model', input: userInput('hello spare') }));
   expect((await probing).status).toBe(503);
   const probeReached = (): boolean =>
     probePhase === 'running'

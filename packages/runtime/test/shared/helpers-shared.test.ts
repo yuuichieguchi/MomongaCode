@@ -77,7 +77,6 @@ describe('shared runtime helpers (system timers; reapTimingOf uses fake timers)'
 
   it('RUNTIME_DEFAULTS has the documented values', () => {
     expect(RUNTIME_DEFAULTS).toEqual({
-      modelAlias: 'default',
       runTimeoutMs: 21_600_000,
       limits: { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: 1_800_000, loopThreshold: 3 },
     });

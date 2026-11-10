@@ -6,14 +6,14 @@ import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
 import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const request = { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
+const request = { model: 'local/system', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
 
 const completions = (fake: Awaited<ReturnType<typeof startFake>>) => fake.requests.filter((entry) => entry.path === '/v1/chat/completions');
 
@@ -24,7 +24,7 @@ const DEFAULT_LISTING = { data: [{ id: 'system', object: 'model', created: 0, ow
 const autoSetup = async (extra: Partial<FakeChatCompletionsOptions> = {}) => {
   const fake = await startFake({ scenario: 'json-schema-only', ...extra });
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } } });
+  writeSettings(home, { models: modelsOf({ local: ccTarget(fake.socketPath, { toolCalling: 'auto' }) }) });
   const probeDir = momongaPaths(home, process.platform, {}).probe;
   const endpoint = `unix:${fake.socketPath}`;
   return { fake, home, probeDir, endpoint, identityFields: IDENTITY_FIELDS, identity: endpointIdentityOf(DEFAULT_LISTING, 'system', IDENTITY_FIELDS) };
@@ -34,7 +34,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
   const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models });
   const home = makeHome();
   writeSettings(home, {
-    models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'auto', model: 'qwen-fake' }) } },
+    models: modelsOf({ local: ccTarget(fake.socketPath, { toolCalling: 'auto', model: 'qwen-fake' }) }),
   });
   await probeEndpointTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
@@ -83,7 +83,7 @@ describe('chat-completions target with toolCalling auto', () => {
 
     const response = await readJson(
       await postJson(clientFor(handle.socketPath), '/v1/responses', {
-        model: 'fast',
+        model: 'local/system',
         input: userInput('summarise'),
         max_output_tokens: 100,
         reasoning: { effort: 'none' },
@@ -211,7 +211,7 @@ describe('chat-completions target with toolCalling auto', () => {
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
-    const compact = { model: 'fast', input: userInput('a long conversation') };
+    const compact = { model: 'local/system', input: userInput('a long conversation') };
     const hidden = 300 - tokensForText(summary);
 
     expect((await readJson(await postJson(client, '/v1/responses/compact', compact))).status).toBe(200);
@@ -225,7 +225,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('leaves a target that sets toolCalling native untouched by any record', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
+    writeSettings(home, { models: modelsOf({ local: ccTarget(fake.socketPath, { toolCalling: 'native' }) }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));

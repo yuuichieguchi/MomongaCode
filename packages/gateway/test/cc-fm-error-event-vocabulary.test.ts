@@ -41,7 +41,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     ...recordKeyOptions(RECORD_KEY),
     toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
-  }), 'fm');
+  }), 'scripted/system');
   const adapter = createChatCompletionsAdapter({ authSource: unauthenticatedSource, liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
@@ -50,8 +50,8 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
 const reportWithMeasuredGuardrail = (): ProbeReport => ({ ...makeReport(1, 1), guardrail: { errorShape: structuredClone(FM_GUARDRAIL_ERROR) } });
 
 const failureThroughGateway = async (adapter: ChatCompletionsAdapter, fake: FakeChatCompletionsServer) => {
-  const { client } = await startGateway({ adapters: { fm: adapter }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
-  const response = await postJson(client, '/v1/responses', { model: 'fast', stream: true, input: [userText('one two three four five six seven eight nine ten')] });
+  const { client } = await startGateway({ adapters: { 'scripted/system': adapter }, config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } } });
+  const response = await postJson(client, '/v1/responses', { model: 'scripted/system', stream: true, input: [userText('one two three four five six seven eight nine ten')] });
   const upstreamRequests = fake.requests.filter((request) => request.path === '/v1/chat/completions').length;
   if (response.status !== 200) {
     const error = (await readJson(response)).body.error;

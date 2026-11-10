@@ -5,9 +5,9 @@ import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
 const HOME = '/Users/someone';
 const paths = momongaPaths(HOME, 'darwin', {});
 
-const gateway = (generation: number, purpose: 'serve' | 'probe', target: string, incarnation = 1) =>
-  managedInstancePaths(paths, purpose === 'serve' ? { owner: 'gateway', generation, purpose, target, incarnation } : { owner: 'gateway', generation, purpose, target });
-const cli = (purpose: 'serve' | 'probe', target: string) => managedInstancePaths(paths, { owner: 'cli', purpose, target });
+const gateway = (generation: number, purpose: 'serve' | 'probe', provider: string, incarnation = 1) =>
+  managedInstancePaths(paths, purpose === 'serve' ? { owner: 'gateway', generation, purpose, provider, incarnation } : { owner: 'gateway', generation, purpose, provider });
+const cli = (purpose: 'serve' | 'probe', provider: string) => managedInstancePaths(paths, { owner: 'cli', purpose, provider });
 
 describe.skipIf(process.platform === 'win32')('the one rule for the place of an instance (design-update-no-interrupt 18.2.1; design-managed-servers section 18, item 2)', () => {
   it.each([

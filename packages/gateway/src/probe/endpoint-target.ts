@@ -109,9 +109,9 @@ export const memoizedVerification = (verifyOnce: (signal: AbortSignal) => Promis
 
 export const ollamaServerRefusal = (targetName: string, adapter: string, endpoint: string): PreconditionFailedError =>
   new PreconditionFailedError(
-    `the target "${targetName}" points at an Ollama server through the ${adapter} adapter, which loses tool calls there; set adapter: "ollama" for it`,
+    `the model "${targetName}" is served by an Ollama server through the ${adapter} adapter, which loses tool calls there; set adapter: "ollama" for its server`,
     `the server at ${endpoint} answered GET /api/version in Ollama's form`,
-    'change the adapter of the target to "ollama" and run its probe',
+    'change the adapter of its server to "ollama" and run its probe',
   );
 
 export type ProbedEndpointTargetOptions = {
@@ -144,7 +144,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   let saving: Promise<void> = Promise.resolve();
   const needsProbe = needsProbeOf(
     targetName,
-    `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
+    `the model "${targetName}" sets toolCalling to auto, but no probe record exists`,
     `no record for ${endpoint} and model ${model}`,
   );
 

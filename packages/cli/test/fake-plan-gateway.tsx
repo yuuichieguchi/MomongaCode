@@ -10,7 +10,7 @@ import type {
   TargetBilling,
   TargetHealth,
 } from '@momonga/protocol';
-import type { ModelConnection } from '@momonga/config';
+import type { AddModelChoice } from '../src/commands/models.ts';
 import { App } from '../src/tui/app.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -68,7 +68,7 @@ export type FakePlanOptions = FakeBackendOptions & {
 export type FakePlanBackend = FakeBackend & {
   readonly plan: PlanGatewayClient;
   readonly planCalls: PlanCall[];
-  readonly connections: ModelConnection[];
+  readonly connections: AddModelChoice[];
   readonly dismissals: string[];
   readonly listenerPaths: string[];
   readonly detections: (readonly string[])[];
@@ -78,7 +78,7 @@ export type FakePlanBackend = FakeBackend & {
 export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend => {
   const base = fakeBackend(options);
   const planCalls: PlanCall[] = [];
-  const connections: ModelConnection[] = [];
+  const connections: AddModelChoice[] = [];
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
   const detections: (readonly string[])[] = [];
@@ -89,12 +89,13 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const called = (route: string, body?: unknown): void => {
     planCalls.push(body === undefined ? { route } : { route, body });
   };
-  const withBilling = (entry: MomongaModelEntry): MomongaModelEntry =>
-    ({
-      ...entry,
-      targetBilling: Object.fromEntries(entry.targets.map((target) => [target, options.billing?.[target] ?? 'metered'])),
-      targetPlan: Object.fromEntries(entry.targets.flatMap((target) => (options.planTargets?.[target] === undefined ? [] : [[target, options.planTargets[target]]]))),
-    }) as MomongaModelEntry;
+  const withBilling = (entry: MomongaModelEntry): MomongaModelEntry => {
+    const chain = entry.chain.map((member) => {
+      const plan = options.planTargets?.[member.model];
+      return { ...member, billing: options.billing?.[member.model] ?? ('metered' as const), ...(plan === undefined ? {} : { plan }) };
+    });
+    return { ...entry, billing: chain[0]?.billing ?? entry.billing, chain };
+  };
   const plan: PlanGatewayClient = {
     accounts: async () => {
       called('accounts');
@@ -146,7 +147,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     addTarget: async (label, request) => {
       called(`accounts/${label}/targets`, request);
       aliases = [...aliases, request.slug];
-      return { target: request.slug, alias: request.slug };
+      return { model: request.slug };
     },
   };
   const listener = async (path: string): Promise<SignInListener> => {
@@ -181,7 +182,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     model: async () => withBilling(await fakeBackend(options).model()),
     health: async (): Promise<GatewayHealth> => ({
       ok: true,
-      targets: Object.fromEntries(targets.map((target) => [target, options.health?.[target] ?? { ok: true, breaker: 'closed' }])),
+      models: Object.fromEntries(targets.map((target) => [target, options.health?.[target] ?? { ok: true, breaker: 'closed' }])),
       version: '0.0.0',
       apiVersion: 1,
       pid: 1,
@@ -195,11 +196,10 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       detections.push(typed);
       return [...(options.detected ?? [])];
     },
-    addModelConnection: async (connection: ModelConnection) => {
-      connections.push(connection);
-      const name = connection.kind === 'managed' ? connection.server : connection.model;
-      aliases = [...aliases, name];
-      return { target: name, alias: name };
+    addModelConnection: async (choice: AddModelChoice) => {
+      connections.push(choice);
+      aliases = [...aliases, choice.model.id];
+      return { model: choice.model.id };
     },
     dismissedNotices: async () => ({ ...(options.dismissed ?? {}) }),
     dismissNotice: async (key: string) => {

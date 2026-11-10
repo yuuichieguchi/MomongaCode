@@ -95,7 +95,7 @@ describe('a run with no adopted guideline', () => {
     const today: CompactRequest = {
       model: request.model,
       ...(request.input === undefined ? {} : { input: request.input }),
-      momonga: { max_summary_tokens: request.momonga?.max_summary_tokens as number, retains_user_request: true },
+      momonga: { max_summary_tokens: request.momonga?.max_summary_tokens as number, retains_user_request: true, exact_model: true },
     };
     expect(JSON.stringify(request)).toBe(JSON.stringify(today));
     expect(compact?.idempotencyKey).toBe(keyOf(run.id, today));
@@ -125,8 +125,8 @@ describe('the pinned guideline version', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.store.guidelines.adopt({ text: FIRST, parent: null, report: { source: 'test' } });
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm', ...pinned }, mode: 'default' }], 'hold');
-    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
+    const claim = await env.seed(parent.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: 'fm', ...pinned }, mode: 'default' }], 'hold');
+    const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.store.guidelines.adopt({ text: SECOND, parent: 1, report: { source: 'test' } });

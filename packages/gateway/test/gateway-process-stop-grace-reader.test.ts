@@ -5,7 +5,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFak
 import type { ManagedServerOptions } from '../src/managed/server.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
-import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -31,7 +31,7 @@ const hostExec = async (file: string, args: readonly string[]) => {
 
 const settingsWith = (managedServerStopGraceMs: number) => ({
   gateway: { managedServerStopGraceMs },
-  models: { aliases: { default: ['apple'] }, targets: { apple: { adapter: 'managed', server: 'fm' } } },
+  models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system' } }),
 });
 
 describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', () => {
@@ -52,7 +52,7 @@ describe('the gateway process wires the settings file into its managed server st
       timers: createFakeTimers(clock),
       logger: createJsonLogger({ service: 'gateway', clock, stream: { write: () => true } }),
     });
-    const managed = servedOptions.find((options) => options.target === 'apple');
+    const managed = servedOptions.find((options) => options.target === 'apple/system');
     expect(managed).toBeDefined();
     expect(managed?.readStopGraceMs()).toBe(700);
     writeSettings(home, settingsWith(1500));

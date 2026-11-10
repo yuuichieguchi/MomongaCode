@@ -83,7 +83,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
       await Promise.all(servers.map((server) => server.close()));
     });
     const primary = createHangingAdapter(bigTextEvents(80, 100_000));
-    const harness = await startGateway({ adapters: { primary }, config: { closeGraceMs: GATEWAY_CONFIG_DEFAULTS.closeGraceMs }, dir });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: GATEWAY_CONFIG_DEFAULTS.closeGraceMs }, dir });
     const fmTimers = switchableTimers(harness.timers);
     const serve = createManagedServer({
       description: FM_SERVER,
@@ -102,7 +102,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     await serve.start();
     fmTimers.useFake();
 
-    await openUnreadStream(harness.socketPath, { model: 'fast', input: userInput('hi'), stream: true });
+    await openUnreadStream(harness.socketPath, { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     await waitFor(() => primary.pulled.count >= 5, { description: 'adapter streaming' });
 
     const closeBegan = harness.clock.now();

@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import { readinessText } from '@momonga/protocol';
-import type { ElicitationAnswerRecord, Readiness } from '@momonga/protocol';
+import { readinessShownText } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, ModelViews, Readiness } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -12,7 +12,7 @@ import { createMapperState, mapChildEvent, mapRunEvent, noticeUpdate } from './e
 import type { ClientFeatures, Effect, MapperState, Phase } from './events.ts';
 import { mcpServersOf } from './mcp-servers.ts';
 import { modeStateOf, selectableModeOf } from './modes.ts';
-import { modelOptionOf, selectableAliasOf } from './models.ts';
+import { modelOptionOf, selectableModelOf } from './models.ts';
 import { promptInputOf } from './prompt-input.ts';
 import { stopReasonOf } from './stop-reason.ts';
 import { createOrderedQueue, createTaskGroup } from './tasks.ts';
@@ -35,9 +35,9 @@ export type FollowSessionRequest = {
 export type AcpDeps = {
   version: string;
   runtime: RuntimeClient;
-  contextWindowOf(modelAlias: string): Promise<number>;
-  readinessOf(modelAlias: string): Promise<Readiness>;
-  modelAliases(): Promise<readonly string[]>;
+  contextWindowOf(model: string): Promise<number>;
+  readinessOf(model: string): Promise<Readiness>;
+  models(): Promise<ModelViews>;
   environment(): Promise<Record<string, string>>;
   autoModeAvailable(): Promise<boolean>;
   canonicalCwd(cwd: string): string;
@@ -52,7 +52,7 @@ type Turn = { runId: string | undefined; cancelRequested: boolean };
 
 type BridgeSession = {
   readonly id: string;
-  modelAlias: string;
+  model: string;
   readonly bypassAllowed: boolean;
   readonly autoAvailable: boolean;
   skillNames: readonly string[];
@@ -68,7 +68,7 @@ type BridgeSession = {
 
 const REQUEST_CANCELLED = -32800;
 
-type ModelListing = { kind: 'listed'; aliases: readonly string[] } | { kind: 'unreadable'; reason: string };
+type ModelListing = { kind: 'listed'; views: ModelViews } | { kind: 'unreadable'; reason: string };
 
 const asRequestError = (error: unknown): unknown => {
   if (error instanceof RunApiError && error.status >= 400 && error.status < 500) {
@@ -120,34 +120,34 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     session.queue.enqueue(() => peer().notify('session/update', { sessionId: session.id, update }));
   };
 
-  const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.modelAlias));
+  const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.model));
 
   let readinessNotices = 0;
 
   const announceReadiness = async (session: BridgeSession): Promise<void> => {
-    const readiness = await deps.readinessOf(session.modelAlias);
+    const readiness = await deps.readinessOf(session.model);
     if (readiness.state === 'ready') return;
     readinessNotices += 1;
-    send(session, noticeUpdate(clientFeatures(), `${session.id}/readiness/${readinessNotices}`, 'warning', readinessText(readiness)));
+    send(session, noticeUpdate(clientFeatures(), `${session.id}/readiness/${readinessNotices}`, 'warning', readinessShownText(readiness, 'shell')));
   };
 
-  const applyModel = (session: BridgeSession, modelAlias: string): void => {
-    if (session.modelAlias === modelAlias) return;
-    session.modelAlias = modelAlias;
+  const applyModel = (session: BridgeSession, model: string): void => {
+    if (session.model === model) return;
+    session.model = model;
     session.contextWindow = undefined;
     session.tasks.run(() => announceReadiness(session));
   };
 
   const listModels = async (): Promise<ModelListing> => {
     try {
-      return { kind: 'listed', aliases: await deps.modelAliases() };
+      return { kind: 'listed', views: await deps.models() };
     } catch (error) {
       return { kind: 'unreadable', reason: describeFailure(error) };
     }
   };
 
   const configOptionsOf = (listing: ModelListing, session: BridgeSession): SessionConfigOption[] =>
-    listing.kind === 'listed' ? [modelOptionOf(listing.aliases, session.modelAlias)] : [];
+    listing.kind === 'listed' ? [modelOptionOf(listing.views, session.model)] : [];
 
   const unreadableNoticeOf = (session: BridgeSession, listing: ModelListing): SessionUpdate[] =>
     listing.kind === 'listed'
@@ -232,7 +232,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
         return;
       case 'model':
         session.queue.enqueue(async () => {
-          applyModel(session, effect.modelAlias);
+          applyModel(session, effect.model);
           const listing = await listModels();
           await peer().notify('session/update', { sessionId: session.id, update: { sessionUpdate: 'config_option_update', configOptions: configOptionsOf(listing, session) } });
           for (const update of unreadableNoticeOf(session, listing)) await peer().notify('session/update', { sessionId: session.id, update });
@@ -295,7 +295,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     };
     const session: BridgeSession = {
       id: view.id,
-      modelAlias: view.modelAlias,
+      model: view.model,
       bypassAllowed: view.bypassAllowed,
       autoAvailable,
       skillNames: [],
@@ -416,11 +416,11 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
 
   app.onRequest('session/set_config_option', async ({ params }) => {
     const session = sessionOf(params.sessionId);
-    const aliases = await deps.modelAliases();
-    const alias = selectableAliasOf(aliases, { configId: params.configId, value: params.value });
-    const view = await viaRunApi(deps.runtime.setModelAlias(session.id, alias));
-    applyModel(session, view.modelAlias);
-    return { configOptions: [modelOptionOf(aliases, view.modelAlias)] };
+    const views = await deps.models();
+    const model = selectableModelOf(views, { configId: params.configId, value: params.value });
+    const view = await viaRunApi(deps.runtime.setModel(session.id, model));
+    applyModel(session, view.model);
+    return { configOptions: [modelOptionOf(views, view.model)] };
   });
 
   app.onRequest('session/prompt', async ({ params, signal }) => {

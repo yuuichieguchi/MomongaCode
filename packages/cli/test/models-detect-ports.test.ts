@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { momongaLayout } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { FM_SERVER, LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
-import { detectModels } from '../src/commands/models.ts';
+import { detectModels, serversDetector } from '../src/commands/models.ts';
+import type { ModelsShell } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { freshHome } from './fresh-home.ts';
 
@@ -17,8 +17,9 @@ describe('momonga models detect takes the host program runner and the file check
   it('runs the precondition of a shipped managed server through ports.exec and finds its binary through ports.files.exists', async () => {
     const written: string[] = [];
     const asked: string[] = [];
+    const home = freshHome();
     const ports = {
-      stdout: { write: (text: string) => void written.push(text) },
+      home,
       exec: async (_file: string, args: readonly string[]) => {
         asked.push(args.join(' '));
         return args.join(' ') === 'license --status' ? { exitCode: 69, stdout: '', stderr: '' } : { exitCode: 0, stdout: '', stderr: '' };
@@ -26,7 +27,9 @@ describe('momonga models detect takes the host program runner and the file check
       files: { exists: async (file: string) => file === FM_SERVER.binary.defaultPath },
     } as unknown as CliPorts;
 
-    const code = await detectModels(ports, momongaLayout(freshHome()), { typed: [], json: false, interrupt: new AbortController().signal, fetch: nothingAnswers });
+    const shell = { stdout: { write: (text: string) => void written.push(text) }, home, interrupt: new AbortController().signal, detect: serversDetector(ports, nothingAnswers) } as unknown as ModelsShell;
+
+    const code = await detectModels(shell, { typed: [], json: false });
 
     expect(code).toBe(0);
     const lines = written.join('').split('\n');

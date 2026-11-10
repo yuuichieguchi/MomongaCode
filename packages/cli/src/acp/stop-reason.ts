@@ -1,16 +1,22 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { StopReason } from '@agentclientprotocol/sdk';
-import { TARGET_NOT_READY, readinessRemedyOf } from '@momonga/protocol';
+import { TARGET_NOT_READY } from '@momonga/protocol';
 import type { RunView } from '../client/views.ts';
 
 export const RUN_STOPPED_CODE = -32010;
+
+const storedRemedyOf = (message: string): { remedy?: string } => {
+  const lines = message.split('\n');
+  const remedy = lines.length > 1 ? lines.at(-1) : undefined;
+  return remedy === undefined ? {} : { remedy };
+};
 
 const detailOf = (run: RunView) => ({
   runId: run.id,
   status: run.status,
   ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
   ...(run.error === undefined ? {} : { error: run.error }),
-  ...(run.error?.code === TARGET_NOT_READY ? { code: TARGET_NOT_READY, remedy: readinessRemedyOf(run.error.message) } : {}),
+  ...(run.error?.code === TARGET_NOT_READY ? { code: TARGET_NOT_READY, ...storedRemedyOf(run.error.message) } : {}),
 });
 
 const stopped = (run: RunView, description: string): RequestError => new RequestError(RUN_STOPPED_CODE, `run ${run.id} ${description}`, detailOf(run));

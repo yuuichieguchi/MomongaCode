@@ -1031,6 +1031,18 @@ CREATE TRIGGER runs_cancelling_has_cancel_origin_update BEFORE UPDATE OF status,
 END;
 `;
 
+const MODEL_BY_ITS_OWN_NAME = `
+ALTER TABLE sessions RENAME COLUMN model_alias TO model;
+ALTER TABLE run_facts RENAME COLUMN model_alias TO model;
+UPDATE facts_cursor SET definitions_version = 0, after_event_id = 0 WHERE id = 1;
+`;
+
+const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
+  version: 30,
+  name: 'call the model of a session and of a run by its own name',
+  sql: MODEL_BY_ITS_OWN_NAME,
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1098,4 +1110,5 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: RUNS_STOP_REASONS_WIDENED,
     rebuildsReferencedTable: true,
   },
+  MODEL_BY_ITS_OWN_NAME_MIGRATION,
 ];

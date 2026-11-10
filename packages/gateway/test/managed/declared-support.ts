@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { makeHome, writeSettings } from '../gateway-process-helpers.ts';
+import { makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
 export type Declaration = { command: string; args: readonly string[]; readyPath: string };
 
@@ -34,7 +34,7 @@ export const registryOf = (models: unknown): ManagedServerDescription[] => {
 };
 
 export const loadedDeclaration = async (id: string, declaration: Declaration, home: string = makeHome()): Promise<ManagedServerDescription> => {
-  writeSettings(home, { models: { servers: { [id]: declaration }, targets: { workbench: { adapter: 'managed', server: id, model: 'fake-1' } }, aliases: { default: ['workbench'] } } });
+  writeSettings(home, { models: modelsOf({ workbench: { adapter: 'managed', server: id, model: 'fake-1' } }, { servers: { [id]: declaration } }) });
   const { settings } = await loadUserSettings({ home });
   const found = registryOf(settings.models).find((server) => server.id === id);
   if (found === undefined) throw new Error(`the loaded registry has no server ${JSON.stringify(id)}`);

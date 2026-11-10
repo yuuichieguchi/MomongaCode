@@ -3,24 +3,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createFileCredentialStore, momongaLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore } from '@momonga/testkit';
 import { getJson } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const planSettings = (account?: string) => ({
-  models: {
-    aliases: { default: 'gpt' },
-    targets: {
+  models: modelsOf({
       gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt', ...(account === undefined ? {} : { account }) } },
-    },
-  },
+    }),
 });
 
 const targetHealth = async (home: string) => {
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore: createFakeSecretStore({}) });
   const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
   expect(health.status).toBe(200);
-  return health.body.targets['gpt'];
+  return health.body.targets['gpt/gpt-fake'];
 };
 
 describe('the gateway serves a plan target through the session engine (P5a-w)', () => {

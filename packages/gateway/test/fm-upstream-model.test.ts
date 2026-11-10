@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -34,14 +34,14 @@ const runThroughFakeFm = async (settings: unknown, alias: string, target: string
 
 describe('the model id a run sends to fm serve', () => {
   it('is a model fm serve lists, for the fm target the person configured under the alias default', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' } }, aliases: { default: ['fm'] } } }, 'default', 'fm');
+    const reply = await runThroughFakeFm({ models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }) }, 'default', 'fm/system');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');
   });
 
   it('is a model fm serve lists, whatever the alias and the target are named', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { apple: { adapter: 'managed', server: 'fm', toolCalling: 'native' } }, aliases: { work: ['apple'] } } }, 'work', 'apple');
+    const reply = await runThroughFakeFm({ models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }) }, 'work', 'apple/system');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');

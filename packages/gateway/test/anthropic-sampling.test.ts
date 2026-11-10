@@ -42,7 +42,7 @@ const send = async (target: Target, thinking: Thinking, sample: Case) => {
     capabilities: capabilitiesOf(target),
     ...(target.apiVersion === undefined ? {} : { apiVersion: target.apiVersion }),
   });
-  const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...thinking.body, [sample.param]: sample.value }));
+  const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...thinking.body, [sample.param]: sample.value }));
   return { response, sent: sentBodies(gateway) };
 };
 
@@ -60,7 +60,7 @@ const expectRefused = async (target: Target, thinking: Thinking, sample: Case, .
   expect(response.body.error.type).toBe('invalid_request');
   expect(response.body.error.param).toBe(sample.param);
   expect(response.body.error.message).toContain(sample.param);
-  expect(response.body.error.message).toContain('remote');
+  expect(response.body.error.message).toContain('upstream-model');
   for (const fragment of named) expect(response.body.error.message).toContain(fragment);
   expect(sent).toEqual([]);
 };
@@ -125,7 +125,7 @@ describe('a carried sampling parameter is any non-null value, the default includ
 describe('a request carrying several sampling fields', () => {
   const sendBoth = async (target: Target, fields: Record<string, number>) => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: capabilitiesOf(target), apiVersion: LEGACY });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...fields }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...fields }));
     return { response, sent: sentBodies(gateway) };
   };
 

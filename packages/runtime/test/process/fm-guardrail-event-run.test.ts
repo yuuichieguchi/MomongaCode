@@ -36,13 +36,14 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const dumpFile = path.join(temp.root, 'fm-invocations.jsonl');
   fm.configure({ envDumpFile: dumpFile, serve: { guardrailTrigger: GUARDRAIL_TRIGGER } });
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
-  writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native' } } } });
+  writeUserSettings(temp.home, { sandbox: 'none', models: { connections: [{ adapter: 'managed', server: 'fm', provider: 'fm', binary: fm.binaryPath, models: [{ id: 'system', toolCalling: 'native' }] }] } });
   await probeManagedFm({
     platform: process.platform,
     paths: temp.paths,
-    instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
+    instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', provider: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
     description: FM_SERVER,
     target: 'fm',
+    model: 'system',
     binary: fm.binaryPath,
     readyTimeoutMs: FM_SERVER.ready.limitMs,
     env: sessionEnvFor(temp.home),

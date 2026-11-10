@@ -9,7 +9,7 @@ import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
 
-export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; modelAlias?: string; signal?: AbortSignal };
+export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; model?: string; signal?: AbortSignal };
 
 export type CliSession = {
   client: RuntimeClient;
@@ -20,7 +20,7 @@ export type CliSession = {
 export const environmentSnapshot = async (ports: Pick<DaemonPorts, 'env' | 'home'>): Promise<Record<string, string>> => {
   const { settings } = await loadUserSettings({ home: ports.home });
   const defined = Object.fromEntries(Object.entries(ports.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  return stripCredentialEnv(defined, credentialEnvNames(settings), settings.credentials).env;
+  return stripCredentialEnv(defined, credentialEnvNames(settings.models), settings.credentials).env;
 };
 
 export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Promise<boolean> => {
@@ -40,7 +40,7 @@ export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 's
       env: await environmentSnapshot(ports),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
-      ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }),
+      ...(options.model === undefined ? {} : { model: options.model }),
     });
     return { client, created, close: () => client.close() };
   } catch (error) {

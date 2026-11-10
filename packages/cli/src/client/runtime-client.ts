@@ -72,7 +72,7 @@ export type CreateSessionInput = {
   cwd: string;
   env: Readonly<Record<string, string>>;
   permissionMode?: PermissionMode;
-  modelAlias?: string;
+  model?: string;
   bypassAllowed?: boolean;
   mcpServers?: Readonly<Record<string, McpServerConfig>>;
 };
@@ -107,7 +107,7 @@ export type RuntimeClient = {
   childRuns(runId: string): Promise<RunView[]>;
   setMcpServers(sessionId: string, servers: Readonly<Record<string, McpServerConfig>>): Promise<SessionView>;
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
-  setModelAlias(sessionId: string, modelAlias: string): Promise<SessionView>;
+  setModel(sessionId: string, model: string): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<RunView>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
@@ -238,7 +238,7 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
         cwd: input.cwd,
         env: input.env,
         ...(input.permissionMode === undefined ? {} : { permissionMode: input.permissionMode }),
-        ...(input.modelAlias === undefined ? {} : { modelAlias: input.modelAlias }),
+        ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.bypassAllowed === undefined ? {} : { bypassAllowed: input.bypassAllowed }),
         ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
       },
@@ -302,9 +302,9 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     return sessionOf(body, `PATCH ${path}`);
   };
 
-  const setModelAlias = async (sessionId: string, modelAlias: string): Promise<SessionView> => {
+  const setModel = async (sessionId: string, model: string): Promise<SessionView> => {
     const path = `/v1/sessions/${sessionId}`;
-    const { body } = await send('PATCH', path, [200], { body: { modelAlias } });
+    const { body } = await send('PATCH', path, [200], { body: { model } });
     return sessionOf(body, `PATCH ${path}`);
   };
 
@@ -604,7 +604,7 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     childRuns,
     setMcpServers,
     setPermissionMode,
-    setModelAlias,
+    setModel,
     createRun,
     getRun,
     cancel,

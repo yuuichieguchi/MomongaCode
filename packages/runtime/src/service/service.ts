@@ -13,7 +13,7 @@ import type { SandboxKind } from '../process/sandbox-kind.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
 import { createRunApp } from './app.ts';
-import type { RunLimitDefaults, SessionCreateSettings } from './app.ts';
+import type { ModelListing, RunLimitDefaults, SessionCreateSettings } from './app.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
@@ -42,14 +42,14 @@ export type RunServiceOptions = {
   sandboxKind: (signal: AbortSignal) => Promise<SandboxKind>;
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
-  modelAliases: () => Promise<readonly string[]>;
-  modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
+  modelListing: (signal: AbortSignal) => Promise<ModelListing>;
+  modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   evidenceRun: (project: string) => EvidenceRun;
-  defaults: { modelAlias: string; runTimeoutMs?: number; limits: RunLimitDefaults };
+  defaults: { runTimeoutMs?: number; limits: RunLimitDefaults };
   timers?: ServiceTimers;
   keepAliveMs?: number;
   sweepIntervalMs?: number;
@@ -107,7 +107,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     clock: options.clock,
     home: options.home,
     version: options.version,
-    modelAliases: options.modelAliases,
+    modelListing: options.modelListing,
     modelCapabilities: options.modelCapabilities,
     sessionCreateSettings: options.sessionCreateSettings,
     sessionReadSettings: options.sessionReadSettings,
@@ -120,7 +120,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     },
     health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
     protectedRootAreas: options.protectedRootAreas,
-    defaults: { modelAlias: options.defaults.modelAlias, runTimeoutMs: options.defaults.runTimeoutMs ?? SIX_HOURS_MS, limits: options.defaults.limits },
+    defaults: { runTimeoutMs: options.defaults.runTimeoutMs ?? SIX_HOURS_MS, limits: options.defaults.limits },
     notifier: options.notifier,
     timers,
     keepAliveMs: options.keepAliveMs ?? 15_000,

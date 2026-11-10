@@ -50,13 +50,13 @@ export const runPreconditions = async (description: ManagedServerDescription, bi
   return { kind: 'met' };
 };
 
-export const notReadyText = (target: string, message: string): string => `the target "${target}" is not ready: ${message}`;
+export const notReadyText = (target: string, message: string): string => `the model "${target}" is not ready: ${message}`;
 
 export const MISSING_EXECUTABLE_MESSAGE = 'the executable is missing';
 
 export const missingExecutableVerdict = (target: string, binary: string): RefusedVerdict => ({
   kind: 'refused',
   message: MISSING_EXECUTABLE_MESSAGE,
-  detail: `the target "${target}": the executable was not found at ${binary}`,
+  detail: `the model "${target}": the executable was not found at ${binary}`,
   remedy: undefined,
 });

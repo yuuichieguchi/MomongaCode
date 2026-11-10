@@ -6,7 +6,8 @@ import { vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor, shortTempBase } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup } from '@momonga/testkit';
+import { killPidsForCleanup, modelSettings } from '@momonga/testkit';
+import type { ModelSettings } from '@momonga/testkit';
 import type { FakeSecurityPort } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
@@ -124,11 +125,36 @@ export const isAlive = (pid: number): boolean => {
   }
 };
 
+export const CC_MODEL = 'system';
+
 export const ccTarget = (socketPath: string, extra: Record<string, unknown> = {}) => ({
   adapter: 'chat-completions',
-  provider: 'fake',
-  model: 'system',
+  model: CC_MODEL,
   socketPath,
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
   ...extra,
 });
+
+export type ServerModel = Record<string, unknown>;
+
+export type ModelsRest = { fallbackTo?: readonly string[]; [key: string]: unknown };
+
+const ownNameOf = (server: string, flat: ServerModel | undefined): string => {
+  const model = flat?.['model'];
+  if (typeof model !== 'string') throw new Error(`the test server ${JSON.stringify(server)} names no model`);
+  return model;
+};
+
+export const modelOf = (servers: Record<string, ServerModel>, server: string): string => `${servers[server]?.['provider'] ?? server}/${ownNameOf(server, servers[server])}`;
+
+export const modelsOf = (servers: Record<string, ServerModel>, rest: ModelsRest = {}): ModelSettings['models'] => {
+  const { fallbackTo, ...keys } = rest;
+  return modelSettings({
+    models: Object.entries(servers).map(([server, flat]) => {
+      const { model: _model, ...spec } = flat;
+      return { provider: server, id: ownNameOf(server, flat), ...spec };
+    }),
+    ...(fallbackTo === undefined ? {} : { fallback: fallbackTo.map((server) => modelOf(servers, server)) }),
+    ...keys,
+  }).models;
+};

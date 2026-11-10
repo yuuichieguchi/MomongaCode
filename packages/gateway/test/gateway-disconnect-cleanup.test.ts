@@ -44,7 +44,7 @@ describe('a client that disconnects while a response streams', () => {
       returned = true;
     });
     const { client, gateway } = await startGateway({
-      adapters: { primary },
+      adapters: { 'scripted/scripted-primary': primary },
       clock,
       telemetry,
       config: { breaker: { failureThreshold: 1, openMs: 30_000 } },
@@ -54,7 +54,7 @@ describe('a client that disconnects while a response streams', () => {
       method: 'POST',
       path: '/v1/responses',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'fast', input: userInput('hi'), stream: true }),
+      body: JSON.stringify({ model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }),
       signal: controller.signal,
     });
     const frames = decodeSse(response.body);

@@ -114,8 +114,8 @@ describe('a key target authenticates through the same AuthSource (P5a-w, M1, O-R
       authSource: keyAuthSource(async () => 'key-target-value'),
     });
     registerCleanup(() => adapter.close());
-    const harness = await startGateway({ adapters: { key: adapter }, config: { aliases: { fast: ['key'] }, targets: { key: { model: 'key-model' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } } });
-    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const harness = await startGateway({ adapters: { 'scripted/key-model': adapter }, config: { chains: { 'scripted/key-model': ['scripted/key-model'] }, targets: { 'scripted/key-model': {} }, retry: { maxAttempts: 1, totalWaitMs: 1 } } });
+    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/key-model', input: userInput('hi') }));
     expect(response.status).toBe(401);
     expect(posts(fake).map((request) => request.headers['authorization'])).toEqual(['Bearer key-target-value']);
   });
@@ -132,8 +132,8 @@ describe('a key target authenticates through the same AuthSource (P5a-w, M1, O-R
       apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
-    const harness = await startGateway({ adapters: { claude: adapter }, config: { aliases: { fast: ['claude'] }, targets: { claude: { model: 'claude-model' } } } });
-    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const harness = await startGateway({ adapters: { 'scripted/claude-model': adapter }, config: { chains: { 'scripted/claude-model': ['scripted/claude-model'] }, targets: { 'scripted/claude-model': {} } } });
+    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/claude-model', input: userInput('hi') }));
     expect(response.status).toBe(200);
     expect(fake.requests[0]?.headers['x-api-key']).toBe('anthropic-key-value');
   });

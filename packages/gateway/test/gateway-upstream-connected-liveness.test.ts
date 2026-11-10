@@ -125,15 +125,15 @@ const askThrough = async (transport: Transport, steps: readonly UpstreamStep[], 
   const harness = await startGateway({
     clock,
     timers,
-    adapters: { remote: adapter },
+    adapters: { 'scripted/upstream-model': adapter },
     config: {
-      aliases: { fast: ['remote'] },
-      targets: { remote: { model: 'upstream-model', kind: 'remote' } },
+      chains: { 'scripted/upstream-model': ['scripted/upstream-model'] },
+      targets: { 'scripted/upstream-model': { kind: 'remote' } },
       retry: { maxAttempts, totalWaitMs: maxAttempts === 1 ? 1 : 60_000, baseMs: 1, maxMs: 1 },
     },
   });
   let settled = false;
-  const pending = postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('a long prompt') })
+  const pending = postJson(harness.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('a long prompt') })
     .then(readJson)
     .finally(() => {
       settled = true;

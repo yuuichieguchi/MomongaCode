@@ -14,14 +14,14 @@ export type AdmissionGate = {
 };
 
 export type AdmissionGateOptions = {
-  targetName: string;
+  display: string;
   maxConcurrency: number;
   admissionTimeoutMs: number;
   timers: GatewayTimers;
 };
 
 export const createAdmissionGate = (options: AdmissionGateOptions): AdmissionGate => {
-  const { targetName, maxConcurrency, admissionTimeoutMs, timers } = options;
+  const { display, maxConcurrency, admissionTimeoutMs, timers } = options;
   const retryAfterSeconds = Math.max(1, Math.ceil(admissionTimeoutMs / 1000));
   const queue: Waiter[] = [];
   let active = 0;
@@ -46,7 +46,7 @@ export const createAdmissionGate = (options: AdmissionGateOptions): AdmissionGat
       status: 429,
       type: 'too_many_requests',
       code: 'admission_timeout',
-      message: `target "${targetName}" has ${maxConcurrency} concurrent requests in flight; none finished within ${admissionTimeoutMs} ms`,
+      message: `model "${display}" has ${maxConcurrency} concurrent requests in flight; none finished within ${admissionTimeoutMs} ms`,
       headers: { 'retry-after': String(retryAfterSeconds) },
     });
 

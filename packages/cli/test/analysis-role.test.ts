@@ -5,9 +5,9 @@ type Capabilities = { contextWindow: number; maxOutputTokens: number; structured
 
 type AnalysisModelFor = (input: {
   roles: Partial<Record<'compaction' | 'reflection' | 'analysis', string>>;
-  alias: string;
-  capabilitiesOf: (alias: string) => Promise<Capabilities>;
-}) => Promise<{ alias: string; capabilities: Capabilities }>;
+  model: string;
+  capabilitiesOf: (model: string) => Promise<Capabilities>;
+}) => Promise<{ model: string; capabilities: Capabilities }>;
 
 const CAPABILITIES: Record<string, Capabilities> = {
   opus: { contextWindow: 200_000, maxOutputTokens: 8192, structuredOutput: 'json_schema' },
@@ -17,10 +17,10 @@ const CAPABILITIES: Record<string, Capabilities> = {
 
 const asked: string[] = [];
 
-const capabilitiesOf = async (alias: string): Promise<Capabilities> => {
-  asked.push(alias);
-  const found = CAPABILITIES[alias];
-  if (found === undefined) throw new Error(`unknown alias ${alias}`);
+const capabilitiesOf = async (model: string): Promise<Capabilities> => {
+  asked.push(model);
+  const found = CAPABILITIES[model];
+  if (found === undefined) throw new Error(`unknown model ${model}`);
   return found;
 };
 
@@ -33,7 +33,7 @@ const analysisModelFor = (): AnalysisModelFor => {
 type ImproveInputFor = (input: {
   seed: number;
   model: 'fake' | 'real';
-  analysis: { alias: string; capabilities: Capabilities };
+  analysis: { model: string; capabilities: Capabilities };
   datasetTokens: number;
   current: undefined;
 }) => { alias: string };
@@ -45,31 +45,31 @@ const improveInputFor = (): ImproveInputFor => {
 };
 
 describe('the analysis role of context improve', () => {
-  it('guards a role that is ignored: the analysis and candidate calls go to the analysis alias with its capabilities', async () => {
+  it('guards a role that is ignored: the analysis and candidate calls go to the analysis model with its capabilities', async () => {
     asked.length = 0;
-    const chosen = await analysisModelFor()({ roles: { analysis: 'cheap' }, alias: 'opus', capabilitiesOf });
-    expect(chosen).toEqual({ alias: 'cheap', capabilities: CAPABILITIES['cheap'] });
+    const chosen = await analysisModelFor()({ roles: { analysis: 'cheap' }, model: 'opus', capabilitiesOf });
+    expect(chosen).toEqual({ model: 'cheap', capabilities: CAPABILITIES['cheap'] });
     expect(asked).toEqual(['cheap']);
   });
 
-  it('guards a default that moves: with no analysis role the calls use the --alias of the command', async () => {
-    const chosen = await analysisModelFor()({ roles: { compaction: 'cheap' }, alias: 'opus', capabilitiesOf });
-    expect(chosen).toEqual({ alias: 'opus', capabilities: CAPABILITIES['opus'] });
+  it('guards a default that moves: with no analysis role the calls use the --model of the command', async () => {
+    const chosen = await analysisModelFor()({ roles: { compaction: 'cheap' }, model: 'opus', capabilitiesOf });
+    expect(chosen).toEqual({ model: 'opus', capabilities: CAPABILITIES['opus'] });
   });
 
   it('guards a role refused for a capability it does not need: an analysis role without structured output is used like any other', async () => {
-    const chosen = await analysisModelFor()({ roles: { analysis: 'plain' }, alias: 'opus', capabilitiesOf });
-    expect(chosen).toEqual({ alias: 'plain', capabilities: CAPABILITIES['plain'] });
+    const chosen = await analysisModelFor()({ roles: { analysis: 'plain' }, model: 'opus', capabilitiesOf });
+    expect(chosen).toEqual({ model: 'plain', capabilities: CAPABILITIES['plain'] });
   });
 
-  it('guards a report that names the wrong alias: the improve input names the analysis role alias the calls used, not the --alias of the command', async () => {
-    const analysis = await analysisModelFor()({ roles: { analysis: 'cheap' }, alias: 'opus', capabilitiesOf });
+  it('guards a report that names the wrong model: the improve input names the model of the analysis role the calls used, not the --model of the command', async () => {
+    const analysis = await analysisModelFor()({ roles: { analysis: 'cheap' }, model: 'opus', capabilitiesOf });
     const input = improveInputFor()({ seed: 7, model: 'real', analysis, datasetTokens: 10, current: undefined });
     expect(input.alias).toBe('cheap');
   });
 
-  it('uses an --alias without structured output when no role is set', async () => {
-    const chosen = await analysisModelFor()({ roles: {}, alias: 'plain', capabilitiesOf });
-    expect(chosen).toEqual({ alias: 'plain', capabilities: CAPABILITIES['plain'] });
+  it('uses a --model without structured output when no role is set', async () => {
+    const chosen = await analysisModelFor()({ roles: {}, model: 'plain', capabilitiesOf });
+    expect(chosen).toEqual({ model: 'plain', capabilities: CAPABILITIES['plain'] });
   });
 });

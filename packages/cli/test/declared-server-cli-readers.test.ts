@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadUserModels } from '@momonga/config';
 import { momongaPaths } from '@momonga/foundation';
-import { NotAProbeableTarget, probeFm } from '../src/commands/gateway.ts';
+import { NotAProbeableModel, probeModel } from '../src/commands/gateway.ts';
 import { copyProbeRecord } from '../src/eval/context-effects.ts';
 import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
@@ -30,8 +30,7 @@ const declaredHome = (command: string): string => {
     JSON.stringify({
       models: {
         servers: { loom: { command, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { workbench: { adapter: 'managed', server: 'loom', model: 'fake-1' } },
-        aliases: { default: ['workbench'] },
+        connections: [{ adapter: 'managed', server: 'loom', models: [{ id: 'fake-1' }] }],
       },
     }),
     { mode: 0o600 },
@@ -45,16 +44,16 @@ const sink = () => {
 };
 
 describe('the CLI readers resolve a declared server through the registry of the loaded settings (design-managed-servers 19.12, 19.14 item 4; R-S19-24)', () => {
-  it('gateway probe (R8, gateway.ts) treats a target of a declared server as probeable and reaches its row-0 check', async () => {
+  it('gateway probe (R8, gateway.ts) treats a model of a declared server as probeable and reaches its row-0 check', async () => {
     const missing = path.join(temporary(), 'absent-server');
     const home = declaredHome(missing);
     const ports = { home, env: {}, stdout: sink(), stderr: sink(), files: nodeFiles } as unknown as CliPorts;
-    const error = await probeFm(ports, momongaPaths(home, process.platform, {}), 'workbench', { interrupt: AbortSignal.timeout(30_000) }).then(
+    const error = await probeModel(ports, momongaPaths(home, process.platform, {}), 'fake-1', { interrupt: AbortSignal.timeout(30_000) }).then(
       () => undefined,
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(Error);
-    expect(error).not.toBeInstanceOf(NotAProbeableTarget);
+    expect(error).not.toBeInstanceOf(NotAProbeableModel);
     expect((error as Error).message).toContain(`the executable was not found at ${missing}`);
   });
 
@@ -66,7 +65,7 @@ describe('the CLI readers resolve a declared server through the registry of the 
     const to = path.join(temporary(), 'probe');
     const servers = loadUserModels({ home }).resolved.servers;
     if (servers === undefined) throw new Error('the loaded settings carry no server registry');
-    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'workbench', server: 'loom', binary, model: 'fake-1' }, servers, process.platform, AbortSignal.timeout(30_000))).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { model: 'loom/fake-1', server: 'loom', binary, upstream: 'fake-1' }, servers, process.platform, AbortSignal.timeout(30_000))).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 

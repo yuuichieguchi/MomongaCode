@@ -3,7 +3,7 @@ import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -12,14 +12,13 @@ const RETRY_BUDGET_MS = GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs;
 
 const closedOriginTarget = (origin: string) => ({
   adapter: 'chat-completions',
-  provider: 'fake',
   model: 'devstral-small-2',
   baseUrl: `${origin}/v1`,
   toolCalling: 'native',
   capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
 });
 
-const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
+const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'local/devstral-small-2', input: userInput('hi') }));
 
 const launchAgainstClosedUpstream = async () => {
   const closed = await startLoopbackServer((_req, res) => {
@@ -28,7 +27,7 @@ const launchAgainstClosedUpstream = async () => {
   const origin = closed.origin;
   await closed.close();
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: closedOriginTarget(origin) } } });
+  writeSettings(home, { models: modelsOf({ local: closedOriginTarget(origin) }) });
   const clock = createFakeClock(Date.now());
   const timers = createFakeTimers(clock);
   const startedAt = clock.now();

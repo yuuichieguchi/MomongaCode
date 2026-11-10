@@ -27,9 +27,9 @@ describe('the price time of a call is the start of its attempt span', () => {
     const adapter = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['ok'], usage: usageOf(9, 3) }), gate: { name: 'spanning', afterEvents: 1 } }],
     });
-    const { client } = await startGateway({ adapters: { primary: adapter }, clock, telemetry, priceTable: table });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, clock, telemetry, priceTable: table });
 
-    const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } });
+    const pending = postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), metadata: { run_id: 'run-1', step: '1' } });
     await waitFor(() => adapter.calls.length === 1, { description: 'the call to start' });
     clock.advance(DAY_MS);
     adapter.release('spanning');

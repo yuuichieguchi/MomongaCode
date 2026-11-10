@@ -85,7 +85,7 @@ const anthropic: Surface = {
       apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
-    const { events, error } = await drain(adapter, { name: 'remote', model: 'claude-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', display: 'remote', model: 'claude-fake' }, request);
     const wire = fake.requests.at(-1)?.body as any;
     return { wire, events, error, instructionsOnWire: wire?.system?.[0]?.text };
   },
@@ -105,7 +105,7 @@ const openResponses: Surface = {
       clock: createFakeClock(START_MS),
     });
     registerCleanup(() => adapter.close());
-    const { events, error } = await drain(adapter, { name: 'remote', model: 'gpt-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', display: 'remote', model: 'gpt-fake' }, request);
     const wire = fake.requests.at(-1)?.body as any;
     return { wire, events, error, instructionsOnWire: wire?.instructions };
   },

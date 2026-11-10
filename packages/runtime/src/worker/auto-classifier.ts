@@ -1,10 +1,11 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, defineProductSchema, jsonReplyInstructions, readJsonReply, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, classifierAllows, escapeXmlText, jsonReplyOf, outputReserveFor } from '@momonga/protocol';
-import type { ClassifierVerdict, CreateResponseBody, RunEventPayload } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, CLASSIFIER_VERDICT_SCHEMA, classifierAllows, displayOf, escapeXmlText, jsonReplyOf, outputReserveFor, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import type { ClassifierVerdict, CreateResponseBody, ModelView, ModelViews, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
+import { EXACT_MODEL } from './exact-model.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
@@ -43,14 +44,15 @@ type Outcome = {
 const asked = (event: Outcome['event']): Outcome => ({ outcome: 'ask', event });
 
 export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => {
-  const alias = ctx.options.settings.autoModeClassifier();
+  const configured = ctx.options.settings.autoModeClassifier();
   const { gateway } = ctx.options;
-  const judge = async (request: AutoClassifierRequest, classifier: string): Promise<Outcome> => {
+  const judge = async (request: AutoClassifierRequest, view: ModelView, views: ModelViews): Promise<Outcome> => {
+    const classifier = view.canon;
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
     const input = [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: userPromptOf(ctx, cwd, request) }] }];
-    const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS }, { signal: ctx.control.signal });
+    const counted = await gateway.countTokens({ model: classifier, input, instructions: CLASSIFIER_INSTRUCTIONS, momonga: { ...EXACT_MODEL } }, { signal: ctx.control.signal });
     if (counted.input_tokens > budgetFor(capabilities, counted.error_bound).I) {
-      return asked({ alias: classifier, failure: `the tool call does not fit the context window of ${classifier}` });
+      return asked({ model: classifier, failure: `the tool call does not fit the context window of ${displayOf(view, views)}` });
     }
     const body: CreateResponseBody = {
       model: classifier,
@@ -62,6 +64,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       store: false,
       stream: true,
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
+      momonga: { ...EXACT_MODEL },
     };
     let terminal: ModelResult | undefined;
     let firstEventMs: number | undefined;
@@ -79,8 +82,8 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       terminal = terminalResultOf(event) ?? terminal;
     }
     const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
-    if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });
-    if (terminal.kind === 'failed') return asked({ alias: classifier, failure: `${terminal.code}: ${terminal.message}` });
+    if (terminal === undefined) return asked({ model: classifier, failure: 'the classifier stream ended without a terminal event' });
+    if (terminal.kind === 'failed') return asked({ model: classifier, failure: `${terminal.code}: ${terminal.message}` });
     const { usage } = terminal.response;
     if (usage === null) throw new GatewayFailureError(`the response of the classifier ${classifier} carries no usage`);
     const spend = {
@@ -93,9 +96,9 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       ...(terminal.response.momonga?.target === undefined ? {} : { target: terminal.response.momonga.target }),
     };
     const read = readJsonReply(validateVerdict, jsonReplyOf(terminal.response));
-    if ('error' in read) return { ...asked({ alias: classifier, failure: read.error }), spend };
+    if ('error' in read) return { ...asked({ model: classifier, failure: read.error }), spend };
     const { verdict, confidence, rationale } = read.value;
-    return { outcome: classifierAllows(read.value) ? 'allow' : 'ask', event: { alias: classifier, verdict, confidence, rationale }, spend };
+    return { outcome: classifierAllows(read.value) ? 'allow' : 'ask', event: { model: classifier, verdict, confidence, rationale }, spend };
   };
 
   return {
@@ -103,14 +106,22 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       const recorded = ctx.journal.state.pendingCalls[request.callId]?.classification;
       if (recorded?.subjectDigest === request.subjectDigest) return recorded.outcome;
       let result: Outcome;
-      if (alias === undefined) {
-        result = asked({ failure: 'no classifier alias is configured: set autoMode.classifier in the user settings' });
+      if (configured === undefined) {
+        result = asked({ failure: 'no classifier model is configured: set autoMode.classifier in the user settings, or run /auto-mode and choose one' });
       } else {
+        let classifier: string | undefined;
         try {
-          result = await judge(request, alias);
+          const { views } = await gateway.listing({ signal: ctx.control.signal });
+          const resolution = resolveTypedModelRef(typedModelText(configured), views);
+          if (resolution.kind === 'found') {
+            classifier = resolution.model.canon;
+            result = await judge(request, resolution.model, views);
+          } else {
+            result = asked({ failure: AUTO_MODE_UNAVAILABLE.message });
+          }
         } catch (error) {
           if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
-          result = asked({ alias, failure: `${error.code}: ${error.message}` });
+          result = asked({ ...(classifier === undefined ? {} : { model: classifier }), failure: `${error.code}: ${error.message}` });
         }
       }
       ctx.journal.append([

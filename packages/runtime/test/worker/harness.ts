@@ -33,7 +33,7 @@ import { createFakeToolbox } from './fake-tools.ts';
 import type { FakeToolbox } from './fake-tools.ts';
 import { createFakeTracer } from './fake-tracer.ts';
 import type { FakeTracer } from './fake-tracer.ts';
-import { MODEL_ALIAS, resetResponseIds } from './scripts.ts';
+import { MODEL_ID, resetResponseIds } from './scripts.ts';
 import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
@@ -227,6 +227,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   });
   const gateway: FakeGateway = createFakeGateway(options.capabilities ?? capabilitiesFor(100_000));
   const settings: FakeSettings = createFakeSettings({ home, project });
+  gateway.alsoListed = () => (settings.classifierModel === undefined ? [] : [settings.classifierModel]);
   const tracer: FakeTracer = createFakeTracer();
   const toolbox: FakeToolbox = createFakeToolbox();
   const instructions = createFakeInstructions();
@@ -281,7 +282,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     cwd: project,
     env: { PATH: '/usr/bin:/bin', LANG: 'C' },
     permissionMode: options.mode ?? 'default',
-    modelAlias: MODEL_ALIAS,
+    model: MODEL_ID,
   });
 
   const snapshotTools = async (tools: AnyTool[]): Promise<ToolSet> => {
@@ -451,8 +452,8 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     raw().prepare('UPDATE sessions SET permission_mode = ? WHERE id = ?').run(mode, session.id);
   };
 
-  const setModelAlias = (alias: string): void => {
-    raw().prepare('UPDATE sessions SET model_alias = ? WHERE id = ?').run(alias, session.id);
+  const setModel = (model: string): void => {
+    raw().prepare('UPDATE sessions SET model = ? WHERE id = ?').run(model, session.id);
   };
 
   const resolveApproval = async (runId: string, kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always', approvalId?: string): Promise<void> => {
@@ -500,7 +501,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     seed,
     raw,
     setMode,
-    setModelAlias,
+    setModel,
     resolveApproval,
     snapshotTools,
   };

@@ -5,7 +5,7 @@ import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, startFakeSiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, registerCleanup } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { ACCOUNT } from './plan-signin-support.ts';
 import { PROFILE_ID, profileFor } from './plan-support.ts';
 
@@ -38,7 +38,7 @@ describe('O-R5-6 L1: the plan scope D5 is derived before the start loads an acco
     );
     writeSettings(home, {
       credentials: { plaintextTokenFiles: true },
-      models: { aliases: { default: ['gpt'] }, targets: { gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: ACCOUNT } } } },
+      models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: ACCOUNT } } }),
     });
     const auth = await startFakeSiwcAuth({});
     registerCleanup(() => auth.close());

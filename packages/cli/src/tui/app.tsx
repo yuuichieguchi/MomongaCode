@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isNotListedCapabilities } from '@momonga/protocol';
-import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { ChainCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
@@ -365,7 +365,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [alias, setAlias] = useState<string | undefined>(undefined);
   const [notices, setNotices] = useState<readonly string[]>([]);
-  const capabilities: AliasCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
+  const capabilities: ChainCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
@@ -482,7 +482,7 @@ export function App(props: AppProps) {
 
   const showModel = (entry: MomongaModelEntry): void => {
     setModel(entry);
-    const text = readinessNoticeOf(agentReadiness(entry.capabilities));
+    const text = readinessNoticeOf(agentReadiness(entry.capabilities), 'tui');
     if (text !== undefined) dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text } });
   };
 
@@ -490,8 +490,8 @@ export function App(props: AppProps) {
     const session = await backend.openSession(modelAlias);
     setModeState(session.permissionMode);
     showAutoNotice(session);
-    aliasRef.current = session.modelAlias;
-    setAlias(session.modelAlias);
+    aliasRef.current = session.model;
+    setAlias(session.model);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
     replaceEditor(emptyEditor(await backend.loadHistory()));
@@ -525,12 +525,12 @@ export function App(props: AppProps) {
   const applyModel = async (chosen: string): Promise<void> => {
     const previous = aliasRef.current;
     const session = await backend.setModel(chosen);
-    aliasRef.current = session.modelAlias;
-    setAlias(session.modelAlias);
+    aliasRef.current = session.model;
+    setAlias(session.model);
     note(
       busyRef.current
-        ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
-        : `model: ${session.modelAlias}; applies from the next task`,
+        ? `model: ${session.model}; the running task keeps ${previous}, the next task uses ${session.model}`
+        : `model: ${session.model}; applies from the next task`,
     );
     void backend.model().then(showModel, (error: unknown) => {
       dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
@@ -596,7 +596,7 @@ export function App(props: AppProps) {
     if (kept === undefined) return;
     const [entries, health] = await Promise.all([backend.models(), backend.health()]);
     const entry = entries.find((candidate) => candidate.id === kept.alias);
-    if (entry === undefined || !entry.targets.some((target) => health.targets[target]?.ok === true)) return;
+    if (entry === undefined || !entry.chain.some((member) => health.models[member.model]?.ok === true)) return;
     signInFailedRun.current = undefined;
     note(RESUBMIT_NOTICE);
     await runPrompt(kept.text, kept.options);
@@ -1139,13 +1139,14 @@ export function App(props: AppProps) {
 
   const banner =
     props.startup === undefined || alias === undefined ? null : (
-      <StartupScreen config={props.startup} model={{ alias, targets: model?.targets }} mode={mode} cwd={backend.cwd} notices={notices} />
+      <StartupScreen config={props.startup} model={{ alias, targets: model?.chain.map((member) => member.model) }} mode={mode} cwd={backend.cwd} notices={notices} />
     );
   const widthProps = (item: StaticItem): { width?: number; flexShrink?: number } => {
     const width = item.kind === 'entry' ? entryWidth(item.entry, columns) : undefined;
     return width === undefined ? {} : { width, flexShrink: 0 };
   };
-  const servedPlan = servedTarget === undefined || model?.targetBilling?.[servedTarget] !== 'plan' ? undefined : model.targetPlan?.[servedTarget];
+  const servedMember = model?.chain.find((member) => member.model === servedTarget);
+  const servedPlan = servedMember?.billing === 'plan' ? servedMember.plan : undefined;
   const servedProfile = servedPlan === undefined ? undefined : profiles.find((profile) => profile.id === servedPlan.profile);
   const staticItems: StaticItem[] = [
     ...(banner !== null && transcript.entries.length > 0 ? [{ kind: 'banner' } as const] : []),

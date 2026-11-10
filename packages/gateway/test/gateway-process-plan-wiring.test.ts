@@ -15,7 +15,7 @@ import {
 } from '@momonga/testkit';
 import { openPlanSessions } from '../src/plan/session.ts';
 import { outputText, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { PROFILE_ID, profileFor, signInAtFake } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -36,7 +36,7 @@ const filesUnder = (directory: string): string[] =>
 describe('the gateway process loads plan profiles from the injected planProfiles (O-R5-3 g)', () => {
   it('refuses a profile id that the injected planProfiles do not hold, even a shipped one', async () => {
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: 'chatgpt' } } } } });
+    writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: 'chatgpt' } } }) });
     await expect(
       launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore: createFakeSecretStore({}), planProfiles: {} } as never),
     ).rejects.toThrow(/unknown plan profile "chatgpt"/);
@@ -92,9 +92,9 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
     await sessions.close();
     clock.advance(60_000);
 
-    writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: PROFILE_ID, account: 'work' } } } } });
+    writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: PROFILE_ID, account: 'work' } } }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, clock } as never);
-    const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
+    const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'gpt/m', input: userInput('hi') }));
     const responses = [await ask(), await ask()];
 
     const answered = upstream.requests.filter((request) => request.method === 'POST' && !installed.has(bearerOf(request)));
@@ -124,17 +124,16 @@ describe('models.billingChanges of the user settings reaches the alias walk (P5a
     registerCleanup(() => serving.close());
     const home = makeHome();
     writeSettings(home, {
-      models: {
-        aliases: { default: ['free', 'paid'] },
-        ...(billingChanges === undefined ? {} : { billingChanges }),
-        targets: {
-          free: { adapter: 'open-responses', provider: 'test', model: 'm', socketPath: failing.socketPath, billing: 'local', capabilities: CAPABILITIES },
-          paid: { adapter: 'open-responses', provider: 'test', model: 'm', socketPath: serving.socketPath, billing: 'metered', capabilities: CAPABILITIES },
+      models: modelsOf(
+        {
+          free: { adapter: 'open-responses', model: 'm', socketPath: failing.socketPath, billing: 'local', capabilities: CAPABILITIES },
+          paid: { adapter: 'open-responses', model: 'm', socketPath: serving.socketPath, billing: 'metered', capabilities: CAPABILITIES },
         },
-      },
+        { fallbackTo: ['paid'], ...(billingChanges === undefined ? {} : { billingChanges }) },
+      ),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
-    return { serving, post: async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') })) };
+    return { serving, post: async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'free/m', input: userInput('hi') })) };
   };
 
   it('does not move from local to metered without the pair, and moves with it', async () => {

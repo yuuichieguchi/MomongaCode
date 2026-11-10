@@ -16,7 +16,7 @@ import { DEFERRED_HEADER } from './retry-support.ts';
 import { REMOTE_CAPABILITIES, startOpenResponsesGateway, terminalOf, textOf } from './upstream-gateway-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
-const streamBody = { model: 'fast', stream: true, input: userInput('hello') };
+const streamBody = { model: 'scripted/upstream-model', stream: true, input: userInput('hello') };
 
 const rateLimitedBeforeOutput = (headers?: Record<string, string>): FakeUpstreamReply =>
   openResponsesStream(
@@ -76,10 +76,10 @@ describe('a rate limit inside the stream before any output goes through classifi
     const primary = await openResponsesTarget([rateLimitedBeforeOutput({ 'retry-after': '20' })]);
     const secondary = await openResponsesTarget([openResponsesTextReply(['from secondary'])]);
     const { client } = await startGateway({
-      adapters: { primary: primary.adapter, secondary: secondary.adapter },
+      adapters: { 'scripted/upstream-model': primary.adapter, 'secondary/upstream-model': secondary.adapter },
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: 'upstream-model', kind: 'remote' }, secondary: { model: 'upstream-model', kind: 'remote' } },
+        chains: { 'scripted/upstream-model': ['scripted/upstream-model', 'secondary/upstream-model'] },
+        targets: { 'scripted/upstream-model': { kind: 'remote' }, 'secondary/upstream-model': { kind: 'remote' } },
       },
     });
 
@@ -88,7 +88,7 @@ describe('a rate limit inside the stream before any output goes through classifi
     const terminal = terminalOf(frames);
     expect(terminal.type).toBe('response.completed');
     expect(textOf(terminal.response)).toBe('from secondary');
-    expect(terminal.response.momonga.fallbackFrom).toEqual(['primary']);
+    expect(terminal.response.momonga.fallbackFrom).toEqual(['scripted/upstream-model']);
     expect(primary.fake.requests).toHaveLength(1);
     expect(secondary.fake.requests).toHaveLength(1);
   });

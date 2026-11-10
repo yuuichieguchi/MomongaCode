@@ -6,21 +6,21 @@ import { expectErrorBody, getJson, postJson, readJson, startGateway, userInput }
 describe('POST /v1/momonga/count_tokens', () => {
   it('uses adapter.countTokens when available and reports its method', async () => {
     const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
-    const { client } = await startGateway({ adapters: { primary } });
-    const request = { model: 'fast', input: userInput('count me') };
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const request = { model: 'scripted/scripted-primary', input: userInput('count me') };
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', request));
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } });
     expect(primary.countCalls).toHaveLength(1);
     expect(primary.countCalls[0]?.request.input).toEqual(request.input);
-    expect(primary.countCalls[0]?.target).toEqual({ name: 'primary', model: 'scripted-primary' });
+    expect(primary.countCalls[0]?.target).toEqual({ name: 'scripted/scripted-primary', display: 'scripted-primary', model: 'scripted-primary' });
   });
 
   it('falls back to a deterministic estimator with method estimated and a non-zero error_bound', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
-    const short = { model: 'fast', input: userInput('short') };
-    const long = { model: 'fast', input: userInput('a much longer piece of text '.repeat(40)) };
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const short = { model: 'scripted/scripted-primary', input: userInput('short') };
+    const long = { model: 'scripted/scripted-primary', input: userInput('a much longer piece of text '.repeat(40)) };
     const first = (await readJson(await postJson(client, '/v1/momonga/count_tokens', short))).body;
     const again = (await readJson(await postJson(client, '/v1/momonga/count_tokens', short))).body;
     const bigger = (await readJson(await postJson(client, '/v1/momonga/count_tokens', long))).body;
@@ -37,20 +37,20 @@ describe('POST /v1/momonga/count_tokens', () => {
 
   it('passes tools through to adapter.countTokens', async () => {
     const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const tools = [{ type: 'function', name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: {} } }];
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('count me'), tools }));
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input: userInput('count me'), tools }));
     expect(response.status).toBe(200);
     expect(primary.countCalls[0]?.request.tools).toEqual(tools);
   });
 
   it('counts tools in the fallback estimator', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const input = userInput('short');
     const tools = [{ type: 'function', name: 'Read', description: 'Read a file '.repeat(40), parameters: { type: 'object', properties: {} } }];
-    const without = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input }))).body;
-    const withTools = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input, tools }))).body;
+    const without = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input }))).body;
+    const withTools = (await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input, tools }))).body;
     expect(withTools.input_tokens).toBeGreaterThan(without.input_tokens);
   });
 
@@ -61,8 +61,8 @@ describe('POST /v1/momonga/count_tokens', () => {
     ['non-object parameters', [{ type: 'function', name: 'Read', parameters: 'x' }]],
   ])('rejects invalid tools (%s) with 400 invalid_request', async (_label, tools) => {
     const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
-    const { client } = await startGateway({ adapters: { primary } });
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input: 'x', tools }));
     expect(response.status).toBe(400);
     expect(response.body.error.type).toBe('invalid_request');
     expect(String(response.body.error.param)).toMatch(/^tools/);
@@ -71,8 +71,8 @@ describe('POST /v1/momonga/count_tokens', () => {
 
   const countWithTools = async (tools: unknown) => {
     const primary = createScriptedAdapter({ calls: [], countTokens: { input_tokens: 42, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } } });
-    const { client } = await startGateway({ adapters: { primary } });
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'x', tools }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input: 'x', tools }));
     return { response, primary };
   };
   const toolNamed = (name: string, parameters: Record<string, unknown> = { type: 'object' }) => ({ type: 'function', name, parameters });
@@ -120,7 +120,7 @@ describe('POST /v1/momonga/count_tokens', () => {
 
   it('rejects an unknown alias with 404 model_not_found', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'nope', input: 'x' }));
     expect(response.status).toBe(404);
     expectErrorBody(response.body, { type: 'not_found', code: 'model_not_found', param: 'model' });
@@ -129,32 +129,32 @@ describe('POST /v1/momonga/count_tokens', () => {
 
 describe('models and health', () => {
   const config = {
-    aliases: { fast: ['a'], deep: ['b', 'a'] },
+    chains: { 'scripted/model-a': ['scripted/model-a'], 'scripted/model-b': ['scripted/model-b', 'scripted/model-a'] },
     targets: {
-      a: { model: 'model-a', capabilities: { contextWindow: 4096, toolCalling: 'constrained' as const } },
-      b: { model: 'model-b' },
+      'scripted/model-a': { capabilities: { contextWindow: 4096, toolCalling: 'constrained' as const } },
+      'scripted/model-b': {},
     },
   };
 
-  it('lists aliases on /v1/models', async () => {
+  it('lists the configured models on /v1/models, owned by their server', async () => {
     const a = createScriptedAdapter({ calls: [] });
     const b = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a, b }, config });
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config });
     const response = await getJson(client, '/v1/models');
     expect(response.status).toBe(200);
     expect(response.body.object).toBe('list');
-    expect(response.body.data.map((model: { id: string }) => model.id).sort()).toEqual(['deep', 'fast']);
-    for (const model of response.body.data) expect(model.object).toBe('model');
+    expect(response.body.data.map((model: { id: string }) => model.id)).toEqual(['scripted/model-a', 'scripted/model-b']);
+    for (const model of response.body.data) expect(model).toMatchObject({ object: 'model', owned_by: 'scripted' });
   });
 
-  it('returns per-alias capabilities with config overrides merged over the adapter declaration', async () => {
+  it('returns per-model capabilities with config overrides merged over the adapter declaration', async () => {
     const a = createScriptedAdapter({ calls: [], capabilities: { maxOutputTokens: 2048 } });
     const b = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a, b }, config });
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config });
     const response = await getJson(client, '/v1/momonga/models');
     expect(response.status).toBe(200);
-    const fast = response.body.data.find((entry: { id: string }) => entry.id === 'fast');
-    expect(fast.targets).toEqual(['a']);
+    const fast = response.body.data.find((entry: { id: string }) => entry.id === 'scripted/model-a');
+    expect(fast.chain.map((member: { model: string }) => member.model)).toEqual(['scripted/model-a']);
     expect(fast.capabilities).toEqual({
       ...DEFAULT_SCRIPTED_CAPABILITIES,
       maxOutputTokens: 2048,
@@ -162,20 +162,20 @@ describe('models and health', () => {
       toolCalling: 'constrained',
       source: 'config',
     });
-    const deep = response.body.data.find((entry: { id: string }) => entry.id === 'deep');
-    expect(deep.targets).toEqual(['b', 'a']);
+    const deep = response.body.data.find((entry: { id: string }) => entry.id === 'scripted/model-b');
+    expect(deep.chain.map((member: { model: string }) => member.model)).toEqual(['scripted/model-b', 'scripted/model-a']);
   });
 
   it('reports per-target health and breaker state', async () => {
     const a = createScriptedAdapter({ calls: [] });
     const b = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a, b }, config });
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config });
     const response = await getJson(client, '/v1/momonga/health');
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(true);
-    expect(Object.keys(response.body.targets).sort()).toEqual(['a', 'b']);
-    expect(response.body.targets.a).toMatchObject({ ok: true, breaker: 'closed' });
-    expect(response.body.targets.b).toMatchObject({ ok: true, breaker: 'closed' });
+    expect(Object.keys(response.body.models).sort()).toEqual(['scripted/model-a', 'scripted/model-b']);
+    expect(response.body.models['scripted/model-a']).toMatchObject({ ok: true, breaker: 'closed' });
+    expect(response.body.models['scripted/model-b']).toMatchObject({ ok: true, breaker: 'closed' });
   });
 });
 
@@ -189,9 +189,9 @@ describe('GET /v1/momonga/usage', () => {
         { events: textResponseEvents({ model: 'scripted-primary', chunks: ['other run'], usage: usageOf(99, 99) }) },
       ],
     });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const send = (step: string, runId = 'run-1') =>
-      postJson(client, '/v1/responses', { model: 'fast', input: userInput(`step ${step}`), metadata: { run_id: runId, step } });
+      postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput(`step ${step}`), metadata: { run_id: runId, step } });
     const r1 = await readJson(await send('1'));
     const r2 = await readJson(await send('1'));
     const r3 = await readJson(await send('2'));
@@ -222,7 +222,7 @@ describe('GET /v1/momonga/usage', () => {
 
   it('requires run_id', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await getJson(client, '/v1/momonga/usage');
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_query', param: 'run_id' });
@@ -230,7 +230,7 @@ describe('GET /v1/momonga/usage', () => {
 
   it('returns an empty report for a run without responses', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await getJson(client, '/v1/momonga/usage?run_id=unknown');
     expect(response.body).toEqual({
       run_id: 'unknown',

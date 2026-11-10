@@ -311,7 +311,7 @@ describe('anthropic adapter through the gateway: failures', () => {
       script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' }), anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
       config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
-    const pending = postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    const pending = postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') });
     let settled = false;
     const settle = (): void => {
       settled = true;
@@ -331,7 +331,7 @@ describe('anthropic adapter through the gateway: failures', () => {
 
   it('answers an authentication failure with 401 authentication_failed and does not retry', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['unreachable'])], sentKey: 'sk-ant-wrong-000000000000' });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(401);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'authentication_failed' });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -340,7 +340,7 @@ describe('anthropic adapter through the gateway: failures', () => {
 
   it('does not retry an invalid request', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicErrorReply(400, 'invalid_request_error', 'max_tokens: too large')] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'unsupported_request' });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -350,7 +350,7 @@ describe('anthropic adapter through the gateway: failures', () => {
     const gateway = await startAnthropicGateway({
       script: [anthropicErrorReply(500, 'api_error', 'deterministic failure', { 'x-should-retry': 'false' })],
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'server_error', code: 'api_error' });
     expect(gateway.fake.requests).toHaveLength(1);
@@ -362,7 +362,7 @@ describe('anthropic adapter through the gateway: compaction', () => {
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(80), anthropicTextReply(['The user asked for X; file a.ts was read.'])] });
     const response = await readJson(
       await postJson(gateway.client, '/v1/responses/compact', {
-        model: 'fast',
+        model: 'scripted/upstream-model',
         input: [...userInput('do X'), { type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '{"path":"a.ts"}' }, { type: 'function_call_output', call_id: 'c1', output: 'body' }],
       }),
     );
@@ -377,7 +377,7 @@ describe('anthropic adapter through the gateway: compaction', () => {
 
   it('sizes the summary request by counting the system and messages it will actually send', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(80), anthropicTextReply(['summary'])] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
     expect(response.status).toBe(200);
     const [counted, sent] = gateway.fake.requests.map((request) => request.body as { model: string; system: unknown; messages: unknown });
     expect(Object.keys(counted as object).sort()).toEqual(['messages', 'model', 'system']);
@@ -459,7 +459,7 @@ describe('anthropic adapter through the gateway: pause_turn', () => {
 
 describe('anthropic adapter through the gateway: count_tokens', () => {
   const count = (gateway: Awaited<ReturnType<typeof startAnthropicGateway>>, body: Record<string, unknown>) =>
-    postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'fast', ...body }).then(readJson);
+    postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'scripted/upstream-model', ...body }).then(readJson);
 
   it('counts through the Anthropic endpoint with the documented request fields and reports an exact count', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(321)] });
@@ -503,7 +503,7 @@ describe('anthropic adapter through the gateway: images', () => {
 
   it('rejects the request before any upstream call when the target does not declare imageInput', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])] });
-    const response = await postJson(gateway.client, '/v1/responses', { model: 'fast', input: imageInput });
+    const response = await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: imageInput });
     expect(response.status).toBe(400);
     expect(gateway.fake.requests).toEqual([]);
   });

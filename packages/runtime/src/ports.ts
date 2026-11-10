@@ -1,4 +1,4 @@
-import type { Lease, ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { Lease, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock, LockCapabilityProbe, ProcessInspector, RuleEnforcement } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -12,7 +12,7 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import type { MemoryView, TargetAnswers } from '@momonga/protocol';
-import type { GatewayModel } from './gateway-client.ts';
+import type { GatewayListing, GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
@@ -34,8 +34,9 @@ export type GatewayPort = {
   stream(body: CreateResponseBody, options: GatewayCallOptions): AsyncIterable<StreamEvent>;
   compact(request: CompactRequest, options: GatewayCallOptions): Promise<CompactResource>;
   countTokens(request: CountTokensRequest, options: { signal: AbortSignal }): Promise<CountTokensResult>;
-  capabilities(alias: string, options: { signal: AbortSignal; target?: string }): Promise<Capabilities>;
-  model(alias: string, options: { signal: AbortSignal }): Promise<GatewayModel>;
+  capabilities(model: string, options: { signal: AbortSignal; target?: string }): Promise<Capabilities>;
+  model(model: string, options: { signal: AbortSignal }): Promise<GatewayModel>;
+  listing(options: { signal: AbortSignal }): Promise<GatewayListing>;
   cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
 };
 
@@ -51,8 +52,6 @@ export type SettingsPort = {
   context(session: Session): Promise<ResolvedContextSettings>;
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
-  modelRoles(): ModelRoles;
-  modelTargets(): Readonly<Record<string, TargetFacts>>;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
 };

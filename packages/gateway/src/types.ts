@@ -4,12 +4,14 @@ import type { PlanApi } from './plan/api.ts';
 import type { GatewayEpochs } from './core/services.ts';
 import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
 import type { Redactor } from './core/redaction.ts';
-import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, MomongaModelRoles, ProviderAdapter, TargetAnswers, TargetBilling } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
   kind: string;
   provider: string;
   model: string;
+  defaultTag?: string;
+  answers?: TargetAnswers;
   billing: TargetBilling;
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -19,13 +21,15 @@ export type GatewayTargetConfig = {
   keyGroup?: string;
 };
 
-export type GatewayBillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
+export type GatewayBillingChange = { from: TargetBilling; to: TargetBilling; model?: string };
 
 export type GatewayConfig = {
   models: {
-    aliases: Record<string, string[]>;
     targets: Record<string, GatewayTargetConfig>;
+    chains: Record<string, string[]>;
     billingChanges?: readonly GatewayBillingChange[];
+    start?: string;
+    roles?: MomongaModelRoles;
   };
   retry: { maxAttempts: number; totalWaitMs: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };

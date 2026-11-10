@@ -4,7 +4,7 @@ import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'nod
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { FactsRefusedError, createBlobStore, createJournalReader, knownValue } from '@momonga/store';
-import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES } from '@momonga/protocol';
+import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES, STORED_MODEL_KEYS, decodeStoredModel } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
 import type { DatabaseSync } from 'node:sqlite';
@@ -174,12 +174,12 @@ const limitOf = (limits: Record<string, unknown>, key: keyof RunFactsLimits, run
   return value;
 };
 
-const startOf = (event: Extract<RunEvent, { type: 'run.started' }>): { modelAlias: string; mode: PermissionMode } => {
-  const { modelAlias } = event.pins;
-  if (typeof modelAlias !== 'string') throw new TypeError(`run ${event.runId}: run.started pins.modelAlias must be a string`);
+const startOf = (event: Extract<RunEvent, { type: 'run.started' }>): { model: string; mode: PermissionMode } => {
+  const model = decodeStoredModel(event.pins, STORED_MODEL_KEYS.pin);
+  if (model === undefined) throw new TypeError(`run ${event.runId}: run.started pins.model must be a string`);
   const mode = PERMISSION_MODES.find((known) => known === event.mode);
   if (mode === undefined) throw new TypeError(`run ${event.runId}: run.started carries no permission mode`);
-  return { modelAlias, mode };
+  return { model, mode };
 };
 
 const agentOf = (pins: Record<string, unknown>, runId: string): string => {
@@ -231,7 +231,7 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         deadlineAt: run.deadlineAt,
         step: run.step,
         tokensTotal: Number(tokensRow['total']),
-        modelAlias: begun.modelAlias,
+        model: begun.model,
         mode: begun.mode,
         agent: agentOf(run.pins, runId),
         origin: run.origin,

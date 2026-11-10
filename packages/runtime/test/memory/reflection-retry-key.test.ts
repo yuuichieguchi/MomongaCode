@@ -168,7 +168,7 @@ describe('the retry identity of a reflection request', () => {
     expect(call.idempotencyKey).not.toBe(sha256Hex(canonicalJson([run.id, 'reflect'])));
   });
 
-  it('sends a retry whose body changed with the capabilities of the alias as a new request, and finishes the job', async () => {
+  it('sends a retry whose body changed with the capabilities of the model as a new request, and finishes the job', async () => {
     const env = setup();
     const runId = await failFirstAttemptAfterTheCall(env);
     env.upstream.capabilitiesValue = capabilitiesFor(8192, { structuredOutput: 'json_schema' });

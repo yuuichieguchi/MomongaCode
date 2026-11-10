@@ -80,7 +80,7 @@ describe('worker context: compaction', () => {
     expect(compact?.idempotencyKey).toBe(compactKey(run.id, compact?.request));
     expect(compact?.request.input).toEqual(history.filter((entry) => entry.seq <= 2).map((entry) => entry.item));
     expect(compact?.request).not.toHaveProperty('instructions');
-    expect(compact?.request.momonga).toEqual({ max_summary_tokens: 2400, retains_user_request: true });
+    expect(compact?.request.momonga).toEqual({ max_summary_tokens: 2400, retains_user_request: true, exact_model: true });
 
     const [compacted] = env.ofType(run.id, 'context.compacted');
     expect(compacted).toMatchObject({ summary: 'S1', replacedThroughSeq: 2, item: { type: 'compaction', encrypted_content: fixtureCompactionContent('S1') } });

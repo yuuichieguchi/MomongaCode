@@ -85,7 +85,7 @@ const contextFor = (options: ContextOptions = {}) => {
       },
     },
     run: { id: 'run_compact', sessionId: 'session_compact', deadlineAt: 2_000_000_000_000 },
-    alias: 'fm',
+    model: 'fm',
     roles: {},
     capabilities: capabilitiesFor(40_000),
     verificationCommands: [],
@@ -130,7 +130,7 @@ describe('compactThrough', () => {
 
     expect(requests).toHaveLength(1);
     const [sent] = requests;
-    expect(sent?.request).toEqual({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true } });
+    expect(sent?.request).toEqual({ model: 'fm', input, momonga: { max_summary_tokens: 240, retains_user_request: true, exact_model: true } });
     expect('instructions' in (sent?.request ?? {})).toBe(false);
     expect(sent?.idempotencyKey).toBe(keyOf(sent?.request as CompactRequest));
     expect(appended).toEqual([

@@ -9,7 +9,7 @@ import type { StreamEvent } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { makeDir, userInput } from './gateway-helpers.ts';
 
-const target = { name: 'primary', model: 'scripted-primary' };
+const target = { name: 'primary', display: 'primary', model: 'scripted-primary' };
 const ctx = () => ({ signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES });
 const requestA: AdapterRequest = { model: 'scripted-primary', input: userInput('first') };
 const requestB: AdapterRequest = { model: 'scripted-primary', input: userInput('second') };

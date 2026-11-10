@@ -75,14 +75,8 @@ const OUTPUT_BOUND_HONOURED_FACTOR = 2;
 const ONE_OUTPUT_TOKEN = 1;
 const LONG_ANSWER_PROMPT = 'Count from 1 to 300, one number per line, and write nothing else.';
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
-const CONTEXT_FIELDS = [
-  'context_window',
-  'context_length',
-  'max_context_length',
-  'contextSize',
-  'resolvedContextSize',
-  'context_size',
-] as const;
+const CONTEXT_WINDOW_FIELDS = ['context_window', 'context_length', 'contextSize', 'resolvedContextSize', 'context_size', 'loaded_context_length'] as const;
+const CONTEXT_CEILING_FIELDS = ['max_context_length'] as const;
 
 const PROBE_PARAMETERS: Record<string, unknown> = {
   type: 'object',
@@ -195,7 +189,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedContextWindow(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
+  const contextWindow = reportedWindowOf(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
@@ -251,7 +245,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   return {
     probedAt: now().toISOString(),
     health: { ok: true },
-    modelId: model,
+    modelId: options.managed !== undefined && typeof listedId === 'string' ? listedId : model,
     contextWindow,
     streaming,
     usageReported,
@@ -525,7 +519,7 @@ const calibrate = async (
   return { ratio, errorBound };
 };
 
-export const reportedContextValue = (source: unknown): number | undefined => {
+const reportedCount = (source: unknown, fields: readonly string[]): number | undefined => {
   const queue: unknown[] = [source];
   for (let cursor = 0; cursor < queue.length; cursor += 1) {
     const node = queue[cursor];
@@ -534,7 +528,7 @@ export const reportedContextValue = (source: unknown): number | undefined => {
       continue;
     }
     if (!isRecord(node)) continue;
-    for (const name of CONTEXT_FIELDS) {
+    for (const name of fields) {
       const value = node[name];
       if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
     }
@@ -543,9 +537,13 @@ export const reportedContextValue = (source: unknown): number | undefined => {
   return undefined;
 };
 
-const reportedContextWindow = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
+export const reportedContextWindow = (source: unknown): number | undefined => reportedCount(source, CONTEXT_WINDOW_FIELDS);
+
+export const reportedContextCeiling = (source: unknown): number | undefined => reportedCount(source, CONTEXT_CEILING_FIELDS);
+
+const reportedWindowOf = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
   for (const source of [listedEntryOf(modelsBody, model), parseJson(healthText)]) {
-    const value = reportedContextValue(source);
+    const value = reportedContextWindow(source);
     if (value !== undefined) return { value, method: 'reported' };
   }
   return undefined;

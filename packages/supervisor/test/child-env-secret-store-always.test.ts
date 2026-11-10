@@ -13,10 +13,10 @@ const binWith = (dir: string, program: string): string => {
 };
 
 const SETTINGS_WITHOUT_SECRETS: readonly { label: string; settings: CredentialSettings }[] = [
-  { label: 'no targets at all', settings: { models: { targets: {} } } as unknown as CredentialSettings },
+  { label: 'no connection at all', settings: { models: { connections: [] } } as unknown as CredentialSettings },
   {
-    label: 'only an apiKeyEnv target',
-    settings: { models: { targets: { remote: { adapter: 'chat-completions', provider: 'fake', apiKeyEnv: 'UPSTREAM_X' } } } } as unknown as CredentialSettings,
+    label: 'only a connection with apiKeyEnv',
+    settings: { models: { connections: [{ adapter: 'chat-completions', provider: 'fake', apiKeyEnv: 'UPSTREAM_X' }] } } as unknown as CredentialSettings,
   },
 ];
 

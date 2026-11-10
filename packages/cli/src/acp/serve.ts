@@ -2,7 +2,7 @@ import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { canonicalPath, currentSocketResolver } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
-import { createGatewayClient } from '../client/gateway-client.ts';
+import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
 import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
@@ -22,9 +22,9 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   const app = createAcpAgent({
     version: ports.version,
     runtime,
-    contextWindowOf: (modelAlias) => gateway.contextWindowOf(modelAlias),
-    readinessOf: async (modelAlias) => agentReadiness(await gateway.capabilitiesOf(modelAlias)),
-    modelAliases: async () => (await gateway.models()).map((model) => model.id),
+    contextWindowOf: (model) => gateway.contextWindowOf(model),
+    readinessOf: async (model) => agentReadiness(await gateway.capabilitiesOf(model)),
+    models: async () => listingViewsOf(await gateway.models()),
     environment: () => environmentSnapshot(ports),
     autoModeAvailable: () => autoModeConfigured(ports),
     canonicalCwd: canonicalPath,

@@ -16,7 +16,7 @@ import {
 } from './gateway-helpers.ts';
 
 const events = (text: string) => textResponseEvents({ model: 'scripted-primary', chunks: [text] });
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'scripted/scripted-primary', input: userInput('hi') };
 const streamBody = { ...body, stream: true };
 const key = (value: string) => ({ 'idempotency-key': value });
 const JOINER_DEADLINE_MS = 60_000;
@@ -30,7 +30,7 @@ const drain = async (iterator: AsyncIterator<SseFrame>, initial: SseFrame[]): Pr
 describe('Idempotency-Key', () => {
   it('coalesces two concurrent identical non-stream requests into one adapter call with identical results', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('once'), gate: { name: 'g', afterEvents: 0 } }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const first = postJson(client, '/v1/responses', body, key('k-1'));
     await waitFor(() => primary.calls.length === 1);
     const second = postJson(client, '/v1/responses', body, key('k-1'));
@@ -47,7 +47,7 @@ describe('Idempotency-Key', () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('shared'), gate: { name: 'g', afterEvents: 2 } }] });
     const clock = createFakeClock(START_MS);
     const live = createLiveSpanTelemetry(clock);
-    const { client, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const firstPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
     await waitFor(() => primary.calls[0]?.emitted === 2 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the opening events' });
@@ -78,14 +78,14 @@ describe('Idempotency-Key', () => {
 
   it('replays a completed result, streamed and non-streamed, without calling the adapter again', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('stored') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const original = await readSse(await postJson(client, '/v1/responses', streamBody, key('k-3')));
     const replayed = await readSse(await postJson(client, '/v1/responses', streamBody, key('k-3')));
     expect(replayed).toEqual(original);
     expect(primary.calls).toHaveLength(1);
 
     const plainOriginal = createScriptedAdapter({ calls: [{ events: events('plain') }] });
-    const second = await startGateway({ adapters: { primary: plainOriginal } });
+    const second = await startGateway({ adapters: { 'scripted/scripted-primary': plainOriginal } });
     const firstPlain = await readJson(await postJson(second.client, '/v1/responses', body, key('k-4')));
     const replayPlain = await readJson(await postJson(second.client, '/v1/responses', body, key('k-4')));
     expect(replayPlain.status).toBe(200);
@@ -97,7 +97,7 @@ describe('Idempotency-Key', () => {
     const primary = createScriptedAdapter({
       calls: [{ failure: { status: 400, message: 'rejected once' } }, { events: events('second time') }],
     });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const failed = await readJson(await postJson(client, '/v1/responses', body, key('k-5')));
     expect(failed.status).toBe(400);
     const retried = await readJson(await postJson(client, '/v1/responses', body, key('k-5')));
@@ -108,10 +108,10 @@ describe('Idempotency-Key', () => {
 
   it('rejects the same key with a different body digest with 422 idempotency_key_reused', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('first') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await readJson(await postJson(client, '/v1/responses', body, key('k-6')))).status).toBe(200);
     const reused = await readJson(
-      await postJson(client, '/v1/responses', { model: 'fast', input: userInput('different') }, key('k-6')),
+      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('different') }, key('k-6')),
     );
     expect(reused.status).toBe(422);
     expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
@@ -120,16 +120,16 @@ describe('Idempotency-Key', () => {
 
   it('treats a key-order-only difference in the body as the same digest', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('canonical') }] });
-    const { client } = await startGateway({ adapters: { primary } });
-    const first = await readJson(await postJson(client, '/v1/responses', '{"model":"fast","input":"hi"}', key('k-7')));
-    const second = await readJson(await postJson(client, '/v1/responses', '{"input":"hi","model":"fast"}', key('k-7')));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const first = await readJson(await postJson(client, '/v1/responses', '{"model":"scripted/scripted-primary","input":"hi"}', key('k-7')));
+    const second = await readJson(await postJson(client, '/v1/responses', '{"input":"hi","model":"scripted/scripted-primary"}', key('k-7')));
     expect(second.body).toEqual(first.body);
     expect(primary.calls).toHaveLength(1);
   });
 
   it('expires entries after idempotency.ttlMs', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('before') }, { events: events('after') }] });
-    const { client, clock } = await startGateway({ adapters: { primary }, config: { idempotency: { ttlMs: 60_000 } } });
+    const { client, clock } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { idempotency: { ttlMs: 60_000 } } });
     await readJson(await postJson(client, '/v1/responses', body, key('k-8')));
     clock.advance(59_999);
     expect(outputText((await readJson(await postJson(client, '/v1/responses', body, key('k-8')))).body)).toBe('before');
@@ -141,7 +141,7 @@ describe('Idempotency-Key', () => {
 
   it('treats the sf-string form of a key as the same key as its bare token', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('quoted') }, { events: events('unexpected') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const quoted = await readJson(await postJson(client, '/v1/responses', body, key('"k-sf"')));
     const bare = await readJson(await postJson(client, '/v1/responses', body, key('k-sf')));
     const quotedAgain = await readJson(await postJson(client, '/v1/responses', body, key('"k-sf"')));
@@ -154,9 +154,9 @@ describe('Idempotency-Key', () => {
 
   it('rejects a reused sf-string key with a different body with 422', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('first') }, { events: events('unexpected') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await readJson(await postJson(client, '/v1/responses', body, key('"k-sf-2"')))).status).toBe(200);
-    const reused = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('different') }, key('k-sf-2')));
+    const reused = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('different') }, key('k-sf-2')));
     expect(reused.status).toBe(422);
     expectErrorBody(reused.body, { type: 'invalid_request', code: 'idempotency_key_reused', param: null });
     expect(primary.calls).toHaveLength(1);
@@ -164,7 +164,7 @@ describe('Idempotency-Key', () => {
 
   it('keeps keys independent', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('one') }, { events: events('two') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const one = await readJson(await postJson(client, '/v1/responses', body, key('k-a')));
     const two = await readJson(await postJson(client, '/v1/responses', body, key('k-b')));
     expect(outputText(one.body)).toBe('one');

@@ -9,16 +9,16 @@ const answering = (model: string) => ({ events: textResponseEvents({ model, chun
 describe('cache marks count the leading items of the request own input, also after previous_response_id', () => {
   it('shifts every mark by the number of stored items the gateway prepends', async () => {
     const primary = createScriptedAdapter({ calls: [answering('scripted-primary'), answering('scripted-primary')] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
-    const first = await readJson(await postJson(client, '/v1/responses', { model: 'fast', store: true, input: [message('system', 'rules'), message('user', 'one')] }));
+    const first = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', store: true, input: [message('system', 'rules'), message('user', 'one')] }));
     expect(first.status).toBe(200);
     const stored = primary.calls[0]?.request.input.length ?? 0;
     const output = (first.body.output as unknown[]).length;
 
     const second = await readJson(
       await postJson(client, '/v1/responses', {
-        model: 'fast',
+        model: 'scripted/scripted-primary',
         previous_response_id: first.body.id,
         input: [message('user', 'two'), message('user', 'three')],
         momonga: { cache: { stable: 0, fixed: 1, previousHistory: 1, history: 2 } },

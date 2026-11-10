@@ -6,7 +6,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, anthropicErrorReply, anthropicTextReply, createFakeSecurityPort, openResponsesTextReply, registerCleanup, startFakeAnthropic, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeSecurityPort, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, fakeSecretHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, fakeSecretHost, homePaths, portOnSecretHost, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import type { SecretHost } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED, expectNoCredential } from './credential-support.ts';
@@ -72,13 +72,10 @@ const startStack = async (
   registerCleanup(context, () => openResponses.close());
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, {
-    models: {
-      aliases: { fast: options.aliasOrder ?? ['claude'] },
-      targets: {
+    models: modelsOf({
         claude: { adapter: 'anthropic', model: 'claude-fake', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
         local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
-      },
-    },
+      }),
   });
   const host = fakeHostPath(context, store);
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets), store, host);
@@ -110,7 +107,7 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
   return { status: response.status, text: await response.text() };
 };
 
-const request = { model: 'fast', input: userInput('hi') };
+const request = { model: 'claude/claude-fake', input: userInput('hi') };
 
 describe.each(HOST_STORES)('stored secrets in the gateway process, $label found on PATH', (store) => {
   it('resolves the referenced secret through the injected process port and sends it as the Anthropic key', async (context) => {
@@ -134,7 +131,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect(stack.security.calls).toHaveLength(1);
     const file = homePaths(stack.home).settings;
     const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { models: { targets: Record<string, Record<string, unknown>> } };
-    const claude = settings.models.targets['claude'] as Record<string, unknown>;
+    const claude = settings.models.targets['claude/claude-fake'] as Record<string, unknown>;
     const staging = `${file}.changed.tmp`;
     fs.writeFileSync(staging, JSON.stringify({ ...settings, models: { ...settings.models, targets: { ...settings.models.targets, claude: { ...claude, model: 'claude-fake-changed' } } } }), { mode: 0o600 });
     fs.renameSync(staging, file);
@@ -198,11 +195,11 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
   });
 
   it('falls through to the next target of the alias when a target secret is unavailable', async (context) => {
-    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [], aliasOrder: ['claude', 'local'] });
+    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [], aliasOrder: ['claude/claude-fake', 'fake/local-fake'] });
     const response = await post(stack.client, request);
     expect(response.status).toBe(200);
     const resource = JSON.parse(response.text);
-    expect(resource.momonga).toMatchObject({ target: 'local', fallbackFrom: ['claude'] });
+    expect(resource.momonga).toMatchObject({ target: 'fake/local-fake', fallbackFrom: ['claude/claude-fake'] });
     expect(stack.anthropic.requests).toEqual([]);
   });
 
@@ -213,13 +210,10 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
     writeSettings(home, {
-      models: {
-        aliases: { fast: ['claude'], other: ['local'] },
-        targets: {
+      models: modelsOf({
           claude: { adapter: 'anthropic', model: 'm', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
           local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
-        },
-      },
+        }),
     });
     let portCalls = 0;
     const handle = await startGatewayProcess({
@@ -244,9 +238,9 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect(failed.text).toContain('spawn security ENOENT');
     expect(anthropic.requests).toEqual([]);
     expect(portCalls).toBe(1);
-    const other = await post(client, { model: 'other', input: userInput('hi') });
+    const other = await post(client, { model: 'fake/local-fake', input: userInput('hi') });
     expect(other.status).toBe(200);
-    expect(JSON.parse(other.text).momonga).toMatchObject({ target: 'local' });
+    expect(JSON.parse(other.text).momonga).toMatchObject({ target: 'fake/local-fake' });
   });
 
   it('never invokes the process port when no target references a secret', async (context) => {
@@ -254,7 +248,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
     writeSettings(home, {
-      models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
+      models: modelsOf({ local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } }),
     });
     const security = createFakeSecurityPort(() => ({}));
     const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });

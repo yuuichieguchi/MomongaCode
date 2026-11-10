@@ -142,7 +142,7 @@ describe('buildCostReport', () => {
     const report = buildCostReport(h.store, [{ runId: 'run-a', sessionId: 's' }], { table: TABLE });
 
     expect(report.total).toMatchObject({ calls: 3, fallbackCalls: 2, fallbacks: [{ answeredBy: 'secondary', calls: 2, failed: causes }] });
-    expect(formatCostReport(report)).toContain('2 of 3 call(s) were answered by fallback target secondary after primary failed (provider_unavailable: the chat-completions upstream is unreachable)');
+    expect(formatCostReport(report)).toContain('2 of 3 call(s) were answered by the fallback model secondary after primary failed (provider_unavailable: the chat-completions upstream is unreachable)');
   });
 
   it('reports no fallback fields when every call was answered by the first target', async () => {

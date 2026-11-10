@@ -72,7 +72,7 @@ const MODES: PermissionMode[] = ['default', 'acceptEdits', 'auto', 'bypassPermis
 const AGENTS = ['build', 'review'];
 const ORIGINS = ['cli', 'api'];
 
-const generateRun = (random: () => number, startAt: number, declared: boolean, modelAlias: string, mode: PermissionMode) => {
+const generateRun = (random: () => number, startAt: number, declared: boolean, model: string, mode: PermissionMode) => {
   const timed: Timed[] = [];
   let t = startAt;
   const push = (payload: RunEventPayload): number => {
@@ -81,7 +81,7 @@ const generateRun = (random: () => number, startAt: number, declared: boolean, m
     return t;
   };
   const truth: RunTruth = { episodes: [], asked: false, sideEffecting: false, repeated: false, prevented: 0, unknown: 0, endedBy: undefined };
-  timed.push([startAt, started(1, { declared, modelAlias, mode })]);
+  timed.push([startAt, started(1, { declared, model, mode })]);
   if (random() < 0.5) push(messageDelta(`assistant says ${Math.floor(random() * 1e6)}`));
   if (random() < 0.3) push(thoughtDelta(`thinking ${Math.floor(random() * 1e6)}`));
   const calls = Math.floor(random() * 4);
@@ -120,7 +120,7 @@ const generateRun = (random: () => number, startAt: number, declared: boolean, m
     }
     if (chainSkew === undefined) chainSkew = skew;
     attempt += 1;
-    push(started(attempt, { declared, modelAlias, mode }));
+    push(started(attempt, { declared, model, mode }));
     if (!last && random() < 0.5) continue;
     const ending = random();
     if (ending < 0.1) {
@@ -167,12 +167,12 @@ const generate = (seed: number): Generated => {
   for (let index = 0; index < TASKS_PER_SEED; index += 1) {
     const rootId = `s${seed}-t${index}`;
     const declared = random() < 0.6;
-    const modelAlias = pick(random, MODELS);
+    const model = pick(random, MODELS);
     const mode = pick(random, MODES);
     const agent = pick(random, AGENTS);
     const origin = pick(random, ORIGINS);
     const startAt = T0 + index * 1_000_000;
-    const root = generateRun(random, startAt, declared, modelAlias, mode);
+    const root = generateRun(random, startAt, declared, model, mode);
     let finalStatus: RunStatus;
     let stopReason: RunInfo['stopReason'];
     if (root.truth.endedBy !== undefined) finalStatus = root.truth.endedBy;
@@ -202,7 +202,7 @@ const generate = (seed: number): Generated => {
     }
     const cancelled = finalStatus === 'CANCELLED';
     const stale = !cancelled && random() < 0.1;
-    const shared = { rootRunId: rootId, modelAlias, mode, agent, origin, createdAt: startAt };
+    const shared = { rootRunId: rootId, model, mode, agent, origin, createdAt: startAt };
     const rootInfo = runInfo({
       ...shared,
       runId: rootId,
@@ -219,7 +219,7 @@ const generate = (seed: number): Generated => {
     const taskRows = [foldFacts(rootEvents, rootInfo)];
     if (random() < 0.3) {
       const childId = `${rootId}-child`;
-      const child = generateRun(random, startAt + 1, false, modelAlias, mode);
+      const child = generateRun(random, startAt + 1, false, model, mode);
       const childStatus: RunStatus = child.truth.endedBy ?? 'COMPLETED';
       if (child.truth.endedBy === undefined) child.push(terminal('COMPLETED'));
       const childInfo = runInfo({ ...shared, runId: childId, createdAt: startAt + 1, status: childStatus, limits: {}, step: 1, tokensTotal: 0 });
@@ -354,11 +354,11 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
     }
   });
 
-  it('P4 no self-report: replacing every assistant text and renaming every model alias changes no indicator, only the group names', () => {
-    const rename = (alias: string): string => `renamed-${alias.split('').reverse().join('')}`;
+  it('P4 no self-report: replacing every assistant text and renaming every model changes no indicator, only the group names', () => {
+    const rename = (model: string): string => `renamed-${model.split('').reverse().join('')}`;
     const rewrite = (event: RunEvent): RunEvent => {
       if (event.type === 'agent.message.delta' || event.type === 'agent.thought.delta') return { ...event, text: 'I completed the task and every test passed.' };
-      if (event.type === 'run.started') return { ...event, pins: { ...event.pins, modelAlias: rename(String(event.pins['modelAlias'])) } };
+      if (event.type === 'run.started') return { ...event, pins: { ...event.pins, model: rename(String(event.pins['model'])) } };
       return event;
     };
     for (const seed of SEEDS) {
@@ -366,7 +366,7 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
       const rewritten = generated.rows.map((row) => {
         const stream = generated.streams.get(row.runId);
         if (stream === undefined) throw new Error(`no stream for ${row.runId}`);
-        const facts = foldFacts(stream.events.map(rewrite), { ...stream.info, modelAlias: rename(stream.info.modelAlias) });
+        const facts = foldFacts(stream.events.map(rewrite), { ...stream.info, model: rename(stream.info.model) });
         return row.definitionsVersion === INDICATOR_DEFINITIONS_VERSION ? facts : { ...facts, definitionsVersion: row.definitionsVersion };
       });
       for (const groupBy of GROUP_KEYS) {

@@ -57,7 +57,7 @@ function failedAfterOutputStep(retryable: boolean): ScriptStep {
     response: {
       ...base,
       error: { code: 'stream_interrupted', message: 'the upstream stream was interrupted after output', type: 'server_error' },
-      momonga: { alias: 'fm', target: 'scripted', counter: 'scripted-counter', attempts: 1, usageSource: 'estimated', retryable },
+      momonga: { model: 'fm', target: 'scripted', counter: 'scripted-counter', attempts: 1, usageSource: 'estimated', retryable },
     },
   } as unknown as StreamEvent;
   return { events: [...text.slice(0, firstDelta + 1), failed] };

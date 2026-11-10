@@ -4,7 +4,7 @@ import { createUdsClient, credentialFileFor, fixedSocket } from '@momonga/founda
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { ACCOUNT, accountRoute, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
-import { writeSettings } from './gateway-process-helpers.ts';
+import { writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -33,7 +33,7 @@ describe('O-R5-6 L1: the close order keeps a refresh in flight to its end', () =
     writeSettings(gateway.home, {
       credentials: { plaintextTokenFiles: true },
       gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 },
-      models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: ACCOUNT } } } },
+      models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: ACCOUNT } } }),
     });
     const closing = gateway.close();
     await vi.waitFor(async () => {

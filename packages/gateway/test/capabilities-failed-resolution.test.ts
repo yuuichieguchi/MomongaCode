@@ -6,11 +6,11 @@ import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { createReasoningOriginCodec } from '../src/core/reasoning-origin.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import { createRouter } from '../src/core/router.ts';
-import { HMAC_KEY, START_MS, buildConfig, getJson, postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
+import { HMAC_KEY, START_MS, buildConfig, clientOfModel, getJson, postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, readFileTool, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
 
-type Harness = Awaited<ReturnType<typeof startGateway>>;
+type Harness = Awaited<ReturnType<typeof gatewayOf>>;
 type Operation = { name: string; path: string; body: Record<string, unknown> };
 type Outcome = { kind: 'reject'; error: () => Error } | { kind: 'fulfil'; capabilities: Capabilities };
 
@@ -20,11 +20,11 @@ const BLIND: Capabilities = { ...CC_CAPABILITIES, toolCalling: 'none' };
 
 const imageInput = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'see' }, { type: 'input_image', image_url: PNG }] }];
 
-const CREATE: Operation = { name: 'create', path: '/v1/responses', body: { model: 'fast', input: userInput('hi') } };
-const CREATE_STREAMING: Operation = { name: 'create streaming', path: '/v1/responses', body: { model: 'fast', stream: true, input: userInput('hi') } };
-const CREATE_WITH_TOOLS: Operation = { name: 'create with tools', path: '/v1/responses', body: { model: 'fast', input: userInput('please read a'), tools: [readFileTool] } };
-const COUNT: Operation = { name: 'count_tokens', path: '/v1/momonga/count_tokens', body: { model: 'fast', input: userInput('please read a'), tools: [readFileTool] } };
-const COMPACT: Operation = { name: 'compact', path: '/v1/responses/compact', body: { model: 'fast', input: userInput('summarise this') } };
+const CREATE: Operation = { name: 'create', path: '/v1/responses', body: { input: userInput('hi') } };
+const CREATE_STREAMING: Operation = { name: 'create streaming', path: '/v1/responses', body: { stream: true, input: userInput('hi') } };
+const CREATE_WITH_TOOLS: Operation = { name: 'create with tools', path: '/v1/responses', body: { input: userInput('please read a'), tools: [readFileTool] } };
+const COUNT: Operation = { name: 'count_tokens', path: '/v1/momonga/count_tokens', body: { input: userInput('please read a'), tools: [readFileTool] } };
+const COMPACT: Operation = { name: 'compact', path: '/v1/responses/compact', body: { input: userInput('summarise this') } };
 
 const refused = (message: string) => (): Error => Object.assign(new Error(message), { code: 'ECONNREFUSED' });
 const plain = (message: string) => (): Error => new Error(message);
@@ -54,20 +54,25 @@ const targetOf = async (outcomes: readonly Outcome[], replies = 2): Promise<Targ
 const RETRYING = { maxAttempts: 2, baseMs: 100, maxMs: 100, totalWaitMs: 500 };
 const ONCE = { maxAttempts: 1, totalWaitMs: 1 };
 
-const gatewayOf = (targets: Record<string, Target>, retry: Record<string, number> = ONCE) =>
-  startGateway({
-    adapters: Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.adapter])),
+const canonOf = (server: string): string => `${server}/system`;
+
+const gatewayOf = async (targets: Record<string, Target>, retry: Record<string, number> = ONCE) => {
+  const model = canonOf(Object.keys(targets)[0] as string);
+  const harness = await startGateway({
+    adapters: Object.fromEntries(Object.entries(targets).map(([name, target]) => [canonOf(name), target.adapter])),
     config: {
-      aliases: { fast: Object.keys(targets) },
-      targets: Object.fromEntries(Object.keys(targets).map((name) => [name, { model: 'system' }])),
+      chains: { [model]: Object.keys(targets).map(canonOf) },
+      targets: Object.fromEntries(Object.keys(targets).map((name) => [canonOf(name), {}])),
       retry,
       breaker: { failureThreshold: 1, openMs: 30_000 },
     },
   });
+  return { ...harness, client: clientOfModel(harness.client, model) };
+};
 
 const sendDriven = async (harness: Harness, operation: Operation) => {
   let settled = false;
-  const pending = postJson(harness.client, operation.path, operation.body).finally(() => {
+  const pending = postJson(harness.client, operation.path, { ...operation.body, model: harness.client.model }).finally(() => {
     settled = true;
   });
   while (!settled) {
@@ -104,7 +109,7 @@ describe('a retryable capabilities rejection gets a real retry on the same targe
     expect(response.status).toBe(200);
     if (isCreate(operation)) {
       expect(response.body.status).toBe('completed');
-      expect(response.body.momonga.target).toBe('only');
+      expect(response.body.momonga.target).toBe(canonOf('only'));
     }
     expect(only.resolver.state.calls).toBe(2);
     expect(completionBodies(only.fake)).toHaveLength(operation === COUNT ? 0 : 1);
@@ -115,7 +120,7 @@ describe('a non-retryable capabilities rejection ends the attempt without a retr
   it.for([CREATE_STREAMING, CREATE, COUNT, COMPACT])('$name on a single-candidate alias ends 502 adapter_error after one resolution', async (operation) => {
     const only = await targetOf([reject(plain('the declaration is broken')), fulfil(CC_CAPABILITIES)]);
     const harness = await gatewayOf({ only }, RETRYING);
-    const response = await readJson(await postJson(harness.client, operation.path, operation.body));
+    const response = await readJson(await postJson(harness.client, operation.path, { ...operation.body, model: harness.client.model }));
     expect(response.status).toBe(502);
     expect(response.body.error?.code).toBe('adapter_error');
     expect(only.resolver.state.calls).toBe(1);
@@ -124,9 +129,9 @@ describe('a non-retryable capabilities rejection ends the attempt without a retr
 });
 
 describe('a fulfilled capabilities resolution is read by every later use in the request', () => {
-  const imageCreate: Operation = { name: 'create with tools and an image', path: '/v1/responses', body: { model: 'fast', input: imageInput, tools: [readFileTool] } };
-  const imageCount: Operation = { name: 'count_tokens with an image', path: '/v1/momonga/count_tokens', body: { model: 'fast', input: imageInput, tools: [readFileTool] } };
-  const imageCompact: Operation = { name: 'compact with an image', path: '/v1/responses/compact', body: { model: 'fast', input: imageInput } };
+  const imageCreate: Operation = { name: 'create with tools and an image', path: '/v1/responses', body: { input: imageInput, tools: [readFileTool] } };
+  const imageCount: Operation = { name: 'count_tokens with an image', path: '/v1/momonga/count_tokens', body: { input: imageInput, tools: [readFileTool] } };
+  const imageCompact: Operation = { name: 'compact with an image', path: '/v1/responses/compact', body: { input: imageInput } };
 
   it.for([CREATE_STREAMING, CREATE_WITH_TOOLS, COUNT, COMPACT, imageCreate, imageCount, imageCompact])('$name resolves the served target once', async (operation) => {
     const only = await targetOf([fulfil(SEEING)]);
@@ -141,8 +146,8 @@ describe('a candidate first resolved inside an attempt is admitted by the narrow
   const lateCases: { operation: Operation; refusing: Capabilities; serving: Capabilities }[] = [
     { operation: CREATE_WITH_TOOLS, refusing: BLIND, serving: CC_CAPABILITIES },
     { operation: { ...CREATE_WITH_TOOLS, name: 'create streaming with tools', body: { ...CREATE_WITH_TOOLS.body, stream: true } }, refusing: BLIND, serving: CC_CAPABILITIES },
-    { operation: { name: 'count_tokens with an image', path: '/v1/momonga/count_tokens', body: { model: 'fast', input: imageInput } }, refusing: CC_CAPABILITIES, serving: SEEING },
-    { operation: { name: 'compact with an image', path: '/v1/responses/compact', body: { model: 'fast', input: imageInput } }, refusing: CC_CAPABILITIES, serving: SEEING },
+    { operation: { name: 'count_tokens with an image', path: '/v1/momonga/count_tokens', body: { input: imageInput } }, refusing: CC_CAPABILITIES, serving: SEEING },
+    { operation: { name: 'compact with an image', path: '/v1/responses/compact', body: { input: imageInput } }, refusing: CC_CAPABILITIES, serving: SEEING },
   ];
 
   it.for(lateCases)('[a, b] $operation.name: a refused late is dropped as narrowing drops it and b serves', async ({ operation, refusing, serving }) => {
@@ -159,24 +164,24 @@ describe('a candidate first resolved inside an attempt is admitted by the narrow
     const harness = await gatewayOf({ a, b }, RETRYING);
     const response = await sendDriven(harness, operation);
     expect(outcomeOf(response)).toEqual(outcomeOf(expected));
-    if (isCreate(operation)) expect(response.body.momonga.target).toBe('b');
+    if (isCreate(operation)) expect(response.body.momonga.target).toBe(canonOf('b'));
     expect(a.fake.requests).toHaveLength(0);
     expect(a.resolver.state.calls).toBe(2);
     const health = await getJson(harness.client, '/v1/momonga/health');
-    expect(health.body.targets.a.breaker).toBe(expectedHealth.body.targets.a.breaker);
-    expect(health.body.targets.a.lastFailure ?? null).toEqual(expectedHealth.body.targets.a.lastFailure ?? null);
+    expect(health.body.models[canonOf('a')].breaker).toBe(expectedHealth.body.models[canonOf('a')].breaker);
+    expect(health.body.models[canonOf('a')].lastFailure ?? null).toEqual(expectedHealth.body.models[canonOf('a')].lastFailure ?? null);
   });
 
   it.for(lateCases)('[a] $operation.name: a refused late fails as narrowing refuses it', async ({ operation, refusing }) => {
     const reference = await gatewayOf({ a: await targetOf([fulfil(refusing)]) }, RETRYING);
-    const expected = failureOf(await readJson(await postJson(reference.client, operation.path, operation.body)));
+    const expected = failureOf(await readJson(await postJson(reference.client, operation.path, { ...operation.body, model: reference.client.model })));
     expect(expected.status).toBe(400);
     expect(expected.code).toBe('capability_unsupported');
 
     const a = await targetOf([reject(refused('a is restarting')), fulfil(refusing)]);
     const harness = await gatewayOf({ a }, RETRYING);
     let settled = false;
-    const pending = postJson(harness.client, operation.path, operation.body).finally(() => {
+    const pending = postJson(harness.client, operation.path, { ...operation.body, model: harness.client.model }).finally(() => {
       settled = true;
     });
     while (!settled) {
@@ -206,14 +211,14 @@ describe('the per-request memo shares an in-flight resolution and forgets a reje
       return Promise.resolve(CC_CAPABILITIES);
     };
     const router = createRouter({
-      config: buildConfig({ aliases: { fast: ['only'] }, targets: { only: { model: 'system' } } }),
-      adapters: { only: makeAdapter(fake, { capabilities }) },
+      config: buildConfig({ chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } }),
+      adapters: { 'scripted/system': makeAdapter(fake, { capabilities }) },
       clock,
       timers,
       redactor: createRedactor({ credentials: [] }),
       reasoningOrigin: createReasoningOriginCodec(HMAC_KEY),
     });
-    const narrowed = await router.narrow('fast', router.targetsOf('fast'), {});
+    const narrowed = await router.narrow('scripted/system', router.chainOf('scripted/system'), {});
     const [target] = narrowed.targets;
     if (target === undefined) throw new Error('narrowing dropped the only target');
     const first = narrowed.capabilitiesOf(target);

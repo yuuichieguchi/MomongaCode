@@ -248,7 +248,7 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes the same call and stores the candidates when the run alias has no structured output', async () => {
+  it('makes the same call and stores the candidates when the run model has no structured output', async () => {
     const env = setup({ structured: false });
     const run = await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts'])));

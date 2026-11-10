@@ -5,7 +5,7 @@ import { postJson, readJson, registerCleanup, startGateway, userInput } from './
 import { openRawPost } from './gateway-support.ts';
 
 const DETACHED_MAX_MS = 60_000;
-const compactBody = { model: 'fast', input: userInput('summarise this conversation') };
+const compactBody = { model: 'scripted/scripted-primary', input: userInput('summarise this conversation') };
 
 type StubbornCompactAdapter = ProviderAdapter & { readonly calls: number[]; release(): void };
 
@@ -36,7 +36,7 @@ const compactWithKey = (client: Awaited<ReturnType<typeof startGateway>>['client
 describe('keyed compaction after the detach expiry', () => {
   it('starts a new call for a retry with the same key while the aborted one is still settling', async () => {
     const primary = createStubbornCompactAdapter();
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, config: { detachedMaxMs: DETACHED_MAX_MS } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { detachedMaxMs: DETACHED_MAX_MS } });
     registerCleanup(() => primary.release());
     const raw = await openRawPost(socketPath, '/v1/responses/compact', compactBody, { headers: { 'idempotency-key': 'dx-1' } });
     await waitFor(() => primary.calls.length === 1, { description: 'first compact call' });
@@ -53,7 +53,7 @@ describe('keyed compaction that finishes with a client attached', () => {
   it('leaves no detach timer behind', async () => {
     const primary = createStubbornCompactAdapter();
     primary.release();
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { detachedMaxMs: DETACHED_MAX_MS } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { detachedMaxMs: DETACHED_MAX_MS } });
     expect((await compactWithKey(client, 'dx-2')).status).toBe(200);
     expect(timers.pending().filter((timer) => timer.delayMs === DETACHED_MAX_MS)).toEqual([]);
   });

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createTokenMeter } from '@momonga/context';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { CountTokensRequest, CountTokensResult, FunctionTool, InputItem } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
@@ -13,7 +13,7 @@ import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const ALIAS = 'default';
+const MODEL = 'fake/system';
 
 const READ_TOOL: FunctionTool = {
   type: 'function',
@@ -42,21 +42,9 @@ beforeAll(async () => {
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     path.join(root, 'settings.json'),
-    JSON.stringify({
-      models: {
-        aliases: { [ALIAS]: ['primary'] },
-        targets: {
-          primary: {
-            adapter: 'chat-completions',
-            provider: 'fake',
-            model: 'system',
-            socketPath: fake.socketPath,
-            toolCalling: 'constrained',
-            capabilities: { contextWindow: 32768, maxOutputTokens: 1024 },
-          },
-        },
-      },
-    }),
+    JSON.stringify(
+      modelSettings({ models: [{ provider: 'fake', id: 'system', socketPath: fake.socketPath, toolCalling: 'constrained', capabilities: { contextWindow: 32768, maxOutputTokens: 1024 } }] }),
+    ),
     { mode: 0o600 },
   );
   const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home }, version: '1.10.0-test' });
@@ -93,9 +81,9 @@ const recordingMeter = async () => {
       }
     },
   };
-  const capabilities = await context.client.capabilities(ALIAS, { signal });
+  const capabilities = await context.client.capabilities(MODEL, { signal });
   expect(capabilities.toolCalling).toBe('constrained');
-  return { meter: createTokenMeter({ counter, model: ALIAS, capabilities }), rejections };
+  return { meter: createTokenMeter({ counter, model: MODEL, capabilities }), rejections };
 };
 
 describe('the token meter split against a constrained chat-completions gateway', () => {

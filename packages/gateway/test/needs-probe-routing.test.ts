@@ -5,7 +5,7 @@ import { TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -32,7 +32,7 @@ const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unkn
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
     fm.configure({ envDumpFile: dumpFile, serve: { stallNativeSamples: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], stallMs: 600_000 } });
     registerCleanup(() => killGroupsForCleanup(servePidsOf(dumpFile)));
-    return { target: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } };
+    return { target: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath } };
   }
   if (kind === 'ollama') {
     const fake = await startFakeOllama({ chat: [] });
@@ -45,7 +45,7 @@ const unprobedTarget = async (kind: Kind): Promise<{ target: Record<string, unkn
 const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets: Record<string, unknown>) => {
   const { target } = await unprobedTarget(kind);
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: aliasTargets }, targets: { local: target, ...extraTargets } } });
+  writeSettings(home, { models: modelsOf({ local: target, ...extraTargets }) });
   const handle = await launchGateway({
     generation: FIRST_GENERATION,
     home,

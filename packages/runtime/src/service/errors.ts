@@ -1,4 +1,5 @@
 import { TARGET_NOT_READY } from '@momonga/protocol';
+import { MODEL_NOT_FOUND_CODE } from '../gateway-client.ts';
 
 export type ApiErrorInit = {
   status: number;
@@ -34,6 +35,8 @@ export const modeNotAllowed = (message: string): ApiError =>
   new ApiError({ status: 403, type: 'forbidden', code: 'mode_not_allowed', message });
 
 export const notFound = (message: string): ApiError => new ApiError({ status: 404, type: 'not_found', code: 'not_found', message });
+
+export const modelNotConfigured = (message: string): ApiError => new ApiError({ status: 404, type: 'not_found', code: MODEL_NOT_FOUND_CODE, message, param: 'model' });
 
 export const methodNotAllowed = (allowed: readonly string[]): ApiError =>
   new ApiError({
@@ -85,12 +88,12 @@ export const unknownSkill = (message: string): ApiError =>
 export const skillUnavailable = (message: string): ApiError =>
   new ApiError({ status: 422, type: 'invalid_request', code: 'skill_unavailable', message, param: 'skill' });
 
-export const imageInputUnsupported = (alias: string): ApiError =>
+export const imageInputUnsupported = (display: string): ApiError =>
   new ApiError({
     status: 422,
     type: 'invalid_request',
     code: 'image_input_unsupported',
-    message: `the model alias ${alias} does not declare image input`,
+    message: `the model "${display}" does not declare image input`,
     param: 'images',
   });
 

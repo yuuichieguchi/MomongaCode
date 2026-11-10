@@ -13,25 +13,17 @@ import type { ChildRole, Launcher } from '../../src/launcher.ts';
 import { DEFAULT_RESTART_POLICY } from '../../src/restart-policy.ts';
 import { createFakeSpawnPort } from './p2-fake-spawn-port.ts';
 import type { FakeSpawnPort } from './p2-fake-spawn-port.ts';
-import { testHostPath } from '@momonga/testkit';
+import { modelSettings, testHostPath } from '@momonga/testkit';
 
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 
 export const FIXTURE_BIN = '/opt/momonga/fixture-bin.ts';
 
-export const chatTargetDeclaring = (apiKeyEnv: string): Record<string, unknown> => ({
-  adapter: 'chat-completions',
-  provider: 'fake',
-  model: 'x',
-  baseUrl: 'https://api.example.com/v1',
-  apiKeyEnv,
-  capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-});
-
 export const settingsDeclaring = (...names: string[]): Record<string, unknown> => {
   if (names.length === 0) return {};
-  const targets = Object.fromEntries(names.map((name, index) => [`t${index}`, chatTargetDeclaring(name)]));
-  return { models: { targets, aliases: { default: 't0' } } };
+  return modelSettings({
+    models: names.map((name, index) => ({ provider: `t${index}`, id: 'x', baseUrl: 'https://api.example.com/v1', apiKeyEnv: name, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })),
+  });
 };
 
 let settingsGeneration = 0;

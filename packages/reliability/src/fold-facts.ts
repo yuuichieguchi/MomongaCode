@@ -183,7 +183,7 @@ export const createFactsFold = (): FactsFold => {
       rootRunId: info.rootRunId,
       sessionId: info.sessionId,
       definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-      modelAlias: info.modelAlias,
+      model: info.model,
       mode: info.mode,
       agent: info.agent,
       origin: info.origin,

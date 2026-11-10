@@ -192,7 +192,7 @@ const answeredByFallback = (step: ScriptStep, target: string): ScriptStep => ({
             response: {
               ...event.response,
               momonga: {
-                alias: 'fm',
+                model: 'fm',
                 target,
                 counter: fakeCounterOf(target),
                 attempts: 2,
@@ -264,7 +264,7 @@ describe('the margin after a fallback step follows the counting method of the ta
     return env.run(run.id);
   };
 
-  it('stops at 85 percent of the estimate when the target that answered counts exactly, although the alias counts by estimate', async () => {
+  it('stops at 85 percent of the estimate when the target that answered counts exactly, although the model counts by estimate', async () => {
     expect(await runWith('exact', 0.85)).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
   });
 
@@ -298,7 +298,7 @@ describe('the margin floor after a fallback step comes from the context window o
     expect(run).toMatchObject({ status: 'FAILED', error: { code: 'input_truncated' } });
   });
 
-  it('completes at the same report when the target that answered has the window of the alias less the floor of the alias would allow', async () => {
+  it('completes at the same report when the target that answered has the window of the model less the floor of the model would allow', async () => {
     const estimate = await (async () => {
       const env = await makeEnv({ capabilities: capabilities() });
       env.gateway.script.push(textStep('Done.'));

@@ -1,8 +1,8 @@
 import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel } from '@momonga/foundation';
-import { countReplyOf } from '@momonga/protocol';
+import { MODEL_ID_CHANGED_CODE, countReplyOf } from '@momonga/protocol';
 import type {
   AdapterStop,
-  AliasRoomFacts,
+  ChainRoomFacts,
   AdapterTarget,
   AllowedToolsForm,
   Capabilities,
@@ -27,6 +27,8 @@ import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
 import { vocabularyOf } from '../adapters/chat-completions/vocabulary.ts';
 import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { invalidRequest } from '../core/errors.ts';
+import type { GatewayError } from '../core/errors.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { ProbeOutputPolicy } from '../probe/decide.ts';
@@ -78,7 +80,7 @@ export type ManagedTarget = {
   envelopeShape: (target: AdapterTarget) => EnvelopeShape;
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget, policy?: ProbeOutputPolicy) => Promise<Capabilities>;
-  roomFacts: (target: AdapterTarget) => Promise<AliasRoomFacts>;
+  roomFacts: (target: AdapterTarget) => Promise<ChainRoomFacts>;
   childStarting: (signal: AbortSignal) => Promise<void>;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
@@ -131,9 +133,9 @@ const countedText = (request: CountTokensRequest): string => {
 };
 
 export const parseCount = (target: string, result: ExecResult): number => {
-  if (result.exitCode !== 0) throw new Error(`the target "${target}": the token counter failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
+  if (result.exitCode !== 0) throw new Error(`the model "${target}": the token counter failed with exit code ${result.exitCode}: ${result.stderr.trim()}`);
   const text = result.stdout.trim();
-  if (!INTEGER_TEXT.test(text)) throw new Error(`the target "${target}": the token counter printed an unexpected value: ${JSON.stringify(text.slice(0, 80))}`);
+  if (!INTEGER_TEXT.test(text)) throw new Error(`the model "${target}": the token counter printed an unexpected value: ${JSON.stringify(text.slice(0, 80))}`);
   return Number(text);
 };
 
@@ -177,6 +179,8 @@ const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: 
 
 type Recorded = { report: ProbeReport | null; capabilities: (policy?: ProbeOutputPolicy) => Capabilities; isGuardrail: (body: unknown) => boolean };
 
+const MODEL_ID_CHANGED_STATUS = 412;
+
 const keyText = (description: ManagedServerDescription, key: KnownProbeKey): string => {
   return description.identity.map((component) => `${probeKeyComponentLabel(component)} ${String(key.fields[component])}`).join(', ');
 };
@@ -197,7 +201,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
         };
 
   const recordedOf = (identityText: string, report: ProbeReport): Recorded => {
-    const needsProbe = needsProbeOf(targetName, `the target "${targetName}" sets toolCalling to auto, but no probe record exists`, `no probe record exists for ${identityText}`);
+    const needsProbe = needsProbeOf(targetName, `the model "${targetName}" sets toolCalling to auto, but no probe record exists`, `no probe record exists for ${identityText}`);
     const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
     const refusedDeclaration = options.toolCallingSetting === 'auto' ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText) : undefined;
     const schemaDialect = resolveDialectId(options.declaredDialect, report);
@@ -248,7 +252,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
         if (declaredOnly !== undefined) return (recorded = declaredOnly);
         throw targetProbingError(ensured.probing);
       }
-      recorded = recordedOf(`the target "${targetName}"`, ensured.report);
+      recorded = recordedOf(`the model "${targetName}"`, ensured.report);
       return recorded;
     }
     const report = await loadProbeRecord(options.probeRecordDir, key, options.currency, targetName);
@@ -256,11 +260,17 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       if (declaredOnly !== undefined) return (recorded = declaredOnly);
       throw targetProbingError(await options.startProbe(key));
     }
-    recorded = recordedOf(`the probe key of the target "${targetName}" (${keyText(description, key)})`, report);
+    recorded = recordedOf(`the probe key of the model "${targetName}" (${keyText(description, key)})`, report);
     return recorded;
   };
+  const idChangedError = (listed: string, entry: string): GatewayError =>
+    invalidRequest(MODEL_ID_CHANGED_CODE, `The server of ${targetName} lists "${listed}", not "${entry}". Run /models add to add the model it serves now.`, 'model', MODEL_ID_CHANGED_STATUS);
+  const checkServedId = (listed: string | undefined): void => {
+    const entry = options.declaredModel;
+    if (entry !== undefined && listed !== undefined && listed !== entry) throw idChangedError(listed, entry);
+  };
   const lastRecorded = (): Recorded => {
-    if (recorded === undefined) throw new Error(`the probe record of the target "${targetName}" was read by no request yet`);
+    if (recorded === undefined) throw new Error(`the probe record of the model "${targetName}" was read by no request yet`);
     return recorded;
   };
 
@@ -269,9 +279,9 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     try {
       const response = await client.request({ method: 'GET', path: description.models.listPath, signal });
       const text = await response.text();
-      if (response.status !== 200) throw new Error(`the target "${targetName}": the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`);
+      if (response.status !== 200) throw new Error(`the model "${targetName}": the server answered GET ${description.models.listPath} with HTTP ${response.status}: ${text.slice(0, 200)}`);
       const id = valueAtPath(parseJson(text), description.models.idPath);
-      if (typeof id !== 'string') throw new Error(`the target "${targetName}": the server lists no model id at GET ${description.models.listPath}`);
+      if (typeof id !== 'string') throw new Error(`the model "${targetName}": the server lists no model id at GET ${description.models.listPath}`);
       return id;
     } finally {
       await client.close();
@@ -279,15 +289,21 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   };
 
   let listedModel: Promise<string> | undefined;
+  let servedId: string | undefined;
   const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
-    const knownModel = options.declaredModel ?? lastRecorded().report?.modelId;
-    if (knownModel !== undefined) return knownModel;
+    const recordedModel = lastRecorded().report?.modelId;
+    if (recordedModel !== undefined) {
+      checkServedId(recordedModel);
+      return options.declaredModel ?? recordedModel;
+    }
     const { socketPath } = await options.server.ensureRunning(signal);
     listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
       listedModel = undefined;
       throw error;
     });
-    return listedModel;
+    servedId = await listedModel;
+    checkServedId(servedId);
+    return options.declaredModel ?? servedId;
   };
 
   const { tokenCount } = description;
@@ -303,7 +319,11 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     constructSupport: () => lastRecorded().report?.constructSupport,
     envelopeShape: () => lastRecorded().report?.schemaDialect.shape ?? 'union',
     upstreamModel,
-    capabilities: async (_target, policy) => ({ ...(await readRecorded()).capabilities(policy), allowedTools }),
+    capabilities: async (_target, policy) => {
+      const read = await readRecorded();
+      checkServedId(read.report?.modelId ?? servedId);
+      return { ...read.capabilities(policy), allowedTools };
+    },
     roomFacts: async () => {
       const { report } = await readRecorded();
       return {
@@ -336,6 +356,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     vocabulary,
     childExited: () => {
       heldKey = undefined;
+      listedModel = undefined;
       options.onInstanceEnd();
       unknownProbe?.probe.restarted();
     },

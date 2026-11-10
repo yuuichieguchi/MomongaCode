@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { MomongaModelEntry, PlanAccountView, PlanModelsResponse, PlanProfileView } from '@momonga/protocol';
+import type { MomongaModelList, PlanAccountView, PlanModelsResponse, PlanProfileView } from '@momonga/protocol';
 import * as authCommands from '../src/commands/auth.ts';
 import * as modelCommands from '../src/commands/models.ts';
 import * as signInModule from '../src/plan/sign-in.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
+import { runModelsForm } from '../src/commands/models.ts';
 import { CHATGPT, account } from './fake-plan-gateway.tsx';
+import { S3, documentOf, homeWith, listingOf, shellOf } from './models-shell-harness.ts';
 
 type Writer = { written: string[]; write(text: string): void; text(): string };
 
@@ -45,7 +47,7 @@ const fakePlan = (options: { accounts?: readonly PlanAccountView[]; profiles?: r
     },
     addTarget: async (label: string, request: unknown) => {
       record('addTarget', label, request);
-      return { target: 'gpt-wide', alias: 'gpt-wide' };
+      return { model: 'chatgpt/gpt-wide' };
     },
   } as unknown as PlanGatewayClient;
   return { plan, calls };
@@ -109,7 +111,7 @@ describe('momonga auth reset-host (O-R5-4 S4)', () => {
   });
 });
 
-describe('momonga models --catalog and --add (O-R5-4 S5)', () => {
+describe('momonga models catalog and momonga models add --plan (O-R5-4 S5)', () => {
   it('prints one row per entry in server order, reading with refresh', async () => {
     const { plan, calls } = fakePlan();
     const stdout = writer();
@@ -134,34 +136,38 @@ describe('momonga models --catalog and --add (O-R5-4 S5)', () => {
     expect(await models['modelsCatalog']?.({ stdout: writer(), stderr: writer(), plan }, { json: false })).toBe(0);
   });
 
-  it('adds a listed model through the targets route and prints the names', async () => {
-    const { plan, calls } = fakePlan();
-    const stdout = writer();
-    expect(await models['modelsAdd']?.({ stdout, stderr: writer(), plan }, { slug: 'gpt-wide' })).toBe(0);
-    expect(calls.find((call) => call.route === 'addTarget')?.args).toEqual(['work', { profile: 'chatgpt', slug: 'gpt-wide' }]);
-    expect(stdout.text()).toBe('Added gpt-wide (alias gpt-wide)\n');
+  it('adds a model of a plan account to the settings through the one writer and prints the confirm sentence and the summary', async (context) => {
+    const at = homeWith(context, undefined);
+    const harness = shellOf(at);
+    expect(await runModelsForm(harness.shell, 'add', { args: [], options: { plan: 'chatgpt', model: 'gpt-wide', yes: true } })).toBe(0);
+    expect(harness.out()).toBe('Add gpt-wide to your settings?\nAdded gpt-wide. It is used from the next request.\n');
+    expect(documentOf(at.settingsFile)).toEqual({ models: { connections: [{ adapter: 'open-responses', plan: { profile: 'chatgpt' }, models: [{ id: 'gpt-wide' }] }] } });
   });
 });
 
 describe('the auth status model line (O-R5-4 S8)', () => {
-  const entry = (id: string, targets: Record<string, 'plan' | 'metered' | 'local'>): MomongaModelEntry =>
-    ({ id, object: 'model', targets: Object.keys(targets), targetBilling: targets, targetCounters: {}, capabilities: {}, targetCapabilities: {} }) as unknown as MomongaModelEntry;
+  const EMPTY: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
 
-  it('ends with model: <alias> -> <target> (<billing>) for the default alias, in alias order', async () => {
+  it('ends with model: <name> (<billing>) for the model new sessions start with', async (context) => {
     const { plan } = fakePlan();
     const stdout = writer();
-    await authCommands.authStatus({ stdout, plan, models: async () => [entry('default', { 'plan-gpt': 'plan', 'metered-key': 'metered' })] } as never, { json: false });
-    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe('model: default -> plan-gpt (plan), metered-key (metered)');
+    const listing = listingOf(homeWith(context, S3).home);
+    await authCommands.authStatus({ stdout, plan, listing: async () => listing }, { json: false });
+    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe('model: chatgpt/gpt-5.5 (plan)');
   });
 
-  it('says model: none with no alias, and adds model to --json', async () => {
+  it('says that no model is connected when there is none, and adds model to --json', async (context) => {
     const { plan } = fakePlan();
     const stdout = writer();
-    await authCommands.authStatus({ stdout, plan, models: async () => [] } as never, { json: false });
-    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe('model: none');
+    await authCommands.authStatus({ stdout, plan, listing: async () => EMPTY }, { json: false });
+    expect(stdout.text().trimEnd().split('\n').at(-1)).toBe('model: none (No model is connected. Use /login to connect one.)');
     const json = writer();
-    await authCommands.authStatus({ stdout: json, plan, models: async () => [entry('default', { 'plan-gpt': 'plan' })] } as never, { json: true });
-    expect(JSON.parse(json.text()).model).toEqual({ alias: 'default', targets: [{ name: 'plan-gpt', billing: 'plan' }] });
+    const listing = listingOf(homeWith(context, S3).home);
+    await authCommands.authStatus({ stdout: json, plan, listing: async () => listing }, { json: true });
+    expect(JSON.parse(json.text()).model).toEqual({ name: 'chatgpt/gpt-5.5', canon: 'chatgpt/gpt-5.5', billing: 'plan' });
+    const none = writer();
+    await authCommands.authStatus({ stdout: none, plan, listing: async () => EMPTY }, { json: true });
+    expect(JSON.parse(none.text()).model).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvent
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { makeDir, userInput } from './gateway-helpers.ts';
 
-const ctx = { signal: new AbortController().signal, target: { name: 'primary', model: 'm' }, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES };
+const ctx = { signal: new AbortController().signal, target: { name: 'primary', display: 'primary', model: 'm' }, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES };
 const request: AdapterRequest = { model: 'm', input: userInput('q') };
 
 const record = async (file: string): Promise<void> => {

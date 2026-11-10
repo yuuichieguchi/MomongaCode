@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeUsageOfRequest } from '@momonga/testkit';
-import { launchRuntime, prepareStack, startGateway, waitForStatus } from './run-helpers.ts';
+import { launchRuntime, modelSettings, prepareStack, startGateway, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -11,19 +11,7 @@ const finalEnvelope = {
 };
 
 const constrainedModels = (socketPath: string, contextWindow: number) => ({
-  models: {
-    aliases: { default: ['primary'] },
-    targets: {
-      primary: {
-        adapter: 'chat-completions',
-        provider: 'fake',
-        model: 'system',
-        socketPath,
-        toolCalling: 'constrained',
-        capabilities: { contextWindow, maxOutputTokens: 1024, structuredOutput: 'json_schema' },
-      },
-    },
-  },
+  ...modelSettings(socketPath, contextWindow, { toolCalling: 'constrained', capabilities: { contextWindow, maxOutputTokens: 1024, structuredOutput: 'json_schema' } }),
 });
 
 const CONTEXT_WINDOW = 8192;

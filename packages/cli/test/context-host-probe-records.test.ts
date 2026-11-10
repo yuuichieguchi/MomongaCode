@@ -2,107 +2,54 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ResolvedModelTarget, UserModels } from '@momonga/config';
+import type { ResolvedModel, UserModels } from '@momonga/config';
 import { probeRecordKeyOf } from '@momonga/config';
 import { endpointRecordFileName } from '@momonga/gateway';
 import { nodeFiles } from '../src/node-ports.ts';
 import { copyEndpointProbeRecord } from '../src/eval/context-effects.ts';
 import { liveSettingsFor } from '../src/eval/context-host.ts';
+import { firstModelOf, userModelsOf } from './user-models.ts';
 
-const capabilities = {
-  contextWindow: 8192,
-  maxOutputTokens: 1024,
-  structuredOutput: 'none',
-  streaming: true,
-  stopSequences: true,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'estimated',
-  usageReported: true,
-  source: 'config',
-  maxConcurrency: 4,
-} as const;
+const capabilities = { contextWindow: 8192, maxOutputTokens: 1024 };
 
-const remote = { billing: 'metered', capabilities, maxConcurrency: 4, admissionTimeoutMs: 30000 } as const;
+type Configuration = readonly [string, Record<string, unknown>, readonly string[]];
 
-const declaredCapabilities = { contextWindow: 8192, maxOutputTokens: 1024 };
+const ollamaOverTcp: Configuration = ['ollama over tcp', { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', models: [{ id: 'qwen3', capabilities }] }, ['endpoint http://127.0.0.1:11434 qwen3:latest']];
 
-type Configuration = readonly [string, ResolvedModelTarget, Record<string, unknown>, readonly string[]];
-
-const ollamaOverTcp: Configuration = [
-  'ollama over tcp',
-  { ...remote, adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434' },
-  { adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434', capabilities: declaredCapabilities },
-  ['endpoint http://127.0.0.1:11434 qwen3'],
-];
+const chatCompletions = (toolCalling: string): Record<string, unknown> => ({ adapter: 'chat-completions', provider: 'p', baseUrl: 'https://upstream.invalid/v1', models: [{ id: 'm', toolCalling, capabilities }] });
 
 const configurations: readonly Configuration[] = [
-  ['managed fm', { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { adapter: 'managed', server: 'fm' }, ['managed fm /usr/bin/fm system']],
-  [
-    'chat-completions auto',
-    { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'auto' },
-    { adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'auto', capabilities: declaredCapabilities },
-    ['endpoint https://upstream.invalid/v1 m'],
-  ],
-  [
-    'chat-completions native',
-    { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native' },
-    { adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native', capabilities: declaredCapabilities },
-    [],
-  ],
-  [
-    'chat-completions constrained',
-    { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'constrained' },
-    { adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'constrained', capabilities: declaredCapabilities },
-    [],
-  ],
-  [
-    'open-responses',
-    { ...remote, adapter: 'open-responses', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native' },
-    { adapter: 'open-responses', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', capabilities: declaredCapabilities },
-    [],
-  ],
-  [
-    'anthropic',
-    { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native', apiVersion: '2026-10-21' },
-    { adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', capabilities: declaredCapabilities },
-    [],
-  ],
+  ['managed fm', { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', models: [{ id: 'system' }] }, ['managed fm /usr/bin/fm system']],
+  ['chat-completions auto', chatCompletions('auto'), ['endpoint https://upstream.invalid/v1 m']],
+  ['chat-completions native', chatCompletions('native'), []],
+  ['chat-completions constrained', chatCompletions('constrained'), []],
+  ['open-responses', { adapter: 'open-responses', provider: 'p', baseUrl: 'https://upstream.invalid/v1', models: [{ id: 'm', capabilities }] }, []],
+  ['anthropic', { adapter: 'anthropic', baseUrl: 'https://upstream.invalid', apiKeyEnv: 'UPSTREAM_KEY', models: [{ id: 'm', capabilities }] }, []],
   ollamaOverTcp,
-  [
-    'ollama over a socket',
-    { ...remote, adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock' },
-    { adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock', capabilities: declaredCapabilities },
-    ['endpoint unix:/s/ollama.sock qwen3'],
-  ],
+  ['ollama over a socket', { adapter: 'ollama', socketPath: '/s/ollama.sock', models: [{ id: 'qwen3', capabilities }] }, ['endpoint unix:/s/ollama.sock qwen3:latest']],
 ];
 
-const modelsWith = (resolved: ResolvedModelTarget, declared: Record<string, unknown>): UserModels =>
-  ({
-    declared: { aliases: { default: ['t'] }, targets: { t: declared } },
-    resolved: { aliases: { default: ['t'] }, targets: { t: resolved }, dialects: {}, roles: {} },
-  }) as unknown as UserModels;
+const modelsWith = (connection: Record<string, unknown>): UserModels => userModelsOf({ connections: [connection] });
 
 const copiedRecordsOf = (models: UserModels): string[] => {
-  const settings = liveSettingsFor(models, ['default']);
-  return [...settings.managedTargets.map((source) => `managed ${source.server} ${source.binary} ${source.model ?? ''}`.trim()), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
+  const settings = liveSettingsFor(models, [firstModelOf(models).canon]);
+  return [...settings.managedTargets.map((source) => `managed ${source.server} ${source.binary} ${source.upstream}`), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
 };
 
-const gatewayRecordsOf = (resolved: ResolvedModelTarget): string[] => {
-  if (resolved.adapter === 'managed') return [`managed ${resolved.server} ${resolved.binary} ${resolved.model ?? ''}`.trim()];
-  const key = probeRecordKeyOf('t', resolved);
+const gatewayRecordsOf = (resolved: ResolvedModel): string[] => {
+  if (resolved.adapter === 'managed') return [`managed ${resolved.server} ${resolved.binary} ${resolved.model}`];
+  const key = probeRecordKeyOf(resolved.canon, resolved);
   if (key === undefined) return [];
-  return [key.kind === 'target' ? `target ${key.target}` : `endpoint ${key.key.endpoint} ${key.key.model}`];
+  return [key.kind === 'model' ? `model ${key.model}` : `endpoint ${key.key.endpoint} ${key.key.model}`];
 };
 
 describe('the probe records a case home receives', () => {
-  it.each(configurations)('%s: the gateway reads the expected record', (_label, resolved, _declared, expected) => {
-    expect(gatewayRecordsOf(resolved)).toEqual(expected);
+  it.each(configurations)('%s: the gateway reads the expected record', (_label, connection, expected) => {
+    expect(gatewayRecordsOf(firstModelOf(modelsWith(connection)))).toEqual(expected);
   });
 
-  it.each(configurations)('%s: the host copies exactly the record the gateway reads', (_label, resolved, declared, expected) => {
-    expect(copiedRecordsOf(modelsWith(resolved, declared))).toEqual(expected);
+  it.each(configurations)('%s: the host copies exactly the record the gateway reads', (_label, connection, expected) => {
+    expect(copiedRecordsOf(modelsWith(connection))).toEqual(expected);
   });
 });
 
@@ -118,15 +65,15 @@ afterEach(() => {
   for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
 });
 
-describe('the probe record of an ollama target in a case home', () => {
+describe('the probe record of an Ollama model in a case home', () => {
   it('lands in the case probe directory under the file name the gateway reads, byte for byte', async () => {
     const owner = temporary();
     const caseProbe = path.join(temporary(), 'probe');
-    const fileName = endpointRecordFileName({ endpoint: 'http://127.0.0.1:11434', model: 'qwen3' });
+    const fileName = endpointRecordFileName({ endpoint: 'http://127.0.0.1:11434', model: 'qwen3:latest' });
     const text = '{"identity":"sha256:digest","identityFields":["digest"],"report":{}}\n';
     fs.writeFileSync(path.join(owner, fileName), text);
-    const [, resolved, declared] = ollamaOverTcp;
-    const settings = liveSettingsFor(modelsWith(resolved, declared), ['default']);
+    const models = modelsWith(ollamaOverTcp[1]);
+    const settings = liveSettingsFor(models, [firstModelOf(models).canon]);
     for (const probe of settings.endpointProbes) {
       await copyEndpointProbeRecord(nodeFiles, owner, caseProbe, probe);
     }

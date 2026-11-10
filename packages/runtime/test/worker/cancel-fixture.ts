@@ -28,7 +28,7 @@ export const pinnedStart = (): RunEventPayload => ({
   type: 'run.started',
   attempt: 1,
   now: START_MS,
-  pins: { modelAlias: 'fm', systemPromptDigest: 'seeded', toolSetDigest: 'seeded', capabilities: capabilitiesFor(100_000), roles: {}, targets: {} },
+  pins: { model: 'fm', systemPromptDigest: 'seeded', toolSetDigest: 'seeded', capabilities: capabilitiesFor(100_000), roles: {}, targets: {} },
   mode: 'default',
 });
 

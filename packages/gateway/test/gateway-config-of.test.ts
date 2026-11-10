@@ -3,70 +3,70 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { gatewayConfigOf } from '@momonga/gateway';
+import { modelSettings } from '@momonga/testkit';
+import type { ModelSettingsSpec } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 
-const targetsFor = async (models: Record<string, unknown>) => {
+const configFor = async (spec: ModelSettingsSpec) => {
   const home = makeDir();
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models }), { mode: 0o600 });
+  fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify(modelSettings(spec)), { mode: 0o600 });
   const { settings } = await loadUserSettings({ home });
-  return gatewayConfigOf(settings.models.targets, settings.models.aliases, settings.models.servers).models.targets;
+  return gatewayConfigOf(settings.models).models;
 };
 
-const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
+const fieldOf = <Field extends 'billing' | 'provider'>(targets: Awaited<ReturnType<typeof configFor>>['targets'], field: Field) =>
+  Object.fromEntries(Object.entries(targets).map(([canon, target]) => [canon, target[field]]));
+
+const ON_DEVICE = { provider: 'apple', adapter: 'managed', server: 'fm', id: 'system' };
 
 describe('gatewayConfigOf billing', () => {
-  it('declares an fm target local, a remote target metered unless the user declares it local', async () => {
-    const targets = await targetsFor({
-      targets: {
-        onDevice: { adapter: 'managed', server: 'fm' },
-        hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
-        selfHosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', provider: 'vllm', billing: 'local', capabilities: CAPABILITIES },
-      },
-      aliases: { default: 'onDevice' },
+  it('declares an fm model local, a remote model metered unless the user declares it local', async () => {
+    const { targets } = await configFor({
+      models: [
+        ON_DEVICE,
+        { provider: 'acme', adapter: 'chat-completions', id: 'm', baseUrl: 'https://api.example.com/v1' },
+        { provider: 'vllm', adapter: 'chat-completions', id: 'm', baseUrl: 'http://127.0.0.1:8000/v1', billing: 'local' },
+      ],
     });
-    expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.billing]))).toEqual({
-      onDevice: 'local',
-      hosted: 'metered',
-      selfHosted: 'local',
-    });
+    expect(fieldOf(targets, 'billing')).toEqual({ 'apple/system': 'local', 'acme/m': 'metered', 'vllm/m': 'local' });
   });
 });
 
-describe('gatewayConfigOf provider names', () => {
-  it('names an fm target apple, and a chat-completions target by its provider setting', async () => {
-    const targets = await targetsFor({
-      targets: {
-        onDevice: { adapter: 'managed', server: 'fm' },
-        hosted: { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
-        local: { adapter: 'chat-completions', provider: 'vllm', model: 'm', baseUrl: 'http://127.0.0.1:8000/v1', capabilities: CAPABILITIES },
-      },
-      aliases: { default: 'onDevice' },
+describe('gatewayConfigOf server names', () => {
+  it('keys every model by its full reference and names its server', async () => {
+    const { targets } = await configFor({
+      models: [
+        ON_DEVICE,
+        { provider: 'acme', adapter: 'chat-completions', id: 'm', baseUrl: 'https://api.example.com/v1' },
+        { provider: 'anthropic', adapter: 'anthropic', id: 'claude-x', baseUrl: 'https://api.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY' },
+        { provider: 'ollama', adapter: 'ollama', id: 'devstral-small-2', baseUrl: 'http://127.0.0.1:11434' },
+      ],
     });
-    expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.provider]))).toEqual({
-      onDevice: 'apple',
-      hosted: 'acme',
-      local: 'vllm',
-    });
+    expect(fieldOf(targets, 'provider')).toEqual({ 'apple/system': 'apple', 'acme/m': 'acme', 'anthropic/claude-x': 'anthropic', 'ollama/devstral-small-2:latest': 'ollama' });
+    expect(targets['ollama/devstral-small-2:latest']).toMatchObject({ kind: 'ollama', model: 'devstral-small-2:latest', defaultTag: 'latest' });
+    expect(targets['acme/m']).not.toHaveProperty('defaultTag');
   });
 
-  it('names an anthropic target anthropic and and an open-responses target by its provider setting', async () => {
-    const targets = await targetsFor({
-      targets: {
-        claude: { adapter: 'anthropic', model: 'm', baseUrl: 'https://api.example.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: CAPABILITIES },
-        relay: { adapter: 'open-responses', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', capabilities: CAPABILITIES },
-        ollama: { adapter: 'open-responses', provider: 'ollama', model: 'm', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: CAPABILITIES },
-      },
-      aliases: { default: 'claude' },
+  it('hands over the chain of every model, the start model and the roles the loader resolved', async () => {
+    const models = await configFor({
+      models: [
+        { provider: 'acme', adapter: 'chat-completions', id: 'm', baseUrl: 'https://api.example.com/v1' },
+        { provider: 'vllm', adapter: 'chat-completions', id: 'm', baseUrl: 'http://127.0.0.1:8000/v1' },
+      ],
+      start: 'vllm/m',
+      fallback: ['acme/m'],
+      roles: { compaction: 'acme/m' },
     });
-    expect(Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target.provider]))).toEqual({
-      claude: 'anthropic',
-      relay: 'acme',
-      ollama: 'ollama',
-    });
+    expect(models.chains).toEqual({ 'acme/m': ['acme/m'], 'vllm/m': ['vllm/m', 'acme/m'] });
+    expect(models.start).toBe('vllm/m');
+    expect(models.roles).toEqual({ compaction: 'acme/m' });
   });
 
-  it('creates no implicit target', async () => {
-    expect(await targetsFor({})).toEqual({});
+  it('creates no implicit model', async () => {
+    const models = await configFor({ models: [] });
+    expect(models.targets).toEqual({});
+    expect(models.chains).toEqual({});
+    expect(models).not.toHaveProperty('start');
   });
 });

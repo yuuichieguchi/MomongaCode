@@ -157,7 +157,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS * 2]));
     manual.fire(BACKOFF_MS * 2);
     await vi.waitFor(async () =>
-      expect(await server.health(asking())).toEqual({ ok: false, reason: 'unhealthy', detail: `the target "${kind.target}": the server exceeded ${MAX_RESTARTS} restarts; the next request starts it again` }),
+      expect(await server.health(asking())).toEqual({ ok: false, reason: 'unhealthy', detail: `the model "${kind.target}": the server exceeded ${MAX_RESTARTS} restarts; the next request starts it again` }),
     );
     expect(spawn).toHaveBeenCalledTimes(1 + MAX_RESTARTS);
     expect(manual.delays()).toEqual([]);

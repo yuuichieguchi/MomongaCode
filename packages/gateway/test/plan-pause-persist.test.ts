@@ -7,7 +7,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeSecretStore, p
 import { createPlanCatalog } from '../src/plan/catalog.ts';
 import { openPlanSessions } from '../src/plan/session.ts';
 import { postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import type { ListableCredentialStore } from '@momonga/foundation';
 import { CONDITION_WAIT, PAUSE_CODE, PROFILE_ID, errno, failingWrites, planError, profileFor, readRecord, refusingLocks, signInAtFake, signedIn, startHarness } from './plan-support.ts';
 import type { Harness, RecordedPlanEvent } from './plan-support.ts';
@@ -162,7 +162,7 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
   await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens });
   await sessions.close();
 
-  writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: 'work' } } } } });
+  writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'm', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: 'work' } } }) });
   const handle = await launchGateway({
     generation: FIRST_GENERATION,
     home,
@@ -174,7 +174,7 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
     planStore,
   });
   return {
-    ask: async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') })),
+    ask: async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'gpt/m', input: userInput('hi') })),
     upstreamPosts: () => upstream.requests.filter((request) => request.method === 'POST').length,
     close: async () => {
       await handle.close();

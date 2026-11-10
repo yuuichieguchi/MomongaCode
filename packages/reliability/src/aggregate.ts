@@ -125,7 +125,7 @@ const weekOf = (ms: number): string => {
 const groupOf = (row: RunFacts, groupBy: GroupKey): string => {
   switch (groupBy) {
     case 'model':
-      return row.modelAlias;
+      return row.model;
     case 'mode':
       return row.mode;
     case 'agent':

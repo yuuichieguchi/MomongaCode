@@ -52,14 +52,14 @@ const open = (url: string, headers: Record<string, string> = {}): Promise<Client
 
 const connectUnix = (harness: Harness): Promise<Client> => open(`ws+unix://${harness.socketPath}:/v1/responses`);
 
-const create = (extra: Record<string, unknown> = {}): Message => ({ type: 'response.create', model: 'fast', store: false, input: userInput('hi'), ...extra });
+const create = (extra: Record<string, unknown> = {}): Message => ({ type: 'response.create', model: 'scripted/scripted-primary', store: false, input: userInput('hi'), ...extra });
 
 const textCall = (text: string) => ({ events: textResponseEvents({ model: 'scripted-primary', chunks: [text] }) });
 
 describe('WebSocket transport over the unix socket', () => {
   it('streams the standard events for a response.create and sends no [DONE] marker', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('hello')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const turn = await client.untilTerminal();
@@ -76,7 +76,7 @@ describe('WebSocket transport over the unix socket', () => {
     const adapter = createScriptedAdapter({
       calls: [{ ...textCall('first'), gate: { name: 'first', afterEvents: 1 } }, textCall('second')],
     });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create({ input: 'one' }));
     client.send(create({ input: 'two' }));
@@ -92,7 +92,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('continues a store:false response from the connection-local state and not from another connection', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('one'), textCall('two'), textCall('three')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const first = (await client.untilTerminal()).at(-1) as Message;
@@ -113,7 +113,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('keeps only the most recent response for continuation', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('one'), textCall('two')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const first = (await client.untilTerminal()).at(-1) as Message;
@@ -126,7 +126,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('evicts the referenced response when a continuation fails with a 4xx or 5xx', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('one'), { failure: { status: 400, message: 'bad continuation' } }] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const first = (await client.untilTerminal()).at(-1) as Message;
@@ -142,7 +142,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('continues from a persisted response when store is true', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('one'), textCall('two')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const writer = await connectUnix(harness);
     writer.send(create({ store: true }));
     const first = (await writer.untilTerminal()).at(-1) as Message;
@@ -153,14 +153,14 @@ describe('WebSocket transport over the unix socket', () => {
 
   it.for([
     { name: 'a body that is not JSON', message: 'not json', code: 'invalid_json', param: null },
-    { name: 'a wrong event type', message: { type: 'response.cancel', model: 'fast' }, code: 'invalid_event_type', param: 'type' },
+    { name: 'a wrong event type', message: { type: 'response.cancel', model: 'scripted/scripted-primary' }, code: 'invalid_event_type', param: 'type' },
     { name: 'a stream field', message: create({ stream: true }), code: 'invalid_body', param: 'stream' },
     { name: 'a stream_options field', message: create({ stream_options: { include_usage: true } }), code: 'invalid_body', param: 'stream_options' },
     { name: 'a background field', message: create({ background: false }), code: 'invalid_body', param: 'background' },
     { name: 'an unknown model', message: create({ model: 'nope' }), code: 'model_not_found', param: 'model' },
   ])('answers $name with an error envelope and keeps the connection usable', async ({ message, code, param }) => {
     const adapter = createScriptedAdapter({ calls: [textCall('fine')] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     if (typeof message === 'string') client.socket.send(message);
     else client.send(message);
@@ -176,7 +176,7 @@ describe('WebSocket transport over the unix socket', () => {
     { name: 'a long message with the credential at the failing position', sent: `{"a":1,"padding":"${'p'.repeat(200)}","key":${TEST_API_KEY}}` },
   ])('answers $name with invalid_json and a message that quotes nothing of it', async ({ sent }) => {
     const adapter = createScriptedAdapter({ calls: [] });
-    const harness = await startGateway({ adapters: { primary: adapter }, credentials: [TEST_API_KEY] });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, credentials: [TEST_API_KEY] });
     const client = await connectUnix(harness);
     client.socket.send(sent);
     const rejected = (await client.untilTerminal()).at(-1) as Message;
@@ -186,7 +186,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('redacts a credential that the validator quotes as an unknown item type', async () => {
     const adapter = createScriptedAdapter({ calls: [] });
-    const harness = await startGateway({ adapters: { primary: adapter }, credentials: [TEST_API_KEY] });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, credentials: [TEST_API_KEY] });
     const client = await connectUnix(harness);
     client.send(create({ input: [{ type: TEST_API_KEY }] }));
     const rejected = (await client.untilTerminal()).at(-1) as Message;
@@ -197,7 +197,7 @@ describe('WebSocket transport over the unix socket', () => {
   it('reports a failed upstream response as a response.failed event, not an error envelope', async () => {
     const events = textResponseEvents({ model: 'scripted-primary', chunks: ['partial'] });
     const adapter = createScriptedAdapter({ calls: [{ events: events.slice(0, 5), failure: { status: 503, message: 'reset' } }] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const turn = await client.untilTerminal();
@@ -205,7 +205,7 @@ describe('WebSocket transport over the unix socket', () => {
   });
 
   it('sends websocket_connection_limit_reached and closes when the connection reaches its time limit', async () => {
-    const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, config: { websocketConnectionMs: CONNECTION_LIMIT_MS } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, config: { websocketConnectionMs: CONNECTION_LIMIT_MS } });
     const client = await connectUnix(harness);
     await waitFor(() => harness.timers.pending().some((timer) => timer.delayMs === CONNECTION_LIMIT_MS), { description: 'connection limit timer armed' });
     harness.timers.advance(CONNECTION_LIMIT_MS);
@@ -217,7 +217,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('ends an in-flight turn with the limit error envelope as its terminal message when the connection reaches its time limit', async () => {
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('never'), gate: { name: 'held', afterEvents: 1 } }] });
-    const harness = await startGateway({ adapters: { primary: adapter }, config: { websocketConnectionMs: CONNECTION_LIMIT_MS } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, config: { websocketConnectionMs: CONNECTION_LIMIT_MS } });
     const client = await connectUnix(harness);
     client.send(create());
     await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
@@ -230,7 +230,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('applies the momonga-deadline-ms of the upgrade request to every turn, ending a turn held before output with an error', async () => {
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('never'), gate: { name: 'held', afterEvents: 1 } }] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await open(`ws+unix://${harness.socketPath}:/v1/responses`, { 'momonga-deadline-ms': '2000' });
     client.send(create());
     await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
@@ -242,7 +242,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('carries the deferral in the WebSocket error envelope when the only target asks for longer than the whole budget', async () => {
     const adapter = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'come back later', retryAfterMs: 100_000 } }] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     const turn = await client.untilTerminal();
@@ -251,7 +251,7 @@ describe('WebSocket transport over the unix socket', () => {
   });
 
   it('closes idle connections with going-away when the gateway closes and waits for none', async () => {
-    const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     const client = await connectUnix(harness);
     await harness.gateway.close();
     expect(await client.closed).toBe(1001);
@@ -259,7 +259,7 @@ describe('WebSocket transport over the unix socket', () => {
 
   it('ends an in-flight turn held before output with a gateway_closed error before the connection closes on gateway close', async () => {
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('late'), gate: { name: 'g', afterEvents: 1 } }] });
-    const harness = await startGateway({ adapters: { primary: adapter } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
     const client = await connectUnix(harness);
     client.send(create());
     await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
@@ -272,7 +272,7 @@ describe('WebSocket transport over the unix socket', () => {
   });
 
   it('refuses an upgrade for any other path', async () => {
-    const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     await expect(open(`ws+unix://${harness.socketPath}:/v1/models`)).rejects.toThrow('HTTP 404');
   });
 });
@@ -283,7 +283,7 @@ describe('WebSocket transport over the TCP debug listener', () => {
 
   it('requires the bearer token for the upgrade and then serves the same protocol', async () => {
     const adapter = createScriptedAdapter({ calls: [textCall('over tcp')] });
-    const harness = await startGateway({ adapters: { primary: adapter }, debugTcp: { host: '127.0.0.1', port: 0, token: DEBUG_TOKEN } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': adapter }, debugTcp: { host: '127.0.0.1', port: 0, token: DEBUG_TOKEN } });
     await expect(connectTcp(harness, {})).rejects.toThrow('HTTP 401');
     await expect(connectTcp(harness, { authorization: 'Bearer wrong-token' })).rejects.toThrow('HTTP 401');
     const client = await connectTcp(harness, { authorization: `Bearer ${DEBUG_TOKEN}` });
@@ -292,7 +292,7 @@ describe('WebSocket transport over the TCP debug listener', () => {
   });
 
   it('closes its connections when the gateway closes', async () => {
-    const harness = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, debugTcp: { host: '127.0.0.1', port: 0, token: DEBUG_TOKEN } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, debugTcp: { host: '127.0.0.1', port: 0, token: DEBUG_TOKEN } });
     const client = await connectTcp(harness, { authorization: `Bearer ${DEBUG_TOKEN}` });
     await harness.gateway.close();
     expect(await client.closed).toBe(1001);

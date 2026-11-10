@@ -6,7 +6,7 @@ import { responseResource, usageOf } from '@momonga/testkit';
 import { within } from './deferred.ts';
 import { START_MS, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, gated, textStep, textThenCallsStep } from './scripts.ts';
+import { MODEL_ID, assistantMessage, callsStep, functionCallItem, gated, textStep, textThenCallsStep } from './scripts.ts';
 import {
   CLOSURE_TEXT,
   MARKER_TEXT,
@@ -25,7 +25,7 @@ const echo = (callId: string, value: string) => ({ callId, name: 'Echo', args: {
 
 const startedPayload = (): RunEventPayload => ({ type: 'run.started', attempt: 1, now: 0, pins: {}, mode: 'default' });
 
-const requestedPayload = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: MODEL_ALIAS, input: 'seed' } });
+const requestedPayload = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: MODEL_ID, input: 'seed' } });
 
 const respondedPayload = (step: number, output: unknown[]): RunEventPayload => ({
   type: 'model.responded',
@@ -214,7 +214,7 @@ describe('interrupted run 1 in the request of run 2', () => {
     const env = await makeEnv();
     const first = env.enqueue('Talk');
     const opening: StreamEvent[] = [
-      { type: 'response.created', sequence_number: 0, response: responseResource({ id: 'resp_partial', model: MODEL_ALIAS, status: 'in_progress' }) },
+      { type: 'response.created', sequence_number: 0, response: responseResource({ id: 'resp_partial', model: MODEL_ID, status: 'in_progress' }) },
       { type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: { type: 'message', id: ITEM_ID, status: 'in_progress', role: 'assistant', content: [] } },
       { type: 'response.output_text.delta', sequence_number: 2, item_id: ITEM_ID, output_index: 0, content_index: 0, delta: 'Partial ' },
       { type: 'response.output_text.delta', sequence_number: 3, item_id: ITEM_ID, output_index: 0, content_index: 0, delta: 'answer' },

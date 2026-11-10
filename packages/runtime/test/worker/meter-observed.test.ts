@@ -48,7 +48,7 @@ const answeredBy = (step: ScriptStep, target: string): ScriptStep => ({
             response: {
               ...event.response,
               momonga: {
-                alias: 'fm',
+                model: 'fm',
                 target,
                 counter: fakeCounterOf(target),
                 attempts: 2,
@@ -217,7 +217,7 @@ describe('the meter of a claim is folded from the session journal', () => {
     expect(env.ofType(two.id, 'meter.observed')).toMatchObject([{ target: PRIMARY_TARGET, fallback: false, known: firstCount, uncounted: secondCount - firstCount, counted: secondCount }]);
   });
 
-  it('keeps the reports of a fallback target out of the alias meter and gives them to that target meter', async () => {
+  it('keeps the reports of a fallback target out of the model meter and gives them to that target meter', async () => {
     const [firstCount, secondCount] = await measuredAcrossRuns();
 
     const runSecond = async (second: ScriptStep) => {

@@ -46,76 +46,20 @@ const PERMANENT_FOR_COMMAND_AND_PATH_ALIASES: readonly string[] = [
 ];
 
 const ALLOWED_UNTIL: readonly Listed[] = [
-  { file: 'packages/cli/src/acp/agent.ts', tokens: ['modelAlias', 'ModelAlias', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/acp/events.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/acp/models.ts', tokens: ['aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/acp/serve.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/client/gateway-client.ts', tokens: ['model alias', 'alias ${'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/client/golden-run-api.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/client/runtime-client.ts', tokens: ['modelAlias', 'ModelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/client/views.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/auto-mode.ts', tokens: ['modelAlias', 'agentAlias', 'models.aliases', 'alias ${', 'the alias', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/context.ts', tokens: ['AliasCapabilities'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/evaluate.ts', tokens: ['model alias', '--alias', 'the alias', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/gateway.ts', tokens: ['models.targets'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/models.ts', tokens: ['AliasCapabilities', 'models.aliases', 'models.targets', 'model alias', 'alias ${', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/register.ts', tokens: ['modelAlias', 'model alias', '--alias', 'an alias', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/eval/context-host.ts', tokens: ['modelAlias', 'models.aliases', '--alias', 'alias ${', 'the alias', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/program.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/readiness.ts', tokens: ['models.aliases', 'models.targets', 'aliases'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/run/headless.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/run/open-session.ts', tokens: ['modelAlias'], removedBy: 'N3a' },
-  { file: 'packages/cli/src/tui/app.tsx', tokens: ['modelAlias', 'AliasCapabilities', 'aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/backend.ts', tokens: ['modelAlias', 'ModelAlias'], removedBy: 'N3b' },
+  { file: 'packages/cli/src/client/golden-run-api.ts', tokens: ['modelAlias'], removedBy: 'N4' },
+  { file: 'packages/cli/src/commands/auto-mode.ts', tokens: ['modelAlias'], removedBy: 'N4' },
+  { file: 'packages/cli/src/eval/context-host.ts', tokens: ['modelAlias'], removedBy: 'N4' },
+  { file: 'packages/cli/src/tui/app.tsx', tokens: ['modelAlias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/auth.ts', tokens: ['modelAlias', 'an alias'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/auto-mode.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/shell-commands.ts', tokens: ['model alias', '--alias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/plan-flows.ts', tokens: ['models.aliases', 'models.targets', 'an alias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/slash.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
-  { file: 'packages/context/src/budget.ts', tokens: ['AliasCapabilities'], removedBy: 'N2' },
-  { file: 'packages/eval/src/auto-gate-record.ts', tokens: ['agentAlias'], removedBy: 'N4' },
   { file: 'packages/eval/src/context-improve.ts', tokens: ['alias ${', 'the alias'], removedBy: 'N4' },
   { file: 'packages/eval/src/context-live.ts', tokens: ['modelAlias'], removedBy: 'N4' },
   { file: 'packages/eval/src/context-report.ts', tokens: ['modelAlias', '--alias', 'the alias', 'aliases'], removedBy: 'N4' },
   { file: 'packages/eval/src/runner.ts', tokens: ['modelAlias'], removedBy: 'N4' },
   { file: 'packages/eval/src/transcript.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'packages/gateway/src/adapters/chat-completions/types.ts', tokens: ['AliasRoomFacts'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/core/router.ts', tokens: ['AliasCapabilities', 'aliasRoomVerdict', 'models.aliases', 'models.targets', 'model alias', 'the alias', 'aliases'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/core/unary.ts', tokens: ['model alias'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/core/unknown-fields.ts', tokens: ['model alias'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/core/validation.ts', tokens: ['the alias'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/managed/target.ts', tokens: ['AliasRoomFacts'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/process.ts', tokens: ['models.aliases', 'models.targets', 'aliases'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/app.ts', tokens: ['aliases'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/capability-listing.ts', tokens: ['AliasCapabilities', 'model alias'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/config-check.ts', tokens: ['models.aliases', 'models.targets', 'aliases'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/server/gateway.ts', tokens: ['models.targets'], removedBy: 'N1' },
-  { file: 'packages/gateway/src/types.ts', tokens: ['aliases'], removedBy: 'N1' },
-  { file: 'packages/reliability/src/aggregate.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/reliability/src/fold-facts.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/reliability/src/types.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/memory/journal-thread-code.generated.ts', tokens: ['modelAlias', 'model_alias', 'previousModelAlias', 'ModelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/memory/journal-thread.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/memory/reflection.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/process/child-runs.ts', tokens: ['modelAlias', 'model alias', 'aliases'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/process/defaults.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/process/settings-port.ts', tokens: ['models.aliases', 'models.targets', 'aliases'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/process/start-runtime-process.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/app.ts', tokens: ['modelAlias', 'ModelAlias', 'model alias', 'alias ${', 'aliases'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/errors.ts', tokens: ['model alias', 'alias ${'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/request.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/rules.ts', tokens: ['modelAlias', 'model alias', 'alias ${'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/service.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/service/views.ts', tokens: ['modelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/worker/claim-runner.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/worker/context-step.ts', tokens: ['alias ${'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/worker/model-switch.ts', tokens: ['modelAlias', 'previousModelAlias', 'ModelAlias'], removedBy: 'N2' },
-  { file: 'packages/runtime/src/worker/pins.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N2' },
-  { file: 'packages/store/src/codec.ts', tokens: ['modelAlias', 'model_alias', 'previousModelAlias', 'ModelAlias'], removedBy: 'N2' },
-  { file: 'packages/store/src/index.ts', tokens: ['ModelAlias'], removedBy: 'N2' },
-  { file: 'packages/store/src/run-facts.ts', tokens: ['modelAlias', 'model_alias'], removedBy: 'N2' },
-  { file: 'packages/store/src/runtime-store.ts', tokens: ['modelAlias', 'model_alias', 'previousModelAlias', 'ModelAlias'], removedBy: 'N2' },
-  { file: 'packages/store/src/types.ts', tokens: ['modelAlias', 'ModelAlias'], removedBy: 'N2' },
   { file: 'scripts/plan-real-check.ts', tokens: ["'aliases'", '--alias', 'alias ${', 'the alias', 'aliases'], removedBy: 'N4' },
   { file: 'README.md', tokens: ['models.aliases', 'models.targets', 'model alias', 'the alias', 'an alias', 'aliases'], removedBy: 'N4' },
 ];
@@ -127,18 +71,26 @@ const filesUnder = (directory: string): string[] =>
     return entry.isFile() ? [full] : [];
   });
 
-const scannedFiles = (): string[] => [
-  ...fs
-    .readdirSync(packagesDir)
-    .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
-    .flatMap((name) => filesUnder(path.join(packagesDir, name, 'src'))),
-  ...filesUnder(path.join(root, 'scripts')),
-  path.join(root, 'README.md'),
-];
+const GENERATED_BUNDLE_SUFFIX = '.generated.ts';
+
+const scannedFiles = (): string[] =>
+  [
+    ...fs
+      .readdirSync(packagesDir)
+      .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
+      .flatMap((name) => filesUnder(path.join(packagesDir, name, 'src'))),
+    ...filesUnder(path.join(root, 'scripts')),
+    path.join(root, 'README.md'),
+  ].filter((file) => !file.endsWith(GENERATED_BUNDLE_SUFFIX));
 
 const relative = (file: string): string => path.relative(root, file).split(path.sep).join('/');
 
-const isPermanent = (file: string, token: Token): boolean => PERMANENT_FILES.includes(file) || (token === 'aliases' && PERMANENT_FOR_COMMAND_AND_PATH_ALIASES.includes(file));
+const PERMANENT_FOR_RETIRED_FORMAT_REASONS: readonly string[] = ['packages/protocol/src/reliability.ts'];
+
+const isPermanent = (file: string, token: Token): boolean =>
+  PERMANENT_FILES.includes(file) ||
+  (token === 'aliases' && PERMANENT_FOR_COMMAND_AND_PATH_ALIASES.includes(file)) ||
+  (token === 'an alias' && PERMANENT_FOR_RETIRED_FORMAT_REASONS.includes(file));
 
 const pairOf = (file: string, token: Token): string => `${file}: ${token}`;
 

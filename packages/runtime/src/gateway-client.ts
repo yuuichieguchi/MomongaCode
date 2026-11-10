@@ -7,6 +7,7 @@ import {
   ROLE_HEADER,
   RUN_ID_HEADER,
   STREAM_IDLE_HEADER,
+  TARGET_ANSWERS,
   TARGET_PROBING,
   isProbingCapabilities,
   isToolCallingState,
@@ -26,14 +27,20 @@ import type {
   GatewayCostReportView,
   GatewayHealth,
   HeaderRole,
+  ModelView,
+  ModelViews,
+  MomongaModelRoles,
   PlanAccountRef,
   StreamEvent,
+  TargetAnswers,
 } from '@momonga/protocol';
-import type { Clock, GatewayCallOptions, GatewayPort } from './ports.ts';
+import type { Clock, GatewayCallOptions, GatewayPort, TargetFacts } from './ports.ts';
 import { systemTimers } from './service/timers.ts';
 import type { ServiceTimers } from './service/timers.ts';
 
 const MS_PER_SECOND = 1000;
+
+export const MODEL_NOT_FOUND_CODE = 'model_not_found';
 
 export type GatewayRequestErrorFields = {
   status: number;
@@ -92,17 +99,21 @@ export type GatewayClientOptions = {
   streamIdleTimeoutMs?: number;
 };
 
+export type ListedChainMember = { model: string; counter: string; adapter: string; answers: TargetAnswers; upstream: string; capabilities: Record<string, unknown> };
+
+export type ListedGatewayModel = ModelView & { id: string; capabilities: Record<string, unknown>; chain: ListedChainMember[] };
+
+export type GatewayListing = { models: ListedGatewayModel[]; views: ModelViews; start: string | null; roles: MomongaModelRoles };
+
+export type GatewayChainMember = { model: string; counter: string; capabilities: Capabilities };
+
 export type GatewayModel = {
   id: string;
-  targets: string[];
   capabilities: Capabilities;
-  targetCapabilities: Record<string, Capabilities>;
-  targetCounters: Record<string, string>;
-};
-
-export type ListedGatewayModel = Pick<GatewayModel, 'id' | 'targets' | 'targetCounters'> & {
-  capabilities: Record<string, unknown>;
-  targetCapabilities: Record<string, Record<string, unknown>>;
+  chain: GatewayChainMember[];
+  targets: Record<string, TargetFacts>;
+  roles: MomongaModelRoles;
+  views: ModelViews;
 };
 
 export type GatewayClient = GatewayPort & {
@@ -213,6 +224,72 @@ const holdsMalformedUnavailable = (capabilities: unknown): boolean => {
   return isRecord(toolCalling) && toolCalling['state'] === 'unavailable' && !isToolCallingState(toolCalling);
 };
 
+const MODEL_ROLE_NAMES = ['compaction', 'reflection', 'analysis'] as const;
+
+const isAnswers = (value: unknown): value is TargetAnswers => (TARGET_ANSWERS as readonly unknown[]).includes(value);
+
+const listedMemberOf = (member: unknown): ListedChainMember => {
+  if (
+    !isRecord(member) ||
+    typeof member['model'] !== 'string' ||
+    typeof member['counter'] !== 'string' ||
+    typeof member['adapter'] !== 'string' ||
+    typeof member['upstream'] !== 'string' ||
+    !isAnswers(member['answers']) ||
+    !isRecord(member['capabilities'])
+  ) {
+    throw invalidResponse('the model list holds an entry without its chain members and their counters');
+  }
+  return { model: member['model'], counter: member['counter'], adapter: member['adapter'], answers: member['answers'], upstream: member['upstream'], capabilities: member['capabilities'] };
+};
+
+const listedModelOf = (entry: unknown): ListedGatewayModel => {
+  if (!isRecord(entry) || typeof entry['id'] !== 'string' || typeof entry['provider'] !== 'string' || typeof entry['ownName'] !== 'string') {
+    throw invalidResponse('the model list holds a malformed entry');
+  }
+  const defaultTag = entry['defaultTag'];
+  if (defaultTag !== undefined && typeof defaultTag !== 'string') throw invalidResponse('the model list holds a malformed entry');
+  const members = entry['chain'];
+  if (!Array.isArray(members) || members.length === 0) throw invalidResponse('the model list holds an entry without its chain members and their counters');
+  const chain = members.map(listedMemberOf);
+  if (!isRecord(entry['capabilities'])) throw invalidResponse('the model list holds a malformed entry');
+  if ([entry['capabilities'], ...chain.map((member) => member.capabilities)].some(holdsMalformedUnavailable)) {
+    throw invalidResponse('the model list holds a malformed unavailable entry');
+  }
+  return {
+    id: entry['id'],
+    canon: entry['id'],
+    provider: entry['provider'],
+    ownName: entry['ownName'],
+    ...(defaultTag === undefined ? {} : { defaultTag }),
+    capabilities: entry['capabilities'],
+    chain,
+  };
+};
+
+const listedRolesOf = (value: unknown): MomongaModelRoles => {
+  if (!isRecord(value)) throw invalidResponse('the model list has no roles object');
+  const roles: MomongaModelRoles = {};
+  for (const role of MODEL_ROLE_NAMES) {
+    const model = value[role];
+    if (model === undefined) continue;
+    if (typeof model !== 'string') throw invalidResponse('the model list holds a malformed role');
+    roles[role] = model;
+  }
+  return roles;
+};
+
+const viewOf = ({ canon, provider, ownName, defaultTag }: ModelView): ModelView => ({ canon, provider, ownName, ...(defaultTag === undefined ? {} : { defaultTag }) });
+
+export const gatewayListingOf = (parsed: unknown): GatewayListing => {
+  const data = isRecord(parsed) ? parsed['data'] : undefined;
+  if (!isRecord(parsed) || !Array.isArray(data)) throw invalidResponse('the model list has no data array');
+  const start = parsed['start'];
+  if (start !== null && typeof start !== 'string') throw invalidResponse('the model list has no start model');
+  const models = data.map(listedModelOf);
+  return { models, views: models.map(viewOf), start, roles: listedRolesOf(parsed['roles']) };
+};
+
 const unlistedErrorOf = (capabilities: Record<string, unknown>): ModelUnlistedError | undefined => {
   const { toolCalling } = capabilities;
   if (!isToolCallingState(toolCalling)) return undefined;
@@ -230,6 +307,32 @@ const unlistedErrorOf = (capabilities: Record<string, unknown>): ModelUnlistedEr
   const { status, type, code, message, param } = listed.toolCalling;
   return new ModelUnlistedError({ status, type, code, message, ...(param === undefined ? {} : { param }) });
 };
+
+const listedModelIn = (listing: GatewayListing, model: string): ListedGatewayModel => {
+  const found = listing.models.find((listed) => listed.id === model);
+  if (found === undefined) {
+    throw new GatewayRequestError({ status: 404, type: 'not_found', code: MODEL_NOT_FOUND_CODE, message: `the gateway does not list the model "${model}"`, param: 'model' });
+  }
+  return found;
+};
+
+export const gatewayModelIn = (listing: GatewayListing, model: string): GatewayModel => {
+  const found = listedModelIn(listing, model);
+  const unlisted = unlistedErrorOf(found.capabilities);
+  if (unlisted !== undefined) throw unlisted;
+  return {
+    id: found.id,
+    capabilities: found.capabilities as Capabilities,
+    chain: found.chain
+      .filter((member, index) => index === 0 || unlistedErrorOf(member.capabilities) === undefined)
+      .map((member) => ({ model: member.model, counter: member.counter, capabilities: member.capabilities as Capabilities })),
+    targets: Object.fromEntries(found.chain.map((member) => [member.model, { adapter: member.adapter, model: member.upstream, answers: member.answers }])),
+    roles: listing.roles,
+    views: listing.views,
+  };
+};
+
+export const isModelNotFound = (error: unknown): error is GatewayRequestError => error instanceof GatewayRequestError && error.status === 404 && error.code === MODEL_NOT_FOUND_CODE;
 
 export const createGatewayClient = (options: GatewayClientOptions): GatewayClient => {
   const { clock, version } = options;
@@ -340,40 +443,10 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
 
   const noSignal = new AbortController().signal;
 
-  const listModels = async (signal: AbortSignal): Promise<ListedGatewayModel[]> => {
-    const parsed = await unary({ method: 'GET', path: '/v1/momonga/models', headers: {} }, signal, unaryBound());
-    const data = isRecord(parsed) ? parsed['data'] : undefined;
-    if (!Array.isArray(data)) throw invalidResponse('the model list has no data array');
-    return data.map((entry: unknown): ListedGatewayModel => {
-      if (!isRecord(entry) || typeof entry['id'] !== 'string') throw invalidResponse('the model list holds a malformed entry');
-      const targets = entry['targets'];
-      const counters = entry['targetCounters'];
-      if (!Array.isArray(targets) || !targets.every((target) => typeof target === 'string') || !isRecord(counters) || !targets.every((target) => typeof counters[target] === 'string')) {
-        throw invalidResponse('the model list holds an entry without its targets and their counters');
-      }
-      if (!isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) throw invalidResponse('the model list holds a malformed entry');
-      if ([entry['capabilities'], ...Object.values(entry['targetCapabilities'])].some(holdsMalformedUnavailable)) {
-        throw invalidResponse('the model list holds a malformed unavailable entry');
-      }
-      return {
-        id: entry['id'],
-        targets,
-        capabilities: entry['capabilities'],
-        targetCapabilities: entry['targetCapabilities'] as Record<string, Record<string, unknown>>,
-        targetCounters: counters as Record<string, string>,
-      };
-    });
-  };
+  const listModels = async (signal: AbortSignal): Promise<GatewayListing> =>
+    gatewayListingOf(await unary({ method: 'GET', path: '/v1/momonga/models', headers: {} }, signal, unaryBound()));
 
-  const modelOf = async (alias: string, callOptions: { signal: AbortSignal }): Promise<GatewayModel> => {
-    const found = (await listModels(callOptions.signal)).find((model) => model.id === alias);
-    if (found === undefined) {
-      throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
-    }
-    const unlisted = unlistedErrorOf(found.capabilities);
-    if (unlisted !== undefined) throw unlisted;
-    return { ...found, capabilities: found.capabilities as Capabilities, targetCapabilities: found.targetCapabilities as Record<string, Capabilities> };
-  };
+  const modelOf = async (model: string, callOptions: { signal: AbortSignal }): Promise<GatewayModel> => gatewayModelIn(await listModels(callOptions.signal), model);
 
   const timedChunksOf = async function* (guard: Guard, response: UdsResponse): AsyncGenerator<Uint8Array> {
     const iterator = response.body[Symbol.asyncIterator]();
@@ -512,16 +585,18 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
 
     model: modelOf,
 
-    capabilities: async (alias: string, callOptions: { signal: AbortSignal; target?: string }): Promise<Capabilities> => {
-      const found = await modelOf(alias, callOptions);
-      if (callOptions.target === undefined) return found.capabilities;
-      const own = Object.hasOwn(found.targetCapabilities, callOptions.target) ? found.targetCapabilities[callOptions.target] : undefined;
+    listing: (callOptions: { signal: AbortSignal }): Promise<GatewayListing> => listModels(callOptions.signal),
+
+    capabilities: async (model: string, callOptions: { signal: AbortSignal; target?: string }): Promise<Capabilities> => {
+      const listing = await listModels(callOptions.signal);
+      if (callOptions.target === undefined) return gatewayModelIn(listing, model).capabilities;
+      const own = listedModelIn(listing, model).chain.find((member) => member.model === callOptions.target);
       if (own === undefined) {
-        throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'invalid_target', message: `the gateway lists no target "${callOptions.target}" for the model "${alias}"`, param: 'target' });
+        throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'invalid_target', message: `the gateway lists no model "${callOptions.target}" that the model "${model}" falls back to`, param: 'target' });
       }
-      const unlisted = unlistedErrorOf(own);
+      const unlisted = unlistedErrorOf(own.capabilities);
       if (unlisted !== undefined) throw unlisted;
-      return own;
+      return own.capabilities as Capabilities;
     },
 
     cancel: async (idempotencyKey: string, callOptions: { signal: AbortSignal }): Promise<boolean> => {
@@ -534,7 +609,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       return parsed['cancelled'];
     },
 
-    models: () => listModels(noSignal),
+    models: async () => (await listModels(noSignal)).models,
     cost: async (runs, signal, includeRunless) => {
       const parsed = await unary({ method: 'POST', path: '/v1/momonga/cost', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ runs, includeRunless }) }, signal, unaryBound());
       if (!isRecord(parsed) || !isRecord(parsed['report']) || typeof parsed['text'] !== 'string') throw invalidResponse('the cost answer has no report and text');

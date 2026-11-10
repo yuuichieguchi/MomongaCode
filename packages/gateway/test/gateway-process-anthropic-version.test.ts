@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, anthropicCountTokensReply, anthropicTextReply, startFakeAnthropic } from '@momonga/testkit';
 import { postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { FAKE_API_KEY } from './upstream-gateway-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -14,9 +14,7 @@ const launchWith = async (apiVersion: string | undefined) => {
   registerCleanup(() => fake.close());
   const home = makeHome();
   writeSettings(home, {
-    models: {
-      aliases: { fast: ['remote'] },
-      targets: {
+    models: modelsOf({
         remote: {
           adapter: 'anthropic',
           model: 'model-a',
@@ -25,13 +23,12 @@ const launchWith = async (apiVersion: string | undefined) => {
           capabilities: { contextWindow: 200000, maxOutputTokens: 8192 },
           ...(apiVersion === undefined ? {} : { apiVersion }),
         },
-      },
-    },
+      }),
   });
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { [KEY_ENV]: FAKE_API_KEY }), version: PROCESS_VERSION });
   const client = clientFor(handle.socketPath);
-  const created = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
-  const counted = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('hi') }));
+  const created = await readJson(await postJson(client, '/v1/responses', { model: 'remote/model-a', input: userInput('hi') }));
+  const counted = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'remote/model-a', input: userInput('hi') }));
   const versionOn = (urlPath: string): unknown[] =>
     fake.requests.filter((request) => request.path === urlPath).map((request) => request.headers['anthropic-version']);
   return { created, counted, versionOn };

@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
 import { waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, makeEnv, createdRun } from './harness.ts';
-import { MODEL_ALIAS, textStep } from './scripts.ts';
+import { MODEL_ID, textStep } from './scripts.ts';
 
 describe('worker poll loop', () => {
   it('reports a claim error through onError and keeps claiming the next run without an unhandled rejection', async () => {
     const env = await makeEnv();
     const failing = env.enqueue('Fails to load');
-    const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: MODEL_ALIAS });
+    const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', model: MODEL_ID });
     const healthy = createdRun(env.store.createRunAndEnqueue(otherSession.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
     env.gateway.script.push(textStep('Hello.'));
     const failure = new Error('load exploded');

@@ -5,13 +5,13 @@ import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { START_MS, TEST_VERSION, expectErrorBody, getJson, postJson, readJson, readSse, startGateway, validator } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, readFileTool, startFake } from './cc-support.ts';
 
-const singleTarget = { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } };
+const singleTarget = { chains: { 'fm/system': ['fm/system'] }, targets: { 'fm/system': {} } };
 
 const startCcGateway = async (fake: FakeChatCompletionsServer, toolCalling: 'native' | 'constrained' | 'none') => {
   const adapter = makeAdapter(fake, {
     capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling }),
   });
-  return startGateway({ adapters: { fm: adapter }, config: singleTarget });
+  return startGateway({ adapters: { 'fm/system': adapter }, config: singleTarget });
 };
 
 const schemaNames = validator.streamEventSchemaNames();
@@ -27,7 +27,7 @@ const roundTrip = async (fake: FakeChatCompletionsServer, toolCalling: 'native' 
   const { client } = await startCcGateway(fake, toolCalling);
   const first = await readSse(
     await postJson(client, '/v1/responses', {
-      model: 'fast',
+      model: 'fm/system',
       stream: true,
       store: true,
       tools: [readFileTool],
@@ -45,7 +45,7 @@ const roundTrip = async (fake: FakeChatCompletionsServer, toolCalling: 'native' 
 
   const second = await readSse(
     await postJson(client, '/v1/responses', {
-      model: 'fast',
+      model: 'fm/system',
       stream: true,
       store: true,
       tools: [readFileTool],
@@ -93,7 +93,7 @@ describe('chat-completions adapter through the gateway', () => {
     const { client } = await startCcGateway(fake, 'none');
     const response = await readJson(
       await postJson(client, '/v1/responses', {
-        model: 'fast',
+        model: 'fm/system',
         tools: [readFileTool],
         input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] }],
       }),
@@ -112,16 +112,16 @@ describe('chat-completions adapter through the gateway', () => {
         return CC_CAPABILITIES;
       },
     });
-    const { client } = await startGateway({ adapters: { fm: adapter }, config: singleTarget });
+    const { client } = await startGateway({ adapters: { 'fm/system': adapter }, config: singleTarget });
     const models = await getJson(client, '/v1/momonga/models');
     expect(models.body.data[0].capabilities).toEqual(CC_CAPABILITIES);
-    expect(seen).toContainEqual({ name: 'fm', model: 'system' });
+    expect(seen).toContainEqual({ name: 'fm/system', display: 'system', model: 'system' });
   });
 });
 
-const expectHealth = (body: Record<string, unknown>, expected: { ok: boolean; targets: Record<string, unknown> }): void => {
-  const { ok, targets, ...processFields } = body;
-  expect({ ok, targets }).toEqual(expected);
+const expectHealth = (body: Record<string, unknown>, expected: { ok: boolean; models: Record<string, unknown> }): void => {
+  const { ok, models, ...processFields } = body;
+  expect({ ok, models }).toEqual(expected);
   expect(Object.keys(processFields).sort()).toEqual(['apiVersion', 'pid', 'startedAt', 'state', 'version']);
   expect(processFields).toMatchObject({ version: TEST_VERSION, apiVersion: 1, pid: process.pid, state: 'running' });
   expect(new Date(processFields['startedAt'] as string).getTime()).toBe(START_MS);
@@ -146,22 +146,22 @@ describe('/v1/momonga/health with adapter health', () => {
     };
     const healthy = createScriptedAdapter({ calls: [] });
     const { client } = await startGateway({
-      adapters: { sick: unhealthy, well: healthy },
+      adapters: { 'scripted/m1': unhealthy, 'scripted/m2': healthy },
       config: {
-        aliases: { fast: ['sick', 'well'] },
-        targets: { sick: { model: 'm1' }, well: { model: 'm2' } },
+        chains: { 'scripted/m1': ['scripted/m1', 'scripted/m2'] },
+        targets: { 'scripted/m1': {}, 'scripted/m2': {} },
       },
     });
     const health = await getJson(client, '/v1/momonga/health');
     expect(health.status).toBe(200);
     expectHealth(health.body, {
       ok: false,
-      targets: {
-        sick: { ok: false, breaker: 'closed', reason: 'unhealthy', detail: 'model asset missing' },
-        well: { ok: true, breaker: 'closed' },
+      models: {
+        'scripted/m1': { ok: false, breaker: 'closed', reason: 'unhealthy', detail: 'model asset missing' },
+        'scripted/m2': { ok: true, breaker: 'closed' },
       },
     });
-    expect(seen).toEqual([{ name: 'sick', model: 'm1' }]);
+    expect(seen).toEqual([{ name: 'scripted/m1', display: 'm1', model: 'm1' }]);
   });
 
   it('reports a healthy adapter as ok', async () => {
@@ -176,8 +176,8 @@ describe('/v1/momonga/health with adapter health', () => {
       classify: (error) => scripted.classify(error),
       health: async () => ({ ok: true }),
     };
-    const { client } = await startGateway({ adapters: { primary: adapter } });
-    expectHealth((await getJson(client, '/v1/momonga/health')).body, { ok: true, targets: { primary: { ok: true, breaker: 'closed' } } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': adapter } });
+    expectHealth((await getJson(client, '/v1/momonga/health')).body, { ok: true, models: { 'scripted/scripted-primary': { ok: true, breaker: 'closed' } } });
   });
 });
 
@@ -197,19 +197,19 @@ describe('/v1/momonga/health with a throwing adapter health', () => {
       },
     };
     const { client } = await startGateway({
-      adapters: { broken, well: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'broken/m1': broken, 'scripted/m2': createScriptedAdapter({ calls: [] }) },
       config: {
-        aliases: { fast: ['broken', 'well'] },
-        targets: { broken: { model: 'm1' }, well: { model: 'm2' } },
+        chains: { 'broken/m1': ['broken/m1', 'scripted/m2'] },
+        targets: { 'broken/m1': {}, 'scripted/m2': {} },
       },
     });
     const health = await getJson(client, '/v1/momonga/health');
     expect(health.status).toBe(200);
     expectHealth(health.body, {
       ok: false,
-      targets: {
-        broken: { ok: false, breaker: 'closed', reason: 'health_check_failed', detail: 'probe crashed' },
-        well: { ok: true, breaker: 'closed' },
+      models: {
+        'broken/m1': { ok: false, breaker: 'closed', reason: 'health_check_failed', detail: 'probe crashed' },
+        'scripted/m2': { ok: true, breaker: 'closed' },
       },
     });
   });

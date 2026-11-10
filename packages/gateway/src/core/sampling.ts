@@ -13,7 +13,7 @@ const thinkingIsOn = (effort: unknown, reasoning: ReasoningCapability | undefine
 const refusal = (field: SamplingField, targetName: string, reason: string): SamplingRefusal => ({
   field,
   targetName,
-  message: `${field} is not accepted by target "${targetName}": ${reason}`,
+  message: `${field} is not accepted by model "${targetName}": ${reason}`,
 });
 
 export const carriesSampling = (request: SamplingRequest): boolean => SAMPLING_FIELDS.some((field) => request[field] !== undefined && request[field] !== null);

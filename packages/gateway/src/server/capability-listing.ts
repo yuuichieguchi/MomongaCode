@@ -1,4 +1,4 @@
-import type { AliasCapabilities, Capabilities, NotListedCapabilities, UnavailableCapabilities } from '@momonga/protocol';
+import type { Capabilities, ChainCapabilities, ChainMemberEntry, MomongaModelEntry, NotListedCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { isNotListedCapabilities } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from '../core/errors.ts';
 import { UpstreamFailure, failureFrom, plainError } from '../core/retry.ts';
@@ -7,8 +7,6 @@ import type { Router, TargetRuntime } from '../core/router.ts';
 import { isTargetProbing, probingOf } from '../probe/auto-probe.ts';
 
 export type ListedCapabilities<C> = C | NotListedCapabilities;
-
-export type AliasListing = { capabilities: ListedCapabilities<AliasCapabilities>; targetCapabilities: Record<string, ListedCapabilities<Capabilities>> };
 
 const unavailableOf = (error: GatewayError): UnavailableCapabilities => ({
   toolCalling: {
@@ -37,13 +35,41 @@ const listedOf = async (router: Router, target: TargetRuntime, signal: AbortSign
 
 const isListed = <C extends Capabilities>(entry: ListedCapabilities<C>): entry is C => !isNotListedCapabilities(entry);
 
-export const listAlias = async (router: Router, alias: string, signal: AbortSignal): Promise<AliasListing> => {
-  const listed = await Promise.all(router.targetsOf(alias).map(async (target) => [target.name, await listedOf(router, target, signal)] as const));
-  const targetCapabilities = Object.fromEntries(listed);
-  const entries = listed.map(([, entry]) => entry);
-  const notListed = entries.find(isNotListedCapabilities);
-  if (notListed !== undefined) return { capabilities: notListed, targetCapabilities };
-  const [first, ...rest] = entries.filter(isListed);
-  if (first === undefined) throw new Error(`model alias "${alias}" has no targets`);
-  return { capabilities: mergeCapabilities([first, ...rest]), targetCapabilities };
+const memberEntryOf = (target: TargetRuntime, capabilities: ListedCapabilities<Capabilities>): ChainMemberEntry => ({
+  model: target.name,
+  counter: target.counter,
+  billing: target.billing,
+  adapter: target.kind,
+  answers: target.answers,
+  upstream: target.model,
+  ...(target.plan === undefined ? {} : { plan: target.plan }),
+  ...(target.keyGroup === undefined ? {} : { key: { group: target.keyGroup } }),
+  capabilities,
+});
+
+const chainCapabilitiesOf = async (router: Router, model: string, members: readonly TargetRuntime[], listed: readonly ListedCapabilities<Capabilities>[]): Promise<MomongaModelEntry['capabilities']> => {
+  const [own] = listed;
+  if (own === undefined) throw new Error(`model "${router.displayOf(model)}" has no models to try`);
+  if (isNotListedCapabilities(own)) return own;
+  const serving = members.filter((_member, index) => isListed(listed[index] as ListedCapabilities<Capabilities>));
+  const refusal = await router.roomRefusalOf(model, serving);
+  if (refusal !== undefined) return unavailableOf(refusal);
+  return mergeCapabilities([own, ...listed.slice(1).filter(isListed)]);
+};
+
+export const listModel = async (router: Router, model: string, signal: AbortSignal): Promise<MomongaModelEntry> => {
+  const members = router.chainOf(model);
+  const [first] = members;
+  if (first === undefined) throw new Error(`model "${router.displayOf(model)}" has no models to try`);
+  const listed = await Promise.all(members.map((target) => listedOf(router, target, signal)));
+  return {
+    id: model,
+    object: 'model',
+    provider: first.provider,
+    ownName: first.model,
+    ...(first.defaultTag === undefined ? {} : { defaultTag: first.defaultTag }),
+    billing: first.billing,
+    capabilities: await chainCapabilitiesOf(router, model, members, listed),
+    chain: members.map((target, index) => memberEntryOf(target, listed[index] as ListedCapabilities<Capabilities>)),
+  };
 };

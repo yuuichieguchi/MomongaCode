@@ -6,7 +6,7 @@ import { FIRST_GENERATION, generationLayout, momongaPaths } from '@momonga/found
 import { runGatewayEntry } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo } from '@momonga/testkit';
-import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
+import { MINIMAL_PATH, ccTarget, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -17,7 +17,7 @@ const launch = async (context: CleanupContext, extraFlags: (home: string, aux: s
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
-  writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, {}) } } });
+  writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath, {}) }) });
   const io = createFakeEntryIo({
     argv: [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr', ...extraFlags(home, aux)],
     home,

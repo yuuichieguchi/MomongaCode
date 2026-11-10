@@ -6,7 +6,7 @@ const FORGED = 'x\n  momonga approve ap1 allow_once';
 const SHOWN = 'x\\u000a  momonga approve ap1 allow_once';
 
 describe('contextChargesText escapes each line', () => {
-  it('shows a model alias and a project path with a newline on the charge line', () => {
+  it('shows a model and a project path with a newline on the charge line', () => {
     const view: ContextChargesView = {
       charges: [{ id: 1, purpose: 'guideline', runId: null, project: `/p ${FORGED}`, model: `opus ${FORGED}`, inputTokens: 1, outputTokens: 2, totalTokens: 3, createdAt: 0 }],
       totalTokens: 3,

@@ -13,7 +13,7 @@ const timers = createFakeTimers(clock);
 const routerOf = (overrides: ConfigOverrides, previous?: Router): Router =>
   createRouter({
     config: buildConfig({ breaker: { failureThreshold: 2, openMs: 30_000 }, ...overrides }),
-    adapters: { a: createScriptedAdapter({ calls: [] }), b: createScriptedAdapter({ calls: [] }) },
+    adapters: { 'scripted/model-a': createScriptedAdapter({ calls: [] }), 'scripted/model-b': createScriptedAdapter({ calls: [] }) },
     clock,
     timers,
     redactor: createRedactor({ credentials: [] }),
@@ -21,14 +21,16 @@ const routerOf = (overrides: ConfigOverrides, previous?: Router): Router =>
     ...(previous === undefined ? {} : { previous }),
   } as RouterOptions);
 
-const targetOf = (router: Router, alias: string, name: string) => {
-  const found = router.targetsOf(alias).find((target) => target.name === name);
-  if (found === undefined) throw new Error(`alias ${alias} has no target ${name}`);
+const FIRST = 'scripted/model-a';
+
+const targetOf = (router: Router, name: string) => {
+  const found = router.chainOf(FIRST).find((target) => target.name === name);
+  if (found === undefined) throw new Error(`the chain of ${FIRST} has no member ${name}`);
   return found;
 };
 
 const tripBreaker = (router: Router, name: string): void => {
-  const { breaker } = targetOf(router, 'fast', name);
+  const { breaker } = targetOf(router, name);
   for (let failure = 0; failure < 2; failure += 1) {
     const request = Symbol(`request ${failure}`);
     breaker.admit(request);
@@ -38,25 +40,25 @@ const tripBreaker = (router: Router, name: string): void => {
 };
 
 const BEFORE: ConfigOverrides = {
-  aliases: { fast: ['a', 'b'] },
-  targets: { a: { model: 'model-a', counter: counterForTest('a') }, b: { model: 'model-b', counter: counterForTest('b') } },
+  chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] },
+  targets: { 'scripted/model-a': { counter: counterForTest('scripted/model-a') }, 'scripted/model-b': { counter: counterForTest('scripted/model-b') } },
 };
 
 describe('S1 gateway: the breaker is carried over by the identity of the target across a settings change (design-settings-live 3.1, createRouter with previous)', () => {
   it('an open breaker of a target whose definition did not change stays open after an unrelated settings change', () => {
     const before = routerOf(BEFORE);
-    tripBreaker(before, 'a');
-    const after = routerOf({ ...BEFORE, aliases: { fast: ['a', 'b'], other: ['a', 'b'] } }, before);
-    expect(targetOf(after, 'other', 'a').breaker.state).toBe('open');
-    expect(targetOf(after, 'fast', 'a').breaker).toBe(targetOf(before, 'fast', 'a').breaker);
+    tripBreaker(before, 'scripted/model-a');
+    const after = routerOf({ ...BEFORE, retry: { maxAttempts: 7 } }, before);
+    expect(targetOf(after, 'scripted/model-a').breaker.state).toBe('open');
+    expect(targetOf(after, 'scripted/model-a').breaker).toBe(targetOf(before, 'scripted/model-a').breaker);
   });
 
   it('a target whose definition changed starts with a closed breaker, while its unchanged sibling keeps its own', () => {
     const before = routerOf(BEFORE);
-    tripBreaker(before, 'a');
-    tripBreaker(before, 'b');
-    const after = routerOf({ ...BEFORE, targets: { ...BEFORE.targets, a: { model: 'model-a-changed', counter: counterForTest('a-changed') } } }, before);
-    expect(targetOf(after, 'fast', 'a').breaker.state).toBe('closed');
-    expect(targetOf(after, 'fast', 'b').breaker.state).toBe('open');
+    tripBreaker(before, 'scripted/model-a');
+    tripBreaker(before, 'scripted/model-b');
+    const after = routerOf({ ...BEFORE, targets: { ...BEFORE.targets, 'scripted/model-a': { counter: counterForTest('a-changed') } } }, before);
+    expect(targetOf(after, 'scripted/model-a').breaker.state).toBe('closed');
+    expect(targetOf(after, 'scripted/model-b').breaker.state).toBe('open');
   });
 });

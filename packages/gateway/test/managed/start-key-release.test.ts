@@ -104,7 +104,7 @@ const wired = async ({ spawnFails, afterChildStarting }: Wiring) => {
   return { server, managed, binary, started };
 };
 
-const target = { name: 'workbench', model: 'fake-1' };
+const target = { name: 'workbench', display: 'workbench', model: 'fake-1' };
 
 describe('a start that launches no child does not keep its start key for the next start (19.11-a, 19.14 item 16b)', () => {
   it('reads the key again at the next start after a start abandoned because the instance is no longer current', async () => {

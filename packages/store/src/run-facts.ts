@@ -63,7 +63,7 @@ const factsOf = (row: Row, recoveries: RecoveryEpisodeView[], context: DecodeCon
     rootRunId: reader.string('root_run_id'),
     sessionId: reader.string('session_id'),
     definitionsVersion: reader.number('definitions_version'),
-    modelAlias: reader.string('model_alias'),
+    model: reader.string('model'),
     mode: storedOneOf(context, 'run_facts', identity, 'mode', PERMISSION_MODES, reader.string('mode')),
     agent: reader.string('agent'),
     origin: reader.string('origin'),
@@ -116,13 +116,13 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
   );
   const upsertFacts = db.prepare(
     `INSERT OR REPLACE INTO run_facts (
-       run_id, unavailable, definitions_version, root_run_id, session_id, model_alias, mode, agent, origin, status, stop_reason,
+       run_id, unavailable, definitions_version, root_run_id, session_id, model, mode, agent, origin, status, stop_reason,
        created_at, ended_at, elapsed_ms, human_wait_ms, tokens_total, steps, max_steps, max_total_tokens, deadline_at,
        asked, elicited, authorization_required, side_effecting_calls, repeated_starts,
        reconciled_already_applied, reconciled_not_applied, reconciled_unknown,
        basis_read_only, basis_rule, basis_mode, basis_hook, basis_classifier, basis_person, declared, met
      ) VALUES (
-       :runId, 0, :definitionsVersion, :rootRunId, :sessionId, :modelAlias, :mode, :agent, :origin, :status, :stopReason,
+       :runId, 0, :definitionsVersion, :rootRunId, :sessionId, :model, :mode, :agent, :origin, :status, :stopReason,
        :createdAt, :endedAt, :elapsedMs, :humanWaitMs, :tokensTotal, :steps, :maxSteps, :maxTotalTokens, :deadlineAt,
        :asked, :elicited, :authorizationRequired, :sideEffectingCalls, :repeatedStarts,
        :reconciledAlreadyApplied, :reconciledNotApplied, :reconciledUnknown,
@@ -164,7 +164,7 @@ export const createRunFactsStore = (db: DatabaseSync, context: DecodeContext): R
       definitionsVersion: facts.definitionsVersion,
       rootRunId: facts.rootRunId,
       sessionId: facts.sessionId,
-      modelAlias: facts.modelAlias,
+      model: facts.model,
       mode: facts.mode,
       agent: facts.agent,
       origin: facts.origin,

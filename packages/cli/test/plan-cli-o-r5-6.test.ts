@@ -436,7 +436,7 @@ describe('momonga auth status shows the files the gateway could not list (O-R5-6
       accounts: async () => ({ profiles: [CHATGPT], accounts: [account({ label: 'work' })], listProblems: [{ file: 'abc123.json', cause: 'the file mode is 644' }] }),
     } as unknown as PlanGatewayClient;
     const stdout = writer();
-    expect(await authCommands.authStatus({ stdout, plan, models: async () => [] }, { json: false })).toBe(0);
+    expect(await authCommands.authStatus({ stdout, plan, listing: async () => ({ object: 'list', data: [], start: null, roles: {} } as const) }, { json: false })).toBe(0);
     const lines = stdout.text().split('\n');
     expect(lines).toContain(PROBLEM_LINE);
     expect(lines.indexOf(PROBLEM_LINE)).toBeGreaterThan(lines.indexOf(USAGE_LINE));
@@ -448,7 +448,7 @@ describe('momonga auth status shows the files the gateway could not list (O-R5-6
       accounts: async () => ({ profiles: [CHATGPT, other], accounts: [account({ label: 'work' })], listProblems: [{ file: 'abc123.json', cause: 'the file mode is 644' }] }),
     } as unknown as PlanGatewayClient;
     const stdout = writer();
-    expect(await authCommands.authStatus({ stdout, plan, models: async () => [] }, { json: false })).toBe(0);
+    expect(await authCommands.authStatus({ stdout, plan, listing: async () => ({ object: 'list', data: [], start: null, roles: {} } as const) }, { json: false })).toBe(0);
     const lines = stdout.text().split('\n');
     expect(lines.filter((line) => line === PROBLEM_LINE)).toHaveLength(1);
     const usageIndexes = lines.flatMap((line, index) => (line === USAGE_LINE ? [index] : []));

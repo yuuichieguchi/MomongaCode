@@ -78,8 +78,8 @@ describe('T6: traces hold redacted upstream text', () => {
     const fake = await startFake({ scenario: 'tools-ok', routes: [{ match: () => true, reply: { kind: 'error', status: 401, body: ECHO_401 } }] });
     const { clock, memory, telemetry } = memoryTelemetry();
     const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
-    const { client } = await startGateway({ adapters: { primary }, clock, telemetry, credentials: [TEST_API_KEY] });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry, credentials: [TEST_API_KEY] });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('authentication_failed');
     expect(response.body.error.message).toBe(REDACTED_401);
@@ -94,8 +94,8 @@ describe('T6: traces hold redacted upstream text', () => {
   it('records a redacted momonga.adapter_cleanup_error when the iterator return() throws', async () => {
     const { clock, memory, telemetry } = memoryTelemetry();
     const primary = cleanupFailingAdapter(textResponseEvents({ model: 'scripted-primary', chunks: ['done'] }));
-    const { client } = await startGateway({ adapters: { primary }, clock, telemetry, credentials: [TEST_API_KEY] });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry, credentials: [TEST_API_KEY] });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     expect(response.status).toBe(200);
     await telemetry.forceFlush();
     const cleanup = memory
@@ -110,11 +110,11 @@ describe('T6: traces hold redacted upstream text', () => {
 describe('T8: unknown and GatewayError failures cross the guard redacted', () => {
   it('lists a target whose capabilities() throws as unavailable with a redacted message', async () => {
     const broken = capabilityFailingAdapter({ inner: createScriptedAdapter({ calls: [] }), fails: () => new Error(`boom ${TEST_API_KEY}`) });
-    const { client } = await startGateway({ adapters: { primary: broken }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': broken }, credentials: [TEST_API_KEY] });
     const response = await client.request({ method: 'GET', path: '/v1/momonga/models' });
     const body = await response.text();
     expect(response.status).toBe(200);
-    const entry = (JSON.parse(body).data as Array<{ targets: string[]; capabilities: unknown }>).find((candidate) => candidate.targets.includes('primary'));
+    const entry = (JSON.parse(body).data as Array<{ id: string; capabilities: unknown }>).find((candidate) => candidate.id === 'scripted/scripted-primary');
     expect(entry?.capabilities).toEqual({ toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: 'adapter_error', message: `boom ${REDACTED}` }, source: 'unprobed' });
     expectRedacted(body, TEST_API_KEY);
   });
@@ -123,7 +123,7 @@ describe('T8: unknown and GatewayError failures cross the guard redacted', () =>
     const log = captureLog();
     const logger = createJsonLogger({ service: 'gateway', clock: createFakeClock(START_MS), stream: log });
     const { client } = await startGateway({
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       credentials: [TEST_API_KEY],
       onError: (error) => logger.error('unhandled gateway error', { err: error instanceof Error ? error : new Error(String(error)) }),
       costReport: async () => {
@@ -148,8 +148,8 @@ describe('T8: unknown and GatewayError failures cross the guard redacted', () =>
         throw new GatewayError({ status: 400, type: 'invalid_request', code: 'invalid_body', param: 'input[0]', message: `bad body ${TEST_API_KEY}` });
       },
     };
-    const { client } = await startGateway({ adapters: { primary: thrower }, credentials: [TEST_API_KEY] });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': thrower }, credentials: [TEST_API_KEY] });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expect(response.body.error).toEqual({ type: 'invalid_request', code: 'invalid_body', param: 'input[0]', message: `bad body ${REDACTED}` });
   });
@@ -160,7 +160,7 @@ describe('a request-body error quotes nothing of the body', () => {
     { label: 'a short body that is the bare credential', sent: TEST_API_KEY },
     { label: 'a long body with the credential at the failing position', sent: `{"a":1,"padding":"${'p'.repeat(200)}","key":${TEST_API_KEY}}` },
   ])('answers invalid_json with the fixed message for $label', async ({ sent }) => {
-    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
     const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: sent });
     const text = await response.text();
     expect(response.status).toBe(400);
@@ -171,7 +171,7 @@ describe('a request-body error quotes nothing of the body', () => {
   it('answers json_too_deep with the gateway wording and the depth limit only', async () => {
     const depth = MAX_JSON_DEPTH + 1;
     const sent = `{"key":"${TEST_API_KEY}","extra":${'['.repeat(depth - 1)}${']'.repeat(depth - 1)}}`;
-    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
     const response = await client.request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: sent });
     const text = await response.text();
     expect(response.status).toBe(400);
@@ -184,8 +184,8 @@ describe('a request-body error quotes nothing of the body', () => {
 
 describe('a validation error body crosses the redactor at the exit', () => {
   it('redacts a credential that the validator quotes as an unknown item type', async () => {
-    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
-    const response = await postJson(client, '/v1/responses', { model: 'fast', input: [{ type: TEST_API_KEY }] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, credentials: [TEST_API_KEY] });
+    const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: [{ type: TEST_API_KEY }] });
     const text = await response.text();
     expect(response.status).toBe(400);
     expect(JSON.parse(text)).toEqual({ error: { message: `input[0].type has unknown item type "${REDACTED}"`, type: 'invalid_request', param: 'input[0].type', code: 'invalid_body' } });
@@ -201,8 +201,8 @@ describe('T9: a mid-stream error event is redacted', () => {
       { type: 'error', sequence_number: 4, error: { message: `upstream hiccup ${TEST_API_KEY}`, type: 'server_error', code: 'upstream_error', param: null } },
       ...events.slice(4),
     ];
-    const { client } = await startGateway({ adapters: { primary: eventsAdapter(withError) }, credentials: [TEST_API_KEY] });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': eventsAdapter(withError) }, credentials: [TEST_API_KEY] });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     const errorFrame = frames.find((frame) => frame.data.type === 'error');
     expect(errorFrame?.data.error).toEqual({ message: `upstream hiccup ${REDACTED}`, type: 'server_error', code: 'upstream_error', param: null });
     expectRedacted(framesText(frames), TEST_API_KEY);
@@ -231,8 +231,8 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
     { label: 'a code equal to the configured key is scrubbed and the failure carries upstream_error', code: TEST_API_KEY, param: null, expected: { code: 'upstream_error', param: null } },
     { label: 'a param equal to the configured key becomes null', code: 'invalid_body', param: TEST_API_KEY, expected: { code: 'invalid_body', param: null } },
   ])('classify: $label', async ({ code, param, expected }) => {
-    const { client } = await startGateway({ adapters: { primary: failingAdapter(classified(code, param)) }, credentials: [TEST_API_KEY] });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': failingAdapter(classified(code, param)) }, credentials: [TEST_API_KEY] });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expect({ code: response.body.error.code, param: response.body.error.param }).toEqual(expected);
   });
@@ -251,8 +251,8 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
       { type: 'error', sequence_number: 4, error: { message: 'hiccup', type: 'server_error', code, param } },
       ...events.slice(4),
     ];
-    const { client } = await startGateway({ adapters: { primary: eventsAdapter(withError) }, credentials: [TEST_API_KEY] });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': eventsAdapter(withError) }, credentials: [TEST_API_KEY] });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     const errorFrame = frames.find((frame) => frame.data.type === 'error');
     expect({ code: errorFrame?.data.error.code, param: errorFrame?.data.error.param }).toEqual(expected);
   });
@@ -269,11 +269,11 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
       response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code, message: 'failed', type: 'server_error' } },
     } as unknown as StreamEvent;
     const { client } = await startGateway({
-      adapters: { primary: eventsAdapter([...created, failed]) },
+      adapters: { 'scripted/scripted-primary': eventsAdapter([...created, failed]) },
       credentials: [TEST_API_KEY],
       config: { retry: { totalWaitMs: 1 } },
     });
-    const reply = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const reply = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     expect(reply.status).toBe(502);
     expect(reply.body.error.code).toBe('upstream_error');
     expect(JSON.stringify(reply.body)).not.toContain(leaked);
@@ -290,8 +290,8 @@ describe('every failure the gateway forwards carries a code', () => {
         response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code: 'leaky code value', message: 'failed', type: 'server_error' } },
       } as unknown as StreamEvent,
     ];
-    const { client } = await startGateway({ adapters: { primary: eventsAdapter(afterOutput) }, credentials: [TEST_API_KEY] });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': eventsAdapter(afterOutput) }, credentials: [TEST_API_KEY] });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true }));
     expect(frames.at(-1)?.data.type).toBe('response.failed');
     expect(frames.at(-1)?.data.response.error.code).toBe('upstream_error');
   });
@@ -301,8 +301,8 @@ describe('T4: count_tokens on a chat-completions target stays local', () => {
   it('estimates without calling the upstream', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
-    const { client } = await startGateway({ adapters: { primary }, credentials: [TEST_API_KEY] });
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'one two three' }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, credentials: [TEST_API_KEY] });
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/scripted-primary', input: 'one two three' }));
     expect(response.status).toBe(200);
     expect(response.body.method).toBe('estimated');
     expect(fake.requests.filter((request) => request.path === '/v1/chat/completions')).toEqual([]);
@@ -311,13 +311,13 @@ describe('T4: count_tokens on a chat-completions target stays local', () => {
   it('redacts the 401 echo on /v1/responses/compact', async () => {
     const fake = await startFake({ scenario: 'tools-ok', routes: [{ match: () => true, reply: { kind: 'error', status: 401, body: ECHO_401 } }] });
     const primary = makeAdapter(fake, { authSource: keyAuthSource(async () => TEST_API_KEY) });
-    const { client } = await startGateway({ adapters: { primary }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, credentials: [TEST_API_KEY] });
     const response = await client.request({
       method: 'POST',
       path: '/v1/responses/compact',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'fast',
+        model: 'scripted/scripted-primary',
         input: [
           ...userInput('Fix the parser bug'),
           { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{"path":"src/parse.ts"}' },
@@ -340,9 +340,9 @@ describe('guarded health in the gateway', () => {
         throw new Error(`probe failed ${TEST_API_KEY}`);
       },
     };
-    const { client } = await startGateway({ adapters: { primary: sick }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': sick }, credentials: [TEST_API_KEY] });
     const health = await getJson(client, '/v1/momonga/health');
-    expect(health.body.targets.primary).toMatchObject({ ok: false, reason: 'health_check_failed', detail: `probe failed ${REDACTED}` });
+    expect(health.body.models['scripted/scripted-primary']).toMatchObject({ ok: false, reason: 'health_check_failed', detail: `probe failed ${REDACTED}` });
     expectNoCredential(JSON.stringify(health.body), TEST_API_KEY);
   });
 });

@@ -15,11 +15,13 @@ import {
   startFakeAnthropic,
 } from '@momonga/testkit';
 import { START_MS, postJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+const SECOND_SERVER = 'secondary';
 import { QWEN_MODEL, chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const ANTHROPIC_MODEL = 'claude-model-x';
+const FIRST = `scripted/${ANTHROPIC_MODEL}`;
 const THINKING = 'anthropic thinking of turn one';
 const SIGNATURE = 'anthropic-signature-of-turn-one';
 const OLLAMA_THINKING = 'ollama thinking of turn two';
@@ -61,14 +63,14 @@ describe('a fallback away and back on a mixed-adapter alias (item 5, decision 2(
     });
     const secondary = makeOllamaAdapter(ollamaFake);
     const { client } = await startGateway({
-      adapters: { primary, secondary },
+      adapters: { [FIRST]: primary, [`${SECOND_SERVER}/${QWEN_MODEL}`]: secondary },
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: ANTHROPIC_MODEL, kind: 'remote' }, secondary: { model: QWEN_MODEL } },
+        chains: { [FIRST]: [FIRST, `${SECOND_SERVER}/${QWEN_MODEL}`] },
+        targets: { [FIRST]: { kind: 'remote' }, [`${SECOND_SERVER}/${QWEN_MODEL}`]: {} },
         retry: { maxAttempts: 1 },
       },
     });
-    const turn = async (input: unknown[]) => outputOf(await readSse(await postJson(client, '/v1/responses', { model: 'fast', stream: true, input })));
+    const turn = async (input: unknown[]) => outputOf(await readSse(await postJson(client, '/v1/responses', { model: FIRST, stream: true, input })));
 
     const first = await turn(userInput('one'));
     const secondInput = [...userInput('one'), ...first, ...userInput('two')];

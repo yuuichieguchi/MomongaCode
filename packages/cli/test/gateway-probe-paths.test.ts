@@ -64,18 +64,18 @@ describe('gateway probe on a HOME that has never run momonga', () => {
     const fm = await createFakeFm({ dir: freshDir('mm-fm-') });
     fm.configure({ serve: { scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' } });
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
-    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
+    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [{ adapter: 'managed', server: 'fm', binary: fm.binaryPath, models: [{ id: 'system' }] }] } }), { mode: 0o600 });
 
-    const result = await runCli(home, ['gateway', 'probe', 'fm', '--samples', '1']);
+    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
-    expect(result.stdout).toContain('probed fm: model system, context window 8192 (reported)');
+    expect(result.stdout).toContain('probed system: model system, context window 8192 (reported)');
     expect(modeOf(path.join(home, '.momonga'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'run'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'state'))).toBe(0o700);
   });
 
-  it('brings an existing ~/.momonga that holds only the settings to the private tree before probing a chat-completions target', async () => {
+  it('brings an existing ~/.momonga that holds only the settings to the private tree before probing a model of an OpenAI-compatible server', async () => {
     const home = freshDir('mm-home-');
     const upstream: FakeChatCompletionsServer = await startFakeChatCompletions({ scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' });
     cleanups.push(() => upstream.close());
@@ -86,18 +86,16 @@ describe('gateway probe on a HOME that has never run momonga', () => {
       path.join(root, 'settings.json'),
       JSON.stringify({
         models: {
-          targets: {
-            remote: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: upstream.socketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
-          },
+          connections: [{ adapter: 'chat-completions', provider: 'fake', socketPath: upstream.socketPath, models: [{ id: 'system', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
         },
       }),
       { mode: 0o600 },
     );
 
-    const result = await runCli(home, ['gateway', 'probe', 'remote', '--samples', '1']);
+    const result = await runCli(home, ['gateway', 'probe', 'fake/system', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
-    expect(result.stdout).toContain('probed remote: model system');
+    expect(result.stdout).toContain('probed system: model system');
     expect(modeOf(root)).toBe(0o700);
     expect(modeOf(path.join(root, 'run'))).toBe(0o700);
     expect(modeOf(path.join(root, 'state'))).toBe(0o700);

@@ -10,9 +10,12 @@ import type {
   CreateResponseBody,
   ErrorShape,
   ItemField,
+  ModelView,
+  MomongaModelRoles,
   StreamEvent,
 } from '@momonga/protocol';
-import type { GatewayCallOptions, GatewayModel, GatewayPort } from '@momonga/runtime';
+import { gatewayModelIn } from '@momonga/runtime';
+import type { GatewayCallOptions, GatewayListing, GatewayModel, GatewayPort, ListedGatewayModel } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
@@ -39,7 +42,7 @@ export type RecordedCompact = {
 
 export type RecordedCount = { request: CountTokensRequest; signal: AbortSignal | undefined };
 
-export type RecordedCapabilities = { alias: string; signal: AbortSignal | undefined };
+export type RecordedCapabilities = { model: string; signal: AbortSignal | undefined };
 
 export type RecordedCancel = { idempotencyKey: string; signal: AbortSignal | undefined };
 
@@ -95,6 +98,12 @@ const withObservedUsage = (events: readonly StreamEvent[], body: CreateResponseB
 
 export const PRIMARY_TARGET = 'primary';
 
+export const FAKE_PROVIDER = 'fake';
+
+export const FAKE_ADAPTER = 'chat-completions';
+
+export const fakeViewsOf = (models: readonly string[]): ModelView[] => models.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model }));
+
 export const FALLBACK_TARGETS: readonly string[] = ['secondary'];
 
 export const fakeCounterOf = (target: string): string => createHash('sha256').update(`fake counter of ${target}`).digest('hex');
@@ -130,10 +139,17 @@ export type FakeGateway = GatewayPort & {
   generations: Map<string, number>;
   compactSummaries: string[];
   capabilitiesValue: Capabilities;
-  capabilitiesByAlias: Record<string, Capabilities>;
-  targetsByAlias: Record<string, string[]>;
+  capabilitiesByModel: Record<string, Capabilities>;
+  chainsByModel: Record<string, string[]>;
   countersByTarget: Map<string, string>;
   modelCalls: RecordedCapabilities[];
+  listingCalls: number;
+  listed: string[];
+  alsoListed: () => readonly string[];
+  memberFacts: Record<string, { adapter: string; upstream: string; answers: 'model' | 'script' }>;
+  unlisted: Set<string>;
+  start: string | null;
+  roles: MomongaModelRoles;
   counterOf(target: string): string;
   rewriteCallIds: boolean;
   issuedCallIds(scriptId: string): string[];
@@ -186,16 +202,52 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
 
   const withRoute = (event: StreamEvent, body: CreateResponseBody): StreamEvent => {
     if (event.type !== 'response.completed' && event.type !== 'response.incomplete') return event;
-    const routed = event.response.momonga ?? { alias: body.model, target: targetsOf(body.model)[0] ?? PRIMARY_TARGET, attempts: 1, usageSource: 'reported' as const };
+    const routed = event.response.momonga ?? { model: body.model, target: targetsOf(body.model)[0] ?? PRIMARY_TARGET, attempts: 1, usageSource: 'reported' as const };
     const counted = 'counter' in routed ? routed : { ...routed, counter: gateway.counterOf(routed.target) };
     return { ...event, response: { ...event.response, momonga: counted } };
   };
 
-  const targetsOf = (alias: string): string[] => {
-    const named = gateway.targetsByAlias[alias];
+  const targetsOf = (model: string): string[] => {
+    const named = gateway.chainsByModel[model];
     if (named !== undefined) return [...named];
     const known = [PRIMARY_TARGET, ...FALLBACK_TARGETS, ...gateway.capabilitiesByTarget.keys()];
     return known.filter((target, index) => known.indexOf(target) === index);
+  };
+
+  const listedModelOf = (model: string): ListedGatewayModel => {
+    const capabilitiesOfModel = gateway.capabilitiesByModel[model] ?? gateway.capabilitiesValue;
+    return {
+      id: model,
+      canon: model,
+      provider: FAKE_PROVIDER,
+      ownName: model,
+      capabilities: { ...capabilitiesOfModel },
+      chain: targetsOf(model).map((target) => ({
+        model: target,
+        counter: gateway.counterOf(target),
+        ...(gateway.memberFacts[target] ?? { adapter: FAKE_ADAPTER, upstream: target, answers: 'model' as const }),
+        capabilities: { ...(gateway.capabilitiesByTarget.get(target) ?? capabilitiesOfModel) },
+      })),
+    };
+  };
+
+  const listingWith = (asked?: string): GatewayListing => {
+    const named = [
+      ...(asked === undefined ? [] : [asked]),
+      ...gateway.listed,
+      ...gateway.alsoListed(),
+      ...Object.keys(gateway.capabilitiesByModel),
+      ...Object.keys(gateway.chainsByModel),
+      ...Object.values(gateway.roles),
+    ];
+    const ids = named.filter((model, index) => named.indexOf(model) === index && !gateway.unlisted.has(model));
+    const models = ids.map(listedModelOf);
+    return {
+      models,
+      views: fakeViewsOf(ids),
+      start: gateway.start ?? ids[0] ?? null,
+      roles: { ...gateway.roles },
+    };
   };
 
   let generationCount = 0;
@@ -272,10 +324,17 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     generations: new Map(),
     compactSummaries: [],
     capabilitiesValue: capabilities,
-    capabilitiesByAlias: {},
-    targetsByAlias: {},
+    capabilitiesByModel: {},
+    chainsByModel: {},
     countersByTarget: new Map(),
     modelCalls: [],
+    listingCalls: 0,
+    listed: [],
+    alsoListed: () => [],
+    memberFacts: {},
+    unlisted: new Set(),
+    start: null,
+    roles: {},
     counterOf: (target) => gateway.countersByTarget.get(target) ?? fakeCounterOf(target),
     rewriteCallIds: true,
 
@@ -350,25 +409,23 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       return result;
     },
 
-    capabilities: async (alias, options) => {
-      gateway.capabilityRequests.push(alias);
-      gateway.capabilitiesCalls.push({ alias, signal: options?.signal });
-      await gateway.capabilitiesHook?.(alias, options?.signal);
+    capabilities: async (model, options) => {
+      gateway.capabilityRequests.push(model);
+      gateway.capabilitiesCalls.push({ model, signal: options?.signal });
+      await gateway.capabilitiesHook?.(model, options?.signal);
       const target = options?.target;
-      return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
+      const listed = gatewayModelIn(listingWith(model), model);
+      return (target === undefined ? undefined : gateway.capabilitiesByTarget.get(target)) ?? listed.capabilities;
     },
 
-    model: async (alias, options): Promise<GatewayModel> => {
-      gateway.modelCalls.push({ alias, signal: options.signal });
-      const targets = targetsOf(alias);
-      const aliasCapabilities = gateway.capabilitiesByAlias[alias] ?? gateway.capabilitiesValue;
-      return {
-        id: alias,
-        targets,
-        capabilities: aliasCapabilities,
-        targetCapabilities: Object.fromEntries(targets.map((target) => [target, gateway.capabilitiesByTarget.get(target) ?? aliasCapabilities])),
-        targetCounters: Object.fromEntries(targets.map((target) => [target, gateway.counterOf(target)])),
-      };
+    model: async (model, options): Promise<GatewayModel> => {
+      gateway.modelCalls.push({ model, signal: options.signal });
+      return gatewayModelIn(listingWith(model), model);
+    },
+
+    listing: async (): Promise<GatewayListing> => {
+      gateway.listingCalls += 1;
+      return listingWith();
     },
 
     cancel: async (idempotencyKey, options) => {

@@ -21,10 +21,10 @@ const answeredWith = (step: ScriptStep, momonga: MomongaResponseExtension): Scri
   events: step.events.map((event): StreamEvent => (event.type === 'response.completed' ? { ...event, response: { ...event.response, momonga } } : event)),
 });
 
-const byPrimary = (counter: string): MomongaResponseExtension => ({ alias: 'fm', target: PRIMARY_TARGET, counter, attempts: 1, usageSource: 'reported' });
+const byPrimary = (counter: string): MomongaResponseExtension => ({ model: 'fm', target: PRIMARY_TARGET, counter, attempts: 1, usageSource: 'reported' });
 
 const bySecondary = (counter: string): MomongaResponseExtension => ({
-  alias: 'fm',
+  model: 'fm',
   target: SECONDARY,
   counter,
   attempts: 2,
@@ -35,7 +35,7 @@ const bySecondary = (counter: string): MomongaResponseExtension => ({
 
 const sessionWithReports = async (answer: (counter: string) => MomongaResponseExtension, listed: string): Promise<Env> => {
   const env = await makeEnv({ capabilities: exactTarget() });
-  env.gateway.targetsByAlias[env.session.modelAlias] = [PRIMARY_TARGET, SECONDARY];
+  env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET, SECONDARY];
   env.gateway.script.push(answeredWith(textStep('Earlier.'), answer(fakeCounterOf(listed))));
   const earlier = env.enqueue('An earlier task of the session');
   await env.runOnce(env.worker());
@@ -46,7 +46,7 @@ const sessionWithReports = async (answer: (counter: string) => MomongaResponseEx
 const latestResponseIdOf = (env: Env): string => `resp_generation_${[...env.gateway.generations.values()].reduce((sum, count) => sum + count, 0)}`;
 
 const CASES = [
-  ['the alias meter', PRIMARY_TARGET, BEFORE_RESTART_PRIMARY, byPrimary, false],
+  ['the model meter', PRIMARY_TARGET, BEFORE_RESTART_PRIMARY, byPrimary, false],
   ['a fallback meter', SECONDARY, BEFORE_RESTART_SECONDARY, bySecondary, true],
 ] as const;
 

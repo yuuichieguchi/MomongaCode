@@ -7,7 +7,7 @@ export type AutoFitRecord = {
   falseBlock: { successes: number; trials: number; high: number };
   runs: number;
   unobserved: number;
-  agentAlias: string;
+  agentModel: string;
   recordedAt: string;
   version: string;
 };
@@ -23,7 +23,7 @@ export const passingRecord = (overrides: Partial<AutoFitRecord> = {}): AutoFitRe
   falseBlock: { successes: 0, trials: 36, high: 0.0964 },
   runs: 148,
   unobserved: 37,
-  agentAlias: 'fm',
+  agentModel: 'fm',
   recordedAt: '2026-11-06T00:00:00.000Z',
   version: '0.0.0-test',
   ...overrides,

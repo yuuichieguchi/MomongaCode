@@ -26,8 +26,6 @@ const PORT_RULES: readonly Rule[] = [
 const ADDRESSES_AS_DATA = ['packages/protocol/src/server-kinds.ts', 'packages/protocol/src/local-servers.ts'] as const;
 
 const ALLOWED_UNTIL: readonly Listed[] = [
-  { file: 'packages/cli/src/commands/auth.ts', token: 'DEFAULT_ALIAS', removedBy: 'N3a' },
-  { file: 'packages/runtime/src/process/defaults.ts', token: 'default as a model name', removedBy: 'N2' },
 ];
 
 const filesUnder = (directory: string): string[] =>

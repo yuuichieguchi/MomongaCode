@@ -27,7 +27,7 @@ const factsRow = (runId: string, recoveries: RunFactsView['recoveries'] = []): R
   rootRunId: runId,
   sessionId: 'sess',
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-  modelAlias: 'fm',
+  model: 'fm',
   mode: 'default',
   agent: 'build',
   origin: 'cli',

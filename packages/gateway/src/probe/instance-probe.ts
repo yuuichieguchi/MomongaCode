@@ -23,7 +23,7 @@ export type InstanceProbeOptions<Report> = {
 };
 
 export const unreadableKeyNotice = (target: string, component: string, reason: string): string =>
-  `the target "${target}": its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}; it is measured each time its server starts and no probe record is kept`;
+  `the model "${target}": its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}; it is measured each time its server starts and no probe record is kept`;
 
 export const createInstanceProbe = <Report>(options: InstanceProbeOptions<Report>): InstanceProbe<Report> => {
   const stop = new AbortController();

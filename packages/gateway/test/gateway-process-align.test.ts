@@ -11,7 +11,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, create
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -96,7 +96,7 @@ const prepareHome = async (context: CleanupContext) => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
-  writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath) } } });
+  writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath) }) });
   return { home, fake, paths: homePaths(home) };
 };
 
@@ -125,7 +125,7 @@ const heldRequest = async (context: CleanupContext, fake: Awaited<ReturnType<typ
   registerCleanup(context, () => hold.release());
   const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(context, () => client.close());
-  const request = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hold me') }, { 'idempotency-key': 'held-through-grace' }).then(
+  const request = postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hold me') }, { 'idempotency-key': 'held-through-grace' }).then(
     async (response) => response.status,
     () => 'failed' as const,
   );
@@ -160,7 +160,7 @@ describe('startGatewayProcess startup unwind (§4.3)', () => {
   it('ConfigError from settings is rethrown as ConfigError and the lock is released', async (context) => {
     resetControl(context);
     const home = withTempDir(context, { asHome: true });
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
+    writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
     const error = await rejectionOf(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: capture() }));
     expect(error).toBeInstanceOf(ConfigError);
     expect((await inspectProcessLock(homePaths(home).lock)).state).toBe('free');

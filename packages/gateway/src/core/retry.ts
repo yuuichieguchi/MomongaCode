@@ -1,8 +1,8 @@
 import { computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { ClassifiedError, FallbackCause, PlanAccountRef, TargetBilling } from '@momonga/protocol';
-import { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, DEFERRED_HEADER } from '@momonga/protocol';
-import { CandidateRefused, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
+import { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REFUSED, DEFERRED_HEADER, fallbackCauseName } from '@momonga/protocol';
+import { CandidateDropped, CandidateRefused, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
@@ -30,7 +30,7 @@ export const emptyStreamFailure = (): UpstreamFailure =>
   });
 
 export const failureFrom = (adapter: GuardedAdapter, error: unknown, signal: AbortSignal): unknown => {
-  if (error instanceof GatewayError || error instanceof UpstreamFailure || error instanceof CandidateRefused || error instanceof UnprobedTarget) return error;
+  if (error instanceof GatewayError || error instanceof UpstreamFailure || error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) return error;
   if (signal.aborted) return signal.reason;
   return new UpstreamFailure(adapter.classify(error));
 };
@@ -107,6 +107,7 @@ export const plainError = (classified: ClassifiedError): GatewayError =>
 
 const openBreakerCause = (target: TargetRuntime): FallbackCause => ({
   target: target.name,
+  name: target.display,
   code: target.lastFailure?.code ?? null,
   message: target.lastFailure?.message ?? 'its circuit breaker is open',
 });
@@ -118,6 +119,7 @@ const skipsNow = (classified: ClassifiedError): boolean =>
 
 const billingRefusalOf = (target: TargetRuntime, from: TargetBilling): FallbackCause => ({
   target: target.name,
+  name: target.display,
   code: BILLING_CHANGE_REFUSED,
   message: `changing from ${from} to ${target.billing} billing is not allowed (models.billingChanges)`,
   fromBilling: from,
@@ -125,7 +127,7 @@ const billingRefusalOf = (target: TargetRuntime, from: TargetBilling): FallbackC
   reason: BILLING_CHANGE_REFUSED,
 });
 
-const notTriedSentence = (refusal: FallbackCause): string => `Model target "${refusal.target}" was not tried: ${refusal.message}.`;
+const notTriedSentence = (refusal: FallbackCause): string => `Model "${fallbackCauseName(refusal)}" was not tried: ${refusal.message}.`;
 
 const withNotTried = (error: GatewayError, refusals: readonly FallbackCause[]): GatewayError => {
   if (refusals.length === 0) return error;
@@ -156,6 +158,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
   let firstSendAt: number | undefined;
   let lastFailure: LastFailure | undefined;
   const refusals: Refusal[] = [...(request.refusals ?? [])];
+  const dropped: GatewayError[] = [];
   const elapsedMs = (): number => (firstSendAt === undefined ? 0 : policy.clock.now() - firstSendAt);
   let kind = billing.initial;
   let leftCause: number | undefined;
@@ -164,14 +167,16 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     if (target.billing === kind) return;
     const left = leftCause === undefined ? undefined : { at: leftCause, cause: fallbackCauses[leftCause] };
     if (left?.cause !== undefined) {
-      const { target: leftTarget, code, message } = left.cause;
-      fallbackCauses[left.at] = { target: leftTarget, code, message, fromBilling: kind, toBilling: target.billing, reason: BILLING_CHANGE_ALLOWED };
+      const { target: leftTarget, name, code, message } = left.cause;
+      fallbackCauses[left.at] = { target: leftTarget, ...(name === undefined ? {} : { name }), code, message, fromBilling: kind, toBilling: target.billing, reason: BILLING_CHANGE_ALLOWED };
     }
     kind = target.billing;
   };
   const eligible = (target: TargetRuntime): boolean => target.billing === kind || billing.allows(kind, target.billing);
   const exhausted = (from: number): never => {
     const notTried = [...billingRefusals, ...candidates.slice(from).filter((target) => !eligible(target)).map((target) => billingRefusalOf(target, kind))];
+    const [firstDropped] = dropped;
+    if (lastFailure === undefined && firstDropped !== undefined) throw withNotTried(firstDropped, notTried);
     if (lastFailure === undefined && refusals.length > 0) throw withNotTried(refusalErrorOf(refusals), notTried);
     if (lastFailure === undefined) throw new Error('runWithRetry ended without trying any candidate');
     if (lastFailure.kind === 'skip') throw withNotTried(withPlan(lastFailure.error, lastFailure.plan), notTried);
@@ -220,6 +225,13 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           };
         } catch (error) {
           if (error instanceof UnprobedTarget) throw error.error;
+          if (error instanceof CandidateDropped) {
+            dropped.push(error.error);
+            refused = true;
+            attempts -= 1;
+            lastFailure = lastBefore;
+            break;
+          }
           if (error instanceof CandidateRefused) {
             refusals.push(error.refusal);
             refused = true;
@@ -232,7 +244,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           if (error instanceof GatewayError && isSkipCode(error.body.code)) {
             verdict = 'neutral';
             target.lastFailure = { code: error.body.code, message: error.message };
-            causeHere = { target: target.name, ...target.lastFailure };
+            causeHere = { target: target.name, name: target.display, ...target.lastFailure };
             lastFailure = { kind: 'skip', error, plan };
             break;
           }
@@ -240,7 +252,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           if (!(error instanceof UpstreamFailure)) throw error;
           const { classified } = error;
           target.lastFailure = { code: classified.error.code, message: classified.error.message };
-          causeHere = { target: target.name, ...target.lastFailure };
+          causeHere = { target: target.name, name: target.display, ...target.lastFailure };
           if (skipsNow(classified)) {
             verdict = classified.verdict ?? 'neutral';
             lastFailure = { kind: 'skip', error: plainError(classified), plan };
@@ -261,7 +273,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           if (decision.kind === 'leave') exhausted(index + 1);
           const waitMs = decision.kind === 'wait' ? decision.ms : 0;
           if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
-            throw deadlineExceededError(`the next retry of target "${target.name}" would start after the request deadline`);
+            throw deadlineExceededError(`the next retry of model "${target.display}" would start after the request deadline`);
           }
           await sleep(policy.timers, waitMs, signal);
         }

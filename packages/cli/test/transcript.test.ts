@@ -158,7 +158,7 @@ describe('hooks, auto mode and denials', () => {
   });
 
   it('appends a notice for the classifier verdict under the title of the call', () => {
-    const state = apply([call, { type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high' }]);
+    const state = apply([call, { type: 'tool.permission.classified', callId: 'c1', model: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high' }]);
     expect(state.entries[1]).toEqual({ kind: 'notice', level: 'info', text: 'auto mode allowed Read /a; classifier guard judged Read /a safe with high confidence' });
   });
 });

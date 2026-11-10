@@ -15,7 +15,7 @@ import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 
 const declaring = (...names: string[]): CredentialSettings =>
   ({
-    models: { targets: Object.fromEntries(names.map((name, index) => [`t${index}`, { adapter: 'chat-completions', provider: 'fake', apiKeyEnv: name }])) },
+    models: { connections: names.map((name, index) => ({ adapter: 'chat-completions', provider: `t${index}`, apiKeyEnv: name })) },
   }) as unknown as CredentialSettings;
 
 const TOKEN_LIKE = 'sk-' + 'placeholder-value';
@@ -99,7 +99,7 @@ describe('gatewayEnv', () => {
 
 const referencingSecret = (): CredentialSettings =>
   ({
-    models: { targets: { claude: { adapter: 'anthropic', model: 'm', apiKeySecret: 'anthropic-main' } } },
+    models: { connections: [{ adapter: 'anthropic', provider: 'anthropic', apiKeySecret: 'anthropic-main' }] },
   }) as unknown as CredentialSettings;
 
 const binWith = (...programs: string[]): string => {

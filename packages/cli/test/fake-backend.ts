@@ -1,6 +1,6 @@
 import { applyCapabilityOverride } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
+import { SCRIPTED_MODEL, SCRIPTED_PROVIDER, createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { Capabilities, CapabilityOverride, MomongaModelEntry, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
@@ -10,7 +10,7 @@ export const SESSION: SessionView = {
   id: 'session-1',
   cwd: '/work/project',
   permissionMode: 'default',
-  modelAlias: 'default',
+  model: SCRIPTED_MODEL,
   bypassAllowed: false,
   createdAt: 1,
   envKeys: [],
@@ -72,6 +72,16 @@ export type FakeBackendOptions = {
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
 };
+
+export const listedEntryOf = (id: string, capabilities: MomongaModelEntry['chain'][number]['capabilities'], members: readonly string[]): MomongaModelEntry => ({
+  id,
+  object: 'model',
+  provider: SCRIPTED_PROVIDER,
+  ownName: id.startsWith(`${SCRIPTED_PROVIDER}/`) ? id.slice(SCRIPTED_PROVIDER.length + 1) : id,
+  billing: 'local',
+  capabilities,
+  chain: members.map((member) => ({ model: member, counter: `counter of ${member}`, billing: 'local', adapter: 'chat-completions', answers: 'model', upstream: member, capabilities })),
+});
 
 export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
   applyCapabilityOverride(
@@ -172,17 +182,10 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     },
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
     models: async () =>
-      (options.aliases ?? [session.modelAlias]).map((id) => ({
-        id,
-        object: 'model',
-        targets: [...(options.targets ?? ['primary'])],
-        capabilities: aliasCapabilities(id),
-        targetCapabilities: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, aliasCapabilities(id)])),
-        targetCounters: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, `counter of ${target}`])),
-      })),
-    setModel: async (modelAlias: string) => {
-      record(`model:${modelAlias}`);
-      session = { ...session, modelAlias };
+      (options.aliases ?? [session.model]).map((id) => listedEntryOf(id, aliasCapabilities(id), options.targets ?? ['primary'])),
+    setModel: async (model: string) => {
+      record(`model:${model}`);
+      session = { ...session, model };
       return session;
     },
     setMode: async (mode: PermissionMode) => {
@@ -267,16 +270,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
-      const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.modelAlias] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.modelAlias) };
-      const targets = [...(options.targets ?? ['primary'])];
-      return {
-        id: session.modelAlias,
-        object: 'model',
-        targets,
-        capabilities,
-        targetCapabilities: Object.fromEntries(targets.map((target) => [target, capabilities])),
-        targetCounters: Object.fromEntries(targets.map((target) => [target, `counter of ${target}`])),
-      };
+      const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.model] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.model) };
+      return listedEntryOf(session.model, capabilities, options.targets ?? ['primary']);
     },
     startupNotices: async () => [...(options.startupNotices ?? []), ...(options.skillWarnings ?? [])],
     readImage: async (file) => {
@@ -291,7 +286,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     plan: NO_PLAN,
     health: async () => ({
       ok: true,
-      targets: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, { ok: true, breaker: 'closed' as const }])),
+      models: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, { ok: true, breaker: 'closed' as const }])),
       version: '0.0.0',
       apiVersion: 1,
       pid: 1,

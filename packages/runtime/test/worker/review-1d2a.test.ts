@@ -156,7 +156,7 @@ describe('WW4: runOnce honours stop', () => {
     const worker = env.worker('worker-1', { idlePollMs: 10 });
     worker.start();
     await within(blocked.gate.reached.promise, 5_000, 'the first stream to start');
-    const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: 'fm' });
+    const otherSession = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', model: 'fm' });
     const second = createdRun(env.store.createRunAndEnqueue(otherSession.id, { input: 'Second', timeoutMs: 3_600_000, limits: {}, pins: {} }));
 
     const stopping = worker.stop();
@@ -298,7 +298,7 @@ describe('WW1: sweep after each claim', () => {
     expect((await env.cancelToEnd(failed.id)).status).toBe('CANCELLED');
 
     const enqueueElsewhere = (input: string) => {
-      const session = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: 'fm' });
+      const session = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', model: 'fm' });
       return createdRun(env.store.createRunAndEnqueue(session.id, { input, timeoutMs: 3_600_000, limits: {}, pins: {} }));
     };
     const busy = enqueueElsewhere('Busy');

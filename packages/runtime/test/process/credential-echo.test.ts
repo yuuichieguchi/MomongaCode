@@ -30,8 +30,7 @@ const FINISH_REASON_ECHO: FakeScriptedReply = {
 };
 
 const keyedModels = (fakeSocketPath: string): Record<string, unknown> => {
-  const base = modelSettings(fakeSocketPath) as { models: { aliases: unknown; targets: { primary: Record<string, unknown> } } };
-  return { models: { ...base.models, targets: { primary: { ...base.models.targets.primary, apiKeyEnv: TEST_API_KEY_ENV } } } };
+  return modelSettings(fakeSocketPath, undefined, { apiKeyEnv: TEST_API_KEY_ENV });
 };
 
 const journalOf = (temp: RunHome, runId: string): string =>

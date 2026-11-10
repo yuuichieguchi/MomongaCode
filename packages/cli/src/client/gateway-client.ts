@@ -1,11 +1,12 @@
 import { createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
-import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_BILLINGS, TARGET_HEALTH_REASONS, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf } from '@momonga/protocol';
+import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf } from '@momonga/protocol';
 import type {
   Capabilities,
   GatewayHealth,
   MomongaModelEntry,
   MomongaModelList,
+  ModelViews,
   PlanAccountView,
   PlanAccountsResponse,
   PlanActiveRequest,
@@ -69,10 +70,11 @@ export type PlanGatewayClient = {
 };
 
 export type GatewayClient = {
+  modelList(signal?: AbortSignal): Promise<MomongaModelList>;
   models(signal?: AbortSignal): Promise<readonly MomongaModelEntry[]>;
-  modelOf(alias: string): Promise<MomongaModelEntry>;
-  capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
-  contextWindowOf(alias: string): Promise<number>;
+  modelOf(model: string): Promise<MomongaModelEntry>;
+  capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
+  contextWindowOf(model: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   health(): Promise<GatewayHealth>;
   readonly plan: PlanGatewayClient;
@@ -115,20 +117,40 @@ const isTargetPlan = (value: unknown): boolean => isRecord(value) && isString(va
 
 const isListedCapabilities = (value: unknown): boolean => isCapabilities(value) || isNotListedListing(value);
 
+const isBilling = (value: unknown): boolean => oneOf(value, TARGET_BILLINGS);
+
+const isChainMember = (value: unknown): boolean =>
+  isRecord(value) &&
+  isString(value['model']) &&
+  isString(value['counter']) &&
+  isBilling(value['billing']) &&
+  isString(value['adapter']) &&
+  oneOf(value['answers'], TARGET_ANSWERS) &&
+  isString(value['upstream']) &&
+  isOptional(value['plan'], isTargetPlan) &&
+  isOptional(value['key'], (key) => isRecord(key) && isString(key['group'])) &&
+  isListedCapabilities(value['capabilities']);
+
+const isModelEntry = (entry: unknown): boolean =>
+  isRecord(entry) &&
+  isString(entry['id']) &&
+  isString(entry['provider']) &&
+  isString(entry['ownName']) &&
+  isOptional(entry['defaultTag'], isString) &&
+  isBilling(entry['billing']) &&
+  isListedCapabilities(entry['capabilities']) &&
+  Array.isArray(entry['chain']) &&
+  entry['chain'].every(isChainMember);
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
-  value['data'].every(
-    (entry) =>
-      isRecord(entry) &&
-      typeof entry['id'] === 'string' &&
-      Array.isArray(entry['targets']) &&
-      entry['targets'].every((target) => typeof target === 'string') &&
-      isListedCapabilities(entry['capabilities']) &&
-      isRecordOf(entry['targetCapabilities'], isListedCapabilities) &&
-      isOptional(entry['targetBilling'], (billing) => isRecordOf(billing, (kind) => oneOf(kind, TARGET_BILLINGS))) &&
-      isOptional(entry['targetPlan'], (plans) => isRecordOf(plans, isTargetPlan)),
-  );
+  value['data'].every(isModelEntry) &&
+  (value['start'] === null || isString(value['start'])) &&
+  isRecordOf(value['roles'], isString);
+
+export const listingViewsOf = (entries: readonly MomongaModelEntry[]): ModelViews =>
+  entries.map((entry) => ({ canon: entry.id, provider: entry.provider, ownName: entry.ownName, ...(entry.defaultTag === undefined ? {} : { defaultTag: entry.defaultTag }) }));
 
 const isTargetHealth = (value: unknown): value is TargetHealth =>
   isRecord(value) &&
@@ -141,7 +163,7 @@ const isTargetHealth = (value: unknown): value is TargetHealth =>
 const isGatewayHealth = (value: unknown): value is GatewayHealth =>
   isRecord(value) &&
   typeof value['ok'] === 'boolean' &&
-  isRecordOf(value['targets'], isTargetHealth) &&
+  isRecordOf(value['models'], isTargetHealth) &&
   isString(value['version']) &&
   value['apiVersion'] === 1 &&
   typeof value['pid'] === 'number' &&
@@ -199,7 +221,7 @@ const isCatalogEntry = (value: unknown): value is PlanCatalogEntry =>
 
 const isModelsResponse = (value: unknown): value is PlanModelsResponse => isRecord(value) && isString(value['readAt']) && Array.isArray(value['models']) && value['models'].every(isCatalogEntry);
 
-const isTargetResponse = (value: unknown): value is PlanTargetResponse => isRecord(value) && isString(value['target']) && isString(value['alias']);
+const isTargetResponse = (value: unknown): value is PlanTargetResponse => isRecord(value) && isString(value['model']);
 
 const isResumeResponse = (value: unknown): value is PlanResumeResponse => isRecord(value) && typeof value['resumed'] === 'boolean';
 
@@ -261,22 +283,25 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const health = (): Promise<GatewayHealth> => checked('GET', '/v1/momonga/health', undefined, isGatewayHealth, 'a gateway health report');
 
-  const models = async (signal?: AbortSignal): Promise<readonly MomongaModelEntry[]> => {
+  const modelList = async (signal?: AbortSignal): Promise<MomongaModelList> => {
     const body = await getJson('/v1/momonga/models', signal);
     if (!isModelList(body)) throw new Error(`GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify(body)}`);
-    return body.data;
+    return body;
   };
 
-  const modelOf = async (alias: string): Promise<MomongaModelEntry> => {
-    const entry = (await models()).find((candidate) => candidate.id === alias);
-    if (entry === undefined) throw new Error(`the gateway does not list the model alias ${alias}`);
+  const models = async (signal?: AbortSignal): Promise<readonly MomongaModelEntry[]> => (await modelList(signal)).data;
+
+  const modelOf = async (model: string): Promise<MomongaModelEntry> => {
+    const entries = await models();
+    const entry = entries.find((candidate) => candidate.id === model);
+    if (entry === undefined) throw new Error(`the gateway does not list the model ${displayMapOf(listingViewsOf(entries)).get(model) ?? model}`);
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<MomongaModelEntry['capabilities']> => (await modelOf(alias)).capabilities;
+  const capabilitiesOf = async (model: string): Promise<MomongaModelEntry['capabilities']> => (await modelOf(model)).capabilities;
 
-  const contextWindowOf = async (alias: string): Promise<number> => {
-    const capabilities = await capabilitiesOf(alias);
+  const contextWindowOf = async (model: string): Promise<number> => {
+    const capabilities = await capabilitiesOf(model);
     if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
     return capabilities.contextWindow;
   };
@@ -288,5 +313,5 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return body;
   };
 
-  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, health, plan, close: () => http.close() };
+  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, health, plan, close: () => http.close() };
 };
