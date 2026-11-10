@@ -29,6 +29,7 @@ describe('the fields the edit flows offer (4.9.2)', () => {
       Billing: 'choice',
       'API version': 'choice',
       'Who answers': 'choice',
+      'Idempotency key header': 'text',
       'Concurrent requests': 'number',
       'Wait for a free slot': 'number',
     });
@@ -86,17 +87,17 @@ describe('the fields the edit flows offer (4.9.2)', () => {
   });
 
   it('a field the kind of the server does not allow is not offered', () => {
-    expect(labelsOf(serverFieldRows(CONNECTIONS.ollama))).toEqual(['API', 'Address', 'Socket', 'Billing', 'Who answers', 'Concurrent requests', 'Wait for a free slot']);
+    expect(labelsOf(serverFieldRows(CONNECTIONS.ollama))).toEqual(['API', 'Address', 'Socket', 'Billing', 'Who answers', 'Idempotency key header', 'Concurrent requests', 'Wait for a free slot']);
     expect(labelsOf(modelFieldRows(CONNECTIONS.ollama))).not.toContain('Output limit field');
     expect(labelsOf(modelFieldRows(CONNECTIONS.ollama))).not.toContain('Tool calling');
     expect(labelsOf(serverFieldRows(CONNECTIONS.chat))).not.toContain('API version');
     expect(labelsOf(serverFieldRows(CONNECTIONS.plan))).not.toContain('API');
-    expect(labelsOf(serverFieldRows(CONNECTIONS.managed))).toEqual(['Server program', 'Program file', 'Start wait', 'Billing', 'Who answers', 'Concurrent requests', 'Wait for a free slot']);
+    expect(labelsOf(serverFieldRows(CONNECTIONS.managed))).toEqual(['Server program', 'Program file', 'Start wait', 'Billing', 'Who answers', 'Idempotency key header', 'Concurrent requests', 'Wait for a free slot']);
     expect(labelsOf(modelFieldRows(CONNECTIONS.managed))).toEqual(['Concurrent requests', 'Wait for a free slot', 'Tool calling', 'Context window', 'Output limit', 'Output limit field']);
   });
 
   it('the labels are the label column of the table, in its order', () => {
-    expect(labelsOf(serverFieldRows(CONNECTIONS.responses))).toEqual(['API', 'Address', 'Socket', 'Key', 'Billing', 'Who answers', 'Concurrent requests', 'Wait for a free slot']);
+    expect(labelsOf(serverFieldRows(CONNECTIONS.responses))).toEqual(['API', 'Address', 'Socket', 'Key', 'Billing', 'Who answers', 'Idempotency key header', 'Concurrent requests', 'Wait for a free slot']);
     expect(labelsOf(modelFieldRows(CONNECTIONS.responses))).toEqual([
       'Concurrent requests',
       'Wait for a free slot',

@@ -23,7 +23,7 @@
 (*       same key and digest joins the call in flight or replays the       *)
 (*       stored answer without the upstream (Send on an "inflight" or      *)
 (*       "done" entry); the ttl of 7 days is not modelled                  *)
-(*   packages/gateway/src/core/store.ts:235  a completed answer is stored  *)
+(*   packages/gateway/src/core/store.ts:264  a completed answer is stored  *)
 (*       under its key (Finish)                                            *)
 (*   t2-t5-design.md M4, "A report of another counter within a claim": the *)
 (*       runtime rejects a complete answer whose counter differs from the  *)

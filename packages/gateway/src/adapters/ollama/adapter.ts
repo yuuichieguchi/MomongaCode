@@ -16,6 +16,7 @@ import { OLLAMA_TOOL_CHOICE, buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
 import { OLLAMA_VOCABULARY, ollamaErrorText } from './vocabulary.ts';
+import { idempotencyHeaderOf } from '../shared/idempotency-header.ts';
 
 const OLLAMA_LABEL = 'ollama';
 const OLLAMA_CHAT_PATH = '/api/chat';
@@ -47,7 +48,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
-        headers: { 'content-type': 'application/json', accept: 'application/x-ndjson' },
+        headers: { ...idempotencyHeaderOf(ctx), 'content-type': 'application/json', accept: 'application/x-ndjson' },
         body: JSON.stringify(body),
         signal,
         ...watchedPostOf(options.liveness),

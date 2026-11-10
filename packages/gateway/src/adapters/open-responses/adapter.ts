@@ -24,6 +24,7 @@ import { parseOpenResponsesEvent } from './events.ts';
 import { buildResponsesBody, carriesResponsesOutputBound } from './request.ts';
 import { OpenResponsesStreamDriver } from './stream-driver.ts';
 import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.ts';
+import { idempotencyHeaderOf } from '../shared/idempotency-header.ts';
 
 const OPEN_RESPONSES_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
 
@@ -71,6 +72,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       const response = await sendAuthorized(auth, signal, (bearer) =>
         pool.clientFor(endpoint).post({
           headers: {
+            ...idempotencyHeaderOf(ctx),
             'content-type': 'application/json',
             accept: 'text/event-stream',
             ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),

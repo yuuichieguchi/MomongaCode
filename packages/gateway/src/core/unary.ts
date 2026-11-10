@@ -290,6 +290,7 @@ const compactOnce = async (
       runId: trace.runId,
       step: undefined,
       attempt: attemptNumber,
+      retryOf: undefined,
       targetName: target.name,
       role: COMPACTION_ROLE,
       startedAtMs: services.clock.now(),

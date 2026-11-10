@@ -40,6 +40,7 @@ describe('protocol capability types', () => {
         };
         parallelToolCalls?: boolean;
         allowedTools?: readonly ('native' | 'envelope' | 'single_tool' | 'filter')[];
+        idempotencyKey?: { header: string };
         schemaDialect: DialectId;
         tokenCounting: 'exact' | 'calibrated' | 'estimated';
         tokenErrorRatio?: number;

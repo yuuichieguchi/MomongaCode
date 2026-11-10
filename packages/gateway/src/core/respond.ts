@@ -42,6 +42,8 @@ import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
 import type { UnknownFields } from './unknown-fields.ts';
+import { upstreamCallKey } from './upstream-call-key.ts';
+import type { CallIdentity } from './upstream-call-key.ts';
 
 export type ResponseJob = {
   model: string;
@@ -63,6 +65,7 @@ type Opened = {
   release: Release;
   span: AttemptSpan;
   capabilities: Capabilities;
+  retryOfSeq: number | undefined;
 };
 
 type Pulled = { kind: 'event'; event: StreamEvent } | { kind: 'failed'; error: unknown };
@@ -157,9 +160,10 @@ const openAttempt = async (
   narrowed: Narrowed,
   attemptNumber: number,
   signal: AbortSignal,
+  call: CallIdentity,
 ): Promise<Opened> => {
   const release = await target.gate.acquire(signal);
-  const startSpan = (): AttemptSpan =>
+  const startSpan = (retryOf?: number): AttemptSpan =>
     startAttemptSpan({
       telemetry: services.telemetry,
       parent: job.parent,
@@ -171,14 +175,18 @@ const openAttempt = async (
       runId: job.runId,
       step: job.step,
       attempt: attemptNumber,
+      retryOf,
       targetName: target.name,
       role: job.role,
       startedAtMs: services.clock.now(),
       request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
     });
+  const callKey = upstreamCallKey(call, target.name);
   let capabilities: Capabilities;
+  let retryOfSeq: number | undefined;
   try {
     capabilities = await narrowed.capabilitiesOf(target);
+    retryOfSeq = services.store.recordSend({ callKey, target: target.name, runId: job.runId ?? null, step: job.step ?? null, sentAtMs: services.clock.now() }).retryOfSeq;
   } catch (error) {
     release();
     if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
@@ -187,9 +195,9 @@ const openAttempt = async (
     failed.fail(errorTypeOf(failure), failure, messageOf(failure));
     throw failure;
   }
-  const span = startSpan();
+  const span = startSpan(retryOfSeq);
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber, callKey));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
@@ -201,7 +209,7 @@ const openAttempt = async (
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
     span.committed();
-    return { iterator, held, release, span, capabilities };
+    return { iterator, held, release, span, capabilities, retryOfSeq };
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
@@ -552,6 +560,7 @@ async function* relaySteps(
             inputTokens: usage.input_tokens,
             outputTokens: usage.output_tokens,
             usageSource,
+            retryOfSeq: opened.retryOfSeq ?? null,
           },
         }),
   };
@@ -600,6 +609,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
     unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
   });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
+  const call: CallIdentity = job.idempotency === undefined ? { kind: 'unkeyed', nonce: uuidv7(services.clock) } : { kind: 'keyed', ...job.idempotency };
   try {
     const outcome = await runWithRetry({
       candidates: narrowed.targets,
@@ -608,7 +618,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,
-      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed, attemptNumber, signal),
+      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed, attemptNumber, signal, call),
     });
     yield* relay(services, job, resolved, outcome, control);
   } finally {

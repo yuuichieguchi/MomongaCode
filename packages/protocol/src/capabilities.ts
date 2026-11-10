@@ -191,6 +191,10 @@ export const JSON_MODES = ['json_object', 'none'] as const;
 
 export type JsonMode = (typeof JSON_MODES)[number];
 
+export type IdempotencyKeyCapability = { header: string };
+
+export const IDEMPOTENCY_KEY_HEADER_PATTERN = "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$";
+
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
   sampling?: SamplingCapability;
@@ -208,6 +212,7 @@ export type CapabilitiesCore = {
   inputKinds?: InputKinds;
   parallelToolCalls?: boolean;
   allowedTools?: readonly AllowedToolsForm[];
+  idempotencyKey?: IdempotencyKeyCapability;
   schemaDialect: DialectId;
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;

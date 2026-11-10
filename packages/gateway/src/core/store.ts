@@ -49,6 +49,22 @@ const MIGRATIONS: readonly Migration[] = [
       ) STRICT;
     `,
   },
+  {
+    version: 3,
+    name: 'gateway-sends',
+    sql: `
+      CREATE TABLE sends (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        call_key TEXT NOT NULL,
+        target TEXT NOT NULL,
+        run_id TEXT,
+        step INTEGER,
+        sent_at_ms INTEGER NOT NULL
+      ) STRICT;
+      CREATE INDEX sends_by_call ON sends (call_key, seq);
+      ALTER TABLE usage ADD COLUMN retry_of_seq INTEGER;
+    `,
+  },
 ];
 
 export type StoredResponse = { input: InputItem[]; output: ItemField[] };
@@ -63,7 +79,12 @@ export type UsageRecord = {
   inputTokens: number;
   outputTokens: number;
   usageSource: UsageSource;
+  retryOfSeq: number | null;
 };
+
+export type SendRecord = { callKey: string; target: string; runId: string | null; step: number | null; sentAtMs: number };
+
+export type RecordedSend = { seq: number; retryOfSeq: number | undefined };
 
 export type StoredCompaction = { digest: string; expiresAtMs: number; resource: CompactResource };
 
@@ -82,6 +103,7 @@ export type GatewayStore = {
   getIdempotency(key: string): StoredIdempotency | undefined;
   deleteIdempotency(key: string): void;
   commit(request: CommitRequest): void;
+  recordSend(send: SendRecord): RecordedSend;
   getCompaction(key: string): StoredCompaction | undefined;
   deleteCompaction(key: string): void;
   commitCompaction(commit: CompactionCommit): void;
@@ -139,6 +161,9 @@ type Statements = {
   deleteCompaction: StatementSync;
   pruneCompactions: StatementSync;
   putUsage: StatementSync;
+  firstSend: StatementSync;
+  putSend: StatementSync;
+  pruneSends: StatementSync;
   usageForRun: StatementSync;
 };
 
@@ -156,10 +181,13 @@ const prepare = (db: DatabaseSync): Statements => ({
   deleteCompaction: db.prepare('DELETE FROM compactions WHERE key = ?'),
   pruneCompactions: db.prepare('DELETE FROM compactions WHERE expires_at <= ?'),
   putUsage: db.prepare(
-    'INSERT INTO usage (response_id, run_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, recorded_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO usage (response_id, run_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, recorded_at_ms, retry_of_seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
   ),
+  firstSend: db.prepare('SELECT MIN(seq) AS seq FROM sends WHERE call_key = ?'),
+  putSend: db.prepare('INSERT INTO sends (call_key, target, run_id, step, sent_at_ms) VALUES (?, ?, ?, ?, ?)'),
+  pruneSends: db.prepare('DELETE FROM sends WHERE sent_at_ms <= ?'),
   usageForRun: db.prepare(
-    'SELECT response_id, step, target, input_tokens, output_tokens, total_tokens, usage_source FROM usage WHERE run_id = ? ORDER BY seq',
+    'SELECT response_id, step, target, input_tokens, output_tokens, total_tokens, usage_source, retry_of_seq FROM usage WHERE run_id = ? ORDER BY seq',
   ),
 });
 
@@ -226,6 +254,7 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
       commit: (request) => {
         immediateTx(db, () => {
           statements.pruneIdempotency.run(request.idempotencyExpiredBeforeMs);
+          statements.pruneSends.run(request.idempotencyExpiredBeforeMs);
           if (request.response !== undefined) {
             const { id, input, output } = request.response;
             statements.putResponse.run(id, JSON.stringify(input), JSON.stringify(output), request.recordedAtMs);
@@ -246,13 +275,21 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
               usage.inputTokens + usage.outputTokens,
               usage.usageSource,
               request.recordedAtMs,
+              usage.retryOfSeq,
             );
           }
         });
       },
+      recordSend: (send) =>
+        immediateTx(db, () => {
+          const first = statements.firstSend.get(send.callKey)?.['seq'];
+          const inserted = statements.putSend.run(send.callKey, send.target, send.runId, send.step, send.sentAtMs);
+          return { seq: Number(inserted.lastInsertRowid), retryOfSeq: first === null || first === undefined ? undefined : requireNumber(first, 'seq') };
+        }),
       usageReport: (runId) => {
         const responses = statements.usageForRun.all(runId).map((row) => {
           const step = row['step'];
+          const retryOfSeq = row['retry_of_seq'];
           return {
             response_id: requireString(row['response_id'], 'response_id'),
             step: step === null ? null : requireNumber(step, 'step'),
@@ -261,6 +298,7 @@ export const openGatewayStore = (dbPath: string, checks: StoredDataChecks): Gate
             output_tokens: requireNumber(row['output_tokens'], 'output_tokens'),
             total_tokens: requireNumber(row['total_tokens'], 'total_tokens'),
             usage_source: requireUsageSource(row['usage_source']),
+            ...(retryOfSeq === null ? {} : { retry_of_seq: requireNumber(retryOfSeq, 'retry_of_seq') }),
           };
         });
         const byStep = new Map<number, { input_tokens: number; output_tokens: number; total_tokens: number }>();

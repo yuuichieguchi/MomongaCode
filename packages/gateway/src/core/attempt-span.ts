@@ -25,6 +25,7 @@ export type AttemptSpanInput = {
   runId: string | undefined;
   step: number | undefined;
   attempt: number;
+  retryOf: number | undefined;
   targetName: string;
   role: string;
   startedAtMs: number;
@@ -58,6 +59,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       requestModel: input.requestModel,
       stream: input.stream,
       attempt: input.attempt,
+      ...(input.retryOf === undefined ? {} : { retryOf: input.retryOf }),
       target: input.targetName,
       role: input.role,
       ...(input.maxTokens === undefined ? {} : { maxTokens: input.maxTokens }),
