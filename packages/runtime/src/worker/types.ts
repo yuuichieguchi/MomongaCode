@@ -14,7 +14,7 @@ export type WorkerDefaults = {
 
 export type WorkerBlobs = {
   handleFor(content: string): string;
-  put(data: string, options: { mediaType: string; runId?: string }): { handle: string };
+  put(data: string, options: { mediaType: string; runId?: string }): Promise<{ handle: string }>;
   read(handle: string, range: { offset: number; length: number }, scope: { runId: string }): Promise<{ text: string; totalBytes: number }>;
 };
 

@@ -1,4 +1,4 @@
-import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, parseBoundedJson, sha256Hex } from '@momonga/foundation';
 import {
   LOOP_GROUPS_KEPT,
   STOP_HOOK_FEEDBACK_PREFIX,
@@ -105,7 +105,7 @@ const closedGroup = (open: NonNullable<RunState['loopOpen']>): RunState['loopGro
 const withLoopItem = (state: RunState, item: InputItem): RunState => {
   const open = state.loopOpen;
   if (item.type === 'function_call') {
-    const call: [string, unknown] = [item.name, parseJsonOrText(item.arguments)];
+    const parsed = parseBoundedJson(item.arguments), call: [string, unknown] = [item.name, parsed.kind === 'value' ? parsed.value : parsed.text];
     if (open !== undefined && Object.keys(open.outputs).length === 0) {
       return { ...state, loopOpen: { calls: [...open.calls, call], callIds: [...open.callIds, item.call_id], outputs: open.outputs } };
     }

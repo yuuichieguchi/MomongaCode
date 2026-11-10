@@ -6,7 +6,7 @@ const recordingBlobs = () => {
   const puts: Array<{ runId?: string }> = [];
   const reads: Array<{ runId: string } | undefined> = [];
   const port = {
-    put: (_data: string, options: { runId?: string }) => {
+    put: async (_data: string, options: { runId?: string }) => {
       puts.push(options);
       return { handle: 'ab'.repeat(32), sha256: 'ab'.repeat(32), byteLength: 1, lineCount: 1 };
     },
@@ -24,7 +24,7 @@ describe('blobs handed to a tool', () => {
     const harness = makeHarness({ outputLimitChars: 200, executor: { blobs: port } });
     const tool = makeTool('Scoped', {
       execute: async (_input, ctx) => {
-        ctx.blobs.put('data', { mediaType: 'text/plain' });
+        await ctx.blobs.put('data', { mediaType: 'text/plain' });
         await ctx.blobs.read('ab'.repeat(32), { lineStart: 1, lineEnd: 1 });
         return { status: 'completed', output: 'line\n'.repeat(200) };
       },

@@ -1,4 +1,4 @@
-import { parseJsonOrText } from '@momonga/foundation';
+import { parseBoundedJson } from '@momonga/foundation';
 import type { ContentPart, InputItem } from '@momonga/protocol';
 import type { DeepReadonly } from './types.ts';
 import { outputTextOf } from './tool-output.ts';
@@ -32,8 +32,10 @@ export const textOfItem = (item: DeepReadonly<InputItem>): string => {
   switch (item.type) {
     case 'message':
       return textOfContent(item.content);
-    case 'function_call':
-      return [`${item.name} ${item.arguments}`, ...stringLeavesOf(parseJsonOrText(item.arguments))].join('\n');
+    case 'function_call': {
+      const parsed = parseBoundedJson(item.arguments);
+      return [`${item.name} ${item.arguments}`, ...stringLeavesOf(parsed.kind === 'value' ? parsed.value : parsed.text)].join('\n');
+    }
     case 'function_call_output':
       return outputTextOf(item.output as Parameters<typeof outputTextOf>[0]);
     case 'reasoning':

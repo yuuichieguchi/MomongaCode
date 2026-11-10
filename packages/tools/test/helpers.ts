@@ -192,7 +192,7 @@ export const makeBlobs = () => {
   const stored = new Map<string, { text: string; mediaType: string }>();
   const puts: Array<{ handle: string; mediaType: string }> = [];
   const port = {
-    put(data: string | Uint8Array, options: { mediaType: string }) {
+    async put(data: string | Uint8Array, options: { mediaType: string }) {
       const text = typeof data === 'string' ? data : Buffer.from(data).toString('utf8');
       const handle = blobHandle(stored.size + 1);
       stored.set(handle, { text, mediaType: options.mediaType });
@@ -213,7 +213,7 @@ export const makeBlobs = () => {
       return Promise.resolve({ ...base, text: entry.text.slice(range.offset, range.offset + range.length), offset: range.offset, length: range.length });
     },
   } as {
-    put(data: string | Uint8Array, options: { mediaType: string }): { handle: string; sha256: string; byteLength: number; lineCount: number };
+    put(data: string | Uint8Array, options: { mediaType: string }): Promise<{ handle: string; sha256: string; byteLength: number; lineCount: number }>;
     read(handle: string, range: { lineStart: number; lineEnd: number }): Promise<{ text: string; totalLines: number; totalBytes: number }>;
     read(
       handle: string,

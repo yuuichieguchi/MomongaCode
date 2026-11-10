@@ -43,7 +43,7 @@ export type IdempotencyPort = {
 };
 
 export type BlobPort = {
-  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): { handle: string; sha256: string; byteLength: number; lineCount: number };
+  put(data: string | Uint8Array, options: { mediaType: string; runId?: string }): Promise<{ handle: string; sha256: string; byteLength: number; lineCount: number }>;
   read(handle: string, range: { lineStart: number; lineEnd: number }, scope?: { runId: string }): Promise<{ text: string; totalLines: number; totalBytes: number }>;
   read(
     handle: string,
