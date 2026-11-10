@@ -2,8 +2,8 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
-import type { Clock, OperationLimit } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, routeOf, settledOrAborted } from '@momonga/foundation';
+import type { Clock, OperationLimit, OutboundNetwork } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
 import { CLOSE_LIMIT_LABEL, CONNECT_LIMIT_LABEL, CONNECT_SUBJECT, CREDENTIAL_STORE_WAIT, REQUEST_LIMIT_LABEL, REQUEST_SUBJECT } from './limit-texts.ts';
@@ -64,6 +64,16 @@ export type McpServerDiagnostics = {
   protocolVersion: string | undefined;
   lastError: string | null;
   stderrTail: string;
+  route?: 'direct' | 'proxy' | 'bypass';
+  proxyHost?: string;
+};
+
+type ConnectionRoute = { route: 'direct' | 'bypass' } | { route: 'proxy'; proxyHost: string };
+
+const connectionRouteOf = (url: string, network: OutboundNetwork): ConnectionRoute | undefined => {
+  const route = routeOf(new URL(url), network.config);
+  if (route.kind === 'unsupported') return undefined;
+  return route.kind === 'proxy' ? { route: 'proxy', proxyHost: route.url.host } : { route: route.kind };
 };
 
 export type McpCallToolInput = {
@@ -231,6 +241,7 @@ class ManagedConnection implements McpServerConnection {
   private connecting: Promise<Session> | undefined;
   private state: McpServerState = 'idle';
   private lastError: string | null = null;
+  private lastRoute: ConnectionRoute | undefined;
   private lastProtocolVersion: string | undefined;
   private lastProtocolEra: ProtocolEra | undefined;
   private lastServerInfo: Implementation | undefined;
@@ -292,6 +303,7 @@ class ManagedConnection implements McpServerConnection {
       protocolVersion: this.protocolVersion,
       lastError: this.lastError === null ? null : this.redact(this.lastError),
       stderrTail: transport === undefined ? '' : this.redact(transport.diagnostics().stderrTail),
+      ...this.lastRoute,
     };
   }
 
@@ -688,6 +700,7 @@ class ManagedConnection implements McpServerConnection {
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }
     if (remote === undefined) throw new Error(`MCP server "${this.name}" is remote but no credential store was configured`);
+    this.lastRoute = connectionRouteOf(config.url, remote.network);
     const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
     const staticAuthorization = Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization');
     const authProvider: McpOAuthProvider | undefined = staticAuthorization

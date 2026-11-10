@@ -41,25 +41,40 @@ const probePathOfLength = (directory: string, byteLength: number): string => {
   return path.join(directory, name);
 };
 
+export type SocketBindRefusal =
+  | { kind: 'unsupported'; byteLength: number; directory: string; code: string }
+  | { kind: 'unmeasured'; byteLength: number; directory: string; reason: string };
+
+const bindRefusalOf = async (bind: SocketBind, socketPath: string): Promise<SocketBindRefusal | undefined> => {
+  const directory = path.dirname(socketPath);
+  const byteLength = Buffer.byteLength(socketPath);
+  try {
+    await bind(probePathOfLength(directory, byteLength));
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) return { kind: 'unsupported', byteLength, directory, code };
+    return { kind: 'unmeasured', byteLength, directory, reason: code ?? (error as Error).message };
+  }
+  return undefined;
+};
+
 export const createSocketPathProbe = (bind: SocketBind): ((socketPath: string) => Promise<CapabilityResult<number>>) =>
   createAsyncCapabilityProbe<string, number>(
     (socketPath) => `${Buffer.byteLength(socketPath)}:${path.dirname(socketPath)}`,
     async (socketPath) => {
-      const directory = path.dirname(socketPath);
-      const byteLength = Buffer.byteLength(socketPath);
-      try {
-        await bind(probePathOfLength(directory, byteLength));
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) {
-          return {
-            kind: 'unsupported',
-            evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${code}); the path must be shorter than ${byteLength} bytes. Use a shorter path.`,
-          };
-        }
-        return { kind: 'unmeasured', evidence: `a Unix socket path of ${byteLength} bytes in ${directory} could not be tested: ${code ?? (error as Error).message}` };
+      const refusal = await bindRefusalOf(bind, socketPath);
+      if (refusal === undefined) {
+        const byteLength = Buffer.byteLength(socketPath);
+        return { kind: 'supported', value: byteLength, evidence: `the kernel bound a Unix socket path of ${byteLength} bytes in ${path.dirname(socketPath)}` };
       }
-      return { kind: 'supported', value: byteLength, evidence: `the kernel bound a Unix socket path of ${byteLength} bytes in ${directory}` };
+      const { byteLength, directory } = refusal;
+      if (refusal.kind === 'unsupported') {
+        return {
+          kind: 'unsupported',
+          evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${refusal.code}); the path must be shorter than ${byteLength} bytes. Use a shorter path.`,
+        };
+      }
+      return { kind: 'unmeasured', evidence: `a Unix socket path of ${byteLength} bytes in ${directory} could not be tested: ${refusal.reason}` };
     },
   );
 
@@ -85,19 +100,7 @@ export const setSocketBind = (bind: SocketBind | undefined): void => {
   socketPathProbe = createSocketPathProbe(hostBind);
 };
 
-export type SocketBindRefusal = { byteLength: number; directory: string; code: string };
-
-export const socketBindRefusalOf = async (socketPath: string): Promise<SocketBindRefusal | undefined> => {
-  const directory = path.dirname(socketPath);
-  const byteLength = Buffer.byteLength(socketPath);
-  try {
-    await hostBind(probePathOfLength(directory, byteLength));
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) return { byteLength, directory, code };
-  }
-  return undefined;
-};
+export const socketBindRefusalOf = (socketPath: string): Promise<SocketBindRefusal | undefined> => bindRefusalOf(hostBind, socketPath);
 
 export class SocketPathUnsupportedError extends Error {}
 
