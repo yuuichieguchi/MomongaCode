@@ -529,9 +529,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(on['keyed']).toBe(off['keyed']);
     await handle.close();
   });
-});
 
-describe('O-R5-6 (N) 3: a damaged active pointer is a listed problem, not a failed start', () => {
   it('a damaged plan-active.json does not stop the gateway: it is a listed problem and an unpinned target fails plan_store_unreadable', async () => {
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
