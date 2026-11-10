@@ -1,7 +1,7 @@
 import { realGroupTiming, waitForGroupGone } from '@momonga/foundation';
 import type { GroupTiming, ProcessGroupPort } from '@momonga/foundation';
 import type { ManifestEntry, Tier, TlcRun } from './manifest-reader.ts';
-import { RAN_REASONS, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
+import { RAN_REASONS, RECORD_FORMAT, keyOf, keyPartsOf, refusalOf, sealedRecord } from './reuse.ts';
 import type { JavaIdentity, RanReason, ResultStore, StoredFacts } from './reuse.ts';
 import { TLC_WORKERS, runTlc } from './runner.ts';
 import { factsOf, problemsOf, verdictProblems } from './verdict.ts';
@@ -26,8 +26,6 @@ export type CheckOutcome =
   | { outcome: 'ran'; reason: RanReason; problems: readonly string[]; stored: 'stored' | 'not eligible' | { notStored: string } };
 
 const FIXED_FINGERPRINT_ARGS = ['-fp', '0'] as const;
-
-const RECORD_FORMAT = 'momonga-tlc-result/1';
 
 type FinishedRun = { readonly run: TlcRun; readonly problems: readonly string[] };
 
@@ -76,6 +74,8 @@ export const checkEntry = async (request: CheckRequest): Promise<CheckOutcome> =
   const { run, problems } = await runAndJudge(request, args);
   const facts = storedFactsOf(run);
   if (problems.length > 0 || facts === undefined) return { outcome: 'ran', reason, problems, stored: 'not eligible' };
+  const keyedAfter = await keyOfRun(request, args);
+  if ('unkeyed' in keyedAfter || keyedAfter.key !== keyed.key) return { outcome: 'ran', reason: 'inputs changed during the run', problems, stored: 'not eligible' };
   const written = await store.write(sealedRecord({ format: RECORD_FORMAT, key: keyed.key, config: entry.config, facts, producedAt: request.now().toISOString() }));
   return { outcome: 'ran', reason, problems, stored: written.stored ? 'stored' : { notStored: written.reason } };
 };

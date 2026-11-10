@@ -1,9 +1,12 @@
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import type { RUN_LOCK_EXIT, RunClass } from './support/run-lock.ts';
+import type { RUN_LOCK_EXIT, RunClass, StoppingSignal } from './support/run-lock.ts';
 
-const USAGE = 'usage: node scripts/run-lock.ts <heavy|light> [--wait <seconds>] -- <command> [args...]';
+const USAGE = [
+  'usage: node scripts/run-lock.ts <heavy|light> [--wait <seconds>] -- <command> [args...]',
+  'A signal sent to this process alone ends the command and frees the lock while processes the command started may still run; signal the process group (Ctrl-C does) to stop them all.',
+].join('\n');
 const COMMAND_SEPARATOR = '--';
 const WAIT_OPTION = '--wait';
 const COMMAND_NOT_STARTED_EXIT = 127;
@@ -11,10 +14,8 @@ const SIGNAL_EXIT_BASE = 128;
 const SUPPORT_UNLOADABLE_EXIT: typeof RUN_LOCK_EXIT.unusable = 73;
 const SUPPORT_DIR = path.join(import.meta.dirname, 'support');
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
-const STOPPING_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
 const FORWARDED_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
 
-type StoppingSignal = (typeof STOPPING_SIGNALS)[number];
 type Environment = Readonly<Record<string, string | undefined>>;
 type Invocation = { readonly runClass: RunClass; readonly waitOption: string | undefined; readonly command: string; readonly commandArgs: readonly string[] };
 type CommandEnd = { readonly kind: 'ended'; readonly code: number | null; readonly signal: NodeJS.Signals | null } | { readonly kind: 'not-started'; readonly message: string };
@@ -65,7 +66,7 @@ export const runUnderLock = async (argv: readonly string[], env: Environment): P
     say(`run-lock: cannot use ${SUPPORT_DIR}: ${cause}`);
     return SUPPORT_UNLOADABLE_EXIT;
   }
-  const { RUN_LOCK_ENV, RUN_LOCK_EXIT: EXIT, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseWaitSeconds, unusableMessage } = lock;
+  const { RUN_LOCK_ENV, RUN_LOCK_EXIT: EXIT, RUN_LOCK_WAIT_ENV, STOPPED_WHILE_WAITING_MESSAGE, acquireRunLock, causeOf, parseWaitSeconds, runLockDirsOf, unusableMessage, untilStopped } = lock;
 
   const invocation = invocationOf(argv);
   if (invocation === undefined) {
@@ -90,35 +91,21 @@ export const runUnderLock = async (argv: readonly string[], env: Environment): P
     return EXIT.unusable;
   }
 
-  const stopping = new AbortController();
-  let stoppedBy: StoppingSignal | undefined;
-  const stoppers = STOPPING_SIGNALS.map((signal) => {
-    const stop = (): void => {
-      stoppedBy ??= signal;
-      stopping.abort();
-    };
-    process.on(signal, stop);
-    return { signal, stop };
-  });
   const stopExitOf = (signal: StoppingSignal): number => (signal === 'SIGINT' ? EXIT.interrupted : EXIT.terminated);
 
-  let outcome: Awaited<ReturnType<typeof acquireRunLock>>;
-  try {
-    outcome = await acquireRunLock({
+  const { result: outcome, stoppedBy } = await untilStopped((signal) =>
+    acquireRunLock({
       runClass,
-      dir: path.join(stateDir, 'run-lock'),
-      proofDir: path.join(stateDir, 'run-lock-proof'),
+      ...runLockDirsOf(stateDir),
       command: [command, ...commandArgs].join(' '),
       cwd: process.cwd(),
       pid: process.pid,
       env,
       waitSeconds,
-      signal: stopping.signal,
+      signal,
       say,
-    });
-  } finally {
-    for (const { signal, stop } of stoppers) process.off(signal, stop);
-  }
+    }),
+  );
 
   if (outcome.kind === 'refused') {
     say(outcome.message);

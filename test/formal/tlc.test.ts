@@ -19,11 +19,11 @@ const REAP_SLACK_MS = 5000;
 const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
 const ENDLESS_BUDGET_CPU_SECONDS = 8;
 
-const loadManifest = (): { manifest: Manifest } | { error: unknown } => {
+const loadManifest = (): { manifest: Manifest } | { error: Error } => {
   try {
     return { manifest: readManifest(manifestPath) };
   } catch (error) {
-    return { error };
+    return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 };
 
@@ -34,7 +34,7 @@ const manifestOrThrow = (): Manifest => {
 };
 
 const selectedTier = process.env['MOMONGA_TLC_TIER'] === 'deep' ? 'deep' : 'every-run';
-const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : [];
+const tierEntries = 'manifest' in loaded ? loaded.manifest.entries.filter((entry) => entry.tier === selectedTier) : loaded.error;
 const manifestConfigs = 'manifest' in loaded ? loaded.manifest.entries.map((entry) => entry.config) : [];
 
 const discoveryManifest = (configs: readonly string[]): Manifest => ({

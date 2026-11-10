@@ -9,7 +9,7 @@ import { TLC_WORKERS } from './runner.ts';
 
 export type TierOptions = {
   tier: Tier;
-  entries: readonly ManifestEntry[];
+  entries: readonly ManifestEntry[] | Error;
   manifestConfigs: readonly string[];
   script: string;
   repoRoot: string;
@@ -36,7 +36,9 @@ type TierSession = {
 const titleOf = (entry: ManifestEntry): string => `${entry.config} ${entry.expect === 'holds' ? 'holds' : `violates ${entry.expect.violates}`}`;
 
 export const describeTier = (options: TierOptions): void => {
-  const { tier, entries, manifestConfigs, script, repoRoot, env } = options;
+  const { tier, manifestConfigs, script, repoRoot, env } = options;
+  const loadError = options.entries instanceof Error ? options.entries : undefined;
+  const entries = options.entries instanceof Error ? [] : options.entries;
   const now = options.now ?? ((): Date => new Date());
 
   describe(`TLC over every ${tier} configuration in the manifest`, () => {
@@ -61,12 +63,13 @@ export const describeTier = (options: TierOptions): void => {
 
     afterAll(async () => {
       report.print();
-      if (opened?.reuses !== true) return;
+      if (loadError !== undefined || opened?.reuses !== true) return;
       const cleanup = await opened.store.removeOrphans(manifestConfigs);
       if (cleanup.reason !== undefined) process.stderr.write(`store cleanup: ${cleanup.reason}\n`);
     });
 
     it('has configurations in this tier', () => {
+      if (loadError !== undefined) throw loadError;
       session();
       expect(entries.length).toBeGreaterThan(0);
     });

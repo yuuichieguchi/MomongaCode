@@ -64,8 +64,8 @@ for argument in "$@"; do
 done
 heavy=0
 case "$workers" in
-  '' | *[!0-9]*) heavy=1 ;;
-  *) if [ "$workers" -gt 1 ]; then heavy=1; fi ;;
+  0 | 1) ;;
+  *) heavy=1 ;;
 esac
 if [ "$heavy" = 1 ] && [ -f "$root/scripts/run-lock.ts" ]; then
   case "${MOMONGA_RUN_LOCK:-}" in

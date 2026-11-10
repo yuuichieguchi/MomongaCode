@@ -10,9 +10,9 @@
   },
   "packageManager": "npm@11.19.1",
   "scripts": {
-    "test": "vitest run --project unit",
+    "test": "MOMONGA_TLC_REUSE=0 vitest run --project unit",
     "test:reuse": "MOMONGA_TLC_REUSE=1 vitest run --project unit",
-    "test:tlc-deep": "MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
+    "test:tlc-deep": "MOMONGA_TLC_REUSE=0 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
     "test:e2e": "vitest run --project e2e",
     "test:packaging": "vitest run --project packaging",
     "typecheck": "node scripts/bundle.ts --journal-thread && tsc -p tsconfig.json",

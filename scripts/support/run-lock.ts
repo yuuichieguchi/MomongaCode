@@ -17,6 +17,31 @@ export const HEAVY_STEPS = ['claimHeavy', 'scanOne', 'decide'] as const;
 export const NESTED_HEAVY_MESSAGE = 'run-lock: a heavy run cannot start inside a light run';
 export const STOPPED_WHILE_WAITING_MESSAGE = 'run-lock: stopped while waiting; the command did not run';
 
+export const runLockDirsOf = (stateDir: string): { dir: string; proofDir: string } => ({ dir: path.join(stateDir, 'run-lock'), proofDir: path.join(stateDir, 'run-lock-proof') });
+
+const STOPPING_SIGNALS = ['SIGINT', 'SIGTERM'] as const;
+
+export type StoppingSignal = (typeof STOPPING_SIGNALS)[number];
+
+export const untilStopped = async <T>(work: (signal: AbortSignal) => Promise<T>): Promise<{ result: T; stoppedBy: StoppingSignal | undefined }> => {
+  const stopping = new AbortController();
+  let stoppedBy: StoppingSignal | undefined;
+  const stoppers = STOPPING_SIGNALS.map((signal) => {
+    const stop = (): void => {
+      stoppedBy ??= signal;
+      stopping.abort();
+    };
+    process.on(signal, stop);
+    return { signal, stop };
+  });
+  try {
+    const result = await work(stopping.signal);
+    return { result, stoppedBy };
+  } finally {
+    for (const { signal, stop } of stoppers) process.off(signal, stop);
+  }
+};
+
 const WAIT_SOURCE_NAMES = { option: '--wait', env: RUN_LOCK_WAIT_ENV } as const;
 
 export type WaitSource = keyof typeof WAIT_SOURCE_NAMES;

@@ -22,6 +22,7 @@ export const RAN_REASONS = [
   'record unreadable',
   'record altered',
   'record does not satisfy the manifest entry',
+  'inputs changed during the run',
 ] as const;
 
 export type RanReason = (typeof RAN_REASONS)[number];
@@ -202,14 +203,19 @@ const INSTANCE_WORD = /\bINSTANCE\b/g;
 const EXTENDS_FORM = /\bEXTENDS\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)/g;
 const INSTANCE_FORM = /\bINSTANCE\s+([A-Za-z_][A-Za-z0-9_]*)/g;
 
+const UNREAD_REST = /^\s*(?:,|\\\*|\(\*)/;
+
 const countOf = (text: string, pattern: RegExp): number => [...text.matchAll(pattern)].length;
+
+const readToItsEnd = (text: string, match: RegExpExecArray): boolean => !UNREAD_REST.test(text.slice(match.index + match[0].length));
 
 const namedModulesOf = (text: string): { names: string[]; complete: boolean } => {
   const extended = [...text.matchAll(EXTENDS_FORM)];
   const instanced = [...text.matchAll(INSTANCE_FORM)];
+  const forms = [...extended, ...instanced];
   return {
     names: [...extended.flatMap((match) => (match[1] as string).split(',').map((name) => name.trim())), ...instanced.map((match) => match[1] as string)],
-    complete: extended.length + instanced.length === countOf(text, EXTENDS_WORD) + countOf(text, INSTANCE_WORD),
+    complete: forms.length === countOf(text, EXTENDS_WORD) + countOf(text, INSTANCE_WORD) && forms.every((match) => readToItsEnd(text, match)),
   };
 };
 
@@ -289,7 +295,7 @@ export const keyPartsOf = async ({ repoRoot, entry, args, workers, java }: KeyRe
 
 export const keyOf = (parts: KeyParts): string => sha256Hex(canonicalJson(parts));
 
-const RECORD_FORMAT = 'momonga-tlc-result/1';
+export const RECORD_FORMAT = 'momonga-tlc-result/1';
 
 export type StoredFacts = TlcFacts & { readonly exitCode: 0 | 12 | 13; readonly signal: null };
 
