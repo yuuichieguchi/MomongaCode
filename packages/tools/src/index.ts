@@ -27,6 +27,8 @@ export { createToolHooks, runSessionStart, runStop, runUserPromptSubmit, hasStop
 export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionStartHookResult, StopHookResult, ToolHookCall, ToolHooks } from './hooks/events.ts';
 export type { HookReply, HookRunContext } from './hooks/run.ts';
 export { selectHookCommands } from './hooks/run.ts';
+export { runSandboxedCommand, verificationMarkerName } from './sandboxed-command.ts';
+export type { SandboxedCommandRequest, SandboxedCommandResult } from './sandboxed-command.ts';
 export type {
   BackgroundJobKill,
   BackgroundJobRead,
@@ -74,7 +76,7 @@ export type {
 export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
-export { runUserCommand } from './builtins/bash.ts';
+export { MAX_TIMEOUT_MS as MAX_COMMAND_TIMEOUT_MS, runUserCommand, shellCommandSubject } from './builtins/bash.ts';
 export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
 export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';

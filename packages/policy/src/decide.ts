@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
 import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
@@ -84,12 +84,14 @@ const protectedWriteReason = (input: DecideInput, subject: PermissionSubject): s
 
 type Applicable = Array<{ rule: PermissionRule; ruleIndex: number }>;
 
-const applicableRules = (input: DecideInput, subject: PermissionSubject): Applicable =>
+type DenyInput = Pick<DecideInput, 'rules' | 'mode' | 'fileRules'>;
+
+const applicableRules = (input: Pick<DecideInput, 'rules'>, subject: PermissionSubject): Applicable =>
   input.rules.map((rule, ruleIndex) => ({ rule, ruleIndex })).filter(({ rule }) => ruleCoversSubject(rule, subject));
 
 type DenyScan = { denied: Decision | undefined; incidental: PermissionRule | undefined };
 
-const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Applicable): DenyScan => {
+const scanDeny = (input: DenyInput, subject: PermissionSubject, applicable: Applicable): DenyScan => {
   const hits = applicable
     .filter(({ rule }) => rule.effect === 'deny')
     .map(({ rule, ruleIndex }) => ({ rule, strength: matchStrength(rule, subject, input.fileRules, ruleIndex) }));
@@ -103,6 +105,11 @@ const scanDeny = (input: DecideInput, subject: PermissionSubject, applicable: Ap
         ? byRule('deny', incidental.rule, 'denied')
         : undefined;
   return { denied, incidental: incidental?.rule };
+};
+
+export const denyingRuleFor = (rules: readonly PermissionRule[], mode: PermissionMode, subject: PermissionSubject): PermissionRule | undefined => {
+  const input: DenyInput = { rules: [...rules], mode, fileRules: EMPTY_FILE_RULES };
+  return scanDeny(input, subject, applicableRules(input, subject)).denied?.rule;
 };
 
 const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
