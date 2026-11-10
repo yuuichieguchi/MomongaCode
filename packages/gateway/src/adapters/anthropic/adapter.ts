@@ -36,6 +36,7 @@ import type { AnthropicCountTokensBody, CachePlan } from './request.ts';
 import type { AnthropicRequestBody } from './request.ts';
 import { AnthropicStreamDriver, inputTokensOf } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
+import { idempotencyHeaderOf } from '../shared/idempotency-header.ts';
 
 type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields; firstInputTokens: number };
 
@@ -117,7 +118,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await sendAuthorized(auth, signal, (key) =>
-          pool.clientFor(endpoint).post({ headers: headersFor(key, 'text/event-stream'), body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
+          pool.clientFor(endpoint).post({ headers: { ...idempotencyHeaderOf(ctx, continuation), ...headersFor(key, 'text/event-stream') }, body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
         );
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
         watch?.dispose();

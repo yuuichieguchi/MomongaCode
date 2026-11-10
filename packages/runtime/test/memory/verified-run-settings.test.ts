@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createRun, createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from '../process/helpers.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
-import { bash, exported, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, finishClaimed, checked } from './reflection-fixture.ts';
 
 type Fixture = Awaited<ReturnType<typeof makeRuntimeFixture>>;
 
@@ -11,19 +11,28 @@ const verified = (f: Fixture, runId: string): Promise<boolean> =>
 const projectCheckRun = async (f: Fixture) => {
   const session = createSession(f.store, f.temp.project);
   const runId = createRun(f.store, session.id);
-  await finishClaimed(f.store, bash('t1', 'just check', 0));
+  await finishClaimed(f.store, checked('just check', 0));
   return runId;
 };
 
 describe('isRunVerified with real settings', () => {
-  it('honours a project verification command only in a trusted folder', async () => {
+  it('reads the verdict of the conditions pinned when the run started, whatever the settings of the folder say now', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, {});
-    writeProjectSettings(f.temp.project, { verification: { commands: ['just check'] } });
-    const runId = projectCheckRun(f);
-    expect(await verified(f, (await runId))).toBe(false);
+    writeProjectSettings(f.temp.project, { verification: { commands: ['another check'] } });
+    const runId = await projectCheckRun(f);
+    expect(await verified(f, runId)).toBe(true);
     f.store.trust.set(f.temp.project, 'trusted');
-    expect(await verified(f, (await runId))).toBe(true);
+    expect(await verified(f, runId)).toBe(true);
+  });
+
+  it('answers a run that declared no condition as not verified, whatever command the model ran', async () => {
+    const f = await makeRuntimeFixture();
+    writeUserSettings(f.temp.home, { verification: { commands: ['just check'] } });
+    const session = createSession(f.store, f.temp.project);
+    const runId = createRun(f.store, session.id);
+    await finishClaimed(f.store, bash('t1', 'just check', 0));
+    expect(await verified(f, runId)).toBe(false);
   });
 
   it('honours a user verification command in any folder', async () => {

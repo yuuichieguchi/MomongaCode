@@ -80,6 +80,7 @@ export function validateSandboxPolicy(policy: SandboxPolicy, options: { tmpDir?:
   assertAbsoluteEntries('entry_not_absolute', 'protectedSet.literals', policy.protectedSet.literals);
   assertAbsoluteEntries('entry_not_absolute', 'readDenied', policy.readDenied);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', policy.readAllowed ?? []);
+  assertAbsoluteEntries('entry_not_absolute', 'unixSocketAllow', policy.unixSocketAllow ?? []);
   assertReadAllowedValid(policy.readDenied, policy.readAllowed ?? []);
   if (options.tmpDir !== undefined) assertSessionTmpDirValid(policy, options.tmpDir);
 }
@@ -257,8 +258,19 @@ export function buildSeatbeltProfile(policy: SandboxPolicy, options: { tmpDir?: 
     for (const directory of reallowedMetadata) lines.push(`(allow file-read-metadata (literal (param "${metadataNames[metadataDirs.indexOf(directory)]}")))`);
     lines.push(...DEVICE_NODE_RULES);
   }
-  if (policy.network === 'allow') {
-    lines.push('(allow network*)');
+  const unixSocketAllow = unique((policy.unixSocketAllow ?? []).map(canonicalizePath));
+  if (policy.network === 'allow') lines.push('(allow network*)');
+  if (typeof policy.network === 'object') {
+    const { loopbackPort } = policy.network;
+    if (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535) {
+      throw new SandboxPolicyError('network_port_invalid', `network.loopbackPort must be a port number: ${String(loopbackPort)}`);
+    }
+    lines.push(`(allow network-outbound (remote ip "localhost:${loopbackPort}"))`);
+  }
+  for (const name of define('UNIX_SOCKET_ALLOW', unixSocketAllow)) {
+    lines.push(`(allow network-outbound (remote unix-socket (subpath (param "${name}"))))`);
+  }
+  if (policy.network !== 'deny' || unixSocketAllow.length > 0) {
     for (const name of readDeniedNames) {
       lines.push(`(deny network-outbound (remote unix-socket (subpath (param "${name}"))))`);
     }

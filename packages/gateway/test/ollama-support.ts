@@ -45,7 +45,7 @@ export type OllamaChatReply =
   | { kind: 'error'; status: number; body: unknown }
   | { kind: 'hang'; lines: readonly string[] };
 
-export type RecordedOllamaRequest = { method: string; path: string; body: any };
+export type RecordedOllamaRequest = { method: string; path: string; headers: http.IncomingHttpHeaders; body: any };
 
 export type FakeOllamaOptions = {
   chat?: OllamaChatReply[];
@@ -115,7 +115,7 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
   const server = await startLoopbackServer(async (req, res) => {
     const body = parsedBody(await readBody(req));
     const url = new URL(req.url ?? '/', 'http://fake');
-    requests.push({ method: req.method ?? '', path: url.pathname, body });
+    requests.push({ method: req.method ?? '', path: url.pathname, headers: req.headers, body });
     if (url.pathname === '/api/version' && req.method === 'GET') {
       const version = options.version ?? { status: 200, body: fixtureJson('version.json') };
       sendJson(res, version.status, version.body);

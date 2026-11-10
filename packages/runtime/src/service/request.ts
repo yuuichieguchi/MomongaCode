@@ -1,7 +1,7 @@
 import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
-import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode } from '@momonga/protocol';
+import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode, Mandate } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
 export type CreateSessionBody = {
@@ -23,6 +23,7 @@ export type CreateRunBody = {
   skill?: string;
   images?: ImageAttachment[];
   attachMentions?: boolean;
+  mandate?: Mandate;
 };
 
 export type ResolveApprovalBody = { optionId: string };

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_JSON_DEPTH, createMemoryCredentialStore } from '@momonga/foundation';
 import { createMcpPool } from '@momonga/mcp';
 import { createToolRegistry } from '@momonga/tools';
-import { createFakeClock } from '@momonga/testkit';
+import { UNCONFIGURED_NETWORK, createFakeClock } from '@momonga/testkit';
 import { boundedMessages } from '../src/connection.ts';
 import type { ConnectionTransport } from '../src/remote-transport.ts';
 import { BASE_ENV, entry, makeDir, makeExecutor, onCleanup } from './mcp-harness.ts';
@@ -80,6 +80,7 @@ describe('a dropped notification reaches the notices of the tool source through 
       random: () => 0,
       remote: {
         credentials: createMemoryCredentialStore(),
+        network: UNCONFIGURED_NETWORK,
         randomToken: () => 'random',
         openAuthorizationUrl: () => Promise.reject(new Error('no browser in this test')),
       },

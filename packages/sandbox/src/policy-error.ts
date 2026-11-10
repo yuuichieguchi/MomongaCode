@@ -12,7 +12,9 @@ export type SandboxPolicyErrorCode =
   | 'file_rules_stale'
   | 'guard_path_unresolvable'
   | 'protected_link_not_pinnable'
-  | 'protected_path_unreadable';
+  | 'protected_path_unreadable'
+  | 'network_port_invalid'
+  | 'network_scope_unsupported';
 
 export class SandboxPolicyError extends Error {
   readonly code: SandboxPolicyErrorCode;

@@ -43,3 +43,20 @@ Redaction has limits:
 - **Transformed values.** Only the exact configured text is replaced. A server that returns the value encoded, split, or changed in case is not redacted.
 
 Neither notice refuses or blocks the server. Use a long, random credential for any MCP server whose tools can return text you or the server do not control.
+
+## A model request can be sent twice
+
+A model request can be sent twice to its server. Momonga Code sends a request again when it cannot know that the first send was answered:
+
+- After a crash of the gateway or the runtime while a request was in flight, the restarted process sends the request of the interrupted step again.
+- When a server fails, or the connection to it breaks, before its answer starts, the gateway sends the request again.
+
+The server may have received the first send and worked on it. A server that does not recognise the second send as the same request runs the model twice and can bill both. Momonga Code uses one answer.
+
+What bounds this:
+
+- **An answered request is not sent again.** The gateway keeps a finished answer under the key of its request for 7 days and replays it to a caller that asks again with that key.
+- **Every send is recorded.** A second send of the same request is marked `retry_of`: the usage record of its answer (`GET /v1/momonga/usage`) carries `retry_of_seq`, and its trace span carries `momonga.retry_of`. Both hold the number of the first send, so a doubled request is visible in usage and in the trace.
+- **A server that accepts an idempotency key can be told the key.** Set `idempotencyKeyHeader` on the server's entry of `models.connections` to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. Momonga Code then sends a key in that header: the same key on the first send and on every resend of that request to that server, and a different key for every other request and for every other server. A server that honours the header does not run or bill the model again for the second send.
+
+`idempotencyKeyHeader` is a fact you declare. Momonga Code cannot measure whether a server honours such a header, and never infers it from the name of a server or a model. Without the setting no key is sent, and the double send remains: a request can be billed twice after a crash. Accept that for the server, or use a server that offers such a header.

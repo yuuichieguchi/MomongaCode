@@ -1,15 +1,12 @@
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HookStart, HooksSettings, PermissionMode } from '@momonga/protocol';
-import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, groupRecordOutcome, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
-import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
-import { createCapture, pumpOutput } from '../capture.ts';
-import { resolveBashPath } from '../builtins/shell.ts';
+import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { ShellHost } from '../builtins/shell.ts';
-import { createMarkerSettle, settleFinishedCommand } from '../marker-settle.ts';
 import type { MarkerOwners } from '../marker-owners.ts';
-import { cancellableTimer } from '../timers.ts';
+import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { parseHookOutput } from './output.ts';
 import type { ParsedHookOutput } from './output.ts';
 
@@ -76,16 +73,6 @@ const executeHook = async (
   if (ctx.signal.aborted) return finish({ outcome: 'cancelled' });
   if (timeoutMs <= 0) return finish({ outcome: 'timed_out', message: 'the run deadline passed before the hook could start' });
 
-  const { shellHost } = ctx;
-  const controller = new AbortController();
-  const onCancel = (): void => controller.abort();
-  ctx.signal.addEventListener('abort', onCancel, { once: true });
-  const timer = cancellableTimer(timeoutMs);
-  let timedOut = false;
-  void timer.done.then(() => {
-    timedOut = true;
-    controller.abort();
-  });
   const stdin = JSON.stringify({
     session_id: ctx.session.id,
     cwd: ctx.cwd,
@@ -93,82 +80,54 @@ const executeHook = async (
     hook_event_name: event,
     ...payload,
   });
-  const marker = path.join(ctx.markerDir, `hook-${sha256Hex(canonicalJson([ctx.runId, event, callId ?? null, command.command]))}`);
-  const inspector = ctx.inspector ?? defaultProcessInspector();
-  let handle: Awaited<ReturnType<typeof createMarker>> | undefined;
-  let settle: ReturnType<typeof createMarkerSettle> | undefined;
-  let spawned = false;
-  let running = true;
-  ctx.owners?.register(path.basename(marker), { alive: () => running });
-  try {
-    handle = await createMarker(marker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
-    ctx.owners?.remember(path.basename(marker), handle.mode);
-    settle = createMarkerSettle({ marker, mode: handle.mode, inspector, ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }), onWarning: () => undefined });
-    const child = ctx.sandbox.spawn(
-      {
-        argv: [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: ctx.env }), '-c', command.command],
-        cwd: ctx.cwd,
-        env: { ...ctx.env, MOMONGA_PROJECT_DIR: ctx.projectDir },
-        stdin,
-        markerFile: marker,
-        ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
-      },
-      ctx.sandboxPolicy,
-      controller.signal,
-      { markerFd: handle.fd },
-    );
-    spawned = true;
-    const captures = [createCapture(), createCapture()] as const;
-    const pump = pumpOutput([child.stdout, child.stderr], (index, chunk) => captures[index === 0 ? 0 : 1].push(chunk));
-    let exit: SandboxExit;
-    try {
-      [exit, groupNotice] = await Promise.all([child.exited, groupRecordOutcome(recordMarkerGroup(marker, child.pgid), marker)]);
-      await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: controller.signal });
-      await pump.settle();
-    } finally {
-      await pump.close();
-    }
-    const failure = pump.failure();
-    if (failure !== undefined) throw failure.error;
-    const stdout = captures[0].text();
-    const stderr = captures[1].text();
-    if (timedOut) return finish({ outcome: 'timed_out', message: `the hook exceeded its ${timeoutMs} ms timeout` }, undefined, stderr);
-    if (ctx.signal.aborted) return finish({ outcome: 'cancelled' }, undefined, stderr);
-    if (exit.signal !== null) return finish({ outcome: 'error', message: `the hook was terminated by ${exit.signal}` }, undefined, stderr);
-    const exitCode = exit.code ?? 0;
-    if (exitCode === HOOK_BLOCKING_EXIT_CODE) {
-      const message = stderr.trim();
-      if (BLOCKING_EVENTS.has(event)) return finish({ outcome: 'blocked', exitCode, decision: event === 'PreToolUse' ? 'deny' : 'block', message }, undefined, stderr);
-      return finish({ outcome: 'error', exitCode, message }, undefined, stderr);
-    }
-    const parsed = parseHookOutput(event, stdout);
-    if (!parsed.ok) return finish({ outcome: 'error', exitCode, message: parsed.message }, undefined, stderr);
-    const output = parsed.value;
-    if (exitCode !== 0 && stdout.trim().startsWith('{') === false) {
-      return finish({ outcome: 'error', exitCode, message: firstLine(stderr) }, undefined, stderr);
-    }
-    return finish(
-      {
-        outcome: 'success',
-        exitCode,
-        ...(output.decision === undefined ? {} : { decision: output.decision }),
-        ...(output.reason === undefined ? {} : { message: output.reason }),
-        ...(output.systemMessage === undefined ? {} : { systemMessage: output.systemMessage }),
-        ...(output.updatedInput === undefined ? {} : { updatedInput: output.updatedInput }),
-        ...(output.halt === undefined ? {} : { halted: true as const }),
-        ...(output.halt?.reason === undefined ? {} : { stopReason: output.halt.reason }),
-      },
-      output,
-      stderr,
-    );
-  } finally {
-    handle?.close();
-    if (handle !== undefined && !spawned) await settle?.discard();
-    else await settle?.remove();
-    running = false;
-    timer.cancel();
-    ctx.signal.removeEventListener('abort', onCancel);
+  const result = await runSandboxedCommand({
+    command: command.command,
+    sandbox: ctx.sandbox,
+    sandboxPolicy: ctx.sandboxPolicy,
+    env: { ...ctx.env, MOMONGA_PROJECT_DIR: ctx.projectDir },
+    shellHost: ctx.shellHost,
+    cwd: ctx.cwd,
+    markerFile: path.join(ctx.markerDir, `hook-${sha256Hex(canonicalJson([ctx.runId, event, callId ?? null, command.command]))}`),
+    clock: ctx.clock,
+    signal: ctx.signal,
+    timeoutMs,
+    stdin,
+    ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
+    ...(ctx.inspector === undefined ? {} : { inspector: ctx.inspector }),
+    ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }),
+    ...(ctx.owners === undefined ? {} : { owners: ctx.owners }),
+  });
+  if (result.kind === 'spawn_error') throw result.error;
+  groupNotice = result.groupNotice;
+  if (result.kind === 'timed_out') return finish({ outcome: 'timed_out', message: `the hook exceeded its ${timeoutMs} ms timeout` }, undefined, result.stderr);
+  if (result.kind === 'cancelled') return finish({ outcome: 'cancelled' }, undefined, result.stderr);
+  if (result.kind === 'signaled') return finish({ outcome: 'error', message: `the hook was terminated by ${result.signal}` }, undefined, result.stderr);
+  const { exitCode, stdout, stderr } = result;
+  if (exitCode === HOOK_BLOCKING_EXIT_CODE) {
+    const message = stderr.trim();
+    if (BLOCKING_EVENTS.has(event)) return finish({ outcome: 'blocked', exitCode, decision: event === 'PreToolUse' ? 'deny' : 'block', message }, undefined, stderr);
+    return finish({ outcome: 'error', exitCode, message }, undefined, stderr);
   }
+  const parsed = parseHookOutput(event, stdout);
+  if (!parsed.ok) return finish({ outcome: 'error', exitCode, message: parsed.message }, undefined, stderr);
+  const output = parsed.value;
+  if (exitCode !== 0 && stdout.trim().startsWith('{') === false) {
+    return finish({ outcome: 'error', exitCode, message: firstLine(stderr) }, undefined, stderr);
+  }
+  return finish(
+    {
+      outcome: 'success',
+      exitCode,
+      ...(output.decision === undefined ? {} : { decision: output.decision }),
+      ...(output.reason === undefined ? {} : { message: output.reason }),
+      ...(output.systemMessage === undefined ? {} : { systemMessage: output.systemMessage }),
+      ...(output.updatedInput === undefined ? {} : { updatedInput: output.updatedInput }),
+      ...(output.halt === undefined ? {} : { halted: true as const }),
+      ...(output.halt?.reason === undefined ? {} : { stopReason: output.halt.reason }),
+    },
+    output,
+    stderr,
+  );
 };
 
 export const runHooks = async (

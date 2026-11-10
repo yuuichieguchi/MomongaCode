@@ -10,7 +10,7 @@ const COMMIT = '0123456789abcdef0123456789abcdef01234567';
 
 const file = (filePath: string, sha256 = HASH, project = PROJECT): MemoryEvidence => ({ kind: 'file', project, path: filePath, sha256 });
 const commit: MemoryEvidence = { kind: 'commit', sha: COMMIT };
-const check: MemoryEvidence = { kind: 'check', runId: 'r1', callId: 'c1', seq: 4, command: 'npm test', exitCode: 0 };
+const check: MemoryEvidence = { kind: 'check', runId: 'r1', conditionId: 'c1', seq: 4, command: 'npm test', exitCode: 0 };
 
 const portsWith = (files: Record<string, string>, ancestorAnswer: boolean | 'unknown' = true) => {
   const ancestor = ancestorAnswer === 'unknown' ? undefined : ancestorAnswer;

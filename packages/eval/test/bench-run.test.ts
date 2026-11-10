@@ -21,10 +21,12 @@ type RunView = {
   agent: string;
   mode: string;
   model: string;
+  declared: boolean;
 };
+type Mandate = { completion?: { conditions?: { id?: string; command: string; when?: string }[] } };
 type Api = {
   createSession(input: { cwd: string; permissionMode: string; model: string }): Promise<{ id: string }>;
-  createRun(sessionId: string, input: { input: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } }): Promise<{ id: string }>;
+  createRun(sessionId: string, input: { input: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; mandate?: Mandate }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   runOf(runId: string): Promise<RunView>;
   answeredBy(runId: string): Promise<{ target: string; answers: 'model' | 'script' | 'unknown' }[]>;
@@ -32,7 +34,7 @@ type Api = {
   cancelRun(runId: string): Promise<void>;
 };
 type Result = {
-  report: { kind: string; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[]; total: { intervention: { k: number; n: number } } };
+  report: { kind: string; total: { completion: { k: number; n: number; undeclared: number }; intervention: { k: number; n: number } }; harness: { suite: { name: string }; codeDigest: string; answeredBy: unknown[]; unrecordedAnswers: number }; tasks?: { task: string; trials: number; met: number }[] };
   invalidSetup: { taskId: string; trial: number }[];
 };
 type RunBenchmark = (file: string, ports: { api: Api; probe: WorkspaceProbe; model: string; codeDigest: string; groupBy: 'model'; scratch: string }) => Promise<Result>;
@@ -47,11 +49,11 @@ const scratch = (): string => {
   return dir;
 };
 
-type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; unknownEffect?: boolean; delegate?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string };
+type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; unknownEffect?: boolean; delegate?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string; pinned?(mandate: Mandate | undefined): boolean };
 
 const fakeApi = (behaviour: Behaviour = {}) => {
   const sessions = new Map<string, { cwd: string; permissionMode: string; model: string }>();
-  const runs = new Map<string, { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; input: string }>();
+  const runs = new Map<string, { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; input: string; mandate?: Mandate }>();
   const resolved: { approvalId: string; optionId: string }[] = [];
   const children = new Map<string, string>();
   const asked: string[] = [];
@@ -130,9 +132,9 @@ const fakeApi = (behaviour: Behaviour = {}) => {
     runOf: async (runId) => {
       if (children.has(runId)) {
         asked.push(runId);
-        return { sessionId: `child-sess-${runId}`, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + 1000, limits: {}, step: 1, tokensTotal: 5, origin: 'trusted', agent: 'explore', mode: 'acceptEdits', model: 'fake/system' };
+        return { sessionId: `child-sess-${runId}`, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + 1000, limits: {}, step: 1, tokensTotal: 5, origin: 'trusted', agent: 'explore', mode: 'acceptEdits', model: 'fake/system', declared: false };
       }
-      const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
+      const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; mandate?: Mandate };
       const session = sessions.get(run.sessionId) as { permissionMode: string; model: string };
       return {
         sessionId: run.sessionId,
@@ -146,6 +148,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
         agent: 'main',
         mode: behaviour.mode ?? session.permissionMode,
         model: session.model,
+        declared: (behaviour.pinned ?? ((mandate) => (mandate?.completion?.conditions?.length ?? 0) > 0))(run.mandate),
       };
     },
     answeredBy: async () => [{ target: 'fake/system', answers: 'script' }],
@@ -194,6 +197,41 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     });
     const { report } = await runBenchmark(dir, fake.api, scratch());
     expect(report.tasks).toEqual([expect.objectContaining({ task: 'fix', trials: 3, met: 1 })]);
+  });
+
+  const declaring = async (declaration: unknown[]): Promise<string> => {
+    const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
+    const file = path.join(dir, 'benchmark.json');
+    const benchmark = JSON.parse(fs.readFileSync(file, 'utf8')) as { tasks: { declaration: unknown[] }[] };
+    (benchmark.tasks[0] as { declaration: unknown[] }).declaration = declaration;
+    fs.writeFileSync(file, JSON.stringify(benchmark));
+    return dir;
+  };
+
+  it('sends the declaration of a task to its run as the mandate, and no mandate for a task that declares nothing', async () => {
+    const declared = fakeApi({ edit: fixTheBug });
+    await runBenchmark(await declaring([{ id: 'tests', command: 'node --test', when: 'always' }]), declared.api, scratch());
+    expect([...declared.runs.values()].map((run) => run.mandate)).toEqual(
+      Array.from({ length: 3 }, () => ({ completion: { conditions: [{ id: 'tests', command: 'node --test', when: 'always' }] } })),
+    );
+    const undeclared = fakeApi({ edit: fixTheBug });
+    await runBenchmark(await declaring([]), undeclared.api, scratch());
+    expect([...undeclared.runs.values()].map((run) => 'mandate' in run)).toEqual([false, false, false]);
+  });
+
+  it('counts a trial in the Task Completion Rate by the declaration its run pinned, with met from the oracle', async () => {
+    const fake = fakeApi({ edit: (cwd, trial) => (trial === 0 ? fixTheBug(cwd) : undefined) });
+    const { report } = await runBenchmark(await declaring([{ id: 'tests', command: 'node --test', when: 'always' }]), fake.api, scratch());
+    expect(report.total.completion).toEqual({ k: 1, n: 3, undeclared: 0 });
+  });
+
+  it('leaves a trial whose run pinned no condition out of the rate, and one whose run pinned a standing condition of the settings in it, whatever the task file declares', async () => {
+    const nothingPinned = fakeApi({ edit: fixTheBug, pinned: () => false });
+    const none = await runBenchmark(await declaring([{ id: 'tests', command: 'node --test', when: 'always' }]), nothingPinned.api, scratch());
+    expect(none.report.total.completion).toEqual({ k: 0, n: 0, undeclared: 3 });
+    const standing = fakeApi({ edit: fixTheBug, pinned: () => true });
+    const settings = await runBenchmark(await declaring([]), standing.api, scratch());
+    expect(settings.report.total.completion).toEqual({ k: 3, n: 3, undeclared: 0 });
   });
 
   it('answers an ask with the option the task names and counts the trial as needing a person', async () => {

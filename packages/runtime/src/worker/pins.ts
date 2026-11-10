@@ -1,7 +1,7 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
-import type { Capabilities, OutputFormatterName, PinnedRuleVerdict, TargetAnswers } from '@momonga/protocol';
+import { pinnedCompletionOf, verificationRequiredOf, OUTPUT_FORMATTERS, STORED_MODEL_KEYS, TARGET_ANSWERS, agentReadiness, decodeStoredModel, isPinnedRuleVerdict, isToolCallingState } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName, PinnedCompletion, PinnedRuleVerdict, TargetAnswers } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -27,6 +27,8 @@ export type RunPins = {
   guidelineVersion?: number;
   token?: TokenPin;
   policyVerdict?: PinnedRuleVerdict;
+  mandate?: { completion: PinnedCompletion };
+  verificationRequired?: true;
 };
 
 export const readRoles = (value: unknown): ModelRoles => {
@@ -105,6 +107,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
 export const readPins = (value: Record<string, unknown>): RunPins => {
   const { systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token, policyVerdict } = value;
   const model = decodeStoredModel(value, STORED_MODEL_KEYS.pin);
+  const completion = pinnedCompletionOf(value);
   if (
     model === undefined ||
     typeof systemPromptDigest !== 'string' ||
@@ -131,5 +134,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     ...(guidelineVersion === undefined ? {} : { guidelineVersion }),
     ...(token === undefined ? {} : { token: readTokenPin(token) }),
     ...(policyVerdict === undefined ? {} : { policyVerdict }),
+    ...(completion === undefined ? {} : { mandate: { completion } }),
+    ...(verificationRequiredOf(value) ? { verificationRequired: true as const } : {}),
   };
 };

@@ -36,11 +36,11 @@ describe('rule 2: the sandbox policy of each path that approves a Bash call', ()
     expectReadOnlyCall(built.spawns[0]);
   });
 
-  it('the network setting and the deny lists of the batch stay as they are', async () => {
+  it('the deny lists of the batch stay as they are and the network is none whatever the batch carries (I4.2)', async () => {
     const built = await setup();
     const sandboxPolicy: SandboxPolicy = { ...built.sandboxPolicy, network: 'allow' };
     resultOf(await built.run('Bash', { command: 'pwd' }, { sandboxPolicy }));
-    expect(built.spawns[0]?.policy).toEqual({ ...sandboxPolicy, writableRoots: [] });
+    expect(built.spawns[0]?.policy).toEqual({ ...sandboxPolicy, writableRoots: [], network: 'deny' });
   });
 
   it('a file rule that allows writes outside the workspace does not widen the call', async () => {

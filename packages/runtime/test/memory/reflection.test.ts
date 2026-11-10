@@ -16,7 +16,7 @@ import { withInProcessFacts } from './in-process-facts.ts';
 import { assistantMessage, failedStep, incompleteStep, textStep } from '../worker/scripts.ts';
 import { REFLECTION_INSTRUCTIONS } from '../../src/memory/reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA } from '../../src/memory/reflection-reply.ts';
-import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
+import { bash, exported, fileTool, finishClaimed, checked } from './reflection-fixture.ts';
 
 type Dropped = { ordinal: number; text: string | null; cause: 'text_rule' | 'duplicate' | 'evidence'; reason: string };
 
@@ -85,7 +85,7 @@ const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true,
 
 const VERIFIED = (project: string): RunEventPayload[] => [
   ...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }),
-  ...bash('t1', 'npm test', 0, 'ok'),
+  ...checked('npm test', 0, 'ok'),
 ];
 
 type Env = ReturnType<typeof setup>;
@@ -104,7 +104,7 @@ const queued = async (env: Env) => {
 describe('job creation and the decision to call', () => {
   it('writes a pending job at the terminal transition of every completed root run, and of no other', async () => {
     const env = setup({ enabled: false });
-    const completed = await env.finishedRun(bash('t1', 'npm test', 1));
+    const completed = await env.finishedRun(checked('npm test', 1));
     const failed = await env.finishedRun(VERIFIED(env.project), 'FAILED');
     expect(env.api.reflection.get((await completed).id)).toMatchObject({ state: 'pending', attempts: 0 });
     expect(env.api.reflection.get((await failed).id)).toBeUndefined();
@@ -134,7 +134,7 @@ describe('job creation and the decision to call', () => {
 
   it('makes no model call for a run that was not verified, and ends its job with the reason', async () => {
     const env = setup();
-    const unverified = await env.finishedRun(bash('t1', 'npm test', 1));
+    const unverified = await env.finishedRun(checked('npm test', 1));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
     expect(env.api.reflection.get((await unverified).id)).toMatchObject({ state: 'done', lastError: 'the run is not a verified success' });
@@ -150,7 +150,7 @@ describe('job creation and the decision to call', () => {
     const edited = await env.finishedRun([
       ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
       ...bash('s1', "sed -i 's/\"test\": \".*\"/\"test\": \"true\"/' package.json", 0, '', 'person'),
-      ...bash('t1', 'npm test', 0, 'ok'),
+      ...checked('npm test', 0, 'ok'),
     ]);
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
@@ -162,13 +162,13 @@ describe('job creation and the decision to call', () => {
     const inspected = await env.finishedRun([
       ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
       ...bash('g1', 'git status', 0, '', 'read_only'),
-      ...bash('t1', 'npm test', 0, 'ok', 'person'),
+      ...checked('npm test', 0, 'ok'),
     ]);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.reflection.get((await inspected).id)).toMatchObject({ state: 'done', lastError: null });
-    const alone = await env.finishedRun(bash('t1', 'npm test', 0, 'ok'));
+    const alone = await env.finishedRun(checked('npm test', 0, 'ok'));
     env.gateway.script.push(textStep(CANDIDATE_REPLY([], 'a second, different note')));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(2);
@@ -947,7 +947,7 @@ describe('the prompt frames recorded content as data (R7)', () => {
     const input = JSON.stringify(call?.body.input);
     expect(input.length).toBeLessThan(2048 * 4);
     expect(input).toContain('earlier steps are not shown');
-    expect(input).toContain('npm test');
+    expect(input).toContain('src/a.ts');
   });
 });
 

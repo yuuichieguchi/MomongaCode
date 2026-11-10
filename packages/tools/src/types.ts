@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, NetworkScope } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
@@ -30,6 +30,7 @@ export type ToolResult = {
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
+  mutated?: true;
   command?: string;
   windowShared?: true;
   detached?: true;
@@ -73,6 +74,7 @@ export type ToolContext = ReconcileContext & {
   spawnMarker?(): Promise<SpawnMarker>;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  network?: NetworkScope;
   ripgrep: RipgrepLocator;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;

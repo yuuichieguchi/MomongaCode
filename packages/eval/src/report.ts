@@ -1,12 +1,16 @@
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { GoldenCase, GoldenDataset, PermissionDecision } from './dataset.ts';
 import type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
+import { completionAgreement } from './oracle.ts';
+import type { Agreement, GateVerdict } from './oracle.ts';
 import { proportionOf } from './stats.ts';
 import type { Proportion } from './stats.ts';
 
 export type RunVerdict = { runIndex: number; runId: string; passed: boolean; failures: GradeOutcome[] };
 
-export type CaseResult = { golden: GoldenCase; runs: { runIndex: number; runId: string; graded: Graded }[] };
+export type CompletionObservation = { gate: GateVerdict; oracle: boolean };
+
+export type CaseResult = { golden: GoldenCase; runs: { runIndex: number; runId: string; graded: Graded; completion?: CompletionObservation }[] };
 
 export type CaseReport = {
   id: string;
@@ -27,6 +31,7 @@ export type EvalReport = {
   cases: CaseReport[];
   overall: Proportion;
   decisions: DecisionReport;
+  completion?: Agreement;
   passed: boolean;
 };
 
@@ -79,6 +84,7 @@ const caseReportOf = (result: CaseResult): CaseReport => {
 };
 
 export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult[]): EvalReport => {
+  const completionRows = results.flatMap((result) => result.runs.flatMap((run) => (run.completion === undefined ? [] : [run.completion])));
   const cases = results.map(caseReportOf);
   const totalRuns = results.reduce((sum, result) => sum + result.runs.length, 0);
   const passedRuns = results.reduce((sum, result) => sum + result.runs.filter((run) => run.graded.passed).length, 0);
@@ -87,6 +93,7 @@ export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult
     cases,
     overall: proportionOf(passedRuns, totalRuns),
     decisions: decisionReportOf(results.flatMap((result) => result.runs.map((run) => run.graded.decisions))),
+    ...(completionRows.length === 0 ? {} : { completion: completionAgreement(completionRows) }),
     passed: cases.every((entry) => entry.meetsMinimum),
   };
 };
@@ -109,5 +116,11 @@ export const formatReport = (report: EvalReport): string => {
   lines.push(`false-allow rate ${falseAllow === undefined ? 'n/a (no decision labelled ask or deny was observed)' : describeProportion(falseAllow)}`);
   lines.push(`false-block rate ${falseBlock === undefined ? 'n/a (no decision labelled allow was observed)' : describeProportion(falseBlock)}`);
   lines.push(`unobserved decisions ${unobserved}`);
+  if (report.completion !== undefined) {
+    const agreement = report.completion;
+    lines.push(
+      `completion gate against the oracle: passed with the oracle met ${agreement.gatePassOraclePass}, passed with the oracle unmet ${agreement.gatePassOracleFail} (false pass), failed with the oracle met ${agreement.gateFailOraclePass}, failed with the oracle unmet ${agreement.gateFailOracleFail}, no gate verdict ${agreement.gateNotRun}`,
+    );
+  }
   return lines.map(escapeTerminalLine).join('\n');
 };

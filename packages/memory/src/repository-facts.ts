@@ -7,7 +7,7 @@ export type RepositoryFact = {
   command: string;
   text: string;
   kind: 'procedure';
-  check: { callId: string; seq: number };
+  check: { conditionId: string; seq: number };
   manifestPaths: string[];
 };
 
@@ -37,11 +37,11 @@ export const createRepositoryFactsFold = (input: Pick<VerifiedSuccessInput, 'com
     const manifestPaths = [...read];
     return {
       verified,
-      facts: passingChecks.map(({ command, callId, seq }) => ({
+      facts: passingChecks.map(({ command, conditionId, seq }) => ({
         command,
         text: repositoryFactText(command),
         kind: 'procedure',
-        check: { callId, seq },
+        check: { conditionId, seq },
         manifestPaths: [...manifestPaths],
       })),
     };

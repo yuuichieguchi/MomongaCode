@@ -8,7 +8,7 @@ import { createMcpPool, inheritedEnvOf } from '@momonga/mcp';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
 import type { RuntimeStore } from '@momonga/store';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, MCP_MODERN_SERVER_PATH, modelSettings, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_LEASE, UNCONFIGURED_NETWORK, MCP_MODERN_SERVER_PATH, modelSettings, waitFor } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { ToolSource } from '@momonga/tools';
 import {
@@ -397,6 +397,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     let error: unknown;
     try {
       runtime.createToolRuntime({
+        network: UNCONFIGURED_NETWORK,
         paths: f.temp.paths,
         sharedPaths: f.temp.paths,
         generation: FIRST_GENERATION,

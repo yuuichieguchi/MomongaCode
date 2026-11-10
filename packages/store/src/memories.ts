@@ -51,7 +51,7 @@ const decodeEvidence = (context: DecodeContext, memoryId: string, row: Row): Sto
     case 'commit':
       return { kind, sha: reader.string('sha') };
     case 'check':
-      return { kind, runId: reader.string('run_id'), callId: reader.string('call_id'), seq: reader.number('seq'), command: reader.string('command'), exitCode: reader.number('exit_code') };
+      return { kind, runId: reader.string('run_id'), conditionId: reader.string('call_id'), seq: reader.number('seq'), command: reader.string('command'), exitCode: reader.number('exit_code') };
   }
 };
 
@@ -254,7 +254,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock, context: Decod
     sha256: entry.kind === 'file' ? entry.sha256 : null,
     sha: entry.kind === 'commit' ? entry.sha : null,
     runId: entry.kind === 'check' ? entry.runId : null,
-    callId: entry.kind === 'check' ? entry.callId : null,
+    callId: entry.kind === 'check' ? entry.conditionId : null,
     seq: entry.kind === 'check' ? entry.seq : null,
     command: entry.kind === 'check' ? entry.command : null,
     exitCode: entry.kind === 'check' ? entry.exitCode : null,

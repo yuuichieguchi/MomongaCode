@@ -450,7 +450,7 @@ const registerAutoMode: CommandGroup = (program, deps) => {
     .command('status [model]')
     .description('show the stored measurement of a classifier model for this version')
     .action(async (model: string | undefined) => {
-      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', ...(model === undefined ? {} : { classifier: model }) });
+      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', signal: deps.interrupt, ...(model === undefined ? {} : { classifier: model }) });
       deps.complete(0);
     });
 };

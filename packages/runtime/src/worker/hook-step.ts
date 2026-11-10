@@ -52,18 +52,25 @@ export const hookRunContextFor = (
 
 type LifecycleHooks = { context: HookRunContext; executions: HookExecution[]; session: HeldSession };
 
-const withLifecycleHooks = async <T>(ctx: ClaimContext, hooks: HooksSettings, work: (lifecycle: LifecycleHooks) => Promise<T>): Promise<T> => {
+export type SessionCommands = { session: HeldSession; policy: ToolPolicy; sandbox: Sandbox };
+
+export const withSessionCommands = async <T>(ctx: ClaimContext, work: (commands: SessionCommands) => Promise<T>): Promise<T> => {
   const held = await holdSandbox(ctx.options.tools.sandboxes, ctx.control.signal);
   try {
     const session = sessionOf(ctx);
     const rules: PermissionRule[] = await permissionRulesFor(ctx.options, session);
     const policy = await ctx.options.tools.policyFor(session, { env: ctx.env, rules, readableDirectories: ctx.skills.readDirectories, ruleEnforcement: held.ruleEnforcement });
-    const executions: HookExecution[] = [];
-    return await work({ context: hookRunContextFor(ctx, session, hooks, policy, held.sandbox, (execution) => executions.push(execution)), executions, session });
+    return await work({ session, policy, sandbox: held.sandbox });
   } finally {
     held.done();
   }
 };
+
+const withLifecycleHooks = <T>(ctx: ClaimContext, hooks: HooksSettings, work: (lifecycle: LifecycleHooks) => Promise<T>): Promise<T> =>
+  withSessionCommands(ctx, ({ session, policy, sandbox }) => {
+    const executions: HookExecution[] = [];
+    return work({ context: hookRunContextFor(ctx, session, hooks, policy, sandbox, (execution) => executions.push(execution)), executions, session });
+  });
 
 const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean => (ctx.journal.state.hookCompletions[event] ?? 0) > 0;
 

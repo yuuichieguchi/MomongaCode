@@ -1,6 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { CountRange, GraderSpec, PermissionDecision } from './dataset.ts';
 import { callsOf, finalTextOf } from './observe.ts';
+import { gateVerdictOf } from './oracle.ts';
 import type { ObservedCall } from './observe.ts';
 import type { RecordedRun } from './transcript.ts';
 
@@ -117,6 +118,16 @@ const gradeOne = (spec: GraderSpec, transcript: RecordedRun, calls: readonly Obs
       return outcome(spec, run.usage.totalTokens <= spec.max, `${run.usage.totalTokens} token(s), at most ${spec.max}`);
     case 'permissionDecision':
       return gradeDecision(spec, calls).outcome;
+    case 'verification': {
+      const verdict = gateVerdictOf(run, events);
+      return outcome(spec, verdict === spec.equals, `the completion gate says ${verdict}, expected ${spec.equals}`);
+    }
+    case 'oracle': {
+      const { oracle } = transcript;
+      if (oracle === undefined) return outcome(spec, false, 'the oracle was not run for this recorded run');
+      const failed = oracle.checks.filter((check) => !check.passed).map((check) => `${check.id}${check.reason === undefined ? '' : ` (${check.reason})`}`);
+      return outcome(spec, oracle.met, oracle.met ? 'every oracle check passed' : `oracle checks failed: ${failed.join(', ')}`);
+    }
   }
 };
 

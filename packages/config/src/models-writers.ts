@@ -410,6 +410,7 @@ const CONNECTION_FIELDS: Readonly<Record<string, FieldRow>> = {
   billing: { label: 'Billing' },
   apiVersion: { label: 'API version' },
   answers: { label: 'Who answers', labels: { model: 'A model', script: 'A script' } },
+  idempotencyKeyHeader: { label: 'Idempotency key header' },
   maxConcurrency: { label: 'Concurrent requests' },
   admissionTimeoutMs: { label: 'Wait for a free slot', kind: 'duration' },
 };
@@ -730,7 +731,7 @@ export type ModelsSettingWriter = { path: string; operations: readonly ModelsOpe
 const CONNECTION_PATH = 'models.connections[]';
 const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
 
-const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'maxConcurrency', 'admissionTimeoutMs'] as const;
+const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'idempotencyKeyHeader', 'maxConcurrency', 'admissionTimeoutMs'] as const;
 
 const ENTRY_FIELD_KEYS = [
   'toolCalling',

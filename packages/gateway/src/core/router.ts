@@ -77,6 +77,7 @@ export type TargetRuntime = {
   breaker: TargetBreaker;
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
+  idempotencyKeyHeader: string | undefined;
   plan: { profile: string; account?: string } | undefined;
   keyGroup: string | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
@@ -270,6 +271,7 @@ export const createRouter = (options: RouterOptions): Router => {
           timers,
         }),
       capabilityOverride: target.capabilities,
+      idempotencyKeyHeader: target.idempotencyKeyHeader,
       plan: target.plan,
       keyGroup: target.keyGroup,
       lastFailure: undefined,
@@ -288,7 +290,8 @@ export const createRouter = (options: RouterOptions): Router => {
   };
 
   const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
-    const declared = await target.adapter.capabilities(adapterTargetOf(target));
+    const reported = await target.adapter.capabilities(adapterTargetOf(target));
+    const declared: Capabilities = target.idempotencyKeyHeader === undefined ? reported : { ...reported, idempotencyKey: { header: target.idempotencyKeyHeader } };
     if (target.capabilityOverride === undefined) return declared;
     return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };

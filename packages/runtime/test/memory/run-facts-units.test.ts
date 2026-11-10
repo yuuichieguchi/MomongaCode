@@ -4,7 +4,7 @@ import type { Run } from '@momonga/store';
 import * as thread from '../../src/memory/journal-thread.ts';
 import { reflectionInputFor } from '../../src/memory/reflection-input.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
-import { bash, fileTool } from './reflection-fixture.ts';
+import { bash, checked, conditionIdOf, fileTool } from './reflection-fixture.ts';
 
 const RUN_ID = 'run-units';
 const PROJECT = '/work/units';
@@ -55,41 +55,43 @@ const traced = async (events: readonly RunEvent[], status: Run['status'], name: 
   return { reply, trace };
 };
 
-const checks = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => bash(`t${index}`, 'npm test', 0, 'ok')).flat();
+const checks = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => checked('npm test', 0, 'ok')).flat();
 
-const lastCheckSeq = 3 + 3 * STEPS;
+const modelCalls = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => bash(`t${index}`, 'npm test', 0, 'ok')).flat();
+
+const STARTED = { type: 'run.started', attempt: 1, now: 0, pins: { mandate: { completion: { conditions: [{ id: conditionIdOf('npm test'), command: 'npm test', when: 'always', source: 'settings' }], requirements: [] } } } } as unknown as RunEventPayload;
 
 describe('each new handler touches a bounded number of events between two unit() calls (review of fd3c85df, finding 1)', () => {
   it('verdictHandler folds each event as it is visited, never the whole journal after the last unit', async () => {
-    const events = journalOf([...fileTool('w1', 'Write', { path: `${PROJECT}/src/a.ts`, sha256: SHA, access: 'write' }), ...checks(STEPS)]);
+    const events = journalOf([STARTED, ...fileTool('w1', 'Write', { path: `${PROJECT}/src/a.ts`, sha256: SHA, access: 'write' }), ...checks(STEPS).map((event) => ({ ...event, mutationSeq: 4 }))]);
 
     const { reply, trace } = await traced(events, 'COMPLETED', 'verdictHandler', { runId: RUN_ID, commands: ['npm test'], manifests: ['package.json'] });
 
     expect(reply).toEqual({
       lastSeq: events.length,
       verified: true,
-      facts: [{ command: 'npm test', text: 'Run `npm test` to verify a change in this repository.', kind: 'procedure', check: { callId: `t${STEPS - 1}`, seq: lastCheckSeq }, manifestPaths: [] }],
+      facts: [{ command: 'npm test', text: 'Run `npm test` to verify a change in this repository.', kind: 'procedure', check: { conditionId: conditionIdOf('npm test'), seq: events.length }, manifestPaths: [] }],
     });
-    expect(trace.visited).toBeGreaterThanOrEqual(3 * STEPS);
+    expect(trace.visited).toBeGreaterThanOrEqual(STEPS);
     expect(trace.maxTouchedBetweenUnits).toBeLessThanOrEqual(EVENTS_TOUCHED_PER_UNIT);
   });
 
   it('evidenceHandler finds the recorded hash and the latest check without a pass over the completed calls after the last unit', async () => {
     const events = journalOf([...fileTool('r1', 'Read', { path: `${PROJECT}/src/a.ts`, sha256: SHA, access: 'read' }), ...checks(STEPS)]);
 
-    const { reply, trace } = await traced(events, 'COMPLETED', 'evidenceHandler', { runId: RUN_ID, paths: [`${PROJECT}/src/a.ts`], verificationCommands: ['npm test'] });
+    const { reply, trace } = await traced(events, 'COMPLETED', 'evidenceHandler', { runId: RUN_ID, paths: [`${PROJECT}/src/a.ts`] });
 
     expect(reply).toEqual({
       lastSeq: events.length,
       recorded: [{ sha256: SHA, seq: 3 }],
-      check: { callId: `t${STEPS - 1}`, seq: lastCheckSeq, command: 'npm test', exitCode: 0 },
+      check: { conditionId: conditionIdOf('npm test'), seq: events.length, command: 'npm test', exitCode: 0 },
     });
-    expect(trace.visited).toBeGreaterThanOrEqual(2 * STEPS);
+    expect(trace.visited).toBeGreaterThanOrEqual(STEPS);
     expect(trace.maxTouchedBetweenUnits).toBeLessThanOrEqual(EVENTS_TOUCHED_PER_UNIT);
   });
 
   it('reflectionInputHandler pairs each completion with its call as it is visited and builds the same input as today', async () => {
-    const events = journalOf([{ type: 'user.message', text: 'fix the bug' }, ...checks(STEPS)]);
+    const events = journalOf([{ type: 'user.message', text: 'fix the bug' }, ...modelCalls(STEPS)]);
     const capabilities = capabilitiesFor(8_000);
 
     const { reply, trace } = await traced(events, 'COMPLETED', 'reflectionInputHandler', { runId: RUN_ID, project: PROJECT, capabilities });

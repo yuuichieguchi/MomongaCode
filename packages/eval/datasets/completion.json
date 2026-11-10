@@ -1,0 +1,47 @@
+{
+  "format": "momonga-eval/1",
+  "name": "completion",
+  "cases": [
+    {
+      "id": "create-the-missing-file",
+      "description": "A declared check fails until a file exists; the independent oracle runs the same check and also guards the check script",
+      "input": "The check in check.sh fails. Change the workspace so that it passes, and do not edit check.sh.",
+      "files": { "check.sh": "test -f done.txt\n" },
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "completion": { "conditions": [{ "command": "sh check.sh", "timeoutMs": 60000 }] },
+      "oracle": [
+        { "id": "acceptance", "kind": "command", "run": "sh check.sh", "expectExit": 0, "evidence": "acceptance", "timeoutMs": 60000 },
+        { "id": "check-untouched", "kind": "unchangedPaths", "paths": ["check.sh"] }
+      ],
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "verification", "equals": "passed" },
+        { "kind": "oracle" }
+      ]
+    },
+    {
+      "id": "correct-the-setting",
+      "description": "A declared check fails on the value of a setting; the oracle also limits where the change may land",
+      "input": "The check in check.sh fails because of the value in settings.txt. Change settings.txt so that it passes, and do not edit check.sh.",
+      "files": { "check.sh": "grep -q '^mode=fast$' settings.txt\n", "settings.txt": "mode=slow\n" },
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "completion": { "conditions": [{ "command": "sh check.sh", "timeoutMs": 60000 }] },
+      "oracle": [
+        { "id": "acceptance", "kind": "command", "run": "sh check.sh", "expectExit": 0, "evidence": "acceptance", "timeoutMs": 60000 },
+        { "id": "check-untouched", "kind": "unchangedPaths", "paths": ["check.sh"] },
+        { "id": "only-the-setting", "kind": "changedPathsWithin", "paths": ["settings.txt"] }
+      ],
+      "graders": [
+        { "kind": "status", "equals": "COMPLETED" },
+        { "kind": "verification", "equals": "passed" },
+        { "kind": "oracle" }
+      ]
+    }
+  ]
+}

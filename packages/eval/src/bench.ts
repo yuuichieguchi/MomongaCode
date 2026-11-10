@@ -2,10 +2,15 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { defineProductSchema, nodeFileSystem } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { PERMISSION_MODES } from '@momonga/protocol';
-import type { PermissionMode } from '@momonga/protocol';
+import { CONDITION_WHENS, PERMISSION_MODES } from '@momonga/protocol';
+import type { ConditionWhen, Mandate, PermissionMode } from '@momonga/protocol';
 import { ASK_RESPONSES, DatasetError, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
 import type { AskResponse } from './dataset.ts';
+import { EVIDENCE_KINDS, ORACLE_CHECKS_SCHEMA } from './oracle-check.ts';
+import type { OracleCheck } from './oracle-check.ts';
+
+export { EVIDENCE_KINDS };
+export type { OracleCheck };
 
 export const BENCH_FORMAT = 'momonga-bench/1';
 export const BENCH_DEFAULT_RUNS = 3;
@@ -15,13 +20,6 @@ export type BenchTaskType = (typeof BENCH_TASK_TYPES)[number];
 
 export const BENCH_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 export type BenchDifficulty = (typeof BENCH_DIFFICULTIES)[number];
-
-export const EVIDENCE_KINDS = ['acceptance', 'unit', 'regression', 'lint', 'static', 'security'] as const;
-
-export type OracleCheck =
-  | { id: string; kind: 'command'; run: string; expectExit: number; evidence: (typeof EVIDENCE_KINDS)[number]; timeoutMs: number }
-  | { id: string; kind: 'unchangedPaths'; paths: string[] }
-  | { id: string; kind: 'changedPathsWithin'; paths: string[] };
 
 export type BenchTask = {
   id: string;
@@ -37,7 +35,7 @@ export type BenchTask = {
   runs?: number;
   setup: { run: string; timeoutMs: number }[];
   graderFiles: Record<string, string>;
-  declaration: { id: string; command: string; when: string }[];
+  declaration: { id: string; command: string; when: ConditionWhen }[];
   oracle: OracleCheck[];
   reference: { directory: string };
 };
@@ -51,16 +49,6 @@ export type Benchmark = {
 
 const text = { type: 'string', minLength: 1 } as const;
 const count = { type: 'integer', minimum: 1 } as const;
-const paths = { type: 'array', minItems: 1, items: text } as const;
-
-const oracleCheck = (kind: string, properties: Record<string, unknown>, required: readonly string[]) =>
-  ({
-    type: 'object',
-    properties: { id: text, kind: { const: kind }, ...properties },
-    required: ['id', 'kind', ...required],
-    additionalProperties: false,
-  }) as const;
-
 export const BENCH_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
@@ -101,19 +89,9 @@ export const BENCH_SCHEMA = {
           graderFiles: { type: 'object', additionalProperties: { type: 'string' } },
           declaration: {
             type: 'array',
-            items: { type: 'object', properties: { id: text, command: text, when: text }, required: ['id', 'command', 'when'], additionalProperties: false },
+            items: { type: 'object', properties: { id: text, command: text, when: { enum: [...CONDITION_WHENS] } }, required: ['id', 'command', 'when'], additionalProperties: false },
           },
-          oracle: {
-            type: 'array',
-            minItems: 1,
-            items: {
-              oneOf: [
-                oracleCheck('command', { run: text, expectExit: { type: 'integer', minimum: 0 }, evidence: { enum: [...EVIDENCE_KINDS] }, timeoutMs: count }, ['run', 'expectExit', 'evidence', 'timeoutMs']),
-                oracleCheck('unchangedPaths', { paths }, ['paths']),
-                oracleCheck('changedPathsWithin', { paths }, ['paths']),
-              ],
-            },
-          },
+          oracle: ORACLE_CHECKS_SCHEMA,
           reference: { type: 'object', properties: { directory: text }, required: ['directory'], additionalProperties: false },
         },
         required: [
@@ -140,6 +118,9 @@ export const BENCH_SCHEMA = {
   required: ['format', 'name', 'repositories', 'tasks'],
   additionalProperties: false,
 } as const;
+
+export const mandateOfTask = (task: Pick<BenchTask, 'declaration'>): Mandate | undefined =>
+  task.declaration.length === 0 ? undefined : { completion: { conditions: task.declaration.map(({ id, command, when }) => ({ id, command, when })) } };
 
 const validateBenchmarkShape: ProductValidator<Benchmark> = defineProductSchema('eval/bench', BENCH_SCHEMA);
 

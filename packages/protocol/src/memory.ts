@@ -33,7 +33,7 @@ export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
 export type MemoryEvidence =
   | { kind: 'file'; project: string; path: string; sha256: string }
   | { kind: 'commit'; sha: string }
-  | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number };
+  | { kind: 'check'; runId: string; conditionId: string; seq: number; command: string; exitCode: number };
 
 export type StoredMemorySource = MemorySource | { kind: typeof UNKNOWN_VALUE };
 

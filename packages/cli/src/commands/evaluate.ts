@@ -29,6 +29,7 @@ import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
+import { nodeWorkspaceProbe } from '../eval/workspace-probe.ts';
 import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
@@ -76,7 +77,11 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
         workspaces.push(workspace);
         const cwd = workspace.path;
         await populate(ports, cwd, golden);
-        return { api, workspace: { cwd, env }, close: async () => undefined };
+        if (golden.oracle === undefined) return { api, workspace: { cwd, env }, close: async () => undefined };
+        const base = await createOwnedDirectory({ parent: os.tmpdir(), prefix: WORKSPACE_PREFIX });
+        workspaces.push(base);
+        await populate(ports, base.path, golden);
+        return { api, workspace: { cwd, env }, oracle: { base: base.path, probe: nodeWorkspaceProbe(env) }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });

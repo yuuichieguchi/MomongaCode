@@ -16,6 +16,7 @@ export type {
   HealthResult,
   ImageCapability,
   ImageTokenModel,
+  IdempotencyKeyCapability,
   OutputBoundField,
   AdapterOutputBound,
   AdapterToolPlacement,
@@ -115,6 +116,7 @@ export {
   REQUEST_TOOL_KINDS,
   RESPONSES_OUTPUT_BOUNDS,
   SYSTEM_ROLES,
+  IDEMPOTENCY_KEY_HEADER_PATTERN,
   TOOL_PLACEMENTS,
   REASONING_EFFORTS,
   TARGET_ANSWERS,
@@ -362,7 +364,7 @@ export type {
   UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
-export { DAEMON_CURRENT_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export { COMPLETION_DECLARATION_SCHEMA, DAEMON_CURRENT_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export type { DaemonCurrentFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
@@ -524,6 +526,43 @@ export {
 export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { POLICY_REFUTED_CODE, POLICY_VERDICT_NOTICE_CODE, RULE_FINGERPRINT_PATTERN, RULE_VERDICTS, RULE_VERIFY_BUDGET_MS, isPinnedRuleVerdict, isRuleVerdict, policyRefutedMessage, policyVerdictNotice } from './rule-verdict.ts';
 export type { PinnedRuleVerdict, PutRuleVerdictRequest, RuleRefutation, RuleVerdict, RuleVerdictKind } from './rule-verdict.ts';
+export {
+  CONDITION_SOURCES,
+  CONDITION_STATES,
+  CONDITION_WHENS,
+  NOT_RUN_REASONS,
+  RESIDUAL_RISK_CODES,
+  VERIFICATION_FEEDBACK_PREFIX,
+  VERIFICATION_OUTCOMES,
+  completionMutates,
+  conditionIdOf,
+  conditionOwed,
+  initialVerificationState,
+  pinnedCompletionOf,
+  readMandate,
+  readPinnedCompletion,
+  reconciliationMutates,
+  verificationRequiredOf,
+  withVerificationCompleted,
+  withVerificationStarted,
+} from './completion.ts';
+export type {
+  CompletionDeclaration,
+  ConditionDeclaration,
+  ConditionResult,
+  ConditionSource,
+  ConditionState,
+  ConditionWhen,
+  Mandate,
+  MutationFacts,
+  NotRunReason,
+  PinnedCompletion,
+  PinnedCondition,
+  ResidualRiskCode,
+  RunReport,
+  VerificationOutcome,
+  VerificationState,
+} from './completion.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
 export { APPROVAL_KINDS, APPROVAL_STATUSES, UNKNOWN_EFFECT_ADVICE, UNKNOWN_EFFECT_REASON, unknownEffectLines, unknownEffectOptions, unknownEffectTitle, isInheritedReference, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_FULL_CODE, INBOX_MAX_PENDING, INBOX_STATES, inboxFullMessage, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, USER_SHELL_HEAD_BYTES, USER_SHELL_OUTPUT_BYTES, USER_SHELL_RUN_ACTIVE_CODE, USER_SHELL_TAIL_BYTES, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';

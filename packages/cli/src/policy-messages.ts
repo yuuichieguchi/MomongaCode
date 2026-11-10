@@ -1,9 +1,11 @@
 import { HOOK_STOPPED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { PlanAccountRef } from '@momonga/protocol';
-import type { PermissionDenial, PermissionDenialSource, PublicRunEvent } from '@momonga/protocol';
+import type { PermissionDenial, PermissionDenialSource, PublicRunEvent, RunReport } from '@momonga/protocol';
 
 type HookCompleted = Extract<PublicRunEvent, { type: 'hook.completed' }>;
 type Classified = Extract<PublicRunEvent, { type: 'tool.permission.classified' }>;
+type Verified = Extract<PublicRunEvent, { type: 'verification.completed' }>;
+type ReportedCondition = RunReport['conditions'][number];
 
 export type Level = 'info' | 'warning' | 'error';
 
@@ -31,6 +33,37 @@ const DENIAL_SOURCE_WORDS: Readonly<Record<PermissionDenialSource, string>> = {
 };
 
 export const hookLevel = (event: HookCompleted): Level => HOOK_OUTCOME_LEVELS[event.outcome];
+
+const VERIFICATION_WORDS: Readonly<Record<Verified['outcome'], string>> = {
+  passed: 'passed',
+  failed: 'failed',
+  timed_out: 'timed out',
+  cancelled: 'was cancelled',
+  spawn_error: 'could not be started',
+};
+
+export const verificationLevel = (event: Verified): Level => (event.outcome === 'passed' ? 'info' : 'warning');
+
+export const describeVerification = (event: Verified, agent?: string): string =>
+  `completion condition${agent === undefined ? '' : ` of subagent ${agent}`} ${VERIFICATION_WORDS[event.outcome]}${event.exitCode === undefined || event.outcome === 'passed' ? '' : ` (exit ${event.exitCode})`}: ${event.command}`;
+
+const UNMET_STATE_WORDS: Readonly<Record<Exclude<ReportedCondition['state'], 'passed' | 'not_needed'>, string>> = {
+  failed: 'failed',
+  timed_out: 'timed out',
+  cancelled: 'was cancelled',
+  spawn_error: 'could not be started',
+  stale: 'passed before the last change and was not run again',
+  not_run: 'was not run',
+};
+
+export const unmetConditionLines = (report: RunReport): string[] => {
+  if (report.conditions.length === 0) return ['  no completion condition was declared for a run that changed the workspace'];
+  return report.conditions.flatMap((condition) =>
+    condition.state === 'passed' || condition.state === 'not_needed'
+      ? []
+      : [`  unmet: ${condition.command} ${UNMET_STATE_WORDS[condition.state]}${condition.last?.exitCode === undefined || condition.state !== 'failed' ? '' : ` (exit ${condition.last.exitCode})`}`],
+  );
+};
 
 export const describeHook = (event: HookCompleted, agent?: string): string[] => {
   const facts = [

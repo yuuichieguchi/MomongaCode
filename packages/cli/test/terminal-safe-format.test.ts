@@ -84,7 +84,7 @@ describe('memory text that a person did not write is printed escaped', () => {
         project: HOSTILE,
         evidence: [
           { kind: 'file', project: '/p', path: HOSTILE, sha256: 'a'.repeat(64) },
-          { kind: 'check', command: HOSTILE, exitCode: 0, runId: 'r', callId: 'c', seq: 1 },
+          { kind: 'check', command: HOSTILE, exitCode: 0, runId: 'r', conditionId: 'c', seq: 1 },
         ],
       }),
     );

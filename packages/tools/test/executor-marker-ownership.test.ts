@@ -75,7 +75,7 @@ describe.runIf(process.platform === 'darwin')('T13 every path out of a call that
 });
 
 describe('T13 drift: createMarker is the one creator and each creator closes its handle in a finally', () => {
-  it.for(['packages/tools/src/executor.ts', 'packages/tools/src/hooks/run.ts', 'packages/runtime/src/process/job-marker-files.ts'])('%s creates markers only through createMarker and closes the handle in a finally', (relative) => {
+  it.for(['packages/tools/src/executor.ts', 'packages/tools/src/sandboxed-command.ts', 'packages/runtime/src/process/job-marker-files.ts'])('%s creates markers only through createMarker and closes the handle in a finally', (relative) => {
     const text = fs.readFileSync(path.join(ROOT, relative), 'utf8');
     expect(text).toContain('createMarker(');
     expect(text).not.toMatch(/openSync\([^)]*'wx'/);

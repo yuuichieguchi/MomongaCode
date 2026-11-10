@@ -87,7 +87,7 @@ const isVerdictFact = (fact: unknown): fact is VerdictFact =>
   typeof fact['text'] === 'string' &&
   fact['kind'] === 'procedure' &&
   isRecord(fact['check']) &&
-  typeof fact['check']['callId'] === 'string' &&
+  typeof fact['check']['conditionId'] === 'string' &&
   typeof fact['check']['seq'] === 'number' &&
   Array.isArray(fact['manifestPaths']) &&
   fact['manifestPaths'].every((entry) => typeof entry === 'string');
@@ -102,7 +102,7 @@ const verdictOf = (reply: JournalThreadReply): VerdictReply => {
 const isRecordedHash = (entry: unknown): entry is RecordedHash => isRecord(entry) && typeof entry['sha256'] === 'string' && typeof entry['seq'] === 'number';
 
 const isRecordedCheck = (entry: unknown): entry is RecordedCheck =>
-  isRecord(entry) && typeof entry['callId'] === 'string' && typeof entry['seq'] === 'number' && typeof entry['command'] === 'string' && typeof entry['exitCode'] === 'number';
+  isRecord(entry) && typeof entry['conditionId'] === 'string' && typeof entry['seq'] === 'number' && typeof entry['command'] === 'string' && typeof entry['exitCode'] === 'number';
 
 const evidenceOf = (reply: JournalThreadReply): EvidenceReply => {
   const { recorded, check } = reply;
@@ -369,8 +369,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
 
   const verdict: JournalThreadClient['verdict'] = async ({ runId, commands, manifests }) => verdictOf(await request({ kind: 'verdict', runId, commands, manifests }));
 
-  const evidence: JournalThreadClient['evidence'] = async ({ runId, paths, verificationCommands, onlyCommand }) =>
-    evidenceOf(await request({ kind: 'evidence', runId, paths, verificationCommands, ...(onlyCommand === undefined ? {} : { onlyCommand }) }));
+  const evidence: JournalThreadClient['evidence'] = async ({ runId, paths, onlyCommand }) =>
+    evidenceOf(await request({ kind: 'evidence', runId, paths, ...(onlyCommand === undefined ? {} : { onlyCommand }) }));
 
   const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
     reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));

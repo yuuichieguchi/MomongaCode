@@ -1,6 +1,6 @@
 import type { ModelRoles } from '@momonga/config';
 import type { Calibration, TokenMeter } from '@momonga/context';
-import type { Capabilities, FunctionTool, RunEventPayload } from '@momonga/protocol';
+import type { Capabilities, FunctionTool, PinnedCondition, RunEventPayload } from '@momonga/protocol';
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
 import type { OutputFit, ToolSet } from '@momonga/tools';
@@ -61,6 +61,7 @@ export type ClaimContext = {
   targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }>;
   pinnedDigest: { value: string | undefined };
   memory: RunMemory;
+  completion: { conditions: readonly PinnedCondition[]; requirements: readonly string[]; required: boolean };
   verificationCommands: readonly string[];
   autoCompact: boolean;
   token: TokenPolicy;

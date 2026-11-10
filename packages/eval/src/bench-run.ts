@@ -1,12 +1,12 @@
 import path from 'node:path';
 import { nodeFileSystem } from '@momonga/foundation';
-import type { AnsweredByView, PermissionMode, PublicRunEvent, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
+import type { AnsweredByView, Mandate, PermissionMode, PublicRunEvent, RunFactsView, RunStatus, StopReason } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, foldFacts } from '@momonga/reliability';
 import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliability';
-import { BENCH_DEFAULT_RUNS, parseBenchmark, treeDigest } from './bench.ts';
+import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, Benchmark } from './bench.ts';
 import { gradeTrial } from './bench-grade.ts';
-import type { WorkspaceProbe } from './bench-grade.ts';
+import type { WorkspaceProbe } from './oracle-grade.ts';
 import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
 import { EvalError, driveRun } from './runner.ts';
@@ -24,11 +24,12 @@ export type BenchRunView = {
   agent: string;
   mode: PermissionMode;
   model: string;
+  declared: boolean;
 };
 
 export type BenchRunApi = {
   createSession(input: { cwd: string; permissionMode: PermissionMode; model: string }): Promise<{ id: string }>;
-  createRun(sessionId: string, input: { input: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } }): Promise<{ id: string }>;
+  createRun(sessionId: string, input: { input: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; mandate?: Mandate }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   runOf(runId: string): Promise<BenchRunView>;
   answeredBy(runId: string): Promise<AnsweredByView[]>;
@@ -72,7 +73,7 @@ type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: Answer
 
 const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[]): Promise<RunFactsView> => {
   const view = await api.runOf(runId);
-  return foldFacts(factsEventsOf(events), {
+  const folded = foldFacts(factsEventsOf(events), {
     runId,
     rootRunId,
     sessionId: view.sessionId,
@@ -88,18 +89,25 @@ const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, ev
     agent: view.agent,
     origin: view.origin,
   });
+  return { ...folded, declared: view.declared };
 };
 
 const runTrial = async (task: BenchTask, repository: string, workspace: string, ports: BenchRunPorts): Promise<Trial> => {
   const { api } = ports;
   const session = await api.createSession({ cwd: workspace, permissionMode: task.permissionMode, model: ports.model });
-  const run = await api.createRun(session.id, { input: task.prompt, timeoutMs: task.budget.timeoutMs, limits: { maxSteps: task.budget.maxSteps, maxTotalTokens: task.budget.maxTotalTokens } });
+  const mandate = mandateOfTask(task);
+  const run = await api.createRun(session.id, {
+    input: task.prompt,
+    timeoutMs: task.budget.timeoutMs,
+    limits: { maxSteps: task.budget.maxSteps, maxTotalTokens: task.budget.maxTotalTokens },
+    ...(mandate === undefined ? {} : { mandate }),
+  });
   const driven = await driveRun(api, task, run.id);
   const folded = await factsOfRun(api, run.id, run.id, driven.events);
   const children: RunFactsView[] = [];
   for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
   const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe });
-  return { facts: { ...folded, declared: task.declaration.length > 0, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
+  return { facts: { ...folded, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
 };
 
 const verifiedRepositories = async (benchmark: Benchmark, root: string): Promise<Map<string, string>> => {

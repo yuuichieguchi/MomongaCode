@@ -1,7 +1,11 @@
 import { defineProductSchema, describeFirstError, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
+import { COMPLETION_DECLARATION_SCHEMA, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import type { CompletionDeclaration, PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
+import { GATE_VERDICTS } from './oracle.ts';
+import type { GateVerdict } from './oracle.ts';
+import { ORACLE_CHECKS_SCHEMA } from './oracle-check.ts';
+import type { OracleCheck } from './oracle-check.ts';
 
 export const DATASET_FORMAT = 'momonga-eval/1';
 
@@ -24,7 +28,9 @@ export type GraderSpec =
   | { kind: 'toolNotCalled'; name: string }
   | { kind: 'stepsAtMost'; max: number }
   | { kind: 'tokensAtMost'; max: number }
-  | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision; inputPattern?: string };
+  | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision; inputPattern?: string }
+  | { kind: 'verification'; equals: GateVerdict }
+  | { kind: 'oracle' };
 
 export type GoldenCase = {
   id: string;
@@ -36,6 +42,8 @@ export type GoldenCase = {
   minPassRate: number;
   timeoutMs?: number;
   files?: Record<string, string>;
+  completion?: CompletionDeclaration;
+  oracle?: OracleCheck[];
   graders: GraderSpec[];
 };
 
@@ -84,6 +92,8 @@ export const DATASET_SCHEMA = {
           minPassRate: { type: 'number', minimum: 0, maximum: 1 },
           timeoutMs: { type: 'integer', minimum: 1000 },
           files: { type: 'object', additionalProperties: { type: 'string' } },
+          completion: COMPLETION_DECLARATION_SCHEMA,
+          oracle: ORACLE_CHECKS_SCHEMA,
           graders: {
             type: 'array',
             minItems: 1,
@@ -100,6 +110,8 @@ export const DATASET_SCHEMA = {
                 grader('stepsAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
                 grader('tokensAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
                 grader('permissionDecision', { tool: string, expected: { enum: [...PERMISSION_DECISIONS] }, inputPattern: string }, ['tool', 'expected']),
+                grader('verification', { equals: { enum: [...GATE_VERDICTS] } }, ['equals']),
+                grader('oracle', {}, []),
               ],
             },
           },
@@ -167,7 +179,18 @@ const assertCountRanges = (dataset: CasesHolder, source: string): void => {
   }
 };
 
+const assertOracleDeclared = (dataset: CasesHolder, source: string): void => {
+  for (const golden of dataset.cases) {
+    const ids = (golden.oracle ?? []).map((check) => check.id);
+    if (new Set(ids).size !== ids.length) throw new DatasetError(`${source}: case ${golden.id} has two oracle checks with the same id`);
+    if (golden.graders.some((spec) => spec.kind === 'oracle') && golden.oracle === undefined) {
+      throw new DatasetError(`${source}: case ${golden.id} has an oracle grader but declares no oracle checks`);
+    }
+  }
+};
+
 export const assertGoldenCases = (dataset: CasesHolder, source: string): void => {
+  assertOracleDeclared(dataset, source);
   assertUniqueCaseIds(dataset, source);
   assertPatternsCompile(dataset, source);
   assertCountRanges(dataset, source);

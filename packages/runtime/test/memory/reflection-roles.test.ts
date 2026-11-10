@@ -9,7 +9,7 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
-import { bash, exported, fileTool } from './reflection-fixture.ts';
+import { bash, exported, fileTool, checked, finishClaimed } from './reflection-fixture.ts';
 
 type Job = { state: string; attempts: number; lastError: string | null };
 
@@ -31,14 +31,6 @@ const pinsWith = (roles: Record<string, string> | undefined): Record<string, unk
   capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },
   ...(roles === undefined ? {} : { roles }),
 });
-
-const finishWithPins = async (store: RuntimeStore, pins: Record<string, unknown>, events: readonly RunEventPayload[]): Promise<void> => {
-  const claim = mustClaim(store, 'w1');
-  const appended = store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins }, ...events]);
-  if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
-  const finished = await store.transition(claim, ['RUNNING'], 'COMPLETED', {});
-  if (finished.kind !== 'ok') throw new Error(`finish failed: ${finished.kind}`);
-};
 
 const setup = () => {
   const opened = harness();
@@ -66,10 +58,10 @@ const setup = () => {
       timers: createFakeTimers(clock),
       random: () => 0.5,
     });
-  const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...bash('t1', 'npm test', 0, 'ok')];
+  const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...checked('npm test', 0, 'ok')];
   const finishedRun = async (roles: Record<string, string> | undefined) => {
     const run = enqueue(store, session.id, 'fix the bug');
-    await finishWithPins(store, pinsWith(roles), verified);
+    await finishClaimed(store, verified, 'COMPLETED', pinsWith(roles));
     return run;
   };
   return { store, api: store as unknown as Api, gateway, settings, reflector, finishedRun, project };

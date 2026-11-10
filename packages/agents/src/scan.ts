@@ -3,6 +3,7 @@ import { momongaLayout } from '@momonga/foundation';
 import { attemptRead, describeUnreadable, parseSkillFile } from '@momonga/skills';
 import type { SkillFileSystem } from '@momonga/skills';
 import { AGENT_DIRECTORY_SEGMENTS, AGENT_FILE_SUFFIX, AGENT_NAME_MAX_LENGTH, INHERIT_MODEL, SUPPORTED_FIELDS } from './constants.ts';
+import type { Mandate } from '@momonga/protocol';
 import type { AgentDefinition, AgentScope } from './types.ts';
 
 export type AgentScanRequest = { home: string; projectRoot: string; trusted: boolean };
@@ -19,6 +20,30 @@ const toolsOf = (value: unknown, location: string, warnings: string[]): string[]
     return 'invalid';
   }
   return entries.map((entry) => entry.trim()).filter((entry) => entry !== '');
+};
+
+const nonEmptyStringsOf = (value: unknown): string[] | 'invalid' => {
+  if (!Array.isArray(value)) return 'invalid';
+  const entries = value.map((entry: unknown) => (typeof entry === 'boolean' ? String(entry) : entry));
+  return entries.every((entry): entry is string => typeof entry === 'string' && entry.trim() !== '') ? entries.map((entry) => entry.trim()) : 'invalid';
+};
+
+const mandateOf = (fields: Readonly<Record<string, unknown>>, location: string, warnings: string[]): Mandate | undefined | 'invalid' => {
+  const { conditions, requirements, inherit } = fields;
+  if (conditions === undefined && requirements === undefined && inherit === undefined) return undefined;
+  const commands = conditions === undefined ? undefined : nonEmptyStringsOf(conditions);
+  const texts = requirements === undefined ? undefined : nonEmptyStringsOf(requirements);
+  if (commands === 'invalid' || texts === 'invalid' || (inherit !== undefined && typeof inherit !== 'boolean')) {
+    warnings.push(`Agent at ${location} was skipped: conditions and requirements must be lists of non-empty strings and inherit must be true or false`);
+    return 'invalid';
+  }
+  return {
+    completion: {
+      ...(commands === undefined ? {} : { conditions: commands.map((command) => ({ command, when: 'always' as const })) }),
+      ...(texts === undefined ? {} : { requirements: texts }),
+      ...(inherit === undefined ? {} : { inherit }),
+    },
+  };
 };
 
 const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSystem, warnings: string[]): Promise<AgentDefinition | undefined> => {
@@ -61,6 +86,8 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
   }
   const toolList = toolsOf(tools, file, warnings);
   if (toolList === 'invalid') return undefined;
+  const mandate = mandateOf(parsed.fields, file, warnings);
+  if (mandate === 'invalid') return undefined;
   for (const field of Object.keys(parsed.fields)) {
     if (!SUPPORTED_FIELDS.has(field)) warnings.push(`Agent ${JSON.stringify(trimmedName)} at ${file} uses the field ${JSON.stringify(field)}, which is not supported and was ignored`);
   }
@@ -71,6 +98,7 @@ const agentOf = async (file: string, scope: AgentScope, fileSystem: SkillFileSys
     prompt: parsed.body,
     ...(toolList === undefined ? {} : { tools: toolList }),
     ...(trimmedModel === undefined || trimmedModel === INHERIT_MODEL ? {} : { model: trimmedModel }),
+    ...(mandate === undefined ? {} : { mandate }),
     scope,
     location: file,
   };

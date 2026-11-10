@@ -65,6 +65,7 @@ export type UsageReportResponse = {
   output_tokens: number;
   total_tokens: number;
   usage_source: UsageSource;
+  retry_of_seq?: number;
 };
 
 export type UsageReportStep = {
