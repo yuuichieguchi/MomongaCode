@@ -63,7 +63,7 @@ export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader,
 export type { GatewayStopValues, LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { mcpServerNameProblem, assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
-export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
+export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, OPERATION_RULE_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';

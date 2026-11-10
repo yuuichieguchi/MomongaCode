@@ -59,7 +59,10 @@ export const EDIT_TOOLS: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool) 
 
 export const isPathTool = (tool: string): tool is PathToolName => Object.hasOwn(PATH_TOOL_RULES, tool);
 
-const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash'];
+export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'] as const;
+
+const OPERATION_TOOLS: readonly string[] = OPERATION_RULE_TOOLS;
+const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash', ...OPERATION_TOOLS];
 const PLAIN_TOOLS: readonly string[] = [...SPECIFIER_TOOLS, 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan', 'MemorySave', 'MemorySearch', 'HistorySearch', 'HistoryRead', 'RulePropose'];
 const MCP_NAME = /^[A-Za-z0-9_-]+$/;
 
@@ -90,6 +93,10 @@ const validateSpecifier = (text: string, tool: string, specifier: string): void 
   if (tool === 'Bash') {
     if (!hasBalancedParentheses(specifier)) throw new RuleParseError(text, 'unbalanced parentheses in specifier');
     if (specifier.endsWith(COMMAND_PREFIX_SUFFIX) && specifier.slice(0, -COMMAND_PREFIX_SUFFIX.length).trim() === '') throw new RuleParseError(text, 'empty command prefix');
+    return;
+  }
+  if (OPERATION_TOOLS.includes(tool)) {
+    if (/[()]/.test(specifier)) throw new RuleParseError(text, 'parentheses are not allowed in an operation specifier');
     return;
   }
   if (/[()]/.test(specifier)) throw new RuleParseError(text, 'parentheses are not allowed in a path specifier');

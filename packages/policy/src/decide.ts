@@ -6,6 +6,8 @@ import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
 import { commandCoveredByAllowRules } from './command-match.ts';
 import type { PolicyFilesystem } from './filesystem.ts';
+import { supersededFormOf } from './superseded.ts';
+import type { SupersededForm } from './superseded.ts';
 import { matchRule, matchStrength, ruleCoversSubject } from './match-rule.ts';
 import { absoluteFrom } from './path-match.ts';
 import { commandSpecsFor } from './platform-specs.ts';
@@ -33,11 +35,13 @@ export type DecideInput = {
   searchPath: string | undefined;
   isWritable: (absolute: string) => boolean;
   sandboxNetwork?: SandboxNetworkSetting;
+  mandate?: true;
+  supersededForms?: readonly SupersededForm[];
 };
 
 export type Decision = {
   kind: DecisionKind;
-  source: 'rule' | 'mode' | 'protected' | 'hook';
+  source: 'rule' | 'mode' | 'protected' | 'hook' | 'operation';
   reason: string;
   rule?: PermissionRule;
   humanOnly?: true;
@@ -114,6 +118,11 @@ export const denyingRuleFor = (rules: readonly PermissionRule[], mode: Permissio
   return scanDeny(input, subject, applicableRules(input, subject)).denied?.rule;
 };
 
+const operationDecision = (subject: PermissionSubject): Decision | undefined =>
+  (subject.kind === 'repo' || subject.kind === 'forge') && subject.approval === 'always'
+    ? { kind: 'ask', source: 'operation', humanOnly: true, reason: `${subject.operation} always needs a person to approve it, in every mode` }
+    : undefined;
+
 const protectedDecision = (input: DecideInput, subject: PermissionSubject): Decision | undefined => {
   const reason = protectedWriteReason(input, subject);
   return reason === undefined ? undefined : { kind: 'ask', source: 'protected', reason, humanOnly: true };
@@ -137,6 +146,9 @@ const modeDefault = (input: DecideInput, subject: PermissionSubject): Decision =
       return byMode('ask', `saving a ${subject.scope} memory requires approval because it persists into later sessions`);
     case 'history':
       return byMode('ask', `reading the recorded history of ${subject.project === 'all' ? 'every project' : subject.project} requires approval because it reaches outside this project`);
+    case 'repo':
+    case 'forge':
+      return byMode('ask', `${subject.operation} requires approval`);
     case 'command':
       return commandDefault(input, subject.command);
     case 'path': {
@@ -175,6 +187,9 @@ const decideSubject = (input: DecideInput, tool: PolicyTool, subject: Permission
 
   const guarded = protectedDecision(input, subject);
   if (guarded !== undefined) return guarded;
+
+  const always = operationDecision(subject);
+  if (always !== undefined) return always;
 
   const askRules = applicable.filter(({ rule, ruleIndex }) => rule.effect === 'ask' && matchRule(rule, subject, fileRules, ruleIndex));
   const governingAsk = askRules.find(({ rule }) => isGoverningRule(rule));
@@ -306,4 +321,11 @@ const withNetworkRequest = (input: DecideInput, decision: Decision): Decision =>
   return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
 };
 
-export const decide = (input: DecideInput): Decision => withNetworkRequest(input, decideWithoutNetwork(input));
+const supersededDecision = (input: DecideInput): Decision | undefined => {
+  if (input.mandate !== true || input.subject.kind !== 'command' || input.supersededForms === undefined) return undefined;
+  const form = supersededFormOf(input.subject.command, input.supersededForms, commandSpecsFor(input.fs.platform));
+  if (form === undefined) return undefined;
+  return byMode('deny', `Not run: this run has a mandate, and ${form.argv.join(' ')} is replaced by a dedicated operation; use ${form.operation}`);
+};
+
+export const decide = (input: DecideInput): Decision => supersededDecision(input) ?? withNetworkRequest(input, decideWithoutNetwork(input));
