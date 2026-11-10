@@ -10,6 +10,6 @@ export const AGENT_NAME_MAX_LENGTH = 256;
 
 export const SPAWN_TOOL_TIMEOUT_MS = 10_000;
 
-export const SUPPORTED_FIELDS: ReadonlySet<string> = new Set(['name', 'description', 'tools', 'model', 'color']);
+export const SUPPORTED_FIELDS: ReadonlySet<string> = new Set(['name', 'description', 'tools', 'model', 'color', 'conditions', 'requirements', 'inherit']);
 
 export const INHERIT_MODEL = 'inherit';

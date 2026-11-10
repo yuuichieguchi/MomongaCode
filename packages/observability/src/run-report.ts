@@ -37,7 +37,7 @@ export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
   let truncatedOutputs = 0;
   const calls = new Map<string, CallRecord>();
   const approvals = new Map<string, { callId: string; rejecting: Set<string> }>();
-  const written = new Map<string, { sha256: string; lastSeq: number }>();
+  const written = new Map<string, { sha256?: string; lastSeq: number }>();
   const checks = new Map<string, CheckRecord>();
   const completedCommands: { command: string; exitCode: number; seq: number }[] = [];
 
@@ -92,9 +92,9 @@ export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
         if (event.denial !== undefined) denials += 1;
         if (event.truncated === true) truncatedOutputs += 1;
         if (completionMutates(call, event)) {
-          const writes = event.files?.filter((file) => file.access === 'write') ?? [];
-          recordMutation(writes.length > 0, event.seq);
-          for (const file of writes) written.set(file.path, { sha256: file.sha256, lastSeq: event.seq });
+          const changed = event.files?.filter((file) => file.access !== 'read') ?? [];
+          recordMutation(changed.length > 0, event.seq);
+          for (const file of changed) written.set(file.path, { ...(file.sha256 === undefined ? {} : { sha256: file.sha256 }), lastSeq: event.seq });
         }
         if (call.command !== undefined && event.status === 'completed' && event.exitCode !== undefined && event.denial === undefined) {
           completedCommands.push({ command: call.command, exitCode: event.exitCode, seq: event.seq });
@@ -170,7 +170,7 @@ export const buildRunReport = (events: readonly RunEvent[]): RunReport => {
     ...(stopReason === undefined ? {} : { stopReason }),
     durationMs: Math.max(0, last.createdAt - first.createdAt),
     declaration: completion === undefined ? null : { conditions: completion.conditions, requirements: completion.requirements },
-    changes: { files: [...written].map(([path, fact]) => ({ path, sha256: fact.sha256, lastSeq: fact.lastSeq })), mutatingCalls },
+    changes: { files: [...written].map(([path, fact]) => ({ path, ...fact })), mutatingCalls },
     conditions,
     notRun,
     residualRisk: RESIDUAL_RISK_CODES.filter((code) => counts[code] > 0).map((code) => ({ code, count: counts[code] })),

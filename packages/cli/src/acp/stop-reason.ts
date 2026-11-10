@@ -1,6 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { StopReason } from '@agentclientprotocol/sdk';
 import { TARGET_NOT_READY } from '@momonga/protocol';
+import { unmetConditionLines } from '../policy-messages.ts';
 import type { RunView } from '../client/views.ts';
 
 export const RUN_STOPPED_CODE = -32010;
@@ -15,6 +16,7 @@ const detailOf = (run: RunView) => ({
   runId: run.id,
   status: run.status,
   ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+  ...(run.report === undefined ? {} : { report: run.report }),
   ...(run.error === undefined ? {} : { error: run.error }),
   ...(run.error?.code === TARGET_NOT_READY ? { code: TARGET_NOT_READY, ...storedRemedyOf(run.error.message) } : {}),
 });
@@ -39,6 +41,8 @@ const stoppedReasonOf = (run: RunView): StopReason => {
     case 'approval_timeout':
     case 'usage_limit':
       throw stopped(run, `stopped: ${reason}`);
+    case 'conditions_unmet':
+      throw stopped(run, ['stopped: conditions_unmet', ...(run.report === undefined ? [] : unmetConditionLines(run.report))].join('\n'));
   }
 };
 

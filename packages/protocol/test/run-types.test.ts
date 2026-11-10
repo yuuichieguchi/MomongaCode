@@ -124,6 +124,8 @@ describe('run event payloads', () => {
       | 'context.truncated'
       | 'instructions.loaded'
       | 'skill.activated'
+      | 'verification.started'
+      | 'verification.completed'
       | 'tool.loaded'
       | 'tool.offered'
       | 'loop.warned'
@@ -251,6 +253,7 @@ describe('run event payloads', () => {
       handle?: string;
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
+      mutated?: true;
       command?: string;
       windowShared?: true;
       memories?: string[];
@@ -424,6 +427,8 @@ describe('RunState', () => {
           providerCallId: string;
           arguments: unknown;
           status: 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
+          sideEffect?: 'read_only' | 'write' | 'exec';
+          basis?: ApprovalBasis;
           idemKey?: string;
           awaiting?: ToolAwait;
           approvalId?: string;
@@ -455,6 +460,13 @@ describe('RunState', () => {
       lastCompactionSeq: number;
       callResults: Record<string, 'completed' | 'failed'>;
       unknownEffects: Record<string, { approvalId?: string; acknowledged: boolean }>;
+      lastMutationSeq: number;
+      verification: {
+        round: number;
+        results: Record<string, { seq: number; outcome: 'passed' | 'failed' | 'timed_out' | 'cancelled' | 'spawn_error'; mutationSeq: number }>;
+        pending?: Record<string, { round: number; attempt: number }>;
+        lastFailedRoundMutationSeq?: number;
+      };
       formsSinceCompaction: Record<string, number>;
       governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
       memoriesLoaded?: { id: string; status: MemoryStatus }[];

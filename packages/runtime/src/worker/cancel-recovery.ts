@@ -1,4 +1,4 @@
-import { childResultOf } from '@momonga/agents';
+import { childToolResultOf } from '@momonga/agents';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Run } from '@momonga/store';
 import type { HeldSession } from './known.ts';
@@ -62,7 +62,7 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     const { agents } = options;
     if (agents === undefined) throw new Error(`call ${callId} awaits subagent ${call.awaiting.agent} but the worker has no agents port`);
     const child = await agents.runs.outcomeOf(call.awaiting.runId);
-    const result = child.state === 'finished' ? childResultOf(call.awaiting.agent, child) : { status: 'failed' as const, output: `Subagent ${call.awaiting.agent} was cancelled.` };
+    const result = child.state === 'finished' ? childToolResultOf(call.awaiting.agent, child) : { status: 'failed' as const, output: `Subagent ${call.awaiting.agent} was cancelled.` };
     const outcome: ResultOutcome = { callId, kind: 'result', result, ...(call.idemKey === undefined ? {} : { idemKey: call.idemKey }) };
     const lookup = call.idemKey === undefined ? undefined : options.store.idempotency.get(call.idemKey);
     if (call.idemKey !== undefined && lookup !== undefined && lookup.s !== 'COMPLETED') {

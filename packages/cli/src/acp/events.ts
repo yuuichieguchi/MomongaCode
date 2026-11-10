@@ -2,7 +2,7 @@ import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallC
 import { isRecord } from '@momonga/foundation';
 import { unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
-import { classificationLevel, describeClassification, describeDenial, describeHook, hookLevel } from '../policy-messages.ts';
+import { classificationLevel, describeClassification, describeDenial, describeHook, describeVerification, hookLevel, verificationLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isPrompt } from '../run/prompt-event.ts';
@@ -252,7 +252,10 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'context.compacting':
     case 'tool.permission.classifying':
     case 'hook.started':
+    case 'verification.started':
       return [];
+    case 'verification.completed':
+      return phase === 'live' ? liveNotice(features, event.runId, event.seq, verificationLevel(event), describeVerification(event)) : [];
     case 'hook.completed':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event).join('\n')) : [];
     case 'tool.permission.classified': {

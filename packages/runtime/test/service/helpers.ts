@@ -437,6 +437,7 @@ const unusedUserInput: runtime.UserInputPort = {
 };
 
 export type ServiceOverrides = {
+  permissionRules?: (session: Session) => Promise<readonly PermissionRule[]>;
   role?: RolePort;
   work?: { steps(): number; jobs(): number };
   ignorableMarkerDirectories?: () => Promise<readonly string[]>;
@@ -542,6 +543,7 @@ export const serviceOptions = (
   sessionReadSettings: base.ports.sessionReadSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
+  permissionRules: overrides.permissionRules ?? (async () => []),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   userInput: overrides.userInput ?? unusedUserInput,

@@ -3,7 +3,7 @@ import { setTimeout as sleepFor } from 'node:timers/promises';
 import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
 import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
-import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, PutRuleVerdictRequest, RuleVerdict, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse, Mandate } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -112,6 +112,7 @@ export type CreateRunOptions = {
   timeoutMs?: number;
   images?: readonly ImageAttachment[];
   attachMentions?: boolean;
+  mandate?: Mandate;
 };
 
 export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
@@ -213,6 +214,7 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): Re
   ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
   ...(options.attachMentions === true ? { attachMentions: true } : {}),
+  ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
 });
 
 const parsed = (text: string, description: string): unknown => {

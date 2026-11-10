@@ -1,4 +1,4 @@
-import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
+import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, PlanAccountRef, RunStatus, StopReason, ToolKind, RunReport } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -38,6 +38,7 @@ export type RunView = {
   readonly parentCallId: string | null;
   readonly origin: 'trusted' | 'untrusted';
   readonly agent?: string;
+  readonly report?: RunReport;
   readonly history: 'inherit' | 'fresh';
 };
 

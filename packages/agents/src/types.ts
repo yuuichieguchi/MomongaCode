@@ -1,3 +1,4 @@
+import type { Mandate, RunReport } from '@momonga/protocol';
 import type { AnyTool } from '@momonga/tools';
 
 export type AgentScope = 'project' | 'user';
@@ -8,6 +9,7 @@ export type AgentDefinition = {
   prompt: string;
   tools?: readonly string[];
   model?: string;
+  mandate?: Mandate;
   scope: AgentScope;
   location: string;
 };
@@ -18,6 +20,7 @@ export type AgentPin = {
   prompt: string;
   tools?: string[];
   model?: string;
+  mandate?: Mandate;
 };
 
 export type ChildRunOutcome =
@@ -30,6 +33,7 @@ export type ChildRunOutcome =
       stopReason?: string;
       error?: { code: string; message: string };
       text: string;
+      report?: RunReport;
     };
 
 export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent: AgentDefinition; prompt: string };

@@ -58,6 +58,8 @@ const UNMODELLED_EVENT_TYPES = [
   'notice',
   'plan.updated',
   'skill.activated',
+  'verification.started',
+  'verification.completed',
   'tool.elicitation.cancelled',
   'tool.elicitation.requested',
   'tool.elicitation.resolved',

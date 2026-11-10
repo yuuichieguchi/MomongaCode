@@ -19,7 +19,7 @@ describe('context settings defaults', () => {
   });
 
   it('lists the documented verification commands and manifests', async () => {
-    expect((await resolvedWith({})).verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS });
+    expect((await resolvedWith({})).verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
   });
 
   it('keeps the adaptive budget and automatic compaction on', async () => {
@@ -57,18 +57,18 @@ describe('context settings values', () => {
       context: { adaptiveBudget: true },
     });
     expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 30, repositoryFacts: true });
-    expect(settings.verification).toEqual({ commands: ['just check'], manifests: ['justfile'] });
+    expect(settings.verification).toEqual({ commands: ['just check'], manifests: ['justfile'], conditions: ['just check'], required: false });
     expect(settings.context).toEqual({ adaptiveBudget: true, autoCompact: true, ...TOKEN_ON });
   });
 
   it('keeps the other defaults when one nested key is set', async () => {
     const settings = await resolvedWith({ memory: { reflection: { maxTokens: 512 } }, verification: { commands: ['just check'] } });
     expect(settings.memory).toEqual({ reflection: { enabled: true, maxTokens: 512 }, forgetAfterDays: 90, repositoryFacts: true });
-    expect(settings.verification).toEqual({ commands: ['just check'], manifests: DEFAULT_MANIFESTS });
+    expect(settings.verification).toEqual({ commands: ['just check'], manifests: DEFAULT_MANIFESTS, conditions: ['just check'], required: false });
   });
 
   it('lets an empty list turn verified success off', async () => {
-    expect((await resolvedWith({ verification: { commands: [] } })).verification).toEqual({ commands: [], manifests: DEFAULT_MANIFESTS });
+    expect((await resolvedWith({ verification: { commands: [] } })).verification).toEqual({ commands: [], manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
   });
 
   it('merges nested keys across layers, a later layer winning each key and replacing a list', async () => {
@@ -77,14 +77,14 @@ describe('context settings values', () => {
     writeJson(projectSettingsPath(tree), { memory: { reflection: { enabled: true } }, verification: { commands: ['make verify'] } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(settings.memory).toEqual({ reflection: { enabled: true }, forgetAfterDays: 30, repositoryFacts: true });
-    expect(settings.verification).toEqual({ commands: ['make verify'], manifests: ['justfile'] });
+    expect(settings.verification).toEqual({ commands: ['make verify'], manifests: ['justfile'], conditions: ['make verify'], required: false });
   });
 
   it('ignores project verification settings in an untrusted folder', async () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { verification: { commands: ['make verify'], manifests: [] } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: distrusting() });
-    expect(settings.verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS });
+    expect(settings.verification).toEqual({ commands: DEFAULT_COMMANDS, manifests: DEFAULT_MANIFESTS, conditions: [], required: false });
   });
 });
 

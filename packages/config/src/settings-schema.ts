@@ -487,6 +487,7 @@ export const SETTINGS_SCHEMA = {
       properties: {
         commands: NON_EMPTY_STRING_ARRAY,
         manifests: NON_EMPTY_STRING_ARRAY,
+        required: { type: 'boolean' },
       },
       additionalProperties: false,
     },

@@ -281,11 +281,12 @@ export type RunEventPayload =
       removed?: number;
       diffOmitted?: string;
     }
-  | { type: 'verification.started'; round: number; conditionId: string; mutationSeq: number; attempt: number }
+  | { type: 'verification.started'; round: number; conditionId: string; command: string; mutationSeq: number; attempt: number }
   | {
       type: 'verification.completed';
       round: number;
       conditionId: string;
+      command: string;
       outcome: VerificationOutcome;
       exitCode?: number;
       durationMs: number;

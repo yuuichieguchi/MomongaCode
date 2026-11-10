@@ -184,7 +184,7 @@ const runReport = closed(
     ),
     changes: closed(
       {
-        files: { type: 'array', items: closed({ path: string, sha256: string, lastSeq: nonNegativeInteger }, ['path', 'sha256', 'lastSeq']) },
+        files: { type: 'array', items: closed({ path: string, sha256: string, lastSeq: nonNegativeInteger }, ['path', 'lastSeq']) },
         mutatingCalls: nonNegativeInteger,
       },
       ['files', 'mutatingCalls'],
@@ -557,13 +557,14 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['callId', 'status', 'output'],
   },
   'verification.started': {
-    properties: { round: nonNegativeInteger, conditionId: string, mutationSeq: nonNegativeInteger, attempt: integer },
-    required: ['round', 'conditionId', 'mutationSeq', 'attempt'],
+    properties: { round: nonNegativeInteger, conditionId: string, command: string, mutationSeq: nonNegativeInteger, attempt: integer },
+    required: ['round', 'conditionId', 'command', 'mutationSeq', 'attempt'],
   },
   'verification.completed': {
     properties: {
       round: nonNegativeInteger,
       conditionId: string,
+      command: string,
       outcome: enumOf(VERIFICATION_OUTCOMES),
       exitCode: integer,
       durationMs: nonNegativeInteger,
@@ -572,7 +573,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       handle: string,
       mutationSeq: nonNegativeInteger,
     },
-    required: ['round', 'conditionId', 'outcome', 'durationMs', 'output', 'mutationSeq'],
+    required: ['round', 'conditionId', 'command', 'outcome', 'durationMs', 'output', 'mutationSeq'],
   },
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },

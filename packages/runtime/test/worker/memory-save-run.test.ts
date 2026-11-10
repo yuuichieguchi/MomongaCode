@@ -75,7 +75,7 @@ describe('MemorySave in a run', () => {
     const env = await trustedEnv();
     const target = writeFile(env, 'abc');
     const commands: EvidenceCommand[] = [];
-    env.settings.verificationValue = { commands: ['npm test'], manifests: [] };
+    env.settings.verificationValue = { commands: ['npm test'], manifests: [], conditions: [], required: false };
     env.gateway.script.push(
       callsStep([{ callId: 'call_r_1', name: 'Read', args: { file_path: target } }]),
       callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'npm test' } }]),

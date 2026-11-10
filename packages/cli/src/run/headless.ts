@@ -1,7 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
-import type { MomongaModelEntry, PermissionMode, PublicRunEvent, UnknownEffectCall } from '@momonga/protocol';
+import type { Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -16,7 +16,7 @@ import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
-import { describeClassification, describeDenial, describeHook, describeRunError } from '../policy-messages.ts';
+import { describeClassification, describeDenial, describeHook, describeRunError, describeVerification, unmetConditionLines } from '../policy-messages.ts';
 import type { MessageSurface } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
@@ -49,6 +49,7 @@ export type HeadlessOptions = {
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   skill?: string;
   images?: readonly string[];
+  mandate?: Mandate;
   verbose: boolean;
   interrupt: AbortSignal;
 };
@@ -65,6 +66,7 @@ export type RunResult = {
   error?: { code: string; message: string };
   num_turns: number;
   usage: RunView['usage'];
+  report?: RunReport;
 };
 
 export const resultOf = (run: RunView, result: string): RunResult => ({
@@ -79,11 +81,13 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   ...(run.error === undefined ? {} : { error: run.error }),
   num_turns: run.step,
   usage: run.usage,
+  ...(run.report === undefined ? {} : { report: run.report }),
 });
 
 const endReasonLines = (run: RunView, surface: MessageSurface): string[] => {
   if (run.error !== undefined) return describeRunError(run.error, surface);
-  return run.stopReason === undefined ? [] : [run.stopReason];
+  if (run.stopReason === undefined) return [];
+  return run.stopReason === 'conditions_unmet' && run.report !== undefined ? [run.stopReason, ...unmetConditionLines(run.report)] : [run.stopReason];
 };
 
 export const describeEnd = (run: RunView): string => describeRunEnd(run, 'headless');
@@ -147,6 +151,9 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         break;
       case 'hook.completed':
         note(leadWith('momonga: ', describeHook(event, agent)));
+        break;
+      case 'verification.completed':
+        note([`momonga: ${describeVerification(event, agent)}`]);
         break;
       case 'tool.permission.classified':
         note([`momonga: ${describeClassification(event, titles.get(event.callId) ?? event.callId)}`]);
@@ -402,6 +409,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
     const { run: started } = await session.client.createRun(sessionId, invocation.input, {
       ...(invocation.skill === undefined ? {} : { skill: invocation.skill }),
       ...(images.length === 0 ? {} : { images }),
+      ...(options.mandate === undefined ? {} : { mandate: options.mandate }),
     });
     if (options.format === 'stream-json') {
       ports.stdout.write(

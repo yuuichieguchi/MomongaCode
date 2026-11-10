@@ -15,4 +15,4 @@ export type {
   ChildRuns,
   ChildRunSpawner,
 } from './types.ts';
-export { childResultOf } from './tool.ts';
+export { childResultOf, childToolResultOf } from './tool.ts';

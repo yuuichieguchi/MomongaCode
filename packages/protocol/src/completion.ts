@@ -105,7 +105,7 @@ export type RunReport = {
   stopReason?: string;
   durationMs: number;
   declaration: { conditions: PinnedCondition[]; requirements: string[] } | null;
-  changes: { files: { path: string; sha256: string; lastSeq: number }[]; mutatingCalls: number };
+  changes: { files: { path: string; sha256?: string; lastSeq: number }[]; mutatingCalls: number };
   conditions: {
     id: string;
     command: string;

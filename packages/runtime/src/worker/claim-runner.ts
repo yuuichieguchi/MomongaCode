@@ -33,6 +33,7 @@ import { EXACT_MODEL } from './exact-model.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
 import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
+import { completionPinFor } from './completion-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
@@ -418,6 +419,7 @@ const drive = async (
             ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
             ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
           },
+          ...(await completionPinFor({ run, session, settings: options.settings })),
         }
       : pinned;
   const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
@@ -563,6 +565,11 @@ const drive = async (
     targetFacts: factsOf,
     pinnedDigest: { value: undefined },
     memory,
+    completion: {
+      conditions: pins.mandate?.completion.conditions ?? [],
+      requirements: pins.mandate?.completion.requirements ?? [],
+      required: pins.verificationRequired === true,
+    },
     verificationCommands: (await options.settings.verification(session)).commands,
     autoCompact: (await options.settings.context(session)).autoCompact,
     token,
