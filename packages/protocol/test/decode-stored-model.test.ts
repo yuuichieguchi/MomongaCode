@@ -1,8 +1,10 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { STORED_MODEL_KEYS, decodeStoredModel } from '../src/index.ts';
 import type { StoredModelRef } from '../src/index.ts';
 import { seeded } from '../../context/test/helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const KEYS = { current: 'model', legacy: 'modelAlias' };
 
@@ -59,7 +61,6 @@ describe('decodeStoredModel reads a stored model field of this build and of an e
         expect(decoded, `seed ${seed}`).toBe(expectedOf(record));
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it('the classifier event reads the key of an earlier build through STORED_MODEL_KEYS.classified', () => {

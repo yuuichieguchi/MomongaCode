@@ -79,8 +79,8 @@ describe.each(RESTART_KINDS)('$label goes to failed after maxRestarts consecutiv
 
 const idleServer: ManagedServer = {
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  start: async () => ({ kind: 'unix', path: '/unused.sock' }),
+  ensureRunning: async () => ({ kind: 'unix', path: '/unused.sock' }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 };
@@ -119,6 +119,7 @@ describe('a declared server whose binary exists but cannot be read for its hash 
             return makeReport(1, 1);
           },
           retryAfterMs: 120_000,
+          clock: { now: () => 0 },
           onNotice: (text) => notices.push(text),
         }),
       currency: managedCurrencyOf(description, { userDialects: {} }),

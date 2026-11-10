@@ -46,11 +46,13 @@ describe('the memo of attestation verdicts, fidelity_verdicts (decision 40 B, 13
     expect(verdictCount(dbPath)).toBe(0);
   });
 
-  it('deletes at store open the rows of a fold version other than the current one', () => {
+  it('keeps at store open the rows of a lower fold version, and removes them when the prune is given a bound above them', () => {
     const { dbPath, store, run } = withRun();
     insertVerdict(dbPath, run.id, -1);
     store.close();
-    openStoreAt(dbPath, createFakeClock(START_MS + 10));
+    const reopened = openStoreAt(dbPath, createFakeClock(START_MS + 10));
+    expect(verdictCount(dbPath)).toBe(1);
+    expect(reopened.pruneFidelityVerdicts(0)).toBe(1);
     expect(verdictCount(dbPath)).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
-import type { HookExecution } from './hooks.ts';
+import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
@@ -24,7 +24,15 @@ export const TERMINAL_STATUSES = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED']
 
 export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit'] as const;
 
-export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
+export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
+
+export const PERMISSION_MODE_DESCRIPTIONS: Readonly<Record<(typeof PERMISSION_MODES)[number], string>> = {
+  manual: 'asks before every file change and command',
+  acceptEdits: 'accepts file edits inside the workspace, asks before commands',
+  plan: 'read-only tools, the agent proposes a plan',
+  auto: 'an automatic classifier decides which calls are allowed',
+  bypassPermissions: 'runs every tool without asking',
+};
 
 export const APPROVAL_STATUSES = ['pending', 'resolved', 'superseded', 'expired', 'withdrawn'] as const;
 
@@ -52,6 +60,49 @@ export const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image
 export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 
 export type ImageAttachment = { mediaType: ImageMediaType; data: string };
+
+export type AttachedFilePart = { type: 'attached_file'; path: string; content: string; truncated: false };
+
+export type AttachmentNotePart = { type: 'attachment_note'; path: string; text: string; shown: string };
+
+export type MessageAttachment = AttachedFilePart | AttachmentNotePart;
+
+export const USER_SHELL_OUTPUT_BYTES = 64 * 1024;
+export const USER_SHELL_HEAD_BYTES = 16 * 1024;
+export const USER_SHELL_TAIL_BYTES = USER_SHELL_OUTPUT_BYTES - USER_SHELL_HEAD_BYTES;
+export const USER_SHELL_COMMAND_CHARS = 100_000;
+export const USER_SHELL_RUN_ACTIVE_CODE = 'run_active';
+export const PROMPT_TEXT_MAX_CHARS = 1_000_000;
+export const NOTHING_TO_COMPACT_CODE = 'nothing_to_compact';
+export const NOTHING_TO_COMPACT_MESSAGE = 'Nothing to compact.';
+
+export type UserShellRecord = { command: string; exitCode: number | null; output: string; include: boolean };
+
+export const INBOX_DELIVERIES = ['steer', 'queue'] as const;
+
+export type InboxDelivery = (typeof INBOX_DELIVERIES)[number];
+
+export const INBOX_STATES = ['pending', 'delivered', 'withdrawn'] as const;
+
+export type InboxState = (typeof INBOX_STATES)[number];
+
+export const INBOX_MAX_PENDING = 20;
+
+export const INBOX_FULL_CODE = 'inbox_full';
+
+export const inboxFullMessage = (): string => `${INBOX_MAX_PENDING} messages are already waiting`;
+
+export type InboxRowView = {
+  id: string;
+  sessionId: string;
+  delivery: InboxDelivery;
+  text: string;
+  images?: { mediaType: ImageMediaType; byteLength: number }[];
+  seq: number;
+  state: InboxState;
+  createdAt: number;
+  settledAt: number | null;
+};
 
 export type ElicitationRequestView =
   | { key: string; mode: 'form'; message: string; requestedSchema: Record<string, unknown> }
@@ -94,6 +145,8 @@ export const JOB_STATUSES = ['running', 'exited', 'killed', 'unknown'] as const;
 
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+export type DiffHunk = { oldStart: number; newStart: number; lines: string[] };
+
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
 export type InheritedCopyPayload = {
@@ -116,7 +169,7 @@ export type InheritedCopyPayload = {
 };
 
 export type RunEventPayload =
-  | { type: 'user.message'; text: string; images?: ImageAttachment[] }
+  | { type: 'user.message'; text: string; images?: ImageAttachment[]; source?: InboxDelivery; attachments?: MessageAttachment[]; shell?: UserShellRecord[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
   | { type: 'attempt.lost'; lastLiveAt: number }
@@ -166,6 +219,8 @@ export type RunEventPayload =
       rationale?: string;
       failure?: string;
     }
+  | { type: 'tool.permission.classifying'; callId: string; subjectDigest: string }
+  | ({ type: 'hook.started' } & HookStart)
   | ({ type: 'hook.completed' } & HookExecution)
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
@@ -190,6 +245,10 @@ export type RunEventPayload =
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
+      hunks?: DiffHunk[];
+      added?: number;
+      removed?: number;
+      diffOmitted?: string;
     }
   | { type: 'tool.loaded'; names: string[] }
   | { type: 'tool.offered'; names: string[] }
@@ -250,10 +309,13 @@ export type RunEventPayload =
       source?: SummarySource;
       fidelity?: SummaryFidelity;
       guidelineVersion?: number;
+      tokensBefore?: number;
+      tokensAfter?: number;
     }
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
+  | { type: 'context.compacting'; step: number; attempt: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
   | InheritedCopyPayload
   | InheritedReferencePayload
@@ -265,7 +327,9 @@ export type RunEventPayload =
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
-  | { type: 'model.changed'; model: string; previousModel: string };
+  | { type: 'model.changed'; model: string; previousModel: string }
+  | { type: 'inbox.changed'; pending: InboxRowView[] }
+  | ({ type: 'user_shell' } & UserShellRecord);
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 

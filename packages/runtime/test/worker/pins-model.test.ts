@@ -104,7 +104,7 @@ describe('what a run pins about its model (design-model-names 3.4, 3.10, 3.11, 1
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const created = env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' });
     if (created.kind !== 'created') throw new Error(`the parent run was not created: ${created.kind}`);
-    const claim = await env.seed(created.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: env.session.model, roles: { compaction: 'x' } }, mode: 'default' }], 'hold');
+    const claim = await env.seed(created.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { model: env.session.model, roles: { compaction: 'x' } }, mode: 'manual' }], 'hold');
     const child = env.store.createChildRun({ parentRunId: created.run.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: env.session.model });
     if (child.kind !== 'created') throw new Error(`the child run was not created: ${child.kind}`);
     expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');

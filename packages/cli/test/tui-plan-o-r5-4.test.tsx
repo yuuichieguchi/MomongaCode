@@ -10,7 +10,7 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 const SENTENCE = 'Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
 
 const ready = async (app: Instance): Promise<void> => {
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
 };
 
 const expired = () => runView({ status: 'FAILED', error: { code: 'sign_in_required', message: 'ChatGPT sign-in expired' } });

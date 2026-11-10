@@ -52,7 +52,7 @@ describe('executor defers later calls after a post-reconcile needs_approval', ()
     });
 
     const outcomes = await harness.executor.runBatch(
-      harness.input(await toolSetOf(read, mark), [call('c1', 'Read'), call('c2', 'Mark')], { mode: 'default' }),
+      harness.input(await toolSetOf(read, mark), [call('c1', 'Read'), call('c2', 'Mark')], { mode: 'manual' }),
     );
 
     expect(outcomes.map((outcome) => [outcome.callId, outcome.kind])).toEqual([

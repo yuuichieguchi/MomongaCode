@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markerReapClockBoundMs } from '@momonga/foundation';
+import { EXIT_RETIRED, markerReapClockBoundMs } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childRestartBoundMs, classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY, backoffDelay, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from '../src/restart-policy.ts';
 import type { ExitClassification, StopReason } from '../src/restart-policy.ts';
@@ -103,6 +103,13 @@ describe('decideAfterExit', () => {
   it('75 yields waiting-lock only', () => {
     const classified = classifyExit({ code: 75, signal: null, stop: undefined });
     for (const failures of [0, 5, 100]) expect(decide(classified, failures, () => 0.999)).toEqual({ next: 'waiting-lock' });
+  });
+
+  it('79 is the retire exit: class retired, reason retired, and the child is never restarted (20.1)', () => {
+    const exit = classifyExit({ code: EXIT_RETIRED, signal: null, stop: undefined });
+    expect(EXIT_RETIRED).toBe(79);
+    expect(exit).toEqual({ class: 'retired', reason: 'retired' });
+    expect(decideAfterExit({ exit, consecutiveFailures: 0, policy: DEFAULT_RESTART_POLICY, random: () => 0.5 })).toEqual({ next: 'stopped' });
   });
 
   it('78 yields held-config', () => {

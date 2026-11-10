@@ -5,7 +5,7 @@ import { FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/f
 import type { ManagedInstance } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
-import { getJson, makeDir, postJson, registerCleanup, userInput, listedCountersOf } from '../gateway-helpers.ts';
+import { getJson, makeDir, postJson, registerCleanup, userInput, listedCountersOf, closedAtCleanup } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
 import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome, modelsOf } from '../gateway-process-helpers.ts';
 
@@ -54,7 +54,7 @@ const setup = async (): Promise<Setup> => {
 };
 
 const launch = async (home: string) => {
-  const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } });
+  const handle = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(async () => {
     await handle.close({ closeGraceMs: 0, managedServerStopGraceMs: 0 });
   });

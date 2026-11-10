@@ -68,7 +68,7 @@ type TaskTruth = {
 type Generated = { tasks: TaskTruth[]; rows: RunFacts[]; streams: Map<string, { events: RunEvent[]; info: RunInfo }> };
 
 const MODELS = ['fm', 'gpt-x', 'sonnet'];
-const MODES: PermissionMode[] = ['default', 'acceptEdits', 'auto', 'bypassPermissions'];
+const MODES: PermissionMode[] = ['manual', 'acceptEdits', 'auto', 'bypassPermissions'];
 const AGENTS = ['build', 'review'];
 const ORIGINS = ['cli', 'api'];
 

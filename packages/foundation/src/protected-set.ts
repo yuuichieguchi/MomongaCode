@@ -12,8 +12,8 @@ export const MAX_POINTER_FILE_BYTES = 1033;
 const GIT_NAME = '.git';
 const COMMONDIR_NAME = 'commondir';
 const GITDIR_PREFIX = 'gitdir: ';
-const WORKSPACE_CONTROL_NAMES = ['.momonga', '.mcp.json', '.envrc', '.vscode', '.idea'] as const;
-const GIT_DIRECTORY_ENTRIES = ['hooks', 'config', 'config.worktree', COMMONDIR_NAME] as const;
+export const WORKSPACE_CONTROL_NAMES = ['.momonga', '.mcp.json', '.envrc', '.vscode', '.idea'] as const;
+export const GIT_DIRECTORY_ENTRIES = ['hooks', 'config', 'config.worktree', COMMONDIR_NAME] as const;
 const NESTED_GIT_DIRECTORY_PATTERNS = [
   { anchor: 'modules', pattern: 'modules/**/hooks' },
   { anchor: 'modules', pattern: 'modules/**/config' },

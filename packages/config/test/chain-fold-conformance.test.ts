@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as config from '@momonga/config';
 import { MARGIN, MIN_MARGIN, OUTPUT_RESERVE } from '@momonga/protocol';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { seeded } from '../../context/test/helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Member = { model: string; facts: { outputBounded: boolean; contextWindow: number; maxOutputTokens: number }; measuring: boolean };
 type Verdict = { kind: 'serve' } | { kind: 'wait' } | { kind: 'refuse'; refusal: Record<string, unknown> };
@@ -53,7 +55,6 @@ describe('chainRoomVerdict is the fold of the chain', () => {
         expect(chainRoomVerdict(first, members), `seed ${seed}`).toEqual(expected);
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it('a longer chain is not always harder to serve: a member with a smaller window turns a refusal into a serve', () => {

@@ -15,17 +15,17 @@ describe('4.3 literal prefix matching rows (D14)', () => {
 describe('compound commands', () => {
   it('allows a compound command when every segment has a rule (pin)', () => {
     const row = commandRow('npm test && npm run build', { rules: [['allow', 'Bash(npm test:*)'], ['allow', 'Bash(npm run build:*)']] });
-    expect(kindIn(row, 'default')).toBe('allow');
+    expect(kindIn(row, 'manual')).toBe('allow');
   });
 
   it('asks when one segment has no rule (pin)', () => {
     const row = commandRow('npm test && npm run build', { rules: [['allow', 'Bash(npm test:*)']] });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
   });
 
   it('asks for a substitution body and lets an ask rule fire inside it (pin)', () => {
-    expect(kindIn(commandRow('echo "$(git clean -f)"'), 'default')).toBe('ask');
-    const decision = decideRow(commandRow('echo "$(git clean -f)"', { rules: [['allow', 'Bash(echo:*)'], ['ask', 'Bash(git clean:*)']] }), 'default');
+    expect(kindIn(commandRow('echo "$(git clean -f)"'), 'manual')).toBe('ask');
+    const decision = decideRow(commandRow('echo "$(git clean -f)"', { rules: [['allow', 'Bash(echo:*)'], ['ask', 'Bash(git clean:*)']] }), 'manual');
     expect(decision).toMatchObject({ kind: 'ask', source: 'rule' });
     expect(decision.rule?.text).toBe('Bash(git clean:*)');
   });
@@ -33,26 +33,26 @@ describe('compound commands', () => {
 
 describe('wrapper stripping', () => {
   it('does not strip the query form command -v', () => {
-    expect(kindIn(commandRow('command -v git', { rules: [['allow', 'Bash(git:*)']] }), 'default')).toBe('ask');
+    expect(kindIn(commandRow('command -v git', { rules: [['allow', 'Bash(git:*)']] }), 'manual')).toBe('ask');
   });
 
   it.each(['time npm test', 'time -p npm test', 'nohup npm test', 'noglob npm test', 'command npm test', 'builtin npm test', 'stdbuf -o0 npm test'])(
     'strips the wrapper of %s for Bash(npm test:*)',
     (command) => {
-      const decision = decideRow(commandRow(command, { rules: [['allow', 'Bash(npm test:*)']] }), 'default');
+      const decision = decideRow(commandRow(command, { rules: [['allow', 'Bash(npm test:*)']] }), 'manual');
       expect(decision).toMatchObject({ kind: 'allow', source: 'rule' });
     },
   );
 
   it('approves nohup ls: nohup is stripped and has no effect on the piped stdio', () => {
-    expect(decideRow(commandRow('nohup ls'), 'default')).toMatchObject({ kind: 'allow', reason: expect.stringContaining('read-only command') });
+    expect(decideRow(commandRow('nohup ls'), 'manual')).toMatchObject({ kind: 'allow', reason: expect.stringContaining('read-only command') });
   });
 
   it('does not approve nohup ./ls', () => {
-    expect(kindIn(commandRow('nohup ./ls', { prepare: (layout) => void touch(`${layout.project}/ls`) }), 'default')).toBe('ask');
+    expect(kindIn(commandRow('nohup ./ls', { prepare: (layout) => void touch(`${layout.project}/ls`) }), 'manual')).toBe('ask');
   });
 
   it('does not strip parallel for rules of the inner command', () => {
-    expect(kindIn(commandRow('parallel grep x ::: a', { rules: [['allow', 'Bash(grep:*)']] }), 'default')).toBe('ask');
+    expect(kindIn(commandRow('parallel grep x ::: a', { rules: [['allow', 'Bash(grep:*)']] }), 'manual')).toBe('ask');
   });
 });

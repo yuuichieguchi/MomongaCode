@@ -71,7 +71,7 @@ export const verifyScenario = (api: Z3Engine['api'], layout: Layout, rules: read
   return verifyPermissions(api, {
     rules,
     roots,
-    mode: options.mode ?? 'default',
+    mode: options.mode ?? 'manual',
     home: layout.home,
     cwd: layout.project,
     protectedSet: protectedSetFor(roots, fileSystem),

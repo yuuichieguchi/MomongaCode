@@ -32,7 +32,6 @@ const OPERATIONS = [
 ] as const;
 
 const PENDING: readonly Pending[] = [
-  { form: '/config', removedBy: 'N3b' },
   { form: '/models billing', removedBy: 'N3b' },
   { form: '/models fallback', removedBy: 'N3b' },
   { form: '/models role', removedBy: 'N3b' },

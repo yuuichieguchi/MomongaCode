@@ -95,7 +95,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: approvedDigest })], { mode: 'default' }),
+      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, { kind: 'allow_once', subjectDigest: approvedDigest })], { mode: 'manual' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval' });

@@ -6,6 +6,7 @@ import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
 import { EXACT_MODEL } from './exact-model.ts';
+import { retireDecisionOf } from './gateway-policy.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
@@ -66,6 +67,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
       momonga: { ...EXACT_MODEL },
     };
+    ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
     let terminal: ModelResult | undefined;
     let firstEventMs: number | undefined;
     const { clock } = ctx.options;
@@ -120,7 +122,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
             result = asked({ failure: AUTO_MODE_UNAVAILABLE.message });
           }
         } catch (error) {
-          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
+          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError) || (await retireDecisionOf(error, ctx.options.role)) === 'retire-yield') throw error;
           result = asked({ ...(classifier === undefined ? {} : { model: classifier }), failure: `${error.code}: ${error.message}` });
         }
       }

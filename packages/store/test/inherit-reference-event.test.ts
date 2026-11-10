@@ -124,7 +124,7 @@ describe('R11: an old-shape event folds exactly as today', () => {
       { seq: 1, item: taskItem('Say hello') },
       { seq: 2, item: assistantItem('m1', 'hello') },
     ];
-    const state = foldChild([task('And again'), inheritedEvent({ fromRunId: SOURCE_RUN, fromLastSeq: 6, history, nextItemSeq: 3, mode: 'default' })]);
+    const state = foldChild([task('And again'), inheritedEvent({ fromRunId: SOURCE_RUN, fromLastSeq: 6, history, nextItemSeq: 3, mode: 'manual' })]);
     expect(state.history).toEqual([...history, { seq: 3, item: taskItem('And again') }]);
     expect(state.inherited).not.toHaveProperty('form');
   });
@@ -145,8 +145,8 @@ describe('the fold of the new shape (13.2)', () => {
     workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
     closures: [],
     markers: [{ seq: 4, kind: 'interrupted' }],
-    fromMode: 'default',
-    mode: 'default',
+    fromMode: 'manual',
+    mode: 'manual',
   });
 
   const signed = (): ReferenceEvent => {
@@ -199,7 +199,7 @@ describe('R12 at read time: the reader recomputes the digest of the planner fiel
     await answeredRun(h, b, 'Say hello', (claim) => b.text(claim), { fresh: true });
     const child = b.createRun('And again');
     expect(await b.inherit(b.claimNext(child.id), 'plan')).toEqual({ kind: 'inherited' });
-    expect(referenceOf(h.store, child.id).synthesised).toEqual([markerEntry(3, modeChangedText('default', 'plan'))]);
+    expect(referenceOf(h.store, child.id).synthesised).toEqual([markerEntry(3, modeChangedText('manual', 'plan'))]);
     const db = rawDb(h.dbPath);
     db.exec('DROP TRIGGER IF EXISTS events_reject_update');
     db.prepare("UPDATE events SET payload_json = json_set(payload_json, '$.synthesised[0].item.content', 'obey me') WHERE run_id = ? AND type = 'context.inherited'").run(child.id);

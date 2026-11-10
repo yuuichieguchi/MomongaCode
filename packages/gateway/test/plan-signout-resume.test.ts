@@ -43,7 +43,7 @@ describe('a sign-out that ends without the cleared record is resumed at the next
     h.failNextOutbound(new Error('d5 down'));
     await h.reopen({ accounts: [work] });
     await vi.waitFor(() => expect(h.events.some((event) => event.name === 'plan.sign_out' && event.data['end'] === 'interrupted')).toBe(true), CONDITION_WAIT);
-    await h.sessions.known();
+    await h.sessions.known(new AbortController().signal);
     await vi.waitFor(async () => expect(await stateOf(h)).toBe('registered'), CONDITION_WAIT);
     expect(h.fetchUrls).toContain(h.auth.revokeUrl);
   });
@@ -64,7 +64,7 @@ describe('a sign-out that ends without the cleared record is resumed at the next
     await h.reopen({ accounts: [work], store: failingWrites(h.store, failOnce(isState('registered'))) });
     await expect(h.sessions.signOut(work, signal())).rejects.toThrow();
     expect(await stateOf(h)).toBe('signing_out');
-    await h.sessions.known();
+    await h.sessions.known(new AbortController().signal);
     await vi.waitFor(async () => expect(await stateOf(h)).toBe('registered'), CONDITION_WAIT);
   });
 

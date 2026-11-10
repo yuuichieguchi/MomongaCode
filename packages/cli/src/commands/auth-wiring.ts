@@ -2,8 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { currentSocketResolver, systemTiming } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient } from '../client/gateway-client.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { loopbackSignInListener } from '../plan/sign-in.ts';
 import { terminalChoice } from '../plan/terminal-choice.ts';
 import type { CliPorts } from '../ports.ts';
@@ -13,7 +12,7 @@ import { modelsCatalog } from './models.ts';
 import type { AuthLoginOptions } from './auth.ts';
 
 const withGateway = async (ports: CliPorts, paths: MomongaPaths, work: (gateway: GatewayClient) => Promise<number>): Promise<number> => {
-  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+  await ensureCurrentDaemon(ports, paths);
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   try {
     return await work(gateway);

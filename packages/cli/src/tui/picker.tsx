@@ -2,16 +2,25 @@ import { Box, Text } from 'ink';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { PASTE_LABEL } from '../plan/sign-in.ts';
 import type { EditorState } from './editor.ts';
+import type { KeySpec, KeyTable } from './keys/table.ts';
+import { styleOf } from './screen/theme.ts';
+import { joinHint } from './select.tsx';
+import type { SelectRow, SelectSpec } from './select.tsx';
 
-export type PickRow = { readonly label: string; readonly disabled?: boolean };
+export type PickRow = SelectRow;
 
-export type PickRequest = {
-  readonly title?: string;
-  readonly lines?: readonly string[];
-  readonly rows: readonly PickRow[];
-  readonly hint?: string;
-  readonly confirm?: (row: PickRow) => string;
-};
+export type PickRequest = Pick<SelectSpec, 'title' | 'lines' | 'rows' | 'confirm' | 'alt'> & Partial<Pick<SelectSpec, 'initial' | 'decideOn' | 'escape' | 'filter'>> & { readonly onHighlight?: (index: number) => void };
+
+const FILTER_FROM_ROWS = 10;
+
+export const pickerSpec = ({ onHighlight: _onHighlight, ...request }: PickRequest): SelectSpec => ({
+  initial: 0,
+  decideOn: 'immediate',
+  escape: 'back',
+  filter: request.rows.length >= FILTER_FROM_ROWS,
+  ...request,
+  interrupt: 'back',
+});
 
 export type TextRequest = {
   readonly title: string;
@@ -33,14 +42,23 @@ export type WaitingOverlay = {
   readonly status?: string;
 };
 
+export type PickChoice = { readonly index: number; readonly alt: boolean };
+
+export type CaptureRequest = { readonly title: string; problemOf(spec: KeySpec): string | undefined };
+
+export type CaptureOutcome = { readonly kind: 'key'; readonly spec: KeySpec } | { readonly kind: 'remove' };
+
 export type Overlay =
-  | { readonly kind: 'pick'; readonly request: PickRequest; readonly resolve: (index: number | undefined) => void }
+  | { readonly kind: 'pick'; readonly request: PickRequest; readonly resolve: (choice: PickChoice | undefined) => void }
+  | { readonly kind: 'capture'; readonly request: CaptureRequest; readonly problem?: string; readonly resolve: (outcome: CaptureOutcome | undefined) => void }
   | { readonly kind: 'text'; readonly request: TextRequest; readonly error?: string; readonly resolve: (text: string | undefined) => void }
   | WaitingOverlay
   | { readonly kind: 'loading'; readonly title: string };
 
 export type OverlayPorts = {
   pick(request: PickRequest): Promise<number | undefined>;
+  choose(request: PickRequest): Promise<PickChoice | undefined>;
+  captureKey(request: CaptureRequest): Promise<CaptureOutcome | undefined>;
   promptText(request: TextRequest): Promise<string | undefined>;
   waiting(view: WaitingView, handlers: WaitingHandlers): void;
   closeWaiting(): void;
@@ -48,11 +66,20 @@ export type OverlayPorts = {
   loading(title: string): void;
 };
 
-const PICK_HINT = 'up/down and enter to choose, esc to go back';
+const keyed = (key: string, text: (key: string) => string): string[] => (key === '' ? [] : [text(key)]);
 
-const WAITING_HINT = 'enter submits the pasted URL · ctrl+y copies the sign-in URL · esc cancels';
+export const waitingHint = (keys: KeyTable): string =>
+  joinHint([
+    ...keyed(keys.keyHint('select.decide'), (key) => `${key} submits the pasted URL`),
+    ...keyed(keys.keyHint('select.copy'), (key) => `${key} copies the sign-in URL`),
+    ...keyed(keys.keyHint('select.escape'), (key) => `${key} cancels`),
+  ]);
 
-function WaitingScreen({ overlay, editor }: { overlay: WaitingOverlay; editor: EditorState }) {
+export const textHint = (keys: KeyTable): string => joinHint([...keyed(keys.keyHint('select.decide'), (key) => `${key} to confirm`), ...keyed(keys.keyHint('select.escape'), (key) => `${key}: go back`)]);
+
+export type PanelOverlay = Exclude<Overlay, { kind: 'pick' }>;
+
+function WaitingScreen({ overlay, editor, keys }: { overlay: WaitingOverlay; editor: EditorState; keys: KeyTable }) {
   if (overlay.delivered) {
     return (
       <Box flexDirection="column">
@@ -73,32 +100,13 @@ function WaitingScreen({ overlay, editor }: { overlay: WaitingOverlay; editor: E
       <Text>{`> ${escapeTerminalLine(editor.text)}`}</Text>
       {overlay.problem === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.problem)}</Text>}
       {overlay.status === undefined ? null : <Text dimColor>{escapeTerminalLine(overlay.status)}</Text>}
-      <Text dimColor>{WAITING_HINT}</Text>
+      <Text dimColor>{waitingHint(keys)}</Text>
     </Box>
   );
 }
 
-const rowText = (row: PickRow, index: number, selected: boolean): string => `${selected ? '›' : ' '} ${index + 1}. ${escapeTerminalLine(row.label)}${row.disabled === true ? ' (unavailable)' : ''}`;
-
-export function OverlayView({ overlay, selected, confirming, editor }: { overlay: Overlay; selected: number; confirming: number | undefined; editor: EditorState }) {
+export function OverlayView({ overlay, editor, keys }: { overlay: PanelOverlay; editor: EditorState; keys: KeyTable }) {
   switch (overlay.kind) {
-    case 'pick': {
-      const { request } = overlay;
-      const pending = confirming === undefined ? undefined : request.rows[confirming];
-      return (
-        <Box flexDirection="column">
-          {request.title === undefined ? null : <Text bold>{escapeTerminalLine(request.title)}</Text>}
-          {(request.lines ?? []).map((line, index) => (
-            <Text key={`line-${index}`}>{escapeTerminalLine(line)}</Text>
-          ))}
-          {request.rows.map((row, index) => (
-            <Text key={`row-${index}`}>{rowText(row, index, index === selected)}</Text>
-          ))}
-          {pending === undefined || request.confirm === undefined ? null : <Text color="yellow">{escapeTerminalLine(request.confirm(pending))}</Text>}
-          <Text dimColor>{request.hint ?? PICK_HINT}</Text>
-        </Box>
-      );
-    }
     case 'text':
       return (
         <Box flexDirection="column">
@@ -106,9 +114,18 @@ export function OverlayView({ overlay, selected, confirming, editor }: { overlay
           {(overlay.request.lines ?? []).map((line, index) => (
             <Text key={index}>{escapeTerminalLine(line)}</Text>
           ))}
-          <Text>{`> ${escapeTerminalLine(editor.text)}`}</Text>
+          {editor.text.split('\n').map((line, index) => (
+            <Text key={index}>{`${index === 0 ? '> ' : '  '}${escapeTerminalLine(line)}`}</Text>
+          ))}
           {overlay.error === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.error)}</Text>}
-          <Text dimColor>enter to confirm, esc to go back</Text>
+          <Text dimColor>{textHint(keys)}</Text>
+        </Box>
+      );
+    case 'capture':
+      return (
+        <Box flexDirection="column">
+          <Text bold>{escapeTerminalLine(overlay.request.title)}</Text>
+          {overlay.problem === undefined ? null : <Text {...styleOf(['error'])}>{escapeTerminalLine(overlay.problem)}</Text>}
         </Box>
       );
     case 'loading':
@@ -119,6 +136,6 @@ export function OverlayView({ overlay, selected, confirming, editor }: { overlay
         </Box>
       );
     case 'waiting':
-      return <WaitingScreen overlay={overlay} editor={editor} />;
+      return <WaitingScreen overlay={overlay} editor={editor} keys={keys} />;
   }
 }

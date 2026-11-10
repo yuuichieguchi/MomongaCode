@@ -11,7 +11,7 @@ import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, counterForTest, getJson,
 import type { ConfigOverrides } from './gateway-helpers.ts';
 import path from 'node:path';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { createUdsClient, fixedSocket } from '@momonga/foundation';
+import { createUdsClient, fixedRolePort, fixedSocket } from '@momonga/foundation';
 
 const DEVSTRAL = 'ollama/devstral-small-2:latest';
 const QWEN = 'ollama/qwen3.8:27b';
@@ -252,6 +252,7 @@ describe('the model of a request is typed text, resolved once by the leased rout
       hmacKey: HMAC_KEY,
       socketPath,
       version: TEST_VERSION,
+      role: fixedRolePort('serving'),
     });
     registerCleanup(() => gateway.close());
     const client = createUdsClient(fixedSocket(socketPath));

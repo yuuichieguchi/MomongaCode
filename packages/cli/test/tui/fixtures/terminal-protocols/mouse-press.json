@@ -1,0 +1,17 @@
+{
+  "name": "mouse-press",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b3c303b31303b354d",
+  "events": [
+    {
+      "type": "mouse",
+      "kind": "press",
+      "button": "left",
+      "col": 10,
+      "row": 5,
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

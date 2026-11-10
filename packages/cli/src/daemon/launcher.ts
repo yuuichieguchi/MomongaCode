@@ -27,3 +27,15 @@ export const selfLauncher =
   (self: SelfExecutable) =>
   (role: ChildRole): SelfInvocation =>
     selfInvocation(self, SUPERVISED_ROLE_COMMANDS[role]);
+
+export const superviseFlags = (home: string, generation: number, lifelineFd: number | undefined): string[] => [
+  `--home=${home}`,
+  `--generation=${generation}`,
+  '--log-target=file',
+  ...(lifelineFd === undefined ? [] : [`--lifeline-fd=${lifelineFd}`]),
+];
+
+export const superviseInvocation = (self: SelfExecutable, home: string, generation: number, lifelineFd: number | undefined): SelfInvocation => {
+  const [subcommand, ...leading] = MOMONGA_LAUNCHES.supervise.args;
+  return selfInvocation(self, subcommand, [...leading, ...superviseFlags(home, generation, lifelineFd)]);
+};

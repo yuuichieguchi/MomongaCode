@@ -18,7 +18,6 @@ type IssuerCredentials = { clientInformation?: StoredOAuthClientInformation; tok
 
 type StoredCredentials = { version: typeof STORE_VERSION; lastIssuer?: string; issuers: Record<string, IssuerCredentials> };
 
-
 const parseStored = (raw: string): StoredCredentials => {
   const parsed: unknown = JSON.parse(raw);
   if (!isRecord(parsed) || parsed['version'] !== STORE_VERSION || !isRecord(parsed['issuers'])) {
@@ -48,7 +47,7 @@ export type OAuthProviderOptions = {
   key: string;
   subject: string;
   store: CredentialStore;
-  signal: AbortSignal;
+  signalForCall(): AbortSignal;
   redirectUrl: string | undefined;
   randomToken(): string;
   preregisteredClientId?: string;
@@ -75,7 +74,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
   let discoveryState: OAuthDiscoveryState | undefined;
 
   const load = async (): Promise<StoredCredentials> => {
-    const raw = await options.store.read(key, options.signal);
+    const raw = await options.store.read(key, options.signalForCall());
     return raw === undefined ? emptyStored() : parseStored(raw);
   };
   const update = async (issuer: string | undefined, change: (entry: IssuerCredentials) => IssuerCredentials): Promise<void> => {
@@ -86,7 +85,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
       stored.issuers[target] = change(stored.issuers[target] ?? {});
       stored.lastIssuer = target;
       return JSON.stringify(stored);
-    }, options.signal);
+    }, options.signalForCall());
   };
   const entryFor = async (context: OAuthClientInformationContext | undefined): Promise<IssuerCredentials | undefined> => {
     const stored = await load();
@@ -189,7 +188,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
         return;
       }
       if (scope === 'all') {
-        await options.store.remove(key, options.signal);
+        await options.store.remove(key, options.signalForCall());
         return;
       }
       await options.store.update(key, (raw) => {
@@ -199,7 +198,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
           if (scope === 'client') delete entry.clientInformation;
         }
         return JSON.stringify(stored);
-      }, options.signal);
+      }, options.signalForCall());
     },
     secretValues: async () => {
       const stored = await load();

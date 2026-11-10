@@ -212,7 +212,7 @@ describe('a declared server whose command is missing answers the row-0 text, not
 });
 
 describe.skipIf(process.platform === 'win32')('a declared server socket path too long for the platform refuses that target only (18.2.5; R-S19-18)', () => {
-  it('answers 412 with the 18.2.5 text and creates no directory for the instance', async () => {
+  it('answers 412 with the bind-measurement text and creates no marker directory or socket for the instance', async () => {
     const fake = await createFakeManagedServer({ dir: makeDir() });
     const home = makeHome();
     const limit = socketPathLimit(process.platform);
@@ -228,9 +228,8 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(`${name}/fake-1`)));
     expect(answered.status).toBe(412);
-    expect(JSON.stringify(answered.body)).toContain(
-      `the model \\"fake-1\\": its server socket path is ${limit + 1} bytes, longer than the ${limit} bytes this platform allows; choose a shorter server name`,
-    );
+    expect(answered.body.error.message).toContain(`the model "fake-1": its server socket path is ${limit + 1} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
+    expect(answered.body.error.message).toMatch(/\((ENAMETOOLONG|EINVAL)\); choose a shorter server name/);
     expect(fs.existsSync(targetMarkers(home, `${name}-1`))).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);
   });

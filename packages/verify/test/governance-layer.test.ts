@@ -45,7 +45,7 @@ describe('the governance layer in the model', () => {
     expect(replay).toMatchObject({ agrees: true, actual: 'ask' });
   });
 
-  it.each(['bypassPermissions', 'default'] as const)('predicts ask in %s mode for a path built at run time under a governance path rule, in agreement with decide', async (mode) => {
+  it.each(['bypassPermissions', 'manual'] as const)('predicts ask in %s mode for a path built at run time under a governance path rule, in agreement with decide', async (mode) => {
     const { prediction, replay } = await predictionFor(mode, 'ask', 'Read(secrets/**)', DYNAMIC);
     expect(prediction.kind).toBe('ask');
     expect(replay).toMatchObject({ agrees: true, actual: 'ask' });

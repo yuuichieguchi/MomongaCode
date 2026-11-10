@@ -22,7 +22,7 @@ type Env = ReturnType<typeof fidelityEnv>;
 const inheriting = async (env: Env, events: readonly RunEventPayload[], input: string, outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED') => {
   const run = enqueue(env.store, env.session.id, input);
   const claim = mustClaim(env.store, 'w1');
-  expect(await env.store.inheritContext(claim, { mode: 'default', facts: env.store.journalFacts })).toEqual({ kind: 'inherited' });
+  expect(await env.store.inheritContext(claim, { mode: 'manual', facts: env.store.journalFacts })).toEqual({ kind: 'inherited' });
   const appended = env.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: { ...RUN_PINS } }, ...events]);
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
   const patch = outcome === 'FAILED' ? { error: { code: 'fixture', message: 'fixture failure' } } : {};

@@ -1,7 +1,6 @@
-import fs from 'node:fs';
-import { momongaPaths, systemClock } from '@momonga/foundation';
+import { FIRST_GENERATION, momongaPaths, systemClock } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { prepareGenerationForTest, registerCleanup, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { startSupervisor } from '../../src/start-supervisor.ts';
 import type { SupervisorOptions, SupervisorProcess } from '../../src/start-supervisor.ts';
@@ -30,13 +29,15 @@ export const startSupervisorHarness = async (
   const paths = momongaPaths(home, process.platform, {});
   if (options.invalidSettings === true) writeSettings(home, '{ "models": ');
   else if (options.settings !== undefined) writeSettings(home, options.settings);
-  fs.mkdirSync(paths.markers.daemons, { recursive: true });
+  prepareGenerationForTest(home, FIRST_GENERATION, '1.2.3');
   const port = createFakeSpawnPort();
   const log = createLogBuffer(systemClock);
   const reapCalls: string[] = [];
   const supervisor = await startSupervisor({
     home,
     version: '1.2.3',
+    generation: FIRST_GENERATION,
+    childCounts: async () => ({}),
     launcher: (role) => ({ command: process.execPath, args: [`/opt/momonga/${role}-bin.ts`] }),
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },
     spawn: port,

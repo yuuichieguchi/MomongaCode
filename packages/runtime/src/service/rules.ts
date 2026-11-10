@@ -18,6 +18,7 @@ export type RuleRoutesDeps = {
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
+  refuseWhileRetiring(): void;
 };
 
 const json = (body: unknown, status: number): Response =>
@@ -73,6 +74,7 @@ export const registerRuleRoutes = (route: RouteRegistrar, deps: RuleRoutesDeps):
 
   const addRule: Handler = async (context) => {
     const body = validateBody<AddRuleRequest>('AddRuleRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    deps.refuseWhileRetiring();
     const scope: GoverningFactView['scope'] =
       body.scope.level === 'user' ? body.scope : { level: 'project', project: canonicalProject(body.scope.project, 'scope.project'), paths: body.scope.paths };
     const input = {

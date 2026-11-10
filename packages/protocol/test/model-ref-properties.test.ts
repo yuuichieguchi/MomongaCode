@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { momongaLayout } from '@momonga/foundation';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
@@ -9,6 +9,8 @@ import { canonOf, displayOf, parseCanon, resolveTypedModelRef, shortOf, typedMod
 import { seeded } from '../../context/test/helpers.ts';
 import { view } from './model-ref-fixtures.ts';
 import type { View } from './model-ref-fixtures.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Random = ReturnType<typeof seeded>;
 
@@ -124,7 +126,6 @@ describe('model references, for every generated configuration', () => {
         expect(shortOf(view(provider, ownName)), `seed ${seed} ${ownName}`).toBeUndefined();
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -146,7 +147,6 @@ describe('model references, for every generated configuration', () => {
         for (const text of textsOf(random, views)) expect(codeOutcome(text, views), `seed ${seed} ${text}`).toEqual(specOutcome(text, views));
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -160,7 +160,6 @@ describe('model references, for every generated configuration', () => {
         for (const text of textsOf(random, views)) expect(codeOutcome(text, reordered), `seed ${seed} ${text}`).toEqual(codeOutcome(text, views));
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -180,7 +179,6 @@ describe('model references, for every generated configuration', () => {
       const duplicate = loadModels(home, { connections: [ollamaOf(['x', 'x:latest'])] });
       await expect(duplicate).rejects.toThrow('models.connections[0].models[1]: "x:latest" is the same model as "x" at models.connections[0].models[0] (an id without a tag means the tag latest)');
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -201,6 +199,5 @@ describe('model references, for every generated configuration', () => {
         }
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 });

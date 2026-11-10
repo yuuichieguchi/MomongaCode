@@ -1,16 +1,19 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { TARGET_NOT_READY, TARGET_PROBING } from '@momonga/protocol';
-import { ProbeInProgressError, acquireProbeLock, endpointKeyOf, endpointLockKeyOf, probeEndpointTarget } from '@momonga/gateway';
+import { acquireProbeLock, endpointKeyOf, endpointLockKeyOf, probeEndpointTarget } from '@momonga/gateway';
 import type { EndpointKey } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf, pause, until } from './gateway-process-helpers.ts';
 import { OLLAMA_LISTED, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+const KEY_LOCK_WAITS_OBSERVED_MS = 500;
 
 const launchWith = async (target: Record<string, unknown>) => {
   const servers = { local: target };
@@ -72,16 +75,23 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
     expect(gateway.measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }]);
   });
 
-  it('refuses the CLI probe of a chat-completions target while another holder has the lock of its record, so no record is written outside the lock', async () => {
+  it('measures in the CLI probe of a chat-completions target while another holder has the lock of its record, and writes the record only after the lock is released', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const probeRecordDir = path.join(makeHome(), 'probe');
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
     const held = await acquireProbeLock(probeRecordDir, endpointLockKeyOf(key), 'system');
 
-    const failure = await probeEndpointTarget({ probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).catch((error: unknown) => error);
+    let settled = false;
+    const probing = probeEndpointTarget({ probeRecordDir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'system', apiKey: undefined, samples: 1 }).finally(() => {
+      settled = true;
+    });
+    await until(() => fake.requests.some((request) => request.path === '/v1/chat/completions'), 'the CLI probe to measure');
+    await pause(KEY_LOCK_WAITS_OBSERVED_MS);
+    expect(settled).toBe(false);
+    expect(fs.existsSync(probeRecordDir) ? fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json')) : []).toEqual([]);
 
-    expect(failure).toBeInstanceOf(ProbeInProgressError);
-    expect(fake.requests.filter((request) => request.path === '/v1/chat/completions')).toEqual([]);
     held.release();
+    await probing;
+    expect(fs.readdirSync(probeRecordDir).filter((name) => name.endsWith('.json'))).toHaveLength(1);
   });
 });

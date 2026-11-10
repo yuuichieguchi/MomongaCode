@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ConfigError } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, comparableContains, ensureSessionTmpDir as defaultEnsureSessionTmpDir, isTransientErrno, protectedSetFor } from '@momonga/foundation';
-import type { MomongaPaths, RuleEnforcement } from '@momonga/foundation';
+import type { MomongaPaths, RuleEnforcement, SessionScratch } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
@@ -13,7 +13,7 @@ export type RecoveryContextOptions = {
   home: string;
   fs: PolicyPorts;
   sessionStates: Pick<SessionStates, 'get'>;
-  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
+  ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 };
 
 export type PolicyForOptions = RecoveryContextOptions & { ruleEnforcement: RuleEnforcement };
@@ -37,7 +37,7 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
 
     let tmpDir: string;
     try {
-      tmpDir = await ensureSessionTmpDir(paths, session.id);
+      tmpDir = (await ensureSessionTmpDir(paths, session.id)).dir;
     } catch (error) {
       if (isTransientErrno(error)) throw error;
       throw wrap(error);

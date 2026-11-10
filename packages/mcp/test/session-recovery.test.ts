@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from '@momonga/testkit';
 import { MIN_TASK_POLL_MS, McpInputSuspension, McpParkedInputLostError, McpTaskError } from '@momonga/mcp';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
 
 const CALL_TIMEOUT_MS = 1_000_000;
@@ -15,7 +16,7 @@ describe('a session that expires after a tool call created a task', () => {
     const { connection } = makeRemoteConnection({ fixture, timers });
     await connection.listTools();
     const polled = timers.nextScheduled((ms) => ms === MIN_TASK_POLL_MS);
-    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS });
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS });
     await polled;
     const [taskId] = fixture.taskIds();
 
@@ -44,7 +45,7 @@ describe('a task past its ttl whose tasks/cancel meets an expired session', () =
     const { connection } = makeRemoteConnection({ fixture, timers: observedTimers(createFakeClock(1_000_000)) });
     await connection.listTools();
 
-    const failure = await connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).catch((error: unknown) => error);
+    const failure = await connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(McpTaskError);
     expect((failure as McpTaskError).message).toContain('ttl of 5000ms');
@@ -61,7 +62,7 @@ describe('a session that expires while a call waits for the person', () => {
     const fixture = await startHttpFixture({ era: 'legacy' });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    const first = await connection.callTool({ name: 'ask_name', arguments: {} }).catch((error: unknown) => error);
+    const first = await connection.callTool({ name: 'ask_name', arguments: {}, signal: NEVER_ABORTED }).catch((error: unknown) => error);
     if (!(first instanceof McpInputSuspension)) throw first;
     expect(first.checkpoint.kind).toBe('parked');
 
@@ -72,6 +73,7 @@ describe('a session that expires while a call waits for the person', () => {
       .callTool({
         name: 'ask_name',
         arguments: {},
+        signal: NEVER_ABORTED,
         resume: { checkpoint: first.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
       })
       .catch((error: unknown) => error);

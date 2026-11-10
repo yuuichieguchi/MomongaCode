@@ -145,7 +145,7 @@ describe('a crash between attempt.failed and the yield (RunRecord FailedBeforeYi
       step: 1,
       tokensTotal: 0,
       model: 'fm',
-      mode: 'default',
+      mode: 'manual',
       agent: 'build',
       origin: 'cli',
     });

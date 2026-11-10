@@ -137,7 +137,7 @@ describe('RulePropose in a run', () => {
 
   const worker = (env: Env, id: string) => env.worker(id, { governance: createGovernancePort({ store: env.store, settings: env.settings }) });
 
-  it.each(['default', 'acceptEdits', 'auto', 'bypassPermissions'] as const)('stops for a person in %s mode, however it was prompted, and creates nothing', async (mode) => {
+  it.each(['manual', 'acceptEdits', 'auto', 'bypassPermissions'] as const)('stops for a person in %s mode, however it was prompted, and creates nothing', async (mode) => {
     const env = await makeEnv({ mode });
     env.settings.classifierModel = 'classifier';
     env.gateway.script.push(proposeStep());

@@ -1,0 +1,145 @@
+import { checkRuleText, RuleParseError } from '@momonga/config';
+import type { SettingsLayer, SettingsSnapshot } from '@momonga/config';
+import { GIT_DIRECTORY_ENTRIES, WORKSPACE_CONTROL_NAMES } from '@momonga/foundation';
+import { PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS } from '@momonga/protocol';
+import { APPLIES_NEXT_SESSION, APPLIES_NOW, chooseSaveTarget, currentOf, runCollection, writeSetting } from '../settings-screen.tsx';
+import type { Refusal } from '../settings-screen.tsx';
+import type { SlashCommand, SlashContext } from '../slash.ts';
+
+export const PERMISSIONS_TITLE = 'Permissions';
+export const START_MODE_ROW = 'Start mode';
+export const DIRECTORIES_ROW = 'Additional directories';
+export const PROTECTED_HEADING = 'Always protected';
+export const RULE_KINDS = [
+  { effect: 'allow', row: 'Allow rules', preview: 'Allowed' },
+  { effect: 'ask', row: 'Ask rules', preview: 'Asks' },
+  { effect: 'deny', row: 'Deny rules', preview: 'Denied' },
+] as const;
+
+type RuleKind = (typeof RULE_KINDS)[number];
+
+export const PROTECTED_LINES: readonly string[] = [
+  `in the workspace: ${WORKSPACE_CONTROL_NAMES.join(', ')}`,
+  `in a Git directory: ${GIT_DIRECTORY_ENTRIES.join(', ')}`,
+  'a change to these is asked of a person in every mode',
+  'adding a standing rule is asked of a person in every mode',
+];
+
+const START_MODE_PATH = ['permissions', 'defaultMode'] as const;
+
+type Held = { readonly layer: SettingsLayer; readonly text: string };
+
+const heldAt = (snapshot: SettingsSnapshot, key: string): Held[] =>
+  snapshot.layers.flatMap((view) => {
+    const permissions = view.document['permissions'];
+    const list = typeof permissions === 'object' && permissions !== null ? (permissions as Readonly<Record<string, unknown>>)[key] : undefined;
+    return Array.isArray(list) ? list.filter((text): text is string => typeof text === 'string').map((text) => ({ layer: view.layer, text })) : [];
+  });
+
+const removed = (text: string) => (current: unknown): unknown => {
+  const next = Array.isArray(current) ? (current as unknown[]).filter((member) => member !== text) : [];
+  return next.length === 0 ? undefined : next;
+};
+
+const remove = async (context: SlashContext, held: Held | undefined, key: string): Promise<Refusal | 'left' | undefined> =>
+  held === undefined ? 'left' : writeSetting(context, held.layer, { kind: 'update', path: ['permissions', key], update: removed(held.text) });
+
+const ruleProblem = (text: string): string | undefined => {
+  try {
+    checkRuleText(text);
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof RuleParseError)) throw error;
+    return error.message;
+  }
+};
+
+const editRules = (context: SlashContext, kind: RuleKind): Promise<boolean> =>
+  runCollection(context, {
+    title: kind.row,
+    applied: APPLIES_NOW,
+    entries: (snapshot) => heldAt(snapshot, kind.effect).map((held) => `${held.text}  ${held.layer}`),
+    add: async (_context, snapshot) => {
+      const rule = await context.overlays.promptText({ title: kind.row, lines: [`${kind.preview}: Bash(npm test:*)`], validate: ruleProblem });
+      if (rule === undefined) return 'left';
+      const layer = await chooseSaveTarget(context, snapshot);
+      if (layer === undefined) return 'left';
+      const refusal = await writeSetting(context, layer, { kind: 'addRule', effect: kind.effect, rule });
+      if (refusal === undefined) context.info(`${kind.preview}: ${rule}`);
+      return refusal;
+    },
+    act: (_context, snapshot, index) => remove(context, heldAt(snapshot, kind.effect)[index], kind.effect),
+  });
+
+const editDirectories = (context: SlashContext): Promise<boolean> =>
+  runCollection(context, {
+    title: DIRECTORIES_ROW,
+    applied: APPLIES_NOW,
+    entries: (snapshot) => heldAt(snapshot, 'additionalDirectories').map((held) => `${held.text}  ${held.layer}`),
+    add: async (_context, snapshot) => {
+      const directory = await context.overlays.promptText({ title: DIRECTORIES_ROW, validate: (text) => (text.trim() === '' ? 'expected a directory' : undefined) });
+      if (directory === undefined) return 'left';
+      const layer = await chooseSaveTarget(context, snapshot);
+      if (layer === undefined) return 'left';
+      return writeSetting(context, layer, { kind: 'update', path: ['permissions', 'additionalDirectories'], update: (current) => [...(Array.isArray(current) ? (current as unknown[]) : []), directory] });
+    },
+    act: (_context, snapshot, index) => remove(context, heldAt(snapshot, 'additionalDirectories')[index], 'additionalDirectories'),
+  });
+
+const editStartMode = async (context: SlashContext, snapshot: SettingsSnapshot): Promise<string | undefined> => {
+  const current = currentOf(snapshot, START_MODE_PATH).value;
+  const choice = await context.overlays.choose({
+    title: START_MODE_ROW,
+    rows: PERMISSION_MODES.map((mode) => ({ label: `${mode}  ${PERMISSION_MODE_DESCRIPTIONS[mode]}` })),
+    initial: Math.max(0, PERMISSION_MODES.findIndex((mode) => mode === current)),
+    decideOn: 'enter',
+    escape: 'back',
+    filter: false,
+  });
+  const mode = choice === undefined ? undefined : PERMISSION_MODES[choice.index];
+  if (mode === undefined) return undefined;
+  const layer = await chooseSaveTarget(context, snapshot);
+  if (layer === undefined) return undefined;
+  const refusal = await writeSetting(context, layer, { kind: 'set', path: START_MODE_PATH, value: mode });
+  return refusal === undefined ? `${START_MODE_ROW}: ${mode}  ${APPLIES_NEXT_SESSION}` : refusal.refused;
+};
+
+const startModeLabel = (snapshot: SettingsSnapshot): string => {
+  const { value, source } = currentOf(snapshot, START_MODE_PATH);
+  return `${START_MODE_ROW}  ${typeof value === 'string' ? value : PERMISSION_MODES[0]}  ${source}`;
+};
+
+export const permissionsCommand: SlashCommand = {
+  name: 'permissions',
+  description: 'show and change the start mode, the allow, ask and deny rules and the additional directories',
+  needsSession: false,
+  run: async (_args, context) => {
+    let at = 0;
+    let line: string | undefined;
+    for (;;) {
+      const snapshot = await context.backend.settings();
+      const choice = await context.overlays.choose({
+        title: PERMISSIONS_TITLE,
+        lines: line === undefined ? [] : [line],
+        rows: [
+          { label: startModeLabel(snapshot) },
+          ...RULE_KINDS.map((kind) => ({ label: `${kind.row}  ${heldAt(snapshot, kind.effect).length}` })),
+          { label: `${DIRECTORIES_ROW}  ${heldAt(snapshot, 'additionalDirectories').length}` },
+          { label: PROTECTED_HEADING, separator: true },
+          ...PROTECTED_LINES.map((label) => ({ label, separator: true })),
+        ],
+        initial: at,
+        decideOn: 'enter',
+        escape: 'back',
+        filter: false,
+      });
+      if (choice === undefined) return;
+      at = choice.index;
+      line = undefined;
+      const kind = RULE_KINDS[choice.index - 1];
+      if (choice.index === 0) line = await editStartMode(context, snapshot);
+      else if (kind !== undefined) await editRules(context, kind);
+      else await editDirectories(context);
+    }
+  },
+};

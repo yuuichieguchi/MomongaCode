@@ -134,7 +134,7 @@ const SHELL = '/bin/bash';
 
 export const runCase = async (workspace: DifferentialWorkspace, input: Case): Promise<Outcome> => {
   const cwd = input.cwd ?? workspace.project;
-  const mode = input.mode ?? 'default';
+  const mode = input.mode ?? 'manual';
   const searchPath = input.searchPath;
   let decision: Decision;
   try {

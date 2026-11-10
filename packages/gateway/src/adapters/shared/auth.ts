@@ -46,9 +46,9 @@ export const sendAuthorized = async <Answer extends CompletionResponse>(
   return send(renewed.bearer);
 };
 
-export const applyCredentialEffect = async (auth: AuthSource, classified: ClassifiedError, clock: Clock): Promise<void> => {
+export const applyCredentialEffect = async (auth: AuthSource, classified: ClassifiedError, clock: Clock, signal: AbortSignal): Promise<void> => {
   if (classified.credential !== 'pause') return;
   const { code } = classified.error;
   if (code === null) throw new Error('a classification that pauses the credential carries no code');
-  await auth.pause({ code, ...(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs }) });
+  await auth.pause({ code, ...(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs }) }, signal);
 };

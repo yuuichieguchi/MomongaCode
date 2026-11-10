@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Listing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
 
-type Listable = { listKeys(): Promise<Listing> };
+type Listable = { listKeys(signal: AbortSignal): Promise<Listing> };
 
 const RUNS = 25;
 
@@ -58,7 +58,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
         plaintextTokenFiles: () => given.plaintext,
         keyOfPlaintext: KEY_OF_PLAINTEXT,
       } as Parameters<typeof createEncryptedCredentialStore>[0]);
-      for (const key of given.written) await store.write(key, recordFor(key));
+      for (const key of given.written) await store.write(key, recordFor(key), new AbortController().signal);
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
       for (const key of given.loose) fs.chmodSync(credentialFileFor(directory, key), 0o644);
       const copies = given.copied.map((key, index) => {
@@ -74,7 +74,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
       });
       for (const name of given.temporaries) fs.writeFileSync(path.join(directory, name), 'partial', { mode: 0o600 });
 
-      const listing = await listableOf(store).listKeys();
+      const listing = await listableOf(store).listKeys(new AbortController().signal);
 
       const expectedKeys = given.written.filter((key) => !given.loose.includes(key)).sort();
       expect(listing.keys.map((entry) => entry.key).sort(), `seed ${seed}`).toEqual(expectedKeys);
@@ -94,8 +94,8 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
       secretStore: { kind: 'available', store: createFakeKeyStore() },
       plaintextTokenFiles: () => true,
     });
-    await store.write('plan/p/a', recordFor('plan/p/a'));
-    const listing = await listableOf(store).listKeys();
+    await store.write('plan/p/a', recordFor('plan/p/a'), new AbortController().signal);
+    const listing = await listableOf(store).listKeys(new AbortController().signal);
     expect(listing.keys).toEqual([]);
     expect(listing.problems.map((problem) => nameOf(problem.file))).toEqual([nameOf(credentialFileFor(directory, 'plan/p/a'))]);
   });
@@ -109,7 +109,7 @@ describe('listKeys of the encrypted store equals the set of records created (O-R
       secretStore: { kind: 'available', store: createFakeKeyStore() },
       plaintextTokenFiles: () => false,
     });
-    expect(await listableOf(store).listKeys()).toEqual({ keys: [], problems: [] });
+    expect(await listableOf(store).listKeys(new AbortController().signal)).toEqual({ keys: [], problems: [] });
   });
 });
 
@@ -122,14 +122,14 @@ describe('listKeys of the memory store returns exactly the keys it holds (O-R5-6
       for (let step = 0; step < 12; step += 1) {
         const key = keyFor(random.int(0, 8));
         if (random.int(0, 2) === 0) {
-          await store.remove(key);
+          await store.remove(key, new AbortController().signal);
           held.delete(key);
         } else {
-          await store.write(key, recordFor(key));
+          await store.write(key, recordFor(key), new AbortController().signal);
           held.add(key);
         }
       }
-      const listing = await listableOf(store).listKeys();
+      const listing = await listableOf(store).listKeys(new AbortController().signal);
       expect(
         [...listing.keys].sort((a, b) => a.key.localeCompare(b.key)),
         `seed ${seed}`,

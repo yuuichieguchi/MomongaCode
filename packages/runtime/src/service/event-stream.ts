@@ -26,6 +26,7 @@ export type EventStreamOptions = {
   timers: ServiceTimers;
   keepAliveMs: number;
   signals: readonly AbortSignal[];
+  finalFrame?: () => Uint8Array | undefined;
   onError: (error: unknown) => void;
 };
 
@@ -121,6 +122,8 @@ export const eventStreamResponse = (options: EventStreamOptions): Response => {
       if (cancelled) return;
       if (aborted) {
         finish();
+        const frame = options.finalFrame?.();
+        if (frame !== undefined) controller.enqueue(frame);
         controller.close();
         return;
       }

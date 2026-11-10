@@ -1,7 +1,7 @@
 import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
-import type { ImageAttachment, JsonSchema, PermissionMode } from '@momonga/protocol';
+import type { ImageAttachment, InboxDelivery, JsonSchema, PermissionMode } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
 export type CreateSessionBody = {
@@ -22,9 +22,12 @@ export type CreateRunBody = {
   history?: 'inherit' | 'fresh';
   skill?: string;
   images?: ImageAttachment[];
+  attachMentions?: boolean;
 };
 
 export type ResolveApprovalBody = { optionId: string };
+
+export type AddInboxBody = { delivery: InboxDelivery; text: string; images?: ImageAttachment[] };
 
 export type ResolveElicitationBody = { responses: Record<string, unknown> };
 
@@ -35,6 +38,9 @@ type RequestSchemaName =
   | 'PatchSessionRequest'
   | 'CreateRunRequest'
   | 'ResolveApprovalRequest'
+  | 'AddInboxRequest'
+  | 'UserShellRequest'
+  | 'CompactSessionRequest'
   | 'ResolveElicitationRequest'
   | 'PutTrustRequest'
   | 'AddRuleRequest'
@@ -50,6 +56,9 @@ const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
   PatchSessionRequest: requestValidator(RUN_API_SCHEMAS.PatchSessionRequest),
   CreateRunRequest: requestValidator(RUN_API_SCHEMAS.CreateRunRequest),
   ResolveApprovalRequest: requestValidator(RUN_API_SCHEMAS.ResolveApprovalRequest),
+  AddInboxRequest: requestValidator(RUN_API_SCHEMAS.AddInboxRequest),
+  UserShellRequest: requestValidator(RUN_API_SCHEMAS.UserShellRequest),
+  CompactSessionRequest: requestValidator(RUN_API_SCHEMAS.CompactSessionRequest),
   ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
   PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
   AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),

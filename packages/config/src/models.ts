@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalPath, comparableContains, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { FIRST_GENERATION, canonicalPath, comparableContains, endpointFormsOfSocket, generationLayout, redactedUrl, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import {
   DEFAULT_ANTHROPIC_API_VERSION,
   SERVER_KINDS,
@@ -20,7 +20,7 @@ import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import type { PlanProfile } from './plan-profiles.ts';
 import { PROVIDER_NAME_RULE_TEXT, isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
-import { registeredIds, registeredServer } from './server-registry.ts';
+import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
 import type { ServerRegistry } from './server-registry.ts';
 import type {
   AnthropicTarget,
@@ -102,9 +102,10 @@ const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
 const unknownServerMessage = (where: string, id: string, servers: ServerRegistry): string =>
   `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`;
 
-const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry): ResolvedManagedTarget => {
+const resolveManaged = (target: ManagedTarget, { connection, entry }: Where, servers: ServerRegistry, home: string | undefined): ResolvedManagedTarget => {
   const description = registeredServer(servers, target.server);
   if (description === undefined) throw new Error(unknownServerMessage(connection, target.server, servers));
+  if (home !== undefined) requireOfferedEndpointForm(description, endpointFormsOfSocket(generationLayout(home, FIRST_GENERATION).sockets.gateway), connection);
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${entry}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a model declare; declarable: ${description.declarable.join(', ')}`);
   }
@@ -343,7 +344,7 @@ type ResolveContext = { home: string | undefined; warnings: string[]; servers: S
 const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { home, warnings, servers, profiles }: ResolveContext): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
-      return resolveManaged(target, where, servers);
+      return resolveManaged(target, where, servers, home);
     case 'chat-completions':
       return resolveChatCompletions(target, provider, home, where);
     case 'open-responses':

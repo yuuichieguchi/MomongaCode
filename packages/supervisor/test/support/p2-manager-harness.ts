@@ -85,6 +85,8 @@ export type ManagerHarness = {
   lock: FakeKernelLock;
   transients: { error: unknown; source: string }[];
   draining: { value: boolean };
+  retiring: { value: boolean };
+  retiredExits: number;
   backgroundErrors: { error: unknown; source: string }[];
   versionMismatches: { role: ChildRole; childVersion: string }[];
   logLines(): JsonLine[];
@@ -152,6 +154,8 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     reapCalls,
     reapResult: async () => ({ removed: true }),
     draining,
+    retiring: { value: false },
+    retiredExits: 0,
     backgroundErrors,
   } as ManagerHarness;
   const launcher: Launcher = options.launcher ?? (() => ({ command: process.execPath, args: [FIXTURE_BIN] }));
@@ -164,6 +168,10 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     home,
     paths,
     generation: FIRST_GENERATION,
+    isRetiring: () => harness.retiring.value,
+    onRetiredExit: () => {
+      harness.retiredExits += 1;
+    },
     endpoint: roleEndpoint(layout, role),
     launcher,
     env: options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' },

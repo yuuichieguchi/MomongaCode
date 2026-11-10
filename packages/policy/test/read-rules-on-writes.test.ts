@@ -14,7 +14,7 @@ describe('4.4 Read rules on every write path subject', () => {
 
 describe('one code path for Read deny and ask rules on writes', () => {
   it.each(['RW1', 'RW3', 'RW4', 'RW6', 'RW8'])('%s is denied by the Read(.env) rule', (id) => {
-    const decision = decideRow(rowById(id), 'default');
+    const decision = decideRow(rowById(id), 'manual');
     expect(decision).toMatchObject({ kind: 'deny', source: 'rule' });
     expect(decision.rule?.text).toBe('Read(.env)');
   });
@@ -26,7 +26,7 @@ describe('one code path for Read deny and ask rules on writes', () => {
   });
 
   it('RW10: a Read allow rule grants no write (pin)', () => {
-    const decision = decideRow(rowById('RW10'), 'default');
+    const decision = decideRow(rowById('RW10'), 'manual');
     expect(decision.kind).toBe('ask');
     expect(decision.rule?.text).not.toBe('Read(.env)');
   });

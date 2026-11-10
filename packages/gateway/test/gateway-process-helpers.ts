@@ -1,27 +1,34 @@
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor, shortTempBase } from '@momonga/foundation';
-import type { UdsClient } from '@momonga/foundation';
+import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
+import type { SecretProcessPort, SecretStore, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup, modelSettings } from '@momonga/testkit';
-import type { ModelSettings } from '@momonga/testkit';
-import type { FakeSecurityPort } from '@momonga/testkit';
-import { registerCleanup } from './gateway-helpers.ts';
+import { killPidsForCleanup, modelSettings, FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
+import type { ModelSettings, FakeSecurityPort, PendingTimer } from '@momonga/testkit';
+import { registerCleanup, closedAtCleanup } from './gateway-helpers.ts';
 
 export const PROCESS_VERSION = '1.10.0-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+export const notTheRoleTick = (timer: PendingTimer): boolean => timer.delayMs !== SWEEP_INTERVAL_MS;
 
 export type GatewayProcessOptions = Parameters<typeof startGatewayProcess>[0];
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'gh-')));
-  fs.chmodSync(home, 0o700);
-  registerCleanup(() => fs.rmSync(home, { recursive: true, force: true }));
+  const home = createTempDir({ asHome: true });
+  registerCleanup(() => removeTempDir(home));
+  prepareHome(home);
   return home;
+};
+
+export const prepareHome = (home: string, generation: number = FIRST_GENERATION): void => {
+  const paths = momongaPaths(home, process.platform, {});
+  const directories = [paths.root, paths.run, paths.callLocks, paths.lockProof, paths.markers.root, paths.state, paths.traces.dir, paths.probe, paths.logs, paths.projects, paths.skills, paths.cacheBase, paths.tmp.root, paths.tmp.spawn, paths.tmp.sessions];
+  for (const directory of directories) fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  prepareGenerationForTest(home, generation, PROCESS_VERSION);
 };
 
 export const homePaths = (home: string) => {
@@ -62,15 +69,42 @@ export const fakeSecretHost = (bin: string, store: SecretHostProgram): SecretHos
   return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
 };
 
-export const portOnSecretHost = (inner: FakeSecurityPort, store: SecretHostProgram, host: SecretHost): FakeSecurityPort => {
+export type HostPort = SecretProcessPort & {
+  readonly calls: FakeSecurityPort['calls'];
+  readonly ended: FakeSecurityPort['ended'];
+  arrived(command: string, count?: number): Promise<void>;
+};
+
+const commandOf = (args: readonly string[], stdin: string): string => (args[0] === '-i' ? (stdin.split(' ')[0] as string) : (args[0] as string));
+
+export const portOnSecretHost = (inner: FakeSecurityPort, store: SecretHostProgram, host: SecretHost): HostPort => {
   const calls: FakeSecurityPort['calls'] = [];
-  const port = async (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => {
+  const counts = new Map<string, number>();
+  const waiters: Array<{ command: string; count: number; resolve(): void }> = [];
+  const port: SecretProcessPort = async (file, args, stdin, signal) => {
     calls.push({ file, args, stdin });
+    const command = commandOf(args, stdin);
+    const count = (counts.get(command) ?? 0) + 1;
+    counts.set(command, count);
+    for (const waiter of waiters.splice(0)) {
+      if (waiter.command === command && waiter.count <= count) waiter.resolve();
+      else waiters.push(waiter);
+    }
     if (file !== host.programPath) throw new Error(`the gateway ran ${file}, not the fake ${store.program} on PATH at ${host.programPath}`);
     return inner(store.canonicalBinary, args, stdin, signal);
   };
-  return Object.assign(port, { calls });
+  return Object.assign(port, {
+    calls,
+    ended: inner.ended,
+    arrived: (command: string, count = 1) =>
+      new Promise<void>((resolve) => {
+        if ((counts.get(command) ?? 0) >= count) resolve();
+        else waiters.push({ command, count, resolve });
+      }),
+  });
 };
+
+export const givenStoreOnHost = (port: SecretProcessPort, host: SecretHost): SecretStore => createGivenSecretStore(port, host.env, createFakeSecretFiles(() => new Set([FAKE_KEYCHAIN_PATH])));
 
 export type StdoutCapture = { lines(): string[] };
 
@@ -85,7 +119,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  const handle = await startGatewayProcess(options);
+  const handle = await closedAtCleanup(startGatewayProcess(options));
   registerCleanup(async () => {
     await handle.close();
   });

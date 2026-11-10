@@ -115,7 +115,7 @@ describe('the unconnected phase', () => {
     const { app } = await unconnected();
     await untilFrame(app, UNCONNECTED_FOOTER);
     await submitLine(app, '/help');
-    const frame = await untilFrame(app, 'Slash commands');
+    const frame = await untilFrame(app, 'Commands\n');
     expect(frame).toContain('/login');
     expect(frame).not.toContain(NEEDS_SESSION);
     app.unmount();

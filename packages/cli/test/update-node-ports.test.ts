@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { STARTUP_TIMEOUT_MS, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { CliPorts } from '../src/ports.ts';
@@ -127,12 +127,42 @@ describe('daemon probe', () => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home);
     fs.mkdirSync(paths.run, { recursive: true, mode: 0o700 });
-    const probe = nodeDaemonProbe(paths);
+    const probe = nodeDaemonProbe(paths, virtualClock());
     expect(await probe.running()).toBe(false);
 
     const supervisor = await startFakeSupervisor({ paths, version: '1.0.0', children: readyChildren() });
     registerCleanup(context, () => supervisor.stop());
     expect(await probe.running()).toBe(true);
+  });
+
+  it('sees a live retiring generation when the generation run/current names is gone (20.72)', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    const retiring = await startFakeSupervisor({ paths, version: '1.0.0', generation: 1, children: readyChildren() });
+    registerCleanup(context, () => retiring.stop());
+    const ended = await startFakeSupervisor({ paths, version: '1.1.0', generation: 2, children: readyChildren() });
+    await ended.stop();
+
+    expect(await nodeDaemonProbe(paths, virtualClock()).running()).toBe(true);
+  });
+
+  it('sums the work of the live generations below the serving one, with their versions (20.72)', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const paths = momongaPaths(home);
+    await ensureMomongaDirs(paths);
+    for (const [generation, version, steps, jobs] of [[1, '0.9.0', 1, 1], [2, '1.0.0', 1, 0], [3, '2.0.0', 5, 5]] as const) {
+      const supervisor = await startFakeSupervisor({ paths, version, generation, children: readyChildren(), reports: { steps, jobs, calls: 0 } });
+      registerCleanup(context, () => supervisor.stop());
+    }
+
+    expect(await nodeDaemonProbe(paths, virtualClock()).retiring()).toEqual({ steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] });
+  });
+
+  it('bounds the start after an install by the ready bound alone (20.72)', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    expect(await nodeDaemonProbe(momongaPaths(home), virtualClock()).restartBoundMs()).toBe(STARTUP_TIMEOUT_MS);
+    expect(STARTUP_TIMEOUT_MS).toBe(60_000);
   });
 });
 

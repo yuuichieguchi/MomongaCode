@@ -30,7 +30,7 @@ const CASES: ReadonlyArray<{ id: string; command: string; rules: (harness: Retur
 
 describe('sandbox none forces approval for every Bash command (4.6, 5.11)', () => {
   for (const { id, command, rules } of CASES) {
-    for (const mode of ['default', 'bypassPermissions'] as PermissionMode[]) {
+    for (const mode of ['manual', 'bypassPermissions'] as PermissionMode[]) {
       it(`${id} ${command} needs approval in ${mode} without a kernel`, async () => {
         const harness = makeHarness();
         fs.mkdirSync(path.join(harness.layout.project, 'src'));
@@ -48,7 +48,7 @@ describe('sandbox none forces approval for every Bash command (4.6, 5.11)', () =
     const harness = makeHarness();
     fs.mkdirSync(path.join(harness.layout.project, 'src'));
     const runs: string[] = [];
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('ls src', runs)), [call('c1', 'Bash')], { mode: 'default', sandbox: fakeSandbox, env: { PATH: '/usr/bin:/bin' } }));
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(commandTool('ls src', runs)), [call('c1', 'Bash')], { mode: 'manual', sandbox: fakeSandbox, env: { PATH: '/usr/bin:/bin' } }));
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', result: { status: 'completed' } });
     expect(runs).toEqual(['ls src']);
   });

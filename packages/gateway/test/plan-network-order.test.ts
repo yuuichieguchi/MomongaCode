@@ -34,7 +34,7 @@ describe('O-R5-6 L1: the plan scope D5 is derived before the start loads an acco
         access_token: `access-of-${ACCOUNT}`,
         refresh_token: `refresh-of-${ACCOUNT}`,
         expiresAt: FAR_EXPIRY_MS,
-      }),
+      }), new AbortController().signal,
     );
     writeSettings(home, {
       credentials: { plaintextTokenFiles: true },

@@ -109,7 +109,7 @@ const memoryIds = (db: DatabaseSync, term: string): string[] =>
 
 describe('migration v13', () => {
   it('is followed only by the pinned-digest column, the migration that records dropped reflection candidates, the one that records the detail of a context charge and the model-change index (upgrades over existing rows are tested in migration-v14.test.ts)', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]);
   });
 
   it('preserves an existing memory and gives it the defaults of the new columns', () => {

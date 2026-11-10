@@ -1,4 +1,4 @@
-import { createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { GENERATION_RETIRED_CODE, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf } from '@momonga/protocol';
 import type {
@@ -168,7 +168,8 @@ const isGatewayHealth = (value: unknown): value is GatewayHealth =>
   value['apiVersion'] === 1 &&
   typeof value['pid'] === 'number' &&
   isString(value['startedAt']) &&
-  oneOf(value['state'], ['running', 'draining']);
+  oneOf(value['state'], ['running', 'retiring', 'draining']) &&
+  typeof value['activeRequests'] === 'number';
 
 const isProfileMessages = (value: unknown): boolean =>
   isRecord(value) &&
@@ -243,14 +244,33 @@ const isUsageReport = (value: unknown): value is UsageReport =>
   isCount(value['total']['output_tokens']) &&
   isCount(value['total']['total_tokens']);
 
+const retiredRefusalOf = (text: string): string | undefined => {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  const error = isRecord(body) ? body['error'] : undefined;
+  return isRecord(error) && error['code'] === GENERATION_RETIRED_CODE && typeof error['message'] === 'string' ? error['message'] : undefined;
+};
+
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
 
-  const getJson = async (path: string, signal?: AbortSignal): Promise<unknown> => {
+  const send = async (path: string, signal?: AbortSignal): Promise<{ status: number; text: string }> => {
     const response = await http.request({ method: 'GET', path, ...(signal === undefined ? {} : { signal }) });
-    const text = await response.text();
-    if (response.status !== 200) throw new Error(`GET ${path} answered ${response.status}: ${text}`);
-    return JSON.parse(text);
+    return { status: response.status, text: await response.text() };
+  };
+
+  const getJson = async (path: string, signal?: AbortSignal): Promise<unknown> => {
+    const first = await send(path, signal);
+    const settled = retiredRefusalOf(first.text) === undefined ? first : await send(path, signal);
+    const refusal = retiredRefusalOf(settled.text);
+    if (refusal !== undefined) throw new Error(refusal);
+    if (settled.status !== 200) throw new Error(`GET ${path} answered ${settled.status}: ${settled.text}`);
+    return JSON.parse(settled.text);
   };
 
   const answer = async (method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {

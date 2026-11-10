@@ -43,6 +43,12 @@ const API_KEY_HELP = [
 
 const USE_API_KEY = 'Use an API key';
 
+const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
+const SANDBOX_OFF_CONTINUE = 0;
+const SANDBOX_OFF_CANCEL = 1;
+
+const MODEL_CHANGE_NOTE = 'a change applies from the next task';
+
 const UNREPORTED_TRAINED_CONTEXT = 'the server reports no trained context length for this model';
 
 const healthText = (health: TargetHealth | undefined): string => {
@@ -66,7 +72,7 @@ const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.
 export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const { backend } = ports;
 
-  const chooseFrom = async (request: { title?: string; lines?: readonly string[]; hint?: string }, choices: readonly Choice[]): Promise<boolean> => {
+  const chooseFrom = async (request: { title?: string; lines?: readonly string[] }, choices: readonly Choice[]): Promise<boolean> => {
     const index = await ports.pick({ ...request, rows: choices.map((choice) => choice.row) });
     const chosen = index === undefined ? undefined : choices[index];
     if (chosen === undefined) return false;
@@ -114,7 +120,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const sandboxAccepted = async (): Promise<boolean> => {
     if ((await backend.sandbox()) !== 'none') return true;
-    return (await ports.pick({ title: 'The sandbox is off', lines: SANDBOX_OFF_NOTICE, rows: [{ label: 'Continue' }, { label: 'Cancel' }] })) === 0;
+    return (await ports.pick({ title: 'The sandbox is off', lines: SANDBOX_OFF_NOTICE, rows: SANDBOX_OFF_ROWS, initial: SANDBOX_OFF_CANCEL, decideOn: 'enter', escape: SANDBOX_OFF_CANCEL })) === SANDBOX_OFF_CONTINUE;
   };
 
   const signInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
@@ -328,7 +334,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       ports.info('no subscription account is saved');
       return;
     }
-    const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row) => `press enter again to sign out ${row.label}` });
+    const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row, decideKey) => `press ${decideKey} again to sign out ${row.label}` });
     const chosen = index === undefined ? undefined : listed.accounts[index];
     if (chosen === undefined) return;
     const report = await backend.plan.signOut({ profile: chosen.profile, account: chosen.label });
@@ -387,11 +393,11 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       ports.info('no model is available; use /login to connect one');
       return;
     }
-    await chooseFrom({ title: 'Models', hint: 'up/down and enter to choose, esc to go back; a change applies from the next task' }, choices);
+    await chooseFrom({ title: 'Models', lines: [MODEL_CHANGE_NOTE] }, choices);
   };
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
-    await chooseFrom({ title: 'Connect a model to start', hint: 'up/down and enter to choose, esc to go on to the prompt' }, [
+    await chooseFrom({ title: 'Connect a model to start' }, [
       ...profiles.map((profile) => ({ row: { label: profile.loginLabel }, act: () => providerFlow(profile) })),
       { row: { label: USE_API_KEY }, act: apiKeyHelp },
       { row: { label: 'Use a local server' }, act: addLocalServer },

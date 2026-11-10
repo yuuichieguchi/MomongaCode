@@ -19,6 +19,9 @@ describe('health', () => {
       pid: SERVICE_PID,
       startedAt: STARTED_AT,
       state: 'running',
+      role: 'serving',
+      steps: 0,
+      jobs: 0,
       sandbox: 'seatbelt',
     });
   });
@@ -36,7 +39,7 @@ describe('session creation, listing and reading', () => {
     expect(session).toEqual({
       id: expect.any(String),
       cwd: env.layout.projectReal,
-      permissionMode: 'default',
+      permissionMode: 'manual',
       model: MODEL_ID,
       bypassAllowed: false,
       createdAt: START_MS,
@@ -184,10 +187,20 @@ describe('session permission mode rules', () => {
     expect(env.ports.settingsCalls.length).toBeGreaterThan(0);
   });
 
-  it('falls back to default when settings name no mode', async () => {
+  it('starts in manual when settings name no mode', async () => {
     const env = await startService();
     const session = await env.createSession();
-    expect(session.permissionMode).toBe('default');
+    expect(session.permissionMode).toBe('manual');
+  });
+
+  it('refuses the mode name default at creation and at a mode change', async () => {
+    const env = await startService();
+    const created = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'default' } });
+    expect(created.status).toBe(400);
+    const session = await env.createSession();
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'default' } });
+    expect(patched.status).toBe(400);
+    expect(env.store.getSession(session.id)?.permissionMode).toBe('manual');
   });
 
   it('allows bypass when the user settings default is bypassPermissions', async () => {
@@ -326,7 +339,7 @@ describe('session PATCH', () => {
     expect(autoResponse.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan', extra: true } }), 400, 'invalid_request');
     expectError(await env.http('PATCH', '/v1/sessions/ses_missing', { body: { permissionMode: 'plan' } }), 404, 'not_found');
-    expect(env.store.getSession(session.id)?.permissionMode).toBe('default');
+    expect(env.store.getSession(session.id)?.permissionMode).toBe('manual');
   });
 });
 

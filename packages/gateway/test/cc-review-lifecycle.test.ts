@@ -1,3 +1,4 @@
+import { fixedRolePort } from '@momonga/foundation';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -106,7 +107,7 @@ const managedFm = async () => {
 
 describe('managed endpoint', () => {
   it('asks fm serve to be running on every resolve instead of caching the first endpoint', async () => {
-    const ensureRunning = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/s.sock' }));
+    const ensureRunning = vi.fn(async () => ({ kind: 'unix' as const, path: '/s.sock' }));
     const fmServe: ManagedServer = { restarts: 0, start: ensureRunning, ensureRunning, stop: async () => undefined, health: async () => ({ ok: true }) };
     const managed = await createManagedTarget({
       ...fmTargetBase(),
@@ -167,6 +168,7 @@ describe('adapter and gateway shutdown', () => {
     const socketPath = path.join(dir, 'gw.sock');
     const clock = createFakeClock(START_MS);
     const gateway = await createGateway({
+      role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
       config: buildConfig({
@@ -196,7 +198,7 @@ describe('count-tokens', () => {
     await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, FM_CURRENCY);
     return createManagedTarget({
       ...fmTargetBase(),
-      server: { restarts: 0, start: async () => ({ kind: 'unix', socketPath: '/s' }), ensureRunning: async () => ({ kind: 'unix', socketPath: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
+      server: { restarts: 0, start: async () => ({ kind: 'unix', path: '/s' }), ensureRunning: async () => ({ kind: 'unix', path: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
       binary: '/usr/bin/fm',
       exec: async (_file: string, _args: readonly string[], _stdin: string, signal: AbortSignal) => {
         signals.push(signal);

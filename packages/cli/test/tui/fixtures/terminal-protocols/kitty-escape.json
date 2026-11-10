@@ -1,0 +1,14 @@
+{
+  "name": "kitty-escape",
+  "source": "kitty keyboard protocol page (sw.kovidgoyal.net/kitty/keyboard-protocol)",
+  "hex": "1b5b323775",
+  "events": [
+    {
+      "type": "key",
+      "name": "escape",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

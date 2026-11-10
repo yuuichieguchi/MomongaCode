@@ -89,7 +89,7 @@ describe('the model of a session (design-model-names 3.1, 2.2, 12.1 N2.4)', () =
 
   it('changes the model of a session whose stored model is the name an earlier build wrote', async () => {
     const env = await serviceListing(S1);
-    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'default', model: 'local' });
+    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'manual', model: 'local' });
     const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: 'devstral-small-2:latest' } });
     expect(patched.status).toBe(200);
     expect(env.store.getSession(session.id)?.model).toBe(DEVSTRAL);

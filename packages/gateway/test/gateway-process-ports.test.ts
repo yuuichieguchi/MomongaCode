@@ -2,8 +2,8 @@ import { request } from 'undici';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, modelsOf } from './gateway-process-helpers.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, ownedStart } from '@momonga/testkit';
+import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -12,10 +12,11 @@ const TOKEN = 'injected-debug-token';
 describe('gateway process ports', () => {
   it('reads the debug token and the database presence through the injected file ports', async (context) => {
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     writeSettings(home, { models: modelsOf({ primary: ccTarget('/nonexistent/upstream.sock') }) });
     const lines: string[] = [];
     const asked: string[] = [];
-    const handle = await startGatewayProcess({
+    const handle = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
@@ -35,7 +36,7 @@ describe('gateway process ports', () => {
       random: () => 0.25,
       logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await handle.close();
     });

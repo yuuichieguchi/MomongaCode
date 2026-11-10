@@ -4,7 +4,7 @@ import type { McpServerConnection } from '@momonga/mcp';
 import { FIXTURE_EXTRA_TOOLS_ENV, MCP_LEGACY_SERVER_PATH, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { ToolInputRequired } from '@momonga/tools';
 import type { AnyTool, ToolContext } from '@momonga/tools';
-import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';
+import { BASE_ENV, NEVER_ABORTED, makeDir, onCleanup } from './mcp-harness.ts';
 
 const connect = async (): Promise<McpServerConnection> => {
   const connection = await connectMcpServer({
@@ -26,7 +26,7 @@ const textOf = (result: { content?: unknown }): string =>
     .join('\n');
 
 const suspensionOf = async (connection: McpServerConnection, signal?: AbortSignal): Promise<McpInputSuspension> => {
-  const outcome = await connection.callTool({ name: 'ask_name', arguments: {}, ...(signal === undefined ? {} : { signal }) }).then(
+  const outcome = await connection.callTool({ name: 'ask_name', arguments: {}, signal: signal ?? NEVER_ABORTED }).then(
     (value) => ({ value }),
     (error: unknown) => ({ error }),
   );
@@ -60,10 +60,12 @@ describe('the time budget of a call that waits for the person', () => {
   };
 
   const TIMEOUT_MS = 1;
+  const CONNECT_LIMIT_MS = 30_000;
+  const FIRST_LISTING_LIMIT_MS = 60_000;
 
   it('does not run the time budget while the call is parked, and the late answer still reaches the server', async () => {
     const { connection, timers } = await connectOnFakeTimers();
-    const first = await connection.callTool({ name: 'ask_name', arguments: {}, timeoutMs: TIMEOUT_MS }).catch((error: unknown) => error);
+    const first = await connection.callTool({ name: 'ask_name', arguments: {}, signal: NEVER_ABORTED, timeoutMs: TIMEOUT_MS }).catch((error: unknown) => error);
     if (!(first instanceof McpInputSuspension)) throw first;
     expect(timers.pending()).toEqual([]);
 
@@ -72,6 +74,7 @@ describe('the time budget of a call that waits for the person', () => {
     const result = await connection.callTool({
       name: 'ask_name',
       arguments: {},
+      signal: NEVER_ABORTED,
       timeoutMs: 60_000,
       resume: { checkpoint: first.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
     });
@@ -80,16 +83,17 @@ describe('the time budget of a call that waits for the person', () => {
 
   it('applies the time budget of the resuming call, measured from the resume', async () => {
     const { connection, timers, delays } = await connectOnFakeTimers();
-    const first = await connection.callTool({ name: 'ask_name', arguments: {}, timeoutMs: 60_000 }).catch((error: unknown) => error);
+    const first = await connection.callTool({ name: 'ask_name', arguments: {}, signal: NEVER_ABORTED, timeoutMs: 60_000 }).catch((error: unknown) => error);
     if (!(first instanceof McpInputSuspension)) throw first;
-    expect(delays).toEqual([60_000]);
+    expect(delays).toEqual([CONNECT_LIMIT_MS, FIRST_LISTING_LIMIT_MS, 60_000]);
     await connection.callTool({
       name: 'ask_name',
       arguments: {},
+      signal: NEVER_ABORTED,
       timeoutMs: 5000,
       resume: { checkpoint: first.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
     });
-    expect(delays).toEqual([60_000, 5000]);
+    expect(delays).toEqual([CONNECT_LIMIT_MS, FIRST_LISTING_LIMIT_MS, 60_000, 5000]);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -109,6 +113,7 @@ describe('server-initiated elicitation from a 2025-11-25 server', () => {
     const result = await connection.callTool({
       name: 'ask_name',
       arguments: {},
+      signal: NEVER_ABORTED,
       resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } },
     });
     expect(textOf(result)).toBe('hello Ada');
@@ -121,6 +126,7 @@ describe('server-initiated elicitation from a 2025-11-25 server', () => {
     const result = await connection.callTool({
       name: 'ask_name',
       arguments: {},
+      signal: NEVER_ABORTED,
       resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'decline' } } },
     });
 
@@ -136,6 +142,7 @@ describe('server-initiated elicitation from a 2025-11-25 server', () => {
     const result = await connection.callTool({
       name: 'ask_name',
       arguments: {},
+      signal: NEVER_ABORTED,
       resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Grace' } } } },
     });
 
@@ -149,7 +156,7 @@ describe('server-initiated elicitation from a 2025-11-25 server', () => {
     await connection.releaseCheckpoint(suspension.checkpoint);
 
     const failure = await connection
-      .callTool({ name: 'ask_name', arguments: {}, resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } } })
+      .callTool({ name: 'ask_name', arguments: {}, signal: NEVER_ABORTED, resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } } })
       .catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(McpParkedInputLostError);
   });
@@ -160,7 +167,7 @@ describe('server-initiated elicitation from a 2025-11-25 server', () => {
     const second = await connect();
 
     const failure = await second
-      .callTool({ name: 'ask_name', arguments: {}, resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } } })
+      .callTool({ name: 'ask_name', arguments: {}, signal: NEVER_ABORTED, resume: { checkpoint: suspension.checkpoint, answers: { elicitation: { action: 'accept', content: { name: 'Ada' } } } } })
       .catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(McpParkedInputLostError);

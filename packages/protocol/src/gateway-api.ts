@@ -45,7 +45,8 @@ export type GatewayHealth = {
   apiVersion: 1;
   pid: number;
   startedAt: string;
-  state: 'running' | 'draining';
+  state: 'running' | 'retiring' | 'draining';
+  activeRequests: number;
 };
 
 export type UsageSource = 'reported' | 'estimated';
@@ -85,6 +86,8 @@ export type ModelListEntry = { id: string; object: 'model'; created: number; own
 export type ModelList = { object: 'list'; data: ModelListEntry[] };
 
 export const TARGET_PROBING = 'target_probing';
+
+export const TARGET_PROBE_FAILED = 'target_probe_failed';
 
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 

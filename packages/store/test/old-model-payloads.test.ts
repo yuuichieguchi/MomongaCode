@@ -19,7 +19,7 @@ const withOldRun = () => {
   const session = newSession(h.store);
   const run = enqueue(h.store, session.id);
   const claim = mustClaim(h.store, 'w1');
-  expect(h.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: h.clock.now(), pins: { ...OLD_PINS }, mode: 'default' }, oldClassified]).kind).toBe('ok');
+  expect(h.store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: h.clock.now(), pins: { ...OLD_PINS }, mode: 'manual' }, oldClassified]).kind).toBe('ok');
   return { h, session, run, claim };
 };
 

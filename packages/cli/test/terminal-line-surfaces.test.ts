@@ -161,7 +161,9 @@ describe('a value a person did not write stays on its own line in command output
       `momonga 2.0.0 ${SHOWN} is available (running 1); run \`momonga update\` to install it\n`,
     );
     expect(upToDateText(`1 ${FORGED}`)).toBe(`momonga 1 ${SHOWN} is up to date\n`);
-    expect(installedText({ from: '1', to: `2 ${FORGED}`, target: 't', daemonRestarted: true })).toBe(`updated momonga 1 -> 2 ${SHOWN} (t)\nrestarted the daemon on the new version\n`);
+    expect(installedText({ from: '1', to: `2 ${FORGED}`, target: 't', daemon: { kind: 'restarted', retiring: { steps: 0, jobs: 0, versions: [] } } })).toBe(
+      `updated momonga 1 -> 2 ${SHOWN} (t)\nUpdated to v2 ${SHOWN}. The daemon is running the new version.\n`,
+    );
   });
 
   it('shows an unremoved staging file and its error with a newline on one line', () => {

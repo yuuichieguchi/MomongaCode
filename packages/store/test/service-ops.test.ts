@@ -151,7 +151,7 @@ describe('setPermissionMode', () => {
   it('returns ok without a change and appends nothing for the current mode', async () => {
     const { store } = harness();
     const session = newSession(store);
-    expect(store.setPermissionMode(session.id, 'default')).toEqual({ kind: 'ok', changed: false, session });
+    expect(store.setPermissionMode(session.id, 'manual')).toEqual({ kind: 'ok', changed: false, session });
     expect(store.readSessionEvents(session.id, 0, 100)).toEqual([]);
     expect(store.sessionMaxEventId(session.id)).toBe(0);
   });

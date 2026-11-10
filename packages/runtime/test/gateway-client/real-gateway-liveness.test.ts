@@ -1,14 +1,14 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, modelSettings, startFakeChatCompletions, closeOnceStarted, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
 import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import { prepareGatewayHome } from './prepared-home.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -31,6 +31,8 @@ type Context = {
 };
 
 let context: Context;
+let suiteHome: string | undefined;
+let startedGateway: Promise<Awaited<ReturnType<typeof startGatewayProcess>>> | undefined;
 
 const PRIMARY = 'primary/system';
 const SECONDARY = 'secondary/system';
@@ -39,8 +41,8 @@ const served = (provider: string, socketPath: string) => ({ provider, id: 'syste
 
 beforeAll(async () => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'gl-'));
-  fs.chmodSync(home, 0o700);
+  const home = createTempDir({ asHome: true });
+  suiteHome = home;
   const primary = await startFakeChatCompletions({ scenario: 'tools-ok', script: [REPLY, FAILURE, FAILURE, FAILURE] });
   const secondary = await startFakeChatCompletions({ scenario: 'tools-ok', script: [REPLY] });
   const root = path.join(home, '.momonga');
@@ -50,25 +52,26 @@ beforeAll(async () => {
     JSON.stringify(modelSettings({ models: [served('primary', primary.socketPath), served('secondary', secondary.socketPath)], fallback: [SECONDARY] })),
     { mode: 0o600 },
   );
-  const gateway = await startGatewayProcess({
+  await prepareGatewayHome(home);
+  startedGateway = startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: home, TMPDIR: home },
     version: '1.10.0-test',
     random: () => 0,
   });
+  const gateway = await startedGateway;
   const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath), clock: fakeClock(), version: CLIENT_VERSION, streamIdleTimeoutMs: IDLE_BOUND_MS });
   context = { home, primary, secondary, gateway, client, restoreStdout: () => stdout.mockRestore() };
 });
 
 afterAll(async () => {
-  if (context === undefined) return;
-  await context.client.destroy().catch(() => {});
-  await context.gateway.close();
-  await context.primary.close();
-  await context.secondary.close();
-  context.restoreStdout();
-  fs.rmSync(context.home, { recursive: true, force: true });
+  await context?.client.destroy().catch(() => {});
+  if (startedGateway !== undefined) await closeOnceStarted(startedGateway)();
+  await context?.primary.close();
+  await context?.secondary.close();
+  context?.restoreStdout();
+  if (suiteHome !== undefined) await removeTempDir(suiteHome);
 });
 
 describe('a silent upstream behind a real gateway and the real gateway client', () => {

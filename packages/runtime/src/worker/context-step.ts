@@ -23,7 +23,7 @@ import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/f
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
-import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { DETERMINISTIC_SUMMARY_TEXT, NOTHING_TO_COMPACT_CODE, NOTHING_TO_COMPACT_MESSAGE, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import { billedDetailOf } from './model-stream.ts';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -68,7 +68,7 @@ const sessionOf = (ctx: ClaimContext): HeldSession => heldSessionOf(ctx.options.
 export const taskOf = (ctx: ClaimContext): { content: ContentPart[]; text: string } => {
   const [first] = ctx.options.store.readRunEvents(ctx.run.id, 0, 1);
   if (first === undefined || first.type !== 'user.message') throw new Error(`run ${ctx.run.id} does not start with a user message`);
-  return { content: userMessageContent(first.text, first.images), text: first.text };
+  return { content: userMessageContent(first.text, first.images, first), text: first.text };
 };
 
 type GoverningScan = 'active' | 'live';
@@ -328,7 +328,8 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices'>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices' | 'tokens'>;
+type CompactionCounts = Required<Pick<CompactedPayload, 'tokensBefore' | 'tokensAfter'>>;
 
 const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
 
@@ -352,26 +353,44 @@ const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: Compacti
 
 const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => renderedWorkingState(ctx, projected, capTokens, ctx.readers());
 
-const deterministicCompaction = (plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): CompactedPayload => ({
-  type: 'context.compacted',
-  item: compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code'),
-  summary: DETERMINISTIC_SUMMARY_TEXT,
-  replacedThroughSeq: plan.throughSeq,
-  source: 'deterministic',
-  ...(fidelity === undefined ? {} : { fidelity }),
-  guidelineVersion,
-});
+const countsWith = async (ctx: ClaimContext, plan: CompactionSource, item: CompactionInputItem | MessageInputItem): Promise<CompactionCounts> => {
+  const summaryTokens = await ctx.meter.countItem(item, { callNames: {}, withTools: true });
+  return { tokensBefore: plan.tokens.input, tokensAfter: plan.tokens.input - plan.tokens.replaced + plan.tokens.workingStateGrowth + summaryTokens };
+};
 
-export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
+const deterministicCompaction = async (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): Promise<CompactedPayload> => {
+  const item = compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code');
+  return {
+    type: 'context.compacted',
+    item,
+    summary: DETERMINISTIC_SUMMARY_TEXT,
+    replacedThroughSeq: plan.throughSeq,
+    source: 'deterministic',
+    ...(fidelity === undefined ? {} : { fidelity }),
+    guidelineVersion,
+    ...(await countsWith(ctx, plan, item)),
+  };
+};
+
+const FIRST_REQUEST_ATTEMPT = 1;
+
+export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource, focus?: string): Promise<void> => {
   const { journal, options } = ctx;
   const roleModel = ctx.roles.compaction;
   const request: CompactRequest = {
     model: roleModel ?? ctx.model,
     input: plan.input,
-    momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }), ...EXACT_MODEL },
+    momonga: {
+      max_summary_tokens: plan.summaryTokenCap,
+      retains_user_request: true,
+      ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }),
+      ...(focus === undefined ? {} : { instructions: focus }),
+      ...EXACT_MODEL,
+    },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
   const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
+  journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
   const startedAt = options.clock.now();
@@ -388,12 +407,13 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   } catch (error) {
     if (!escalates(error)) throw error;
     delete ctx.control.inFlight.compactionKey;
+    const fallback = await deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE);
     journal.append([
       noticeOf(
         'compaction_failed',
         `Compaction summary failed (${error.code}): ${error.message}${roleModel === undefined ? '' : ` [models.roles.compaction names the model ${ctx.display(roleModel)}]`}; the deterministic summary was used`,
       ),
-      deterministicCompaction(plan, NO_ADOPTED_GUIDELINE),
+      fallback,
       ...unrecordedNoticePayloads(ctx, plan.notices),
     ]);
     return;
@@ -440,15 +460,16 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
           ),
         ];
   const accepted = fidelity.fabricated.length === 0;
+  const compacted: CompactedPayload = accepted
+    ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion, ...(await countsWith(ctx, plan, item)) }
+    : await deterministicCompaction(ctx, plan, guidelineVersion, fidelity);
   journal.append([
     charge,
     ...unreadableNotices,
     ...(accepted
       ? []
       : [noticeOf('compaction_rejected', `Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
-    accepted
-      ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
-      : deterministicCompaction(plan, guidelineVersion, fidelity),
+    compacted,
     ...unrecordedNoticePayloads(ctx, plan.notices),
   ]);
 };
@@ -717,5 +738,49 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
     recordContextFacts(ctx, built);
     recordEvictions(ctx, built.evictions);
     return { kind: 'built', built };
+  }
+};
+
+export const compactOnly = async (ctx: ClaimContext, focus: string | undefined): Promise<void> => {
+  if (ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['context.compacted']).length > 0) {
+    await ctx.terminals.finish('COMPLETED');
+    return;
+  }
+  for (;;) {
+    if ((await cancelIfInterrupted(ctx)) === 'done') return;
+    let plan: CompactionPlan | undefined;
+    try {
+      await advanceTouched(ctx);
+      await prepareRecall(ctx);
+      plan = (await buildContext({ ...contextInputOf(ctx, undefined, 0), compactNow: true }, portsOf(ctx))).compaction;
+    } catch (error) {
+      if (error instanceof PinnedOverflowError) {
+        await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
+        return;
+      }
+      if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {
+        if ((await recoverRejectedCompaction(ctx, error)) === 'done') return;
+        continue;
+      }
+      if (!(error instanceof ContextOverflowError)) throw error;
+      plan = error.compaction;
+    }
+    if ((await cancelIfInterrupted(ctx)) === 'done') return;
+    if (plan === undefined) {
+      ctx.journal.append([{ type: 'notice', level: 'info', message: NOTHING_TO_COMPACT_MESSAGE, code: NOTHING_TO_COMPACT_CODE }]);
+      await ctx.terminals.finish('COMPLETED');
+      return;
+    }
+    try {
+      await compactThrough(ctx, plan, focus);
+    } catch (error) {
+      if (!(error instanceof GatewayRequestError)) throw error;
+      delete ctx.control.inFlight.compactionKey;
+      if (error.code !== 'invalid_compaction') throw error;
+      if ((await recoverRejectedCompaction(ctx, error)) === 'done') return;
+      continue;
+    }
+    await ctx.terminals.finish('COMPLETED');
+    return;
   }
 };

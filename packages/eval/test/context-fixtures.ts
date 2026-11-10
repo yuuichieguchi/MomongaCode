@@ -120,7 +120,7 @@ export const contextCase = (id: string, scenario: string, compaction: 'on' | 'of
   scenario,
   compaction,
   input: `work on ${scenario}`,
-  permissionMode: 'default',
+  permissionMode: 'manual',
   onAsk: 'reject_once',
   runs: 1,
   minPassRate: 1,

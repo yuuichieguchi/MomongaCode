@@ -1,8 +1,13 @@
 import { SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
+import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
+
+export const TUI_THEMES = ['auto', 'dark', 'light', 'dark-colorblind', 'light-colorblind'] as const;
+export const TUI_NOTIFY_MODES = ['off', 'bell'] as const;
+export const TUI_SCREEN_MODES = ['fullscreen', 'scrollback'] as const;
+export const TUI_SETTING_VALUES = { theme: TUI_THEMES, notify: TUI_NOTIFY_MODES, screen: TUI_SCREEN_MODES } as const;
 
 const STRING_ARRAY = { type: 'array', items: { type: 'string' } } as const;
 const NON_EMPTY_STRING_ARRAY = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
@@ -126,6 +131,12 @@ const DECLARED_SERVER_SCHEMA = {
     command: { type: 'string', minLength: 1 },
     args: { type: 'array', items: { type: 'string' } },
     readyPath: { type: 'string', pattern: '^/' },
+    endpoint: {
+      type: 'object',
+      properties: { forms: { type: 'array', items: { type: 'string', enum: MANAGED_ENDPOINT_FORMS }, minItems: 1, uniqueItems: true } },
+      required: ['forms'],
+      additionalProperties: false,
+    },
   },
   required: ['command', 'args', 'readyPath'],
   additionalProperties: false,
@@ -498,6 +509,11 @@ export const SETTINGS_SCHEMA = {
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },
+    tui: {
+      type: 'object',
+      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' }, screen: { enum: [...TUI_SCREEN_MODES] }, mouse: { type: 'boolean' }, copyOnSelect: { type: 'boolean' }, attachFileMentions: { type: 'boolean' } },
+      additionalProperties: false,
+    },
     gateway: {
       type: 'object',
       properties: {

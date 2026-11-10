@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resolveModels, viewsOf } from '@momonga/config';
 import { displayOf, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText } from '@momonga/protocol';
 import type { ModelView, ModelViews } from '@momonga/protocol';
@@ -11,6 +11,8 @@ import { createRedactor } from '../src/core/redaction.ts';
 import { createRouter } from '../src/core/router.ts';
 import { listModel } from '../src/server/capability-listing.ts';
 import { HMAC_KEY, START_MS, counterForTest } from './gateway-helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const SEEDS = 200;
 const ADAPTERS = ['ollama', 'chat-completions', 'open-responses'] as const;
@@ -77,6 +79,5 @@ describe('I-N19: resolution over the listing equals resolution over the settings
         }
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 });

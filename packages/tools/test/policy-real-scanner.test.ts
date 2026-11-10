@@ -14,9 +14,9 @@ describe('one scanner: a comment inside $() ends at the newline, as in real /bin
     expect(workspace.exists('pwn')).toBe(true);
   });
 
-  it.each([HIDDEN_TOUCH, HIDDEN_TOUCH_QUOTED])('does not allow %j in default mode', (command) => {
+  it.each([HIDDEN_TOUCH, HIDDEN_TOUCH_QUOTED])('does not allow %j in manual mode', (command) => {
     const workspace = makeRealWorkspace();
-    expect(workspace.decide(command, { mode: 'default' }).kind).toBe('ask');
+    expect(workspace.decide(command, { mode: 'manual' }).kind).toBe('ask');
   });
 
   it('denies the hidden command under a deny rule for it', () => {

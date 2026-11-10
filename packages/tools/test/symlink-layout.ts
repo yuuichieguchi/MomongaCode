@@ -5,7 +5,7 @@ export type SymlinkReadLine = {
   program: string;
   argv: string[];
   link: 'tree' | 'operand';
-  mode: 'default' | 'acceptEdits';
+  mode: 'manual' | 'acceptEdits';
   exit: number;
   readsThrough: boolean;
 };

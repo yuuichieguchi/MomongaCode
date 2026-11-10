@@ -23,8 +23,8 @@ beforeAll(() => {
   root = createTempRoot();
 });
 
-afterAll(() => {
-  removeTempRoot(root);
+afterAll(async () => {
+  await removeTempRoot(root);
 });
 
 const written = (name: string, bytes: Buffer): string => {

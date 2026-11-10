@@ -116,7 +116,7 @@ describe('a governance rule', () => {
 
     it('is not a human-only question when only the settings hold the rule, so a hook or the classifier may still answer it', () => {
       const layout = makeLayout();
-      const decision = decideWith(layout, BASH, DYNAMIC, 'default', [ruleIn(layout)('ask', 'Read(secrets/**)')]);
+      const decision = decideWith(layout, BASH, DYNAMIC, 'manual', [ruleIn(layout)('ask', 'Read(secrets/**)')]);
       expect(decision.kind).toBe('ask');
       expect(decision.humanOnly).toBeUndefined();
     });

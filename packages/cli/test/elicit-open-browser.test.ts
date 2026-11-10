@@ -30,7 +30,7 @@ const client = {
 };
 
 vi.mock('../src/run/open-session.ts', () => ({ connectRuntime: () => client }));
-vi.mock('../src/daemon/ensure-daemon.ts', () => ({ ensureDaemon: async () => undefined }));
+vi.mock('../src/daemon/ensure-daemon.ts', () => ({ ensureCurrentDaemon: async () => undefined }));
 
 const { elicit } = await import('../src/commands/elicit.ts');
 

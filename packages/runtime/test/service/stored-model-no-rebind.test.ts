@@ -58,7 +58,7 @@ describe('a stored model is resolved by its full reference only (I-N4, design-mo
   it('opens a session that holds the name an earlier build stored, shows that name, and refuses a run with the same sentence', async () => {
     const env = await startService();
     env.ports.shown.views = WITH_X;
-    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'default', model: LOCAL });
+    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'manual', model: LOCAL });
     const read = await env.http('GET', `/v1/sessions/${session.id}`);
     expect(read.status).toBe(200);
     expect(read.json.session.model).toBe(LOCAL);
@@ -72,7 +72,7 @@ describe('a stored model is resolved by its full reference only (I-N4, design-mo
   it('ends a queued run of such a session failed with model_not_found and the sentence when it is claimed', async () => {
     const env = await startService();
     const kit = attachWorkerKit(env);
-    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'default', model: LOCAL });
+    const session = env.store.createSession({ cwd: env.layout.projectReal, env: {}, permissionMode: 'manual', model: LOCAL });
     const queued = env.store.createRunAndEnqueue(session.id, { input: 'Say hello', timeoutMs: 3_600_000, limits: {}, pins: {}, history: 'inherit' });
     if (queued.kind !== 'created') throw new Error(`the run was not created: ${queued.kind}`);
     kit.gateway.unlisted.add(LOCAL);

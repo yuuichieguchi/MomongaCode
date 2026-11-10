@@ -1,4 +1,5 @@
-export { EarlierAttemptNotStoppedError, clearCallLocks } from './call-lock.ts';
+export { EarlierAttemptNotStoppedError, sweepCallLocks } from './call-lock.ts';
+export { RetiringYield } from './ports.ts';
 export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
 export { callStopOf } from './call-stop.ts';
 export type { CallStop, CallStopTerms } from './call-stop.ts';
@@ -27,6 +28,7 @@ export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionS
 export type { HookReply, HookRunContext } from './hooks/run.ts';
 export { selectHookCommands } from './hooks/run.ts';
 export type {
+  BackgroundJobKill,
   BackgroundJobRead,
   BackgroundJobStart,
   BackgroundJobs,
@@ -72,7 +74,12 @@ export type {
 export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
+export { runUserCommand } from './builtins/bash.ts';
+export type { UserCommandHost, UserCommandOutcome } from './builtins/bash.ts';
+export type { PolicyFacts, UserPolicy, UserPolicyFacts, UserSubject } from './executor.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
+export { listDirectoryEntries, listFileCandidates } from './file-listing.ts';
+export type { FileListingOptions } from './file-listing.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';

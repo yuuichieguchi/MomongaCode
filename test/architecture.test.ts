@@ -509,7 +509,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
     const registry = createToolRegistry();
     const registered = [...createBuiltinTools(), ...createMemoryTools({ port: unusedPort, trusted: true })];
     for (const tool of registered) registry.register(tool);
-    const visible = (await registry.snapshot()).forModel({ mode: 'default', rules: [] });
+    const visible = (await registry.snapshot()).forModel({ mode: 'manual', rules: [] });
     const meter = createTokenMeter({
       model: 'large',
       capabilities: LARGE_WINDOW_TARGET,

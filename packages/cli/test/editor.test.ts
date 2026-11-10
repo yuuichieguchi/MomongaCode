@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { applyKey, emptyEditor } from '../src/tui/editor.ts';
-import type { EditorState, KeyPress } from '../src/tui/editor.ts';
+import type { Key } from 'ink';
+import { applyKeyEvent, emptyEditor } from '../src/tui/editor.ts';
+import type { EditorState } from '../src/tui/editor.ts';
+import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
+import { keyEventOf } from './tui/screen-fakes.ts';
+
+type KeyPress = Partial<Key> & { input: string };
+
+const applyKey = (state: EditorState, key: KeyPress) => applyKeyEvent(state, keyEventOf(key.input, key), DEFAULT_KEY_TABLE);
 
 const press = (state: EditorState, ...keys: (string | KeyPress)[]): { state: EditorState; submitted: string[] } => {
   let current = state;
@@ -22,9 +29,10 @@ describe('editor typing', () => {
     expect(state.cursor).toBe(3);
   });
 
-  it('deletes backwards with backspace and with the delete key code of a macOS terminal', () => {
+  it('deletes before the caret with backspace and after it with delete', () => {
     expect(press(emptyEditor(), 'abc', { input: '', backspace: true }).state.text).toBe('ab');
-    expect(press(emptyEditor(), 'abc', { input: '', delete: true }).state.text).toBe('ab');
+    expect(press(emptyEditor(), 'abc', { input: '', delete: true }).state.text).toBe('abc');
+    expect(press(emptyEditor(), 'abc', { input: '', leftArrow: true }, { input: '', delete: true }).state.text).toBe('ab');
   });
 
   it('moves and deletes by whole characters, so an emoji or a joined emoji sequence is never split into surrogate halves', () => {
@@ -47,12 +55,16 @@ describe('editor typing', () => {
     expect(press(emptyEditor(), 'one\r\ntwo\rthree\nfour').state.text).toBe('one\ntwo\nthree\nfour');
   });
 
-  it('supports ctrl shortcuts for line start, line end, kill to start and kill to end', () => {
+  it('supports ctrl shortcuts for line start, line end, kill to the start and to the end of this line only', () => {
     const typed = press(emptyEditor(), 'hello world').state;
     expect(press(typed, { input: 'a', ctrl: true }).state.cursor).toBe(0);
     expect(press(typed, { input: 'a', ctrl: true }, { input: 'e', ctrl: true }).state.cursor).toBe(11);
     expect(press(typed, { input: 'a', ctrl: true }, { input: '', rightArrow: true }, { input: 'k', ctrl: true }).state.text).toBe('h');
     expect(press(typed, { input: 'u', ctrl: true }).state.text).toBe('');
+    const lines = press(emptyEditor(), 'one\ntwo\nthree', { input: '', upArrow: true }).state;
+    expect(lines.cursor).toBe(7);
+    expect(press(lines, { input: 'u', ctrl: true }).state.text).toBe('one\n\nthree');
+    expect(press(lines, { input: '', leftArrow: true }, { input: 'k', ctrl: true }).state.text).toBe('one\ntw\nthree');
   });
 });
 

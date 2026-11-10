@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isNotListedCapabilities } from '@momonga/protocol';
 import type { Capabilities, ChainRoomFacts, ProviderAdapter } from '@momonga/protocol';
 import { PROPERTY_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
@@ -11,6 +11,8 @@ import { targetProbingError } from '../src/probe/auto-probe.ts';
 import { listModel } from '../src/server/capability-listing.ts';
 import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
 import { HMAC_KEY, START_MS, buildConfig } from './gateway-helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const SEEDS = 200;
 const STATES = ['listed', 'probing', 'unavailable'] as const;
@@ -96,6 +98,5 @@ describe('I-N18: the entry of a model is not listed exactly when the model itsel
         }
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 });

@@ -21,7 +21,7 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   const program = buildProgram({
     ports,
     policyVerify: async () => nodePolicyVerifyHost(ports, await pathsOf(ports)),
-    entries: daemonEntries(ports.self, ports.version),
+    entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
     update: () => ({
       ...wiring,
       build: { repo: FIXTURE_REPO, teamId: FIXTURE_TEAM_ID, publicKey: process.env[PUBLIC_KEY_ENV] },

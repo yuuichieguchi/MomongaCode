@@ -10,10 +10,20 @@ import {
   createJsonLogger,
   createRedactor,
   createLockCapability,
-  ensureGenerationDirs,
+  createRolePort,
+  EXIT_RETIRED,
   fixedSocket,
+  generationIsLive,
   generationLayout,
+  generationOfDirectoryName,
+  hostKernelLock,
+  inspectProcessLock,
+  listGenerations,
   momongaPaths,
+  readCurrentGeneration,
+  requireGenerationDirs,
+  scopeToGeneration,
+  SWEEP_INTERVAL_MS,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   markerReapClockBoundMs,
@@ -26,15 +36,15 @@ import {
   nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, GenerationRole, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, RolePort, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
-import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
+import { FIDELITY_PRUNE_BATCH_ROWS, isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
+import { RetiringYield, ShellNotFoundError, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath, sweepCallLocks } from '@momonga/tools';
 import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -44,10 +54,11 @@ import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
-import { FACTS_SWEEP_BATCH_RUNS } from '@momonga/protocol';
+import { FACTS_SWEEP_BATCH_RUNS, FIDELITY_FOLD_VERSION } from '@momonga/protocol';
+import type { DaemonCurrentFrame } from '@momonga/protocol';
 import { startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
-import { SWEEP_INTERVAL_MS, createRunService } from '../service/service.ts';
+import { createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
 import { createMemoryUpkeepSchedule } from '../memory/upkeep-schedule.ts';
 import { DAY_MS } from '@momonga/memory';
@@ -58,9 +69,14 @@ import type { RunService } from '../service/service.ts';
 import { systemTimers } from '../service/timers.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { heartbeatMsFor } from '../worker/heartbeat.ts';
+import { retireDecisionOf } from '../worker/gateway-policy.ts';
 import { createWorker } from '../worker/worker.ts';
 import type { Worker } from '../worker/types.ts';
 import { asError } from './as-error.ts';
+import { JOB_RECONCILE_BATCH_JOBS } from './background-jobs.ts';
+import { ensureJobOutputDirectory } from './job-output-file.ts';
+import { createServingTasks } from './serving-tasks.ts';
+import type { ServingTaskOutcome } from './serving-tasks.ts';
 import { createCancelUpstream } from './cancel-upstream.ts';
 import { createStoppedRunReleaser } from './release-stopped.ts';
 import type { CancelUpstreamTracker } from './cancel-upstream.ts';
@@ -93,6 +109,7 @@ import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
 import { createEvidenceRunner } from './evidence-run.ts';
 import { createHistoryPort } from './history-port.ts';
+import { createUserInputPort } from './user-input.ts';
 import { createMemoryPort } from './memory-port.ts';
 import { createAgentsPort } from './agents-port.ts';
 import { createChildRuns } from './child-runs.ts';
@@ -122,6 +139,8 @@ export type StartRuntimeProcessOptions = {
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
+  role?: RolePort;
+  requestShutdown?: () => void;
 };
 
 export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
@@ -131,6 +150,7 @@ export type RuntimeCloseResult = {
   fatal?: Error;
   abandoned: string[];
   stragglers: string[];
+  exitCode?: number;
 };
 
 export type RuntimeProcess = {
@@ -138,6 +158,7 @@ export type RuntimeProcess = {
   sandbox: SandboxKind;
   close(): Promise<RuntimeCloseResult>;
   abort(): Promise<RuntimeCloseResult>;
+  role(): GenerationRole;
   fatal: Promise<Error>;
 };
 
@@ -203,6 +224,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   });
   let lifecycle: Promise<RuntimeCloseResult> | undefined;
   let service: RunService | undefined;
+  let retireFrame: { current: DaemonCurrentFrame | undefined } | undefined;
+  let onWorkEnded: () => void = () => undefined;
+  const stepsInFlight = (): number => workers.reduce((sum, { worker }) => sum + worker.claimsInFlight(), 0);
 
   const latchFatal = (error: Error): void => {
     if (phase === 'closed') return;
@@ -294,6 +318,22 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return result;
   };
 
+  const retire = async (sharedPaths: MomongaPaths): Promise<RuntimeCloseResult> => {
+    phase = 'tearingDown';
+    let current: DaemonCurrentFrame | undefined;
+    try {
+      const read = await readCurrentGeneration(sharedPaths);
+      current = read === undefined ? undefined : { generation: read.generation, version: read.version };
+    } catch (error) {
+      logger.warn('generation.current_unreadable', { err: asError(error) });
+    }
+    retireFrame = { current };
+    const abandoned = await teardown();
+    phase = 'closed';
+    const clean = abandoned.length === 0 && fatalError === undefined;
+    return { clean, abandoned, stragglers: [], ...(clean ? { exitCode: EXIT_RETIRED } : {}), ...(fatalError === undefined ? {} : { fatal: fatalError }) };
+  };
+
   const close = (): Promise<RuntimeCloseResult> => {
     lifecycle ??= shutdown(false);
     return lifecycle;
@@ -312,12 +352,25 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   };
 
   try {
+    const sharedPaths = momongaPaths(canonicalHome, platform, {});
     const paths = await step('dirs', async () => {
-      const resolved = momongaPaths(canonicalHome, platform, {});
-      await ensureGenerationDirs(resolved, options.generation, { signal });
-      return resolved;
+      await requireGenerationDirs(sharedPaths, options.generation);
+      const scoped = scopeToGeneration(sharedPaths, options.generation);
+      await ensureJobOutputDirectory(scoped.jobs);
+      await fs.promises.mkdir(scoped.tmp.spawn, { recursive: true, mode: 0o700 });
+      return scoped;
     });
     const own = generationLayout(canonicalHome, options.generation);
+    const rolePort = options.role ?? createRolePort({ paths: sharedPaths, generation: options.generation, logger });
+    await step('role', () => rolePort.refresh());
+    const ignorableMarkerDirectories = async (): Promise<string[]> => {
+      const directories = [paths.markers.root];
+      for (const generation of (await nodeFileSystem.readdir(sharedPaths.markers.root)).map(generationOfDirectoryName)) {
+        if (generation === undefined || generation === options.generation) continue;
+        if (!(await generationIsLive(sharedPaths, generation, { lock: hostKernelLock() }))) directories.push(scopeToGeneration(sharedPaths, generation).markers.root);
+      }
+      return directories;
+    };
 
     const lock: ProcessLock = await step('lock', async () => {
       try {
@@ -346,9 +399,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
-    if (platform === 'linux') {
-      for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
-    }
     const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
       if (kind === 'none') {
         const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
@@ -426,6 +476,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           leaseMs,
           maxAttempts: STORE_MAX_ATTEMPTS,
           maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
+          generation: options.generation,
           onCommit: createdNotifier.onCommit,
           preparer: startedThread,
         });
@@ -446,22 +497,28 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       },
     });
 
+    const lockCapability = createLockCapability({ proofDir: paths.lockProof });
+    const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
+
     await step('tool-markers', async () => {
       await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
-      await clearCallLocks(paths.callLocks);
-    });
-
-    await step('tmp-sweep', async () => {
-      await sweepSpawnTmp({ dir: paths.tmp.spawn, onWarning });
-      await sweepSessionTmp({ root: paths.tmp.sessions, store, now: clock.now(), hasInMemoryState: () => false, onWarning });
+      await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
     });
 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
     const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
-    const bodyPurge = startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
-    cleanups.push({ name: 'body-purge', run: () => bodyPurge.stop() });
+    let bodyPurge: { stop(): void } | undefined;
+    const applyBodyPurge = (role: GenerationRole): void => {
+      if (role === 'serving') {
+        bodyPurge ??= startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
+        return;
+      }
+      bodyPurge?.stop();
+      bodyPurge = undefined;
+    };
+    cleanups.push({ name: 'body-purge', run: () => bodyPurge?.stop() });
 
     type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
     const telemetries = createPinnedDerivation<TracedTelemetry>({
@@ -515,13 +572,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store });
-      const lockCapability = createLockCapability({ proofDir: paths.lockProof });
-      const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
         owners: markerOwners,
         lockCapability,
         kernelLock,
         paths,
+        sharedPaths,
+        generation: options.generation,
+        role: rolePort,
+        onJobSettled: () => onWorkEnded(),
         home: canonicalHome,
         store,
         notifier,
@@ -559,7 +618,17 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         home: canonicalHome,
         fileSystem: createNodeSkillFileSystem(),
         settings: composition.settings,
-        runs: createChildRuns({ store, modelViews: async () => (await gatewayClient.listing({ signal: lifetime.signal })).views }),
+        runs: createChildRuns({
+          store,
+          modelViews: async () => {
+            try {
+              return (await gatewayClient.listing({ signal: lifetime.signal })).views;
+            } catch (error) {
+              if ((await retireDecisionOf(error, rolePort)) === 'retire-yield') throw new RetiringYield();
+              throw error;
+            }
+          },
+        }),
       });
       return { composition, runtime, tracker, skills, memories, history, governance, agents, evidenceRunFor };
     });
@@ -626,6 +695,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
+        userInput: createUserInputPort({
+          tools: toolRuntime.port,
+          policy: toolRuntime.userPolicy,
+          store,
+          settings: settingsComposition.settings,
+          clock,
+          home: canonicalHome,
+          unsandboxed: createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS }),
+        }),
         evidenceRun: evidenceRunFor,
         defaults: RUNTIME_DEFAULTS,
         timers,
@@ -649,12 +727,16 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           }),
         mcp: toolRuntime.mcpAdmin,
         markerOwners: toolRuntime.owners,
+        role: rolePort,
+        work: { steps: stepsInFlight, jobs: () => toolRuntime.jobs.liveCount() },
+        ignorableMarkerDirectories,
+        onRequestEnd: () => onWorkEnded(),
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),
     );
     service = runService;
-    cleanups.push({ name: 'service', run: () => runService.close() });
+    cleanups.push({ name: 'service', run: () => (retireFrame === undefined ? runService.close() : runService.retire(retireFrame.current)) });
 
     await step('workers', () => {
       for (let index = 0; index < workerCount; index += 1) {
@@ -672,6 +754,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           tracers,
           clock,
           workerId: id,
+          role: rolePort,
+          onClaimSettled: () => onWorkEnded(),
           leaseMs,
           random: Math.random,
           platform,
@@ -702,14 +786,33 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       }
     });
 
-    await step('timers', () => {
+    const requireService = (): RunService => runService;
+    const otherRuntimeLive = async (): Promise<boolean> => {
+      for (const generation of (await nodeFileSystem.readdir(sharedPaths.run)).map(generationOfDirectoryName)) {
+        if (generation === undefined || generation === options.generation) continue;
+        if ((await inspectProcessLock(generationLayout(canonicalHome, generation).locks.runtime)).state !== 'free') return true;
+      }
+      return false;
+    };
+    const fidelityBound = async (): Promise<number | undefined> => {
+      let bound = FIDELITY_FOLD_VERSION;
+      for (const listed of await listGenerations(sharedPaths, { lock: hostKernelLock() })) {
+        if (!listed.live || listed.generation === options.generation) continue;
+        if (listed.record.kind !== 'record') return undefined;
+        bound = Math.min(bound, listed.record.record.foldVersion);
+      }
+      return bound;
+    };
+
+    await step('timers', async () => {
       const memoryViews = createRecordViews({ store, evidenceRun: evidenceRunFor });
       const reflector = createReflector({
         store,
         gateway: gatewayClient,
         settings: settingsComposition.settings,
         clock,
-        isIdle: () => phase === 'running' && !store.hasActiveRun(),
+        role: rolePort,
+        isIdle: () => phase === 'running' && rolePort.current() === 'serving' && !store.hasActiveRun(),
         evidenceRun: evidenceRunFor,
         maxAttempts: STORE_MAX_ATTEMPTS,
         attemptTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs,
@@ -727,79 +830,166 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,
         onSkipped: (project) => logger.warn(`memory upkeep skipped the project ${project}: the folder no longer exists`),
       });
-      const memorySweeper = startMemorySweeper({
-        timers,
-        intervalMs: SWEEP_INTERVAL_MS,
-        upkeep: (sweepSignal) => upkeepSchedule.tick(sweepSignal),
-        reflect: (sweepSignal) => reflector.runOne(sweepSignal),
-        onError: report,
-      });
       const sweepStop = new AbortController();
-      const factsSweeper = startFactsSweeper({
-        store,
-        thread: journalThread,
-        timers,
-        intervalMs: SWEEP_INTERVAL_MS,
-        batchSize: FACTS_SWEEP_BATCH_RUNS,
-        onError: report,
-      });
-      periodics.push(
-        startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
-            store.idempotency.purgeExpired(clock.now());
-          }, timers, report }),
-        startPeriodic({
-          intervalMs: SESSION_TMP_SWEEP_MS,
-          run: async () => {
-            await sweepSessionTmp({
-              root: paths.tmp.sessions,
-              store,
-              now: clock.now(),
-              hasInMemoryState: (sessionId) => toolRuntime.sessionStates.has(sessionId),
-              onWarning,
-            });
+      const servingTasks = createServingTasks({
+        clock,
+        report,
+        loops: [
+          {
+            start: () => {
+              const sweeper = startMemorySweeper({
+                timers,
+                intervalMs: SWEEP_INTERVAL_MS,
+                upkeep: (sweepSignal) => upkeepSchedule.tick(sweepSignal),
+                reflect: (sweepSignal) => reflector.runOne(sweepSignal),
+                onError: report,
+              });
+              return { stop: () => sweeper.close() };
+            },
           },
-          timers,
-          report,
-        }),
+          {
+            start: () => {
+              const sweeper = startFactsSweeper({ store, thread: journalThread, timers, intervalMs: SWEEP_INTERVAL_MS, batchSize: FACTS_SWEEP_BATCH_RUNS, onError: report });
+              return { stop: () => sweeper.close() };
+            },
+          },
+        ],
+        tasks: [
+          {
+            name: 'idempotency-purge',
+            intervalMs: IDEMPOTENCY_PURGE_MS,
+            run: (): ServingTaskOutcome => {
+              store.idempotency.purgeExpired(clock.now());
+              return 'done';
+            },
+          },
+          {
+            name: 'session-scratch',
+            intervalMs: SESSION_TMP_SWEEP_MS,
+            run: async (): Promise<ServingTaskOutcome> => {
+              await sweepSessionTmp({ root: paths.tmp.sessions, store, now: clock.now(), onWarning });
+              return 'done';
+            },
+          },
+          {
+            name: 'spawn-scratch',
+            intervalMs: SESSION_TMP_SWEEP_MS,
+            run: async (): Promise<ServingTaskOutcome> => {
+              await sweepSpawnTmp({ dir: paths.tmp.spawn, onWarning });
+              return 'done';
+            },
+          },
+          {
+            name: 'call-locks',
+            intervalMs: TOOL_MARKER_SWEEP_MS,
+            lastRanAt: clock.now(),
+            run: async (): Promise<ServingTaskOutcome> => {
+              await sweepCallLocks({ dir: paths.callLocks, mechanism: kernelLock });
+              return 'done';
+            },
+          },
+          {
+            name: 'fidelity-prune',
+            intervalMs: IDEMPOTENCY_PURGE_MS,
+            run: async (): Promise<ServingTaskOutcome> => {
+              const bound = await fidelityBound();
+              if (bound === undefined) return 'again';
+              return store.pruneFidelityVerdicts(bound) < FIDELITY_PRUNE_BATCH_ROWS ? 'done' : 'again';
+            },
+          },
+          {
+            name: 'tool-markers',
+            intervalMs: TOOL_MARKER_SWEEP_MS,
+            lastRanAt: clock.now(),
+            run: async (): Promise<ServingTaskOutcome> => {
+              const failures: unknown[] = [];
+              try {
+                sandboxes.current().sandbox.sweep?.();
+              } catch (error) {
+                failures.push(error);
+              }
+              try {
+                await reapToolMarkers({
+                  dir: paths.markers.tools,
+                  store,
+                  killGraceMs: MARKER_REAP_KILL_GRACE_MS,
+                  onWarning,
+                  timing: reapTiming,
+                  signal: sweepStop.signal,
+                  event: 'sweep',
+                  owners: toolRuntime.owners,
+                });
+              } catch (error) {
+                failures.push(error);
+              }
+              if (failures.length === 1) throw failures[0];
+              if (failures.length > 1) throw new AggregateError(failures, 'the sandbox sweep and the tool marker sweep both failed');
+              return 'done';
+            },
+          },
+          {
+            name: 'job-reconcile',
+            intervalMs: SWEEP_INTERVAL_MS,
+            lastRanAt: clock.now(),
+            run: async (): Promise<ServingTaskOutcome> => {
+              await toolRuntime.jobs.reconcileOrphans({ batch: JOB_RECONCILE_BATCH_JOBS });
+              return 'done';
+            },
+          },
+          {
+            name: 'placeholder-recovery',
+            intervalMs: Number.POSITIVE_INFINITY,
+            run: async (): Promise<ServingTaskOutcome> => {
+              if (platform !== 'linux') return 'done';
+              if (await otherRuntimeLive()) return 'again';
+              for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+              return 'done';
+            },
+          },
+        ],
+      });
+      const stopKillWatch = notifier.subscribe(() => toolRuntime.jobs.stopKillRequested());
+      let announcedRetiring = false;
+      const checkRetireExit = (): void => {
+        if (phase !== 'running' || lifecycle !== undefined || rolePort.current() !== 'retiring') return;
+        if (stepsInFlight() > 0 || toolRuntime.jobs.liveCount() > 0 || requireService().openRequests() > 0) return;
+        requireService().stopListening();
+        logger.info('generation.retired', { data: { generation: options.generation } });
+        lifecycle = retire(sharedPaths);
+        options.requestShutdown?.();
+      };
+      onWorkEnded = () => {
+        if (phase !== 'running' || rolePort.current() !== 'retiring') return;
+        if (!announcedRetiring) {
+          announcedRetiring = true;
+          logger.info('generation.retiring', { data: { generation: options.generation } });
+        }
+        if (stepsInFlight() === 0) {
+          toolRuntime.sessionStates.evictAll();
+          void toolRuntime.mcpPools.closeAll().catch(report);
+        }
+        checkRetireExit();
+      };
+      const applyRole = async (role: GenerationRole): Promise<void> => {
+        requireService().applyRole();
+        applyBodyPurge(role);
+        await servingTasks.tick(role);
+        if (role === 'retiring') onWorkEnded();
+      };
+      await applyRole(rolePort.current());
+      periodics.push(
+        startPeriodic({ intervalMs: SWEEP_INTERVAL_MS, run: async () => applyRole(await rolePort.refresh()), timers, report }),
         startPeriodic({ intervalMs: SESSION_STATE_SWEEP_MS, run: () => {
             toolRuntime.sessionStates.evictIdle(clock.now());
           }, timers, report }),
         startPeriodic({ intervalMs: STORE_IDENTITY_CHECK_MS, run: () => store.checkIdentity(), timers, report }),
-        startPeriodic({
-          intervalMs: TOOL_MARKER_SWEEP_MS,
-          run: async () => {
-            const failures: unknown[] = [];
-            try {
-              sandboxes.current().sandbox.sweep?.();
-            } catch (error) {
-              failures.push(error);
-            }
-            try {
-              await reapToolMarkers({
-                dir: paths.markers.tools,
-                store,
-                killGraceMs: MARKER_REAP_KILL_GRACE_MS,
-                onWarning,
-                timing: reapTiming,
-                signal: sweepStop.signal,
-                event: 'sweep',
-                owners: toolRuntime.owners,
-              });
-            } catch (error) {
-              failures.push(error);
-            }
-            if (failures.length === 1) throw failures[0];
-            if (failures.length > 1) throw new AggregateError(failures, 'the sandbox sweep and the tool marker sweep both failed');
-          },
-          timers,
-          report,
-        }),
       );
       cleanups.push({
         name: 'timers',
         run: async () => {
           sweepStop.abort();
-          await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())]);
+          stopKillWatch();
+          await Promise.all([servingTasks.close(), ...periodics.map((periodic) => periodic.stop())]);
         },
       });
     });
@@ -821,7 +1011,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return fields;
     });
 
-    return { ready, sandbox: settings.sandbox, close, abort, fatal };
+    return { ready, sandbox: settings.sandbox, close, abort, role: () => rolePort.current(), fatal };
   } catch (error) {
     phase = 'tearingDown';
     await teardown('startup.cleanup_failed');

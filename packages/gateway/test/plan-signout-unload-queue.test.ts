@@ -57,7 +57,7 @@ describe('a request that waited for the record lock behind a sign-out that ended
   it('a pause queued behind a sign-out whose cleared-record write fails is not lost', { timeout: 60_000 }, async () => {
     const h = await harness();
     const { held, first } = await signOutParkedInItsClearedWrite(h);
-    const paused = h.sessions.authSource(work).pause({ code: PAUSE_CODE });
+    const paused = h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
     await vi.waitFor(() => expect(held.lockRequests()).toBe(2), CONDITION_WAIT);
     held.fail(errno('EACCES'));
     expect((await first).code).toBe('plan_store_unwritable');

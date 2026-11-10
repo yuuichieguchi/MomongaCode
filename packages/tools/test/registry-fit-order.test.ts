@@ -35,7 +35,7 @@ describe('the order of a tool set', () => {
 
   it('offers the model the same order, each tool carrying its dense fit rank', async () => {
     for (const order of [REGISTRATION, REVERSED]) {
-      const offered = (await setIn(order)).forModel({ mode: 'default', rules: [] }) as ReadonlyArray<{ name: string; fitRank?: number }>;
+      const offered = (await setIn(order)).forModel({ mode: 'manual', rules: [] }) as ReadonlyArray<{ name: string; fitRank?: number }>;
       expect(offered.map((tool) => tool.name)).toEqual(KEEP_ORDER);
       expect(offered.map((tool) => tool.fitRank)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     }
@@ -63,7 +63,7 @@ describe('the fit rank offered to the model', () => {
 
   it('is dense over the tools a deny rule leaves visible', async () => {
     const rule = ruleFor(makeLayout());
-    const offered = (await offeredSet()).forModel({ mode: 'default', rules: [rule('deny', 'Read'), rule('deny', 'Bash')] });
+    const offered = (await offeredSet()).forModel({ mode: 'manual', rules: [rule('deny', 'Read'), rule('deny', 'Bash')] });
     expect(offered.map((tool) => tool.name)).toEqual(['Write', 'Alpha', 'Zeta']);
     expect(ranksOf(offered)).toEqual(dense(3));
   });

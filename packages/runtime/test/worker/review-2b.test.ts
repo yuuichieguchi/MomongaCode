@@ -70,7 +70,7 @@ describe('worker reporter with a throwing onError hook', () => {
   it('falls back to the claim notice, keeps claiming and stops cleanly', async () => {
     const env = await makeEnv();
     const failing = env.enqueue('Fails to load');
-    const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', model: MODEL_ID });
+    const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: MODEL_ID });
     const healthy = createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {

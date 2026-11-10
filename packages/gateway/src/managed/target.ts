@@ -291,8 +291,8 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       checkServedId(recordedModel);
       return options.declaredModel ?? recordedModel;
     }
-    const { socketPath } = await options.server.ensureRunning(signal);
-    listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
+    const endpoint = await options.server.ensureRunning(signal);
+    listedModel ??= listedModelId(endpoint.path, signal).catch((error: unknown) => {
       listedModel = undefined;
       throw error;
     });
@@ -307,7 +307,8 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
   return {
     resolveEndpoint: async (_target, signal) => {
       await checkBinary();
-      return options.server.ensureRunning(signal);
+      const endpoint = await options.server.ensureRunning(signal);
+      return { kind: 'unix', socketPath: endpoint.path };
     },
     keywordSupport: () => lastRecorded().report?.keywordSupport ?? FULL_KEYWORD_SUPPORT,
     schemaDialect: () => lastRecorded().capabilities().schemaDialect,

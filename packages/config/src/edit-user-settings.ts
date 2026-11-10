@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { comparablePath, createKeyedSerializer, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import { DEFAULT_LOCK_TIMEOUT_MS, comparablePath, createKeyedSerializer, isRecord, nodeFileSystem, systemFileLockPorts, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { readJsonFile } from './json-file.ts';
@@ -10,7 +10,7 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 
 const serializeInProcess = createKeyedSerializer();
 
-export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal?: AbortSignal };
+export type EditUserSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
 
 const documentOf = async (settingsFile: string): Promise<Record<string, unknown>> => {
   const read = await readJsonFile(settingsFile);
@@ -23,20 +23,23 @@ export const editUserSettings = async (
   home: string,
   settingsFile: string,
   edit: (document: Record<string, unknown>) => boolean,
-  options: EditUserSettingsOptions = {},
+  options: EditUserSettingsOptions,
 ): Promise<void> => {
   const ports = options.ports ?? systemFileLockPorts;
   await nodeFileSystem.mkdir(path.dirname(settingsFile), PRIVATE_DIRECTORY_MODE);
   await nodeFileSystem.mkdir(layoutOf(home).run, PRIVATE_DIRECTORY_MODE);
-  await serializeInProcess(comparablePath(settingsFile), () =>
-    withFileLock(
-      settingsLockPath(home, settingsFile),
-      async () => {
-        const document = await documentOf(settingsFile);
-        if (!edit(document)) return;
-        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
-      },
-      { ports, ...(options.lockTimeoutMs === undefined ? {} : { timeoutMs: options.lockTimeoutMs }), ...(options.signal === undefined ? {} : { signal: options.signal }) },
-    ),
+  await serializeInProcess(
+    comparablePath(settingsFile),
+    () =>
+      withFileLock(
+        settingsLockPath(home, settingsFile),
+        async () => {
+          const document = await documentOf(settingsFile);
+          if (!edit(document)) return;
+          await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
+        },
+        { ports, signal: options.signal, timeoutMs: options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS },
+      ),
+    options.signal,
   );
 };

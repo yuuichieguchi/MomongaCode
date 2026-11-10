@@ -54,7 +54,7 @@ describe('modeStateOf', () => {
     const state = modeStateOf({ permissionMode: 'acceptEdits', bypassAllowed: false, autoAvailable: false });
 
     expect(state.currentModeId).toBe('acceptEdits');
-    expect(state.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan']);
+    expect(state.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan']);
     for (const mode of state.availableModes) expect(mode.description).toBeTruthy();
   });
 
@@ -62,11 +62,11 @@ describe('modeStateOf', () => {
     const state = modeStateOf({ permissionMode: 'auto', bypassAllowed: false, autoAvailable: true });
 
     expect(state.currentModeId).toBe('auto');
-    expect(state.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'auto']);
+    expect(state.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto']);
   });
 
   it('adds bypassPermissions when the session may use it', () => {
-    expect(modeStateOf({ permissionMode: 'default', bypassAllowed: true, autoAvailable: false }).availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
+    expect(modeStateOf({ permissionMode: 'manual', bypassAllowed: true, autoAvailable: false }).availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'bypassPermissions']);
   });
 });
 
@@ -101,5 +101,24 @@ describe('availableCommandsOf', () => {
 
   it('announces nothing when there are no skills', () => {
     expect(availableCommandsOf([])).toEqual([]);
+  });
+});
+
+describe('the ACP mode ids are the mode names (design 8.2 row 15)', () => {
+  it('lists manual first, named Manual, with the descriptions of the one table', () => {
+    const state = modeStateOf({ permissionMode: 'manual', bypassAllowed: true, autoAvailable: true });
+    expect(state.currentModeId).toBe('manual');
+    expect(state.availableModes).toEqual([
+      { id: 'manual', name: 'Manual', description: 'asks before every file change and command' },
+      { id: 'acceptEdits', name: 'Accept edits', description: 'accepts file edits inside the workspace, asks before commands' },
+      { id: 'plan', name: 'Plan', description: 'read-only tools, the agent proposes a plan' },
+      { id: 'auto', name: 'Auto', description: 'an automatic classifier decides which calls are allowed' },
+      { id: 'bypassPermissions', name: 'Bypass permissions', description: 'runs every tool without asking' },
+    ]);
+  });
+
+  it('refuses the mode id default like any unknown id', () => {
+    expect(selectableModeOf({ bypassAllowed: true, autoAvailable: true }, 'manual')).toBe('manual');
+    expect(() => selectableModeOf({ bypassAllowed: true, autoAvailable: true }, 'default')).toThrow('the mode default is not available in this session');
   });
 });

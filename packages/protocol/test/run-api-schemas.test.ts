@@ -9,6 +9,7 @@ const SCHEMA_NAMES = [
   'CreateSessionRequest',
   'PatchSessionRequest',
   'CreateRunRequest',
+  'CompactSessionRequest',
   'ResolveApprovalRequest',
   'Health',
   'SessionView',
@@ -161,10 +162,14 @@ describe('response schemas', () => {
     expect(accepts('Health', { ...health, apiVersion: 2 })).toBe(false);
   });
 
-  it('Health accepts the seven fields and rejects a missing or extra field, an unknown state and an unknown sandbox', () => {
+  it('Health accepts the seven fields with or without the optional role, steps and jobs, and rejects a missing or extra field, an unknown state and an unknown sandbox', () => {
     const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, state: 'draining', sandbox: 'none' })).toBe(true);
+    expect(accepts('Health', { ...health, state: 'retiring', role: 'retiring', steps: 2, jobs: 1 })).toBe(true);
+    expect(accepts('Health', { ...health, role: 'starting' })).toBe(true);
+    expect(accepts('Health', { ...health, role: 'draining' })).toBe(false);
+    expect(accepts('Health', { ...health, steps: 0.5 })).toBe(false);
     for (const field of Object.keys(health)) {
       const { [field]: _omitted, ...missing } = health as Record<string, unknown>;
       expect(accepts('Health', missing), field).toBe(false);
@@ -187,7 +192,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -205,7 +210,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -224,7 +229,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -405,6 +410,25 @@ describe('PublicRunEvent projection', () => {
     expect(accepts('PublicRunEvent', { ...reduced, item: { type: 'compaction', encrypted_content: 'x' } })).toBe(false);
   });
 
+  it('carries the token counts of a compaction on the public event, schema and codec both ways', () => {
+    const counted = { ...RUN_ENVELOPE, type: 'context.compacted', summary: 'so far', replacedThroughSeq: 4, tokensBefore: 84_000, tokensAfter: 12_000 };
+    expect(accepts('PublicRunEvent', counted)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...counted, tokensBefore: -1 })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...counted, tokensAfter: 1.5 })).toBe(false);
+    const recorded = { ...counted, leaseToken: 4, item: { type: 'compaction', encrypted_content: 'x' } };
+    expect(toPublicRunEvent(recorded as unknown as RunEvent)).toEqual(counted);
+    const { tokensBefore: _before, tokensAfter: _after, ...uncounted } = counted;
+    expect(toPublicRunEvent({ ...uncounted, leaseToken: 4, item: { type: 'compaction', encrypted_content: 'x' } } as unknown as RunEvent)).toEqual(uncounted);
+  });
+
+  it('accepts a compact request with or without the focus text, bounded like a prompt', () => {
+    expect(accepts('CompactSessionRequest', {})).toBe(true);
+    expect(accepts('CompactSessionRequest', { instructions: 'keep the test names' })).toBe(true);
+    expect(accepts('CompactSessionRequest', { instructions: '' })).toBe(false);
+    expect(accepts('CompactSessionRequest', { instructions: 'x'.repeat(1_000_001) })).toBe(false);
+    expect(accepts('CompactSessionRequest', { instructions: 'x', input: 'y' })).toBe(false);
+  });
+
   it('reduces context.compaction_rejected to step and attempt, without the item', () => {
     const withStep = { ...RUN_ENVELOPE, step: 2, type: 'context.compaction_rejected', attempt: 1 };
     expect(accepts('PublicRunEvent', withStep)).toBe(true);
@@ -475,7 +499,7 @@ describe('PublicRunEvent projection', () => {
         { callId: 'call_b', seq: 7, effect: 'unknown', announced: false },
       ],
       markers: [{ seq: 8, kind: 'mode_changed' }],
-      fromMode: 'default',
+      fromMode: 'manual',
       mode: 'plan',
       digest: 'e'.repeat(64),
     } as unknown as RunEvent;
@@ -519,7 +543,7 @@ describe('PublicRunEvent projection', () => {
       closures: [],
       partial: { seq: 2 },
       markers: [{ seq: 3, kind: 'interrupted' }],
-      mode: 'default',
+      mode: 'manual',
       digest: 'f'.repeat(64),
     } as unknown as RunEvent;
     const publicEvent = toPublicRunEvent(event);

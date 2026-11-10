@@ -31,6 +31,7 @@ describe('SETTINGS_SCHEMA', () => {
         'sandbox',
         'telemetry',
         'tools',
+        'tui',
         'verification',
       ].sort(),
     );
@@ -65,12 +66,12 @@ describe('loadSettings merge', () => {
     const result = await loadSettings({
       home: tree.home,
       projectDir: tree.project,
-      cli: { permissions: { defaultMode: 'default', deny: ['Bash(rm:*)'] } },
+      cli: { permissions: { defaultMode: 'manual', deny: ['Bash(rm:*)'] } },
       trust: trusting(tree),
     });
     expect(result.settings.autoUpdates).toBe(false);
     expect(result.settings.env).toEqual({ DEBUG: 'user', TZ: 'project', CI: 'local' });
-    expect(result.settings.permissions?.defaultMode).toBe('default');
+    expect(result.settings.permissions?.defaultMode).toBe('manual');
     expect(result.rules.map((r) => [r.text, r.effect, r.origin, r.source])).toEqual([
       ['Bash(git status)', 'allow', 'user', user],
       ['Read(~/.ssh/**)', 'deny', 'user', user],
@@ -355,6 +356,18 @@ describe('loadSettings hooks', () => {
 });
 
 describe('loadSettings validation', () => {
+  it('accepts permissions.defaultMode manual and refuses the old word default with the enum message, naming the file', async () => {
+    const accepted = makeTree();
+    writeJson(userSettingsPath(accepted), { permissions: { defaultMode: 'manual' } });
+    expect((await loadSettings({ home: accepted.home, projectDir: accepted.project, cli: {}, trust: trusting(accepted) })).settings.permissions.defaultMode).toBe('manual');
+
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'default' } });
+    const failure = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    await expect(failure).rejects.toThrow(file);
+    await expect(failure).rejects.toThrow('invalid settings at /permissions/defaultMode: must be equal to one of the allowed values');
+  });
+
   it('reports malformed JSON with the file and line/column', async () => {
     const tree = makeTree();
     const file = writeText(projectSettingsPath(tree), '{\n  "env": {\n    "A": 1,,\n  }\n}\n');

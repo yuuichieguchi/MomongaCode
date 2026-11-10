@@ -7,13 +7,13 @@ import {
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
-  FIRST_GENERATION,
+  GENERATION_POLL_INTERVAL_MS,
   STARTUP_TIMEOUT_MS,
 } from '@momonga/foundation';
 
-export { CONTROL_REQUEST_TIMEOUT_MS, KILL_CONFIRM_MS, ORPHAN_REAP_GRACE_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STARTUP_TIMEOUT_MS };
+export { CONTROL_REQUEST_TIMEOUT_MS, GENERATION_POLL_INTERVAL_MS, KILL_CONFIRM_MS, ORPHAN_REAP_GRACE_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STARTUP_TIMEOUT_MS };
 
-export const SUPERVISOR_GENERATION = FIRST_GENERATION;
+export const MANY_GENERATIONS_THRESHOLD = 3;
 
 export const STARTUP_KILL_GRACE_MS = 10_000;
 export const RESTART_BASE_MS = 500;
@@ -45,6 +45,7 @@ export type SupervisorIntervals = {
   killConfirmMs: number;
   settingsDebounceMs: number;
   settingsPollMs: number;
+  generationPollMs: number;
 };
 
 export const DEFAULT_INTERVALS: SupervisorIntervals = {
@@ -55,6 +56,7 @@ export const DEFAULT_INTERVALS: SupervisorIntervals = {
   killConfirmMs: KILL_CONFIRM_MS,
   settingsDebounceMs: SETTINGS_DEBOUNCE_MS,
   settingsPollMs: SETTINGS_POLL_MS,
+  generationPollMs: GENERATION_POLL_INTERVAL_MS,
 };
 
 export const resolveIntervals = (overrides: Partial<SupervisorIntervals> = {}): SupervisorIntervals => ({ ...DEFAULT_INTERVALS, ...overrides });

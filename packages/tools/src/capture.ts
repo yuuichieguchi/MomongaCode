@@ -4,7 +4,7 @@ const CONTINUATION_BYTE = 0b1100_0000;
 
 const isContinuation = (byte: number | undefined): boolean => byte !== undefined && (byte & CONTINUATION_BYTE) === 0b1000_0000;
 
-export const createCapture = () => {
+export const createCapture = (headLimit: number = HEAD_BYTES, tailLimit: number = TAIL_BYTES) => {
   const head: Buffer[] = [];
   const tail: Buffer[] = [];
   let headSize = 0;
@@ -13,8 +13,8 @@ export const createCapture = () => {
   return {
     push(chunk: Buffer): void {
       let rest = chunk;
-      if (headSize < HEAD_BYTES) {
-        const taken = rest.subarray(0, HEAD_BYTES - headSize);
+      if (headSize < headLimit) {
+        const taken = rest.subarray(0, headLimit - headSize);
         head.push(taken);
         headSize += taken.length;
         rest = rest.subarray(taken.length);
@@ -22,8 +22,8 @@ export const createCapture = () => {
       if (rest.length === 0) return;
       tail.push(rest);
       tailSize += rest.length;
-      while (tailSize > TAIL_BYTES) {
-        const excess = tailSize - TAIL_BYTES;
+      while (tailSize > tailLimit) {
+        const excess = tailSize - tailLimit;
         const first = tail[0] as Buffer;
         if (first.length <= excess) {
           tail.shift();

@@ -14,6 +14,7 @@ import {
   readUserStopValues,
   registeredIds,
   registeredServer,
+  requireOfferedEndpointForm,
   resolveNetwork,
   resolveTelemetrySettings,
   settingsInputsDigest,
@@ -21,13 +22,17 @@ import {
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
 import { CAPABILITIES_UNKNOWN_CODE, PLAN_USE_NOT_ENABLED_CODE, SERVER_KINDS, SIGN_IN_REQUIRED_CODE, USAGE_PAUSED_CODE, displayMapOf } from '@momonga/protocol';
-import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason } from '@momonga/protocol';
+import type { ManagedServerDescription, PlanHealthReason, TargetHealthReason, GatewayHealth } from '@momonga/protocol';
 import {
   acquireProcessLock,
   JsonDepthError,
   parseOutsideJson,
   SecretEmptyError,
+  SecretStoreAbsentError,
+  SecretStoreAnswerError,
   SecretUnavailableError,
+  StoreCallEndedError,
+  operationLimit,
   announceReady,
   createJsonLogger,
   createGivenSecretStore,
@@ -50,11 +55,34 @@ import {
   sweepLeftovers,
   hostKernelLock,
   leftoverDirectories,
-  ensureGenerationDirs,
+  requireGenerationDirs,
   generationLayout,
+  createRolePort,
+  endpointFormsOfSocket,
+  pipePathFor,
+  CONTROL_REQUEST_TIMEOUT_MS,
+  EXIT_RETIRED,
+  SWEEP_INTERVAL_MS,
 } from '@momonga/foundation';
 import type { EndpointProbeKey, PlanProfiles, ServerRegistry, StopValuesReader } from '@momonga/config';
-import type { BinaryHashCache, Clock, JsonLogger, ListableCredentialStore, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
+import type {
+  BinaryHashCache,
+  Clock,
+  EndpointForm,
+  GenerationRole,
+  JsonLogger,
+  ListableCredentialStore,
+  ManagedInstancePaths,
+  MomongaPaths,
+  NetworkConfig,
+  OutboundNetwork,
+  ProcessLock,
+  ReadyFields,
+  RolePort,
+  SecretStore,
+  StopValues,
+  TextStream,
+} from '@momonga/foundation';
 import { createEncryptedCredentialStore, createFileCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -79,6 +107,8 @@ import { withImageDefault } from './probe/decide.ts';
 import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import { keyReadLimitOf } from './key-read-limit.ts';
+import type { KeyReadLimit } from './key-read-limit.ts';
 import { createSecretResolver } from './secrets.ts';
 import { readsOutputPolicy, targetCounterOf } from './target-counter.ts';
 import type { ReportedNumbers, ServedAccount } from './target-counter.ts';
@@ -94,6 +124,9 @@ import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from './plan/session.ts';
 import { createPlanApi } from './plan/api.ts';
 import { createPlanCatalog } from './plan/catalog.ts';
+import { authSourceWithinRequestLimit } from './plan/request-limit.ts';
+import { startSharedCall } from './plan/shared-call.ts';
+import type { SharedCall } from './plan/shared-call.ts';
 import { createPlanSignIn } from './plan/signin.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
 import type { PlanEvents } from './plan/events.ts';
@@ -155,10 +188,20 @@ export type StartGatewayProcessOptions = {
   stopValues?: StopValuesReader;
   planProfiles?: PlanProfiles;
   planStore?: (store: ListableCredentialStore) => ListableCredentialStore;
+  role?: RolePort;
+  requestShutdown?: () => void;
+  runtimeHealth?: RuntimeHealthProbe;
 };
+
+export type RuntimeStanding = 'gone' | 'idle' | 'busy';
+
+export const GATEWAY_STATE_IN_MODEL = { running: 'serving', retiring: 'retiring', draining: 'serving' } as const satisfies Record<GatewayHealth['state'], 'serving' | 'retiring'>;
+
+export type RuntimeHealthProbe = (signal: AbortSignal) => Promise<RuntimeStanding>;
 
 export type GatewayCloseResult = {
   clean: boolean;
+  exitCode?: number;
   abandonedRuns: number;
   failures: Error[];
   fatal?: Error;
@@ -169,6 +212,7 @@ export type GatewayProcess = {
   socketPath: string;
   close(values?: StopValues): Promise<GatewayCloseResult>;
   abort(values?: StopValues): Promise<GatewayCloseResult>;
+  role(): GenerationRole;
   fatal: Promise<Error>;
 };
 
@@ -196,12 +240,49 @@ const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): De
 
 const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
 
-const startupFailureOf = (error: unknown): Error | undefined =>
-  error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
+const READ_AGAIN_ON_THE_NEXT_REQUEST = 'the gateway reads the secret again on the next request';
+
+const startupFailureOf = (error: unknown): Error | undefined => {
+  if (error instanceof SecretUnavailableError || error instanceof SecretEmptyError) return error;
+  if (error instanceof StoreCallEndedError) return new StoreCallEndedError(error.call, error.limit, READ_AGAIN_ON_THE_NEXT_REQUEST);
+  if (error instanceof SecretStoreAbsentError || error instanceof SecretStoreAnswerError) return new Error(`${error.message}; ${READ_AGAIN_ON_THE_NEXT_REQUEST}`, { cause: error });
+  return undefined;
+};
 
 type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | undefined>;
 
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
+
+const runtimeStandingOf = (text: string): RuntimeStanding => {
+  let health: unknown;
+  try {
+    health = parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return 'busy';
+    throw error;
+  }
+  if (typeof health !== 'object' || health === null) return 'busy';
+  const { state, steps } = health as Record<string, unknown>;
+  return state === 'retiring' && steps === 0 ? 'idle' : 'busy';
+};
+
+const RUNTIME_HEALTH_PATH = '/v1/health';
+
+export const runtimeHealthOver =
+  (socketPath: string): RuntimeHealthProbe =>
+  async (signal) => {
+    const client = createUdsClient(fixedSocket(socketPath));
+    try {
+      const response = await client.request({ method: 'GET', path: RUNTIME_HEALTH_PATH, signal });
+      const text = await response.text();
+      return response.status === 200 ? runtimeStandingOf(text) : 'busy';
+    } catch (error) {
+      if (UNREACHABLE_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return 'gone';
+      throw error;
+    } finally {
+      client.destroy();
+    }
+  };
 
 const handedValueOf = (text: string): string | undefined => {
   let answer: unknown;
@@ -242,16 +323,21 @@ const apiKeyReader = (
   resolver: SecretResolver,
   target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>,
   handed: HandedCredential,
+  keyReadLimit: KeyReadLimit,
+  timers: GatewayTimers,
 ): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
   return async (_target, signal) => {
     if (apiKeySecret !== undefined) {
+      const limit = operationLimit(signal, keyReadLimit.limitMs, keyReadLimit.label, timers);
       try {
-        return await resolver.read(apiKeySecret, signal);
+        return await resolver.read(apiKeySecret, limit.signal);
       } catch (error) {
         const failure = startupFailureOf(error);
         if (failure === undefined) throw error;
         throw secretUnavailableError(apiKeySecret, failure);
+      } finally {
+        limit.dispose();
       }
     }
     if (apiKeyEnv === undefined) return undefined;
@@ -330,6 +416,9 @@ type ManagedAdapterWiring = {
   autoProbe: AutoProbe;
   probeServers: Set<ManagedServer>;
   timers: ManagedServerTimers;
+  role: RolePort;
+  home: string;
+  hostForms: readonly EndpointForm[];
   readStopGraceMs: () => number;
   requestLimitMs: number;
   keySignal: AbortSignal;
@@ -339,13 +428,20 @@ type ManagedAdapterWiring = {
   onWarning: (message: string) => void;
 };
 
+const INSTANCE_SOCKET_SUFFIX = '.sock';
+
+export const instanceSocketOf = (form: EndpointForm, unixSocketPath: string, home: string, generation: number): string =>
+  form === 'pipe' ? pipePathFor(home, `g${generation}-managed-${path.basename(unixSocketPath, INSTANCE_SOCKET_SUFFIX)}`) : unixSocketPath;
+
 type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined };
 
 const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
   const { display, target, description, paths } = wiring;
   const { provider } = target;
-  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation });
-  const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider });
+  const form = requireOfferedEndpointForm(description, wiring.hostForms, `the server ${provider}`);
+  const inForm = (instance: ManagedInstancePaths): ManagedInstancePaths => ({ ...instance, socketPath: instanceSocketOf(form, instance.socketPath, wiring.home, wiring.generation) });
+  const serving = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', provider, incarnation: wiring.incarnation }));
+  const probing = inForm(managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', provider }));
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
   const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
@@ -370,6 +466,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
       await managed.childStarting(signal);
     },
     onChildExit: () => managed?.childExited(),
+    role: wiring.role,
     ...spawnPort,
   });
   const measure = measureManagedServer({
@@ -417,6 +514,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
         dir: paths.probe,
         measure: (signal) => measure({ key: {}, signal }),
         retryAfterMs: PROBE_RETRY_AFTER_MS,
+        clock: wiring.timers,
         onNotice: wiring.onWarning,
         onFailure: (error) => wiring.onWarning(`the measurement of the model ${display} failed: ${error instanceof Error ? error.message : String(error)}`),
       }),
@@ -773,12 +871,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
   const { signal } = options;
+  const role = options.role ?? createRolePort({ paths: momongaPaths(options.home, process.platform, {}), generation: options.generation, logger });
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
   const paths = momongaPaths(options.home, process.platform, {});
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
-  await ensureGenerationDirs(paths, options.generation);
+  await requireGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
@@ -807,6 +906,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   let abortRequested = false;
   let lifecycle: Promise<GatewayCloseResult> | undefined;
   let closeValues: StopValues | undefined;
+  let retired = false;
   const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
 
   const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
@@ -816,10 +916,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     phase = 'closed';
     const abandonedRuns = gatewayAbandonedRuns();
     if (abandonedRuns > 0) logger.warn('close.abandoned_runs', { count: abandonedRuns });
+    const clean = failures.length === 0 && fatalError === undefined;
     return {
-      clean: failures.length === 0 && fatalError === undefined,
+      clean,
       abandonedRuns,
       failures,
+      ...(clean && retired ? { exitCode: EXIT_RETIRED } : {}),
       ...(fatalError === undefined ? {} : { fatal: fatalError }),
     };
   };
@@ -915,6 +1017,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dir: paths.probe,
       clock,
       retryAfterMs: PROBE_RETRY_AFTER_MS,
+      role,
       onEvent: (event) => {
         if (event.kind === 'stopped') logger.info(`the automatic probe of the model ${event.target} was stopped`);
         else logger.warn(`the automatic probe of the model ${event.target} failed and recorded nothing`, { err: event.error });
@@ -989,6 +1092,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       clock,
       outbound: withOutboundNetwork,
       sleep: planSleep,
+      signal: startSignal,
+      timing: timers,
       random,
       events: planEvents,
       redact: (key, values) => shared.redactor.set(key, values),
@@ -1037,21 +1142,27 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       return { served: { profile: target.plan.profile, account: input.account }, ...(input.reported === undefined ? {} : { reported: input.reported }) };
     };
     const planLoaded = new Set<string>();
-    const planLoads = new Map<string, Promise<void>>();
-    const planLoadOf = (key: string, ref: { profile: string; account: string }): Promise<void> => {
+    const planLoads = new Map<string, SharedCall<void>>();
+    const planLoadOf = (key: string, ref: { profile: string; account: string }, loadSignal: AbortSignal): Promise<void> => {
       const running = planLoads.get(key);
-      if (running !== undefined) return running;
-      const started = Promise.all([sessions.load(ref), catalog.load(ref.profile, ref.account)])
-        .then(() => {
-          planLoaded.add(key);
-        })
-        .finally(() => {
-          planLoads.delete(key);
-        });
+      if (running !== undefined) return running.join(loadSignal);
+      const forget = (): void => {
+        if (planLoads.get(key) === started) planLoads.delete(key);
+      };
+      const started: SharedCall<void> = startSharedCall(
+        sessions.lifetime,
+        (sharedSignal) =>
+          Promise.all([sessions.load(ref, sharedSignal), catalog.load(ref.profile, ref.account, sharedSignal)])
+            .then(() => {
+              planLoaded.add(key);
+            })
+            .finally(forget),
+        forget,
+      );
       planLoads.set(key, started);
-      return started;
+      return started.join(loadSignal);
     };
-    const preparePlan = (current: ResolvedSettings): Promise<void> | undefined => {
+    const preparePlan = (current: ResolvedSettings, prepareSignal: AbortSignal): Promise<void> | undefined => {
       const pending = new Map(
         planTargetsOf(current).flatMap((target): Array<[string, { profile: string; account: string }]> => {
           const { profile, account } = servedOf(target);
@@ -1061,10 +1172,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         }),
       );
       if (pending.size === 0) return undefined;
-      return Promise.all([...pending].map(([key, ref]) => planLoadOf(key, ref))).then(() => undefined);
+      return Promise.all([...pending].map(([key, ref]) => planLoadOf(key, ref, prepareSignal))).then(() => undefined);
     };
     const secretResolverOfPart = (): SecretResolver => {
-      const resolver = createSecretResolver(secretStore);
+      const resolver = createSecretResolver(secretStore, secretStore.backend);
       resolver.onResolved((name, value) => {
         for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) shared.redactor.add(credential);
       });
@@ -1127,6 +1238,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               autoProbe,
               probeServers,
               timers: managedTimers,
+              role,
+              home: options.home,
+              hostForms: endpointFormsOfSocket(own.sockets.gateway),
               readStopGraceMs,
               requestLimitMs: current.models.headersTimeoutMs,
               keySignal,
@@ -1160,7 +1274,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const probed = await createProbedOllamaAdapter(display, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
+      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential, keyReadLimitOf(current.models.headersTimeoutMs), timers);
       const identify = identificationOf(display, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
         const probed = await createAutoChatCompletionsAdapter(display, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
@@ -1199,7 +1313,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       key: string,
       { served, reported }: { served: ServedAccount; reported?: ReportedNumbers },
     ): TargetPart => {
-      const auth = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
+      const source = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
+      const auth = authSourceWithinRequestLimit(source, keyReadLimitOf(current.models.headersTimeoutMs), timers);
       const adapter = createPlanAdapter(target, auth, planProfiles, () => reported ?? undefined, {
         clock,
         userDialects: current.models.dialects,
@@ -1337,11 +1452,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
 
     signal?.throwIfAborted();
+    await role.refresh();
     const gateway = await createGateway({
       startSignal,
       limits: GATEWAY_CONFIG_DEFAULTS,
       epochs,
       ...shared,
+      role,
+      probeFlights: () => autoProbe.openFlights(),
       credentials: [],
       clock,
       timers,
@@ -1378,7 +1496,46 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     phase = 'running';
     if (fatalError !== undefined) void abort();
 
-    return { ready, socketPath: gateway.socketPath, close, abort, fatal };
+    const runtimeHealth = options.runtimeHealth ?? runtimeHealthOver(own.sockets.runtime);
+    const requestShutdown = options.requestShutdown ?? ((): void => void close());
+    let tickFailure: string | undefined;
+    const reportTickFailure = (error: unknown): void => {
+      const reason = toError(error).message;
+      if (reason === tickFailure) return;
+      tickFailure = reason;
+      logger.warn('generation.tick_failed', { err: toError(error) });
+    };
+    const holdsNothing = (): boolean => gateway.activeRequests() === 0;
+    const leaveWhenUnheld = async (): Promise<void> => {
+      gateway.releaseIdleConnections();
+      if (retired || !holdsNothing()) return;
+      const standing = await runtimeHealth(AbortSignal.any([lifetime.signal, AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS)]));
+      if (standing === 'busy' || phase !== 'running' || role.current() !== 'retiring' || !holdsNothing()) return;
+      retired = true;
+      logger.info('generation.retired', { data: { generation: options.generation } });
+      requestShutdown();
+    };
+    const tick = async (): Promise<void> => {
+      try {
+        await role.refresh();
+        if (phase === 'running' && role.current() === 'retiring') await leaveWhenUnheld();
+        tickFailure = undefined;
+      } catch (error) {
+        if (!lifetime.signal.aborted) reportTickFailure(error);
+      }
+    };
+    let tickTimer: unknown;
+    const armTick = (): void => {
+      tickTimer = timers.setTimeout(() => {
+        void tick().then(() => {
+          if (phase === 'running') armTick();
+        });
+      }, SWEEP_INTERVAL_MS);
+    };
+    cleanups.push(() => timers.clearTimeout(tickTimer));
+    armTick();
+
+    return { ready, socketPath: gateway.socketPath, close, abort, role: () => role.current(), fatal };
   } catch (error) {
     phase = 'closing';
     for (const cleanupFailure of await unwind()) logger.error('startup.cleanup_failed', { err: cleanupFailure });

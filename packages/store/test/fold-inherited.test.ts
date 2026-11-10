@@ -33,7 +33,7 @@ const INHERITED = inheritedEvent({
   summary: { item: fixtureCompactionItem('cmp-1', 'before'), summary: 'before', replacedThroughSeq: 2 },
   evicted: ['c_older'],
   mode: 'plan',
-  fromMode: 'default',
+  fromMode: 'manual',
   markers: [],
   closures: [],
 });
@@ -115,7 +115,7 @@ describe('fold of context.inherited', () => {
     expect(() => nextRun([task('x'), INHERITED])).not.toThrow();
     expect(() => nextRun([task('x'), { ...INHERITED, digest: 'f'.repeat(64) }])).toThrow(/digest/);
     expect(() => nextRun([task('x'), { ...INHERITED, nextItemSeq: 8 }])).toThrow(/digest/);
-    expect(() => nextRun([task('x'), { ...INHERITED, mode: 'default' }])).toThrow(/digest/);
+    expect(() => nextRun([task('x'), { ...INHERITED, mode: 'manual' }])).toThrow(/digest/);
   });
 
   it('throws when the payload seqs are not strictly increasing below nextItemSeq', () => {
@@ -185,7 +185,7 @@ describe('a closure entry from the projection folds like any output', () => {
       history: [{ seq: 1, item: taskItem('first') }, { seq: 2, item: callItem('c_d') }, closureEntry(3, 'c_d', 'Not run: the user interrupted the previous request before this tool call ran.')],
       nextItemSeq: 4,
       closures: [{ callId: 'c_d', seq: 3, effect: 'not_executed', announced: false }],
-      mode: 'default',
+      mode: 'manual',
     });
     const state = nextRun([task('x'), closed]);
     expect(state.history.map((entry) => entry.seq)).toEqual([1, 2, 3, 4]);

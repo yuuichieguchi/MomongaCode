@@ -1,9 +1,7 @@
-import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeKernelLock } from '@momonga/testkit';
+import { createFakeKernelLock, createTempDir, removeTempDir } from '@momonga/testkit';
 import {
   createUdsClient,
   currentSocketResolver,
@@ -16,7 +14,7 @@ import {
 } from '@momonga/foundation';
 import type { AtomicWriteFileSystem, CurrentGeneration, MomongaPaths } from '@momonga/foundation';
 
-const temporaryHome = (): string => fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cur-')));
+const temporaryHome = (): string => createTempDir({ asHome: true });
 
 const recordOf = (home: string, generation: number, version: string): CurrentGeneration => ({
   generation,
@@ -31,7 +29,7 @@ const withHome = async (body: (home: string, paths: MomongaPaths) => Promise<voi
     await ensureMomongaDirs(paths);
     await body(home, paths);
   } finally {
-    fs.rmSync(home, { recursive: true, force: true });
+    await removeTempDir(home);
   }
 };
 
@@ -88,7 +86,7 @@ describe('publishCurrentGeneration', () => {
       link: async (from, to) => void operations.push({ op: 'link', file: from, to }),
       rm: async (file) => void operations.push({ op: 'rm', file }),
     };
-    await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), files, createFakeKernelLock({ inheritable: false }));
+    expect(await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), { fs: files, lock: createFakeKernelLock({ inheritable: false }) })).toBe('published');
     const writesToCurrent = operations.filter((operation) => operation.file === paths.current && operation.op.startsWith('open'));
     expect(writesToCurrent).toEqual([]);
     const renames = operations.filter((operation) => operation.op === 'rename');

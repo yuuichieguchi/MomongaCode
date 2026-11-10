@@ -1,0 +1,14 @@
+{
+  "name": "kitty-alt-enter",
+  "source": "kitty keyboard protocol page (sw.kovidgoyal.net/kitty/keyboard-protocol)",
+  "hex": "1b5b31333b3375",
+  "events": [
+    {
+      "type": "key",
+      "name": "enter",
+      "ctrl": false,
+      "alt": true,
+      "shift": false
+    }
+  ]
+}

@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus, UserShellRecord } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
+import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState, userShellRecordOf } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
 import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -32,6 +32,7 @@ import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSI
 import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
+import { createInboxTable, inboxRowView } from './inbox.ts';
 import type {
   Approval,
   ApprovalView,
@@ -42,7 +43,15 @@ import type {
   ContributionMeasured,
   ContributionPreparer,
   CreateChildRunResult,
+  CreateRunInput,
   CreateRunResult,
+  InboxAddResult,
+  InboxDeliverResult,
+  InboxRow,
+  InboxStore,
+  UserShellStore,
+  InboxWithdrawResult,
+  QueuedRunTerms,
   ElicitationView,
   FinishJobResult,
   HeartbeatResult,
@@ -147,6 +156,8 @@ const CLAIMABLE = `
   )
 `;
 
+export const FIDELITY_PRUNE_BATCH_ROWS = 500;
+
 const TAKEOVER = "(r.status IN ('RUNNING', 'CANCELLING') AND r.lease_owner IS NOT NULL)";
 
 const EXHAUSTED = `((${TAKEOVER} AND r.failed_attempts + 1 >= :maxAttempts) OR r.attempts + 1 > :maxTotalAttempts)`;
@@ -169,6 +180,7 @@ const RUN_WRITE_SQL = `
     stop_reason = :stopReason,
     version = :version,
     lease_owner = :leaseOwner,
+    lease_generation = CASE WHEN :leaseOwner IS NULL THEN NULL ELSE lease_generation END,
     lease_token = :leaseToken,
     lease_expires_at = :leaseExpiresAt,
     available_at = :availableAt,
@@ -229,6 +241,11 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   activeRunsOfSession: db.prepare(`SELECT id FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_LIST}) ORDER BY ordinal`),
   jobs: prepareJobStatements(db),
+  pruneFidelityVerdicts: db.prepare(
+    `DELETE FROM fidelity_verdicts WHERE (run_id, cwd, fold_version, token) IN (
+       SELECT run_id, cwd, fold_version, token FROM fidelity_verdicts WHERE fold_version < :bound LIMIT :limit
+     )`,
+  ),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
   leaseTokenOf: db.prepare('SELECT lease_token FROM runs WHERE id = :runId'),
@@ -294,6 +311,11 @@ const prepareStatements = (db: DatabaseSync) => ({
   hasToolOffered: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.offered' LIMIT 1"),
   modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
+  pendingUserShell: db.prepare(
+    `SELECT * FROM events WHERE session_id = :sessionId AND run_id IS NULL AND type = 'user_shell'
+       AND id > COALESCE((SELECT MAX(id) FROM events WHERE session_id = :sessionId AND type = 'user.message' AND seq = 1), 0)
+     ORDER BY id`,
+  ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
   listSweeperOwned: db.prepare(
@@ -314,6 +336,7 @@ const prepareStatements = (db: DatabaseSync) => ({
        status = CASE WHEN status = 'QUEUED' THEN 'RUNNING' ELSE status END,
        version = version + 1,
        lease_owner = :workerId,
+       lease_generation = :generation,
        lease_token = lease_token + 1,
        lease_expires_at = :leaseExpiresAt,
        attempts = attempts + 1,
@@ -336,7 +359,7 @@ const prepareStatements = (db: DatabaseSync) => ({
     `SELECT * FROM runs WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId AND status NOT IN (${sqlList(RUN_STATUSES)})`,
   ),
   releaseHeldLease: db.prepare(
-    `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
+    `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_generation = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
      WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
@@ -412,7 +435,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version < :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -628,6 +650,74 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return [{ type: 'context.contribution', items: contribution.items }];
   };
 
+  const inboxTable = createInboxTable(db, clock);
+
+  const announceInbox = (sessionId: string): InboxRow[] => {
+    const pending = inboxTable.pending(sessionId);
+    insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'inbox.changed', pending: pending.map(inboxRowView) } });
+    return pending;
+  };
+
+  const pendingUserShell = (sessionId: string): UserShellRecord[] =>
+    sql.pendingUserShell.all({ sessionId }).map((row) => {
+      const identity = String(row['id']);
+      return userShellRecordOf(identity, expectRecord('events', identity, 'payload_json', readerFor('events', identity, row).json('payload_json')));
+    });
+
+  const insertRootRun = (sessionRow: Row, input: CreateRunInput, source?: InboxDelivery): Run => {
+    const session = decodeSession(sessionRow, decodeContext);
+    const sessionId = session.id;
+    const ordinalRow = sql.nextOrdinal.get({ sessionId });
+    if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
+    const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
+    const previous = sql.latestRunOfSession.get({ sessionId });
+    const shell = pendingUserShell(sessionId);
+    const id = uuidv7(clock);
+    const now = clock.now();
+    sql.insertRun.run({
+      id,
+      sessionId,
+      ordinal,
+      idempotencyKey: input.idempotencyKey ?? null,
+      requestDigest: input.requestDigest ?? null,
+      previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
+      historyMode: input.history ?? 'inherit',
+      parentRunId: null,
+      parentCallId: null,
+      availableAt: now,
+      deadlineAt: now + input.timeoutMs,
+      limits: canonicalJson(input.limits),
+      usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      pins: canonicalJson(input.pins),
+      createdAt: now,
+      origin: originOf(session.cwd),
+    });
+    const inserted = appendPayloads(requireRun(id), [
+      {
+        type: 'user.message',
+        text: input.input,
+        ...(input.images === undefined ? {} : { images: input.images }),
+        ...(source === undefined ? {} : { source }),
+        ...(input.attachments === undefined || input.attachments.length === 0 ? {} : { attachments: input.attachments }),
+        ...(shell.length === 0 ? {} : { shell }),
+      },
+      ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
+    ]);
+    writeRun(inserted);
+    return requireRun(id);
+  };
+
+  const startNextQueued = (sessionId: string, terms: QueuedRunTerms): void => {
+    if (inboxTable.pendingCount(sessionId) === 0 || inboxTable.sessionHasOpenRun(sessionId)) return;
+    const sessionRow = sql.selectSession.get({ id: sessionId });
+    if (sessionRow === undefined) throw new Error(`session ${sessionId} of a waiting message does not exist`);
+    inboxTable.queuePendingSteer(sessionId);
+    const head = inboxTable.firstPending(sessionId);
+    if (head === undefined || !inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
+    insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, 'queue');
+    announceInbox(sessionId);
+  };
+
   const cancelOriginOf = (status: RunStatus): CancelOrigin => {
     const origin = CANCEL_ORIGINS.find((candidate) => candidate === status);
     if (origin === undefined) throw new Error(`a run in status ${status} cannot become CANCELLING`);
@@ -669,6 +759,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     writeRun(next);
     if (isTerminal(to) || to === 'CANCELLING') cancelChildren(run.id);
     if (isTerminal(to)) wakeParent(run);
+    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId, { timeoutMs: run.deadlineAt - run.createdAt, limits: run.limits });
     return requireRun(run.id);
   };
 
@@ -984,7 +1075,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction(() => {
         const existing = sql.jobs.selectByKey.get({ idemKey: input.idemKey });
         if (existing !== undefined) return { job: decodeJob(existing, decodeContext), created: false };
-        sql.jobs.insert.run({ ...input, sessionId: rootSessionIdOf(input.sessionId), startedAt: clock.now() });
+        sql.jobs.insert.run({
+          id: input.id,
+          idemKey: input.idemKey,
+          sessionId: rootSessionIdOf(input.sessionId),
+          runId: input.runId,
+          callId: input.callId,
+          command: input.command,
+          ownerGeneration: input.ownerGeneration ?? null,
+          outputPath: input.outputPath ?? null,
+          startedAt: clock.now(),
+        });
         const row = sql.jobs.select.get({ id: input.id });
         if (row === undefined) throw new Error(`job ${input.id} vanished during start`);
         return { job: decodeJob(row, decodeContext), created: true };
@@ -1039,12 +1140,78 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     advanceRead: (id, offset, call) => {
       sql.jobs.advance.run({ id, offset, call });
     },
+    requestKill: (id) => Number(sql.jobs.requestKill.run({ id, now: clock.now() }).changes) === 1,
+    clearOutputPath: (id) => {
+      sql.jobs.clearOutputPath.run({ id });
+    },
   };
 
   const rejectContribution = (events: readonly RunEventPayload[]): void => {
     if (events.some((event) => event.type === 'context.contribution')) {
       throw new Error('context.contribution is written only by the terminal transition of a run, never appended');
     }
+  };
+
+  const userShell: UserShellStore = {
+    record: (sessionId, record) =>
+      transaction<{ kind: 'recorded' } | { kind: 'not_found' }>(() => {
+        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
+        insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'user_shell', ...record } });
+        return { kind: 'recorded' };
+      }),
+    pending: pendingUserShell,
+    runActive: (sessionId) => inboxTable.sessionHasOpenRun(sessionId),
+  };
+
+  const inbox: InboxStore = {
+    add: (sessionId, input) =>
+      transaction<InboxAddResult>(() => {
+        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
+        if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
+        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images });
+        const open = inboxTable.sessionHasOpenRun(sessionId);
+        if (open) announceInbox(sessionId);
+        else startNextQueued(sessionId, input.run);
+        const row = inboxTable.get(added.id);
+        if (row === undefined) throw new Error(`inbox row ${added.id} vanished after it was written`);
+        return { kind: 'added', row, pending: inboxTable.pending(sessionId) };
+      }),
+    withdraw: (id) =>
+      transaction<InboxWithdrawResult>(() => {
+        const found = inboxTable.get(id);
+        if (found === undefined) return { kind: 'not_found' };
+        const changed = inboxTable.settle(id, 'withdrawn');
+        if (changed) announceInbox(found.sessionId);
+        const row = inboxTable.get(id);
+        if (row === undefined) throw new Error(`inbox row ${id} vanished while it was withdrawn`);
+        return { kind: row.state === 'delivered' ? 'already_delivered' : 'withdrawn', row, pending: inboxTable.pending(row.sessionId) };
+      }),
+    list: (sessionId) => inboxTable.pending(sessionId),
+    deliverSteering: (claim) =>
+      transaction<InboxDeliverResult>(() => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const rows = inboxTable.pendingSteer(run.sessionId);
+        if (rows.length === 0) return { kind: 'ok', delivered: [] };
+        const delivered = rows.map((row) => {
+          if (!inboxTable.settle(row.id, 'delivered')) throw new Error(`inbox row ${row.id} could not be delivered`);
+          const settled = inboxTable.get(row.id);
+          if (settled === undefined) throw new Error(`inbox row ${row.id} vanished while it was delivered`);
+          return settled;
+        });
+        const next = appendPayloads(
+          run,
+          delivered.map((row): RunEventPayload => ({ type: 'user.message', text: row.text, ...(row.images === undefined ? {} : { images: row.images }), source: 'steer' })),
+        );
+        writeRun(next);
+        derived.repairPage(next.id, next.lastSeq);
+        announceInbox(run.sessionId);
+        return { kind: 'ok', delivered };
+      }),
+    successorOf: (runId) => {
+      const row = inboxTable.nextRunAfter(runId);
+      return row === undefined ? undefined : decodeRun(row, decodeContext);
+    },
   };
 
   const store: RuntimeStore = {
@@ -1124,36 +1291,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
           }
         }
-        const ordinalRow = sql.nextOrdinal.get({ sessionId });
-        if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
-        const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
-        const previous = sql.latestRunOfSession.get({ sessionId });
-        const id = uuidv7(clock);
-        const now = clock.now();
-        sql.insertRun.run({
-          id,
-          sessionId,
-          ordinal,
-          idempotencyKey: input.idempotencyKey ?? null,
-          requestDigest: input.requestDigest ?? null,
-          previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
-          historyMode: input.history ?? 'inherit',
-          parentRunId: null,
-          parentCallId: null,
-          availableAt: now,
-          deadlineAt: now + input.timeoutMs,
-          limits: canonicalJson(input.limits),
-          usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
-          pins: canonicalJson(input.pins),
-          createdAt: now,
-          origin: originOf(decodeSession(sessionRow, decodeContext).cwd),
-        });
-        const inserted = appendPayloads(requireRun(id), [
-          { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }) },
-          ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
-        ]);
-        writeRun(inserted);
-        return { kind: 'created', run: requireRun(id) };
+        return { kind: 'created', run: insertRootRun(sessionRow, input) };
       }),
 
     createChildRun: (input) =>
@@ -1235,6 +1373,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     maxTotalAttempts,
 
+    pruneFidelityVerdicts: (bound) => Number(sql.pruneFidelityVerdicts.run({ bound, limit: FIDELITY_PRUNE_BATCH_ROWS }).changes),
+
     checkIdentity: () => {
       let current: fs.Stats;
       try {
@@ -1263,7 +1403,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const now = clock.now();
       const claim = transaction(() => {
         const candidate = sql.claimTakeover.get({ now, maxAttempts, maxTotalAttempts });
-        const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
+        const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, generation: options.generation ?? null, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
         const claimed = decodeRun(row, decodeContext);
         const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');
@@ -1639,6 +1779,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
+    inbox,
+    userShell,
     memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },
     sessionTouched: {
       after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, (view) => view.touchedAfter(sessionId, afterEventId, limit, afterPath)),

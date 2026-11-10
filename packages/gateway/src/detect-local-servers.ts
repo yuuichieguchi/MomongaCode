@@ -1,5 +1,5 @@
 import { providerNameOf } from '@momonga/config';
-import { AUTH_DOCUMENT_MAX_BYTES, findOutboundError, isLoopbackHost, isRecord } from '@momonga/foundation';
+import { AUTH_DOCUMENT_MAX_BYTES, findOutboundError, isLoopbackHost, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { SERVER_KINDS } from '@momonga/protocol';
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, JsonCheck, LocalServerDetection, LocalServerToolSupport, ManagedServerDescription, ServerKind, ServerKinds } from '@momonga/protocol';
 import { readTextLimited } from './adapters/shared/body-reading.ts';
@@ -51,7 +51,7 @@ const answerOf = async (response: { ok: boolean; body: AsyncIterable<Uint8Array>
   const read = await readTextLimited(response.body, DETECTION_BODY_MAX_BYTES);
   if (!response.ok || read.truncated) return NO_ANSWER;
   try {
-    return JSON.parse(read.text) as unknown;
+    return parseOutsideJson(read.text) as unknown;
   } catch (error) {
     if (error instanceof SyntaxError) return NO_ANSWER;
     throw error;

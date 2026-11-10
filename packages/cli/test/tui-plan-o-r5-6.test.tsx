@@ -3,7 +3,7 @@ import { runView } from './fake-backend.ts';
 import { untilFrame, untilOutput } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { runStarted } from './tui-harness.tsx';
-import { CHATGPT, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { CHATGPT, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, quiet, rowNumberOf, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -13,7 +13,7 @@ const NOT_ELIGIBLE_MESSAGE = 'This account is not eligible for plan use in this 
 const PLAN = { profile: 'chatgpt', account: 'work' };
 
 const ready = async (app: Instance): Promise<void> => {
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
 };
 
 const failWith = (backend: FakePlanBackend, code: string, message: string): void => {
@@ -32,7 +32,7 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     await ready(app);
     await runStarted(backend, app, 'go');
     failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE);
-    const block = await untilFrame(app, 'Enable ChatGPT plan use');
+    const block = await untilRow(app, 'Enable ChatGPT plan use');
     expectIdentityBeforeMessage(block, NOT_ENABLED_MESSAGE);
     expect(rowNumberOf(block, 'Enable ChatGPT plan use')).toBe(1);
     expect(rowNumberOf(block, 'Use an API key')).toBe(2);
@@ -46,7 +46,7 @@ describe('the plan_use_not_enabled block of the TUI (P6.5, O-R5-6 designed and n
     await runStarted(backend, app, 'go');
     failWith(backend, 'plan_use_not_enabled', NOT_ENABLED_MESSAGE);
     await choose(app, 'Enable ChatGPT plan use');
-    const sentenceScreen = await untilFrame(app, CHATGPT.messages.description);
+    const sentenceScreen = await untilRow(app, CHATGPT.messages.apiKeyLabel, CHATGPT.messages.description);
     expect(rowNumberOf(sentenceScreen, 'Enable ChatGPT plan use')).toBe(1);
     expect(rowNumberOf(sentenceScreen, CHATGPT.messages.apiKeyLabel)).toBe(2);
     await choose(app, 'Enable ChatGPT plan use');

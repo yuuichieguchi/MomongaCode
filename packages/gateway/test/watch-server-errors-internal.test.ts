@@ -1,3 +1,4 @@
+import { fixedRolePort } from '@momonga/foundation';
 import http from 'node:http';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -23,6 +24,7 @@ describe('watchServerErrors is module-internal (B3)', () => {
     }) as typeof http.createServer);
     const seen: Error[] = [];
     const gateway = await createGateway({
+      role: fixedRolePort('serving'),
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),

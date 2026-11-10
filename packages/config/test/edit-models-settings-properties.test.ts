@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import { seeded } from '../../context/test/helpers.ts';
 import { documentOf, editModels, homeWith, op, textOf } from './models-edit.ts';
 import type { Home, Operation } from './models-edit.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Random = ReturnType<typeof seeded>;
 type View = { canon: string; provider: string; ownName: string };
@@ -117,7 +119,6 @@ describe('the writer over generated settings and operations (I-N14)', () => {
       }
       expect(accepted).toBeGreaterThan(SEEDS);
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -136,7 +137,6 @@ describe('the writer over generated settings and operations (I-N14)', () => {
       }
       expect(removals).toBeGreaterThan(0);
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -152,6 +152,5 @@ describe('the writer over generated settings and operations (I-N14)', () => {
       }
       expect(refused).toBeGreaterThan(0);
     },
-    PROPERTY_TIMEOUT_MS,
   );
 });

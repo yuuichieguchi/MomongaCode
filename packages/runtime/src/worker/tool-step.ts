@@ -76,6 +76,10 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
           ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+          ...(result.hunks === undefined ? {} : { hunks: result.hunks }),
+          ...(result.added === undefined ? {} : { added: result.added }),
+          ...(result.removed === undefined ? {} : { removed: result.removed }),
+          ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
         }
       : {
           type: 'tool.reconciled',
@@ -167,7 +171,7 @@ const persistRule = async (
   if (resolution.rulePersisted === true) return;
   const rule = requireSuggestedRule(callId, call);
   journal.verifyLease();
-  await options.settings.appendRule(session, { effect, rule });
+  await options.settings.appendRule(session, { effect, rule }, ctx.control.signal);
   const persisted: RunEventPayload = { type: 'approval.rule.persisted', approvalId, effect, rule };
   journal.append(
     effect === 'allow' ? [persisted, { type: 'notice', level: 'info', message: `Saved the allow rule ${rule} to the local settings.`, code: 'allow_rule_saved' }] : [persisted],

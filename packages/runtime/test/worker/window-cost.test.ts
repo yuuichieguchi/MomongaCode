@@ -25,7 +25,7 @@ describe('the cost of the adaptive budget window at run start', () => {
       const claim = await env.seed(
         run.id,
         [
-          { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'default' },
+          { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'manual' },
           { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] },
           ...Array.from({ length: LOG_EVENTS }, (_unused, line) => logEvent(line)),
           { type: 'notice', level: 'warning', message: 'dropped', code: 'memories_dropped' },

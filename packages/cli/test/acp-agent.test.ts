@@ -97,11 +97,11 @@ describe('session/new', () => {
     expect(result).toEqual({
       sessionId: SESSION.id,
       modes: {
-        currentModeId: 'default',
+        currentModeId: 'manual',
         availableModes: [
-          { id: 'default', name: 'Default', description: 'Ask before edits and commands' },
-          { id: 'acceptEdits', name: 'Accept edits', description: 'Apply edits inside the workspace without asking; ask before commands' },
-          { id: 'plan', name: 'Plan', description: 'Offer read-only tools so the agent can plan without changing anything' },
+          { id: 'manual', name: 'Manual', description: 'asks before every file change and command' },
+          { id: 'acceptEdits', name: 'Accept edits', description: 'accepts file edits inside the workspace, asks before commands' },
+          { id: 'plan', name: 'Plan', description: 'read-only tools, the agent proposes a plan' },
         ],
       },
       configOptions: [
@@ -134,7 +134,7 @@ describe('session/new', () => {
 
     const result = resultOf(await harness.peer.request('session/new', NEW_SESSION)) as { modes: { availableModes: { id: string }[] } };
 
-    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
+    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'bypassPermissions']);
     await harness.peer.close();
   });
 
@@ -843,7 +843,7 @@ describe('session/set_mode', () => {
 
     const result = resultOf(await harness.peer.request('session/new', { cwd: SESSION.cwd, mcpServers: [] })) as { sessionId: string; modes: { availableModes: { id: string }[] } };
 
-    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
+    expect(result.modes.availableModes.map((mode) => mode.id)).toEqual(['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']);
     expect(resultOf(await harness.peer.request('session/set_mode', { sessionId: result.sessionId, modeId: 'auto' }))).toEqual({});
     expect(harness.runtime.calls).toContain(`setPermissionMode ${result.sessionId} auto`);
     await harness.peer.close();
@@ -1018,7 +1018,7 @@ describe('session/load', () => {
 
     const response = await harness.peer.request('session/load', { sessionId: SESSION.id, cwd: SESSION.cwd, mcpServers: [] });
 
-    expect(resultOf(response)).toMatchObject({ modes: { currentModeId: 'default' } });
+    expect(resultOf(response)).toMatchObject({ modes: { currentModeId: 'manual' } });
     expect(labelsOf(harness.peer.received)).toEqual(['result:1', 'update:user_message_chunk', 'update:agent_message_chunk', 'result:2']);
     expect(updatesOf(harness.peer.received)).toEqual([
       { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Say hello' }, messageId: 'run-1/user' },

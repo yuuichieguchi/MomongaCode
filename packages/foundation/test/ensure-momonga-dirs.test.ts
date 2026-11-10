@@ -1,22 +1,21 @@
 import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createTempDir, removeTempDir, withTempDir } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const tempDirs: string[] = [];
 
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+afterEach(async () => {
+  for (const dir of tempDirs.splice(0)) await removeTempDir(dir);
 });
 
 const makeHome = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-'));
+  const dir = createTempDir({ asHome: true });
   tempDirs.push(dir);
   return dir;
 };
@@ -108,10 +107,8 @@ describe('ensureMomongaDirs', () => {
   });
 
   it('accepts a home reached through a symlinked ancestor', async () => {
-    const base = makeHome();
-    const real = path.join(base, 'real');
-    fs.mkdirSync(real, { mode: 0o700 });
-    const link = path.join(base, 'link');
+    const real = makeHome();
+    const link = path.join(makeHome(), 'link');
     fs.symlinkSync(real, link);
     const paths = momongaPaths(path.join(link), 'darwin', {});
     await ensureMomongaDirs(paths);
@@ -150,7 +147,7 @@ describe('ensureMomongaDirs under concurrency', () => {
 
 describe('ensureMomongaDirs daemon markers', () => {
   it('creates markers/daemons with mode 0700', async (context) => {
-    const paths = momongaPaths(withTempDir(context), 'darwin', {});
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), 'darwin', {});
     await ensureMomongaDirs(paths);
     const stat = fs.lstatSync(paths.markers.daemons);
     expect(stat.isDirectory()).toBe(true);
@@ -158,7 +155,7 @@ describe('ensureMomongaDirs daemon markers', () => {
   });
 
   it('tightens an existing 0755 markers/daemons to 0700', async (context) => {
-    const paths = momongaPaths(withTempDir(context), 'darwin', {});
+    const paths = momongaPaths(withTempDir(context, { asHome: true }), 'darwin', {});
     fs.mkdirSync(paths.markers.daemons, { recursive: true, mode: 0o700 });
     fs.chmodSync(paths.markers.daemons, 0o755);
     await ensureMomongaDirs(paths);

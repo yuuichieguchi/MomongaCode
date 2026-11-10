@@ -133,7 +133,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     fence: { runId: 'run-1', workerId: 'w1', leaseToken: 1 },
     runId: 'run-1',
     step: 1,
-    mode: 'default',
+    mode: 'manual',
     rules: [],
     home: layout.home,
     roots: [layout.project],

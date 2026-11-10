@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
-import { HOUR_MS, entriesNamed, launchRuntime, settledState, startStack } from './run-helpers.ts';
+import { HOUR_MS, entriesNamed, launchRuntime, passServingTime, settledState, startStack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -139,9 +139,7 @@ describe('error routing of composition-owned callbacks through report (fake time
     launched.timers.advance(HOUR_MS);
     await afterMicrotasks();
     await expectLoggedOnly(launched, error);
-    launched.timers.advance(HOUR_MS);
-    await afterMicrotasks();
-    expect(control.injected).toBe(2);
+    await passServingTime(launched.timers, HOUR_MS, () => control.injected === 2, 'the purge at the first serving tick after the next hour');
   });
 
   it('a fatal store error from the hourly session sweep latches fatal', async () => {

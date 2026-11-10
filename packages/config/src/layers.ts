@@ -65,6 +65,8 @@ const assertRipgrepSetting = (value: unknown, file: string): void => {
   throw new ConfigError(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`);
 };
 
+const USER_ONLY_TUI_KEYS = ['screen', 'mouse', 'copyOnSelect'] as const;
+
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
 
@@ -146,6 +148,16 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.autoMode;
   }
 
+  if (settings.tui !== undefined) {
+    const kept = { ...settings.tui };
+    for (const key of USER_ONLY_TUI_KEYS) {
+      if (kept[key] === undefined) continue;
+      warnings.push(`${source}: tui.${key} is only honored in user settings; discarded`);
+      delete kept[key];
+    }
+    restricted.tui = kept;
+  }
+
   return restricted;
 };
 
@@ -196,6 +208,9 @@ const readLayer = async (
     return buildLayer(copy, file, origin, root, root, true, warnings);
   }
 };
+
+export const repositoryLayerFrom = (document: unknown, file: string, origin: RuleOrigin, root: string, warnings: string[]): Layer | undefined =>
+  buildLayer({ found: true, value: document }, file, origin, root, root, true, warnings);
 
 export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
 

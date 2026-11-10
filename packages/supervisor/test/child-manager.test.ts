@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, EXIT_RETIRED, gatewayAbortBudgetMs, gatewayStopBudgetMs } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor, firstGeneration } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -49,18 +49,59 @@ describe('ready parsing', () => {
     expect(harness.spawnCount()).toBe(2);
   });
 
-  it('ready line of another version is not ready and is reported to the supervisor', async (context) => {
+  it('ready line of another version is not ready, is reported to the supervisor, and the child is stopped and held for its version (20.12)', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
-    harness.port.last().ready({ version: '9.9.9' });
+    const child = harness.port.last();
+    child.ready({ version: '9.9.9' });
     await waitFor(() => harness.versionMismatches.length === 1);
     expect(harness.versionMismatches).toEqual([{ role: 'runtime', childVersion: '9.9.9' }]);
-    expect(harness.manager.state()).toBe('starting');
+    expect(harness.manager.state()).toBe('stopping');
     expect(harness.manager.health().readyAt).toBeUndefined();
     expect(harness.events('child.ready')).toEqual([]);
     expect(harness.events('child.version.mismatch')).toEqual([
       expect.objectContaining({ level: 'error', child: 'runtime', childPid: 41_000, childVersion: '9.9.9', supervisorVersion: '1.2.3' }),
     ]);
+    expect(harness.events('child.stop')).toEqual([expect.objectContaining({ stop: 'ready-mismatch', mode: 'term' })]);
+    child.exit(0);
+    await waitFor(() => harness.manager.state() === 'held-version');
+    expect(harness.manager.health().lastExit).toMatchObject({ reason: 'version-mismatch' });
+    expect(harness.manager.hasEnded()).toBe(true);
+    harness.timers.advance(HELD_RETRY_MS + STARTUP_TIMEOUT_MS);
+    harness.manager.spawnFresh('backoff');
+    harness.manager.retryHeld();
+    expect(harness.spawnCount()).toBe(1);
+  });
+
+  it('a child that exits with the retire code is final: it tells the supervisor and is never restarted (20.1)', async (context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    const child = harness.port.last();
+    child.ready();
+    await waitFor(() => harness.manager.state() === 'ready');
+    child.exit(EXIT_RETIRED);
+    await waitFor(() => harness.manager.state() === 'stopped');
+    expect(harness.retiredExits).toBe(1);
+    expect(harness.manager.health().lastExit).toMatchObject({ code: EXIT_RETIRED, reason: 'retired' });
+    expect(harness.events('child.backoff')).toEqual([]);
+    expect(harness.spawnCount()).toBe(1);
+  });
+
+  it('a child of a retiring generation that exits for any other reason is not restarted (U-I3-11)', async (context) => {
+    const harness = createManagerHarness(context);
+    harness.spawnInitial();
+    const child = harness.port.last();
+    child.ready();
+    await waitFor(() => harness.manager.state() === 'ready');
+    harness.retiring.value = true;
+    harness.manager.enterRetiring();
+    expect(harness.manager.state()).toBe('ready');
+    child.exit(1);
+    await waitFor(() => harness.manager.state() === 'stopped');
+    expect(harness.manager.health().lastExit).toMatchObject({ code: 1, reason: 'failure' });
+    harness.timers.advance(HELD_RETRY_MS);
+    expect(harness.spawnCount()).toBe(1);
+    expect(harness.manager.hasEnded()).toBe(true);
   });
 
   it('ready line of another service is a mismatch', async (context) => {

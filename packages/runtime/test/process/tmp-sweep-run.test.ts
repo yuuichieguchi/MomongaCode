@@ -5,7 +5,7 @@ import { ensureMomongaDirs, hostKernelLock, sidecarOf } from '@momonga/foundatio
 import { openRuntimeStore } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
-import { launchRuntime, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
+import { launchRuntime, scopedPaths, sessionEnvFor, startStack, stepsLogged } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -19,7 +19,7 @@ const seedSessions = async (temp: RunHome): Promise<Seeded> => {
   await ensureMomongaDirs(temp.paths);
   const clock = createFakeClock(START_MS);
   const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
-  const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'default', model: 'default' }).id;
+  const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'manual', model: 'default' }).id;
   try {
     const idle = session();
     const active = session();
@@ -34,10 +34,11 @@ const seedSessions = async (temp: RunHome): Promise<Seeded> => {
 };
 
 describe('startup tmp sweeps through startRuntimeProcess (system timers, fake clock, in-process gateway)', () => {
-  it('removes spawn entries whose sidecar no one holds at start, and keeps a spawn symlink, which cannot carry a lock, without following it', async () => {
+  it('removes the entries of its own generation spawn scratch whose sidecar no one holds at the first serving tick, and keeps a spawn symlink, which cannot carry a lock, without following it', async () => {
     const stack = await startStack();
     await ensureMomongaDirs(stack.temp.paths);
-    const spawnRoot = stack.temp.paths.tmp.spawn;
+    const spawnRoot = scopedPaths(stack.temp).tmp.spawn;
+    fs.mkdirSync(spawnRoot, { recursive: true, mode: 0o700 });
     makeAbandonedDirectory(path.join(spawnRoot, 'rg-1'));
     fs.mkdirSync(path.join(spawnRoot, 'rg-1', 'nested'), { recursive: true });
     fs.writeFileSync(path.join(spawnRoot, 'rg-1', 'nested', 'f'), 'x');
@@ -46,7 +47,7 @@ describe('startup tmp sweeps through startRuntimeProcess (system timers, fake cl
     fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
     fs.symlinkSync(outside, path.join(spawnRoot, 'link'));
     const launched = await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
-    expect(stepsLogged(launched.logger)).toContain('tmp-sweep');
+    expect(stepsLogged(launched.logger)).not.toContain('tmp-sweep');
     expect(fs.readdirSync(spawnRoot)).toEqual(['link']);
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('keep');
   });

@@ -11,6 +11,7 @@ type Remaining = { file: string; removedBy: 'N1' | 'N2' | 'N3a' | 'N3b' | 'N4' }
 
 const REMAINING: readonly Remaining[] = [
   { file: 'packages/cli/src/tui/plan-flows.ts', removedBy: 'N3b' },
+  { file: 'packages/cli/src/tui/settings-screen.tsx', removedBy: 'N3b' },
 ];
 
 const filesUnder = (directory: string): string[] =>

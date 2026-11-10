@@ -198,7 +198,7 @@ export const oracleState = (store: RuntimeStore, runId: string, throughSeq = Num
   const events = eventsOf(store, runId).filter((event) => event.seq <= throughSeq);
   const replaced = events.map((event) => {
     if (event.type !== 'context.inherited' || isOldShape(event)) return event;
-    const mode = (event as unknown as { mode?: PermissionMode }).mode ?? 'default';
+    const mode = (event as unknown as { mode?: PermissionMode }).mode ?? 'manual';
     const { form: _form, ...rest } = event as RunEvent & { form?: string };
     return { ...rest, ...oracleProjection(store, run, mode) } as unknown as RunEvent;
   });
@@ -366,7 +366,7 @@ export type Ending = Parameters<ChainBuilder['end']>[1];
 export const answeredRun = async (h: ReferenceHarness, b: ChainBuilder, task: string, body: (claim: Claim) => void, options: { fresh?: boolean; oldShape?: boolean; mode?: PermissionMode; ending?: Ending } = {}): Promise<Run> => {
   const run = b.createRun(task, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
-  const mode = options.mode ?? 'default';
+  const mode = options.mode ?? 'manual';
   if (options.fresh !== true && run.previousRunId !== null) {
     if (options.oldShape === true) b.inheritOldShape(claim, mode);
     else await b.inherit(claim, mode);
@@ -382,7 +382,7 @@ export const generatedRun = async (h: ReferenceHarness, b: ChainBuilder, random:
     const drawn = random.chance(0.8);
     return options.recordTokens ?? drawn;
   };
-  const mode: PermissionMode = random.chance(0.2) ? 'plan' : 'default';
+  const mode: PermissionMode = random.chance(0.2) ? 'plan' : 'manual';
   const run = b.createRun(`task ${index}`, options.fresh === true ? { history: 'fresh' } : {});
   const claim = b.claimNext(run.id);
   if (options.fresh !== true && run.previousRunId !== null) {

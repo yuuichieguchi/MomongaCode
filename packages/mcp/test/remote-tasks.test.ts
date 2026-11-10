@@ -8,6 +8,7 @@ const isPoll = (ms: number): boolean => ms !== CALL_TIMEOUT_MS;
 import { settleTask } from '../src/tasks.ts';
 import type { TaskMethod, TaskRequester } from '../src/tasks.ts';
 import type { McpTimers } from '../src/timers.ts';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
 
 const setup = async (era: 'modern' | 'legacy' = 'modern') => {
@@ -20,7 +21,7 @@ const setup = async (era: 'modern' | 'legacy' = 'modern') => {
 
 const startLongTask = async (fixture: Awaited<ReturnType<typeof startHttpFixture>>, timers: ReturnType<typeof observedTimers>, connection: Awaited<ReturnType<typeof setup>>['connection'], signal?: AbortSignal) => {
   const scheduled = timers.nextScheduled(isPoll);
-  const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS, ...(signal === undefined ? {} : { signal }) }).then(
+  const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS, signal: signal ?? NEVER_ABORTED }).then(
     (value) => ({ value }),
     (error: unknown) => ({ error }),
   );
@@ -227,7 +228,7 @@ describe('tasks extension over streamable HTTP', () => {
   it('cancels the task when the call deadline passes before it finishes', async () => {
     const { fixture, timers, connection } = await setup();
     const scheduled = timers.nextScheduled((ms) => ms === MIN_TASK_POLL_MS);
-    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: 5000 }).then(
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: 5000 }).then(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
@@ -281,7 +282,7 @@ describe('tasks extension over streamable HTTP', () => {
     const timers = observedTimers(clock);
     const { connection } = makeRemoteConnection({ fixture, timers, clock });
     await connection.listTools();
-    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS }).then(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
@@ -344,7 +345,7 @@ describe('tasks extension over streamable HTTP', () => {
 
   it('is not offered tasks by a 2025-11-25 server and gets the plain result', async () => {
     const { connection } = await setup('legacy');
-    expect(textOf(await connection.callTool({ name: 'long_task', arguments: {} }))).toBe('tasks unsupported');
+    expect(textOf(await connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED }))).toBe('tasks unsupported');
   });
 
   it('polls once a second when the server gives no interval hint', async () => {
@@ -364,7 +365,7 @@ describe('tasks extension over streamable HTTP', () => {
     const { fixture, timers, connection } = await setup();
     const checkpoints: McpCheckpoint[] = [];
     const scheduled = timers.nextScheduled(isPoll);
-    const outcome = connection.callTool({ name: 'long_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS, onCheckpoint: (checkpoint) => checkpoints.push(checkpoint) });
+    const outcome = connection.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS, onCheckpoint: (checkpoint) => checkpoints.push(checkpoint) });
     await scheduled;
     const [taskId] = fixture.taskIds();
     expect(checkpoints).toEqual([{ kind: 'task', taskId, answered: [] }]);
@@ -388,7 +389,7 @@ describe('tasks extension over streamable HTTP', () => {
     const { connection: restarted } = makeRemoteConnection({ fixture, timers: restartedTimers });
     await restarted.listTools();
     fixture.completeTask(taskId, 'finished after restart');
-    const result = await restarted.callTool({ name: 'long_task', arguments: {}, resume: { checkpoint: checkpoints[0] as McpCheckpoint, answers: {} } });
+    const result = await restarted.callTool({ name: 'long_task', arguments: {}, signal: NEVER_ABORTED, resume: { checkpoint: checkpoints[0] as McpCheckpoint, answers: {} } });
     expect(textOf(result)).toBe('finished after restart');
     expect(fixture.rpcRecords('tools/call').filter((record) => record.rpc?.params['name'] === 'long_task')).toHaveLength(1);
     expect(fixture.taskIds()).toEqual([taskId]);
@@ -398,7 +399,7 @@ describe('tasks extension over streamable HTTP', () => {
   it('hands a task that needs input back to the caller, then answers it with tasks/update', async () => {
     const { fixture, timers, connection } = await setup();
     const scheduled = timers.nextScheduled(isPoll);
-    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS }).then(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
@@ -417,6 +418,7 @@ describe('tasks extension over streamable HTTP', () => {
     const resumed = connection.callTool({
       name: 'ask_task',
       arguments: {},
+      signal: NEVER_ABORTED,
       timeoutMs: CALL_TIMEOUT_MS,
       resume: { checkpoint, answers: { name: { action: 'accept', content: { name: 'Ada' } } } },
     });
@@ -433,7 +435,7 @@ describe('tasks extension over streamable HTTP', () => {
   it('cancels a task that waits for input on the server when the caller gives it up', async () => {
     const { fixture, timers, connection } = await setup();
     const scheduled = timers.nextScheduled(isPoll);
-    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, timeoutMs: CALL_TIMEOUT_MS }).then(
+    const outcome = connection.callTool({ name: 'ask_task', arguments: {}, signal: NEVER_ABORTED, timeoutMs: CALL_TIMEOUT_MS }).then(
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );

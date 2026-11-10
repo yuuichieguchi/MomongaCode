@@ -2,6 +2,7 @@ import { computeBackoff } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RunStatus } from '@momonga/protocol';
 import { RECONNECT_FIRST_RETRY_MS, RECONNECT_MAX_INTERVAL_MS } from '../constants.ts';
+import { DaemonMoved } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import type { CliClock } from '../ports.ts';
@@ -118,6 +119,10 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       const result = await options.finished();
       if (result !== undefined) return result;
     } catch (error) {
+      if (options.signal?.aborted !== true && error instanceof DaemonMoved) {
+        await options.restoreConnection(options.signal);
+        continue;
+      }
       if (options.signal?.aborted === true || !isTransientStreamError(error)) throw error;
       failure = error;
     }
@@ -126,6 +131,8 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
 };
 
 export type ChildFrameHandler = (frame: RunEventFrame, agent: string) => void;
+
+export type ChildLifeHandler = (agent: string, runId: string) => void;
 
 export type FollowOptions = {
   client: RuntimeClient;
@@ -138,6 +145,8 @@ export type FollowOptions = {
   onSeenEvent?(frame: RunEventFrame): void;
   onEvent(frame: RunEventFrame): void;
   onChildEvent?: ChildFrameHandler;
+  onChildStarted?: ChildLifeHandler;
+  onChildEnded?: ChildLifeHandler;
   onReconnecting?(attempt: number): void;
   signal?: AbortSignal;
 };
@@ -155,6 +164,7 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
   const followChild = (childRunId: string, agent: string, handler: ChildFrameHandler): void => {
     if (followed.has(childRunId)) return;
     followed.add(childRunId);
+    options.onChildStarted?.(agent, childRunId);
     children.push(
       followRun({
         client,
@@ -165,13 +175,18 @@ export const followRun = async (options: FollowOptions): Promise<RunView> => {
         restoreConnection: options.restoreConnection,
         onEvent: (frame) => handler(frame, agent),
         onChildEvent: handler,
+        ...(options.onChildStarted === undefined ? {} : { onChildStarted: options.onChildStarted }),
+        ...(options.onChildEnded === undefined ? {} : { onChildEnded: options.onChildEnded }),
         ...(options.onReconnecting === undefined ? {} : { onReconnecting: options.onReconnecting }),
         signal,
       }).then(
-        () => undefined,
+        () => {
+          options.onChildEnded?.(agent, childRunId);
+        },
         (error: unknown) => {
           childFailure ??= { error };
           stop.abort();
+          options.onChildEnded?.(agent, childRunId);
         },
       ),
     );

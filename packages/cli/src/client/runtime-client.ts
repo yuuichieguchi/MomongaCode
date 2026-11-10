@@ -1,7 +1,9 @@
 import type { McpServerConfig } from '@momonga/config';
-import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
+import { setTimeout as sleepFor } from 'node:timers/promises';
+import { MOVED_CODE, createUdsClient, decodeSse, isRecord, parseRetryAfter, systemClock } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, UserShellRecord, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -14,7 +16,13 @@ import {
   checkGuidelines,
   checkErrorBody,
   checkHealth,
+  checkInbox,
+  checkInboxAdd,
+  checkInboxWithdraw,
   checkJobs,
+  checkRunSuccessor,
+  checkUserShellFrame,
+  checkUserShellPending,
   checkMcpAuthorization,
   checkMcpServers,
   checkMemories,
@@ -64,6 +72,26 @@ export class RunApiError extends Error {
   }
 }
 
+export const MOVED_RESENDS = 3;
+
+const SOCKET_ERROR_RESENDS = 1;
+
+const RESENT_SOCKET_CODES: ReadonlySet<string> = new Set(['UND_ERR_SOCKET', 'ECONNRESET', 'EPIPE']);
+
+const REPEATABLE_METHODS: ReadonlySet<string> = new Set(['GET', 'PUT', 'PATCH', 'DELETE']);
+
+export class DaemonMoved extends Error {
+  readonly generation: number;
+  readonly version: string;
+
+  constructor(generation: number, version: string) {
+    super(`the daemon moved to generation ${generation} (v${version})`);
+    this.name = 'DaemonMoved';
+    this.generation = generation;
+    this.version = version;
+  }
+}
+
 export type RunEventFrame = { readonly id: number; readonly event: string | undefined; readonly data: PublicRunEvent };
 
 export type EventsOptions = { after?: number; lastEventId?: number; signal?: AbortSignal; onOpen?: () => void };
@@ -83,7 +111,10 @@ export type CreateRunOptions = {
   skill?: string;
   timeoutMs?: number;
   images?: readonly ImageAttachment[];
+  attachMentions?: boolean;
 };
+
+export type UserShellEnd = { kind: 'refused'; reason: string } | { kind: 'exit'; record: UserShellRecord };
 
 export type MemoryFilter = { scope?: MemoryScope; state?: MemoryState; project?: string };
 
@@ -109,7 +140,15 @@ export type RuntimeClient = {
   setPermissionMode(sessionId: string, mode: PermissionMode): Promise<SessionView>;
   setModel(sessionId: string, model: string): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
+  compact(sessionId: string, instructions?: string): Promise<RunView>;
   getRun(id: string): Promise<RunView>;
+  inboxAdd(sessionId: string, delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[]): Promise<InboxAddResponse>;
+  inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
+  inboxList(sessionId: string): Promise<InboxRowView[]>;
+  runSuccessor(runId: string): Promise<RunView | undefined>;
+  userShell(sessionId: string, command: string, include: boolean, onOutput: (text: string) => void): Promise<UserShellEnd>;
+  stopUserShell(sessionId: string): Promise<void>;
+  pendingUserShell(sessionId: string): Promise<UserShellRecord[]>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   trace(runId: string): Promise<RunTraceView>;
   approvals(runId: string): Promise<ApprovalView[]>;
@@ -172,6 +211,7 @@ export const createRunBody = (input: string, options: CreateRunOptions = {}): Re
   ...(options.skill === undefined ? {} : { skill: options.skill }),
   ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   ...(options.images === undefined || options.images.length === 0 ? {} : { images: options.images }),
+  ...(options.attachMentions === true ? { attachMentions: true } : {}),
 });
 
 const parsed = (text: string, description: string): unknown => {
@@ -193,15 +233,32 @@ const listOf = (body: unknown, key: string, description: string): unknown[] => {
   return list;
 };
 
+const movedOf = (data: string, description: string): DaemonMoved => {
+  const body = parsed(data, description);
+  if (!isRecord(body) || typeof body['generation'] !== 'number' || typeof body['version'] !== 'string') throw new ContractViolation(description, `a ${DAEMON_CURRENT_EVENT} frame without a generation and a version: ${data}`);
+  return new DaemonMoved(body['generation'], body['version']);
+};
+
+const socketErrorCodeOf = (error: unknown): string | undefined => {
+  for (let current: unknown = error; isRecord(current); current = current['cause']) {
+    if (typeof current['code'] === 'string' && RESENT_SOCKET_CODES.has(current['code'])) return current['code'];
+  }
+  return undefined;
+};
+
 const frameOf = (event: { id?: string; event?: string; data: string }, description: string): RunEventFrame => {
+  if (event.id === undefined && event.event === DAEMON_CURRENT_EVENT) throw movedOf(event.data, description);
   if (event.id === undefined) throw new ContractViolation(description, `an event without an id: ${event.data}`);
   const id = Number(event.id);
   if (!Number.isInteger(id)) throw new ContractViolation(description, `an event with a non-integer id ${event.id}`);
   return { id, event: event.event, data: checkRunEvent(parsed(event.data, description), description) };
 };
 
-export const createRuntimeClient = (options: { resolveSocket: SocketResolver }): RuntimeClient => {
+export type RuntimeClientOptions = { resolveSocket: SocketResolver; sleep?: (ms: number) => Promise<void>; onMoved?: () => Promise<void> };
+
+export const createRuntimeClient = (options: RuntimeClientOptions): RuntimeClient => {
   const http = createUdsClient(options.resolveSocket);
+  const sleep = options.sleep ?? ((ms: number): Promise<void> => sleepFor(ms).then(() => undefined));
 
   const send = async (
     method: string,
@@ -210,16 +267,33 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     init: { body?: unknown; headers?: Record<string, string>; raw?: true } = {},
   ): Promise<{ response: UdsResponse; body: unknown }> => {
     const description = `${method} ${path}`;
-    const headers = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
-    const response = await http.request({
-      method,
-      path,
-      ...(Object.keys(headers).length === 0 ? {} : { headers }),
-      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
-    });
-    const text = await response.text();
-    if (!expected.includes(response.status)) throw new RunApiError(description, response.status, text);
-    return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
+    const headers: Record<string, string> = { ...(init.body === undefined ? {} : JSON_HEADERS), ...init.headers };
+    const repeatable = REPEATABLE_METHODS.has(method) || (method === 'POST' && headers['idempotency-key'] !== undefined);
+    let socketResends = 0;
+    for (let movedResends = 0; ; ) {
+      let response: UdsResponse;
+      try {
+        response = await http.request({
+          method,
+          path,
+          ...(Object.keys(headers).length === 0 ? {} : { headers }),
+          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+        });
+      } catch (error) {
+        if (!repeatable || socketResends >= SOCKET_ERROR_RESENDS || socketErrorCodeOf(error) === undefined) throw error;
+        socketResends += 1;
+        continue;
+      }
+      const text = await response.text();
+      if (expected.includes(response.status)) return { response, body: response.status === 204 ? undefined : init.raw === true ? text : parsed(text, description) };
+      const failure = new RunApiError(description, response.status, text);
+      if (response.status !== 503 || failure.code !== MOVED_CODE || movedResends >= MOVED_RESENDS) throw failure;
+      const retryAfterMs = parseRetryAfter(response.headers['retry-after'], systemClock.now());
+      if (retryAfterMs === undefined) throw failure;
+      await options.onMoved?.();
+      movedResends += 1;
+      await sleep(retryAfterMs);
+    }
   };
 
   const sessionOf = (body: unknown, description: string): SessionView => checkSession(fieldOf(body, 'session', description), description);
@@ -319,10 +393,41 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     return { run: runOf(body, `POST ${path}`), location };
   };
 
+  const compact = async (sessionId: string, instructions?: string): Promise<RunView> => {
+    const path = `/v1/sessions/${sessionId}/compact`;
+    const { body } = await send('POST', path, [202], { body: instructions === undefined ? {} : { instructions } });
+    return runOf(body, `POST ${path}`);
+  };
+
   const getRun = async (id: string): Promise<RunView> => {
     const path = `/v1/runs/${id}`;
     const { body } = await send('GET', path, [200]);
     return runOf(body, `GET ${path}`);
+  };
+
+  const inboxAdd = async (sessionId: string, delivery: InboxDelivery, text: string, images: readonly ImageAttachment[] = []): Promise<InboxAddResponse> => {
+    const path = `/v1/sessions/${sessionId}/inbox`;
+    const { body } = await send('POST', path, [201], { body: { delivery, text, ...(images.length === 0 ? {} : { images }) } });
+    return checkInboxAdd(body, `POST ${path}`);
+  };
+
+  const inboxWithdraw = async (id: string): Promise<InboxWithdrawResponse> => {
+    const path = `/v1/inbox/${id}/withdraw`;
+    const { body } = await send('POST', path, [200]);
+    return checkInboxWithdraw(body, `POST ${path}`);
+  };
+
+  const inboxList = async (sessionId: string): Promise<InboxRowView[]> => {
+    const path = `/v1/sessions/${sessionId}/inbox`;
+    const { body } = await send('GET', path, [200]);
+    return checkInbox(body, `GET ${path}`).pending;
+  };
+
+  const runSuccessor = async (runId: string): Promise<RunView | undefined> => {
+    const path = `/v1/runs/${runId}/successor`;
+    const { body } = await send('GET', path, [200]);
+    const { successor } = checkRunSuccessor(body, `GET ${path}`);
+    return successor === null ? undefined : successor;
   };
 
   const cancel = async (id: string): Promise<{ status: 200 | 202; run: RunView }> => {
@@ -606,6 +711,31 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     setPermissionMode,
     setModel,
     createRun,
+    compact,
+    inboxAdd,
+    inboxWithdraw,
+    inboxList,
+    userShell: async (sessionId, command, include, onOutput) => {
+      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const description = `POST ${path}`;
+      const response = await http.request({ method: 'POST', path, headers: JSON_HEADERS, body: JSON.stringify({ command, include }) });
+      if (response.status !== 200) throw new RunApiError(description, response.status, await response.text());
+      for await (const event of decodeSse(response.body)) {
+        const frame = checkUserShellFrame(parsed(event.data, description), description);
+        if (frame.type === 'output') onOutput(frame.text);
+        else return frame.type === 'refused' ? { kind: 'refused', reason: frame.reason } : { kind: 'exit', record: frame.record };
+      }
+      throw new ContractViolation(description, 'the stream ended without an exit');
+    },
+    stopUserShell: async (sessionId) => {
+      await send('DELETE', `/v1/sessions/${sessionId}/user-shell`, [200]);
+    },
+    pendingUserShell: async (sessionId) => {
+      const path = `/v1/sessions/${sessionId}/user-shell`;
+      const { body } = await send('GET', path, [200]);
+      return checkUserShellPending(body, `GET ${path}`).pending;
+    },
+    runSuccessor,
     getRun,
     cancel,
     trace,

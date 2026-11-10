@@ -9,6 +9,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit'
 import { settingsLockPath } from '../src/file-lock.ts';
 import { connectionOf, distrusting, localSettingsDir, localSettingsPath, makeDir, makeTree, mcpJsonPath, projectSettingsPath, repoLocalSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
+const NEVER_ABORTED = new AbortController().signal;
+
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const load = (tree: ReturnType<typeof makeTree>) =>
@@ -81,7 +83,7 @@ describe('B6 project env hijack denylist', () => {
 describe('B7 local settings live in user scope', () => {
   it('writes appended rules under the home directory and never inside the repository', async () => {
     const tree = makeTree();
-    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' });
+    await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED });
     expect(fs.existsSync(path.join(tree.project, '.momonga'))).toBe(false);
     expect(fs.statSync(localSettingsDir(tree)).mode & 0o777).toBe(0o700);
     expect(fs.statSync(path.join(tree.home, '.momonga', 'projects')).mode & 0o777).toBe(0o700);
@@ -127,7 +129,7 @@ describe('B8 lock hardening', () => {
     const tree = makeTree();
     fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
     const holder = await startLockHolder(context, lockPathOf(tree));
-    const failure = appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 });
+    const failure = appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED, lockTimeoutMs: 200 });
     await expect(failure).rejects.toThrow(/timed out/);
     await expect(failure).rejects.toThrow(lockPathOf(tree));
     await expect(failure).rejects.toThrow(String(holder.pid));
@@ -138,7 +140,7 @@ describe('B8 lock hardening', () => {
     const target = writeText(path.join(makeDir(), 'victim'), 'precious');
     fs.mkdirSync(path.dirname(lockPathOf(tree)), { recursive: true, mode: 0o700 });
     fs.symlinkSync(target, lockPathOf(tree));
-    await expect(appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow' })).rejects.toMatchObject({ code: 'ELOOP' });
+    await expect(appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED })).rejects.toMatchObject({ code: 'ELOOP' });
     expect(fs.readFileSync(target, 'utf8')).toBe('precious');
   });
 
@@ -146,7 +148,7 @@ describe('B8 lock hardening', () => {
     const tree = makeTree();
     fs.mkdirSync(lockPathOf(tree), { recursive: true, mode: 0o700 });
     await expect(
-      appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', lockTimeoutMs: 200 }),
+      appendPermissionRule({ ports: steppedFileLockPorts(), home: tree.home, projectDir: tree.project, rule: 'Bash(ls)', effect: 'allow', signal: NEVER_ABORTED, lockTimeoutMs: 200 }),
     ).rejects.toMatchObject({ code: 'EISDIR' });
   });
 });

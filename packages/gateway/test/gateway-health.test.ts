@@ -5,12 +5,13 @@ import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
 import { START_MS, TEST_VERSION, expectErrorBody, getJson, postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 describe('GET /v1/momonga/health', () => {
-  it('reports ok, models, version, apiVersion, pid, startedAt and state running', async () => {
+  it('reports ok, models, version, apiVersion, pid, startedAt, state running and no active request', async () => {
     const primary = createScriptedAdapter({ calls: [] });
     const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await getJson(client, '/v1/momonga/health');
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(['apiVersion', 'models', 'ok', 'pid', 'startedAt', 'state', 'version']);
+    expect(Object.keys(response.body).sort()).toEqual(['activeRequests', 'apiVersion', 'models', 'ok', 'pid', 'startedAt', 'state', 'version']);
+    expect(response.body.activeRequests).toBe(0);
     expect(response.body.ok).toBe(true);
     expect(response.body.version).toBe(TEST_VERSION);
     expect(response.body.apiVersion).toBe(1);

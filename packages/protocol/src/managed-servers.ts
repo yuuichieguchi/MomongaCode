@@ -26,13 +26,17 @@ export type ManagedRecordedDefaults = {
   readonly maxConcurrency: number;
 };
 
+export const MANAGED_ENDPOINT_FORMS = ['unix', 'pipe'] as const;
+
+export type ManagedEndpointForm = (typeof MANAGED_ENDPOINT_FORMS)[number];
+
 export type ManagedServerDescription = {
   readonly id: string;
   readonly provider: string;
   readonly wire: 'chat-completions';
   readonly binary: { readonly defaultPath: string };
   readonly launch: { readonly argv: readonly string[] };
-  readonly endpoint: { readonly kind: 'unix' };
+  readonly endpoint: { readonly forms: readonly ManagedEndpointForm[] };
   readonly ready: { readonly method: 'GET'; readonly path: string; readonly status: 200; readonly limitMs: number };
   readonly preconditions: readonly Precondition[];
   readonly identity: readonly ProbeKeyComponent[];
@@ -58,7 +62,7 @@ export const FM_SERVER = {
   wire: 'chat-completions',
   binary: { defaultPath: '/usr/bin/fm' },
   launch: { argv: ['serve', '--socket', SOCKET_PLACEHOLDER] },
-  endpoint: { kind: 'unix' },
+  endpoint: { forms: ['unix'] },
   ready: { method: 'GET', path: '/health', status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [
     {

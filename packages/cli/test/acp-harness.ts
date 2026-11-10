@@ -237,6 +237,10 @@ export const fakeRuntime = (): FakeRuntime => {
       runtime.modelChanged?.(model, previousModel);
       return runtime.session;
     },
+    compact: async (sessionId, instructions) => {
+      record(`compact ${sessionId} ${JSON.stringify(instructions ?? null)}`);
+      return runView({ id: 'run-compact', status: 'QUEUED' });
+    },
     createRun: async (sessionId, input, options) => {
       record(`createRun ${sessionId} ${JSON.stringify({ input, ...(options?.skill === undefined ? {} : { skill: options.skill }) })}`);
       const failure = runtime.failures.get('createRun');
@@ -244,6 +248,13 @@ export const fakeRuntime = (): FakeRuntime => {
       return { run: await runtime.createRunResult(input), location: '/v1/runs/run-1' };
     },
     getRun: unexpected('getRun'),
+    inboxAdd: unexpected('inboxAdd'),
+    inboxWithdraw: unexpected('inboxWithdraw'),
+    inboxList: unexpected('inboxList'),
+    runSuccessor: unexpected('runSuccessor'),
+    userShell: unexpected('userShell'),
+    stopUserShell: unexpected('stopUserShell'),
+    pendingUserShell: unexpected('pendingUserShell'),
     cancel: async (id) => {
       record(`cancel ${id}`);
       const failure = runtime.failures.get('cancel');

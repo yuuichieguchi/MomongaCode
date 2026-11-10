@@ -11,10 +11,11 @@ describe('file credential store under the real path layout', () => {
     const paths = momongaLayout(home);
     await ensureMomongaDirs(paths);
     const directory = mcpCredentialDirectory(paths);
+    const signal = new AbortController().signal;
     expect(directory).toBe(path.join(home, '.momonga', 'state', 'mcp-credentials'));
-    await createFileCredentialStore(directory).write('server|tokens', '{"access_token":"fake"}');
+    await createFileCredentialStore(directory).write('server|tokens', '{"access_token":"fake"}', signal);
 
-    expect(await createFileCredentialStore(directory).read('server|tokens')).toBe('{"access_token":"fake"}');
+    expect(await createFileCredentialStore(directory).read('server|tokens', signal)).toBe('{"access_token":"fake"}');
     expect(fs.statSync(directory).mode & 0o777).toBe(0o700);
     expect(fs.statSync(paths.state).mode & 0o777).toBe(0o700);
     const [file] = fs.readdirSync(directory);

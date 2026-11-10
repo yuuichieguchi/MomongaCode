@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as config from '@momonga/config';
 import { loadUserSettings } from '@momonga/config';
 import * as protocol from '@momonga/protocol';
@@ -7,6 +7,8 @@ import { seeded } from '../../context/test/helpers.ts';
 import { CAPABILITIES, chatConnection } from './model-fixtures.ts';
 import { loadModelsSection, refusalOf } from './load-models.ts';
 import { editModels, homeWith, op, textOf } from './models-edit.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Random = ReturnType<typeof seeded>;
 type Connection = { provider?: string; adapter: string; baseUrl?: string; socketPath?: string };
@@ -61,7 +63,6 @@ describe('the server name derived from a connection (I-N11)', () => {
         expect(providerNameOf(connection), `seed ${seed} ${JSON.stringify(connection)}`).toMatch(NAME_PATTERN);
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -81,7 +82,6 @@ describe('the server name derived from a connection (I-N11)', () => {
         expect(beside, `seed ${seed}`).toEqual([`${providerNameOf(second as Connection)}/n`, alone[0]]);
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -116,7 +116,6 @@ describe('the server name derived from a connection (I-N11)', () => {
         }
       }
     },
-    PROPERTY_TIMEOUT_MS,
   );
 
   it(
@@ -142,6 +141,5 @@ describe('the server name derived from a connection (I-N11)', () => {
       }
       expect(added).toBeGreaterThan(FILE_SEEDS);
     },
-    PROPERTY_TIMEOUT_MS,
   );
 });

@@ -36,6 +36,7 @@ const EXPECTED_TABLES = [
   'run_answerers',
   'run_calls',
   'run_facts',
+  'run_inbox',
   'run_records',
   'run_recoveries',
   'runs',

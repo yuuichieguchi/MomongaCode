@@ -173,6 +173,7 @@ export type BuildContextInput = {
   memoryShare?: number;
   pinnedTokens?: number;
   toolsFrozen?: true;
+  compactNow?: true;
   compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
@@ -221,7 +222,9 @@ export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
 export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; governing: number; task: number };
 
-export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string; notices: ContextNotice[] };
+export type CompactionTokens = { input: number; replaced: number; workingStateGrowth: number };
+
+export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string; notices: ContextNotice[]; tokens: CompactionTokens };
 
 export type CompactionBlockReason =
   | 'no_step_boundary_outside_protection'

@@ -72,7 +72,7 @@ describe('the models listing of the gateway names every model by its canonical r
     expectTypeOf<MomongaModelList['roles']>().toEqualTypeOf<{ compaction?: string; reflection?: string; analysis?: string }>();
     const none: MomongaModelList = { object: 'list', data: [], start: null, roles: {} };
     expect(none.start).toBeNull();
-    expect(accepts('SessionView', { id: 's', cwd: '/w', permissionMode: 'default', model: 'ollama/gemma-3-4b:latest', bypassAllowed: false, createdAt: 1, envKeys: [], activeRunId: null, latestRunId: null, additionalDirectories: [], lastEventId: 0 })).toBe(true);
+    expect(accepts('SessionView', { id: 's', cwd: '/w', permissionMode: 'manual', model: 'ollama/gemma-3-4b:latest', bypassAllowed: false, createdAt: 1, envKeys: [], activeRunId: null, latestRunId: null, additionalDirectories: [], lastEventId: 0 })).toBe(true);
   });
 
   it('an entry has no alias, modelAlias, targets or per-target map', () => {
@@ -84,7 +84,7 @@ describe('the models listing of the gateway names every model by its canonical r
     expectTypeOf<MomongaModelEntry>().not.toHaveProperty('targetBilling');
     expectTypeOf<MomongaModelEntry>().not.toHaveProperty('targetPlan');
     expectTypeOf<MomongaModelEntry>().not.toHaveProperty('targetKey');
-    expect(accepts('SessionView', { id: 's', cwd: '/w', permissionMode: 'default', modelAlias: 'fm', bypassAllowed: false, createdAt: 1, envKeys: [], activeRunId: null, latestRunId: null, additionalDirectories: [], lastEventId: 0 })).toBe(false);
+    expect(accepts('SessionView', { id: 's', cwd: '/w', permissionMode: 'manual', modelAlias: 'fm', bypassAllowed: false, createdAt: 1, envKeys: [], activeRunId: null, latestRunId: null, additionalDirectories: [], lastEventId: 0 })).toBe(false);
   });
 
   it('model.changed carries model and previousModel', () => {

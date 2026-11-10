@@ -1,3 +1,4 @@
+import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -397,6 +398,9 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     try {
       runtime.createToolRuntime({
         paths: f.temp.paths,
+        sharedPaths: f.temp.paths,
+        generation: FIRST_GENERATION,
+        role: fixedRolePort('serving'),
         home: 'relative/home',
         store: f.store,
         notifier: f.notifier,

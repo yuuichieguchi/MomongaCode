@@ -124,7 +124,7 @@ const factsRow = (runId: string, sessionId: string): RunFactsView => ({
   sessionId,
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
   model: 'fm',
-  mode: 'default',
+  mode: 'manual',
   agent: 'build',
   origin: 'cli',
   status: 'COMPLETED',

@@ -49,10 +49,11 @@ const contextWith = (command: string, run: CommandRunner) => {
     projectDir: dir,
     markerDir,
     runId: 'run-1',
-    session: { id: 's1', permissionMode: 'default' },
+    session: { id: 's1', permissionMode: 'manual' },
     clock: { now: () => Date.now() },
     signal: new AbortController().signal,
     deadlineAt: Date.now() + 60_000,
+    started: () => undefined,
     report: (execution: HookExecution) => void executions.push(execution),
     inspector: createProcessInspector(process.platform, { ...hostInspectorPorts(), run, capability: notProved } as never),
   } as HookRunContext;

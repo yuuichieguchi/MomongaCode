@@ -85,7 +85,7 @@ describe('learning loop', () => {
     const raw = rawClient(home);
     try {
       expect((await raw.call('PUT', '/v1/trust', { path: project, decision: 'trusted' })).status).toBe(200);
-      const { session } = await runtime.createSession({ permissionMode: 'default' });
+      const { session } = await runtime.createSession({ permissionMode: 'manual' });
       const { run: first } = await runtime.createRun(session.id, 'Write answer.ts and run the check');
       await approveEachAskUntilEnd(runtime, first.id, 2);
       const frames = await toEnd(runtime, first.id);

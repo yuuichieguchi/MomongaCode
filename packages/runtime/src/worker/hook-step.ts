@@ -46,6 +46,7 @@ export const hookRunContextFor = (
   clock: ctx.options.clock,
   signal: ctx.control.signal,
   deadlineAt: ctx.run.deadlineAt,
+  started: (start) => ctx.journal.append([{ type: 'hook.started', ...start }]),
   report,
 });
 

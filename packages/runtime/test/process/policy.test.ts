@@ -5,7 +5,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem } from '@momonga/tes
 import { ConfigError } from '@momonga/config';
 import { HOST_RULE_ENFORCEMENT, ensureSessionTmpDir, momongaLayout, protectedSetFor } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, SessionScratch } from '@momonga/foundation';
 import * as runtime from '@momonga/runtime';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { Session } from '@momonga/store';
@@ -15,12 +15,12 @@ import type { TempHome } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-type EnsureTmpDir = (paths: MomongaPaths, sessionId: string) => Promise<string>;
+type EnsureTmpDir = (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 
 const setup = async (options: { ensure?: EnsureTmpDir; sessionStates?: { get(session: Pick<Session, 'id' | 'cwd'>): unknown } } = {}) => {
   const temp = await makeTempHome();
   const { store, clock } = openStore(temp);
-  const states = runtime.createSessionStates({ clock, store, logger: makeLogger() });
+  const states = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
   const policyFor = runtime.createPolicyFor({
     paths: temp.paths,
     home: temp.home,
@@ -278,7 +278,7 @@ describe('policyFor (system timers, none used)', () => {
     const temp = await makeTempHome();
     const locked = makeDir(temp.root, 'locked');
     const lockedTmp = path.join(locked, 'session-tmp');
-    const errnoCase = await setup({ ensure: async () => lockedTmp });
+    const errnoCase = await setup({ ensure: async () => ({ dir: lockedTmp, claim: 'owned' }) });
     const errnoSession = createSession(errnoCase.store, errnoCase.temp.project);
     fs.chmodSync(locked, 0o000);
 
@@ -288,7 +288,7 @@ describe('policyFor (system timers, none used)', () => {
     expectWrapped(errnoFailure, errnoSession.id);
     expect(((errnoFailure as Error).cause as NodeJS.ErrnoException).code).toBe('EACCES');
 
-    const assertionCase = await setup({ ensure: async () => 'relative-tmp' });
+    const assertionCase = await setup({ ensure: async () => ({ dir: 'relative-tmp', claim: 'owned' }) });
     const assertionSession = createSession(assertionCase.store, assertionCase.temp.project);
 
     const assertionFailure = await rejectionOf(assertionCase.policyFor(assertionSession, { env: env(), rules: [] }));
@@ -322,7 +322,7 @@ describe('policyFor (system timers, none used)', () => {
   it('a relative home raises TypeError', async () => {
     const temp = await makeTempHome();
     const { store, clock } = openStore(temp);
-    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger() });
+    const sessionStates = runtime.createSessionStates({ clock, store, logger: makeLogger(), releaseScratch: () => undefined });
     let error: unknown;
     try {
       runtime.createPolicyFor({ paths: temp.paths, home: 'relative/home', sessionStates, fs: fakePolicyFilesystem(), ruleEnforcement: 'exact-paths' });

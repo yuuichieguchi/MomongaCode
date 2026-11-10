@@ -13,6 +13,7 @@ export type Journal = {
   needsWindow(): boolean;
   installWindow(reply: InheritedWindowReply): void;
   append(payloads: readonly RunEventPayload[]): void;
+  deliverSteering(): void;
   sync(): void;
   verifyLease(): void;
   snapshot(): void;
@@ -113,6 +114,13 @@ export const openJournal = ({ store, claim, lost }: JournalOptions): Journal => 
     append: (payloads) => {
       const result = store.append(claim, payloads);
       if (result.kind === 'lease_lost') lost();
+      sync();
+      if (own.lastSeq - snapshotSeq >= SNAPSHOT_INTERVAL_EVENTS) snapshot();
+    },
+    deliverSteering: () => {
+      const result = store.inbox.deliverSteering(claim);
+      if (result.kind === 'lease_lost') return lost();
+      if (result.delivered.length === 0) return;
       sync();
       if (own.lastSeq - snapshotSeq >= SNAPSHOT_INTERVAL_EVENTS) snapshot();
     },

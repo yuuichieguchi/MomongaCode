@@ -123,7 +123,10 @@ describe('run api types', () => {
       apiVersion: 1;
       pid: number;
       startedAt: string;
-      state: 'running' | 'draining';
+      state: 'running' | 'retiring' | 'draining';
+      role?: 'starting' | 'serving' | 'retiring';
+      steps?: number;
+      jobs?: number;
       sandbox: 'seatbelt' | 'bubblewrap' | 'none';
     }>();
   });

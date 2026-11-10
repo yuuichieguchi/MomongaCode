@@ -102,8 +102,9 @@ export const killBashTool = defineTool<KillBashInput>({
   title: (input) => `Stop ${input.shell_id}`,
   subject: () => ({ kind: 'none', tool: 'KillBash' }),
   execute: async (input, ctx) => {
-    const job = await requireJobs(ctx).kill(ctx.runId, input.shell_id);
-    return { status: 'completed', output: `Job ${job.id}: ${describeJobStatus(job)}.` };
+    const { view, kill } = await requireJobs(ctx).kill(ctx.runId, input.shell_id);
+    if (kill === 'requested') return { status: 'completed', output: `Job ${view.id}: kill requested; it stops when its owner finishes the stop.` };
+    return { status: 'completed', output: `Job ${view.id}: ${describeJobStatus(view)}.` };
   },
   reconcile: async () => ({ outcome: 'not_applied', output: '' }),
 });

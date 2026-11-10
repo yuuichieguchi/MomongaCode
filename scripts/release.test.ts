@@ -136,8 +136,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.writeFileSync(signingKey, 'fake ssh key');
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   beforeEach(() => {

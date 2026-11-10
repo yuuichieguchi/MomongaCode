@@ -15,8 +15,8 @@ describe('the Z3 assets embedded in the single executable', () => {
     assets = await buildZ3Assets(path.join(root, 'work'), import.meta.url);
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('names exactly the manifest, the two extracted files and the compressed solver binary', () => {

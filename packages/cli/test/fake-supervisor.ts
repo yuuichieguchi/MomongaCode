@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { FIRST_GENERATION, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, acquireProcessLock, formatStartRecord, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
+import type { MomongaPaths, ProcessLock } from '@momonga/foundation';
+import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
 
@@ -18,6 +19,10 @@ export type FakeSupervisorOptions = {
   generation?: number;
   work?: FakeWork;
   publishGate?: Promise<void>;
+  holdsKernelLock?: boolean;
+  publishes?: boolean;
+  startRecordVersion?: string;
+  reports?: Pick<SupervisorHealth, 'steps' | 'jobs' | 'calls' | 'role'>;
 };
 
 export type FakeWork = {
@@ -88,6 +93,8 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
         children,
         logs: { droppedLines: 0 },
         ...(options.stopBoundMs === undefined ? {} : { stopBoundMs: options.stopBoundMs }),
+        generation,
+        ...options.reports,
       };
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(health));
       return;
@@ -110,7 +117,10 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     response.writeHead(404).end();
   });
   fs.mkdirSync(layout.dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(layout.locks.supervisor, String(process.pid));
+  if (!fs.existsSync(layout.startRecord)) fs.writeFileSync(layout.startRecord, formatStartRecord({ version: options.startRecordVersion ?? options.version, foldVersion: FIDELITY_FOLD_VERSION }), { mode: 0o600 });
+  let kernelLock: ProcessLock | undefined;
+  if (options.holdsKernelLock !== false) kernelLock = await acquireProcessLock(layout.locks.supervisor);
+  else fs.writeFileSync(layout.locks.supervisor, String(process.pid));
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(layout.sockets.supervisor, resolve);
@@ -120,13 +130,14 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
   };
   const publishWhenServing = (): Promise<void> =>
-    phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
+    options.publishes !== false && phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
   const startPublish = publishWhenServing();
   if (options.publishGate === undefined) await startPublish;
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
     stopping ??= new Promise<void>((resolve) => {
       server.close(() => {
+        kernelLock?.release();
         fs.rmSync(layout.locks.supervisor, { force: true });
         resolve();
       });
@@ -164,12 +175,12 @@ export const virtualClock = (work: FakeWork = untracked): CliClock => {
   };
 };
 
-export type SpawnedProcess = { command: string; args: readonly string[] };
+export type SpawnedProcess = { command: string; args: readonly string[]; lifeline?: boolean };
 
 export const recordingSpawn = (onSpawn: (spec: SpawnedProcess) => Promise<DetachedExit> | undefined): { spawn: SpawnDetached; spawned: SpawnedProcess[] } => {
   const spawned: SpawnedProcess[] = [];
   const spawn: SpawnDetached = (spec) => {
-    const record = { command: spec.command, args: spec.args };
+    const record = { command: spec.command, args: spec.args, ...(spec.lifeline === undefined ? {} : { lifeline: spec.lifeline }) };
     spawned.push(record);
     return { exit: onSpawn(record) ?? new Promise<DetachedExit>(() => undefined) };
   };

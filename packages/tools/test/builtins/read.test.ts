@@ -208,7 +208,7 @@ describe('Read', () => {
     expect(outcome.locations).toEqual([{ path: outsideFile, line: 3 }]);
   });
 
-  it.each(['default', 'acceptEdits', 'bypassPermissions', 'plan'] as const)('is denied inside a readDenied path in %s mode', async (mode) => {
+  it.each(['manual', 'acceptEdits', 'bypassPermissions', 'plan'] as const)('is denied inside a readDenied path in %s mode', async (mode) => {
     const tools = await makeBuiltins();
     const secretDir = path.join(tools.layout.home, '.momonga');
     fs.mkdirSync(secretDir);

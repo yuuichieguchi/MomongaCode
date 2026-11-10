@@ -37,7 +37,7 @@ const STATIC_OUTSIDE_PROOF: readonly string[] = [
   'Commands with quoting, expansion, redirects, pipes, && or ;, wrapper programs (env, sudo, timeout, xargs and the like), shell payloads (bash -c) and script interpreters, and the file paths the product derives from the arguments of a command.',
   'Path normalisation: the model takes absolute, normalised paths whose symlinks are those the rules were compiled against. Relative paths, .. segments, other symlinks and non-NFC names are normalised by product code that is not proved.',
   'Path characters: printable ASCII plus the non-ASCII characters that occur in the rules, the home folder and the roots. Case folding covers upper and lower case pairs only.',
-  'Hooks, the auto-mode classifier (auto mode is checked as default mode), the sandbox profile, approvals granted while a run is in progress, the scratch folder that each session exempts from file rules, and agent skill directories that are readable by default.',
+  'Hooks, the auto-mode classifier (auto mode is checked as manual mode), the sandbox profile, approvals granted while a run is in progress, the scratch folder that each session exempts from file rules, and agent skill directories that are readable by default.',
   'MCP server names that contain a double underscore, and whether an MCP tool is read-only, which the model leaves open.',
   'The solver and the encoding. The encoding is replayed against the real decision code for every counterexample and compared on generated inputs by the test suite; a proved result is not replayed.',
 ];

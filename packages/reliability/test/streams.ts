@@ -100,7 +100,7 @@ export const runInfo = (
   step: 1,
   tokensTotal: 100,
   model: 'fm',
-  mode: 'default',
+  mode: 'manual',
   agent: 'build',
   origin: 'cli',
   ...overrides,

@@ -1,0 +1,14 @@
+{
+  "name": "legacy-up",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b41",
+  "events": [
+    {
+      "type": "key",
+      "name": "up",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

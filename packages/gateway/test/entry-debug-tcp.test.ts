@@ -1,3 +1,4 @@
+import { prepareHome } from './gateway-process-helpers.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -17,6 +18,7 @@ const launch = async (context: CleanupContext, extraFlags: (home: string, aux: s
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath, {}) }) });
   const io = createFakeEntryIo({
     argv: [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr', ...extraFlags(home, aux)],

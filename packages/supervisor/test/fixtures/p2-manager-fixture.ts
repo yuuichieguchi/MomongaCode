@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
-import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaPaths, roleEndpoint, systemClock } from '@momonga/foundation';
+import { FIRST_GENERATION, createJsonLogger, momongaPaths, roleEndpoint, scopeToGeneration, systemClock } from '@momonga/foundation';
+import { prepareGenerationForTest } from '@momonga/testkit/first-generation';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/constants.ts';
 import { createChildManager } from '../../src/child-manager.ts';
 import { DEFAULT_RESTART_POLICY } from '../../src/restart-policy.ts';
@@ -17,9 +17,7 @@ const child = flag('child')[0];
 if (home === undefined || child === undefined) throw new Error('p2-manager-fixture needs --home and --child');
 
 const paths = momongaPaths(home, process.platform, {});
-fs.mkdirSync(paths.markers.daemons, { recursive: true });
-const layout = generationLayout(home, FIRST_GENERATION);
-fs.mkdirSync(layout.dir, { recursive: true });
+const layout = prepareGenerationForTest(home, FIRST_GENERATION, '0.0.0-fixture');
 const logger = createJsonLogger({ service: 'supervisor', clock: systemClock, stream: process.stderr });
 const manager = createChildManager({
   role: 'runtime',
@@ -28,8 +26,10 @@ const manager = createChildManager({
     process.stderr.write(`version mismatch: ${mismatch.childVersion}\n`);
   },
   home,
-  paths,
+  paths: scopeToGeneration(paths, FIRST_GENERATION),
   generation: FIRST_GENERATION,
+  isRetiring: () => false,
+  onRetiredExit: () => undefined,
   endpoint: roleEndpoint(layout, 'runtime'),
   onReady: () => undefined,
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),

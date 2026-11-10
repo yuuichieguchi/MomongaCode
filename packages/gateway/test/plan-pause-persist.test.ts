@@ -50,7 +50,7 @@ describe('a usage-limit pause adopts in memory first and persists by the dirty/r
     await signedIn(h, 'work');
     await failPausedWrites(h, 'EACCES', Number.POSITIVE_INFINITY);
     const source = h.sessions.authSource(work);
-    await expect(source.pause({ code: PAUSE_CODE })).resolves.toBeUndefined();
+    await expect(source.pause({ code: PAUSE_CODE }, new AbortController().signal)).resolves.toBeUndefined();
     expect((await planError(source.read(signal()))).code).toBe('plan_usage_paused');
     expect(pauseEvents(h).map((event) => event.data)).toEqual([{ profile: PROFILE_ID, account: 'work', code: PAUSE_CODE, saved: false }]);
   });
@@ -59,7 +59,7 @@ describe('a usage-limit pause adopts in memory first and persists by the dirty/r
     const h = await harness();
     await signedIn(h, 'work');
     await failPausedWrites(h, 'ENOSPC', 1);
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE });
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
     await vi.waitFor(async () => expect((await readRecord(h, 'work'))?.['paused']).toBeDefined(), CONDITION_WAIT);
     expect(h.sleeps).toContain(30_000);
   });
@@ -69,7 +69,7 @@ describe('a usage-limit pause adopts in memory first and persists by the dirty/r
     await signedIn(h, 'work');
     await failPausedWrites(h, 'EACCES', Number.POSITIVE_INFINITY);
     const source = h.sessions.authSource(work);
-    await source.pause({ code: PAUSE_CODE });
+    await source.pause({ code: PAUSE_CODE }, new AbortController().signal);
     expect(source.status()).toMatchObject({ state: 'store_unwritable', paused: {} });
     expect((await planError(source.read(signal()))).code).toBe('plan_usage_paused');
     expect((await readRecord(h, 'work'))?.['paused']).toBeUndefined();
@@ -78,16 +78,16 @@ describe('a usage-limit pause adopts in memory first and persists by the dirty/r
   it('resume whose write fails resumes in memory and returns true', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE });
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
     const store = failingWrites(h.store, (value) => (hasPause(value) ? undefined : errno('EACCES')));
     await h.reopen({ accounts: [work], store });
-    expect(await h.sessions.resume(work)).toBe(true);
+    expect(await h.sessions.resume(work, new AbortController().signal)).toBe(true);
     expect((await h.sessions.authSource(work).read(signal())).bearer).toBe(signIn.tokens.access_token);
   });
 
   it('pause on an account with no record is a no-op without an event', async () => {
     const h = await harness();
-    await expect(h.sessions.authSource({ profile: PROFILE_ID, account: 'nobody' }).pause({ code: PAUSE_CODE })).resolves.toBeUndefined();
+    await expect(h.sessions.authSource({ profile: PROFILE_ID, account: 'nobody' }).pause({ code: PAUSE_CODE }, new AbortController().signal)).resolves.toBeUndefined();
     expect(pauseEvents(h)).toEqual([]);
   });
 
@@ -139,7 +139,7 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
     plaintextTokenFiles: () => false,
   });
   const clock = createFakeClock(Date.now());
-  const sessions = await openPlanSessions({
+  const sessions = await openPlanSessions({ signal: new AbortController().signal,
     profiles: { [PROFILE_ID]: profile },
     paths: { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive },
     store,
@@ -158,8 +158,8 @@ const usageLimitedGateway = async (planStore: (store: ListableCredentialStore) =
     warn: () => undefined,
   });
   const signIn = await signInAtFake({ paths: { host: layout.planHost }, auth } as unknown as Harness, { resource: profile.oauth.resource });
-  await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
-  await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens });
+  await sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
+  await sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }, new AbortController().signal);
   await sessions.close();
 
   writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'm', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: 'work' } } }) });
@@ -238,7 +238,7 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
     await signedIn(h, 'work');
     const locks = await lockRefused(h);
     const source = h.sessions.authSource(work);
-    await expect(source.pause({ code: PAUSE_CODE })).resolves.toBeUndefined();
+    await expect(source.pause({ code: PAUSE_CODE }, new AbortController().signal)).resolves.toBeUndefined();
     expect(locks.refused()).toBe(1);
     expect((await planError(source.read(signal()))).code).toBe('plan_usage_paused');
     expect(source.status()).toEqual({ state: 'store_unwritable', cause: 'EROFS: simulated', paused: {} });
@@ -249,10 +249,10 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
   it('a resume of the served account whose lock cannot be taken resolves, resumes in memory and marks the write failure', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE });
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
     const locks = await lockRefused(h);
     const source = h.sessions.authSource(work);
-    await expect(source.resume()).resolves.toBeUndefined();
+    await expect(source.resume(new AbortController().signal)).resolves.toBeUndefined();
     expect(locks.refused()).toBe(1);
     expect(source.status()).toEqual({ state: 'store_unwritable', cause: 'EROFS: simulated' });
     expect((await source.read(signal())).bearer).toBe(signIn.tokens.access_token);
@@ -262,9 +262,9 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
   it('sessions.resume(ref) whose lock cannot be taken returns true, resumes in memory and marks the write failure', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE });
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
     const locks = await lockRefused(h);
-    expect(await h.sessions.resume(work)).toBe(true);
+    expect(await h.sessions.resume(work, new AbortController().signal)).toBe(true);
     expect(locks.refused()).toBe(1);
     const source = h.sessions.authSource(work);
     expect(source.status()).toEqual({ state: 'store_unwritable', cause: 'EROFS: simulated' });
@@ -292,7 +292,7 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
     await h.reopen({ accounts: [work], store });
     const retryWait = h.holdNextBackoff();
     const source = h.sessions.authSource(work);
-    await source.pause({ code: PAUSE_CODE });
+    await source.pause({ code: PAUSE_CODE }, new AbortController().signal);
     await retryWait.reached;
     expect(source.status()).toEqual({ state: 'active', paused: {} });
     armed = true;
@@ -326,7 +326,7 @@ describe('a record lock that cannot be taken is a failed write under the dirty r
     const firstWait = h.holdNextBackoff();
     const secondWait = h.holdNextBackoff();
     const source = h.sessions.authSource(work);
-    await source.pause({ code: PAUSE_CODE });
+    await source.pause({ code: PAUSE_CODE }, new AbortController().signal);
     await firstWait.reached;
     lockRefusals = 1;
     firstWait.release();

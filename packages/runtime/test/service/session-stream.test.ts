@@ -66,9 +66,9 @@ describe('session stream', () => {
     await stream.until((event) => event.type === 'run.status' && event.runId === runB.id && event.to === 'CANCELLED');
     await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the session subscriber');
 
-    expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'default' } })).status).toBe(200);
+    expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'manual' } })).status).toBe(200);
 
-    const later = await stream.until((event) => event.type === 'mode.changed' && event.mode === 'default');
+    const later = await stream.until((event) => event.type === 'mode.changed' && event.mode === 'manual');
     expect(later.at(-1)).not.toHaveProperty('runId');
     expect(stream.ended).toBe(false);
   });

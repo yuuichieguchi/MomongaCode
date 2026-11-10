@@ -90,8 +90,8 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await signedIn(h, 'home');
     await h.reopen({ accounts: [work, home] });
     const mark = gated.recorded.length;
-    await h.sessions.selectActive(work);
-    await h.sessions.selectActive(home);
+    await h.sessions.selectActive(work, new AbortController().signal);
+    await h.sessions.selectActive(home, new AbortController().signal);
     await signedIn(h, 'third');
     const since = gated.recorded.slice(mark).filter((call) => call.path === h.paths.active);
     expect(since.filter((call) => call.method === 'rename')).toHaveLength(3);
@@ -106,9 +106,9 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await h.reopen({ accounts: [work, home] });
     const base = serial.runs;
     const hold = gated.gate('rename', isActiveFile(h));
-    const first = h.sessions.selectActive(work);
+    const first = h.sessions.selectActive(work, new AbortController().signal);
     await hold.reached;
-    const second = h.sessions.selectActive(home);
+    const second = h.sessions.selectActive(home, new AbortController().signal);
     try {
       await vi.waitFor(() => expect(serial.runs - base).toBe(2), CONDITION_WAIT);
       expect(serial.active).toBe(1);
@@ -130,7 +130,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await signedIn(h, 'work');
     fs.writeFileSync(h.paths.active, JSON.stringify({ other: 'z' }));
     await h.reopen({ accounts: [work] });
-    await h.sessions.selectActive(work);
+    await h.sessions.selectActive(work, new AbortController().signal);
     expect(await readActivePointer(nodeFileSystem, h.paths.active)).toEqual({ other: 'z', [PROFILE_ID]: 'work' });
   });
 
@@ -139,7 +139,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     fs.mkdirSync(h.paths.active.slice(0, h.paths.active.lastIndexOf('/')), { recursive: true });
     fs.writeFileSync(h.paths.active, NOT_AN_OBJECT);
     await h.reopen();
-    const failure = await failureOf(signInFor(h).begin({ profile: PROFILE_ID, account: 'work', port: PORT }));
+    const failure = await failureOf(signInFor(h).begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal));
     expect(failure).toEqual({ code: PLAN_STORE_UNREADABLE_CODE, message: notAnObjectCause(h) });
     expect(fs.existsSync(h.paths.host)).toBe(false);
     expect(h.fetchUrls).toEqual([]);
@@ -149,7 +149,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
   it('complete with a damaged pointer rejects PLAN_STORE_UNREADABLE_CODE before consuming: the attempt is still open and no token request was sent', async () => {
     const h = await harness();
     const signIn = signInFor(h);
-    const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT });
+    const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal);
     const browsed = await siwcBrowse(authorizationUrl);
     if (browsed.redirect === undefined) throw new Error(`the fake refused the authorization: ${JSON.stringify(browsed.body)}`);
     fs.writeFileSync(h.paths.active, NOT_AN_OBJECT);
@@ -166,16 +166,16 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
   it('a pointer write that fails after install rejects PLAN_STORE_UNWRITABLE_CODE naming the file, the record stays active, and selectActive then succeeds', async () => {
     const { h, gated } = await gatedHarness();
     const signIn = await signInAtFake(h);
-    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal);
     const pointer = gated.gate('rename', isActiveFile(h));
     const installed = failureOf(
-      h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }),
+      h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId, subject: signIn.subject, email: signIn.email, idToken: signIn.idToken, tokens: signIn.tokens }, new AbortController().signal),
     );
     await pointer.reached;
     pointer.fail(new Error('EACCES'));
     expect(await installed).toEqual({ code: PLAN_STORE_UNWRITABLE_CODE, message: `the active plan account file ${h.paths.active} could not be written: EACCES` });
     expect((await readRecord(h, 'work'))?.['state']).toBe('active');
-    await h.sessions.selectActive(work);
+    await h.sessions.selectActive(work, new AbortController().signal);
     expect(await readActivePointer(nodeFileSystem, h.paths.active)).toEqual({ [PROFILE_ID]: 'work' });
   });
 
@@ -186,7 +186,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await h.reopen({ accounts: [work] });
     expect(h.sessions.listProblems()).toEqual([{ file: 'plan-active.json', cause: notAnObjectCause(h) }]);
     fs.writeFileSync(h.paths.active, JSON.stringify({ other: 'z' }));
-    await h.sessions.selectActive(work);
+    await h.sessions.selectActive(work, new AbortController().signal);
     expect(h.sessions.listProblems()).toEqual([]);
     expect(await readActivePointer(nodeFileSystem, h.paths.active)).toEqual({ other: 'z', [PROFILE_ID]: 'work' });
     expect(h.sessions.activeLabel(PROFILE_ID)).toBe('work');
@@ -198,7 +198,7 @@ describe('one serializer for pointer writes, built from the mirror (P-S5, S8, S9
     await signedIn(h, 'home');
     await signedIn(h, 'third');
     await h.reopen({ accounts: [work, home, third] });
-    await Promise.all(['work', 'home', 'third', 'work', 'third', 'home'].map((account) => h.sessions.selectActive({ profile: PROFILE_ID, account })));
+    await Promise.all(['work', 'home', 'third', 'work', 'third', 'home'].map((account) => h.sessions.selectActive({ profile: PROFILE_ID, account }, new AbortController().signal)));
     const file = JSON.parse(fs.readFileSync(h.paths.active, 'utf8')) as Record<string, unknown>;
     expect(file[PROFILE_ID]).toBe(h.sessions.activeLabel(PROFILE_ID));
   });

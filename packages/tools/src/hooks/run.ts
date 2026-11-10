@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
-import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
+import type { HookCommand, HookEvent, HookExecution, HookStart, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, groupRecordOutcome, recordMarkerGroup, sha256Hex } from '@momonga/foundation';
 import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
@@ -33,6 +33,7 @@ export type HookRunContext = {
   clock: Clock;
   signal: AbortSignal;
   deadlineAt: number;
+  started(start: HookStart): void;
   report(execution: HookExecution): void;
 };
 
@@ -178,7 +179,12 @@ export const runHooks = async (
   callId?: string,
 ): Promise<HookReply[]> => {
   const commands = selectHookCommands(ctx.hooks, event, matchValue);
-  const replies = await Promise.all(commands.map((command) => executeHook(ctx, event, command, payload, callId)));
+  const replies = await Promise.all(
+    commands.map((command) => {
+      ctx.started({ event, command: command.command, ...(callId === undefined ? {} : { callId }) });
+      return executeHook(ctx, event, command, payload, callId);
+    }),
+  );
   for (const reply of replies) ctx.report(reply.execution);
   return replies;
 };

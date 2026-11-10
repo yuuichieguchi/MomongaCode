@@ -15,7 +15,7 @@ type Past = { injected: number; used: number; dropped?: boolean; share?: number 
 const DROPPED_NOTICE = '1 of 2 saved memories were left out of the context because of its budget';
 
 const pastEvents = ({ injected, used, dropped = false, share = 1 / 4 }: Past, now: number): RunEventPayload[] => [
-  { type: 'run.started', attempt: 1, now, pins: { model: 'fm', memoryShare: share }, mode: 'default' },
+  { type: 'run.started', attempt: 1, now, pins: { model: 'fm', memoryShare: share }, mode: 'manual' },
   { type: 'context.memories_loaded', memories: Array.from({ length: injected }, (_unused, index) => ({ id: `past-${index}`, status: 'verified' as const })) },
   ...(dropped ? [{ type: 'notice', level: 'warning', message: DROPPED_NOTICE, code: 'memories_dropped' } as RunEventPayload] : []),
 ];
@@ -109,14 +109,14 @@ describe('adaptive memory budget at run start', () => {
 
   it('ignores the runs of another project', async () => {
     const env = await adaptiveEnv();
-    const elsewhere = env.store.createSession({ cwd: `${env.project}-other`, env: {}, permissionMode: 'default', model: env.session.model });
+    const elsewhere = env.store.createSession({ cwd: `${env.project}-other`, env: {}, permissionMode: 'manual', model: env.session.model });
     for (let index = 0; index < 20; index += 1) await finishPast(env, { injected: 1, used: 0 }, elsewhere);
     expect(shareOf(env, await startRun(env))).toBe(1 / 4);
   });
 
   it('counts another session of the same project', async () => {
     const env = await adaptiveEnv();
-    const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'default', model: env.session.model });
+    const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'manual', model: env.session.model });
     for (let index = 0; index < 20; index += 1) await finishPast(env, { injected: 1, used: 0 }, sibling);
     expect(shareOf(env, await startRun(env))).toBe(1 / 8);
   });
@@ -171,7 +171,7 @@ describe('a window of runs pinned at the current share', () => {
       const claim = await env.seed(
         run.id,
         [
-          { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
+          { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' },
           { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] },
         ],
         'hold',
@@ -194,7 +194,7 @@ describe('a pinned share', () => {
     const abandoned = env.runOnce(memoryWorker(env, 'worker-a'));
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
 
-    const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'default', model: env.session.model });
+    const sibling = env.store.createSession({ cwd: env.project, env: {}, permissionMode: 'manual', model: env.session.model });
     for (let index = 0; index < 20; index += 1) await finishPast(env, { injected: 1, used: 1, dropped: true }, sibling);
     env.clock.advance(LEASE_MS + 1);
     const recovering = env.runOnce(memoryWorker(env, 'worker-b'));

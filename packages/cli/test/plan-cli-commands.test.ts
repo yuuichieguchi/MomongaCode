@@ -38,7 +38,7 @@ describe('state/dismissed-notices.json', () => {
   it('records a dismissal as { key: ISO time } with mode 0600 and reads it back', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'));
+    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T01:02:03.000Z'), new AbortController().signal);
     const file = path.join(state, 'dismissed-notices.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ 'invite:chatgpt': '2026-11-10T01:02:03.000Z' });
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
@@ -48,8 +48,8 @@ describe('state/dismissed-notices.json', () => {
   it('keeps earlier dismissals when another is added', async () => {
     const state = path.join(freshHome(), 'state');
     fs.mkdirSync(state, { recursive: true });
-    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'));
-    await dismissNotice(nodeFiles, state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'));
+    await dismissNotice(nodeFiles, state, 'invite:chatgpt', new Date('2026-11-10T00:00:00.000Z'), new AbortController().signal);
+    await dismissNotice(nodeFiles, state, 'invite:other', new Date('2026-11-11T00:00:00.000Z'), new AbortController().signal);
     expect(await readDismissedNotices(nodeFiles, state, () => undefined)).toEqual({ 'invite:chatgpt': '2026-11-10T00:00:00.000Z', 'invite:other': '2026-11-11T00:00:00.000Z' });
   });
 

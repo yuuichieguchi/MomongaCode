@@ -1,6 +1,6 @@
 import { ModelsEditRefused, PLAN_PROFILES, durationText, editModelsSettings, fieldLabel, fieldValueText, loadUserModels, loadUserSettings, planModelsEdit, providerNameOf, registeredServer, serverKindOf, serverNameFromCommand, serverRegistryOf } from '@momonga/config';
 import type { ConnectionDraft, ModelEntry, ModelsEditPlan, ModelsEditPorts, ModelsOperation, ModelsOperations, ModelsReference, ProviderNameInput, ResolvedModels } from '@momonga/config';
-import { createBinaryHashCache, currentSocketResolver, isRecord } from '@momonga/foundation';
+import { createBinaryHashCache, currentSocketResolver, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import {
   GENERIC_SERVER_KIND,
@@ -25,8 +25,7 @@ import {
 import type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, ModelView, ModelViews, MomongaModelEntry, MomongaModelList, MomongaModelRoles, PlanAccountView, PlanCatalogEntry, Readiness, ServerKind, ServerKindAdapter, TargetBilling } from '@momonga/protocol';
 import { createGatewayClient, listingViewsOf } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { formatTokens } from '../format-tokens.ts';
 import { localManagedPorts } from '../local-managed-ports.ts';
 import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noModelsText, noServerAnsweredAtText, notListedByServerText } from '../models-texts.ts';
@@ -275,7 +274,7 @@ const BUILT_IN_SERVERS = Object.fromEntries(MANAGED_SERVERS.map((server) => [ser
 
 const editOf = async (shell: ModelsShell): Promise<Edit> => {
   const text = await shell.files.readTextIfPresent(shell.settingsFile);
-  const document: unknown = text === undefined ? {} : JSON.parse(text);
+  const document: unknown = text === undefined ? {} : parseOutsideJson(text);
   if (!isRecord(document)) throw new ShellRefusal(`${shell.settingsFile}: settings must be a JSON object`);
   const { resolved } = loadUserModels({ home: shell.home });
   return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS, home: shell.home } };
@@ -589,7 +588,7 @@ const proposeRoleClear = async (_shell: ModelsShell, _edit: Edit, input: FormInp
 const typedValueOf = (text: string): unknown => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
     if (error instanceof SyntaxError) return text;
     throw error;
@@ -664,7 +663,7 @@ const PROGRAM_FIELDS = ['command', 'args', 'readyPath'] as const;
 
 const programValueOf = (field: (typeof PROGRAM_FIELDS)[number], text: string): unknown => {
   if (field !== 'args') return text;
-  const parsed: unknown = JSON.parse(text);
+  const parsed: unknown = parseOutsideJson(text);
   if (!Array.isArray(parsed)) throw new UsageError();
   return parsed;
 };
@@ -703,7 +702,7 @@ const proposeTimeouts = async (_shell: ModelsShell, edit: Edit, input: FormInput
 
 const proposeDialectsSet = async (shell: ModelsShell, _edit: Edit, input: FormInput): Promise<Proposal> => {
   const file = requiredOption(input, 'file');
-  const dialects: unknown = JSON.parse(await shell.files.readText(file));
+  const dialects: unknown = parseOutsideJson(await shell.files.readText(file));
   if (!isRecord(dialects)) throw new ShellRefusal(`${file} does not hold a JSON object.`);
   return { operations: [{ kind: 'setDialects', dialects }], confirm: () => `Save the schema dialects of ${file}?` };
 };
@@ -845,7 +844,7 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
   interrupt,
   files: ports.files,
   listing: async () => {
-    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
+    await ensureCurrentDaemon(ports, paths);
     const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
     try {
       return await gateway.modelList(interrupt);

@@ -38,7 +38,7 @@ const sessionAt = (cwd: string): Session => ({
   id: 'session',
   cwd,
   env: {},
-  permissionMode: 'default',
+  permissionMode: 'manual',
   model: 'model',
   bypassAllowed: false,
   additionalDirectories: [],

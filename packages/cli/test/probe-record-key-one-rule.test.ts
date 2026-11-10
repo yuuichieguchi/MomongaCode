@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +7,7 @@ import { loadUserSettings, probeRecordKeyOf } from '@momonga/config';
 import type { EntryIo } from '@momonga/foundation';
 import { momongaPaths } from '@momonga/foundation';
 import { endpointRecordFileName } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { liveSettingsFor } from '../src/eval/context-host.ts';
 import { userModelsOf } from './user-models.ts';
@@ -40,9 +39,9 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-const freshDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
-  cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+const freshHome = (): string => {
+  const dir = createTempDir({ asHome: true });
+  cleanups.push(() => removeTempDir(dir));
   return dir;
 };
 
@@ -94,7 +93,7 @@ const writeOllamaSettings = (home: string, baseUrl: string): void => {
 describe('the probe command writes the record under the key probeRecordKeyOf gives (W-5)', () => {
   it('writes an Ollama model of a server given with a trailing slash under the key the gateway and the eval host read', async () => {
     const fake = await startFakeOllama({ cacheProbe: 'none' });
-    const home = freshDir('mm-home-');
+    const home = freshHome();
     writeOllamaSettings(home, `${fake.origin}/`);
     const { settings } = await loadUserSettings({ home });
     const [resolved] = settings.models.models.values();

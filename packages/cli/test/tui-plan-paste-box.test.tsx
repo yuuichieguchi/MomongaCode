@@ -21,7 +21,7 @@ const CTRL_Y = '\u0019';
 
 const waitingScreen = async (options: { completeHeld?: Promise<void> } = {}) => {
   const started = await startPlan({ accounts: [], callbackArrives: false, ...options });
-  await untilFrame(started.app, 'mode: default');
+  await untilFrame(started.app, 'mode: manual');
   await submitLine(started.app, '/login chatgpt');
   await choose(started.app, 'Continue with ChatGPT');
   await untilFrame(started.app, PASTE_LABEL);
@@ -160,7 +160,7 @@ describe('the paste box of the sign-in waiting screen (P6.6, D11, O-R5-4 S2)', (
   it('a loopback callback marks the screen delivered and Esc and Ctrl-C then send no cancel', async () => {
     const held = new Promise<void>(() => undefined);
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: true, completeHeld: held });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the delivery of the callback');

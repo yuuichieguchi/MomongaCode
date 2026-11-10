@@ -17,8 +17,8 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const servingFake = (socketPath: string): ManagedServer => ({
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath }),
+  start: async () => ({ kind: 'unix', path: socketPath }),
+  ensureRunning: async () => ({ kind: 'unix', path: socketPath }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 });

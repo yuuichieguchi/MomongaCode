@@ -8,8 +8,8 @@ import type { PermissionMode } from '@momonga/protocol';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout, protectedSetOf, ruleIn, touch } from './helpers.ts';
 import type { FakeFsLayout, Layout } from './helpers.ts';
 
-export const MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const;
-export const RULE_MODES = ['default', 'acceptEdits', 'bypassPermissions'] as const;
+export const MODES = ['manual', 'acceptEdits', 'plan', 'bypassPermissions'] as const;
+export const RULE_MODES = ['manual', 'acceptEdits', 'bypassPermissions'] as const;
 
 export const BASH: PolicyTool = { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' };
 export const WRITE: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };

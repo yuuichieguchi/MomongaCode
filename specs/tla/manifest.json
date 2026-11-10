@@ -3600,11 +3600,11 @@
       "role": "check",
       "expect": "holds",
       "args": [],
-      "tier": "every-run",
-      "distinctStates": 1255970,
-      "measuredSeconds": 215.26,
-      "measuredCpuSeconds": 865.69,
-      "budgetCpuSeconds": 1735
+      "tier": "deep",
+      "distinctStates": 450371,
+      "measuredSeconds": 582.66,
+      "measuredCpuSeconds": 600.85,
+      "budgetCpuSeconds": 1205
     },
     {
       "config": "UpdateSwitch.sessions",
@@ -3612,10 +3612,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 208253,
+      "distinctStates": 111414,
       "measuredSeconds": 13.17,
-      "measuredCpuSeconds": 46.34,
-      "budgetCpuSeconds": 96
+      "measuredCpuSeconds": 9.59,
+      "budgetCpuSeconds": 23
     },
     {
       "config": "UpdateSwitch.today",
@@ -3626,7 +3626,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2733,
+      "distinctStates": 8153,
       "measuredSeconds": 1.31,
       "measuredCpuSeconds": 2.71,
       "budgetCpuSeconds": 9
@@ -3640,7 +3640,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 47,
+      "distinctStates": 374,
       "measuredSeconds": 1.13,
       "measuredCpuSeconds": 1.59,
       "budgetCpuSeconds": 7
@@ -3654,7 +3654,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1194,
+      "distinctStates": 7301,
       "measuredSeconds": 1.28,
       "measuredCpuSeconds": 2.41,
       "budgetCpuSeconds": 8
@@ -3668,7 +3668,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1153,
+      "distinctStates": 54777,
       "measuredSeconds": 1.29,
       "measuredCpuSeconds": 2.35,
       "budgetCpuSeconds": 8
@@ -3682,7 +3682,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 20743,
+      "distinctStates": 56279,
       "measuredSeconds": 1.47,
       "measuredCpuSeconds": 3.63,
       "budgetCpuSeconds": 11
@@ -3696,7 +3696,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 49,
+      "distinctStates": 355,
       "measuredSeconds": 1.13,
       "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7
@@ -3710,7 +3710,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 490,
+      "distinctStates": 3331,
       "measuredSeconds": 1.2,
       "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
@@ -3724,7 +3724,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 29161,
+      "distinctStates": 39182,
       "measuredSeconds": 4.57,
       "measuredCpuSeconds": 16.24,
       "budgetCpuSeconds": 36
@@ -3738,7 +3738,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 489,
+      "distinctStates": 1148,
       "measuredSeconds": 1.22,
       "measuredCpuSeconds": 1.97,
       "budgetCpuSeconds": 7
@@ -3752,7 +3752,7 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4037,
+      "distinctStates": 66949,
       "measuredSeconds": 1.34,
       "measuredCpuSeconds": 2.92,
       "budgetCpuSeconds": 9
@@ -4157,9 +4157,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 10126392,
-      "measuredSeconds": 110.21,
-      "measuredCpuSeconds": 480.61,
-      "budgetCpuSeconds": 965
+      "measuredSeconds": 275.63,
+      "measuredCpuSeconds": 1179.91,
+      "budgetCpuSeconds": 2363
     },
     {
       "config": "ManagedServer.live",
@@ -4171,9 +4171,9 @@
       ],
       "tier": "every-run",
       "distinctStates": 39478,
-      "measuredSeconds": 10.85,
-      "measuredCpuSeconds": 36.9,
-      "budgetCpuSeconds": 77
+      "measuredSeconds": 23.51,
+      "measuredCpuSeconds": 110.02,
+      "budgetCpuSeconds": 224
     },
     {
       "config": "ManagedServer.liveWait",
@@ -4185,9 +4185,9 @@
       ],
       "tier": "every-run",
       "distinctStates": 39490,
-      "measuredSeconds": 9.31,
-      "measuredCpuSeconds": 39.71,
-      "budgetCpuSeconds": 83
+      "measuredSeconds": 25.2,
+      "measuredCpuSeconds": 119.03,
+      "budgetCpuSeconds": 242
     },
     {
       "config": "ManagedServer.cachedRefusal",
@@ -4258,9 +4258,9 @@
       ],
       "tier": "every-run",
       "distinctStates": 73610,
-      "measuredSeconds": 10.11,
-      "measuredCpuSeconds": 34.5,
-      "budgetCpuSeconds": 72
+      "measuredSeconds": 26.05,
+      "measuredCpuSeconds": 121.23,
+      "budgetCpuSeconds": 246
     },
     {
       "config": "ManagedServer.noGroupReap",
@@ -4328,9 +4328,9 @@
       ],
       "tier": "deep",
       "distinctStates": 194518,
-      "measuredSeconds": 46.49,
-      "measuredCpuSeconds": 201.98,
-      "budgetCpuSeconds": 407
+      "measuredSeconds": 606.64,
+      "measuredCpuSeconds": 622.97,
+      "budgetCpuSeconds": 1249
     },
     {
       "config": "LeftoverCleanup",
@@ -4338,10 +4338,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 10080,
-      "measuredSeconds": 2.05,
-      "measuredCpuSeconds": 6.21,
-      "budgetCpuSeconds": 16
+      "distinctStates": 38432,
+      "measuredSeconds": 9.75,
+      "measuredCpuSeconds": 20.57,
+      "budgetCpuSeconds": 45,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.ageRemoval",
@@ -4352,10 +4353,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 163,
-      "measuredSeconds": 1.18,
-      "measuredCpuSeconds": 1.5,
-      "budgetCpuSeconds": 6
+      "distinctStates": 172,
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 1.8,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.pidOnly",
@@ -4366,10 +4368,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 111,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 1.5,
-      "budgetCpuSeconds": 6
+      "distinctStates": 79,
+      "measuredSeconds": 1.37,
+      "measuredCpuSeconds": 1.8,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.noTempLock",
@@ -4380,10 +4383,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 85,
-      "measuredSeconds": 1.17,
-      "measuredCpuSeconds": 1.46,
-      "budgetCpuSeconds": 6
+      "distinctStates": 55,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.66,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.splitCreate",
@@ -4394,10 +4398,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 197,
-      "measuredSeconds": 1.21,
-      "measuredCpuSeconds": 1.53,
-      "budgetCpuSeconds": 7
+      "distinctStates": 201,
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.reapFirst",
@@ -4408,10 +4413,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 389,
-      "measuredSeconds": 1.21,
-      "measuredCpuSeconds": 1.63,
-      "budgetCpuSeconds": 7
+      "distinctStates": 334,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.85,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.listingNumbers",
@@ -4422,10 +4428,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1553,
-      "measuredSeconds": 1.26,
-      "measuredCpuSeconds": 1.94,
-      "budgetCpuSeconds": 7
+      "distinctStates": 1767,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 2.21,
+      "budgetCpuSeconds": 8,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.unlockedStart",
@@ -4436,10 +4443,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 413,
-      "measuredSeconds": 1.23,
-      "measuredCpuSeconds": 1.67,
-      "budgetCpuSeconds": 7
+      "distinctStates": 277,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.83,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.noClaimDirs",
@@ -4450,10 +4458,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 772,
-      "measuredSeconds": 1.23,
-      "measuredCpuSeconds": 1.83,
-      "budgetCpuSeconds": 7
+      "distinctStates": 601,
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 1.88,
+      "budgetCpuSeconds": 7,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.sidecar",
@@ -4461,10 +4470,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 17640,
-      "measuredSeconds": 2.79,
-      "measuredCpuSeconds": 9.39,
-      "budgetCpuSeconds": 22
+      "distinctStates": 67256,
+      "measuredSeconds": 16.76,
+      "measuredCpuSeconds": 34.83,
+      "budgetCpuSeconds": 73,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.sidecarOrder",
@@ -4475,10 +4485,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 26775,
-      "measuredSeconds": 2.49,
-      "measuredCpuSeconds": 7.33,
-      "budgetCpuSeconds": 18
+      "distinctStates": 37569,
+      "measuredSeconds": 4.41,
+      "measuredCpuSeconds": 9.4,
+      "budgetCpuSeconds": 22,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.sidecarNoClaim",
@@ -4489,10 +4500,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 221,
-      "measuredSeconds": 1.21,
-      "measuredCpuSeconds": 1.53,
-      "budgetCpuSeconds": 7
+      "distinctStates": 204,
+      "measuredSeconds": 1.75,
+      "measuredCpuSeconds": 2.22,
+      "budgetCpuSeconds": 8,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "LeftoverCleanup.threeWriters",
@@ -4500,10 +4512,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 50400,
-      "measuredSeconds": 1.61,
-      "measuredCpuSeconds": 4.02,
-      "budgetCpuSeconds": 12
+      "distinctStates": 192160,
+      "measuredSeconds": 5.43,
+      "measuredCpuSeconds": 10.37,
+      "budgetCpuSeconds": 24,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
     },
     {
       "config": "SettingsSwap",
@@ -4765,10 +4778,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 12603,
-      "measuredSeconds": 1.46,
-      "measuredCpuSeconds": 2.42,
-      "budgetCpuSeconds": 8
+      "distinctStates": 111254,
+      "measuredSeconds": 3.28,
+      "measuredCpuSeconds": 5.03,
+      "budgetCpuSeconds": 14
     },
     {
       "config": "CredentialKey.userRemoves",
@@ -4776,10 +4789,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 92476,
-      "measuredSeconds": 2.25,
-      "measuredCpuSeconds": 3.44,
-      "budgetCpuSeconds": 10
+      "distinctStates": 408828,
+      "measuredSeconds": 8.73,
+      "measuredCpuSeconds": 11.32,
+      "budgetCpuSeconds": 26
     },
     {
       "config": "CredentialKey.noOsStore",
@@ -4787,9 +4800,9 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 387,
+      "distinctStates": 774,
       "measuredSeconds": 1.26,
-      "measuredCpuSeconds": 1.73,
+      "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7
     },
     {
@@ -4801,10 +4814,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 976,
-      "measuredSeconds": 1.29,
-      "measuredCpuSeconds": 1.85,
-      "budgetCpuSeconds": 7
+      "distinctStates": 2300,
+      "measuredSeconds": 1.35,
+      "measuredCpuSeconds": 2.08,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "CredentialKey.noLockMarker",
@@ -4815,9 +4828,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 456,
-      "measuredSeconds": 1.28,
-      "measuredCpuSeconds": 1.84,
+      "distinctStates": 871,
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.9,
       "budgetCpuSeconds": 7
     },
     {
@@ -4830,8 +4843,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 49,
-      "measuredSeconds": 1.24,
-      "measuredCpuSeconds": 1.61,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.55,
       "budgetCpuSeconds": 7
     },
     {
@@ -4844,9 +4857,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 49,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.49,
-      "budgetCpuSeconds": 6
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.55,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "CredentialKey.recreateOnReadFailure",
@@ -4857,9 +4870,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 437,
-      "measuredSeconds": 1.25,
-      "measuredCpuSeconds": 1.7,
+      "distinctStates": 660,
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 1.98,
       "budgetCpuSeconds": 7
     },
     {
@@ -4872,9 +4885,51 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 9,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.46,
+      "measuredSeconds": 1.12,
+      "measuredCpuSeconds": 1.45,
       "budgetCpuSeconds": 6
+    },
+    {
+      "config": "CredentialKey.noExit",
+      "role": "evidence",
+      "expect": {
+        "violates": "OsWaitHasExit",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 31,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.67,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.failWritesMarker",
+      "role": "evidence",
+      "expect": {
+        "violates": "MarkerImpliesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 51,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.62,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.failWritesRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "FailureLeavesNoTrace",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 51,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.62,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "ProcessStop.escape",
@@ -5309,6 +5364,932 @@
       "measuredSeconds": 4.03,
       "measuredCpuSeconds": 5.35,
       "budgetCpuSeconds": 14
+    },
+    {
+      "config": "UpdateSwitch.owner",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 895680,
+      "measuredSeconds": 1397.05,
+      "measuredCpuSeconds": 1426.91,
+      "budgetCpuSeconds": 2857
+    },
+    {
+      "config": "UpdateSwitch.gatewayJobs",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 1210465,
+      "measuredSeconds": 2972.15,
+      "measuredCpuSeconds": 2986.27,
+      "budgetCpuSeconds": 5976
+    },
+    {
+      "config": "UpdateSwitch.crashJobs",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 317324,
+      "measuredSeconds": 466.03,
+      "measuredCpuSeconds": 456.17,
+      "budgetCpuSeconds": 916
+    },
+    {
+      "config": "UpdateSwitch.noReconcile",
+      "role": "evidence",
+      "expect": {
+        "violates": "OrphanJobEnds",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 22159,
+      "measuredSeconds": 4.72,
+      "measuredCpuSeconds": 18.22,
+      "budgetCpuSeconds": 40,
+      "note": "measured with five workers, 1-minute load 9.02 at start"
+    },
+    {
+      "config": "UpdateSwitch.noTakeover",
+      "role": "evidence",
+      "expect": {
+        "violates": "OrphanRunYields",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 22036,
+      "measuredSeconds": 4.69,
+      "measuredCpuSeconds": 17.99,
+      "budgetCpuSeconds": 39,
+      "note": "measured with five workers, 1-minute load 8.70 at start"
+    },
+    {
+      "config": "UpdateSwitch.every",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 230159,
+      "measuredSeconds": 74.81,
+      "measuredCpuSeconds": 128.52,
+      "budgetCpuSeconds": 261
+    },
+    {
+      "config": "UpdateSwitch.crash",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 306695,
+      "measuredSeconds": 15.11,
+      "measuredCpuSeconds": 18.52,
+      "budgetCpuSeconds": 41
+    },
+    {
+      "config": "UpdateSwitch.sessionsDeep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 355213,
+      "measuredSeconds": 113.87,
+      "measuredCpuSeconds": 122.04,
+      "budgetCpuSeconds": 248
+    },
+    {
+      "config": "UpdateSwitch.failSetsNone",
+      "role": "evidence",
+      "expect": {
+        "violates": "CurrentOnlyByPromotion",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1629,
+      "measuredSeconds": 1.09,
+      "measuredCpuSeconds": 1.89,
+      "budgetCpuSeconds": 7,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.scanAlloc",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoNumberReuse",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 229,
+      "measuredSeconds": 0.94,
+      "measuredCpuSeconds": 1.34,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.noJoin",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDuplicateStart",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 44,
+      "measuredSeconds": 0.91,
+      "measuredCpuSeconds": 1.14,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.releaseEarly",
+      "role": "evidence",
+      "expect": {
+        "violates": "StarterKeepsDir",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 30,
+      "measuredSeconds": 0.89,
+      "measuredCpuSeconds": 1.12,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.publishNoCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "CurrentOnlyByPromotion",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1872,
+      "measuredSeconds": 1.07,
+      "measuredCpuSeconds": 1.83,
+      "budgetCpuSeconds": 7,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.staleStarter",
+      "role": "evidence",
+      "expect": {
+        "violates": "StarterSucceedsCurrent",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 405,
+      "measuredSeconds": 0.95,
+      "measuredCpuSeconds": 1.41,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.claimUnchecked",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveRemoved",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 157,
+      "measuredSeconds": 0.91,
+      "measuredCpuSeconds": 1.23,
+      "budgetCpuSeconds": 6,
+      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+    },
+    {
+      "config": "LeftoverCleanup.instanceNoClaim",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRemoveLive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 856,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 2.02,
+      "budgetCpuSeconds": 8,
+      "note": "measured with other tlc2.TLC processes running (workers 2, load 9 to 15); the CPU is to be re-measured in a quiet window"
+    },
+    {
+      "config": "UpdateSwitch.gateway",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 514043,
+      "measuredSeconds": 914.94,
+      "measuredCpuSeconds": 1127.05,
+      "budgetCpuSeconds": 2258,
+      "note": "holds on the 2026-11-10 head; CPU measured with one worker alone at 1-minute load 3.4 (1127.05 CPU s, 1104.51 s wall); the wall field is the earlier two-worker value"
+    },
+    {
+      "config": "UpdateSwitch.upkeep",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2178467,
+      "measuredSeconds": 67.11,
+      "measuredCpuSeconds": 137.35,
+      "budgetCpuSeconds": 278
+    },
+    {
+      "config": "UpdateSwitch.killWithoutRequest",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoKillByUpdate",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9779,
+      "measuredSeconds": 1.79,
+      "measuredCpuSeconds": 3.78,
+      "budgetCpuSeconds": 11,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.readOwnGenOnly",
+      "role": "evidence",
+      "expect": {
+        "violates": "OutputReadableAnyGen",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9541,
+      "measuredSeconds": 1.74,
+      "measuredCpuSeconds": 3.24,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "UpdateSwitch.reconcileLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReconcileOwnerDead",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10891,
+      "measuredSeconds": 1.76,
+      "measuredCpuSeconds": 3.46,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "UpdateSwitch.jobRetiring",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoNewJobWhileRetiring",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 326353,
+      "measuredSeconds": 6.98,
+      "measuredCpuSeconds": 22.14,
+      "budgetCpuSeconds": 48
+    },
+    {
+      "config": "UpdateSwitch.sweepRetiring",
+      "role": "evidence",
+      "expect": {
+        "violates": "SweepServingOnly",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10637,
+      "measuredSeconds": 1.75,
+      "measuredCpuSeconds": 3.66,
+      "budgetCpuSeconds": 11,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.pruneAll",
+      "role": "evidence",
+      "expect": {
+        "violates": "PruneBelowLive",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 203,
+      "measuredSeconds": 1.45,
+      "measuredCpuSeconds": 2.5,
+      "budgetCpuSeconds": 8,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.gwAcceptsWhileRetiring",
+      "role": "evidence",
+      "expect": {
+        "violates": "GwNoNewCallWhileRetiring",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 822343,
+      "measuredSeconds": 15.29,
+      "measuredCpuSeconds": 33.55,
+      "budgetCpuSeconds": 71,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.gwExitEarly",
+      "role": "evidence",
+      "expect": {
+        "violates": "GwNoExitWhileOwned",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2376950,
+      "measuredSeconds": 39.99,
+      "measuredCpuSeconds": 86.07,
+      "budgetCpuSeconds": 176,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.gwGraceAbort",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRequestCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2610404,
+      "measuredSeconds": 44.46,
+      "measuredCpuSeconds": 95.37,
+      "budgetCpuSeconds": 194,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.gwSilentRefuse",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRequestCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 882026,
+      "measuredSeconds": 15.3,
+      "measuredCpuSeconds": 33.4,
+      "budgetCpuSeconds": 70,
+      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "Handover",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 115968,
+      "measuredSeconds": 7.61,
+      "measuredCpuSeconds": 28.92,
+      "budgetCpuSeconds": 61,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.18 at start"
+    },
+    {
+      "config": "Handover.echoKept",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneEntryPerPrompt",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.envLost",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 251008,
+      "measuredSeconds": 13.85,
+      "measuredCpuSeconds": 55.31,
+      "budgetCpuSeconds": 114,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.45 at start"
+    },
+    {
+      "config": "Handover.envLostNoLeave",
+      "role": "evidence",
+      "expect": {
+        "violates": "EnabledKnown",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1082,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 3.02,
+      "budgetCpuSeconds": 10,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.envLostNoLeaveRefuse",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoneLeftSet",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1084,
+      "measuredSeconds": 1.41,
+      "measuredCpuSeconds": 2.99,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.moveWithDialog",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoMoveWithDialog",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 154,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.82,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.moveWithSwitch",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoMoveWithSwitch",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 194,
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 2,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.noPrintedSkip",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDuplicateOutput",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1483,
+      "measuredSeconds": 1.59,
+      "measuredCpuSeconds": 3.91,
+      "budgetCpuSeconds": 11,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.38 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.reenterWrites",
+      "role": "evidence",
+      "expect": {
+        "violates": "ModesKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1068,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 2.89,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.refuseLeavesModes",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoneLeftSet",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1154,
+      "measuredSeconds": 1.54,
+      "measuredCpuSeconds": 3.43,
+      "budgetCpuSeconds": 10,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.relay",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 115968,
+      "measuredSeconds": 7.78,
+      "measuredCpuSeconds": 30.04,
+      "budgetCpuSeconds": 64,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.08 at start"
+    },
+    {
+      "config": "Handover.restoreBeforeExec",
+      "role": "evidence",
+      "expect": {
+        "violates": "ModesKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 566,
+      "measuredSeconds": 1.42,
+      "measuredCpuSeconds": 2.85,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.retryOnExecFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneAttemptPerNewer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 477,
+      "measuredSeconds": 1.37,
+      "measuredCpuSeconds": 2.58,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "UpdateSwitch.gwRefuseNoYield",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusalYields",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 73054,
+      "measuredSeconds": 5.09,
+      "measuredCpuSeconds": 7.92,
+      "budgetCpuSeconds": 19,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 18.7 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.killDropped",
+      "role": "evidence",
+      "expect": {
+        "violates": "KillReachesOwner",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 456,
+      "measuredSeconds": 13.27,
+      "measuredCpuSeconds": 7.82,
+      "budgetCpuSeconds": 19,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 43.5 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.userStopNeverEnds",
+      "role": "evidence",
+      "expect": {
+        "violates": "StopEnds",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 750,
+      "measuredSeconds": 144.87,
+      "measuredCpuSeconds": 79.01,
+      "budgetCpuSeconds": 162,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 22.3 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.reapOtherGeneration",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReapOwnGenerationOnly",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1999,
+      "measuredSeconds": 4.68,
+      "measuredCpuSeconds": 3.09,
+      "budgetCpuSeconds": 10,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.4 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.retiringRestarts",
+      "role": "evidence",
+      "expect": {
+        "violates": "GwNoRestartRetiring",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 852,
+      "measuredSeconds": 2.95,
+      "measuredCpuSeconds": 2.85,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.8 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.sharedAcrossGenerations",
+      "role": "evidence",
+      "expect": {
+        "violates": "GenerationIsolation",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 395,
+      "measuredSeconds": 5.11,
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 187.8 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.gens",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 5794288,
+      "measuredSeconds": 1917.33,
+      "measuredCpuSeconds": 1985.9,
+      "budgetCpuSeconds": 3975,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 38.6 at start (above the gate 15): re-measure in the quiet window; tier deep by choice: 5794288 states and about 1986 CPU seconds do not fit the every-run budget"
+    },
+    {
+      "config": "RunLock",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 25890,
+      "measuredSeconds": 1.63,
+      "measuredCpuSeconds": 2.52,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "RunLock.twoHeavies",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 15964,
+      "measuredSeconds": 1.53,
+      "measuredCpuSeconds": 2.17,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RunLock.nested",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 17237,
+      "measuredSeconds": 1.51,
+      "measuredCpuSeconds": 2.33,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RunLock.oneShot",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 112,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.wait",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1046,
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 1.74,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.noLightCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 39,
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.47,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.noHeavyScan",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 39,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.48,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.checkFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 52,
+      "measuredSeconds": 1.17,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.staleIsLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusedHasCause",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 70,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.4,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.crashKeeps",
+      "role": "evidence",
+      "expect": {
+        "violates": "DeadHoldsNothing",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 8,
+      "measuredSeconds": 1.12,
+      "measuredCpuSeconds": 1.44,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.orphan",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAloneIncludingChildren",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 279,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.63,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.orphanLimit",
+      "role": "evidence",
+      "expect": {
+        "violates": "ChildRunsUnderHolder",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 59,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.52,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.heavyUnderLight",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAloneIncludingChildren",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1018,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.94,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.bothRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "NotBothRefused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 87,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.lightsOverlap",
+      "role": "evidence",
+      "expect": {
+        "violates": "LightsExclusive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 50,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.63,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.childRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoChildRefused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 34,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.46,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.retryRuns",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetryNeverRuns",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 219,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.unboundedWait",
+      "role": "evidence",
+      "expect": {
+        "violates": "Termination",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 125,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
     }
   ]
 }

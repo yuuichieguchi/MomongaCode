@@ -913,6 +913,13 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const GENERATION_OWNERSHIP = `
+ALTER TABLE runs ADD COLUMN lease_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN owner_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN kill_requested_at INTEGER;
+ALTER TABLE jobs ADD COLUMN output_path TEXT;
+`;
+
 const STORE_COMPATIBILITY = `
 CREATE TABLE store_compat (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1031,6 +1038,49 @@ CREATE TRIGGER runs_cancelling_has_cancel_origin_update BEFORE UPDATE OF status,
 END;
 `;
 
+const SESSIONS_MODE_MANUAL = `
+CREATE TABLE sessions_manual (
+  id TEXT PRIMARY KEY,
+  cwd TEXT NOT NULL,
+  env_json TEXT NOT NULL,
+  permission_mode TEXT NOT NULL CHECK (permission_mode IN ('manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions')),
+  model_alias TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  bypass_allowed INTEGER NOT NULL DEFAULT 0 CHECK (bypass_allowed IN (0, 1)),
+  additional_directories_json TEXT NOT NULL DEFAULT '[]',
+  mcp_servers_json TEXT NOT NULL DEFAULT '{}'
+);
+INSERT INTO sessions_manual (rowid, id, cwd, env_json, permission_mode, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json)
+  SELECT rowid, id, cwd, env_json, CASE permission_mode WHEN 'default' THEN 'manual' ELSE permission_mode END, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json
+  FROM sessions ORDER BY rowid;
+DROP TABLE sessions;
+ALTER TABLE sessions_manual RENAME TO sessions;
+CREATE INDEX sessions_by_cwd ON sessions (cwd, created_at);
+CREATE TRIGGER search_docs_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM search_docs WHERE session_id = OLD.id;
+END;
+CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM fidelity_verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_id = OLD.id);
+END;
+`;
+
+const RUN_INBOX = `
+CREATE TABLE run_inbox (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  delivery TEXT NOT NULL CHECK (delivery IN ('steer', 'queue')),
+  text TEXT NOT NULL,
+  attachments TEXT NOT NULL DEFAULT '[]',
+  seq INTEGER NOT NULL CHECK (seq >= 1),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'withdrawn')),
+  created_at INTEGER NOT NULL,
+  settled_at INTEGER,
+  UNIQUE (session_id, seq),
+  CHECK ((state = 'pending') = (settled_at IS NULL))
+);
+CREATE INDEX run_inbox_pending ON run_inbox (session_id, seq) WHERE state = 'pending';
+`;
+
 const MODEL_BY_ITS_OWN_NAME = `
 ALTER TABLE sessions RENAME COLUMN model_alias TO model;
 ALTER TABLE run_facts RENAME COLUMN model_alias TO model;
@@ -1038,7 +1088,7 @@ UPDATE facts_cursor SET definitions_version = 0, after_event_id = 0 WHERE id = 1
 `;
 
 const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
-  version: 30,
+  version: 33,
   name: 'call the model of a session and of a run by its own name',
   sql: MODEL_BY_ITS_OWN_NAME,
 };
@@ -1109,6 +1159,22 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'widen the runs.stop_reason CHECK list to every stop reason, usage_limit and conditions_unmet included, by rebuilding runs with its indexes and triggers and re-creating the sessions trigger that reads runs',
     sql: RUNS_STOP_REASONS_WIDENED,
     rebuildsReferencedTable: true,
+  },
+  {
+    version: 30,
+    name: 'record the generation that holds a run lease, and for a background job the generation that owns it, the time a kill was requested and the file its owner writes the output to',
+    sql: GENERATION_OWNERSHIP,
+  },
+  {
+    version: 31,
+    name: "name the asking mode manual: rebuild sessions with a permission_mode CHECK list that holds 'manual' in place of 'default', rewrite each stored 'default' to 'manual', and re-create the index and the two triggers of sessions",
+    sql: SESSIONS_MODE_MANUAL,
+    rebuildsReferencedTable: true,
+  },
+  {
+    version: 32,
+    name: 'hold the messages typed while a run works in run_inbox, each to steer the run or queued as the next run, pending until delivered or withdrawn',
+    sql: RUN_INBOX,
   },
   MODEL_BY_ITS_OWN_NAME_MIGRATION,
 ];

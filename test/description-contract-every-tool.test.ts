@@ -33,7 +33,7 @@ const snapshotOf = async (tools: readonly AnyTool[]): Promise<ToolSet> => {
 };
 
 const offeredFrom = (set: ToolSet, concise?: boolean): Map<string, FunctionTool> => {
-  const options = concise === undefined ? { mode: 'default' as const, rules: [] } : { mode: 'default' as const, rules: [], conciseDescriptions: concise };
+  const options = concise === undefined ? { mode: 'manual' as const, rules: [] } : { mode: 'manual' as const, rules: [], conciseDescriptions: concise };
   return new Map(set.forModel(options).map((tool) => [tool.name, tool]));
 };
 

@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, prepareGenerationForTest, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -22,6 +22,7 @@ import type { ModelSpec } from '@momonga/testkit';
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 export const HARNESS_CLOSE_BOUND_MS = 2_000_000;
 export const TEST_VERSION = '9.9.9-test';
+export const HARNESS_GENERATION = 1;
 
 export type CapturedLog = {
   readonly logger: JsonLogger;
@@ -412,6 +413,7 @@ export type Harness = {
   readonly markers: { ports: Required<MarkerPorts>; calls: MarkerCalls };
   readonly order: string[];
   readonly supervisor: SupervisorProcess;
+  readonly successorLaunches: number[];
   health(): SupervisorHealth;
   child(role: ChildRole): SupervisorHealth['children'][number];
   waitForState(role: ChildRole, state: string, maxMs?: number): Promise<void>;
@@ -421,7 +423,8 @@ export type HarnessOptions = {
   settings?: unknown;
   settingsText?: string;
   markerPorts?: MarkerPorts;
-  overrides?: Partial<Omit<SupervisorOptions, 'spawn' | 'home' | 'version' | 'launcher' | 'clock' | 'timers' | 'logger' | 'stdout' | 'markerPorts'>> & {
+  generation?: number;
+  overrides?: Partial<Omit<SupervisorOptions, 'spawn' | 'home' | 'version' | 'generation' | 'launcher' | 'clock' | 'timers' | 'logger' | 'stdout' | 'markerPorts'>> & {
     launcher?: SupervisorOptions['launcher'];
   };
   home?: string;
@@ -441,7 +444,10 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   const paths = momongaPaths(home);
   if (options.settingsText !== undefined) writeSettingsText(home, options.settingsText);
   else writeSettings(home, options.settings ?? validSettings());
+  const generation = options.generation ?? HARNESS_GENERATION;
+  prepareGenerationForTest(home, generation, TEST_VERSION);
   options.prepare?.(home, paths);
+  const successorLaunches: number[] = [];
   const realWork = createRealWorkScope();
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
@@ -456,6 +462,15 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
   const started = await realWork.run(() => startSupervisor({
     home,
     version: TEST_VERSION,
+    generation,
+    childCounts: async () => ({}),
+    successorLauncher: {
+      launch: (successor) => {
+        successorLaunches.push(successor);
+        order.push(`successor:${successor}`);
+        return { pid: undefined };
+      },
+    },
     launcher: options.overrides?.launcher ?? fakeLauncher,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
@@ -496,6 +511,7 @@ export const startHarness = async (context: CleanupContext, options: HarnessOpti
     markers,
     order,
     supervisor,
+    successorLaunches,
     health,
     child,
     waitForState: async (role, state, maxMs = 120_000) => {

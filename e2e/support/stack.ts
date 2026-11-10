@@ -48,6 +48,7 @@ export type StackTarget = { readonly capabilities?: StackTargetCapabilities; rea
 
 export type StartStackOptions = {
   home: E2eHome;
+  preparedGeneration?: number;
   needsBash?: boolean;
   sandbox?: StackSandbox;
   settings?: Readonly<Record<string, unknown>>;
@@ -77,7 +78,7 @@ export type SpawnedSupervisor = {
   exited: Promise<SupervisorExit>;
 };
 
-export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string };
+export type SpawnSupervisorOptions = { home: E2eHome; deps?: E2eDeps; stackNumber?: number; script?: string; version?: string; generation?: number };
 
 export type E2eStack = {
   readonly home: E2eHome;
@@ -194,7 +195,7 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number,
   return file;
 };
 
-export const supervisorArgv = (home: E2eHome): string[] => [`--home=${home.home}`, '--log-target=file'];
+export const supervisorArgv = (home: E2eHome, generation?: number): string[] => [`--home=${home.home}`, '--log-target=file', ...(generation === undefined ? [] : [`--generation=${generation}`])];
 
 export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> =>
   productTestEnv({
@@ -215,10 +216,10 @@ const trimToUtf8Boundary = (bytes: Buffer): Buffer => {
 const describeExit = (exit: SupervisorExit): string => `code ${exit.code}, signal ${exit.signal}`;
 
 export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervisor => {
-  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version } = options;
+  const { home, deps = DEFAULT_E2E_DEPS, stackNumber = 1, script = SUPERVISOR_MAIN_PATH, version, generation } = options;
   const depsFile = writeDepsFile(home, deps, stackNumber, version);
   const env = supervisorEnv(home, depsFile);
-  const child = spawn(process.execPath, [script, ...supervisorArgv(home)], {
+  const child = spawn(process.execPath, [script, ...supervisorArgv(home, generation)], {
     env,
     cwd: home.root,
     detached: true,
@@ -339,7 +340,14 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
   writeSettingsFile(home, settingsOf(home, choice.kind, options));
   const deadline = Date.now() + (options.readinessDeadlineMs ?? e2eStartBoundMs(deps));
   const remainingMs = (): number => Math.max(0, deadline - Date.now());
-  const supervisor = spawnSupervisor({ home, deps, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }), ...(options.version === undefined ? {} : { version: options.version }) });
+  const supervisor = spawnSupervisor({
+    home,
+    deps,
+    stackNumber: 1,
+    ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }),
+    ...(options.version === undefined ? {} : { version: options.version }),
+    ...(options.preparedGeneration === undefined ? {} : { generation: options.preparedGeneration }),
+  });
   const ready = await supervisor.ready(remainingMs());
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());

@@ -4,8 +4,9 @@ import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation
 import type { ManagedInstancePaths, MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import { displayMapOf, modelRefErrorOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
-import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { withinCommandLimit } from '../command-limit.ts';
+import { restartGeneration } from '../daemon/ensure-daemon.ts';
+import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { withOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -44,12 +45,13 @@ export const probeSubjectOf = (models: ResolvedModels, text: string): ProbeSubje
 
 export const cliProbeInstance = (paths: MomongaPaths, provider: string): ManagedInstancePaths => managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider });
 
-const restartDaemon = async (ports: CliPorts, paths: MomongaPaths): Promise<void> => {
-  const { stopped } = await stopDaemon(ports, paths, undefined, stderrStopNotice(ports));
-  if (stopped) {
-    await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
-    ports.stdout.write('restarted the daemon so that the gateway reads the record\n');
-  }
+export const RESTART_STARTED_TEXT = (version: string): string => `started a new daemon (v${version}) so that the gateway reads the record; work in the old one keeps running.`;
+
+export const RESTART_NOTHING_SERVING_TEXT = 'no daemon is running; the record is read when it starts.';
+
+export const restartDaemon = async (ports: Pick<CliPorts, 'stdout'> & DaemonPorts, paths: MomongaPaths, options: Parameters<typeof restartGeneration>[2] = {}): Promise<void> => {
+  const outcome = await restartGeneration(ports, paths, options);
+  ports.stdout.write(`${outcome.kind === 'started' ? RESTART_STARTED_TEXT(outcome.version) : RESTART_NOTHING_SERVING_TEXT}\n`);
 };
 
 export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: string, options: ProbeOptions): Promise<number> => {
@@ -62,7 +64,8 @@ export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: str
 };
 
 const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsModel, interrupt: AbortSignal): Promise<string | undefined> => {
-  if (target.apiKeySecret !== undefined) return ports.secretStore().read(target.apiKeySecret, interrupt);
+  const { apiKeySecret } = target;
+  if (apiKeySecret !== undefined) return withinCommandLimit(interrupt, (signal) => ports.secretStore().read(apiKeySecret, signal));
   if (target.apiKeyEnv === undefined) return undefined;
   const value = ports.env[target.apiKeyEnv];
   if (value === undefined || value === '') throw new Error(`the environment variable ${target.apiKeyEnv} is unset or empty, so the model cannot be probed`);

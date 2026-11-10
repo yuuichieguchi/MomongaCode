@@ -26,7 +26,7 @@ const RECORD_KEY = `chatgpt/${ACCOUNT}`;
 const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home) as unknown as { planCatalog: string }).planCatalog;
 
 const readRecord = async (gateway: PlanGateway): Promise<any> => {
-  const raw = await createFileCredentialStore(catalogDirectory(gateway)).read(RECORD_KEY);
+  const raw = await createFileCredentialStore(catalogDirectory(gateway)).read(RECORD_KEY, new AbortController().signal);
   return raw === undefined ? undefined : JSON.parse(raw);
 };
 
@@ -101,7 +101,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     await signIn(gateway);
     await gateway.get(modelsRoute());
     const record = await readRecord(gateway);
-    await createFileCredentialStore(catalogDirectory(gateway)).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }));
+    await createFileCredentialStore(catalogDirectory(gateway)).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }), new AbortController().signal);
     await gateway.get(modelsRoute());
     expect(listReads(gateway)).toBe(2);
     await gateway.close();

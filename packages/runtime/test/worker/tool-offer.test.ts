@@ -63,7 +63,7 @@ const sorted = (names: Iterable<string>): string[] => [...names].sort();
 describe('the offer without deferral', () => {
   it('is the visible list unchanged when the run pinned no deferred set', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: undefined, loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -73,7 +73,7 @@ describe('the offer without deferral', () => {
 
   it('offers no loader when the pinned deferred set is empty', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: [], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -85,7 +85,7 @@ describe('the offer without deferral', () => {
 describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
   it('withholds the deferred tools and offers LoadTools at its comparator place among the others', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -96,7 +96,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
 
   it('gives LoadTools an array of names whose enum is the catalog', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
     const loader = loaderOf(offer.tools);
@@ -109,7 +109,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
 
   it('describes each catalog tool on one line, as its name and the first line of its description', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
     const lines = (loaderOf(offer.tools)?.description ?? '').split('\n');
@@ -122,7 +122,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
 
   it('appends loaded definitions after the whole first list in load order, keeps the full catalog and the loader', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
     const definitionOf = (name: string) => visible.find((tool) => tool.name === name);
 
     const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma', 'Beta'], keepCompanionsWithoutHost: false, required: new Set<string>() });
@@ -136,7 +136,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
 
   it('offers a loaded tool only while the snapshot still holds it (4.6)', async () => {
     const toolSet = await toolSetOf([ALPHA, BETA, READ_OUTPUT]);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma'], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -148,7 +148,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
 describe('what is never deferred (5.4)', () => {
   it('keeps an essential tool such as ReadOutput offered even when the pin lists it (T3-4)', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: ['ReadOutput'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -158,7 +158,7 @@ describe('what is never deferred (5.4)', () => {
 
   it('never lists the loader in its own catalog', async () => {
     const toolSet = await toolSetOf(UNIVERSE);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
 
     const offer = offerFor({ toolSet, visible, deferred: [LOAD_TOOLS_TOOL_NAME, 'Gamma'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
@@ -180,7 +180,7 @@ describe('what is never deferred (5.4)', () => {
 describe('a companion follows its host (5.4)', () => {
   const companionCase = async (deferred: readonly string[], loaded: readonly string[], keepCompanionsWithoutHost: boolean) => {
     const toolSet = await toolSetOf([ALPHA, HOST, SIDE]);
-    const visible = toolSet.forModel({ mode: 'default', rules: [] });
+    const visible = toolSet.forModel({ mode: 'manual', rules: [] });
     return offerFor({ toolSet, visible, deferred, loaded, keepCompanionsWithoutHost, required: new Set<string>() });
   };
 
@@ -213,7 +213,7 @@ describe('a companion follows its host (5.4)', () => {
 });
 
 describe('T3-3 for child runs, by exhaustive enumeration', () => {
-  const MODES: readonly PermissionMode[] = ['default', 'plan'];
+  const MODES: readonly PermissionMode[] = ['manual', 'plan'];
   const NAMES = UNIVERSE.map((spec) => spec.name);
   const ESSENTIAL = new Set(['ReadOutput']);
 

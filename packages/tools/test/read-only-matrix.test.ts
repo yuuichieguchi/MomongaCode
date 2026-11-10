@@ -46,7 +46,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     return decide({
       tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
       subject,
-      mode: 'default',
+      mode: 'manual',
       rules: [],
       roots,
       home,

@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runView } from './fake-backend.ts';
-import { KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
+import { KEYS, untilFrame, untilOutput, withoutLinks } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
 import { frame, runStarted } from './tui-harness.tsx';
 import { authLogout } from '../src/commands/auth.ts';
-import { AUTHORIZATION_URL, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, fakePlanBackend, quiet, rowNumberOf, startPlan, submitLine } from './fake-plan-gateway.tsx';
+import { AUTHORIZATION_URL, LISTENER_PORT, PLAN_TEST_TIMEOUT_MS, account, choose, eventually, fakePlanBackend, quiet, rowNumberOf, startPlan, submitLine, untilRow } from './fake-plan-gateway.tsx';
 import type { FakePlanBackend } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 const SENTENCE ='Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
 
 const ready = async (app: Instance): Promise<void> => {
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
 };
 
 const routesOf = (backend: FakePlanBackend): string[] => backend.planCalls.map((call) => call.route);
@@ -117,7 +117,7 @@ describe('the account picker and a new sign-in', () => {
     await choose(app, 'Add another account or workspace');
     await untilFrame(app, 'chatgpt-2');
     app.stdin.write(KEYS.enter);
-    const sentence = await untilFrame(app, SENTENCE);
+    const sentence = await untilRow(app, 'Continue with ChatGPT', SENTENCE);
     expect(sentence).toContain('Continue with ChatGPT');
     await choose(app, 'Continue with ChatGPT');
     await eventually(() => routesOf(backend).includes('sign-in/complete'), 'the sign-in completion');
@@ -212,7 +212,7 @@ describe('a command and the TUI print the same sign-out lines (P-C8)', () => {
     await quiet();
     app.stdin.write(KEYS.enter);
     await eventually(() => routesOf(backend).includes('sign-out'), 'the sign-out');
-    const output = await untilOutput(app, lines[1]);
+    const output = withoutLinks(await untilOutput(app, (shown) => withoutLinks(shown).includes(lines[1])));
     expect(output).toContain(lines[0]);
     app.unmount();
   });
@@ -330,7 +330,7 @@ describe('plan errors in the transcript', () => {
     await ready(app);
     await runStarted(backend, app, 'go');
     backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
-    const block = await untilFrame(app, "Review your plan or this app's limit in ChatGPT settings.");
+    const block = await untilRow(app, 'Manage usage', "Review your plan or this app's limit in ChatGPT settings.");
     const limit = block.indexOf('Usage limit reached');
     expect(limit).toBeGreaterThan(-1);
     expect(block.lastIndexOf('ChatGPT', limit)).toBeGreaterThan(-1);

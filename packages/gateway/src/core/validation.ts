@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import type { UnknownFields } from './unknown-fields.ts';
@@ -298,7 +298,7 @@ const requireExactModelFlag = (momonga: SchemaObject): void => {
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'exact_model'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model'], ['momonga']);
   requireExactModelFlag(momonga);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
@@ -311,6 +311,10 @@ const validateCompactMomonga = (value: unknown): void => {
   const guideline = momonga['guideline'];
   if (guideline !== undefined && (typeof guideline !== 'string' || tokensForText(guideline) > MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'guideline'], message: `must be a string of at most ${MIN_SUMMARY_TOKENS} estimated tokens` });
+  }
+  const instructions = momonga['instructions'];
+  if (instructions !== undefined && (typeof instructions !== 'string' || instructions.length === 0 || instructions.length > PROMPT_TEXT_MAX_CHARS)) {
+    throwIssue({ segments: ['momonga', 'instructions'], message: `must be a string of 1 to ${PROMPT_TEXT_MAX_CHARS} characters` });
   }
 };
 

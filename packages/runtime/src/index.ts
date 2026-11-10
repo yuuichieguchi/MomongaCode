@@ -1,5 +1,6 @@
 export { ConfigError } from '@momonga/config';
 export { buildSystemPrompt } from './system-prompt.ts';
+export { INIT_INSTRUCTION } from './prompts/init.ts';
 export { AUTO_CLASSIFIER_CODE } from './worker/auto-classifier.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
@@ -7,6 +8,9 @@ export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOpt
 export type {
   AgentSpanInput,
   AgentCatalogPort,
+  AttachTerms,
+  UserInputPort,
+  UserShellIo,
   AgentsPort,
   AppendedRule,
   Clock,
@@ -52,7 +56,7 @@ export type {
   ServiceTimers,
   SessionCreateSettings,
 } from './service/index.ts';
-export { GatewayRequestError, MODEL_NOT_FOUND_CODE, ModelUnlistedError, createGatewayClient, gatewayListingOf, gatewayModelIn, isModelNotFound } from './gateway-client.ts';
+export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, MODEL_NOT_FOUND_CODE, ModelUnlistedError, createGatewayClient, gatewayListingOf, gatewayModelIn, isGatewayNeverReached, isGenerationRetiredRefusal, isModelNotFound } from './gateway-client.ts';
 export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayListing, GatewayModel, GatewayRequestErrorFields, ListedChainMember, ListedGatewayModel } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
@@ -71,7 +75,7 @@ export type { SessionStates, SessionStatesOptions } from './process/session-stat
 export { createSettingsComposition } from './process/settings-port.ts';
 export type { SettingsComposition, SettingsCompositionOptions, UserSnapshot } from './process/settings-port.ts';
 export { createPolicyFor, createRecoveryContextFor } from './process/tool-policy.ts';
-export { createPolicyFilesystem } from '@momonga/tools';
+export { createPolicyFilesystem, listFileCandidates } from '@momonga/tools';
 export type { PolicyForOptions } from './process/tool-policy.ts';
 export { createMemoryPort } from './process/memory-port.ts';
 export type { MemoryPortOptions } from './process/memory-port.ts';
@@ -115,3 +119,5 @@ export { startRuntimeProcess } from './process/start-runtime-process.ts';
 export type { BundledRipgrepSource } from './process/start-runtime-process.ts';
 export type { RuntimeCloseResult, RuntimeProcess, StartRuntimeProcessOptions } from './process/start-runtime-process.ts';
 export { RUNTIME_ENTRY_FLAGS, runRuntimeEntry } from './process/entry.ts';
+export { createUserInputPort } from './process/user-input.ts';
+export type { UserInputOptions } from './process/user-input.ts';

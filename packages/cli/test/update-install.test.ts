@@ -46,7 +46,7 @@ describe('momonga update: a good update', () => {
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
     expect(fs.statSync(harness.target).mode & 0o777).toBe(0o755);
     expect(harness.directoryEntries()).toEqual(['momonga']);
-    expect(harness.stdout.join('')).toBe(`updated momonga 1.0.0 -> 2.0.0 (${harness.target})\n`);
+    expect(harness.stdout.join('')).toBe(`updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. No daemon was running; the next command starts v2.0.0.\n`);
     expect(harness.released.count).toBe(1);
   });
 
@@ -419,7 +419,20 @@ describe('momonga update: the daemon after the update', () => {
     expect(restart?.file).toBe(harness.target);
     expect(restart?.args).toEqual(['daemon', 'start']);
     expect(restart?.targetContent).toBe(NEW_BINARY.toString());
-    expect(harness.stdout.join('')).toContain('restarted the daemon on the new version');
+    expect(harness.stdout.join('')).toBe(`updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. The daemon is running the new version.\n`);
+  });
+
+  it('says what finishes in the background when work of older generations is running (20.72)', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.daemonRunning = true;
+    harness.control.retiring = { steps: 2, jobs: 1, versions: ['0.9.0', '1.0.0'] };
+    publish(harness);
+
+    await update(harness);
+
+    expect(harness.stdout.join('')).toBe(
+      `updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. The daemon is running the new version now. 2 running steps and 1 background jobs of v0.9.0, 1.0.0 finish in the background; nothing is interrupted.\n`,
+    );
   });
 
   it('lets the interrupt stop the signature check, the candidate check and the restart, and bounds the restart', async (context) => {
@@ -441,7 +454,7 @@ describe('momonga update: the daemon after the update', () => {
     await update(harness);
 
     expect(harness.runs.some((call) => call.args[0] === 'daemon')).toBe(false);
-    expect(harness.stdout.join('')).not.toContain('daemon');
+    expect(harness.stdout.join('')).toBe(`updated momonga 1.0.0 -> 2.0.0 (${harness.target})\nUpdated to v2.0.0. No daemon was running; the next command starts v2.0.0.\n`);
   });
 
   it('reports a daemon that fails to restart while the new binary stays installed', async (context) => {
@@ -452,6 +465,7 @@ describe('momonga update: the daemon after the update', () => {
 
     const error = await expectRejected(harness, 'daemon_restart_failed');
 
+    expect(error.message).toBe('The new daemon (v2.0.0) did not start (exit code 1); v1.0.0 keeps running.');
     expect(error.detail).toBe('supervisor exited');
     expect(error.remediation).toBe('run `momonga daemon start`');
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);

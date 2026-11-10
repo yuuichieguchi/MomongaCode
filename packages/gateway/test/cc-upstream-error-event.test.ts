@@ -36,7 +36,7 @@ const startFmStyleUpstream = async (errorBody: unknown): Promise<FakeUpstreamSer
 };
 
 const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
-  const endpoint = { kind: 'unix' as const, socketPath: upstream.socketPath };
+  const endpoint = { kind: 'unix' as const, path: upstream.socketPath };
   const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => endpoint,

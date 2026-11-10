@@ -63,12 +63,21 @@ export type BackgroundJobStart = {
 
 export type BackgroundJobRead = { job: JobView; output: string };
 
+export type BackgroundJobKill = { view: JobView; kill: 'stopped' | 'requested' };
+
+export class RetiringYield extends Error {
+  constructor() {
+    super('this generation is retiring and starts no new work; the run is yielded to the serving generation');
+    this.name = 'RetiringYield';
+  }
+}
+
 export type BackgroundJobs = {
   start(request: BackgroundJobStart): Promise<{ jobId: string }>;
   byCall(callKey: string): JobView | undefined;
   status(runId: string, jobId: string): JobView;
   read(runId: string, jobId: string, options: { call: string; filter?: RegExp }): Promise<BackgroundJobRead>;
-  kill(runId: string, jobId: string): Promise<JobView>;
+  kill(runId: string, jobId: string): Promise<BackgroundJobKill>;
 };
 
 export type AutoClassifierRequest = {

@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { PublicRunEvent } from '@momonga/protocol';
 import { createMapperState, mapChildEvent, mapRunEvent } from '../src/acp/events.ts';
 import type { ClientFeatures, Phase } from '../src/acp/events.ts';
-import { initialTranscript, reduceEvent } from '../src/tui/transcript.ts';
+import { fold } from './tui/screen-fakes.ts';
 import { frameOf } from './acp-harness.ts';
 import type { EventPayload } from './acp-harness.ts';
 
@@ -26,16 +25,14 @@ describe('ACP mapping of the token events', () => {
   });
 });
 
-const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, createdAt: 1 } as const;
-
 describe('the TUI transcript of the token events', () => {
   it('renders tool.loaded as one info entry naming the tools in load order', () => {
-    const state = reduceEvent(initialTranscript, { ...envelope, type: 'tool.loaded', names: ['Grep', 'Glob'] } as unknown as PublicRunEvent);
+    const state = fold([{ type: 'tool.loaded', names: ['Grep', 'Glob'] }]);
     expect(state.entries).toEqual([{ kind: 'info', text: 'tools loaded: Grep, Glob' }]);
   });
 
   it('adds no entry for loop.warned, whose notice carries the message', () => {
-    const state = reduceEvent(initialTranscript, { ...envelope, type: 'loop.warned', signature: 'sig-1' } as unknown as PublicRunEvent);
+    const state = fold([{ type: 'loop.warned', signature: 'sig-1' }]);
     expect(state.entries).toEqual([]);
   });
 });

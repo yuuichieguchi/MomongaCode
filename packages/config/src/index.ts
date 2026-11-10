@@ -43,7 +43,11 @@ export type { AutoFitFailedBound, AutoFitKey, AutoFitKeyResult, AutoFitMeasureme
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
-export { MODEL_ROLES } from './settings-schema.ts';
+export { MODEL_ROLES, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_THEMES } from './settings-schema.ts';
+export { editSettings, readSettingsSnapshot } from './edit-settings.ts';
+export type { EditSettingsOptions, SettingsLayer, SettingsLayerView, SettingsOperation, SettingsPath, SettingsPlace, SettingsSnapshot } from './edit-settings.ts';
+export { writeTuiSetting } from './tui-settings.ts';
+export { defaultTuiSettings } from './settings.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
@@ -52,12 +56,12 @@ export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, planA
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
-export { registeredIds, registeredServer, registeredServers, serverRegistryOf } from './server-registry.ts';
+export { firstOfferedEndpointForm, registeredIds, registeredServer, registeredServers, requireOfferedEndpointForm, serverRegistryOf } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
-export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
+export { mcpServerNameProblem, assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
@@ -125,6 +129,11 @@ export type {
   ResolvedTelemetrySettings,
   TelemetrySettings,
   GatewaySettings,
+  ResolvedTuiSettings,
+  TuiNotify,
+  TuiScreen,
+  TuiSettings,
+  TuiTheme,
   NetworkSettings,
 } from './settings.ts';
 export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';

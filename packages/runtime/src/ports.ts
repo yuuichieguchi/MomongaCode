@@ -17,7 +17,8 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, UserCommandOutcome, WorkTreeObserver } from '@momonga/tools';
+import type { AttachedMentions } from '@momonga/context';
 
 export type { Clock };
 
@@ -52,8 +53,17 @@ export type SettingsPort = {
   context(session: Session): Promise<ResolvedContextSettings>;
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
-  appendRule(session: Session, entry: AppendedRule): Promise<void>;
+  appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
   trusted(session: Session): boolean;
+};
+
+export type AttachTerms = { ceiling: number; imageInput: boolean; signal: AbortSignal };
+
+export type UserShellIo = { signal: AbortSignal; onOutput(text: string): void };
+
+export type UserInputPort = {
+  attach(session: Session, text: string, terms: AttachTerms): Promise<AttachedMentions>;
+  shell(session: Session, command: string, io: UserShellIo): Promise<UserCommandOutcome>;
 };
 
 export type SkillsPort = {

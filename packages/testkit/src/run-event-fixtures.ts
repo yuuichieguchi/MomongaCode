@@ -286,7 +286,7 @@ const inheritedHistory: InheritedPayload['history'] = [
 ];
 
 const inheritedDigest = (history: InheritedPayload['history'], nextItemSeq: number): string =>
-  sha256Hex(canonicalJson({ history, nextItemSeq, summary: null, evicted: [], mode: 'default' }));
+  sha256Hex(canonicalJson({ history, nextItemSeq, summary: null, evicted: [], mode: 'manual' }));
 
 export const inheritedRun: RecordedRun = {
   name: 'inherited context',
@@ -302,11 +302,11 @@ export const inheritedRun: RecordedRun = {
       evicted: [],
       closures: [{ callId: 'c0', seq: 3, effect: 'not_executed', announced: true }],
       markers: [{ seq: 4, kind: 'interrupted' }],
-      fromMode: 'default',
-      mode: 'default',
+      fromMode: 'manual',
+      mode: 'manual',
       digest: inheritedDigest(inheritedHistory, 5),
     },
-    { type: 'run.started', attempt: 1, now: 1_700_000_000_001, pins: { model: 'fm' }, mode: 'default' },
+    { type: 'run.started', attempt: 1, now: 1_700_000_000_001, pins: { model: 'fm' }, mode: 'manual' },
     { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { input: 'inherited + now read b.txt' } },
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantText('m1', 'b says hi')], usage: usage(40, 4) } },
     { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' },

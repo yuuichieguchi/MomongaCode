@@ -24,11 +24,11 @@ const bareAt = (directory: string, head: string | { link: string } | 'dir' = 're
 const gitAt = (directory: string): void => bareAt(path.join(directory, '.git'));
 
 const asks = (command: string, extra: Extra = {}): void => {
-  expect(kindIn(commandRow(command, extra), 'default')).toBe('ask');
+  expect(kindIn(commandRow(command, extra), 'manual')).toBe('ask');
 };
 
 const allows = (command: string, extra: Extra = {}): void => {
-  expect(kindIn(commandRow(command, extra), 'default')).toBe('allow');
+  expect(kindIn(commandRow(command, extra), 'manual')).toBe('allow');
 };
 
 const withPrograms = (programs: Record<string, string>): Record<string, string> => ({ ls: '/bin/ls', ...programs });
@@ -204,7 +204,7 @@ describe('mutation rows', () => {
   });
 
   it('removes-cont: rm -rf .. from a root removes the workspace', () => {
-    expect(decideRow(commandRow('rm -rf ..', { rules: [['allow', 'Bash(rm:*)']] }), 'default').reason).toContain('removes the workspace');
+    expect(decideRow(commandRow('rm -rf ..', { rules: [['allow', 'Bash(rm:*)']] }), 'manual').reason).toContain('removes the workspace');
   });
 
   it('unknown-dir: cd; ls with home inside the roots asks', () => asks('cd; ls', { roots: (layout) => [layout.project, layout.home] }));

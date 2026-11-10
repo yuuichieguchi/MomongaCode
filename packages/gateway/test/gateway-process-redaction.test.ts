@@ -5,9 +5,9 @@ import { DEFAULT_STOP_VALUES, createJsonLogger, gatewayMaxCloseMs, createUdsClie
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, modelsOf } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import {
   REDACTED,
@@ -65,18 +65,19 @@ const startKeyedStack = async (
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', routes: [{ match: () => true, reply }] });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: modelsOf({ primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   const log = captureLog();
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: options.keyValue ?? TEST_API_KEY }),
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   let closed = false;
   registerCleanup(
     context,
@@ -301,11 +302,12 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     return killGroupsForCleanup(pids);
   });
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   await placeFakeFm(home, fm.binaryPath);
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { [TEST_API_KEY_ENV]: TEST_API_KEY }),
@@ -314,7 +316,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     ...(options.execWithStdin === undefined ? {} : { execWithStdin: options.execWithStdin }),
     stdout: { write: () => true },
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: captureLog() }),
-  });
+  }));
   registerCleanup(
     context,
     async () => {

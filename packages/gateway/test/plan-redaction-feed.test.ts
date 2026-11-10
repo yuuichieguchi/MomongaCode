@@ -83,8 +83,8 @@ describe('the plan feeder sets one key per account: current, previous and live o
     toRefreshWindow(h, START_MS);
     await source(h).read(signal());
     expect(sets).toHaveBeenCalledTimes(1);
-    await source(h).pause({ code: PAUSE_CODE });
-    await source(h).resume();
+    await source(h).pause({ code: PAUSE_CODE }, new AbortController().signal);
+    await source(h).resume(new AbortController().signal);
     expect(sets).toHaveBeenCalledTimes(1);
   });
 
@@ -113,7 +113,7 @@ describe('the plan feeder sets one key per account: current, previous and live o
     const installed = await tokensOf(h);
     h.fed.clear();
     await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
-    await h.sessions.load({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.load({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect(sorted(fedOf(h))).toEqual(sorted(installed));
   });
 

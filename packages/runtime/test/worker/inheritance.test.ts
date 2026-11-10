@@ -23,7 +23,7 @@ const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
 const echo = (callId: string, value: string) => ({ callId, name: 'Echo', args: { value } });
 
-const startedPayload = (): RunEventPayload => ({ type: 'run.started', attempt: 1, now: 0, pins: {}, mode: 'default' });
+const startedPayload = (): RunEventPayload => ({ type: 'run.started', attempt: 1, now: 0, pins: {}, mode: 'manual' });
 
 const requestedPayload = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: MODEL_ID, input: 'seed' } });
 
@@ -359,8 +359,8 @@ describe('first claim CANCELLING', () => {
     expect(env.run(second.id).status).toBe('CANCELLED');
     const inherited = inheritedEventOf(env, second.id);
     expect(env.ofType(second.id, 'run.started')).toEqual([]);
-    expect(inherited.mode).toBe('default');
-    expect(env.fold(second.id).mode).toBe('default');
+    expect(inherited.mode).toBe('manual');
+    expect(env.fold(second.id).mode).toBe('manual');
 
     const third = await nextRun(env, 'Third');
 
