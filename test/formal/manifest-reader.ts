@@ -48,9 +48,11 @@ export type TlcRunOptions = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const fail = (where: string, expectation: string): never => {
-  throw new Error(`the TLA manifest is invalid: ${where} must be ${expectation}`);
+const refuse = (where: string, rule: string): never => {
+  throw new Error(`the TLA manifest is invalid: ${where} ${rule}`);
 };
+
+const fail = (where: string, expectation: string): never => refuse(where, `must be ${expectation}`);
 
 const positiveNumber = (value: unknown, where: string): number => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fail(where, 'a positive number'));
 
@@ -107,6 +109,7 @@ export const readManifest = (file: string): Manifest => {
   if (parsed['format'] !== MANIFEST_FORMAT) return fail('format', `"${MANIFEST_FORMAT}"`);
   const entries = parsed['entries'];
   if (!Array.isArray(entries)) return fail('entries', 'an array');
+  if (entries.length === 0) return refuse('entries', 'must not be empty');
   const startupCpuSeconds = positiveNumber(parsed['startupCpuSeconds'], 'startupCpuSeconds');
   return {
     format: MANIFEST_FORMAT,
