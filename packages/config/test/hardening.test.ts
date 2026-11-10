@@ -7,20 +7,7 @@ import type { FileLockPorts } from '@momonga/config';
 import { hostKernelLock } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { settingsLockPath } from '../src/file-lock.ts';
-import {
-  distrusting,
-  localSettingsDir,
-  localSettingsPath,
-  makeDir,
-  makeTree,
-  mcpJsonPath,
-  projectSettingsPath,
-  repoLocalSettingsPath,
-  trusting,
-  userSettingsPath,
-  writeJson,
-  writeText,
-} from './helpers.ts';
+import { connectionOf, distrusting, localSettingsDir, localSettingsPath, makeDir, makeTree, mcpJsonPath, projectSettingsPath, repoLocalSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -187,8 +174,7 @@ describe('S6 credential variables in project .mcp.json', () => {
     writeJson(userSettingsPath(tree), {
       enableAllProjectMcpServers: true,
       models: {
-        targets: { m: { ...target, apiKeyEnv: 'MY_MODEL_KEY', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
-        aliases: { default: 'm' },
+        connections: [connectionOf('m', { ...target, apiKeyEnv: 'MY_MODEL_KEY', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })],
       },
     });
     writeJson(mcpJsonPath(tree), { mcpServers: { s: { command: 's', args: ['${MY_MODEL_KEY}'] } } });

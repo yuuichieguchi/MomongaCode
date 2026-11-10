@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings, loadUserSettings } from '@momonga/config';
 import { MAX_BUDGET_COUNT } from '@momonga/protocol';
-import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();
@@ -100,16 +100,16 @@ const chatCompletionsTarget = {
 
 describe('the promptCache capability of a target', () => {
   it('declares four breakpoints for an Anthropic target', async () => {
-    const settings = await resolvedWith({ models: { targets: { claude: anthropicTarget({ contextWindow: 200000, maxOutputTokens: 8192 }) }, aliases: { default: 'claude' } } });
-    expect(settings.models.targets['claude']).toMatchObject({ capabilities: { promptCache: { kind: 'breakpoints', maxBreakpoints: 4 } } });
+    const settings = await resolvedWith({ models: { connections: [connectionOf('claude', anthropicTarget({ contextWindow: 200000, maxOutputTokens: 8192 }))] } });
+    expect(modelOf(settings, 'claude')).toMatchObject({ capabilities: { promptCache: { kind: 'breakpoints', maxBreakpoints: 4 } } });
   });
 
   it('declares nothing for an open-responses or a chat-completions target, so nothing is sent', async () => {
-    const settings = await resolvedWith({ models: { targets: { or: openResponsesTarget, cc: chatCompletionsTarget }, aliases: { default: 'or' } } });
-    expect(settings.models.targets['or']).toHaveProperty('capabilities');
-    expect(settings.models.targets['or']).not.toHaveProperty('capabilities.promptCache');
-    expect(settings.models.targets['cc']).toHaveProperty('capabilities');
-    expect(settings.models.targets['cc']).not.toHaveProperty('capabilities.promptCache');
+    const settings = await resolvedWith({ models: { connections: [connectionOf('or', openResponsesTarget), connectionOf('cc', chatCompletionsTarget)] } });
+    expect(modelOf(settings, 'or')).toHaveProperty('capabilities');
+    expect(modelOf(settings, 'or')).not.toHaveProperty('capabilities.promptCache');
+    expect(modelOf(settings, 'cc')).toHaveProperty('capabilities');
+    expect(modelOf(settings, 'cc')).not.toHaveProperty('capabilities.promptCache');
   });
 });
 
@@ -119,11 +119,11 @@ describe('the exactness domain of contextWindow', () => {
   });
 
   it('accepts a context window of exactly 2^33', async () => {
-    const settings = await resolvedWith({ models: { targets: { claude: anthropicTarget({ contextWindow: MAX_BUDGET_COUNT, maxOutputTokens: 8192 }) }, aliases: { default: 'claude' } } });
-    expect(settings.models.targets['claude']).toMatchObject({ capabilities: { contextWindow: MAX_BUDGET_COUNT } });
+    const settings = await resolvedWith({ models: { connections: [connectionOf('claude', anthropicTarget({ contextWindow: MAX_BUDGET_COUNT, maxOutputTokens: 8192 }))] } });
+    expect(modelOf(settings, 'claude')).toMatchObject({ capabilities: { contextWindow: MAX_BUDGET_COUNT } });
   });
 
   it('refuses a context window above 2^33', async () => {
-    await rejectedWith({ models: { targets: { claude: anthropicTarget({ contextWindow: MAX_BUDGET_COUNT + 1, maxOutputTokens: 8192 }) }, aliases: { default: 'claude' } } }, /contextWindow/);
+    await rejectedWith({ models: { connections: [connectionOf('claude', anthropicTarget({ contextWindow: MAX_BUDGET_COUNT + 1, maxOutputTokens: 8192 }))] } }, /contextWindow/);
   });
 });

@@ -4,13 +4,13 @@ import type { PermissionMode, RunEventPayload, SessionEvent, SessionEventPayload
 describe('session-scoped events', () => {
   it('defines SessionEventPayload as mode.changed and model.changed', () => {
     expectTypeOf<SessionEventPayload>().toEqualTypeOf<
-      { type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; modelAlias: string; previousModelAlias: string }
+      { type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; model: string; previousModel: string }
     >();
   });
 
   it('defines SessionEvent as the payload plus id, sessionId and createdAt', () => {
     expectTypeOf<SessionEvent>().toEqualTypeOf<
-      ({ type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; modelAlias: string; previousModelAlias: string }) & { id: number; sessionId: string; createdAt: number }
+      ({ type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; model: string; previousModel: string }) & { id: number; sessionId: string; createdAt: number }
     >();
     expectTypeOf<SessionEvent>().not.toHaveProperty('runId');
     expectTypeOf<SessionEvent>().not.toHaveProperty('seq');

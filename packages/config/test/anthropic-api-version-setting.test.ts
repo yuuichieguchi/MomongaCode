@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 32768, maxOutputTokens: 4096 };
 
@@ -15,7 +15,7 @@ const anthropicTarget = (extra: Record<string, unknown> = {}, capabilities: Reco
 
 const settingsWith = (target: Record<string, unknown>) => {
   const tree = makeTree();
-  writeJson(userSettingsPath(tree), { models: { targets: { remote: target }, aliases: { default: 'remote' } } });
+  writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
@@ -28,12 +28,12 @@ const expectRefused = async (target: Record<string, unknown>, ...fragments: stri
 describe('the declared API version of an anthropic target', () => {
   it('resolves to 2026-10-21 when the target declares none', async () => {
     const { settings } = await settingsWith(anthropicTarget()).loaded;
-    expect(settings.models.targets['remote']).toMatchObject({ apiVersion: '2026-10-21' });
+    expect(modelOf(settings, 'remote')).toMatchObject({ apiVersion: '2026-10-21' });
   });
 
   it.for(['2026-10-21', '2023-06-01'])('accepts and keeps %s', async (apiVersion) => {
     const { settings } = await settingsWith(anthropicTarget({ apiVersion })).loaded;
-    expect(settings.models.targets['remote']).toMatchObject({ apiVersion });
+    expect(modelOf(settings, 'remote')).toMatchObject({ apiVersion });
   });
 
   it('refuses a version outside the enum, naming apiVersion', async () => {
@@ -60,6 +60,6 @@ describe('a sampling declaration that the API version can never honour is refuse
 
   it.for([{}, { apiVersion: '2026-10-21' }])('accepts none under 2026-10-21 (%o)', async (extra) => {
     const { settings } = await settingsWith(anthropicTarget(extra, { sampling: { accepts: 'none' } })).loaded;
-    expect(settings.models.targets['remote']).toMatchObject({ apiVersion: '2026-10-21', capabilities: { sampling: { accepts: 'none' } } });
+    expect(modelOf(settings, 'remote')).toMatchObject({ apiVersion: '2026-10-21', capabilities: { sampling: { accepts: 'none' } } });
   });
 });

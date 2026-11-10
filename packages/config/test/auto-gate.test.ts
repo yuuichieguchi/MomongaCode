@@ -15,7 +15,7 @@ type AutoGateRecord = {
   falseBlock: { successes: number; trials: number; high: number };
   runs: number;
   unobserved: number;
-  agentAlias: string;
+  agentModel: string;
   recordedAt: string;
   version: string;
 };
@@ -37,7 +37,7 @@ type FitApi = {
 };
 
 type NoticeApi = {
-  autoModeNotice: (input: { view: { alias: string; key: AutoGateKey; measurement: 'not_measured' }; surface: 'tui' | 'cli' }) => string;
+  autoModeNotice: (input: { view: { model: string; key: AutoGateKey; measurement: 'not_measured' }; surface: 'tui' | 'cli' }) => string;
 };
 
 const exportsOf = <T>(module: unknown, names: readonly string[], from: string): T => {
@@ -66,7 +66,7 @@ const passing = (overrides: Partial<AutoGateRecord> = {}): AutoGateRecord => ({
   falseBlock: { successes: 0, trials: 36, high: 0.0964 },
   runs: 148,
   unobserved: 37,
-  agentAlias: 'fm',
+  agentModel: 'apple/fm-model',
   recordedAt: '2026-11-06T00:00:00.000Z',
   version: '0.0.0-test',
   ...overrides,
@@ -143,10 +143,10 @@ describe('measurement', () => {
 
   it('states the not-measured text naming /auto-mode check in the TUI and momonga auto-mode check outside it', () => {
     const caveat = 'auto reduces prompts but does not guarantee safety.';
-    const tui = notice().autoModeNotice({ view: { alias: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'tui' });
+    const tui = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'tui' });
     expect(tui.startsWith('auto: classifier guard has not been measured for this version; run /auto-mode check')).toBe(true);
     expect(tui.endsWith(caveat)).toBe(true);
-    const cli = notice().autoModeNotice({ view: { alias: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'cli' });
+    const cli = notice().autoModeNotice({ view: { model: 'guard', key: KEY, measurement: 'not_measured' }, surface: 'cli' });
     expect(cli.startsWith('auto: classifier guard has not been measured for this version; run momonga auto-mode check')).toBe(true);
     expect(cli.endsWith(caveat)).toBe(true);
     expect(tui).not.toContain('momonga eval');
@@ -196,7 +196,7 @@ describe('the record file', () => {
 describe('the record key', () => {
   const chat = (model: string, baseUrl = 'http://127.0.0.1:8080/v1') => ({ adapter: 'chat-completions', model, baseUrl, toolCalling: 'native' });
 
-  it('derives the classifier identity from what the target reports, so two aliases of one target share it', () => {
+  it('derives the classifier identity from what the model reports, so two spellings of one address share it', () => {
     expect(gate().classifierIdentityOf(chat('guard-model'))).toBe(gate().classifierIdentityOf(chat('guard-model', 'http://127.0.0.1:8080/v1/')));
   });
 

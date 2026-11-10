@@ -1,0 +1,47 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const root = path.resolve(import.meta.dirname, '..');
+const packagesDir = path.join(root, 'packages');
+
+const OLD_KEY_SENTENCES_FILE = 'packages/config/src/settings.ts';
+
+type Remaining = { file: string; removedBy: 'N1' | 'N2' | 'N3a' | 'N3b' | 'N4' };
+
+const REMAINING: readonly Remaining[] = [
+  { file: 'packages/cli/src/commands/auto-mode.ts', removedBy: 'N3a' },
+  { file: 'packages/cli/src/commands/gateway.ts', removedBy: 'N3a' },
+  { file: 'packages/cli/src/commands/models.ts', removedBy: 'N3a' },
+  { file: 'packages/cli/src/eval/context-host.ts', removedBy: 'N3a' },
+  { file: 'packages/cli/src/readiness.ts', removedBy: 'N3a' },
+  { file: 'packages/cli/src/tui/plan-flows.ts', removedBy: 'N3b' },
+  { file: 'packages/gateway/src/core/router.ts', removedBy: 'N1' },
+  { file: 'packages/gateway/src/process.ts', removedBy: 'N1' },
+  { file: 'packages/gateway/src/server/config-check.ts', removedBy: 'N1' },
+  { file: 'packages/gateway/src/server/gateway.ts', removedBy: 'N1' },
+  { file: 'packages/runtime/src/process/settings-port.ts', removedBy: 'N2' },
+];
+
+const filesUnder = (directory: string): string[] =>
+  fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(directory, entry.name);
+    if (entry.isDirectory()) return filesUnder(full);
+    return entry.isFile() ? [full] : [];
+  });
+
+const filesNamingTheOldKeys = (): string[] =>
+  fs
+    .readdirSync(packagesDir)
+    .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
+    .flatMap((name) => filesUnder(path.join(packagesDir, name, 'src')))
+    .filter((file) => /models\.targets|models\.aliases/.test(fs.readFileSync(file, 'utf8')))
+    .map((file) => path.relative(root, file).split(path.sep).join('/'))
+    .filter((file) => file !== OLD_KEY_SENTENCES_FILE)
+    .sort();
+
+describe('adoption of the new settings shape', () => {
+  it('the source files that still name models.targets or models.aliases are the ones listed for a later increment, and none when the list is empty', () => {
+    expect(filesNamingTheOldKeys()).toEqual(REMAINING.map((entry) => entry.file).sort());
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionsOf, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
 
@@ -12,15 +12,15 @@ const target = (adapter: 'chat-completions' | 'open-responses', capabilities: Re
   capabilities: { ...CAPABILITIES, ...capabilities },
 });
 
-const load = (targets: Record<string, unknown>) => {
+const load = (targets: Record<string, Record<string, unknown>>) => {
   const tree = makeTree();
-  writeJson(userSettingsPath(tree), { models: { targets, aliases: { default: Object.keys(targets)[0] } } });
+  writeJson(userSettingsPath(tree), { models: { connections: connectionsOf(targets) } });
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
-const promptCacheOf = async (targets: Record<string, unknown>, name: string): Promise<unknown> => {
+const promptCacheOf = async (targets: Record<string, Record<string, unknown>>, name: string): Promise<unknown> => {
   const { settings } = await load(targets).loaded;
-  const resolved = settings.models.targets[name];
+  const resolved = modelOf(settings, name);
   return resolved !== undefined && 'capabilities' in resolved ? (resolved.capabilities as { promptCache?: unknown }).promptCache : undefined;
 };
 
@@ -31,7 +31,7 @@ describe('a person declares the key prompt cache of a target, which no probe can
 
   it.for(['chat-completions', 'open-responses'] as const)('leaves the capability absent on a %s target that declares none, so nothing is sent', async (adapter) => {
     const { settings } = await load({ remote: target(adapter) }).loaded;
-    const resolved = settings.models.targets['remote'];
+    const resolved = modelOf(settings, 'remote');
     expect(resolved !== undefined && 'capabilities' in resolved ? resolved.capabilities : {}).not.toHaveProperty('promptCache');
   });
 

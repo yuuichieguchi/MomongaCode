@@ -14,14 +14,12 @@ describe('agentReadiness decides whether a target can run a task from its report
     expect(agentReadiness({ toolCalling })).toEqual({ state: 'ready' });
   });
 
-  it('a target that reports no tool calling runs without tools and says how to choose another target', () => {
+  it('a target that reports no tool calling runs without tools and carries the message alone', () => {
     const readiness = agentReadiness({ toolCalling: 'none' });
     expect(readiness.state).toBe('no_tools');
     if (readiness.state !== 'no_tools') return;
     expect(readiness.message).toMatch(/cannot call tools/);
-    expect(readiness.remedy).toContain('/model');
-    expect(readiness.remedy).not.toMatch(/probe/i);
-    expect(readiness.remedy).not.toMatch(/momonga model/);
+    expect(readiness).not.toHaveProperty('remedy');
   });
 
   it('an unprobed target is never guessed: it carries the message, evidence and remedy the gateway reported', () => {
@@ -38,8 +36,8 @@ describe('agentReadiness decides whether a target can run a task from its report
     const readiness = agentReadiness({ unavailable: reason });
     expect(readiness.state).toBe('unavailable');
     if (readiness.state !== 'unavailable') return;
-    expect(readiness.message).toContain(reason);
-    expect(readiness.remedy).toContain('/model');
+    expect(readiness.message).toBe(reason);
+    expect(readiness).not.toHaveProperty('remedy');
   });
 
   it('reads no target name: two capability sets that differ only outside toolCalling give the same verdict', () => {
@@ -51,12 +49,9 @@ describe('agentReadiness decides whether a target can run a task from its report
     expect(TARGET_NOT_READY).toBe('target_not_ready');
   });
 
-  it('every non-ready verdict carries a remedy that fits its state', () => {
+  it('only the verdict of an unprobed target carries a remedy: it is the data of the probe', () => {
     const verdicts = [agentReadiness({ toolCalling: 'none' }), agentReadiness({ toolCalling: NEEDS_PROBE }), agentReadiness({ unavailable: 'down' })];
-    for (const verdict of verdicts) {
-      expect(verdict.state).not.toBe('ready');
-      if (verdict.state === 'ready' || verdict.state === 'probing') continue;
-      expect(verdict.remedy.length).toBeGreaterThan(0);
-    }
+    expect(verdicts.map((verdict) => verdict.state)).toEqual(['no_tools', 'needs_probe', 'unavailable']);
+    expect(verdicts.map((verdict) => ('remedy' in verdict ? verdict.remedy : undefined))).toEqual([undefined, NEEDS_PROBE.remedy, undefined]);
   });
 });

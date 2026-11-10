@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 type Adapter = 'anthropic' | 'chat-completions' | 'open-responses' | 'ollama';
 
@@ -20,7 +20,7 @@ const targetOf = (adapter: Adapter, promptCache: unknown): Record<string, unknow
 
 const load = (adapter: Adapter, promptCache: unknown) => {
   const tree = makeTree();
-  writeJson(userSettingsPath(tree), { models: { targets: { remote: targetOf(adapter, promptCache) }, aliases: { default: 'remote' } } });
+  writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', targetOf(adapter, promptCache))] } });
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
@@ -47,7 +47,7 @@ const accepted: ReadonlyArray<{ adapter: Adapter; promptCache: unknown }> = [
 
 const resolvedPromptCache = async (adapter: Adapter, promptCache: unknown): Promise<unknown> => {
   const { settings } = await load(adapter, promptCache).loaded;
-  const resolved = settings.models.targets['remote'];
+  const resolved = modelOf(settings, 'remote');
   return resolved !== undefined && 'capabilities' in resolved ? (resolved.capabilities as { promptCache?: unknown }).promptCache : undefined;
 };
 

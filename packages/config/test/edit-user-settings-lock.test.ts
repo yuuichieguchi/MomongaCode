@@ -11,7 +11,7 @@ import type { Tree } from './helpers.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const APPEND_RULE_SOURCE = path.resolve(import.meta.dirname, '../src/append-rule.ts');
-const ORIGINAL = { models: { aliases: {}, targets: {} } };
+const ORIGINAL = { models: { connections: [] } };
 
 const userSettingsOf = (tree: Tree): string => writeJson(momongaLayout(tree.home).settingsFile, ORIGINAL);
 

@@ -10,10 +10,11 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 });
 
+const servedModelOf = (settings: { models: unknown }): string | undefined => [...(settings.models as { models: ReadonlyMap<string, { model: string }> }).models.values()][0]?.model;
+
 const settingsWithModel = (model: string) => ({
   models: {
-    aliases: { default: ['remote'] },
-    targets: { remote: { adapter: 'chat-completions', provider: 'fake', model, baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
+    connections: [{ adapter: 'chat-completions', provider: 'remote', baseUrl: 'https://api.example.com/v1', models: [{ id: model, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
   },
 });
 
@@ -40,7 +41,7 @@ const makeTree = () => {
 const cacheOf = (home: string, appliedRecord: string) =>
   createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, appliedRecord } as UserSettingsCacheOptions);
 
-const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => (cache.get().models.targets['remote'] as { model?: string } | undefined)?.model;
+const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => (modelOf(cache.get(), 'remote') as { model?: string } | undefined)?.model;
 
 describe('S7: the applied record is ordered by seq (design-settings-live 15.1, NoRollbackAfterApply)', () => {
   it('a record at seq 2 wins over an own copy noted at seq 1', () => {
