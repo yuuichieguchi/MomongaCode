@@ -3579,7 +3579,7 @@
       "measuredSeconds": 215.26,
       "measuredCpuSeconds": 865.69,
       "budgetCpuSeconds": 1735,
-      "note": "STALE, NOT RUN: the I4 and I5 extensions (switch Extended = TRUE) with the full constants did not finish within the 45-minute bound on 2026-11-09 (killed at 3,245,085 distinct states, 1,426,942 queued, still growing). The distinctStates and CPU of this row are the I3 values from before the extension. Pending: a deep run with reduced constants or a longer bound, decided by the coordinator."
+      "note": "not re-run after the 2026-11-10 model edits (machine load above 100; the run was stopped); count and time are the earlier manifest values and must be re-run and re-measured before the deep tier is used"
     },
     {
       "config": "UpdateSwitch.sessions",
@@ -3587,10 +3587,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 188999,
+      "distinctStates": 111414,
       "measuredSeconds": 13.17,
       "measuredCpuSeconds": 46.34,
-      "budgetCpuSeconds": 96
+      "budgetCpuSeconds": 96,
+      "note": "state space changed by the 2026-11-10 model edits; time not re-measured (run started at 1-minute load 24.4, gate 15): re-measure in the quiet window"
     },
     {
       "config": "UpdateSwitch.today",
@@ -4291,7 +4292,8 @@
       "distinctStates": 194518,
       "measuredSeconds": 46.49,
       "measuredCpuSeconds": 201.98,
-      "budgetCpuSeconds": 407
+      "budgetCpuSeconds": 407,
+      "note": "not re-run after the 2026-11-10 model edits (machine load above 100; the run was stopped); count and time are the earlier manifest values and must be re-run and re-measured before the deep tier is used"
     },
     {
       "config": "LeftoverCleanup",
@@ -4485,11 +4487,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 417283,
-      "measuredSeconds": 101.57,
-      "measuredCpuSeconds": 201.76,
-      "budgetCpuSeconds": 407,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "distinctStates": 230159,
+      "measuredSeconds": 74.81,
+      "measuredCpuSeconds": 141.72,
+      "budgetCpuSeconds": 287
     },
     {
       "config": "UpdateSwitch.crash",
@@ -4497,11 +4498,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 238363,
+      "distinctStates": 142214,
       "measuredSeconds": 6.14,
       "measuredCpuSeconds": 13.82,
       "budgetCpuSeconds": 31,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "note": "state space changed by the 2026-11-10 model edits; time not re-measured (run started at 1-minute load 25.9, gate 15): re-measure in the quiet window"
     },
     {
       "config": "UpdateSwitch.sessionsDeep",
@@ -4513,7 +4514,7 @@
       "measuredSeconds": 90.65,
       "measuredCpuSeconds": 172.66,
       "budgetCpuSeconds": 349,
-      "note": "measured above the load gate (workers 2, load 8 to 55), to be re-measured in the quiet window"
+      "note": "holds on the 2026-11-10 head (run at load 53); the state count was not recorded correctly by that run and is the earlier value: re-run and re-measure before the deep tier is used"
     },
     {
       "config": "UpdateSwitch.failSetsNone",
@@ -4641,11 +4642,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 761131,
+      "distinctStates": 514043,
       "measuredSeconds": 914.94,
       "measuredCpuSeconds": 1232.33,
       "budgetCpuSeconds": 2468,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "note": "state space changed by the 2026-11-10 model edits; time not re-measured (run started at 1-minute load 37.3, gate 15): re-measure in the quiet window"
     },
     {
       "config": "UpdateSwitch.upkeep",
@@ -4653,11 +4654,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3030710,
-      "measuredSeconds": 196.96,
-      "measuredCpuSeconds": 206.14,
-      "budgetCpuSeconds": 416,
-      "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+      "distinctStates": 2178467,
+      "measuredSeconds": 67.11,
+      "measuredCpuSeconds": 135.95,
+      "budgetCpuSeconds": 275
     },
     {
       "config": "UpdateSwitch.killWithoutRequest",
@@ -4808,6 +4808,198 @@
       "measuredCpuSeconds": 33.4,
       "budgetCpuSeconds": 70,
       "note": "measured above the load gate (workers 2, other tlc2.TLC processes running, load 9 to 37), to be re-measured in the quiet window"
+    },
+    {
+      "config": "Handover",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1752,
+      "measuredSeconds": 5.62,
+      "measuredCpuSeconds": 2.82,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 37.3 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "Handover.echoKept",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneEntryPerPrompt",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 5,
+      "measuredSeconds": 2.29,
+      "measuredCpuSeconds": 1.76,
+      "budgetCpuSeconds": 7,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 9.8 at start"
+    },
+    {
+      "config": "Handover.moveWithDialog",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoMoveWithDialog",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 26,
+      "measuredSeconds": 1.52,
+      "measuredCpuSeconds": 1.68,
+      "budgetCpuSeconds": 7,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 10.9 at start"
+    },
+    {
+      "config": "Handover.noPrintedSkip",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDuplicateOutput",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 384,
+      "measuredSeconds": 1.59,
+      "measuredCpuSeconds": 1.96,
+      "budgetCpuSeconds": 7,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 10.9 at start"
+    },
+    {
+      "config": "Handover.relay",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1752,
+      "measuredSeconds": 4.01,
+      "measuredCpuSeconds": 2.73,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 38.1 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "Handover.retryOnExecFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneAttemptPerNewer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 86,
+      "measuredSeconds": 1.77,
+      "measuredCpuSeconds": 1.72,
+      "budgetCpuSeconds": 7,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 12.4 at start"
+    },
+    {
+      "config": "UpdateSwitch.gwRefuseNoYield",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusalYields",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 73054,
+      "measuredSeconds": 5.09,
+      "measuredCpuSeconds": 7.92,
+      "budgetCpuSeconds": 19,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 18.7 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.killDropped",
+      "role": "evidence",
+      "expect": {
+        "violates": "KillReachesOwner",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 456,
+      "measuredSeconds": 13.27,
+      "measuredCpuSeconds": 7.82,
+      "budgetCpuSeconds": 19,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 43.5 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "UpdateSwitch.userStopNeverEnds",
+      "role": "evidence",
+      "expect": {
+        "violates": "StopEnds",
+        "exitCode": 13
+      },
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 750,
+      "measuredSeconds": 144.87,
+      "measuredCpuSeconds": 79.01,
+      "budgetCpuSeconds": 162,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 22.3 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.reapOtherGeneration",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReapOwnGenerationOnly",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1999,
+      "measuredSeconds": 4.68,
+      "measuredCpuSeconds": 3.09,
+      "budgetCpuSeconds": 10,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.4 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.retiringRestarts",
+      "role": "evidence",
+      "expect": {
+        "violates": "GwNoRestartRetiring",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 852,
+      "measuredSeconds": 2.95,
+      "measuredCpuSeconds": 2.85,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 173.8 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.sharedAcrossGenerations",
+      "role": "evidence",
+      "expect": {
+        "violates": "GenerationIsolation",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 395,
+      "measuredSeconds": 5.11,
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 187.8 at start (above the gate 15): re-measure in the quiet window"
+    },
+    {
+      "config": "ManagedServer.gens",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 5794288,
+      "measuredSeconds": 1917.33,
+      "measuredCpuSeconds": 1985.9,
+      "budgetCpuSeconds": 3975,
+      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 38.6 at start (above the gate 15): re-measure in the quiet window; tier deep by choice: 5794288 states and about 1986 CPU seconds do not fit the every-run budget"
     }
   ]
 }

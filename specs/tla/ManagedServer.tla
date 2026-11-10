@@ -486,7 +486,7 @@ ClaimOk(s, t, f) ==
     IN
     /\ st[s][t][f] = "claim" /\ ~hung[s][t][f] /\ (OnInst(s, t, n) = 0 \/ MayReap(s, t, n))
     /\ st' = [st EXCEPT ![s][t][f] = "spawn"]
-    /\ foreignReap' = foreignReap \/ ForeignFootprint(s, t, n)
+    /\ foreignReap' = (foreignReap \/ ForeignFootprint(s, t, n))
     /\ orphan' = [s2 \in Scopes |-> [t2 \in Targets |-> [n2 \in Insts |->
             IF t2 = t /\ n2 = n /\ s2 \in ReapKeys(s) THEN 0 ELSE orphan[s2][t2][n2]]]]
     /\ tries' = [tries EXCEPT ![k][t][n] = 0]
@@ -571,7 +571,7 @@ TimerFires(s, t) ==
     /\ pre' = [pre EXCEPT ![s][t] = "unknown"]
     /\ cc' = [cc EXCEPT ![s][t] = cc[s][t] + 1]
     /\ gt' = [gt EXCEPT ![s][t] = gt[s][t] + 1]
-    /\ restartRetiring' = restartRetiring \/ (ret[s] /\ calls[s][t] = 0)
+    /\ restartRetiring' = (restartRetiring \/ (ret[s] /\ calls[s][t] = 0))
     /\ UNCHANGED <<gw, ret, gwCrashes, childCrashes, keyChanges, refusals, cancels, closes, calls, alive, orphan, tries, taint, hung, cond, reaped, foreignReap>>
 
 WindowDone(s, t) ==

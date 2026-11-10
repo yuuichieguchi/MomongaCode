@@ -421,17 +421,26 @@ Reap(g) ==
     /\ know' = [know EXCEPT ![g] = FALSE]
     /\ UNCHANGED <<jvars, gwv, xvars, tvars, sup, stl, cvars, rvars, kvars>>
 
-SettingsRestart(g) ==
-    /\ g \in Gens
-    /\ g = cur
+RestartNow(c) ==
+    /\ cs[c] = "starting"
+    /\ pend[c] = 0
     /\ Srv
-    /\ ~(\E h \in Starting : ver[h] >= curv)
+    /\ cv[c] = curv
+    /\ AllocVariantOK
     /\ AllocNo <= MaxGen
     /\ nextGen' = nextGen + 1
     /\ dir' = [dir EXCEPT ![AllocNo] = TRUE]
     /\ ver' = [ver EXCEPT ![AllocNo] = curv]
-    /\ stl' = [stl EXCEPT ![AllocNo] = g]
-    /\ UNCHANGED <<jvars, gwv, xvars, iv, stopped, crashes, faulted, sup, prom, dr, claimed, know, cvars, rvars, kvars>>
+    /\ stl' = [stl EXCEPT ![AllocNo] = c]
+    /\ pend' = [pend EXCEPT ![c] = AllocNo]
+    /\ msg' = [msg EXCEPT ![c] = "pending"]
+    /\ UNCHANGED <<jvars, gwv, xvars, iv, stopped, crashes, faulted, sup, prom, dr, claimed, know, cvars, rvars, cs, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
+
+GiveUpPromotion(g) ==
+    /\ g \in Gens
+    /\ sup[g] /\ ~prom[g] /\ ~dr[g]
+    /\ sup' = [sup EXCEPT ![g] = FALSE]
+    /\ UNCHANGED <<jvars, gwv, xvars, tvars, dir, ver, stl, prom, dr, claimed, know, cvars, rvars, kvars>>
 
 ChildMismatch(g) ==
     /\ g \in Gens
@@ -692,12 +701,12 @@ Prune(g) ==
 
 Next ==
     \/ \E c \in Clients :
-        Install(c) \/ ConnectNow(c) \/ MoveNow(c) \/ RefuseOlder(c) \/ FloorNow(c) \/ JoinNow(c) \/ AllocNow(c)
+        Install(c) \/ ConnectNow(c) \/ MoveNow(c) \/ RefuseOlder(c) \/ FloorNow(c) \/ JoinNow(c) \/ AllocNow(c) \/ RestartNow(c)
         \/ PathFullNow(c) \/ WaitNow(c) \/ DrainNow(c) \/ Retry(c) \/ Leave(c) \/ ConnectStarter(c) \/ FailStarter(c)
         \/ GiveUp(c) \/ StarterCrash(c) \/ OpenModal(c) \/ CloseModal(c) \/ Exec(c) \/ ExecFail(c) \/ Finish(c)
         \/ Type(c) \/ Send(c) \/ SendRead(c) \/ AnswerRead(c) \/ Notified(c)
     \/ \E c \in Clients, v \in 1..MaxV : StartClient(c, v)
-    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ SettingsRestart(g) \/ ChildMismatch(g)
+    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ GiveUpPromotion(g) \/ ChildMismatch(g)
     \/ UserStop
     \/ \E r \in Runs : Submit(r) \/ StepEnd(r) \/ \E g \in Gens : Claim(r, g)
     \/ \E j \in Jobs, r \in Runs : JobStart(j, r)
