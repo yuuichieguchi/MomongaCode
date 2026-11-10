@@ -1,4 +1,5 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
+import type { VerificationOutcome, VerificationState } from './completion.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
@@ -22,7 +23,7 @@ export const RUN_STATUSES = [
 
 export const TERMINAL_STATUSES = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED'] as const;
 
-export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit'] as const;
+export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit', 'conditions_unmet'] as const;
 
 export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
@@ -269,6 +270,7 @@ export type RunEventPayload =
       handle?: string;
       denial?: PermissionDenial;
       files?: ToolFile[];
+      mutated?: true;
       command?: string;
       windowShared?: true;
       memories?: string[];
@@ -278,6 +280,19 @@ export type RunEventPayload =
       added?: number;
       removed?: number;
       diffOmitted?: string;
+    }
+  | { type: 'verification.started'; round: number; conditionId: string; mutationSeq: number; attempt: number }
+  | {
+      type: 'verification.completed';
+      round: number;
+      conditionId: string;
+      outcome: VerificationOutcome;
+      exitCode?: number;
+      durationMs: number;
+      output: string;
+      truncated?: boolean;
+      handle?: string;
+      mutationSeq: number;
     }
   | { type: 'tool.loaded'; names: string[] }
   | { type: 'tool.offered'; names: string[] }
@@ -427,6 +442,8 @@ export type RunState = {
       providerCallId: string;
       arguments: unknown;
       status: PendingCallStatus;
+      sideEffect?: SideEffect;
+      basis?: ApprovalBasis;
       idemKey?: string;
       awaiting?: ToolAwait;
       approvalId?: string;
@@ -452,6 +469,8 @@ export type RunState = {
   lastCompactionSeq: number;
   callResults: Record<string, 'completed' | 'failed'>;
   unknownEffects: Record<string, { approvalId?: string; acknowledged: boolean }>;
+  lastMutationSeq: number;
+  verification: VerificationState;
   formsSinceCompaction: Record<string, number>;
   governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
   memoriesLoaded?: { id: string; status: MemoryStatus }[];

@@ -151,7 +151,7 @@ describe('RunRecovery.tla against the implementation', () => {
 describe('STOP_REASONS against RunRecovery.tla and the store', () => {
   const schemaSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'schema.ts'), 'utf8');
 
-  const COMING_STOP_REASONS = ['conditions_unmet'];
+  const COMING_STOP_REASONS: string[] = [];
 
   it('is a subset of the stop_reason CHECK of the widened runs table, each reason once, and the rest is exactly the coming reasons (design-chatgpt-plan O-R5-6 L7)', () => {
     const constraints = [...schemaSource.matchAll(/stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/g)];

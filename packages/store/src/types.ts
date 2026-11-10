@@ -14,6 +14,7 @@ import type {
   ElicitationRequestView,
   JobStatus,
   ImageAttachment,
+  Mandate,
   MessageAttachment,
   UserShellRecord,
   InboxDelivery,
@@ -118,6 +119,7 @@ export type CreateRunInput = {
   skill?: { name: string; content: string };
   images?: ImageAttachment[];
   attachments?: MessageAttachment[];
+  mandate?: Mandate;
 };
 
 export type UserShellStore = {

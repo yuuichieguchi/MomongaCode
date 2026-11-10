@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
+import { APPROVAL_BASES, SIDE_EFFECTS, VERIFICATION_OUTCOMES, FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
 import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxRowView, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
@@ -155,6 +155,8 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'context.truncated': true,
   'instructions.loaded': true,
   'skill.activated': true,
+  'verification.started': true,
+  'verification.completed': true,
   'tool.loaded': true,
   'tool.offered': true,
   'loop.warned': true,
@@ -360,6 +362,8 @@ const isPendingCall = (value: unknown): boolean =>
   typeof value['providerCallId'] === 'string' &&
   PENDING_STATUSES.some((status) => status === value['status']) &&
   (value['subjectDigest'] === undefined || typeof value['subjectDigest'] === 'string') &&
+  (value['sideEffect'] === undefined || SIDE_EFFECTS.some((effect) => effect === value['sideEffect'])) &&
+  (value['basis'] === undefined || APPROVAL_BASES.some((basis) => basis === value['basis'])) &&
   (value['suggestedRule'] === undefined || typeof value['suggestedRule'] === 'string') &&
   (value['classification'] === undefined ||
     (isRecord(value['classification']) &&
@@ -418,6 +422,21 @@ const isInheritedTruncation = (value: unknown): boolean =>
 
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']) && typeof value['content'] === 'string';
+
+const isVerificationState = (value: unknown): boolean =>
+  isRecord(value) &&
+  Number.isInteger(value['round']) &&
+  isRecord(value['results']) &&
+  Object.values(value['results']).every(
+    (result) =>
+      isRecord(result) &&
+      Number.isInteger(result['seq']) &&
+      Number.isInteger(result['mutationSeq']) &&
+      VERIFICATION_OUTCOMES.some((outcome) => outcome === result['outcome']),
+  ) &&
+  (value['pending'] === undefined ||
+    (isRecord(value['pending']) && Object.values(value['pending']).every((check) => isRecord(check) && Number.isInteger(check['round']) && Number.isInteger(check['attempt'])))) &&
+  (value['lastFailedRoundMutationSeq'] === undefined || Number.isInteger(value['lastFailedRoundMutationSeq']));
 
 const isCountMap = (value: unknown): boolean => isRecord(value) && Object.values(value).every((count) => Number.isInteger(count));
 
@@ -501,7 +520,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 18;
+export const SNAPSHOT_STATE_VERSION = 19;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -550,6 +569,8 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Number.isInteger(state['lastCompactionSeq']) &&
     isCallResults(state['callResults']) &&
     isUnknownEffects(state['unknownEffects']) &&
+    Number.isInteger(state['lastMutationSeq']) &&
+    isVerificationState(state['verification']) &&
     isCountMap(state['formsSinceCompaction']) &&
     (state['governingLoaded'] === undefined || isGoverningLoaded(state['governingLoaded'])) &&
     (state['memoriesLoaded'] === undefined || isArrayOf(state['memoriesLoaded'], isMemoryLoaded)) &&

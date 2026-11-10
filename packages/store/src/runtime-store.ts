@@ -692,7 +692,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       deadlineAt: now + input.timeoutMs,
       limits: canonicalJson(input.limits),
       usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
-      pins: canonicalJson(input.pins),
+      pins: canonicalJson(input.mandate === undefined ? input.pins : { ...input.pins, mandate: input.mandate }),
       createdAt: now,
       origin: originOf(session.cwd),
     });
