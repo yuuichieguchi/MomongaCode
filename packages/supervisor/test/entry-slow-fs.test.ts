@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { hostKernelLock, inspectProcessLock } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
-import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, firstGeneration } from '@momonga/testkit';
+import { createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { runSupervisorEntry } from '../src/entry.ts';
 import type { SupervisorEntryDeps } from '../src/entry.ts';
@@ -54,10 +54,11 @@ type SlowRun = {
 const startEntry = (context: CleanupContext, prepared: { home: string; paths: MomongaPaths }, lockMechanism: KernelLockMechanism, deps: Partial<SupervisorEntryDeps>): SlowRun => {
   const { home, paths } = prepared;
   writeSettings(home, validSettings());
+  prepareGenerationForTest(home, 1, TEST_VERSION);
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const io = createFakeEntryIo({
-    argv: [`--home=${home}`, '--log-target=file'],
+    argv: [`--home=${home}`, '--generation=1', '--log-target=file'],
     home,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,

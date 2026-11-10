@@ -1,9 +1,26 @@
 import path from 'node:path';
 import { MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, SOCKET_PLACEHOLDER } from '@momonga/protocol';
-import type { ManagedServerDescription } from '@momonga/protocol';
+import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
 import type { DeclaredServer } from './settings.ts';
 
 export type ServerRegistry = Readonly<Record<string, ManagedServerDescription>>;
+
+const DEFAULT_DECLARED_ENDPOINT_FORMS: readonly ManagedEndpointForm[] = ['unix'];
+
+const bracketed = (forms: readonly string[]): string => `[${forms.join(', ')}]`;
+
+export const firstOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[]): ManagedEndpointForm | undefined =>
+  description.endpoint.forms.find((form) => hostForms.includes(form));
+
+export const requireOfferedEndpointForm = (description: ManagedServerDescription, hostForms: readonly ManagedEndpointForm[], where: string): ManagedEndpointForm => {
+  const form = firstOfferedEndpointForm(description, hostForms);
+  if (form === undefined) {
+    throw new Error(
+      `${where}: server ${JSON.stringify(description.id)} accepts only the endpoint forms ${bracketed(description.endpoint.forms)}, and this host offers ${bracketed(hostForms)}; the target cannot be used on this platform`,
+    );
+  }
+  return form;
+};
 
 const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedServerDescription => ({
   id,
@@ -11,7 +28,7 @@ const declaredDescriptionOf = (id: string, declared: DeclaredServer): ManagedSer
   wire: 'chat-completions',
   binary: { defaultPath: declared.command },
   launch: { argv: [...declared.args] },
-  endpoint: { kind: 'unix' },
+  endpoint: { forms: declared.endpoint?.forms ?? DEFAULT_DECLARED_ENDPOINT_FORMS },
   ready: { method: 'GET', path: declared.readyPath, status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [],
   identity: ['binarySha256', 'hostOsBuild'],

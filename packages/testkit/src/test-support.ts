@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
 import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
-import { stopSupervisorHolder } from './process-groups.ts';
+import { stopSupervisorHolders } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
@@ -99,7 +99,7 @@ export const createTempDir = (options: TempDirOptions = {}): string => {
 };
 
 export const removeTempDir = async (dir: string): Promise<void> => {
-  if (createdHomes.delete(dir)) await stopSupervisorHolder(dir);
+  if (createdHomes.delete(dir)) await stopSupervisorHolders(dir);
   removeDirectoryTree(dir);
 };
 

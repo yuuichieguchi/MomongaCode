@@ -79,7 +79,7 @@ describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose ow
     const inUse = path.join(root, sessionId);
     await holdEntry(inUse);
     const store = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS - 1 }) };
-    const result = await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
+    const result = await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
     expect(fs.existsSync(inUse)).toBe(true);
     expect(result.removed).toBe(0);
   });
@@ -95,7 +95,7 @@ describe('tmp-sweep.ts:47-: age is retention only (R4); a session entry whose ow
       old: { hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS },
     };
     const store = { sessionActivity: (id: string) => activity[id] };
-    await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+    await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning, lock });
     expect(fs.readdirSync(root).sort()).toEqual(sidecarNamesOf(lock, 'young'));
   });
   }
@@ -139,10 +139,10 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       const owner = await startClaimHolder(context, directoryClaimPath(scratch));
       fs.mkdirSync(scratch);
       const store = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS - 1 }) };
-      await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
+      await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
       expect(fs.statSync(scratch).isDirectory()).toBe(true);
       await killed(owner);
-      await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
+      await sweepSessionTmp({ root, store, now: NOW, onWarning: noWarning });
       expect(fs.readdirSync(root)).toEqual([]);
     },
   );
@@ -177,12 +177,12 @@ describe('S9: session scratch made by ensureSessionTmpDir is kept while its owne
         const owner = await startSessionOwner(context, home, sessionId, platform);
         const old = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS }) };
         const young = { sessionActivity: () => ({ hasActiveRun: false, lastActivityAt: NOW - SEVEN_DAYS_MS + 1 }) };
-        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, onWarning: noWarning, lock });
         expect(fs.statSync(scratch).isDirectory()).toBe(true);
         await killed(owner);
-        await sweepSessionTmp({ root: paths.tmp.sessions, store: young, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: young, now: NOW, onWarning: noWarning, lock });
         expect(fs.statSync(scratch).isDirectory()).toBe(true);
-        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
+        await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, onWarning: noWarning, lock });
         expect(fs.readdirSync(paths.tmp.sessions)).toEqual([]);
       },
     );

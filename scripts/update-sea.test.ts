@@ -240,7 +240,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     expect(third.stderr).toBe('');
   });
 
-  it('restarts a running daemon on the new version', async () => {
+  it('starts the new version beside a running daemon, which is not stopped', async () => {
     const installation = install();
     fs.mkdirSync(path.join(installation.home, '.momonga'));
     fs.writeFileSync(
@@ -261,9 +261,9 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
 
       const outcome = await run(installation.bin, ['update'], installation.home);
 
-      expect(outcome.stdout).toBe(`updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\nrestarted the daemon on the new version\n`);
+      expect(outcome.stdout).toBe(`updated momonga 1.0.0 -> 2.0.0 (${installation.bin})\nUpdated to v2.0.0. The daemon is running the new version.\n`);
       const status = await run(installation.bin, ['daemon', 'status'], installation.home);
-      expect(status.stdout).toContain('version 2.0.0');
+      expect(status.stdout).toMatch(/^momonga daemon running: pid \d+, version 2\.0\.0, phase running/);
     } finally {
       await run(installation.bin, ['daemon', 'stop'], installation.home);
     }

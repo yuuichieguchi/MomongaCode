@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ATOMIC_WRITE_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, createKernelLockMechanism, lockFormOf } from '@momonga/foundation';
+import { ATOMIC_WRITE_STEP_ACTIONS, GENERATION_REAPER_STEPS, GENERATION_REAPER_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, createKernelLockMechanism, lockFormOf } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -122,4 +122,21 @@ describe('T7 and C8: every eval and sandbox scratch owner creates its directory 
       expect(source).toMatch(/\bcreateOwnedDirectory(Sync)?\b/);
     });
   }
+});
+
+describe('T7 and T-L2-18: the steps of the generation reaper are the reaper actions of LeftoverCleanup.tla, in their order', () => {
+  const reaperActionsDefined = (): Set<string> => new Set([...spec.matchAll(/^(\w+)\(g(?:, i)?\) ==/gm)].map((match) => match[1] as string));
+
+  it('runs ClaimDead, ReapMarkers, ClaimInstance, RemoveInstance and RemoveDir in that order', () => {
+    expect(GENERATION_REAPER_STEPS.map((step) => GENERATION_REAPER_STEP_ACTIONS[step])).toEqual(['ClaimDead', 'ReapMarkers', 'ClaimInstance', 'RemoveInstance', 'RemoveDir']);
+  });
+
+  it('maps every step to an action the spec defines', () => {
+    const defined = reaperActionsDefined();
+    for (const [step, action] of Object.entries(GENERATION_REAPER_STEP_ACTIONS)) expect(defined, `${step} -> ${action}`).toContain(action);
+  });
+
+  it('the spec keeps the variants that show the reaper invariants catch the known bugs', () => {
+    expect(assumedSet('Variant')).toEqual(expect.arrayContaining(['reapFirst', 'noClaimDirs', 'listingNumbers', 'unlockedStart', 'instanceNoClaim']));
+  });
 });

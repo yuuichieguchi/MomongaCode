@@ -13,7 +13,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextR
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, prepareHome, writeSettings } from './gateway-process-helpers.ts';
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { makeReport } from './report-fixture.ts';
@@ -141,6 +141,7 @@ const startRemoteStack = async (
   options: { profile: PlanProfile; accounts: readonly string[]; records?: (hostId: string) => readonly Record<string, unknown>[]; network: Record<string, unknown> },
 ): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   const layout = momongaLayout(home);
   fs.mkdirSync(layout.planSessions, { recursive: true, mode: 0o700 });
   const { hostId } = await ensureHostIdentity(nodeFileSystem, layout.planHost, { accountsExist: false });

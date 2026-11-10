@@ -1,3 +1,4 @@
+import { prepareHome } from './gateway-process-helpers.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/bin.ts');
 const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   const aux = withTempDir(context);
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(path.join(aux, 'up.sock')) } } });
   return { home, paths: momongaPaths(home, process.platform, {}), env: productTestEnv({ PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux }) };

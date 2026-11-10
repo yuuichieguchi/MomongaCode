@@ -22,7 +22,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
     const program = buildProgram({
       ports,
       policyVerify: async () => nodePolicyVerifyHost(ports, await pathsOf(ports)),
-      entries: daemonEntries(ports.self, ports.version),
+      entries: daemonEntries(ports.self, ports.version, ports.spawnDetached),
       update: async () => (update ??= nodeUpdateWiring(ports, await pathsOf(ports))),
       interrupt: interrupt.signal,
       entryIo,

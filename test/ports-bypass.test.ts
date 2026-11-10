@@ -105,6 +105,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/clock.ts': { 'Date.now': 1 },
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 1 },
   'packages/foundation/src/file-lock.ts': { 'setTimeout': 1, 'randomBytes': 1 },
+  'packages/foundation/src/generation-reaper.ts': { 'node:fs': 1 },
   'packages/foundation/src/host-identity.ts': { 'node:fs': 1 },
   'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 1 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1 },
@@ -139,6 +140,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/runtime/src/memory/journal-thread.ts': { 'performance.now': 2, 'node:fs': 1 },
   'packages/runtime/src/memory/skill-promotion.ts': { 'node:fs': 1 },
   'packages/runtime/src/memory/upkeep.ts': { 'node:fs': 1 },
+  'packages/runtime/src/process/job-output-file.ts': { 'node:fs': 1 },
   'packages/runtime/src/process/runtime-files.ts': { 'node:fs': 1 },
   'packages/runtime/src/process/tool-runtime.ts': { 'randomBytes': 1 },
   'packages/runtime/src/service/markers.ts': { 'node:fs': 1 },
@@ -166,7 +168,6 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/tools/src/builtins/shell.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/walk.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/write.ts': { 'node:fs': 1 },
-  'packages/tools/src/call-lock.ts': { 'node:fs': 1 },
   'packages/tools/src/capture.ts': { 'setTimeout': 1 },
   'packages/tools/src/executor.ts': { 'setTimeout': 3, 'node:fs': 1 },
   'packages/tools/src/policy-filesystem.ts': { 'setTimeout': 1, 'node:fs': 1 },
@@ -178,6 +179,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
 
 const CLI_PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/auto-mode.ts': { createHostExec: 1 },
+  'packages/cli/src/daemon/ensure-daemon.ts': { nodeFileSystem: 1 },
   'packages/cli/src/eval/context-effects.ts': { createHostExec: 1 },
   'packages/cli/src/ripgrep/host.ts': { nodeFileSystem: 1 },
   'packages/cli/src/verify/host.ts': { nodeFileSystem: 4 },

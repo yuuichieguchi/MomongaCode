@@ -79,8 +79,8 @@ describe.each(RESTART_KINDS)('$label goes to failed after maxRestarts consecutiv
 
 const idleServer: ManagedServer = {
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  start: async () => ({ kind: 'unix', path: '/unused.sock' }),
+  ensureRunning: async () => ({ kind: 'unix', path: '/unused.sock' }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 };

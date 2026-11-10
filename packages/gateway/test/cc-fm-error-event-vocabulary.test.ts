@@ -22,7 +22,7 @@ const startFakeFm = async (reply: FakeScriptedReply): Promise<FakeChatCompletion
 };
 
 const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) => {
-  const endpoint = { kind: 'unix' as const, socketPath: fake.socketPath };
+  const endpoint = { kind: 'unix' as const, path: fake.socketPath };
   const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => endpoint,

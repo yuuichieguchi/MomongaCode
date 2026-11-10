@@ -83,6 +83,7 @@ const waitForAbort = (signal: AbortSignal | undefined): Promise<never> =>
 const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }; silent?: boolean } = {}): Fake => {
   const state: Fake = { effects: undefined as unknown as ContextHostEffects, roots: new Map(), started: [], terminated: [], connected: [], sessions: [], ...(options.abortAt === undefined ? {} : { abortAt: options.abortAt }) };
   let pid = 5000;
+  const daemons = new Map<string, number>();
   let streams = 0;
   const runtimeFor = (root: string): ContextRuntime =>
     ({
@@ -134,13 +135,18 @@ const fake = (options: { abortAt?: { stage: Stage; controller: AbortController }
     },
     makeDirectory: async () => undefined,
     canonical: async (directory) => directory,
-    startDaemon: async () => {
+    refuseUnfitSockets: async () => undefined,
+    startDaemon: async (_root, paths) => {
       pid += 1;
       state.started.push(pid);
-      return pid;
+      daemons.set(paths.root, pid);
     },
-    daemonHolder: async () => undefined,
-    terminate: async (killed) => void state.terminated.push(killed),
+    terminate: async (paths) => {
+      const killed = daemons.get(paths.root);
+      if (killed === undefined) return;
+      daemons.delete(paths.root);
+      state.terminated.push(killed);
+    },
     remove: async (directory) => {
       const entry = state.roots.get(directory);
       if (entry !== undefined) entry.removed = true;
@@ -377,8 +383,7 @@ const publishGateGateway = async (home: string, gatewaySocket: string): Promise<
   await publishCurrentGeneration(
     momongaPaths(home),
     { generation: 2, version: '0.0.0-test', sockets: { gateway: gatewaySocket, runtime: '/tmp/gate-home-sockets/runtime-2.sock', supervisor: '/tmp/gate-home-sockets/supervisor-2.sock' } },
-    nodeFileSystem,
-    createFakeKernelLock({ inheritable: false }),
+    { fs: nodeFileSystem, lock: createFakeKernelLock({ inheritable: false }) },
   );
 };
 

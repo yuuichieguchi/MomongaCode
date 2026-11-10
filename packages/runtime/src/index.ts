@@ -52,7 +52,7 @@ export type {
   ServiceTimers,
   SessionCreateSettings,
 } from './service/index.ts';
-export { GatewayRequestError, ModelUnlistedError, createGatewayClient } from './gateway-client.ts';
+export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, ModelUnlistedError, createGatewayClient, isGatewayNeverReached, isGenerationRetiredRefusal } from './gateway-client.ts';
 export type { GatewayClient, GatewayClientOptions, GatewayModel, GatewayRequestErrorFields } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';

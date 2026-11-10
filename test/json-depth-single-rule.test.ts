@@ -57,7 +57,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/cli/src/update/node-ports.ts': { calls: 1, reason: 'the update state file the product writes' },
   'packages/cli/src/client/runtime-client.ts': { calls: 2, reason: 'responses of the product\'s own run service, which bounds its inputs at entry' },
   'packages/cli/src/client/supervisor-client.ts': { calls: 2, reason: 'responses of the product\'s own supervisor' },
-  'packages/cli/src/client/gateway-client.ts': { calls: 2, reason: 'responses of the product\'s own gateway, which bounds upstream data at entry' },
+  'packages/cli/src/client/gateway-client.ts': { calls: 3, reason: 'responses of the product\'s own gateway, which bounds upstream data at entry' },
   'packages/runtime/src/gateway-client.ts': { calls: 5, reason: 'responses and stream frames of the product\'s own gateway, which bounds upstream data at entry' },
   'packages/observability/src/trace-store.ts': { calls: 1, reason: 'spans the product wrote to its own trace store' },
   'packages/observability/src/cost-report.ts': { calls: 1, reason: 'a span attribute the product encoded' },

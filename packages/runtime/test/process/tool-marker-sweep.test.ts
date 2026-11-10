@@ -6,7 +6,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTe
 import type { CleanupContext } from '@momonga/testkit';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
 import { START_MS, writeUserSettings } from './helpers.ts';
-import { entriesNamed, fireTimer, launchRuntime, modelSettings, waitForCondition } from './run-helpers.ts';
+import { SERVING_TICK_MS, entriesNamed, launchRuntime, modelSettings, passServingTime } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -50,13 +50,14 @@ describe('tool marker sweep wiring (§8)', () => {
     expect(TOOL_MARKER_SWEEP_MS).toBe(30_000);
   });
 
-  it('timers teardown: the sweep timer is armed while running and no sweep timer is pending after close (fake timers)', async (context) => {
+  it('timers teardown: the serving tick that carries the sweep is armed while running, no timer of the sweep interval exists, and none is pending after close (fake timers)', async (context) => {
     const temp = trackedRunHome(context);
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
     const launched = await launchRuntime(temp, { clock, fakeTimers: timers, leaseMs: NON_SWEEP_LEASE_MS });
 
-    expect(timers.pending().filter((timer) => timer.delayMs === TOOL_MARKER_SWEEP_MS)).toHaveLength(1);
+    expect(timers.pending().filter((timer) => timer.delayMs === TOOL_MARKER_SWEEP_MS)).toHaveLength(0);
+    expect(timers.pending().some((timer) => timer.delayMs === SERVING_TICK_MS)).toBe(true);
     expect(await launched.handle.close()).toEqual({ clean: true, abandoned: [], stragglers: [] });
     expect(timers.pending()).toEqual([]);
   });
@@ -80,10 +81,8 @@ describe('tool marker sweep wiring (§8)', () => {
       const { timers, launched } = launchBubblewrap(bubblewrapHome(context));
       await launched;
       expect(sandboxSweeps.calls).toBe(0);
-      await fireTimer(timers, TOOL_MARKER_SWEEP_MS, 'the first tool marker sweep');
-      await waitForCondition(() => sandboxSweeps.calls === 1, 'the first sandbox sweep');
-      await fireTimer(timers, TOOL_MARKER_SWEEP_MS, 'the second tool marker sweep');
-      await waitForCondition(() => sandboxSweeps.calls === 2, 'the second sandbox sweep');
+      await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => sandboxSweeps.calls === 1, 'the first sandbox sweep');
+      await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => sandboxSweeps.calls === 2, 'the second sandbox sweep');
     });
 
     it('report a sweep that fails without stopping the runtime', async (context) => {
@@ -91,8 +90,7 @@ describe('tool marker sweep wiring (§8)', () => {
       sandboxSweeps.failure = failure;
       const { timers, launched } = launchBubblewrap(bubblewrapHome(context));
       const runtime = await launched;
-      await fireTimer(timers, TOOL_MARKER_SWEEP_MS, 'the tool marker sweep');
-      await waitForCondition(() => entriesNamed(runtime.logger, 'runtime error').some((entry) => entry.fields?.err === failure), 'the sweep failure to be reported');
+      await passServingTime(timers, TOOL_MARKER_SWEEP_MS, () => entriesNamed(runtime.logger, 'runtime error').some((entry) => entry.fields?.err === failure), 'the sweep failure to be reported');
       expect(entriesNamed(runtime.logger, 'runtime.fatal')).toEqual([]);
     });
   });

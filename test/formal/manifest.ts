@@ -8,7 +8,7 @@ export { verdictProblems } from './verdict.ts';
 export const everyRunBudgetSeconds = (manifest: Manifest): number =>
   manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + Math.ceil(2 * entry.measuredSeconds), 0);
 
-export const EVERY_RUN_BUDGET_RATIO = 24;
+export const EVERY_RUN_BUDGET_RATIO = 38;
 
 export const tierBudgetProblem = (manifest: Manifest): string | undefined => {
   const total = everyRunBudgetSeconds(manifest);

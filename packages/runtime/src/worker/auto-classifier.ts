@@ -5,6 +5,7 @@ import type { ClassifierVerdict, CreateResponseBody, RunEventPayload } from '@mo
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { GatewayFailureError } from './errors.ts';
+import { retireDecisionOf } from './gateway-policy.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
@@ -109,7 +110,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
         try {
           result = await judge(request, alias);
         } catch (error) {
-          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError)) throw error;
+          if (ctx.control.signal.aborted || !(error instanceof GatewayRequestError) || (await retireDecisionOf(error, ctx.options.role)) === 'retire-yield') throw error;
           result = asked({ alias, failure: `${error.code}: ${error.message}` });
         }
       }

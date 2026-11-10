@@ -97,7 +97,7 @@ export const measureManagedServer =
     try {
       const endpoint = await server.start(signal);
       return await runProbe({
-        socketPath: endpoint.socketPath,
+        socketPath: endpoint.path,
         managed: { readyPath: description.ready.path, listPath: description.models.listPath, idPath: description.models.idPath },
         vocabulary: vocabularyOf(description),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),

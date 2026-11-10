@@ -1,3 +1,4 @@
+import type { RolePort } from '@momonga/foundation';
 import type { Claim, RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from '../service/timers.ts';
 import { LeaseLostError, ShutdownError } from './errors.ts';
@@ -26,11 +27,12 @@ export type ClaimControlOptions = {
   store: RuntimeStore;
   timers: ServiceTimers;
   claim: Claim;
+  role: Pick<RolePort, 'current'>;
   heartbeatMs: number;
   cancelPollMs: number;
 };
 
-export const startClaimControl = ({ store, timers, claim, heartbeatMs, cancelPollMs }: ClaimControlOptions): ClaimControl => {
+export const startClaimControl = ({ store, timers, claim, role, heartbeatMs, cancelPollMs }: ClaimControlOptions): ClaimControl => {
   const controller = new AbortController();
   const recovery = new AbortController();
   let leaseLost = false;
@@ -133,7 +135,7 @@ export const startClaimControl = ({ store, timers, claim, heartbeatMs, cancelPol
     requestYield: () => {
       yieldRequested = true;
     },
-    yieldRequested: () => yieldRequested || shuttingDown,
+    yieldRequested: () => yieldRequested || shuttingDown || role.current() === 'retiring',
     inFlight,
     fail,
     recordingRaised: async (pending) => {

@@ -187,6 +187,7 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       pid: 1,
       startedAt: '2026-11-10T00:00:00.000Z',
       state: 'running',
+      activeRequests: 0,
     }),
     sandbox: async () => 'seatbelt' as const,
     startSignInListener: options.startListener ?? listener,

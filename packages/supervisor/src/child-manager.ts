@@ -51,7 +51,7 @@ import type { DaemonMarker, MarkerPorts } from './orphans.ts';
 import { watchLock } from './lock-watch.ts';
 import type { ExternalProbe, LockWatch } from './lock-watch.ts';
 import { classifyExit, decideAfterExit, failureWithoutProcess, stopReasonRank } from './restart-policy.ts';
-import type { ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
+import type { ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';
 
 export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
 
@@ -113,6 +113,8 @@ export type ChildManagerOptions = {
   markerPorts?: MarkerPorts;
   stopValues?: StopValuesReader;
   isDraining(): boolean;
+  isRetiring(): boolean;
+  onRetiredExit(): void;
   onBackgroundError(error: unknown, source: string): void;
   onTransientError(error: unknown, source: string): void;
   onVersionMismatch(mismatch: ChildVersionMismatch): void;
@@ -130,6 +132,8 @@ export type ChildManager = {
   holdsCapability(given: string): boolean;
   stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult>;
   enterDraining(): void;
+  enterRetiring(): void;
+  hasEnded(): boolean;
   unreapedMarkers(): readonly string[];
   inFlightReaps(): ReadonlyMap<string, Promise<{ removed: boolean }>>;
   awaitLeave(from: ChildState, options: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState>;
@@ -209,6 +213,9 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const inFlightReaps = new Map<string, Promise<{ removed: boolean }>>();
   const leaveWaiters = new Set<{ from: ChildState; settle: () => void }>();
   let lastSkippedNames = '';
+  let heldForVersion = false;
+
+  const startsNothing = (): boolean => options.isDraining() || options.isRetiring() || heldForVersion;
 
   const setState = (next: ChildState): void => {
     state = next;
@@ -273,7 +280,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const armedGeneration = generation;
     heldTimer = schedule('held-retry-timer', options.heldRetryMs, () => {
       heldTimer = undefined;
-      if (options.isDraining() || generation !== armedGeneration) return;
+      if (startsNothing() || generation !== armedGeneration) return;
       spawnFresh('held-retry');
     });
   };
@@ -295,7 +302,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     const armedGeneration = generation;
     backoffTimer = schedule('backoff-timer', delayMs, () => {
       backoffTimer = undefined;
-      if (options.isDraining() || generation !== armedGeneration) return;
+      if (startsNothing() || generation !== armedGeneration) return;
       spawnFresh('backoff');
     });
     log(childBackoff({ child: role, delayMs, consecutiveFailures }));
@@ -304,7 +311,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const enterWaitingLock = (): void => {
     setState('waiting-lock');
     const armedGeneration = generation;
-    const isStale = (): boolean => options.isDraining() || generation !== armedGeneration;
+    const isStale = (): boolean => startsNothing() || generation !== armedGeneration;
     lockWatch = watchLock({
       role,
       lockPath: options.endpoint.lockPath,
@@ -449,6 +456,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (fields.service === role && fields.pid === life.pid) {
       if (fields.version !== options.version) {
         log(childVersionMismatch({ child: role, childPid: life.pid ?? null, childVersion: fields.version, supervisorVersion: options.version }));
+        heldForVersion = true;
+        void stop('ready-mismatch', 'term');
         options.onVersionMismatch({ role, childVersion: fields.version });
         return true;
       }
@@ -569,7 +578,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       if (current === life) current = undefined;
       return;
     }
-    const classification = classifyExit({ code: exit.code, signal: exit.signal, stop: life.stopReason });
+    const exitClass = classifyExit({ code: exit.code, signal: exit.signal, stop: life.stopReason });
+    const classification: ExitClassification = heldForVersion && life.stopReason === 'ready-mismatch' ? { class: exitClass.class, reason: 'version-mismatch' } : exitClass;
     lastExit = { code: exit.code, signal: exit.signal, at: isoOf(clock.now()), reason: classification.reason };
     readyAt = undefined;
     if (current === life) current = undefined;
@@ -588,6 +598,15 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       setState('stopped');
       return;
     }
+    if (heldForVersion) {
+      setState('held-version');
+      return;
+    }
+    if (classification.class === 'retired') options.onRetiredExit();
+    if (options.isRetiring()) {
+      setState('stopped');
+      return;
+    }
     applyDecision(decideAfterExit({ exit: classification, consecutiveFailures, policy: options.restart, random: options.random }), life.lastStderrLine);
   };
 
@@ -597,7 +616,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const launch = (snapshot: UserSettingsSnapshot, reason: SpawnReason): void => {
-    if (options.isDraining()) return;
+    if (startsNothing()) return;
     beginAttempt();
     if ('error' in snapshot) {
       hold(snapshot.error.message, 'settings');
@@ -666,7 +685,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   function spawnFresh(reason: SpawnReason): void {
-    if (options.isDraining()) return;
+    if (startsNothing()) return;
     let snapshot: UserSettingsSnapshot;
     try {
       snapshot = options.settings.snapshot();
@@ -790,6 +809,13 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     if (liveLife() === undefined) setState('stopped');
   };
 
+  const enterRetiring = (): void => {
+    clearScheduled();
+    if (liveLife() === undefined && state !== 'held-version') setState('stopped');
+  };
+
+  const ENDED_STATES: ReadonlySet<ChildState> = new Set<ChildState>(['pending', 'stopped', 'held-version']);
+
   const awaitLeave = (from: ChildState, leaveOptions: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState> =>
     new Promise<ChildState>((resolve) => {
       if (state !== from || leaveOptions.signal.aborted) {
@@ -844,12 +870,14 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       });
     },
     retryHeld: () => {
-      if (options.isDraining() || state !== 'held-config') return;
+      if (startsNothing() || state !== 'held-config') return;
       consecutiveFailures = 0;
       spawnFresh('settings-change');
     },
     stop,
     enterDraining,
+    enterRetiring,
+    hasEnded: () => ENDED_STATES.has(state) && liveLife() === undefined,
     unreapedMarkers: () => [...unreaped],
     inFlightReaps: () => inFlightReaps,
     awaitLeave,

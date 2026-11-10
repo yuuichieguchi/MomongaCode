@@ -13,6 +13,9 @@ describe('health (fake timers)', () => {
       pid: SERVICE_PID,
       startedAt: STARTED_AT,
       state: 'running',
+      role: 'serving',
+      steps: 0,
+      jobs: 0,
       sandbox: 'seatbelt',
     });
     expectSchema('Health', response.json);

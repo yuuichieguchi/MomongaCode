@@ -44,7 +44,8 @@ export type GatewayHealth = {
   apiVersion: 1;
   pid: number;
   startedAt: string;
-  state: 'running' | 'draining';
+  state: 'running' | 'retiring' | 'draining';
+  activeRequests: number;
 };
 
 export type UsageSource = 'reported' | 'estimated';

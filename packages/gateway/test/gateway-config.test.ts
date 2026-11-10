@@ -1,3 +1,4 @@
+import { fixedRolePort } from '@momonga/foundation';
 import path from 'node:path';
 import { Agent, request } from 'undici';
 import { describe, expect, it } from 'vitest';
@@ -10,6 +11,7 @@ const construct = (overrides: { hmacKey?: Uint8Array; debugTcp?: { host: string;
   const dir = makeDir();
   const clock = createFakeClock(START_MS);
   return createGateway({
+    role: fixedRolePort('serving'),
     random: () => 0.5,
     credentials: [],
     config: buildConfig(),
@@ -76,6 +78,7 @@ describe('readerStallMs', () => {
     const config = buildConfig({ limits: { readerStallMs: 0 } });
     await expect(
       createGateway({
+        role: fixedRolePort('serving'),
         random: () => 0.5,
         credentials: [],
         config,

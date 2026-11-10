@@ -23,7 +23,7 @@ import {
   withTempDir,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 
@@ -54,6 +54,7 @@ type Stack = { home: string; handle: GatewayProcess; client: UdsClient; logText(
 
 const startStack = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}): Promise<Stack> => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   replaceSettings(home, settings);
   const chunks: string[] = [];
   const handle = await ownedStart(context, startGatewayProcess({
@@ -407,6 +408,7 @@ const keyedTarget = (fake: FakeChatCompletionsServer) => ({ models: { aliases: {
 
 const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletionsServer, env: Record<string, string>, beforeStart: (home: string) => Promise<unknown>) => {
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   await beforeStart(home);
   replaceSettings(home, keyedTarget(fake));
   const handle = await ownedStart(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
@@ -474,6 +476,7 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
   ])('$label gives the unset text and no reply text in the answer or the log', async ({ status, body }, context) => {
     const a = await fakeUpstream(context);
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     await replyingSupervisor(context, home, status, body);
     replaceSettings(home, keyedTarget(a));
     const chunks: string[] = [];

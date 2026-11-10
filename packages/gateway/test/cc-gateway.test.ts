@@ -122,7 +122,7 @@ describe('chat-completions adapter through the gateway', () => {
 const expectHealth = (body: Record<string, unknown>, expected: { ok: boolean; targets: Record<string, unknown> }): void => {
   const { ok, targets, ...processFields } = body;
   expect({ ok, targets }).toEqual(expected);
-  expect(Object.keys(processFields).sort()).toEqual(['apiVersion', 'pid', 'startedAt', 'state', 'version']);
+  expect(Object.keys(processFields).sort()).toEqual(['activeRequests', 'apiVersion', 'pid', 'startedAt', 'state', 'version']);
   expect(processFields).toMatchObject({ version: TEST_VERSION, apiVersion: 1, pid: process.pid, state: 'running' });
   expect(new Date(processFields['startedAt'] as string).getTime()).toBe(START_MS);
 };

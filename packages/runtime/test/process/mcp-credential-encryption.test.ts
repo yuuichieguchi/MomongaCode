@@ -1,3 +1,4 @@
+import { FIRST_GENERATION, fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -46,6 +47,9 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
     }) as unknown as McpAuthorizingPool;
   const toolRuntime = runtime.createToolRuntime({
     paths: f.temp.paths,
+    sharedPaths: f.temp.paths,
+    generation: FIRST_GENERATION,
+    role: fixedRolePort('serving'),
     home: f.temp.home,
     store: f.store,
     notifier: f.notifier,

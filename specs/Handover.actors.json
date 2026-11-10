@@ -1,0 +1,168 @@
+[
+  {
+    "actor": "modelled state: terminal modes (raw mode, bracketed paste) written by Ink's render in the TUI process; the only writer of the terminal's modes in code today",
+    "file": "packages/cli/src/tui/run-interactive.tsx",
+    "symbol": "render("
+  },
+  {
+    "actor": "writes the prompt event at run creation",
+    "file": "packages/store/src/runtime-store.ts",
+    "symbol": "{ type: 'user.message', text: input.input"
+  },
+  {
+    "actor": "writes injected user.message (hook context)",
+    "file": "packages/runtime/src/worker/hook-step.ts",
+    "symbol": "type: 'user.message', text: `[${event}"
+  },
+  {
+    "actor": "daemon session event stream (replay source)",
+    "file": "packages/runtime/src/service/app.ts",
+    "symbol": "'/v1/sessions/:id/events'"
+  },
+  {
+    "actor": "ACP session/load replays each run",
+    "file": "packages/cli/src/acp/agent.ts",
+    "symbol": "replayRun"
+  },
+  {
+    "actor": "ACP maps user.message in history",
+    "file": "packages/cli/src/acp/events.ts",
+    "symbol": "case 'user.message':"
+  },
+  {
+    "actor": "TUI live echo of the prompt (removed by I7)",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "dispatch({ kind: 'append', entry: { kind: 'user', text } })"
+  },
+  {
+    "actor": "TUI fold of approval requests",
+    "file": "packages/cli/src/tui/transcript.ts",
+    "symbol": "case 'tool.permission.requested'"
+  },
+  {
+    "actor": "TUI local task runner (blocks a move)",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "return tasks.run(work);"
+  },
+  {
+    "actor": "TUI elicitation answer submission (blocks a move)",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "const proceedFlow"
+  },
+  {
+    "actor": "newer generation surfaces (the hook of I6 and I7)",
+    "file": "packages/cli/src/daemon/ensure-daemon.ts",
+    "symbol": "was updated to"
+  },
+  {
+    "actor": "headless run waits for an approval",
+    "file": "packages/cli/src/run/headless.ts",
+    "symbol": "waiting for approval"
+  },
+  {
+    "actor": "modelled state: Ink's input hooks (raw mode on mount, restore on unmount); reader of the terminal state in the old and the new process",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "useInput((input, key) =>"
+  },
+  {
+    "actor": "modelled state: Ink's paste hook (bracketed paste on mount)",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "usePaste("
+  },
+  {
+    "actor": "modelled state: the TUI exits through Ink's exit (the restore path of a finished session); the exit path of the refuse case is the same code",
+    "file": "packages/cli/src/tui/app.tsx",
+    "symbol": "const { exit } = useApp();"
+  },
+  {
+    "actor": "terminal layer Start: enters the alternate screen (fullscreen only), pushes the kitty flags, enables bracketed paste; the mode set per screen mode is data (ModesOf, StartModes)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.2, 2.3",
+    "model": "Init, term, ModesOf, StartModes",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "terminal layer: mouse reporting turned on after the 1006 reply (EnableMouse)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.3",
+    "model": "EnableMouse",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "terminal layer restore(): writes the inverse of ENABLED; not run on the exec handover (either screen mode); the new process that does not adopt restores exactly the modes named in MOMONGA_HANDOVER_TERMINAL; the restore at session exit is outside the model",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.2",
+    "model": "RestoreOld (evidence only), LeaveAll, Refuse; the leave at session exit is the same table and the same enabled set (no second actor)",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "terminal layer suspend and continue: restore, SIGSTOP, re-enter every mode of the saved set; a move happens only at a quiet point, and a suspended process receives no event, so it cannot begin a move (argued away)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.2, design-update 16.5",
+    "model": "none: not enabled in any phase of the model",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "screen switch /tui fullscreen|scrollback: chunked writes (SWITCH_CHUNK_ROWS rows per event-loop turn) while the session lives; a move does not begin while a switch is under way (16.5); the effect on the screen mode is outside the model (Screen is fixed)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.1",
+    "model": "StartSwitch, EndSwitch, switching, NoMoveWithSwitch",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "viewport: owns the scroll anchor {entryId, rowOffset} and the flag following; written by wheel, keys, selection moves and new output (ScrollView)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.5, 13.1",
+    "model": "ScrollView, viewNow, recView, adoptedView",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "thought entries: expanded flag toggled by ctrl+o and a click (ToggleThought); replay shows every thought folded unless a record carries the toggles",
+    "design": "design-screens-2026-11-10.md",
+    "section": "6.3, 13.1",
+    "model": "ToggleThought, togNow, recTog, adoptedTog",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "resize: marks the wrap cache stale by width and rewraps visible rows; the adoption runs the same path after restoring the anchor key and following; no modelled variable reads the terminal size (argued away; the screens design states no rule for the row offset)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.4",
+    "model": "none: ViewKept checks key and following only",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "/clear opens a new session: no record holds a clear mark, and a session client moves one session at a time; a move waits for the quiet point like any pending connection work",
+    "design": "design-screens-2026-11-10.md",
+    "section": "9.4, 13.1 I-8",
+    "model": "none: no clear mark, no clear action",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "scrollback Static output (printed items): written once per settled row by Ink (Flush), skipped by the new process (Adopt)",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.1, design-update 16.6",
+    "model": "Flush, output, recItems",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "old process writes MOMONGA_HANDOVER_TERMINAL (version, screen mode, mode set) into the environment of the exec or relay spawn; the new process reads it with --handover and deletes it from its own environment; a value that is absent, unparseable or of an unknown version makes it write the leave sequence of every row of the mode table once, before anything else, then start as an ordinary client in the screen mode of its settings",
+    "design": "design-update-no-interrupt-2026-11-07.md",
+    "section": "16.6 (O8)",
+    "model": "WriteOk (envModes), ExecOk (envKnown), LeaveAll, Adopt (screenNow, enabled), Refuse, EnabledKnown, NoneLeftSet, ModesKept",
+    "status": "not in code yet: derived from the update design"
+  },
+  {
+    "actor": "negotiation state (neg) and newline hint: carried by the record; the new process asks the terminal nothing at adoption",
+    "design": "design-screens-2026-11-10.md",
+    "section": "2.3",
+    "model": "negNow, recNeg, adoptedNeg, NegKept",
+    "status": "not in code yet: derived from the screens design"
+  },
+  {
+    "actor": "mode table: one table of data, each row with its enter and its leave sequence, used by the enable code, the restore at exit, the refuse path and the lost-value leave",
+    "design": "design-update-no-interrupt-2026-11-07.md",
+    "section": "16.6 (O13)",
+    "model": "Modes (idempotent rows: alt, mouse, paste; stacked row: kitty), LeaveAll",
+    "status": "not in code yet: derived from the update design"
+  }
+]

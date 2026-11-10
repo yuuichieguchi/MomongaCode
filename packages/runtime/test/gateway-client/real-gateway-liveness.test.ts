@@ -8,6 +8,7 @@ import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { CLIENT_VERSION, callOptions, collect, expectGatewayError, fakeClock, settle, streamBody, userInput } from './fixtures.ts';
 import { FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
+import { prepareGatewayHome } from './prepared-home.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -59,6 +60,7 @@ beforeAll(async () => {
     }),
     { mode: 0o600 },
   );
+  await prepareGatewayHome(home);
   startedGateway = startGatewayProcess({
     generation: FIRST_GENERATION,
     home,

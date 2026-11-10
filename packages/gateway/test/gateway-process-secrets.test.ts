@@ -20,7 +20,7 @@ import {
   withTempDir,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeControl, FakeTimers, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, fakeSecretHost, givenStoreOnHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, fakeSecretHost, givenStoreOnHost, homePaths, portOnSecretHost, writeSettings, prepareHome } from './gateway-process-helpers.ts';
 import type { HostPort, SecretHost } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED, expectNoCredential } from './credential-support.ts';
@@ -102,6 +102,7 @@ const startStack = async (
   const openResponses = await startFakeOpenResponses({ script: [openResponsesTextReply(['from the local target'])] });
   registerCleanup(context, () => openResponses.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: {
       ...(options.headersTimeoutMs === undefined ? {} : { headersTimeoutMs: options.headersTimeoutMs }),
@@ -249,6 +250,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     const openResponses = await startFakeOpenResponses({ script: [openResponsesTextReply(['from the local target'])] });
     registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     writeSettings(home, {
       models: {
         aliases: { fast: ['claude'], other: ['local'] },
@@ -290,6 +292,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     const openResponses = await startFakeOpenResponses({ script: [] });
     registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     writeSettings(home, {
       models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
     });

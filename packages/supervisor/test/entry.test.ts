@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
+import { EXIT_CONFIG, EXIT_OK, hostKernelLock, inspectProcessLock, parseReadyLine } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, registerCleanup, startLockHolder, waitFor, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeEntryIo, createFakeTimers, fakeReapTiming, parseJsonLines, prepareGenerationForTest, registerCleanup, startLockHolder, waitFor, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { runSupervisorEntry } from '../src/entry.ts';
@@ -49,6 +49,7 @@ type EntryOptions = {
   prepared?: { home: string; paths: MomongaPaths };
   lockMechanism?: KernelLockMechanism;
   argvHome?: boolean;
+  generationFlag?: string | false;
   behaviours?: FakeSpawnOptions['behaviours'];
 };
 
@@ -66,11 +67,12 @@ const cancelOnClaim = (target: string, cancel: () => void): KernelLockMechanism 
 const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryRun => {
   const { home, paths } = options.prepared ?? prepareHome(context);
   writeSettings(home, validSettings());
+  prepareGenerationForTest(home, 1, TEST_VERSION);
   options.prepare?.(home, paths);
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
   const io = createFakeEntryIo({
-    argv: [...(options.argvHome === false ? [] : [`--home=${home}`]), '--log-target=file'],
+    argv: [...(options.argvHome === false ? [] : [`--home=${home}`]), ...(options.generationFlag === false ? [] : [`--generation=${options.generationFlag ?? '1'}`]), '--log-target=file'],
     home,
     env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home, LANG: 'C' },
     clock,
@@ -88,6 +90,7 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
     random: () => 0.5,
     watchSettings: false,
     reapTiming: fakeReapTiming(clock, timers),
+    childCounts: async () => ({}),
     ...(options.lockMechanism === undefined ? {} : { lockMechanism: options.lockMechanism }),
     ...options.deps,
   }));
@@ -161,18 +164,32 @@ describe('runSupervisorEntry', () => {
     expect(run.io.exits).toEqual([0]);
   });
 
-  it('a child that reports another version is never ready: the supervisor drains and exits with the version-mismatch code', async (context) => {
+  it('a child that reports another version before promotion makes the start an abandoned one: exit 0, never promoted', async (context) => {
     const run = startEntry(context, { behaviours: { runtime: { readyVersion: `${TEST_VERSION}-other` } } });
     await ready(run);
-    expect(await exitOf(run)).toBe(EXIT_VERSION_MISMATCH);
-    expect(EXIT_VERSION_MISMATCH).not.toBe(EXIT_ALREADY_RUNNING);
-    expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', clean: false, code: EXIT_VERSION_MISMATCH });
+    expect(await exitOf(run)).toBe(EXIT_OK);
+    expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', clean: true, code: EXIT_OK });
     const mismatches = run.supervisorLog().filter((line) => line.msg === 'child.version.mismatch');
     expect(mismatches).toEqual([expect.objectContaining({ child: 'runtime', childVersion: `${TEST_VERSION}-other`, supervisorVersion: TEST_VERSION })]);
+    expect(run.supervisorLog().filter((line) => line.msg === 'start.abandoned')).toEqual([expect.objectContaining({ generation: 1, reason: 'version-differs' })]);
     expect(run.supervisorLog().filter((line) => line.msg === 'child.ready' && line['child'] === 'runtime')).toEqual([]);
-    expect(run.fake.latest('runtime').signals).toEqual(['SIGTERM']);
-    expect(run.fake.latest('gateway').signals).toEqual(['SIGTERM']);
-    expect(run.io.exits).toEqual([EXIT_VERSION_MISMATCH]);
+    expect(fs.existsSync(run.paths.current)).toBe(false);
+    expect(run.io.exits).toEqual([EXIT_OK]);
+  });
+
+  it.for([['no flag', false], ['zero', '0'], ['a word', 'two'], ['a signed number', '-1']] as const)('refuses to start with %s for --generation: exit 78 and the settled text', async ([, generationFlag], context) => {
+    const run = startEntry(context, { generationFlag });
+    expect(await exitOf(run, 5000)).toBe(EXIT_CONFIG);
+    expect(run.io.stderrLines().join('\n')).toContain('supervise requires --generation=<N>, a positive whole number');
+    expect(run.fake.spawnCount()).toBe(0);
+  });
+
+  it('every line of the supervisor log carries the generation', async (context) => {
+    const run = startEntry(context);
+    await childrenReady(run);
+    const lines = run.supervisorLog().filter((line) => typeof line.msg === 'string' && !String(line.msg).startsWith('entry.'));
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((line) => line['generation'] === 1)).toBe(true);
   });
 
   it('exit codes: a killed child gives 1', async (context) => {
@@ -185,13 +202,14 @@ describe('runSupervisorEntry', () => {
     expect(run.fake.latest('runtime').groupKills).toBe(1);
   });
 
-  it('SIGTERM during the reap exits 0 through close()', async (context) => {
+  it('SIGTERM during the reap of its own markers exits 0 through close()', async (context) => {
     const run = startEntry(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999] },
+      markerPorts: {
+        reapMarkerDirectory: (options) => new Promise((resolve) => options.signal?.addEventListener('abort', () => resolve({ reaped: 0, kept: 0 }), { once: true })),
+      },
     });
     await ready(run);
-    await waitFor(() => run.markers.findHolders.length > 0);
+    await waitFor(() => run.markers.reapMarkerDirectory.length > 0);
     run.io.signal('SIGTERM');
     expect(await exitOf(run)).toBe(0);
     expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', trigger: 'sigterm', code: 0 });
@@ -214,14 +232,16 @@ describe('runSupervisorEntry', () => {
     expect(run.fake.children.flatMap((child) => child.signals)).not.toContain('SIGINT');
   });
 
-  it('second supervisor on the same home exits 75', async (context) => {
+  it('a second supervisor of the same generation is an abandoned start: exit 0, no ready line', async (context) => {
     const prepared = prepareHome(context);
-    fs.mkdirSync(firstGeneration(prepared.paths).dir, { recursive: true, mode: 0o700 });
+    prepareGenerationForTest(prepared.home, 1, TEST_VERSION);
     await startLockHolder(context, firstGeneration(prepared.paths).locks.supervisor);
     const run = startEntry(context, { prepared });
-    expect(await exitOf(run, 5000)).toBe(75);
+    expect(await exitOf(run, 5000)).toBe(EXIT_OK);
     expect(run.io.stdoutLines()).toEqual([]);
-    expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'start-failed', code: 75 });
+    expect(run.supervisorLog().filter((line) => line.msg === 'start.abandoned')).toEqual([expect.objectContaining({ generation: 1, reason: 'lock-held' })]);
+    expect(lastLine(run)).toMatchObject({ msg: 'entry.exit', path: 'close', code: EXIT_OK });
+    expect(run.fake.spawnCount()).toBe(0);
   });
 
   it('a cancel during the supervisor lock acquisition is a startup cancel', async (context) => {

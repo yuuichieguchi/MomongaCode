@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, canonicalPath, createUninspectableRegistry, markerReapClockBoundMs, momongaPaths, probeFailed, runtimeMaxCloseMs, scopeToGeneration, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, prepareGenerationForTest, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
-import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+import { TEST_VERSION, captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -68,6 +68,44 @@ const recorded = (overrides: MarkerPorts = {}) => {
 };
 
 describe('reapOrphans', () => {
+  it('with an occasion, hands it to the marker reap so that each marker spends that one chance (20.62)', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-05'), '', { mode: 0o600 });
+    const { calls, ports } = recorded({ reapMarkerDirectory: async () => ({ reaped: 1, kept: 0 }) });
+    const { options } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await expect(reapOrphans(options)).resolves.toEqual({ reaped: 1, kept: 0, aborted: false });
+    expect(calls.reap.map((call) => call.options.occasion)).toEqual(['sweep']);
+  });
+
+  it('with an occasion, neither waits for nor signals the holders of markers that spent it or are ignored, and writes no line (20.62)', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-06'), 'r01000\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'gateway-07'), 'r00001\n', { mode: 0o600 });
+    const { calls, ports } = recorded({ findHolders: async () => [HOLDER_PID] });
+    const { options, log } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await expect(reapOrphans(options)).resolves.toEqual({ reaped: 0, kept: 2, aborted: false });
+    expect(calls.findHolders).toBe(0);
+    expect(calls.reap).toEqual([]);
+    expect(log.lines()).toEqual([]);
+  });
+
+  it('with an occasion, still waits for a marker that has the chance left beside one that spent it', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-08'), 'r01000\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, 'runtime-09'), '', { mode: 0o600 });
+    const probed: string[] = [];
+    const { calls, ports } = recorded({
+      findHolders: async (marker) => {
+        probed.push(path.basename(marker));
+        return [];
+      },
+    });
+    const { options } = reapSetup(dir, { markerPorts: ports, occasion: 'sweep' });
+    await reapOrphans(options);
+    expect(probed).toEqual(['runtime-09']);
+    expect(calls.reap).toHaveLength(1);
+  });
+
   it('returns at once when there are no markers', async (context) => {
     const dir = markersDir(context);
     const { calls, ports } = recorded();
@@ -378,84 +416,54 @@ describe('orphan reap at supervisor start', () => {
     expect(ORPHAN_REAP_GRACE_MS).toBe(15_000);
   });
 
-  it('start reaps daemon markers before the first spawn', async (context) => {
-    const holder = liveHolder();
+  it('start reaps only the daemon markers of its own generation, before the first spawn, and reads no other generation (20.29)', async (context) => {
+    const others: string[] = [];
     const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-0190a0a0-0000-7000-8000-000000000001'),
-      markerPorts: {
-        findHolders: holder.findHolders,
-        reapMarkerDirectory: async () => {
-          holder.exit();
-          return { reaped: 1, kept: 0 };
-        },
+      generation: 3,
+      prepare: (home) => {
+        for (const generation of [1, 2, 4]) {
+          const marker = path.join(prepareGenerationForTest(home, generation, TEST_VERSION).markers, 'daemons', `runtime-of-g${generation}`);
+          fs.writeFileSync(marker, '', { mode: 0o600 });
+          others.push(marker);
+        }
       },
-      overrides: { orphanGraceMs: 500, orphanReapGraceMs: 200 },
     });
-    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 100_000, description: 'both children spawned after the reap' });
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([expect.objectContaining({ dir: h.paths.markers.daemons, killGraceMs: 200 })]);
+    await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000, description: 'both children spawned' });
+    expect(h.markers.calls.reapMarkerDirectory).toEqual([expect.objectContaining({ dir: scopeToGeneration(momongaPaths(canonicalPath(h.home), process.platform, {}), 3).markers.daemons, killGraceMs: DAEMON_MARKER_KILL_GRACE_MS, label: 'daemon' })]);
+    expect(h.markers.calls.findHolders).toEqual([]);
+    expect(others.map((marker) => fs.existsSync(marker))).toEqual([true, true, true]);
     const messages = h.log.messages();
     expect(messages.indexOf('orphans.reaped')).toBeGreaterThanOrEqual(0);
     expect(messages.indexOf('orphans.reaped')).toBeLessThan(messages.indexOf('child.spawn'));
   });
 
-  it('the control server listens and ready is announced before the first findHolders', async (context) => {
+  it('the control server listens, ready is announced and the phase is running before the reap of its own markers (20.16)', async (context) => {
     let socketPath = '';
     let lockPath = '';
-    const seenAtFirstCall: Array<{ lock: boolean; socket: boolean }> = [];
+    const seenAtReap: Array<{ lock: boolean; socket: boolean }> = [];
+    const reap = Promise.withResolvers<{ reaped: number; kept: number }>();
     const h = await startHarness(context, {
       prepare: (_home, paths) => {
         socketPath = firstGeneration(paths).sockets.supervisor;
         lockPath = firstGeneration(paths).locks.supervisor;
-        writeMarker(paths, 'runtime-old');
       },
       markerPorts: {
-        findHolders: async () => {
-          seenAtFirstCall.push({ lock: fs.existsSync(lockPath), socket: fs.existsSync(socketPath) });
-          return [999_999];
+        reapMarkerDirectory: async () => {
+          seenAtReap.push({ lock: fs.existsSync(lockPath), socket: fs.existsSync(socketPath) });
+          return reap.promise;
         },
       },
     });
-    await waitFor(() => h.markers.calls.findHolders.length > 0);
+    await waitFor(() => h.markers.calls.reapMarkerDirectory.length > 0);
     expect(h.order.indexOf('ready')).toBeGreaterThanOrEqual(0);
-    expect(h.order.indexOf('ready')).toBeLessThan(h.order.indexOf('findHolders'));
-    expect(seenAtFirstCall[0]).toEqual({ lock: true, socket: true });
+    expect(h.order.indexOf('ready')).toBeLessThan(h.order.indexOf('reapMarkerDirectory'));
+    expect(seenAtReap[0]).toEqual({ lock: true, socket: true });
     const response = await httpOver(context, socketPath, 'GET', '/v1/health');
-    expect(JSON.parse(response.text)).toMatchObject({ phase: 'reaping-orphans' });
-  });
-
-  it('phase turns running when the reap ends', async (context) => {
-    let holding = true;
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => (holding ? [999_999] : []) },
-      overrides: { orphanGraceMs: 60_000 },
-    });
-    await pumpUntil(h.timers, () => h.markers.calls.findHolders.length >= 3, { realWork: h.realWork, maxMs: 5000 });
-    expect(h.health().phase).toBe('reaping-orphans');
+    expect(JSON.parse(response.text)).toMatchObject({ phase: 'running', generation: 1, role: 'starting' });
     expect(h.fake.spawnCount()).toBe(0);
-    holding = false;
-    let observedTogether = false;
-    await pumpUntil(
-      h.timers,
-      () => {
-        const health = h.health();
-        if (health.phase === 'running') {
-          observedTogether = health.children.every((child) => child.state !== 'pending');
-          return true;
-        }
-        expect(health.children.map((child) => child.state)).toEqual(['pending', 'pending']);
-        return false;
-      },
-      { realWork: h.realWork, maxMs: 5000 },
-    );
-    expect(observedTogether).toBe(true);
+    reap.resolve({ reaped: 0, kept: 0 });
     await pumpUntil(h.timers, () => h.fake.spawnCount() === 2, { realWork: h.realWork, maxMs: 5000 });
-    const messages = h.log.messages();
-    const reapedAt = messages.indexOf('orphans.reaped');
-    expect(reapedAt).toBeGreaterThanOrEqual(0);
-    messages.forEach((message, index) => {
-      if (message === 'child.spawn') expect(index).toBeGreaterThan(reapedAt);
-    });
+    expect(h.log.withMsg('phase.change')).toEqual([]);
   });
 
   it('a kept marker does not block the start', async (context) => {
@@ -476,28 +484,5 @@ describe('orphan reap at supervisor start', () => {
     h.fake.latest('runtime').exit(75);
     await h.waitForState('runtime', 'waiting-lock', 5000);
     expect(holderPid).toBeGreaterThan(0);
-  });
-
-  it('the default orphanReapGraceMs reaches the reap as killGraceMs 17000', async (context) => {
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999] },
-      overrides: { orphanGraceMs: 250 },
-    });
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 5000 });
-    expect(h.markers.calls.reapMarkerDirectory[0]?.killGraceMs).toBe(ORPHAN_REAP_GRACE_MS);
-    expect(h.markers.calls.reapMarkerDirectory[0]?.dir).toBe(h.paths.markers.daemons);
-  });
-
-  it('orphanGraceMs defaults to runtimeMaxCloseMs(drainTimeoutMs)', async (context) => {
-    const h = await startHarness(context, {
-      prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
-      markerPorts: { findHolders: async () => [999_999] },
-      overrides: { runtime: { drainTimeoutMs: 1000 } },
-    });
-    const bound = runtimeMaxCloseMs(1000);
-    await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { realWork: h.realWork, maxMs: bound });
-    expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
-    await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 1000 });
   });
 });

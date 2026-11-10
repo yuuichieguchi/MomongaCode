@@ -7,7 +7,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import {
   REDACTED,
@@ -65,6 +65,7 @@ const startKeyedStack = async (
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', routes: [{ match: () => true, reply }] });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) } },
   });
@@ -301,6 +302,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     return killGroupsForCleanup(pids);
   });
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], keyed: ['cc'] },

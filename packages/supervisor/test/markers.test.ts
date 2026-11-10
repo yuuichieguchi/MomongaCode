@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, isProcessAlive, momongaPaths, scopeToGeneration } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import { openDaemonMarker } from '../src/orphans.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -138,7 +138,7 @@ describe('daemon markers at spawn', () => {
   it('the supervisor process does not retain the marker fd', async (context) => {
     const markerHolders = async (leak: boolean): Promise<{ listed: boolean; errors: string }> => {
       const home = withTempDir(context, { asHome: true });
-      const paths = momongaPaths(home, process.platform, {});
+      const paths = scopeToGeneration(momongaPaths(home, process.platform, {}), FIRST_GENERATION);
       const args = [SUPERVISOR_FIXTURE, `--home=${home}`, `--child=${CHILD_FIXTURE}`, ...(leak ? ['--leak-marker-fd'] : [])];
       const supervisor = spawnTracked(context, process.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
       trackSupervisorChildren(context, firstGeneration(paths).sockets.supervisor);

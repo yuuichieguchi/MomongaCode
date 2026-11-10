@@ -12,7 +12,7 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf, observedCodeOf, terminalOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf, retireDecisionOf, terminalOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -113,6 +113,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     store,
     timers: options.timers,
     claim,
+    role: options.role,
     heartbeatMs: options.heartbeatMs ?? heartbeatMsFor(options.leaseMs),
     cancelPollMs: options.cancelPollMs ?? DEFAULT_CANCEL_POLL_MS,
   });
@@ -146,6 +147,10 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     }
     try {
       if (control.shuttingDown() || cause instanceof UnknownValueError) {
+        await terminals.yieldLease();
+        return;
+      }
+      if ((await retireDecisionOf(cause, options.role)) === 'retire-yield') {
         await terminals.yieldLease();
         return;
       }

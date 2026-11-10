@@ -101,6 +101,14 @@ describe('C3: the registered list of leftover directories is data in momonga-pat
     expect(stateDirectory?.isLeftover(`.${path.basename(paths.gatewayKey)}.0a1b2c.tmp`)).toBe(true);
     expect(stateDirectory?.isLeftover(path.basename(paths.gatewayKey))).toBe(false);
   });
+
+  it('registers run/ for the temporaries of its atomic writes, and never names run/current, the counter, a lock or a generation directory (20.66)', () => {
+    const paths = momongaPaths(makeTemporaryDirectory());
+    const run = leftoverDirectories(paths).find((entry) => entry.directory === paths.run);
+    expect(run?.isLeftover('.current.0a1b2c.tmp')).toBe(true);
+    expect(run?.isLeftover('.generation.counter.0a1b2c.tmp')).toBe(true);
+    for (const name of ['current', 'generation.counter', 'generation.lock', 'g1', 'markers', 'call-locks']) expect(run?.isLeftover(name), name).toBe(false);
+  });
 });
 
 describe('S8: every directory the product writes entries in is swept, including the store blobs and the probe records', () => {

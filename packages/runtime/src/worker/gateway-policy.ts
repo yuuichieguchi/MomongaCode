@@ -1,11 +1,12 @@
 import { ConfigError } from '@momonga/config';
 import { TRANSIENT_REQUEST_STATUSES } from '@momonga/foundation';
+import type { RolePort } from '@momonga/foundation';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { InheritanceError, JournalThreadError } from '@momonga/store';
 import type { RunError, StatusPatch } from '@momonga/store';
-import { EarlierAttemptNotStoppedError } from '@momonga/tools';
+import { EarlierAttemptNotStoppedError, RetiringYield } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
-import { GatewayRequestError, isTargetProbing } from '../gateway-client.ts';
+import { GatewayRequestError, isGatewayNeverReached, isGenerationRetiredRefusal, isTargetProbing } from '../gateway-client.ts';
 import { USAGE_LIMIT_CODES } from '@momonga/protocol';
 import type { PlanAccountRef, StopReason } from '@momonga/protocol';
 
@@ -45,6 +46,17 @@ export const terminalOf = (disposition: TerminalDisposition): { to: 'FAILED' | '
 
 export const responseFailureDisposition = (failure: RunErrorFields): TerminalDisposition =>
   isUsageLimitCode(failure.code) ? { kind: 'stop', reason: 'usage_limit', ...runErrorOf(failure) } : { kind: 'fail', ...runErrorOf(failure) };
+export type RetireDecision = 'retire-yield' | 'not-retired';
+
+export const retireDecisionOf = async (error: unknown, role: Pick<RolePort, 'refresh'>): Promise<RetireDecision> => {
+  if (error instanceof RetiringYield) return 'retire-yield';
+  if (isGenerationRetiredRefusal(error)) {
+    await role.refresh();
+    return 'retire-yield';
+  }
+  if (isGatewayNeverReached(error) && (await role.refresh()) === 'retiring') return 'retire-yield';
+  return 'not-retired';
+};
 
 export const observedCodeOf = (error: unknown): string => {
   if (error instanceof GatewayRequestError) return error.code;

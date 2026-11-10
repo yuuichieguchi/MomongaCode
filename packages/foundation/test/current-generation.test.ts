@@ -86,7 +86,7 @@ describe('publishCurrentGeneration', () => {
       link: async (from, to) => void operations.push({ op: 'link', file: from, to }),
       rm: async (file) => void operations.push({ op: 'rm', file }),
     };
-    await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), files, createFakeKernelLock({ inheritable: false }));
+    expect(await publishCurrentGeneration(paths, recordOf('/Users/alice', 1, '1.0.0'), { fs: files, lock: createFakeKernelLock({ inheritable: false }) })).toBe('published');
     const writesToCurrent = operations.filter((operation) => operation.file === paths.current && operation.op.startsWith('open'));
     expect(writesToCurrent).toEqual([]);
     const renames = operations.filter((operation) => operation.op === 'rename');

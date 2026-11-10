@@ -2,15 +2,17 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { FIRST_GENERATION, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor } from '@momonga/foundation';
+import { FIRST_GENERATION, SWEEP_INTERVAL_MS, createGivenSecretStore, createUdsClient, fixedSocket, generationLayout, momongaPaths, secretStoreEnvFor } from '@momonga/foundation';
 import type { SecretProcessPort, SecretStore, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, killPidsForCleanup, removeTempDir } from '@momonga/testkit';
-import type { FakeSecurityPort } from '@momonga/testkit';
+import { FAKE_KEYCHAIN_PATH, createFakeSecretFiles, createTempDir, killPidsForCleanup, prepareGenerationForTest, removeTempDir } from '@momonga/testkit';
+import type { FakeSecurityPort, PendingTimer } from '@momonga/testkit';
 import { closedAtCleanup, registerCleanup } from './gateway-helpers.ts';
 
 export const PROCESS_VERSION = '1.10.0-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+
+export const notTheRoleTick = (timer: PendingTimer): boolean => timer.delayMs !== SWEEP_INTERVAL_MS;
 
 export type GatewayProcessOptions = Parameters<typeof startGatewayProcess>[0];
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
@@ -18,7 +20,15 @@ export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess
 export const makeHome = (): string => {
   const home = createTempDir({ asHome: true });
   registerCleanup(() => removeTempDir(home));
+  prepareHome(home);
   return home;
+};
+
+export const prepareHome = (home: string, generation: number = FIRST_GENERATION): void => {
+  const paths = momongaPaths(home, process.platform, {});
+  const directories = [paths.root, paths.run, paths.callLocks, paths.lockProof, paths.markers.root, paths.state, paths.traces.dir, paths.probe, paths.logs, paths.projects, paths.skills, paths.cacheBase, paths.tmp.root, paths.tmp.spawn, paths.tmp.sessions];
+  for (const directory of directories) fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  prepareGenerationForTest(home, generation, PROCESS_VERSION);
 };
 
 export const homePaths = (home: string) => {

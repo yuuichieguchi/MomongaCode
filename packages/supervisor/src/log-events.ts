@@ -58,6 +58,14 @@ export const orphansWaiting = defineEvent<{ markers: number; holders: number }>(
 export const orphansReaping = defineEvent<{ holders: number }>('orphans.reaping', 'warn');
 export const orphansReaped = defineEvent<{ reaped: number; kept: number }>('orphans.reaped', (payload) => (payload.kept > 0 ? 'warn' : 'info'));
 export const orphansWarning = defineEvent<{ detail: string; marker?: string }>('orphans.warning', 'warn');
+export const startAbandoned = defineEvent<{ generation: number; reason: string }>('start.abandoned', 'warn');
+export const startSuperseded = defineEvent<{ generation: number; current: number }>('start.superseded', 'info');
+export const startUnpromoted = defineEvent<{ generation: number; reason: string }>('start.unpromoted', 'warn');
+export const generationPromoted = defineEvent<{ generation: number; version: string; startToPromotedMs: number }>('generation.promoted', 'info');
+export const generationRetiring = defineEvent<{ generation: number; current: number | null }>('generation.retiring', 'info');
+export const generationEnded = defineEvent<{ generation: number; liveMs: number }>('generation.ended', 'info');
+export const generationSuccessor = defineEvent<{ generation: number; successor: number | null; version: string; outcome: string }>('generation.successor', (payload) => (payload.outcome === 'started' || payload.outcome === 'joined' ? 'info' : 'warn'));
+export const generationMany = defineEvent<{ live: number }>('generation.many', 'warn');
 export const shutdownBegin = defineEvent<{ mode: 'close' | 'abort' }>('shutdown.begin', 'info');
 export const shutdownStep = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'info');
 export const shutdownStepBound = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'warn');
@@ -91,6 +99,14 @@ export const SUPERVISOR_EVENTS = {
   'orphans.reaping': orphansReaping,
   'orphans.reaped': orphansReaped,
   'orphans.warning': orphansWarning,
+  'start.abandoned': startAbandoned,
+  'start.superseded': startSuperseded,
+  'start.unpromoted': startUnpromoted,
+  'generation.promoted': generationPromoted,
+  'generation.retiring': generationRetiring,
+  'generation.ended': generationEnded,
+  'generation.successor': generationSuccessor,
+  'generation.many': generationMany,
   'shutdown.begin': shutdownBegin,
   'shutdown.step': shutdownStep,
   'shutdown.end': shutdownEnd,

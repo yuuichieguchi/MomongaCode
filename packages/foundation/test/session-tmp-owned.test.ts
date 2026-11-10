@@ -47,12 +47,13 @@ describe('S9: the session scratch owner takes its claim in L1, through the fixed
       const paths = momongaPaths(makeShortHomeDirectory());
       await ensureMomongaDirs(paths);
       const watched = observing(mechanism);
-      const first = await ensureSessionTmpDir(paths, 'session-1', { lock: watched.lock });
+      const { dir: first, claim } = await ensureSessionTmpDir(paths, 'session-1', { lock: watched.lock });
+      expect(claim).toBe('owned');
       expect(first).toBe(path.join(paths.tmp.sessions, 'session-1'));
       expect(watched.existedAtClaim).toEqual([false]);
       expect(await mechanism.isHeld(claimPathOfDirectory(mechanism, first))).toBe(true);
       const second = await ensureSessionTmpDir(paths, 'session-1', { lock: watched.lock });
-      expect(second).toBe(first);
+      expect(second).toEqual({ dir: first, claim: 'owned' });
       expect(watched.existedAtClaim).toEqual([false]);
       expect(await mechanism.isHeld(claimPathOfDirectory(mechanism, first))).toBe(true);
     });

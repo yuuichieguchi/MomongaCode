@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { closedAtCleanup, onCleanup, writeUserSettings } from './helpers.ts';
-import { GATEWAY_VERSION, launchRuntime, makeRunHome, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
+import { GATEWAY_VERSION, launchRuntime, makeRunHome, prepareGeneration, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
@@ -56,6 +56,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   });
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
+    await prepareGeneration(temp);
     const gateway = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, exec: fakeExec }));
     onCleanup(async () => {
       await gateway.close();

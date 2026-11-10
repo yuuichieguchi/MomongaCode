@@ -1,4 +1,4 @@
-import type { Clock } from '@momonga/foundation';
+import type { Clock, RolePort } from '@momonga/foundation';
 import type { ContextOverflowError, InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerLeases } from '../ports.ts';
@@ -35,6 +35,8 @@ export type WorkerOptions = {
   tracers: TracerLeases;
   clock: Clock;
   workerId: string;
+  role: RolePort;
+  onClaimSettled?: () => void;
   leaseMs: number;
   heartbeatMs?: number;
   cancelPollMs?: number;
@@ -59,4 +61,5 @@ export type Worker = {
   stop(): Promise<void>;
   abort(reason: 'shutdown'): Promise<void>;
   memorySize(): number;
+  claimsInFlight(): number;
 };

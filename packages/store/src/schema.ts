@@ -913,6 +913,13 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const GENERATION_OWNERSHIP = `
+ALTER TABLE runs ADD COLUMN lease_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN owner_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN kill_requested_at INTEGER;
+ALTER TABLE jobs ADD COLUMN output_path TEXT;
+`;
+
 const STORE_COMPATIBILITY = `
 CREATE TABLE store_compat (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1097,5 +1104,10 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'widen the runs.stop_reason CHECK list to every stop reason, usage_limit and conditions_unmet included, by rebuilding runs with its indexes and triggers and re-creating the sessions trigger that reads runs',
     sql: RUNS_STOP_REASONS_WIDENED,
     rebuildsReferencedTable: true,
+  },
+  {
+    version: 30,
+    name: 'record the generation that holds a run lease, and for a background job the generation that owns it, the time a kill was requested and the file its owner writes the output to',
+    sql: GENERATION_OWNERSHIP,
   },
 ];

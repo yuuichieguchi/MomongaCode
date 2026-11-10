@@ -11,7 +11,7 @@ import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
 import { capabilitiesFor } from './harness.ts';
 import { MODEL_ALIAS } from './scripts.ts';
-import { fixedSocket } from '@momonga/foundation';
+import { fixedRolePort, fixedSocket } from '@momonga/foundation';
 
 export const KEEP_ALIVE_EVERY_MS = 40;
 
@@ -61,6 +61,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
     hmacKey: Buffer.from('momonga-test-hmac-key-0001-padded-to-32-bytes', 'utf8'),
     socketPath,
     random: () => 0,
+    role: fixedRolePort('serving'),
     version: '1.10.0-test',
   });
   const client = createGatewayClient({ resolveSocket: fixedSocket(socketPath), clock: options.clock, version: '7.7.7' });

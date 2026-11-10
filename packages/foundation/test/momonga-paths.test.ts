@@ -20,6 +20,8 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     run,
     current: path.join(run, 'current'),
     generationLock: path.join(run, 'generation.lock'),
+    generationCounter: path.join(run, 'generation.counter'),
+    jobs: path.join(run, 'jobs'),
     callLocks: path.join(run, 'call-locks'),
     grepArguments: path.join(run, 'grep-arguments'),
     lockProof: path.join(run, 'lock-proof'),

@@ -3,7 +3,7 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
-import { FIRST_GENERATION, SecretUnavailableError, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretUnavailableError, SocketPathUnsupportedError, momongaLayout } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
@@ -83,9 +83,9 @@ type Behaviour = {
   failSessionOnRoot?: number;
   hang?: boolean;
   failStartOnRoot?: number;
-  rootLength?: number;
   secrets?: Record<string, string>;
   staleRoots?: { root: string; owner: number; home?: string; holder?: number; held?: boolean }[];
+  refusesSockets?: (root: string) => boolean;
   unreadableRoots?: string[];
   legacyRoots?: string[];
   canonicalPrefix?: string;
@@ -114,6 +114,7 @@ const harness = (behaviour: Behaviour = {}) => {
   const roots = new Map<string, { removed: boolean; settings?: string; pid?: number; cwd?: string }>();
   const alive = new Set<number>();
   const terminated: number[] = [];
+  const measuredSockets: { root: string; generation: number }[] = [];
   const stopped: string[] = [];
   const memories: unknown[] = [];
   const trusted: string[] = [];
@@ -166,7 +167,7 @@ const harness = (behaviour: Behaviour = {}) => {
       return { PATH: '/usr/bin' };
     },
     makeRoot: async () => {
-      const root = `/tmp/mc-${'x'.repeat(behaviour.rootLength ?? 6)}${roots.size}`;
+      const root = `/tmp/mc-xxxxxx${roots.size}`;
       roots.set(root, { removed: false });
       return root;
     },
@@ -204,15 +205,18 @@ const harness = (behaviour: Behaviour = {}) => {
       holders.set(root, nextPid);
       if (behaviour.failStartOnRoot === roots.size) throw new Error('the supervisor exited before it was ready');
       state.pid = nextPid;
-      return nextPid;
     },
-    daemonHolder: async (paths: MomongaPaths) => {
-      for (const [root, pid] of holders) if (paths.root === `${root}/.momonga`) return pid;
-      return undefined;
+    refuseUnfitSockets: async (paths, generation) => {
+      measuredSockets.push({ root: paths.root, generation });
+      if (behaviour.refusesSockets?.(paths.root) === true) throw new SocketPathUnsupportedError(`Unix socket path ${paths.root}/run/g${generation}/supervisor.sock: the kernel refused to bind it`);
     },
-    terminate: async (pid) => {
-      terminated.push(pid);
-      alive.delete(pid);
+    terminate: async (paths: MomongaPaths) => {
+      for (const [root, pid] of holders) {
+        if (paths.root !== `${root}/.momonga`) continue;
+        holders.delete(root);
+        terminated.push(pid);
+        alive.delete(pid);
+      }
     },
     remove: async (directory) => {
       removedDirectories.push(directory);
@@ -236,7 +240,7 @@ const harness = (behaviour: Behaviour = {}) => {
     }
     if (stale.held === true) lock.holdExternally(`${stale.root}${HOME_SIDECAR_SUFFIX}`, stale.owner);
   }
-  return { lock, effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
+  return { lock, effects, sessionRoots, roots, alive, terminated, measuredSockets, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -350,22 +354,18 @@ describe('a live context run', () => {
   });
 
   it('measures the sockets on the canonical path of the home, the one the supervisor builds them from', async () => {
-    const limit = socketPathLimit('darwin');
-    const probe = '/tmp/mc-0';
-    const suffix = Math.max(...Object.values(generationLayout(probe, FIRST_GENERATION, 'darwin').sockets).map((socket) => Buffer.byteLength(socket))) - Buffer.byteLength(probe);
-    const canonicalPrefix = '/private';
-    const rootLength = limit - 1 - suffix - Buffer.byteLength('/tmp/mc-') - 1;
-    const plain = harness({ rootLength });
+    const plain = harness();
     await runContextLive(plain.effects, input());
-    expect(plain.roots.size).toBe(2);
-    const canonical = harness({ rootLength, canonicalPrefix });
-    await expect(runContextLive(canonical.effects, input())).rejects.toThrow(new RegExp(`${canonicalPrefix}/tmp/mc-.*must be shorter than ${limit} bytes`));
+    expect(plain.measuredSockets.map((measured) => measured.generation)).toEqual([FIRST_GENERATION, FIRST_GENERATION]);
+    expect(plain.measuredSockets.every((measured) => measured.root.startsWith('/tmp/mc-'))).toBe(true);
+    const canonical = harness({ canonicalPrefix: '/private', refusesSockets: (root) => root.startsWith('/private/') });
+    await expect(runContextLive(canonical.effects, input())).rejects.toThrow(/the sockets of the temporary home do not fit: Unix socket path \/private\/tmp\/mc-.*; the benchmark needs a shorter temporary directory/);
     noDaemonLeft(canonical);
   });
 
-  it('refuses a temporary home whose sockets would not fit and removes it', async () => {
-    const context = harness({ rootLength: 90 });
-    await expect(runContextLive(context.effects, input())).rejects.toThrow(/must be shorter than 104 bytes/);
+  it('refuses a temporary home whose sockets the host does not bind and removes it', async () => {
+    const context = harness({ refusesSockets: () => true });
+    await expect(runContextLive(context.effects, input())).rejects.toThrow(/the sockets of the temporary home do not fit/);
     expect(context.alive.size).toBe(0);
     noDaemonLeft(context);
   });
@@ -590,10 +590,25 @@ describe('the isolation of a case', () => {
     expect(env).toEqual({ PATH: '/usr/bin', HOME: '/tmp/mc-abc123', UPSTREAM_KEY: 'k' });
   });
 
-  it('accepts a short temporary home and refuses a long one, with the limit of the platform', () => {
-    expect(() => assertSocketsFit('/tmp/mc-abc123', 'darwin')).not.toThrow();
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'darwin')).toThrow(/shorter than 104 bytes on darwin/);
-    expect(() => assertSocketsFit(`/tmp/${'a'.repeat(69)}`, 'linux')).not.toThrow();
+  it('accepts a temporary home whose sockets the host binds, and refuses one the bind measurement refuses, with the measured evidence', async () => {
+    const paths = momongaLayout('/tmp/mc-abc123', 'darwin', {});
+    const measured: [string, number][] = [];
+    await expect(assertSocketsFit(paths, async (given, generation) => void measured.push([given.root, generation]))).resolves.toBeUndefined();
+    expect(measured).toEqual([['/tmp/mc-abc123/.momonga', 1]]);
+
+    const refusal = new SocketPathUnsupportedError('Unix socket path /tmp/mc-abc123/.momonga/run/g1/supervisor.sock: the kernel refused to bind a Unix socket path of 104 bytes');
+    const failure = await assertSocketsFit(paths, async () => {
+      throw refusal;
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ContextHostError);
+    expect((failure as Error).message).toBe(`the sockets of the temporary home do not fit: ${refusal.message}; the benchmark needs a shorter temporary directory`);
+
+    const other = new Error('disk gone');
+    await expect(
+      assertSocketsFit(paths, async () => {
+        throw other;
+      }),
+    ).rejects.toBe(other);
   });
 });
 

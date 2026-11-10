@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { registeredIds, registeredServer } from './server-registry.ts';
+import { FIRST_GENERATION, canonicalPath, comparableContains, endpointFormsOfSocket, generationLayout, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
+import { registeredIds, registeredServer, requireOfferedEndpointForm } from './server-registry.ts';
 import type { ServerRegistry } from './server-registry.ts';
 import { aliasRoomVerdict } from './alias-room.ts';
 import type { AliasMember } from './alias-room.ts';
 import { DEFAULT_ANTHROPIC_API_VERSION, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
-import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, ManagedEndpointForm, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
 import { PLAN_PROFILES } from './plan-profiles.ts';
@@ -62,9 +62,10 @@ const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
 const unknownServerMessage = (where: string, id: string, servers: ServerRegistry): string =>
   `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`;
 
-const resolveManaged = (target: ManagedTarget, where: string, servers: ServerRegistry): ResolvedManagedTarget => {
+const resolveManaged = (target: ManagedTarget, where: string, servers: ServerRegistry, hostForms: readonly ManagedEndpointForm[]): ResolvedManagedTarget => {
   const description = registeredServer(servers, target.server);
   if (description === undefined) throw new Error(unknownServerMessage(where, target.server, servers));
+  requireOfferedEndpointForm(description, hostForms, where);
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${where}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a target declare; declarable: ${description.declarable.join(', ')}`);
   }
@@ -300,7 +301,7 @@ const resolveTarget = (target: ModelTarget, home: string, where: string, warning
 const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: ServerRegistry, profiles: PlanProfiles): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
-      return resolveManaged(target, where, servers);
+      return resolveManaged(target, where, servers, endpointFormsOfSocket(generationLayout(home, FIRST_GENERATION).sockets.gateway));
     case 'chat-completions':
       return resolveChatCompletions(target, home, where);
     case 'open-responses':
