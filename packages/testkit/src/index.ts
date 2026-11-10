@@ -229,8 +229,9 @@ export {
   startFakePlanResponses,
 } from './fake-plan-responses.ts';
 export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
-export { createFakeSecretStore, createFakeSecurityPort } from './fake-secrets.ts';
-export type { FakeSecretStore, FakeSecurityPort } from './fake-secrets.ts';
+export { FAKE_KEYCHAIN_PATH, READY_CONTROL, createFakeSecretFiles, createFakeSecretStore, createFakeSecurityPort, fakeReadinessAnswer } from './fake-secrets.ts';
+export type { FakeSecretPrograms } from './fake-secret-programs.ts';
+export type { FakeCallMode, FakeControl, FakeReadiness, FakeSecretStore, FakeSecretStoreOptions, FakeSecurityPort, FakeSecurityPortOptions } from './fake-secrets.ts';
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
 export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
@@ -248,6 +249,17 @@ export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOpti
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
 export { firstGeneration } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
-export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
+export {
+  TEST_SECRET_PROGRAMS_ENV,
+  createFakeSecretPrograms,
+  fakeSecretProgramsBin,
+  getFakeSecretEnded,
+  getFakeSecretHanging,
+  installFakeSecretPrograms,
+  removeFakeSecretPrograms,
+  resetFakeSecretControl,
+  setFakeSecretControl,
+  testHostPath,
+} from './fake-secret-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
 export { productTestEnv } from './product-spawn.ts';

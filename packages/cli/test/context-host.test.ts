@@ -3,7 +3,7 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
-import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SecretUnavailableError, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
@@ -174,7 +174,7 @@ const harness = (behaviour: Behaviour = {}) => {
     readSecret: async (name) => {
       secretReads.push(name);
       const value = behaviour.secrets?.[name];
-      if (value === undefined) throw new Error(`no such secret ${name}`);
+      if (value === undefined) throw new SecretUnavailableError(name, 44, 'the fake store has no such secret');
       return value;
     },
     copyProbeRecord: async (source, paths) => void probeCopies.push(`${source.target} ${source.server} ${source.binary} -> ${paths.probe}`),
@@ -246,6 +246,7 @@ const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Param
   limits: { maxTotalTokens: 1000, defaultTimeoutMs: 60_000 },
   reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
   codeDigest: CALLER_CODE_DIGEST,
+  interrupt: new AbortController().signal,
   ...extra,
 });
 

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation';
 
+import { FAKE_CALL_MODES, FAKE_READINESS_VALUES, READY_CONTROL } from './fake-secrets.ts';
+import type { FakeControl } from './fake-secrets.ts';
 import { fakeSecretProgramsBin } from './secret-store-env-check.ts';
 
 export { TEST_SECRET_PROGRAMS_ENV, fakeSecretProgramsBin } from './secret-store-env-check.ts';
@@ -71,3 +73,74 @@ export const removeFakeSecretPrograms = (root: string, token: string): void => {
 export const posixPathLine = (bin: string): string => `PATH=${shellQuoted(bin)}:"$PATH"`;
 
 export const testHostPath = (base: string = MINIMAL_CHILD_PATH): string => `${fakeSecretProgramsBin()}${path.delimiter}${base}`;
+
+const CONTROL_FILE = '.control';
+const ENDED_FILE = '.ended';
+const HANGING_FILE = '.hanging';
+const LOGIN_KEYCHAIN_FILE = '.login.keychain-db';
+const MISSING_KEYCHAIN_FILE = '.missing.keychain-db';
+
+const itemsOf = (bin: string): string => path.join(path.dirname(bin), 'items');
+
+const textOrUndefined = (file: string): string | undefined => {
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
+};
+
+export const readFakeSecretControl = (items: string): FakeControl => {
+  const file = path.join(items, CONTROL_FILE);
+  const text = textOrUndefined(file);
+  if (text === undefined) return READY_CONTROL;
+  const { readiness, calls } = JSON.parse(text) as Partial<FakeControl>;
+  if (readiness === undefined || !FAKE_READINESS_VALUES.includes(readiness) || calls === undefined || !FAKE_CALL_MODES.includes(calls)) {
+    throw new Error(`the fake secret control file ${file} does not hold a readiness and a call mode: ${text}`);
+  }
+  return { readiness, calls };
+};
+
+export const setFakeSecretControl = (control: Partial<FakeControl>, bin: string): void => {
+  const items = itemsOf(bin);
+  const staging = path.join(items, `${CONTROL_FILE}.${process.pid}.${randomBytes(8).toString('hex')}`);
+  fs.writeFileSync(staging, JSON.stringify({ ...READY_CONTROL, ...control }), { mode: 0o600, flag: 'wx' });
+  fs.renameSync(staging, path.join(items, CONTROL_FILE));
+};
+
+export const resetFakeSecretControl = (bin: string): void => {
+  fs.rmSync(path.join(itemsOf(bin), CONTROL_FILE), { force: true });
+};
+
+const linesOf = (file: string): string[] => (textOrUndefined(file) ?? '').split('\n').filter((line) => line !== '');
+
+const appendLine = (file: string, words: readonly string[]): void => {
+  fs.appendFileSync(file, `${words.join(' ')}\n`, { mode: 0o600 });
+};
+
+export const getFakeSecretEnded = (bin: string): string[] => linesOf(path.join(itemsOf(bin), ENDED_FILE));
+
+export const getFakeSecretHanging = (bin: string): string[] => linesOf(path.join(itemsOf(bin), HANGING_FILE));
+
+export const recordFakeSecretEnded = (items: string, program: string, args: readonly string[]): void => {
+  appendLine(path.join(items, ENDED_FILE), ['ended', program, ...args]);
+};
+
+export const recordFakeSecretHanging = (items: string, program: string, args: readonly string[]): void => {
+  appendLine(path.join(items, HANGING_FILE), ['hanging', program, ...args]);
+};
+
+const fakeLoginKeychainOf = (items: string): string => path.join(items, LOGIN_KEYCHAIN_FILE);
+
+export const fakeMissingKeychainOf = (items: string): string => path.join(items, MISSING_KEYCHAIN_FILE);
+
+export const createFakeLoginKeychain = (items: string): string => {
+  const file = fakeLoginKeychainOf(items);
+  try {
+    fs.writeFileSync(file, '', { mode: 0o600, flag: 'wx' });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  }
+  return file;
+};

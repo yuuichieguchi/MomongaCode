@@ -82,6 +82,8 @@ export const listRecordCount = (file: string): number => readRecords(file).filte
 export const callRecords = (file: string, tool: string): ModernFixtureRecord[] =>
   readRecords(file).filter((entry) => entry.type === 'call' && entry.tool === tool);
 
+export const NEVER_ABORTED = new AbortController().signal;
+
 export const BASE_ENV: Record<string, string> = { PATH: '/usr/bin:/bin', HOME: os.tmpdir(), USER: 'fixture-user' };
 
 export const modernConfig = (recordFile: string, env: Record<string, string> = {}): McpServerConfig => ({

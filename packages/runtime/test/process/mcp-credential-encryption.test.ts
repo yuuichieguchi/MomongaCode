@@ -36,9 +36,9 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
   let tokens = 'tokens-1';
   const createAdminPool = (options: McpPoolOptions): McpAuthorizingPool =>
     ({
-      authorize: async () => {
+      authorize: async (_server: string, signal: AbortSignal) => {
         const key = `mcp/${written.length}`;
-        await options.remote?.credentials.write(key, tokens);
+        await options.remote?.credentials.write(key, tokens, signal);
         written.push(key);
       },
       authState: async () => ({ state: 'required' }),

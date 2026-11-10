@@ -7,7 +7,7 @@ import type { FetchLike } from '@modelcontextprotocol/client';
 import { createFakeClock } from '@momonga/testkit';
 import { createToolRegistry } from '@momonga/tools';
 import { browserThatFollowsRedirect, makeRemoteConnection, observedTimers, startHttpFixture, startOauthFixture, textOf } from './remote-harness.ts';
-import { makeDir, makeExecutor } from './mcp-harness.ts';
+import { NEVER_ABORTED, makeDir, makeExecutor } from './mcp-harness.ts';
 
 const FAKE_STATIC_TOKEN = 'static-fake-token-0123456789';
 
@@ -28,7 +28,7 @@ const setup = async (extra: Partial<Parameters<typeof makeRemoteConnection>[0]> 
 };
 
 const storedTokens = async (store: Awaited<ReturnType<typeof setup>>['store'], url: string) => {
-  const raw = await store.read(credentialKey('remote', url));
+  const raw = await store.read(credentialKey('remote', url), NEVER_ABORTED);
   return raw === undefined ? undefined : (JSON.parse(raw) as { issuers: Record<string, { tokens?: { access_token: string; refresh_token?: string } }> });
 };
 
@@ -150,6 +150,7 @@ describe('OAuth against a loopback authorization server', () => {
         },
       },
       signal: controller.signal,
+      storeLimitMs: 30_000,
       waitMs,
     }).then(
       () => undefined,
@@ -175,7 +176,7 @@ describe('authorization URLs', () => {
       resourceUrl: 'https://mcp.example.com/mcp',
       scope,
       store: createMemoryCredentialStore(),
-      signal: new AbortController().signal,
+      signalForCall: () => NEVER_ABORTED,
       redirectUrl: 'http://127.0.0.1:1/callback',
       randomToken: () => 'state',
       onAuthorizationUrl: () => undefined,
@@ -223,7 +224,7 @@ describe('authorization URLs', () => {
       resourceUrl: 'https://mcp.example.com/mcp',
       scope: 'project',
       store: createMemoryCredentialStore(),
-      signal: new AbortController().signal,
+      signalForCall: () => NEVER_ABORTED,
       redirectUrl: 'http://127.0.0.1:1/callback',
       randomToken: () => 'state',
       onAuthorizationUrl: (url) => {
@@ -250,7 +251,7 @@ describe('the 401 challenge of the server', () => {
     });
     await connection.authorize(new AbortController().signal);
     expect(requested).toEqual(['files:read']);
-    expect(await connection.authState()).toEqual({ state: 'authorized' });
+    expect(await connection.authState(NEVER_ABORTED)).toEqual({ state: 'authorized' });
   });
 
   it('yields to the scope the user configured', async () => {
@@ -325,9 +326,9 @@ describe('credentials never leave the connection', () => {
   it('refuses a credential file that is readable by others', async () => {
     const directory = path.join(makeDir(), 'mcp-credentials');
     const store = createFileCredentialStore(directory);
-    await store.write('k', 'v');
+    await store.write('k', 'v', NEVER_ABORTED);
     const file = path.join(directory, fs.readdirSync(directory)[0] as string);
     fs.chmodSync(file, 0o644);
-    await expect(store.read('k')).rejects.toThrow(/mode 0600/);
+    await expect(store.read('k', NEVER_ABORTED)).rejects.toThrow(/mode 0600/);
   });
 });

@@ -205,7 +205,7 @@ describe('a refusal raised while the HTTP client resolves the host name', () => 
 
   it('is reported by authState as refused with the reason, not as unreachable', async () => {
     const { connection } = await rebound();
-    const probe = await connection.authState();
+    const probe = await connection.authState(new AbortController().signal);
     expect(probe.state).toBe('refused');
     expect(probe.detail).toContain('non-public address (127.0.0.1)');
   });
