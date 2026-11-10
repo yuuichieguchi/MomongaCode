@@ -1,7 +1,6 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import * as protocol from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
@@ -10,11 +9,14 @@ import { fixedSandboxBindings } from '@momonga/runtime';
 import type { Run } from '@momonga/store';
 import * as tools from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { spawn } from '@momonga/testkit/child-process';
 import { groupExists } from './cancel-fixture.ts';
 import { within } from './deferred.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type VerificationCompleted = { seq: number; round: number; conditionId: string; outcome: string; exitCode?: number };
 
@@ -87,7 +89,7 @@ describe('the condition id', () => {
   });
 });
 
-describe('recovery during verification', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('recovery during verification', () => {
   it('never treats a started check without a completion as a verdict, and the new owner reruns it once', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const counter = path.join(env.root, 'check-runs.txt');

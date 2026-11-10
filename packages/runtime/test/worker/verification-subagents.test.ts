@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
@@ -11,6 +11,8 @@ import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { fakeViewsOf } from './fake-gateway.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type VerificationCompleted = { round: number; outcome: string; exitCode?: number; mutationSeq: number };
 
@@ -39,7 +41,7 @@ const runToRest = async (env: Env, rounds: number): Promise<void> => {
   for (let index = 0; index < rounds; index += 1) await env.runOnce(worker);
 };
 
-describe('verifiable completion of sub-agent runs', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('verifiable completion of sub-agent runs', () => {
   it('ends a child with an unmet front matter condition STOPPED(conditions_unmet) and tells the parent which condition failed', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     writeAgent(env, 'fixer', 'conditions:\n  - echo still-broken; exit 3\n');

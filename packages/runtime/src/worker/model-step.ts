@@ -16,8 +16,7 @@ import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
-import { runStopHooks } from './hook-step.ts';
-import { verifyCompletion } from './verification-step.ts';
+import { stopGate } from './verification-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
@@ -67,10 +66,8 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
   if (response.refusal) return terminals.finish('STOPPED', { stopReason: 'refusal' });
   if (response.callIds.length === 0) {
     if (response.incomplete) return incompleteFailure(response.incompleteReason, terminals);
-    const verified = await verifyCompletion(ctx);
-    if (verified !== 'proceed') return verified;
-    if ((await runStopHooks(ctx)) === 'continue') return 'continue';
-    return terminals.finish('COMPLETED');
+    const gated = await stopGate(ctx);
+    return gated === 'allow' ? terminals.finish('COMPLETED') : gated;
   }
   const repeatedSignature = loopSignatureOf(journal.state, ctx.limits.loopThreshold);
   const warning: RunEventPayload[] = [];

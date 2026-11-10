@@ -65,6 +65,8 @@ describe('settings composition hooks and auto mode', () => {
     expect(await f.composition.settings.verification(session)).toEqual({
       commands: ['make check'],
       manifests: [...DEFAULT_VERIFICATION_MANIFESTS],
+      conditions: ['make check'],
+      required: false,
     });
   });
 

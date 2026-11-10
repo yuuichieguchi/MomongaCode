@@ -7,7 +7,7 @@ import type { SandboxedCommandResult } from '@momonga/tools';
 import { MARKER_REAP_KILL_GRACE_MS } from '../process/constants.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { cancelIfInterrupted } from './context-step.ts';
-import { withSessionCommands } from './hook-step.ts';
+import { runStopHooks, withSessionCommands } from './hook-step.ts';
 import type { SessionCommands } from './hook-step.ts';
 
 const OUTPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
@@ -125,7 +125,7 @@ const runCheck = async (ctx: ClaimContext, condition: PinnedCondition, attempt: 
   return { condition, outcome, exitCode, output: inline };
 };
 
-export const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | Flow> => {
+const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | Flow> => {
   const { conditions, required } = ctx.completion;
   const { lastMutationSeq } = ctx.journal.state;
   if (conditions.length === 0) {
@@ -176,4 +176,9 @@ export const verifyCompletion = async (ctx: ClaimContext): Promise<'proceed' | F
   if (!changedSinceLastFailure) return stopped(ctx, 'conditions_unmet');
   ctx.journal.append([feedbackFor(failures, unchecked)]);
   return 'continue';
+};
+
+export const stopGate = async (ctx: ClaimContext): Promise<'allow' | Flow> => {
+  const verified = await verifyCompletion(ctx);
+  return verified === 'proceed' ? runStopHooks(ctx) : verified;
 };

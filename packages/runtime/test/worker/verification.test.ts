@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as protocol from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -11,6 +11,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Condition = { id?: string; command: string; timeoutMs?: number; when?: 'always' | 'after_mutation' };
 
@@ -79,7 +81,7 @@ const write = (callId: string, file: string, content = 'x') => callsStep([{ call
 
 const stopHook = (command: string): HooksSettings => ({ Stop: [{ hooks: [{ type: 'command', command }] }] });
 
-describe('verifiable completion in the worker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('verifiable completion in the worker', () => {
   it('does not complete when a declared condition fails, tells the model, and stops with conditions_unmet when it stops again without a change', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const command = 'echo "2 tests failed" >&2; exit 1';
@@ -230,7 +232,7 @@ describe('verifiable completion in the worker', { timeout: REAL_PROCESS_TEST_TIM
   });
 });
 
-describe('when a condition is owed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('when a condition is owed', () => {
   it('does not evaluate an after_mutation condition when nothing was changed', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['exit 1']);
@@ -280,7 +282,7 @@ describe('when a condition is owed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, 
   });
 });
 
-describe('the pinned declaration', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the pinned declaration', () => {
   it('pins the union of the request and the settings conditions in run.started.pins.mandate.completion', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, ['npm run lint']);
@@ -356,7 +358,7 @@ describe('the pinned declaration', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, ()
   });
 });
 
-describe('verification.required', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('verification.required', () => {
   it('stops a run that wrote without any declared condition when required is on', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     standing(env, [], true);
@@ -402,7 +404,7 @@ describe('verification.required', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () 
   });
 });
 
-describe('limits during the send-back loop', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('limits during the send-back loop', () => {
   it('ends with the existing max_steps reason when the fix rounds use up the steps', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(

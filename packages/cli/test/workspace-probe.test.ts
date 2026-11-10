@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { nodeWorkspaceProbe } from '../src/eval/workspace-probe.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 let root = '';
 let dir = '';
@@ -29,7 +31,7 @@ afterEach(() => {
 
 const probe = () => nodeWorkspaceProbe({ PATH: '/usr/bin:/bin' });
 
-describe('nodeWorkspaceProbe', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('nodeWorkspaceProbe', () => {
   it('runs a command in the workspace and reports its exit code', async () => {
     expect(await probe().run('sh check.sh', 30_000, dir)).toEqual({ exitCode: 1, timedOut: false });
     fs.writeFileSync(path.join(dir, 'done.txt'), '');
