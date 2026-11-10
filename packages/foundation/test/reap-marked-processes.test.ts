@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
 import type { CommandRunner, ProcessInspector, ReapTiming } from '@momonga/foundation';
@@ -126,7 +126,7 @@ const startGroup = async (dir: string, script: string, options: { fd3?: string; 
 const startHolder = async (marker: string, options: { ignoreTerm?: boolean } = {}): Promise<number> => {
   const fd = fs.openSync(marker, 'r');
   try {
-    const argv = options.ignoreTerm === true ? ['/bin/sh', '-c', "trap '' TERM; exec /bin/sleep 60"] : ['/bin/sleep', '60'];
+    const argv = options.ignoreTerm === true ? ['/bin/sh', '-c', `trap '' TERM; exec ${HOLD_UNTIL_SIGNALLED}`] : [...HOLD_UNTIL_SIGNALLED_ARGV];
     const child = spawn(argv[0] as string, argv.slice(1), { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] });
     child.unref();
     const pid = child.pid;
@@ -140,10 +140,10 @@ const startHolder = async (marker: string, options: { ignoreTerm?: boolean } = {
   }
 };
 
-const TERM_MARKER_SCRIPT = `trap 'echo term > "$DIR/term"; kill $! 2>/dev/null; exit 0' TERM; sleep 60 & touch "$DIR/ready"; wait`;
+const TERM_MARKER_SCRIPT = `trap 'echo term > "$DIR/term"; kill $! 2>/dev/null; exit 0' TERM; ${HOLD_UNTIL_SIGNALLED} & touch "$DIR/ready"; wait`;
 const IGNORING_GROUP_SCRIPT = `trap '' TERM; touch "$DIR/ready"; while :; do sleep 1; done`;
-const CLOSED_FD_SCRIPT = `exec 3<&-; trap 'exit 0' TERM; sleep 60 & touch "$DIR/ready"; wait`;
-const MEMBER_WITHOUT_FD_SCRIPT = `/bin/sh -c 'exec 3<&-; echo $$ > "$DIR/member.pid"; exec sleep 60' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
+const CLOSED_FD_SCRIPT = `exec 3<&-; trap 'exit 0' TERM; ${HOLD_UNTIL_SIGNALLED} & touch "$DIR/ready"; wait`;
+const MEMBER_WITHOUT_FD_SCRIPT = `/bin/sh -c 'exec 3<&-; echo $$ > "$DIR/member.pid"; exec ${HOLD_UNTIL_SIGNALLED}' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
 
 const nonZero = (signals: readonly Signalled[]): Array<[number, NodeJS.Signals | 0]> => signals.map(({ pid, signal }) => [pid, signal]);
 
@@ -616,9 +616,9 @@ const spawnOnMarker = async (context: CleanupContext, dir: string, marker: strin
   }
 };
 
-const TERM_IGNORING_HOLDER = `trap '' TERM; touch "$READY"; exec /bin/sleep 60`;
+const TERM_IGNORING_HOLDER = `trap '' TERM; touch "$READY"; exec ${HOLD_UNTIL_SIGNALLED}`;
 const TERM_IGNORING_GROUP = `trap '' TERM; touch "$READY"; while :; do /bin/sleep 1; done`;
-const TERM_EXITING_GROUP = `trap 'exit 0' TERM; /bin/sleep 60 & touch "$READY"; wait`;
+const TERM_EXITING_GROUP = `trap 'exit 0' TERM; ${HOLD_UNTIL_SIGNALLED} & touch "$READY"; wait`;
 
 const markerFile = (dir: string, name = 'marker'): string => {
   const marker = path.join(dir, name);
@@ -789,7 +789,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
     ] as const)('%s', async ([, variant], context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
-      const script = variant === 'normal' ? `trap 'exit 0' TERM; touch "$READY"; exec /bin/sleep 60` : TERM_IGNORING_HOLDER;
+      const script = variant === 'normal' ? `trap 'exit 0' TERM; touch "$READY"; exec ${HOLD_UNTIL_SIGNALLED}` : TERM_IGNORING_HOLDER;
       const holder = await spawnOnMarker(context, dir, marker, script);
       const controller = new AbortController();
       if (variant === 'pre-aborted') controller.abort();

@@ -47,7 +47,7 @@ const scratch = (): string => {
   return dir;
 };
 
-type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; delegate?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string };
+type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; unknownEffect?: boolean; delegate?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string };
 
 const fakeApi = (behaviour: Behaviour = {}) => {
   const sessions = new Map<string, { cwd: string; permissionMode: string; model: string }>();
@@ -55,6 +55,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
   const resolved: { approvalId: string; optionId: string }[] = [];
   const children = new Map<string, string>();
   const asked: string[] = [];
+  const cancelled: string[] = [];
   const api: Api = {
     createSession: async (input) => {
       const id = `sess-${sessions.size + 1}`;
@@ -108,6 +109,16 @@ const fakeApi = (behaviour: Behaviour = {}) => {
           reason: 'ask',
         } as PublicRunEvent;
       }
+      if (behaviour.unknownEffect === true) {
+        yield {
+          ...envelope(3),
+          type: 'tool.unknown.requested',
+          approvalId: `unknown-${runId}`,
+          callIds: ['call-1'],
+          options: [{ optionId: 'continue', kind: 'allow_once', name: 'Continue' }],
+          subjectDigest: 'digest',
+        } as PublicRunEvent;
+      }
       if (behaviour.delegate === true) {
         const childRunId = `child-of-${runId}`;
         children.set(childRunId, runId);
@@ -141,9 +152,11 @@ const fakeApi = (behaviour: Behaviour = {}) => {
     resolveApproval: async (approvalId, optionId) => {
       resolved.push({ approvalId, optionId });
     },
-    cancelRun: async () => undefined,
+    cancelRun: async (runId) => {
+      cancelled.push(runId);
+    },
   };
-  return { api, sessions, runs, resolved, asked };
+  return { api, sessions, runs, resolved, asked, cancelled };
 };
 
 const runBenchmark = (dir: string, api: Api, at: string): Promise<Result> =>
@@ -189,6 +202,15 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     const { report } = await runBenchmark(dir, fake.api, scratch());
     expect(fake.resolved.map((entry) => entry.optionId)).toEqual(['yes', 'yes', 'yes']);
     expect(report.total.intervention).toEqual({ k: 3, n: 3 });
+  });
+
+  it('continues a trial that asks about a call whose effect is unknown, by the ask rule of the task', async () => {
+    const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
+    const fake = fakeApi({ edit: fixTheBug, unknownEffect: true });
+    const { report } = await runBenchmark(dir, fake.api, scratch());
+    expect(fake.resolved).toEqual([1, 2, 3].map((run) => ({ approvalId: `unknown-run-${run}`, optionId: 'continue' })));
+    expect(fake.cancelled).toEqual([]);
+    expect(report.tasks).toEqual([expect.objectContaining({ task: 'fix', trials: 3, met: 3 })]);
   });
 
   it('folds the facts of the child runs of a trial into the trial: a child that asked makes the task one that needed a person, and stays one task (2.2)', async () => {

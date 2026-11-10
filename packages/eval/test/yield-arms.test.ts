@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildYieldReport, runYieldDataset } from '@momonga/eval';
 import type { EvalRunApi, YieldCandidate, YieldPorts } from '@momonga/eval';
+import type { PublicRunEvent } from '@momonga/protocol';
 import { publicEventsOf, RECORDED_CODE_DIGEST, RESOLVED_ON_POLICY } from './fixtures.ts';
 import { FAMILY_IDS, REAL_TARGET, anchorOf, family, fourFamilies, modelCall, reflectionCharge, yieldDatasetOf } from './yield-fixtures.ts';
 
@@ -132,6 +133,45 @@ describe('the arms of a yield family', () => {
     expect(port).not.toHaveProperty('breakEvenReuses');
     expect(port?.reuse.with).toEqual(port?.reuse.without);
     expect(codename?.nothingAccepted).toBe(false);
+  });
+
+  it('continues every session that asks about a call whose effect is unknown, by the ask rule of the session', async () => {
+    const context = harness(mixed);
+    const resolved: { runId: string; approvalId: string; optionId: string }[] = [];
+    const cancelled: string[] = [];
+    const asking = (api: EvalRunApi): EvalRunApi => ({
+      ...api,
+      events: async function* (runId) {
+        let first = true;
+        for await (const event of api.events(runId)) {
+          if (first) {
+            yield { ...event, type: 'tool.unknown.requested', approvalId: `unknown-${runId}`, callIds: ['c1'], options: [{ optionId: 'continue', name: 'Continue', kind: 'allow_once' }], subjectDigest: 'd' } as unknown as PublicRunEvent;
+          }
+          first = false;
+          yield event;
+        }
+      },
+      resolveApproval: async (approvalId, optionId) => {
+        resolved.push({ runId: approvalId.slice('unknown-'.length), approvalId, optionId });
+      },
+      cancelRun: async (runId) => {
+        cancelled.push(runId);
+      },
+    });
+    const ports: YieldPorts = {
+      ...context.ports,
+      openLearn: async (entry) => {
+        const host = await context.ports.openLearn(entry);
+        return { ...host, api: asking(host.api) };
+      },
+      openReuse: async (entry, arm, learn) => {
+        const host = await context.ports.openReuse(entry, arm, learn);
+        return { ...host, api: asking(host.api) };
+      },
+    };
+    await runYieldDataset(fourFamilies(), ports);
+    expect(resolved).toEqual(Array.from({ length: 12 }, (_unused, index) => `r${index + 1}`).map((runId) => ({ runId, approvalId: `unknown-${runId}`, optionId: 'continue' })));
+    expect(cancelled).toEqual([]);
   });
 
   it('closes every home it opened when a reuse session fails', async () => {
