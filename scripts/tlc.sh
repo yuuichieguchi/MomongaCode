@@ -56,6 +56,32 @@ fi
 config="$1"
 shift
 
+workers=1
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "-workers" ]; then workers="$argument"; fi
+  previous="$argument"
+done
+heavy=0
+case "$workers" in
+  '' | *[!0-9]*) heavy=1 ;;
+  *) if [ "$workers" -gt 1 ]; then heavy=1; fi ;;
+esac
+if [ "$heavy" = 1 ] && [ -f "$root/scripts/run-lock.ts" ]; then
+  case "${MOMONGA_RUN_LOCK:-}" in
+    heavy.????????????????) ;;
+    light.????????????????)
+      echo "run-lock: a heavy run cannot start inside a light run: this tlc.sh call uses more than one worker" >&2
+      exit 71 ;;
+    *)
+      if ! command -v node > /dev/null 2>&1; then
+        echo "run-lock: node is required to take the run lock for a TLC run with more than one worker" >&2
+        exit 73
+      fi
+      exec node "$root/scripts/run-lock.ts" heavy -- bash "${BASH_SOURCE[0]}" "$config" "$@" ;;
+  esac
+fi
+
 java_properties="$(java -XshowSettings:properties -version 2>&1 || true)"
 java_specification="$(awk -F' = ' '/java\.specification\.version/ && !found { print $2; found = 1 }' <<< "$java_properties")"
 java_major="${java_specification#1.}"

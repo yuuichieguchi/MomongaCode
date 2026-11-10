@@ -147,7 +147,6 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh takes the heavy run lock for more than
   afterEach(async () => {
     if (holder !== undefined) {
       fs.writeFileSync(holder.release, '');
-      if (holder.child.exitCode === null && holder.child.signalCode === null) holder.child.kill('SIGKILL');
       await holder.exit;
       holder = undefined;
     }

@@ -14,7 +14,7 @@ const WRAPPER = path.join(repoRoot, 'scripts', 'run-lock.ts');
 const HOLDER = path.join(repoRoot, 'scripts', 'support', 'run-lock-holder.ts');
 const USAGE = 'usage: node scripts/run-lock.ts <heavy|light> [--wait <seconds>] -- <command> [args...]';
 
-type Started = { child: ChildProcess; stderr: () => string; stdout: () => string; exit: Promise<number | null> };
+type Started = { child: ChildProcess; stderr: () => string; stdout: () => string; exit: Promise<number | null>; processGone: Promise<void> };
 
 let root = '';
 let state = '';
@@ -55,7 +55,8 @@ const wrapper = (args: string[], extra: Record<string, string> = {}): Started =>
     stdout += chunk.toString();
   });
   const exit = new Promise<number | null>((resolve) => child.on('close', (code) => resolve(code)));
-  const run = { child, stderr: () => stderr, stdout: () => stdout, exit };
+  const processGone = new Promise<void>((resolve) => child.on('exit', () => resolve()));
+  const run = { child, stderr: () => stderr, stdout: () => stdout, exit, processGone };
   started.push(run);
   return run;
 };
@@ -194,14 +195,14 @@ describe.skipIf(!HAS_POSIX_SHELL)('node scripts/run-lock.ts', () => {
     fs.writeFileSync(path.join(root, 'H2-done'), '');
     await until(() => waiter.stderr().includes('run-lock: heavy run waits up to 60 s for '), waiter);
     holder.run.child.kill('SIGKILL');
-    await holder.run.exit;
+    await holder.run.processGone;
 
     expect(await waiter.exit).toBe(0);
     expect(eventLines()).toContain('H2 start');
 
     const light = await holdLight();
     light.run.child.kill('SIGKILL');
-    await light.run.exit;
+    await light.run.processGone;
     const heavy = wrapper(['heavy', '--', 'true']);
 
     expect(await heavy.exit).toBe(0);

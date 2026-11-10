@@ -376,10 +376,10 @@ const runNestedVitest = (root: string, args: readonly string[], env: Record<stri
   });
 
 const nestedEnv = (extra: Record<string, string>): Record<string, string | undefined> => {
-  const env: Record<string, string | undefined> = { ...process.env, ...extra };
-  delete env['MOMONGA_RUN_LOCK'];
-  delete env['MOMONGA_TLC_REUSE'];
-  return env;
+  const inherited: Record<string, string | undefined> = { ...process.env };
+  delete inherited['MOMONGA_RUN_LOCK'];
+  delete inherited['MOMONGA_TLC_REUSE'];
+  return { ...inherited, ...extra };
 };
 
 type JsonReport = { testResults: { assertionResults: { title: string; fullName: string; status: string; failureMessages: string[] }[] }[] };

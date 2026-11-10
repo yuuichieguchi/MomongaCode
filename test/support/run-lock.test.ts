@@ -41,7 +41,7 @@ const fixtureTest = (importLine: string): string =>
   ].join('\n');
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-run-lock-setup-'));
+  root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mm-run-lock-setup-'));
   fixture = path.join(root, 'fixture');
   out = path.join(root, 'out');
   state = path.join(root, 'state');
@@ -108,7 +108,7 @@ const holderScript = (tokenFile: string, release: string): string =>
   [
     "const fs = require('node:fs');",
     `fs.writeFileSync(${JSON.stringify(tokenFile)}, process.env.MOMONGA_RUN_LOCK ?? '');`,
-    `const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) clearInterval(timer); }, 10);`,
+    `const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)}) || !fs.existsSync(${JSON.stringify(path.dirname(release))})) clearInterval(timer); }, 10);`,
   ].join('\n');
 
 const hold = async (runClass: 'heavy' | 'light'): Promise<{ run: Started; release: string; token: string }> => {

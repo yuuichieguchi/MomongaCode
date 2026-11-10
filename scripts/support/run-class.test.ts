@@ -122,7 +122,7 @@ describe('the files that can start the model-checking tier', () => {
   });
 
   it('TB2 (b) only the known formal files import a function that starts TLC', () => {
-    const known = ['test/formal/check-entry.ts', 'test/formal/check-entry.test.ts', 'test/formal/tlc.test.ts'];
+    const known = ['test/formal/check-entry.ts', 'test/formal/check-entry.test.ts', 'test/formal/tier.ts', 'test/formal/tlc.test.ts'];
     const importing = testSideFiles()
       .filter((file) => TLC_START_IMPORT.test(fs.readFileSync(file, 'utf8')))
       .map((file) => path.relative(root, file));
