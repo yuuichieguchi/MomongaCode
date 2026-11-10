@@ -4961,6 +4961,243 @@
       "measuredCpuSeconds": 2.42,
       "budgetCpuSeconds": 8,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
+    },
+    {
+      "config": "RunLock",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 25890,
+      "measuredSeconds": 1.63,
+      "measuredCpuSeconds": 2.52,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "RunLock.twoHeavies",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 15964,
+      "measuredSeconds": 1.53,
+      "measuredCpuSeconds": 2.17,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RunLock.nested",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 17237,
+      "measuredSeconds": 1.51,
+      "measuredCpuSeconds": 2.33,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RunLock.oneShot",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 112,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.wait",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1046,
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 1.74,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.noLightCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 39,
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.47,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.noHeavyScan",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 39,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.48,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.checkFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAlone",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 52,
+      "measuredSeconds": 1.17,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.staleIsLive",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusedHasCause",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 70,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.4,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.crashKeeps",
+      "role": "evidence",
+      "expect": {
+        "violates": "DeadHoldsNothing",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 8,
+      "measuredSeconds": 1.12,
+      "measuredCpuSeconds": 1.44,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.orphan",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAloneIncludingChildren",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 279,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.63,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.orphanLimit",
+      "role": "evidence",
+      "expect": {
+        "violates": "ChildRunsUnderHolder",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 59,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.52,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.heavyUnderLight",
+      "role": "evidence",
+      "expect": {
+        "violates": "HeavyAloneIncludingChildren",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1018,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.94,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.bothRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "NotBothRefused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 87,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.lightsOverlap",
+      "role": "evidence",
+      "expect": {
+        "violates": "LightsExclusive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 50,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.63,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.childRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoChildRefused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 34,
+      "measuredSeconds": 1.14,
+      "measuredCpuSeconds": 1.46,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "RunLock.retryRuns",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetryNeverRuns",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 219,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RunLock.unboundedWait",
+      "role": "evidence",
+      "expect": {
+        "violates": "Termination",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 125,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
     }
   ]
 }
