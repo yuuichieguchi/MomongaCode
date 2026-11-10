@@ -124,7 +124,7 @@ export type ImproveInputSource = {
 export const improveInputFor = ({ seed, analysis, tokenCap, current }: ImproveInputSource): ImproveInput => ({
   seed,
   bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
-  alias: analysis.model,
+  analysisModel: analysis.model,
   tokenCap,
   current,
   recordChars: recordCharsFor(analysis.capabilities),

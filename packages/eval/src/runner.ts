@@ -7,7 +7,7 @@ import type { Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptRefl
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
-export type EvalSessionInput = { cwd: string; env?: Record<string, string>; permissionMode: GoldenCase['permissionMode']; modelAlias?: string };
+export type EvalSessionInput = { cwd: string; env?: Record<string, string>; permissionMode: GoldenCase['permissionMode']; model?: string };
 
 export type EvalRunApi = {
   createSession(input: EvalSessionInput): Promise<{ id: string }>;
@@ -24,7 +24,7 @@ export type EvalRunScope = { api: EvalRunApi; workspace: EvalWorkspace; close():
 
 export type EvalPorts = {
   open(golden: GoldenCase, runIndex: number): Promise<EvalRunScope>;
-  modelAlias?: string;
+  model?: string;
   onTranscript?(transcript: RecordedRun): Promise<void>;
 };
 
@@ -90,7 +90,7 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
     const session = await scope.api.createSession({
       ...scope.workspace,
       permissionMode: golden.permissionMode,
-      ...(ports.modelAlias === undefined ? {} : { modelAlias: ports.modelAlias }),
+      ...(ports.model === undefined ? {} : { model: ports.model }),
     });
     const run = await scope.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
     const { events, children } = await driveRun(scope.api, golden, run.id);

@@ -108,7 +108,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   ports.write(`auto-mode check: classifier ${classifierName}, agent ${displayOf(ports.models, agent)}, ${dataset.cases.reduce((total, golden) => total + golden.runs, 0)} runs, each in its own temporary home\n`);
   try {
     const report = await runDataset(dataset, {
-      modelAlias: agent,
+      model: agent,
       open: async (golden, runIndex) => {
         signal?.throwIfAborted();
         const home = await homes.open({

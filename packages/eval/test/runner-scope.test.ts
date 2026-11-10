@@ -5,7 +5,7 @@ import { goldenCase } from './fixtures.ts';
 
 type Scope = { api: EvalRunApi; workspace: { cwd: string; env: Record<string, string> }; close(): Promise<void> };
 
-type OpenPorts = { open(golden: GoldenCase, runIndex: number): Promise<Scope>; modelAlias?: string };
+type OpenPorts = { open(golden: GoldenCase, runIndex: number): Promise<Scope>; model?: string };
 
 const apiFor = (label: string, log: string[], sessions: EvalSessionInput[], failRun = false): EvalRunApi => ({
   createSession: async (input) => {
@@ -58,13 +58,13 @@ describe('a dataset run opens one scope per run and closes it', () => {
     expect(log.at(-1)).toBe('close x');
   });
 
-  it('passes the model alias of the ports to every session it creates', async () => {
+  it('passes the model of the ports to every session it creates', async () => {
     const sessions: EvalSessionInput[] = [];
     const ports: OpenPorts = {
-      modelAlias: 'worker',
+      model: 'worker',
       open: async (golden, runIndex) => ({ api: apiFor(`${runIndex}`, [], sessions), workspace: { cwd: '/w', env: {} }, close: async () => undefined }),
     };
     await run(ports, 3);
-    expect(sessions.map((session) => session.modelAlias)).toEqual(['worker', 'worker', 'worker']);
+    expect(sessions.map((session) => session.model)).toEqual(['worker', 'worker', 'worker']);
   });
 });

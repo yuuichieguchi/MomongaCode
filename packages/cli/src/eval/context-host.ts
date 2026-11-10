@@ -602,7 +602,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
     policy: input.policy ?? {},
     codeDigest: input.codeDigest,
     openCase: hosts.openCase,
-    modelAlias: input.model,
+    model: input.model,
     bounds,
     deadline: (caseId, signal) => {
       const milliseconds = bounds.caseDeadlineMs[caseId];

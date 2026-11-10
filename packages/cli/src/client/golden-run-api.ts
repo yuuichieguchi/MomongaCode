@@ -46,7 +46,7 @@ export const goldenRunApi = (
         cwd: input.cwd,
         env: envOf(input.env),
         permissionMode: input.permissionMode,
-        ...(input.modelAlias === undefined ? {} : { model: input.modelAlias }),
+        ...(input.model === undefined ? {} : { model: input.model }),
       });
       pinnedModels.set(session.id, session.model);
       return { id: session.id };
@@ -58,7 +58,7 @@ export const goldenRunApi = (
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,
     getRun: async (runId) => {
       const run = await client.getRun(runId);
-      const modelAlias = pinnedModels.get(run.sessionId);
+      const model = pinnedModels.get(run.sessionId);
       return {
         id: run.id,
         status: run.status,
@@ -66,7 +66,7 @@ export const goldenRunApi = (
         step: run.step,
         usage: run.usage,
         origin: run.origin,
-        ...(modelAlias === undefined ? {} : { modelAlias }),
+        ...(model === undefined ? {} : { model }),
       };
     },
     reflectionOf: async (runId) => {

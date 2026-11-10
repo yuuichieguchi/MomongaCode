@@ -1,15 +1,16 @@
 import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
-import { createJsonLogger, momongaLayout } from '@momonga/foundation';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaLayout, momongaPaths, publishCurrentGeneration } from '@momonga/foundation';
 import type { LogFields } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, openResponsesTextReply, withTempDir } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { userInput } from '../packages/gateway/test/gateway-helpers.ts';
-import { clientFor } from '../packages/gateway/test/gateway-process-helpers.ts';
+import { PROCESS_VERSION, clientFor, makeHome, modelsOf, writeSettings } from '../packages/gateway/test/gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, begin, browse, startPlanGateway } from '../packages/gateway/test/plan-signin-support.ts';
 import type { PlanGateway } from '../packages/gateway/test/plan-signin-support.ts';
 import { PROFILE_ID } from '../packages/gateway/test/plan-support.ts';
@@ -19,6 +20,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const SCRIPT = path.resolve(import.meta.dirname, '..', 'scripts', 'plan-real-check.ts');
 const REPORT_FORMAT = 'momonga-plan-real-check/1';
 const SPARE = 'spare';
+const PLAN_MODEL = 'gpt/plan-model';
 
 type Run = { code: number; stdout: string; stderr: string };
 
@@ -185,7 +187,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     });
     logger = fileLogger(gateway.home, logClock);
     const exposed = [...(await signInAs(gateway, ACCOUNT)), ...(await signInAs(gateway, SPARE))];
-    const asked = await clientFor(gateway.socketPath).request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }) });
+    const asked = await clientFor(gateway.socketPath).request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: PLAN_MODEL, input: userInput('hi'), stream: false }) });
     await asked.text();
     expect(asked.status).toBe(200);
     const catalog = `${accountRoute(PLAN_ROUTES.accountModels)}?profile=${PROFILE_ID}&refresh=1`;
@@ -213,7 +215,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     ]);
 
     const carriage = path.join(reports, 'carriage.json');
-    const carried = await runScript(['carriage', '--home', gateway.home, '--alias', 'default', '--report', carriage]);
+    const carried = await runScript(['carriage', '--home', gateway.home, '--model', PLAN_MODEL, '--report', carriage]);
     expect(carried.code).toBe(0);
     const carriedReport = readReport(carriage);
     expect(carriedReport.format).toBe(REPORT_FORMAT);
@@ -221,18 +223,18 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(carriedReport.steps.map((entry) => entry.verdict)).toEqual(['recorded', 'recorded']);
     expect(carriedReport.steps.find((entry) => entry.step === 'R2')?.facts).toEqual({ status: 200, code: null, param: null, functionCalled: false });
     const r4 = carriedReport.steps.find((entry) => entry.step === 'R4')?.facts as { requests: Array<Record<string, unknown>> };
-    expect(r4.requests.map((request) => [request['alias'], request['request']])).toEqual([
-      ['plan-r4-cache', 1],
-      ['plan-r4-cache', 2],
-      ['plan-r4-reasoning', 1],
-      ['plan-r4-both', 1],
+    expect(r4.requests.map((request) => [request['variant'], request['request']])).toEqual([
+      ['cache', 1],
+      ['cache', 2],
+      ['reasoning', 1],
+      ['both', 1],
     ]);
     for (const request of r4.requests) {
       expect(request).toMatchObject({ status: 200, code: null, param: null });
       expect(request['cachedTokens'] === null || typeof request['cachedTokens'] === 'number').toBe(true);
     }
     const sized = path.join(reports, 'request-size.json');
-    const sizing = await runScript(['request-size', '--home', gateway.home, '--alias', 'default', '--report', sized]);
+    const sizing = await runScript(['request-size', '--home', gateway.home, '--model', PLAN_MODEL, '--report', sized]);
     expect(sizing.code).toBe(0);
     const sizedReport = readReport(sized);
     expect(sizedReport.format).toBe(REPORT_FORMAT);
@@ -252,5 +254,143 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect(events.length).toBeGreaterThan(0);
     for (const value of forbidden) expect(events.join('\n').includes(value), 'a plan event carries a value the design forbids (O-R5-6 L10)').toBe(false);
     await gateway.close();
+  });
+});
+
+const DECLARED = { contextWindow: 128000, maxOutputTokens: 16000 };
+const PROMPT_CACHE = { kind: 'key' };
+const REASONING = { control: 'reasoning_effort', lowest: 'low' };
+
+type Seen = { model: unknown; capabilities: unknown; settingsText: string };
+
+type StubGateway = { home: string; settingsFile: string; seen: Seen[]; capabilitiesNow(): unknown };
+
+const planEntryOf = (settingsText: string): Record<string, unknown> => {
+  const document = JSON.parse(settingsText) as { models: { connections: Array<{ models: Array<Record<string, unknown>> }> } };
+  return document.models.connections[0]?.models[0] as Record<string, unknown>;
+};
+
+const startStubGateway = async (options: { dropRequest?: number } = {}): Promise<StubGateway> => {
+  const home = makeHome();
+  writeSettings(home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: DECLARED, plan: { profile: PROFILE_ID, account: ACCOUNT } } }) });
+  const settingsFile = momongaLayout(home).settingsFile;
+  const seen: Seen[] = [];
+  const server = http.createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => chunks.push(chunk));
+    request.on('end', () => {
+      const settingsText = fs.readFileSync(settingsFile, 'utf8');
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { model: unknown };
+      seen.push({ model: body.model, capabilities: planEntryOf(settingsText)['capabilities'], settingsText });
+      if (seen.length === options.dropRequest) {
+        request.socket.destroy();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ output: [], usage: { input_tokens_details: { cached_tokens: 0 } } }));
+    });
+  });
+  const socketPath = path.join(home, 'stub.sock');
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  onTestFinished(
+    () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections();
+        server.close(() => resolve());
+      }),
+  );
+  const paths = momongaPaths(home, process.platform, {});
+  fs.mkdirSync(path.dirname(paths.current), { recursive: true, mode: 0o700 });
+  await publishCurrentGeneration(paths, {
+    generation: FIRST_GENERATION,
+    version: PROCESS_VERSION,
+    sockets: { ...generationLayout(home, FIRST_GENERATION).sockets, gateway: socketPath },
+  });
+  return { home, settingsFile, seen, capabilitiesNow: () => planEntryOf(fs.readFileSync(settingsFile, 'utf8'))['capabilities'] };
+};
+
+describe('design-model-names 5.3: scripts/plan-real-check.ts runs its variants on the one plan model it is given', () => {
+  it('carriage and request-size need --model, and --alias is not a flag any more', async (context) => {
+    const home = withTempDir(context, { asHome: true });
+    const report = path.join(withTempDir(context), 'report.json');
+    for (const command of ['carriage', 'request-size']) {
+      const missing = await runScript([command, '--home', home, '--report', report]);
+      expect([command, missing.code]).toEqual([command, 2]);
+      expect(missing.stderr).toContain(`${command} --home <dir> --model <model> --report <file>`);
+      const old = await runScript([command, '--home', home, '--alias', PLAN_MODEL, '--report', report]);
+      expect([command, old.code]).toEqual([command, 2]);
+    }
+    expect(fs.existsSync(report)).toBe(false);
+  });
+
+  it('each variant declares its capabilities on the model entry on top of the declared ones, sends its requests to that model, and the original capabilities are back at the end, also after a send that failed', async (context) => {
+    const stub = await startStubGateway();
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['carriage', '--home', stub.home, '--model', 'plan-model', '--report', report]);
+    expect(run.code).toBe(0);
+    expect(stub.seen.map((request) => request.model)).toEqual([PLAN_MODEL, PLAN_MODEL, PLAN_MODEL, PLAN_MODEL, PLAN_MODEL]);
+    expect(stub.seen.map((request) => request.capabilities)).toEqual([
+      DECLARED,
+      { ...DECLARED, promptCache: PROMPT_CACHE },
+      { ...DECLARED, promptCache: PROMPT_CACHE },
+      { ...DECLARED, reasoning: REASONING },
+      { ...DECLARED, promptCache: PROMPT_CACHE, reasoning: REASONING },
+    ]);
+    expect(stub.capabilitiesNow()).toEqual(DECLARED);
+
+    const dropped = await startStubGateway({ dropRequest: 3 });
+    const failedReport = path.join(withTempDir(context), 'failed.json');
+    const failed = await runScript(['carriage', '--home', dropped.home, '--model', PLAN_MODEL, '--report', failedReport]);
+    expect(failed.code).toBe(1);
+    expect(dropped.seen.length).toBe(3);
+    expect(dropped.seen[2]?.capabilities).toEqual({ ...DECLARED, promptCache: PROMPT_CACHE });
+    expect(dropped.capabilitiesNow()).toEqual(DECLARED);
+    expect(readReport(failedReport).steps.find((entry) => entry.step === 'R4')).toEqual({
+      step: 'R4',
+      verdict: 'failed',
+      facts: { requests: [{ variant: 'cache', request: 1, status: 200, code: null, param: null, cachedTokens: 0 }], reason: 'the request could not be sent' },
+    });
+  });
+
+  it('no plan-r4 name and no second model or connection is ever written to the settings', async (context) => {
+    const stub = await startStubGateway();
+    const before = JSON.parse(fs.readFileSync(stub.settingsFile, 'utf8')) as unknown;
+    const report = path.join(withTempDir(context), 'report.json');
+    const run = await runScript(['carriage', '--home', stub.home, '--model', PLAN_MODEL, '--report', report]);
+    expect(run.code).toBe(0);
+    const texts = [...stub.seen.map((request) => request.settingsText), fs.readFileSync(stub.settingsFile, 'utf8'), fs.readFileSync(report, 'utf8'), run.stdout];
+    expect(texts.filter((text) => text.includes('plan-r4'))).toEqual([]);
+    for (const text of stub.seen.map((request) => request.settingsText)) {
+      const document = JSON.parse(text) as { models: { connections: Array<{ models: unknown[] }> } };
+      expect(document.models.connections.map((connection) => connection.models.length)).toEqual([1]);
+    }
+    expect(JSON.parse(fs.readFileSync(stub.settingsFile, 'utf8'))).toEqual(before);
+  });
+
+  it('the report lists the variants by the names cache, reasoning and both, and a text that is not one plan model of the home is not run', async (context) => {
+    const stub = await startStubGateway();
+    const reports = withTempDir(context);
+    const report = path.join(reports, 'report.json');
+    const run = await runScript(['carriage', '--home', stub.home, '--model', PLAN_MODEL, '--report', report]);
+    expect(run.code).toBe(0);
+    const r4 = readReport(report).steps.find((entry) => entry.step === 'R4');
+    expect(r4).toEqual({
+      step: 'R4',
+      verdict: 'recorded',
+      facts: {
+        requests: [
+          { variant: 'cache', request: 1, status: 200, code: null, param: null, cachedTokens: 0 },
+          { variant: 'cache', request: 2, status: 200, code: null, param: null, cachedTokens: 0 },
+          { variant: 'reasoning', request: 1, status: 200, code: null, param: null, cachedTokens: 0 },
+          { variant: 'both', request: 1, status: 200, code: null, param: null, cachedTokens: 0 },
+        ],
+      },
+    });
+    const unknown = path.join(reports, 'unknown.json');
+    const refused = await runScript(['carriage', '--home', stub.home, '--model', 'gpt/other', '--report', unknown]);
+    expect(refused.code).toBe(1);
+    const notRun = (step: string) => ({ step, verdict: 'not_run', facts: { reason: 'gpt/other is not one plan model of this home' } });
+    expect(readReport(unknown).steps).toEqual([notRun('R2'), notRun('R4')]);
+    expect(stub.seen.length).toBe(5);
   });
 });

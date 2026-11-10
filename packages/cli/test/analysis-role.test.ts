@@ -36,7 +36,7 @@ type ImproveInputFor = (input: {
   analysis: { model: string; capabilities: Capabilities };
   datasetTokens: number;
   current: undefined;
-}) => { alias: string };
+}) => { analysisModel: string };
 
 const improveInputFor = (): ImproveInputFor => {
   const found = (contextCommand as Record<string, unknown>)['improveInputFor'];
@@ -65,7 +65,7 @@ describe('the analysis role of context improve', () => {
   it('guards a report that names the wrong model: the improve input names the model of the analysis role the calls used, not the --model of the command', async () => {
     const analysis = await analysisModelFor()({ roles: { analysis: 'cheap' }, model: 'opus', capabilitiesOf });
     const input = improveInputFor()({ seed: 7, model: 'real', analysis, datasetTokens: 10, current: undefined });
-    expect(input.alias).toBe('cheap');
+    expect(input.analysisModel).toBe('cheap');
   });
 
   it('uses a --model without structured output when no role is set', async () => {

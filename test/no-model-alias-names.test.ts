@@ -46,22 +46,12 @@ const PERMANENT_FOR_COMMAND_AND_PATH_ALIASES: readonly string[] = [
 ];
 
 const ALLOWED_UNTIL: readonly Listed[] = [
-  { file: 'packages/cli/src/client/golden-run-api.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'packages/cli/src/commands/auto-mode.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'packages/cli/src/eval/context-host.ts', tokens: ['modelAlias'], removedBy: 'N4' },
   { file: 'packages/cli/src/tui/app.tsx', tokens: ['modelAlias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/auth.ts', tokens: ['modelAlias', 'an alias'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/auto-mode.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/commands/shell-commands.ts', tokens: ['model alias', '--alias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/plan-flows.ts', tokens: ['models.aliases', 'models.targets', 'an alias', 'aliases'], removedBy: 'N3b' },
   { file: 'packages/cli/src/tui/slash.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
-  { file: 'packages/eval/src/context-improve.ts', tokens: ['alias ${', 'the alias'], removedBy: 'N4' },
-  { file: 'packages/eval/src/context-live.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'packages/eval/src/context-report.ts', tokens: ['modelAlias', '--alias', 'the alias', 'aliases'], removedBy: 'N4' },
-  { file: 'packages/eval/src/runner.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'packages/eval/src/transcript.ts', tokens: ['modelAlias'], removedBy: 'N4' },
-  { file: 'scripts/plan-real-check.ts', tokens: ["'aliases'", '--alias', 'alias ${', 'the alias', 'aliases'], removedBy: 'N4' },
-  { file: 'README.md', tokens: ['models.aliases', 'models.targets', 'model alias', 'the alias', 'an alias', 'aliases'], removedBy: 'N4' },
 ];
 
 const filesUnder = (directory: string): string[] =>
@@ -85,7 +75,7 @@ const scannedFiles = (): string[] =>
 
 const relative = (file: string): string => path.relative(root, file).split(path.sep).join('/');
 
-const PERMANENT_FOR_RETIRED_FORMAT_REASONS: readonly string[] = ['packages/protocol/src/reliability.ts'];
+const PERMANENT_FOR_RETIRED_FORMAT_REASONS: readonly string[] = ['packages/protocol/src/reliability.ts', 'packages/eval/src/transcript.ts'];
 
 const isPermanent = (file: string, token: Token): boolean =>
   PERMANENT_FILES.includes(file) ||

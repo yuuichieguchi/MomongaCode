@@ -103,7 +103,7 @@ describe('what a model reply puts in the text of context improve', () => {
     const outcome: ImproveOutcome = {
       status: 'no_winner',
       model: 'real',
-      alias: 'opus',
+      analysisModel: 'opus',
       seed: 1,
       candidateCount: 1,
       tokenCap: 700,
@@ -131,7 +131,7 @@ describe('adopting from an outcome file', () => {
   const outcome = (parent: { version: number; text: string } | undefined): ImproveOutcome => ({
     status: 'winner',
     model: 'real',
-    alias: 'opus',
+    analysisModel: 'opus',
     seed: 7,
     candidateCount: 5,
     tokenCap: 700,

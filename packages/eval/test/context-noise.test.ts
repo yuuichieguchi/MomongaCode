@@ -70,7 +70,7 @@ const host = (
 const ports = (open: () => Promise<ContextCaseHost>, overrides: Partial<Parameters<typeof runContextDataset>[1]> = {}) => ({
   ...RECORDED_IDENTITY,
   openCase: open,
-  modelAlias: 'gamma',
+  model: 'gamma',
   deadline: (_caseId: string, signal: AbortSignal) =>
     new Promise<void>((_resolve, reject) => {
       signal.addEventListener('abort', () => reject(signal.reason), { once: true });

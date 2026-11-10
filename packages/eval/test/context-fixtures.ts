@@ -101,13 +101,13 @@ export const recorded = (
   caseId: string,
   runIndex: number,
   payloads: readonly RunEventPayload[],
-  options: { status?: RunStatus; totalTokens?: number; children?: Transcript['children']; modelAlias?: string; reflection?: Transcript['reflection'] } = {},
+  options: { status?: RunStatus; totalTokens?: number; children?: Transcript['children']; model?: string; reflection?: Transcript['reflection'] } = {},
 ): Transcript => {
   const totalTokens = options.totalTokens ?? 100;
   return {
     caseId,
     runIndex,
-    run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }) },
+    run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.model === undefined ? {} : { model: options.model }) },
     events: publicEventsOf(payloads),
     children: options.children ?? [],
     ...RECORDED_IDENTITY,

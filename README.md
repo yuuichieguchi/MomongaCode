@@ -53,7 +53,7 @@ All of these settings are off by default (see Configuration).
 
 ## 3. Getting Started
 
-1. Declare a model target and an alias in your user settings file, `~/.momonga/settings.json` (see Configuration for a complete example).
+1. Declare a model server and its models in your user settings file, `~/.momonga/settings.json` (see Configuration for a complete example), or let `momonga models add` find a server on this computer and write it.
 2. Check that it is seen:
 
    ```sh
@@ -80,7 +80,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 ## 4. Features
 
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
-- **Models.** Targets for Apple's `fm`, chat-completions servers, Open Responses servers, Anthropic, and Ollama. An alias names one target or an ordered list of targets. `momonga gateway probe <target>` measures a target's capabilities and records the result.
+- **Models.** Connections to Ollama, chat-completions servers, Open Responses servers, Anthropic, and server programs that Momonga Code starts itself, such as Apple's `fm`. A model is called by the name its server gives it. `models.fallback` lists the models tried next when a model cannot answer. `momonga gateway probe <model>` measures a model's capabilities and records the result.
 - **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background jobs), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), and `activate_skill`.
 - **Permission modes.** `default`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
 - **Policy verification.** `momonga policy verify` checks the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not.
@@ -105,7 +105,7 @@ momonga [options] [prompt]
 | `-p, --print <prompt>` | Run the prompt without a terminal UI and print the result |
 | `--output-format <format>` | `text`, `json`, or `stream-json` (for `--print` and `attach`) |
 | `--permission-mode <mode>` | `default`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
-| `--model <alias>` | The model alias of the session |
+| `--model <model>` | The model of the session, for example `devstral-small-2` (`momonga models` lists them) |
 | `--dangerously-skip-permissions` | Run in `bypassPermissions` mode |
 | `--skill <name>` | Run the prompt with this skill activated |
 | `--image <path>` | Attach an image; repeat for several. Needs a model that declares image input |
@@ -123,8 +123,8 @@ Commands:
 | `jobs [session-id]` | List background jobs of a session (`--json`) |
 | `trace [run-id]` | Show the model and tool spans of a run (`--json`) |
 | `cost [run-id]` | Show model cost (`--session <id>`, `--all`, `--breakdown`, `--json`) |
-| `models` | List the aliases with the capabilities their targets declare (`--json`); `models detect [url...]` finds local model servers |
-| `gateway probe <target>` | Measure an `fm`, chat-completions, or Ollama target and record the result (`--fm-binary <path>`, `--samples <count>`) |
+| `models` | List the configured models with the capabilities they declare (`--json`); `models detect [url...]` finds local model servers; `models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` change the model settings (each write needs `--yes`) |
+| `gateway probe <model>` | Measure a model of a managed server, an OpenAI-compatible server, or an Ollama server and record the result (`--samples <count>`) |
 | `memory add\|list\|show\|history\|delete\|review\|restore\|promote` | Manage memories. `add` takes `--kind`, `--path`, `--user`; `review` has `accept <id>` and `reject <id>`; `promote <id>` writes an accepted procedure memory as a skill |
 | `rule add\|list\|retire\|history` | Standing rules. `add <target> <text...>` takes `--kind`, `--user`, `--path`, `--deny`, `--ask`, `--supersedes`, `--until` |
 | `policy verify` | Check the permission rules of the folder (`--json`, `--mode <mode>`, `--secret <path>`) |
@@ -159,43 +159,44 @@ Inside the interactive session, slash commands include `/help`, `/clear`, `/exit
 
 Project and local settings cannot set `models`, `credentials`, `mcpServers`, `sandbox`, `telemetry`, `pricing`, `autoUpdates`, or `autoMode`; those keys are discarded with a warning. They can set `permissions.defaultMode` only to modes other than `bypassPermissions` and `auto`. In `env`, only a short allowlist of names is kept. Unknown keys are ignored with a warning.
 
-### Model targets and aliases
+### Models
 
-A target is declared under `models.targets` with an `adapter`: `fm`, `chat-completions`, `open-responses`, `anthropic`, or `ollama`. An alias under `models.aliases` is a target name or an ordered list of target names. The alias `default` is used when you name none; if it is missing, the first target becomes `default` with a warning.
+A model is called by its own name: the name its server gives it. Its full name is `server/own-name`, for example `ollama/devstral-small-2:latest`. Where one name is enough, the own name alone works (`--model devstral-small-2`); when two servers serve a model of the same name, write the full name.
+
+Each server or account is one entry of `models.connections`, with an `adapter` (`ollama`, `chat-completions`, `open-responses`, `anthropic`, or `managed`), its address, and the list of its `models`. Each model has an `id`, which is the server's own name for it, and its `capabilities`. The server part of the full name is the connection's `provider`. When you leave `provider` out it is derived: `ollama` and `anthropic` for those adapters, the account for a subscription plan, the program for a `managed` connection, and otherwise a name made from the address, such as `srv-127.0.0.1-1234`.
 
 Credentials are declared by reference and never written into the file:
 
 - `apiKeyEnv` names an environment variable that holds the key.
 - `apiKeySecret` names an entry in the platform secret store, which you fill with `momonga secret set <name>`.
-- `anthropic` targets need exactly one of the two. `chat-completions` and `open-responses` targets accept at most one. `ollama` and `fm` targets take none.
+- An `anthropic` connection needs exactly one of the two. `chat-completions` and `open-responses` connections accept at most one. `ollama` and `managed` connections take none.
 
 Example:
 
 ```json
 {
   "models": {
-    "targets": {
-      "local": {
+    "connections": [
+      {
         "adapter": "ollama",
-        "model": "your-model-name",
         "baseUrl": "http://127.0.0.1:11434",
-        "capabilities": { "contextWindow": 32768, "maxOutputTokens": 4096 }
+        "models": [
+          { "id": "your-model-name:latest", "capabilities": { "contextWindow": 32768, "maxOutputTokens": 4096 } }
+        ]
       },
-      "hosted": {
+      {
         "adapter": "chat-completions",
         "provider": "example",
-        "model": "example-model",
         "baseUrl": "https://api.example.com/v1",
         "apiKeyEnv": "EXAMPLE_API_KEY",
-        "capabilities": { "contextWindow": 128000, "maxOutputTokens": 8192 }
-      },
-      "apple": { "adapter": "fm" }
-    },
-    "aliases": {
-      "default": "local",
-      "cloud": ["hosted", "local"]
-    },
-    "billingChanges": [{ "from": "metered", "to": "local", "alias": "cloud" }]
+        "models": [
+          { "id": "example-model", "capabilities": { "contextWindow": 128000, "maxOutputTokens": 8192 } }
+        ]
+      }
+    ],
+    "start": "example/example-model",
+    "fallback": ["ollama/your-model-name:latest"],
+    "billingChanges": [{ "from": "metered", "to": "local" }]
   },
   "permissions": {
     "defaultMode": "default",
@@ -205,11 +206,15 @@ Example:
 }
 ```
 
-A list falls from a metered target to a local one, or the reverse, only when `models.billingChanges` allows that change; otherwise a warning is shown.
+`models.start` is the model a new session starts with; without it, the first model in the file is used. `models.fallback` is the ordered list of models tried when the model of a request cannot answer. A request falls from a metered model to a local one, or the reverse, only when `models.billingChanges` allows that change; otherwise a warning is shown.
 
-The values in `capabilities` are what you declare for your model; set them to the real values for the model you use. `momonga gateway probe <target>` measures a target and records the result.
+The values in `capabilities` are what you declare for your model; set them to the real values for the model you use. `momonga gateway probe <model>` measures a model and records the result.
 
-Other keys under `models`: `roles` (an alias for `compaction`, `reflection`, or `analysis` calls), `dialects`, `billingChanges`, `headersTimeoutMs`, and `idleTimeoutMs`. A target can also set `billing`, `maxConcurrency`, and `admissionTimeoutMs`.
+A `managed` connection names a server program with `server`: the built-in `fm`, or a program you declare under `models.servers`.
+
+Other keys under `models`: `roles` (the model for `compaction`, `reflection`, or `analysis` calls), `dialects`, `headersTimeoutMs`, and `idleTimeoutMs`. A connection can also set `billing`, `maxConcurrency`, and `admissionTimeoutMs`.
+
+You can make every one of these changes without editing the file: `momonga models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` in a shell, or `/models` in a session.
 
 ### Permission rules
 
@@ -234,7 +239,7 @@ With `"sandbox": "none"` none of these bounds apply, so an allow rule no longer 
 | `hooks` | Hook commands by event, with an optional `matcher` and `timeout` |
 | `mcpServers` | User MCP servers (`stdio` with `command`, `args`, `env`, `cwd`; or `http` with `url`, `headers`, `oauth`) |
 | `enabledMcpjsonServers`, `disabledMcpjsonServers`, `enableAllProjectMcpServers` | Which servers of a project `.mcp.json` are used |
-| `autoMode.classifier` | The alias that judges approvals in auto mode |
+| `autoMode.classifier` | The model that judges approvals in auto mode |
 | `memory.reflection.enabled` (default `false`), `memory.reflection.maxTokens` | Let the agent propose memories after a run |
 | `memory.forgetAfterDays` | Default 90 |
 | `memory.repositoryFacts` (default `false`) | Propose a procedure memory from a verification command that passed in a verified run |
@@ -342,4 +347,4 @@ Bundles ripgrep (MIT or Unlicense); see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-N
 
 ## 11. Disclaimer
 
-Momonga Code is provided as is, without warranty of any kind. It runs commands and edits files on your machine, and it sends the content of your prompts, files, and tool output to the model targets you configure. You are responsible for the models, targets, permission rules, sandbox setting, and permission mode you choose, for the cost of any hosted model you use, and for reviewing what the agent does. A model can make mistakes. Do not use `bypassPermissions` mode or `"sandbox": "none"` on a machine or in a folder where an unwanted command could cause harm you cannot undo.
+Momonga Code is provided as is, without warranty of any kind. It runs commands and edits files on your machine, and it sends the content of your prompts, files, and tool output to the model servers you configure. You are responsible for the models, targets, permission rules, sandbox setting, and permission mode you choose, for the cost of any hosted model you use, and for reviewing what the agent does. A model can make mistakes. Do not use `bypassPermissions` mode or `"sandbox": "none"` on a machine or in a folder where an unwanted command could cause harm you cannot undo.

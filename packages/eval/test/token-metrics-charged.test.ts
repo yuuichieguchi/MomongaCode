@@ -135,7 +135,7 @@ describe('the token metrics count the reflection charge of a run', () => {
     expect(reportOf(undefined, { state: 'failed' }).metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
   });
 
-  it('settles a finished reflection without a charge as no call, since no call is made for an untrusted folder, with reflection off, after a run that was not a verified success, or with a role alias without structured output', () => {
+  it('settles a finished reflection without a charge as no call, since no call is made for an untrusted folder, with reflection off, after a run that was not a verified success, or with a role model without structured output', () => {
     const report = reportOf(undefined, { state: 'done' });
     expect(report.metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
     expect(report.cases[0]?.tokens?.unsettledReflections).toBe(0);

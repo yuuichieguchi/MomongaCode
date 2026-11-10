@@ -55,7 +55,7 @@ const reportOf = (outcomes: (caseId: string) => Outcome): ContextReport =>
 const costLine = (report: ContextReport): string | undefined => formatContextReport(report).split('\n').find((line) => line.includes('costPerSuccess'));
 
 describe('eval records why a cost is unmeasured (R-D)', () => {
-  it('names plan usage in the costPerSuccess line of a plan alias', () => {
+  it('names plan usage in the costPerSuccess line of a plan model', () => {
     const report = reportOf(() => ({ unpriced: 'plan' }));
 
     expect(report.metrics.costPerSuccess).toBeUndefined();
@@ -108,26 +108,26 @@ describe('eval records why a cost is unmeasured (R-D)', () => {
 
     expect(local.cases.every((entry) => entry.tokens !== undefined && !('unpriced' in entry.tokens) && !('unrecordedPrice' in entry.tokens))).toBe(true);
     expect(comparison.gate.checks.map((entry) => entry.name)).toContain('uncachedInputPerSuccess');
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/6');
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
   });
 });
 
-describe('the context report format /6', () => {
-  it('is /6, and refuses a /5 report as retired with the reason of the price outcome', () => {
+describe('the context report format /7', () => {
+  it('is /7, and refuses a /5 report as retired with the reason of the price outcome', () => {
     const report = reportOf(() => PRICED);
     const previous = encodeContextReport({ ...report, format: 'momonga-eval-context-report/5' } as unknown as ContextReport);
 
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/6');
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
     expect(() => parseContextReport(previous, 'previous.json')).toThrow(
       'previous.json: momonga-eval-context-report/5 reports do not record the price outcome of the calls (why a cost is unmeasured), so momonga-eval-context-report/5 is retired',
     );
   });
 
-  it('keeps the unpriced counts and the unrecorded count through a stored /6 report', () => {
+  it('keeps the unpriced counts and the unrecorded count through a stored /7 report', () => {
     const report = reportOf((caseId) => (caseId === 'b-off' ? { unpriced: 'plan' } : caseId === 'a-off' ? 'unrecorded' : PRICED));
     const parsed = parseContextReport(encodeContextReport(report), 'stored.json');
 
-    expect(parsed.format).toBe('momonga-eval-context-report/6');
+    expect(parsed.format).toBe('momonga-eval-context-report/7');
     expect(parsed.cases.find((entry) => entry.id === 'b-off')?.tokens).toMatchObject({ unpriced: { plan: 1 } });
     expect(parsed.cases.find((entry) => entry.id === 'a-off')?.tokens).toMatchObject({ unrecordedPrice: 1 });
   });

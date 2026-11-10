@@ -21,13 +21,14 @@ import { caseTotalsOf, hasInconsistentCacheRead, tokenFactsOf, tokenMetricsOf } 
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Answerer, Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/6';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/7';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
   'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
   'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
   'momonga-eval-context-report/4': 'which calls the upstream reported cache reads for (an unreported cache read was recorded as 0)',
   'momonga-eval-context-report/5': 'the price outcome of the calls (why a cost is unmeasured)',
+  'momonga-eval-context-report/6': 'the models the runs used (they were recorded as alias names)',
 };
 
 export const CONTEXT_MODELS = MODEL_KINDS;
@@ -104,7 +105,7 @@ export type ContextReport = {
   model: ContextModel;
   answeredBy: Answerer[];
   unrecordedAnswers: number;
-  modelAliases: string[];
+  models: string[];
   policy: PolicyOverlay | null;
   codeDigest: string | null;
   metrics: ContextMetrics;
@@ -126,7 +127,7 @@ type RunMeasure = {
   governance: GovernanceCounts | undefined;
   recalled: Recalled;
   retrieval: Retrieval | undefined;
-  modelAlias: string | undefined;
+  model: string | undefined;
   quality: Record<QualityMetricName, Cluster>;
   token: TokenFacts;
 };
@@ -162,7 +163,7 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     governance,
     recalled,
     retrieval,
-    modelAlias: transcript.run.modelAlias,
+    model: transcript.run.model,
     quality: {
       continuationRate: { numerator: facts.compactions > 0 && passed ? 1 : 0, denominator: facts.compactions > 0 ? 1 : 0 },
       governanceFidelity: governance === undefined ? none : { numerator: governance.bindingLoaded, denominator: governance.binding },
@@ -340,7 +341,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     model,
     answeredBy,
     unrecordedAnswers,
-    modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
+    models: [...new Set(measures.flatMap((measure) => (measure.model === undefined ? [] : [measure.model])))].sort(),
     policy: identity.policy,
     codeDigest: identity.codeDigest,
     metrics: metricsOf(cases, measured, input.seed),
@@ -461,10 +462,10 @@ const answeredLine = (report: Pick<ContextReport, 'answeredBy' | 'unrecordedAnsw
 
 export const formatContextReport = (report: ContextReport): string => {
   const { metrics } = report;
-  const aliases = report.modelAliases.length === 0 ? 'none recorded' : report.modelAliases.join(', ');
+  const used = report.models.length === 0 ? 'none recorded' : report.models.join(', ');
   const lines = [
     `dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`,
-    `model: ${report.model} (derived from the pinned provenance of the targets that answered: ${answeredLine(report)}; the aliases the runs pinned: ${aliases})`,
+    `model: ${report.model} (derived from the pinned provenance of the models that answered: ${answeredLine(report)}; the models the runs used: ${used})`,
   ];
   if (report.model === 'fake') {
     lines.push('a fake model proves only that the machinery works; none of these numbers says anything about the quality of the context');
@@ -554,7 +555,7 @@ const CONTEXT_REPORT_SCHEMA = {
         ),
       },
       unrecordedAnswers: count,
-      modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
+      models: { type: 'array', items: { type: 'string', minLength: 1 } },
       policy: { anyOf: [policySchema, { type: 'null' }] },
       codeDigest: { anyOf: [{ type: 'string', pattern: '^[0-9a-f]{64}$' }, { type: 'null' }] },
       metrics: closed(
@@ -624,7 +625,7 @@ const CONTEXT_REPORT_SCHEMA = {
       'model',
       'answeredBy',
       'unrecordedAnswers',
-      'modelAliases',
+      'models',
       'policy',
       'codeDigest',
       'metrics',
@@ -646,7 +647,7 @@ export const parseContextReport = (text: string, source: string): ContextReport 
   const value = jsonOf(text, source);
   if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_CONTEXT_REPORT_FORMATS, value['format'])) {
     throw new EvalError(
-      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
+      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --model <model> --report <off report>\` without --settings, then \`momonga eval context <dataset> --model <model> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
     );
   }
   const verdict = validateContextReport(value);

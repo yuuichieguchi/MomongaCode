@@ -89,7 +89,7 @@ const improve = async (fixture: Fixture = {}) => {
   const benchmarked: (string | undefined)[] = [];
   const charges: unknown[] = [];
   const outcome = await improveGuideline(
-    { seed: 42, bootstrapSeed: 1, alias: 'opus', tokenCap: TOKEN_CAP, current: undefined, ...fixture.input },
+    { seed: 42, bootstrapSeed: 1, analysisModel: 'opus', tokenCap: TOKEN_CAP, current: undefined, ...fixture.input },
     {
       benchmark: async (guideline) => {
         benchmarked.push(guideline);
@@ -221,7 +221,7 @@ describe('the analysis call', () => {
   it('hands the billed detail of every completion to the charge, so the charge can record the cost and timing of the call', async () => {
     const detail = { responseId: 'resp_1', cachedInputTokens: 3, timing: { firstEventMs: 5, durationMs: 90 } };
     const details: unknown[] = [];
-    const base = { seed: 42, bootstrapSeed: 1, alias: 'opus', tokenCap: TOKEN_CAP, current: undefined };
+    const base = { seed: 42, bootstrapSeed: 1, analysisModel: 'opus', tokenCap: TOKEN_CAP, current: undefined };
     await improveGuideline(base, {
       benchmark: async (guideline) => failingBaseline(guideline),
       complete: async (request) => ({ text: request.purpose === 'analysis' ? analysis() : candidateReply(0), usage: USAGE, detail }),
@@ -657,7 +657,7 @@ describe('the outcome file', () => {
     expect(() => parseOutcomeFile(extended)).toThrow(/outcome file/);
   });
 
-  it.each(['status', 'model', 'alias', 'seed', 'candidateCount', 'contrastive', 'skipped', 'tokens'])(
+  it.each(['status', 'model', 'analysisModel', 'seed', 'candidateCount', 'contrastive', 'skipped', 'tokens'])(
     'guards the closed schema: refuses an outcome without %s even with a recomputed digest',
     async (key) => {
       const { outcome } = await winning();
@@ -669,7 +669,7 @@ describe('the outcome file', () => {
     },
   );
 
-  it.each(['source', 'dataset', 'model', 'alias', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'])(
+  it.each(['source', 'dataset', 'model', 'analysisModel', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'])(
     'guards the closed schema: refuses a report without %s even with a recomputed digest',
     async (key) => {
       const { outcome } = await winning();
@@ -790,10 +790,10 @@ describe('the guideline report escapes each line', () => {
     expect(guidelineDiff('same\told\tx', 'same\told\ty')).toBe('- same\\u0009old\\u0009x\n+ same\\u0009old\\u0009y');
   });
 
-  it('shows an alias with a newline on the model line of the outcome', async () => {
-    const { outcome } = await improve({ input: { alias: `opus ${FORGED}` } });
+  it('shows a model name with a newline on the model line of the outcome', async () => {
+    const { outcome } = await improve({ input: { analysisModel: `opus ${FORGED}` } });
     const lines = formatImproveOutcome(outcome).split('\n');
-    expect(lines[0]).toBe(`model: real (derived from the pinned provenance of the targets that answered the benchmark; the analysis and candidate calls used the alias opus ${SHOWN})`);
+    expect(lines[0]).toBe(`model: real (derived from the pinned provenance of the models that answered the benchmark; the analysis and candidate calls used the model opus ${SHOWN})`);
     expect(lines.filter((line) => line.startsWith('  momonga'))).toEqual([]);
   });
 });
