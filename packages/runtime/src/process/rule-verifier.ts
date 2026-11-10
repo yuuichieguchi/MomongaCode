@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { nodeFileSystem, protectedSetFor } from '@momonga/foundation';
+import { nodeFileSystem, parseOutsideJson, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
@@ -26,7 +26,7 @@ const INSTALLED_PACKAGE = `${path.sep}node_modules${path.sep}z3-solver${path.sep
 const installedVersionOf = async (entry: string): Promise<string> => {
   const at = entry.lastIndexOf(INSTALLED_PACKAGE);
   if (at < 0) throw new Error(`the Z3 solver at ${entry} is not inside a z3-solver package`);
-  const manifest: unknown = JSON.parse(new TextDecoder().decode(await nodeFileSystem.readFile(path.join(entry.slice(0, at + INSTALLED_PACKAGE.length), 'package.json'))));
+  const manifest: unknown = parseOutsideJson(new TextDecoder().decode(await nodeFileSystem.readFile(path.join(entry.slice(0, at + INSTALLED_PACKAGE.length), 'package.json'))));
   if (typeof manifest !== 'object' || manifest === null || !('version' in manifest) || typeof manifest.version !== 'string') {
     throw new Error(`the z3-solver package of ${entry} states no version`);
   }
