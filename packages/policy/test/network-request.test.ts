@@ -33,12 +33,12 @@ const decideCall = ({ command = 'npm install', network, mode = 'manual', setting
 const allowNpm = (layout: ReturnType<typeof makeLayout>): PermissionRule[] => [ruleIn(layout)('allow', 'Bash(npm install)')];
 
 describe('a command that requests the network', () => {
-  it.each(['manual', 'acceptEdits', 'plan', 'auto'] as const)('asks in %s mode, naming the scope, with the default setting', (mode) => {
+  it.each(['manual', 'acceptEdits', 'plan', 'auto'] as const)('asks a person in %s mode, naming the scope, with the default setting', (mode) => {
     const decision = decideCall({ network: 'open', mode });
     expect(decision.kind).toBe('ask');
     expect(decision.source).toBe('mode');
     expect(decision.reason).toContain('the command requests unrestricted network access');
-    expect(decision.humanOnly).toBeUndefined();
+    expect(decision.humanOnly).toBe(true);
   });
 
   it('asks even when an allow rule covers the command, because a network grant is never saved', () => {
@@ -60,7 +60,7 @@ describe('a command that requests the network', () => {
 
   it('names the hosts of a request for named hosts', () => {
     const decision = decideCall({ network: { hosts: ['registry.example.org', 'github.example.com:443'] }, rules: allowNpm });
-    expect(decision).toMatchObject({ kind: 'ask', reason: 'the command requests network access to github.example.com:443, registry.example.org only' });
+    expect(decision).toMatchObject({ kind: 'ask', reason: 'the command requests network access to github.example.com:443, registry.example.org only (through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network)', humanOnly: true });
   });
 
   it('refuses every request when the setting is deny, in every mode', () => {

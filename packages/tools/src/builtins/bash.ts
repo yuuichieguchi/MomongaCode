@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
-import { groupRecordOutcome, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
+import { groupRecordOutcome, hostEntryProblem, normalizedHosts, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
 import type { NetworkRequest } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import { USER_SHELL_HEAD_BYTES, USER_SHELL_TAIL_BYTES } from '@momonga/protocol';
@@ -11,6 +11,7 @@ import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
 import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
+import { openGrantedNetwork } from './network-egress.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
@@ -39,32 +40,56 @@ const bashPathFor = (env: Readonly<Record<string, string>>): string => resolveBa
 
 const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
 
+const networkRequestOf = (network: NetworkRequest): NetworkRequest => {
+  if (network === 'open') return network;
+  for (const entry of network.hosts) {
+    const problem = hostEntryProblem(entry);
+    if (problem !== undefined) throw new ToolInputError(`network.hosts: ${problem}`);
+  }
+  return { hosts: normalizedHosts(network.hosts) };
+};
+
 const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
   if (ctx.jobs === undefined) throw new ToolExecutionError('Background jobs are not available in this runtime');
   return ctx.jobs;
 };
 
 const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<ToolResult> => {
-  const { jobId } = await requireJobs(ctx).start({
-    runId: ctx.runId,
-    callKey: ctx.idemKey,
-    callId: ctx.callId,
-    command: input.command,
-    timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
-    spawn: (markerFile, signal, markerFd) =>
-      ctx.sandbox.spawn(
-        {
-          argv: [bashPathFor(ctx.env), '-c', input.command],
-          cwd: ctx.session.cwd,
-          env: bashEnvOf(ctx.env),
-          markerFile,
-          ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
-        },
-        ctx.sandboxPolicy,
-        signal,
-        markerFd === undefined ? {} : { markerFd },
-      ),
-  });
+  const jobs = requireJobs(ctx);
+  const network = await openGrantedNetwork(ctx);
+  let jobId: string;
+  try {
+    ({ jobId } = await jobs.start({
+      runId: ctx.runId,
+      callKey: ctx.idemKey,
+      callId: ctx.callId,
+      command: input.command,
+      timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
+      spawn: (markerFile, signal, markerFd) => {
+        const child = ctx.sandbox.spawn(
+          {
+            argv: [bashPathFor(ctx.env), '-c', input.command],
+            cwd: ctx.session.cwd,
+            env: bashEnvOf(network.env),
+            markerFile,
+            ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
+          },
+          network.sandboxPolicy,
+          signal,
+          markerFd === undefined ? {} : { markerFd },
+        );
+        return {
+          ...child,
+          exited: child.exited.finally(async () => {
+            await network.settle();
+          }),
+        };
+      },
+    }));
+  } catch (error) {
+    await network.settle();
+    throw error;
+  }
   return {
     status: 'completed',
     output: `Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`,
@@ -74,8 +99,8 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
-  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops. The sandbox has no network: a command that needs it sets network to "open", which asks the person before the command runs.`,
-  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}. The sandbox has no network; set network to "open" when the command needs it, which asks the person.`,
+  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops. The sandbox has no network: a command that needs it sets network to {"hosts": ["name", ...]} to reach only those hosts through a filtering proxy (HTTP and HTTPS; a program that ignores the proxy variables stays without network), or to "open" for unrestricted access. Either asks the person before the command runs, so name the fewest hosts that do the work.`,
+  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}. The sandbox has no network; set network to {"hosts": ["name", ...]} (those hosts only, through a proxy for HTTP and HTTPS) or "open" when the command needs it; either asks the person.`,
   conciseParameterDescriptions: {
     command: 'Command to run',
     timeout: 'Timeout in milliseconds',
@@ -98,7 +123,13 @@ export const bashTool = defineTool<BashInput>({
       },
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
-      network: { enum: ['open'], description: 'Network access the command needs. Absent: none. "open": unrestricted network access, which the person is asked to approve' },
+      network: {
+        anyOf: [
+          { enum: ['open'] },
+          { type: 'object', properties: { hosts: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 } }, required: ['hosts'], additionalProperties: false },
+        ],
+        description: 'Network access the command needs. Absent: none. {"hosts": ["registry.example.org", "example.org:443"]}: only those hosts (a name or an IP address, optionally with :port), through a proxy. "open": unrestricted. The person is asked to approve either',
+      },
     },
     required: ['command'],
     additionalProperties: false,
@@ -111,31 +142,39 @@ export const bashTool = defineTool<BashInput>({
     return {};
   },
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
-  subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command, ...(input.network === undefined ? {} : { network: input.network }) }),
+  subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command, ...(input.network === undefined ? {} : { network: networkRequestOf(input.network) }) }),
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const { file: marker, fd: markerFd, settle } = await requireSpawnMarker(ctx, 'Bash');
     const nonce = randomBytes(16).toString('hex');
     const script = `${trapScript(nonce)}\n${input.command}`;
-    const child = ctx.sandbox.spawn(
-      {
-        argv: [bashPathFor(ctx.env), '-c', script],
-        cwd: ctx.session.cwd,
-        env: bashEnvOf(ctx.env),
-        markerFile: marker,
-        ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
-      },
-      ctx.sandboxPolicy,
-      ctx.signal,
-      { markerFd },
-    );
+    const network = await openGrantedNetwork(ctx);
+    let child: SandboxedProcess;
+    try {
+      child = ctx.sandbox.spawn(
+        {
+          argv: [bashPathFor(ctx.env), '-c', script],
+          cwd: ctx.session.cwd,
+          env: bashEnvOf(network.env),
+          markerFile: marker,
+          ...(ctx.tmpDir === undefined ? {} : { tmpDir: ctx.tmpDir }),
+        },
+        network.sandboxPolicy,
+        ctx.signal,
+        { markerFd },
+      );
+    } catch (error) {
+      await network.settle();
+      throw error;
+    }
     const attached = groupRecordOutcome(ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() }), marker);
 
     const capture = createCapture();
     const pump = pumpOutput([child.stdout, child.stderr], (_index, chunk) => capture.push(chunk));
     let exit: SandboxExit;
     const notes: string[] = [];
+    let refusals: string[];
     try {
       let groupNotice: string | undefined;
       [exit, groupNotice] = await Promise.all([child.exited, attached]);
@@ -144,7 +183,9 @@ export const bashTool = defineTool<BashInput>({
       await pump.settle();
     } finally {
       await pump.close();
+      refusals = await network.settle();
     }
+    notes.push(...refusals);
     const failure = pump.failure();
     if (failure !== undefined) throw failure.error;
 

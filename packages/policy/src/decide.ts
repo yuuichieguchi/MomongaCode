@@ -286,14 +286,17 @@ const withWriteBasis = (primary: Decision, writes: PathPlan, writeDecisions: rea
   return { ...primary, basis: writing.basis };
 };
 
+const PROXY_NOTE = 'through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network';
+
 const withNetworkRequest = (input: DecideInput, decision: Decision): Decision => {
   if (input.subject.kind !== 'command' || input.subject.network === undefined || decision.kind === 'deny') return decision;
-  const requests = `the command requests ${describeNetworkScope(networkScopeOfRequest(input.subject.network))}`;
+  const scope = networkScopeOfRequest(input.subject.network);
+  const requests = `the command requests ${describeNetworkScope(scope)}${scope.kind === 'hosts' ? ` (${PROXY_NOTE})` : ''}`;
   const setting = input.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK;
   if (setting === 'deny') return { kind: 'deny', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
-  if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, network: true };
-  if (setting === 'allow' || input.mode === 'bypassPermissions') return decision;
-  return { kind: 'ask', source: 'mode', reason: requests, network: true };
+  if (setting === 'allow' || input.mode === 'bypassPermissions') return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
+  if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, humanOnly: true, network: true };
+  return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
 };
 
 export const decide = (input: DecideInput): Decision => withNetworkRequest(input, decideWithoutNetwork(input));
