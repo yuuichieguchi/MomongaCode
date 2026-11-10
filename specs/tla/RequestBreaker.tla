@@ -3,10 +3,11 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Requests, Threshold, Budget, MaxAttempts, Targets, Variant
 
-ASSUME Variant \in {"decided", "perSend", "twoTrials", "cut"}
+ASSUME Variant \in {"decided", "perSend", "twoTrials", "cut", "repeatedMember"}
 ASSUME Threshold \in Nat \ {0} /\ Budget \in Nat \ {0} /\ MaxAttempts \in Nat \ {0} /\ Targets \in Nat \ {0}
 
 TargetIds == 1..Targets
+Member(i) == IF Variant = "repeatedMember" /\ i > 1 THEN 1 ELSE i
 None == "none"
 Outcomes == {"ok", "fail", "neutral"}
 
@@ -84,26 +85,26 @@ Start(r) ==
     /\ UNCHANGED <<brk, fails, trial, holder, at, here, left, sent, last, verdicts, reason>>
 
 Leave(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ IF sent[r][t] THEN Record(r, t, VerdictOf(r, t)) ELSE UNCHANGED <<verdicts, brk, fails, trial, holder>>
-    /\ at' = [at EXCEPT ![r] = t + 1]
+    /\ at' = [at EXCEPT ![r] = @ + 1]
     /\ here' = [here EXCEPT ![r] = 0]
 
 SkipOpen(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ st[r] = "active"
     /\ ~CanPass(r, t)
     /\ HasLater(r)
-    /\ CanPass(r, t + 1)
+    /\ CanPass(r, Member(at[r] + 1))
     /\ Leave(r)
     /\ UNCHANGED <<st, left, sent, last, reason>>
 
 Cut(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ Variant = "cut"
     /\ st[r] = "active"
     /\ ~CanPass(r, t)
-    /\ ~(HasLater(r) /\ CanPass(r, t + 1))
+    /\ ~(HasLater(r) /\ CanPass(r, Member(at[r] + 1)))
     /\ st' = [st EXCEPT ![r] = "done"]
     /\ reason' = [reason EXCEPT ![r] = "cut"]
     /\ UNCHANGED <<brk, fails, trial, holder, at, here, left, sent, last, verdicts>>
@@ -120,15 +121,15 @@ Admits(r, t) ==
        /\ UNCHANGED <<trial, holder>>
 
 MaySend(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ st[r] = "active"
     /\ (left[r] > 0 \/ (here[r] = 0 /\ at[r] > 1))
     /\ here[r] < MaxAttempts \/ ~HasLater(r)
-    /\ ~(~CanPass(r, t) /\ HasLater(r) /\ CanPass(r, t + 1))
+    /\ ~(~CanPass(r, t) /\ HasLater(r) /\ CanPass(r, Member(at[r] + 1)))
     /\ (Variant = "cut") => CanPass(r, t)
 
 SendOk(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ MaySend(r)
     /\ verdicts' = [verdicts EXCEPT ![r][t] = @ + 1]
     /\ brk' = [brk EXCEPT ![t] = "closed"]
@@ -141,7 +142,7 @@ SendOk(r) ==
     /\ UNCHANGED <<at, here, left, last>>
 
 SendError(r, e) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ MaySend(r)
     /\ Admits(r, t)
     /\ sent' = [sent EXCEPT ![r][t] = TRUE]
@@ -154,7 +155,7 @@ SendError(r, e) ==
     /\ UNCHANGED <<brk, fails, st, at, reason>>
 
 AfterError(r) ==
-    LET t == at[r] IN
+    LET t == Member(at[r]) IN
     /\ st[r] = "active"
     /\ last[r][t] # None
     /\ here[r] > 0
