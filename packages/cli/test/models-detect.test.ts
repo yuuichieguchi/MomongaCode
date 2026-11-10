@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
+import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { FM_SERVER, LOCAL_SERVER_CANDIDATES, MANAGED_SERVERS } from '@momonga/protocol';
 import { detectModels, formatDetected } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
+import { freshHome } from './fresh-home.ts';
 
 vi.mock('../src/local-managed-ports.ts', () => ({
   localManagedPorts: () => ({
@@ -15,9 +17,9 @@ vi.mock('../src/local-managed-ports.ts', () => ({
 
 const SETTINGS_FILE = '/home/u/.momonga/settings.json';
 
-const portsOf = (written: string[]): CliPorts => ({ stdout: { write: (text: string) => void written.push(text) } }) as unknown as CliPorts;
+const pathsOf = (): MomongaPaths => momongaLayout(freshHome());
 
-const pathsOf = { home: '/home/u', settingsFile: SETTINGS_FILE } as unknown as MomongaPaths;
+const portsOf = (written: string[]): CliPorts => ({ stdout: { write: (text: string) => void written.push(text) } }) as unknown as CliPorts;
 
 const answering = (routes: Readonly<Record<string, unknown>>): { fetch: typeof fetch; asked: string[] } => {
   const asked: string[] = [];
@@ -40,7 +42,7 @@ describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
     const [first] = LOCAL_SERVER_CANDIDATES;
     const served = answering({ [`${first}/v1/models`]: { data: [{ id: 'served' }] } });
 
-    const code = await detectModels(portsOf(written), pathsOf, { typed: [], json: false, interrupt: new AbortController().signal, fetch: served.fetch });
+    const code = await detectModels(portsOf(written), pathsOf(), { typed: [], json: false, interrupt: new AbortController().signal, fetch: served.fetch });
 
     expect(code).toBe(0);
     expect(written.join('')).toContain(`found at ${first} (openai API)`);
@@ -57,7 +59,7 @@ describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
     const [first] = LOCAL_SERVER_CANDIDATES;
     const served = answering({ [`${first}/v1/models`]: { data: [{ id: 'served' }] } });
 
-    await detectModels(portsOf(written), pathsOf, { typed: [], json: true, interrupt: new AbortController().signal, fetch: served.fetch });
+    await detectModels(portsOf(written), pathsOf(), { typed: [], json: true, interrupt: new AbortController().signal, fetch: served.fetch });
 
     expect(JSON.parse(written.join(''))).toEqual([
       { baseUrl: first, shape: 'openai', models: [{ id: 'served', tools: 'unknown' }] },

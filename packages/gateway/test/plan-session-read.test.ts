@@ -197,6 +197,15 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     },
   ];
 
+  it('while plan-active.json is damaged the status of an unpinned source shows no account, as for a profile nobody signed in to', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await fs.writeFile(h.paths.active, '"x"');
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    expect(h.sessions.authSource({ profile: PROFILE_ID }).status()).toEqual({ state: 'absent' });
+    expect(h.sessions.signedOutSource(PROFILE_ID).status()).toEqual({ state: 'absent' });
+  });
+
   for (const entry of damaged) {
     it(`${entry.name} is warned at open, an unpinned source fails plan_store_unreadable with the cause, a pinned source reads and selectActive does not overwrite it`, async () => {
       const h = await harness();

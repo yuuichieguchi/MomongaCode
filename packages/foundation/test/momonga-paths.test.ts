@@ -14,6 +14,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
   const run = path.join(root, 'run');
   const state = path.join(root, 'state');
   return {
+    home,
     root,
     settingsFile: path.join(root, 'settings.json'),
     run,

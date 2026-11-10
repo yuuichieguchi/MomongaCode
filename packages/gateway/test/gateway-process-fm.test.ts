@@ -188,10 +188,17 @@ describe('managed fm under startGatewayProcess', () => {
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
-    const target = (await loadUserSettings({ home })).settings.models.targets['fm'];
+    const { settings } = await loadUserSettings({ home });
+    const target = settings.models.targets['fm'];
     if (target === undefined) throw new Error('the default settings resolved no fm target');
     expect(entry.targetCounters).toEqual({
-      fm: targetCounterOf({ target, server: FM_SERVER, codeDigest: await codeDigestOfRunningProcess(), probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical }),
+      fm: targetCounterOf({
+        target,
+        server: FM_SERVER,
+        codeDigest: await codeDigestOfRunningProcess(),
+        probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical,
+        outputPolicy: { unboundedOutputReserve: settings.context.unboundedOutputReserve },
+      }),
     });
   });
 

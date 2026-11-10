@@ -148,6 +148,33 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     expect(catalog[0]?.data).not.toHaveProperty('listed');
     await gateway.close();
   });
+
+  it('a 200 catalog answer whose body is not JSON writes plan.catalog list_invalid with requestIdHeaders', async () => {
+    const events: RecordedEvent[] = [];
+    const gateway = await startPlanGateway({ models: LISTED, catalogReply: { kind: 'stream', frames: [{ data: 'not a model list' }] }, logger: recordingLogger(events) });
+    await signIn(gateway);
+    const answered = await gateway.get(modelsRoute('profile=chatgpt&refresh=1'));
+    expect(answered.status).not.toBe(200);
+    const catalog = events.filter((event) => event.name === 'plan.catalog');
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]?.data['outcome']).toBe('list_invalid');
+    expect(Array.isArray(catalog[0]?.data['requestIdHeaders'])).toBe(true);
+    expect(catalog[0]?.data).not.toHaveProperty('listed');
+    await gateway.close();
+  });
+
+  it('a 429 catalog answer with an empty JSON body that matches no rule of the profile writes plan.catalog unclassified', async () => {
+    const events: RecordedEvent[] = [];
+    const gateway = await startPlanGateway({ models: LISTED, catalogReply: { kind: 'error', status: 429, body: {} }, logger: recordingLogger(events) });
+    expect(gateway.profile.errorRules.some((rule) => rule.match.kind === 'status' && rule.match.status === 429)).toBe(false);
+    await signIn(gateway);
+    const answered = await gateway.get(modelsRoute('profile=chatgpt&refresh=1'));
+    expect(answered.status).toBe(429);
+    const catalog = events.filter((event) => event.name === 'plan.catalog');
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0]?.data['outcome']).toBe('unclassified');
+    await gateway.close();
+  });
 });
 
 describe('accounts/{account}/targets adds an unpinned target named by the P6.8 rule (O-R5-4 c)', () => {

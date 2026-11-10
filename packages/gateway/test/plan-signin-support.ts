@@ -62,6 +62,7 @@ export type PlanGatewayOptions = {
   verifyBearer?: PlanResponsesOptions['verifyBearer'];
   respond?: PlanResponsesOptions['respond'];
   catalogListKey?: string;
+  catalogReply?: PlanResponsesOptions['catalogReply'];
 };
 
 export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
@@ -79,7 +80,12 @@ export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>
 
 export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promise<PlanGateway> => {
   const home = makeHome();
-  const upstream = await startFakePlanResponses({ verifyBearer: options.verifyBearer ?? (() => 'valid'), models: options.models ?? [], ...(options.respond === undefined ? {} : { respond: options.respond }) });
+  const upstream = await startFakePlanResponses({
+    verifyBearer: options.verifyBearer ?? (() => 'valid'),
+    models: options.models ?? [],
+    ...(options.respond === undefined ? {} : { respond: options.respond }),
+    ...(options.catalogReply === undefined ? {} : { catalogReply: options.catalogReply }),
+  });
   registerCleanup(() => upstream.close());
   const loopback = `${upstream.origin}/v1`;
   const auth = await startFakeSiwcAuth({ resource: loopback, ...(options.accessTokenForm === undefined ? {} : { accessTokenForm: options.accessTokenForm }) });

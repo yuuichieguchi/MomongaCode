@@ -549,4 +549,24 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active' });
     await gateway.close();
   });
+
+  it('a damaged plan-active.json stays a listed problem until a pointer write succeeds: after selectActive on the repaired file no problem is listed and an unpinned target reads', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true, respond: () => openResponsesTextReply(['hi']) });
+    await signInAs(gateway, ACCOUNT);
+    await gateway.close();
+    const pointer = momongaLayout(gateway.home).planActive;
+    fs.writeFileSync(pointer, '"x"');
+    await gateway.restart();
+    replaceSettings(gateway.home, unpinnedSettings(true));
+    const problem = { file: 'plan-active.json', cause: `the active plan account file ${pointer} is not a JSON object` };
+    fs.writeFileSync(pointer, '{}');
+    expect((await gateway.get(PLAN_ROUTES.accounts)).body.listProblems).toEqual([problem]);
+    expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: ACCOUNT })).status).toBe(200);
+    const listed = await gateway.get(PLAN_ROUTES.accounts);
+    expect(listed.status).toBe(200);
+    expect(listed.body).not.toHaveProperty('listProblems');
+    expect((await askDefault(gateway)).status).toBe(200);
+    expect(bearerOf(responsePosts(gateway).at(-1) ?? { headers: {} })).toBe(`Bearer ${accessTokenOf(gateway, ACCOUNT)}`);
+    await gateway.close();
+  });
 });
