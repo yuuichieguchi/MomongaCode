@@ -70,7 +70,7 @@ describe('targetCounterOf', () => {
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354') })).toBe(base);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('2'.repeat(64), '25A354') })).not.toBe(base);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A355') })).not.toBe(base);
-    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354', 'system') })).not.toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354', 'another-model') })).not.toBe(base);
   });
 
   it('changes for a probed endpoint target when its probe record names another upstream identity', async () => {

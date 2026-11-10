@@ -10,11 +10,6 @@ const OLD_KEY_SENTENCES_FILE = 'packages/config/src/settings.ts';
 type Remaining = { file: string; removedBy: 'N1' | 'N2' | 'N3a' | 'N3b' | 'N4' };
 
 const REMAINING: readonly Remaining[] = [
-  { file: 'packages/cli/src/commands/auto-mode.ts', removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/gateway.ts', removedBy: 'N3a' },
-  { file: 'packages/cli/src/commands/models.ts', removedBy: 'N3a' },
-  { file: 'packages/cli/src/eval/context-host.ts', removedBy: 'N3a' },
-  { file: 'packages/cli/src/readiness.ts', removedBy: 'N3a' },
   { file: 'packages/cli/src/tui/plan-flows.ts', removedBy: 'N3b' },
 ];
 

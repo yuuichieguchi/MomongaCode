@@ -170,7 +170,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', () 
       { clock, timers },
     );
 
-    const pending = post(client, { ...body, stream: false });
+    const pending = post(client, { ...body, model: 'primary/model-a', stream: false });
     let settled = false;
     const settle = (): void => {
       settled = true;

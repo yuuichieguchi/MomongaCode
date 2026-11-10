@@ -72,21 +72,24 @@ export const saveFakeFmRecord = async (home: string, binaryPath: string, report:
   await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, FM_CURRENCY);
 };
 
-type SettingsTree = { models?: { targets?: Record<string, Record<string, unknown>> } } & Record<string, unknown>;
+type Connection = Record<string, unknown> & { models?: Array<Record<string, unknown>> };
 
-const managedTargetsOf = (settings: unknown): Array<[string, Record<string, unknown>]> =>
-  Object.entries((settings as SettingsTree).models?.targets ?? {}).filter(([, target]) => target['adapter'] === 'managed' && target['server'] === FM_SERVER.id);
+type SettingsTree = { models?: { connections?: Connection[] } } & Record<string, unknown>;
+
+const isFmConnection = (connection: Connection): boolean => connection['adapter'] === 'managed' && connection['server'] === FM_SERVER.id;
+
+const fmConnectionsOf = (settings: unknown): Connection[] => ((settings as SettingsTree).models?.connections ?? []).filter(isFmConnection);
 
 export const withFakeBinary = <Settings>(settings: Settings, binaryPath: string): Settings => {
   const tree = settings as SettingsTree;
-  const targets = tree.models?.targets;
-  if (targets === undefined) return settings;
-  const placed = Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target['adapter'] === 'managed' && target['server'] === FM_SERVER.id && target['binary'] === undefined ? { ...target, binary: binaryPath } : target]));
-  return { ...tree, models: { ...tree.models, targets: placed } } as Settings;
+  const connections = tree.models?.connections;
+  if (connections === undefined) return settings;
+  const placed = connections.map((connection) => (isFmConnection(connection) && connection['binary'] === undefined ? { ...connection, binary: binaryPath } : connection));
+  return { ...tree, models: { ...tree.models, connections: placed } } as Settings;
 };
 
 export const saveFakeFmRecordsFor = async (home: string, settings: unknown, binaryPath: string, report: ProbeReport = makeReport(1, 1)): Promise<void> => {
-  const models = new Set(managedTargetsOf(settings).map(([, target]) => (typeof target['model'] === 'string' ? target['model'] : undefined)));
+  const models = new Set(fmConnectionsOf(settings).flatMap((connection) => (connection.models ?? []).map((entry) => (typeof entry['id'] === 'string' ? entry['id'] : undefined))));
   for (const model of models) await saveFakeFmRecord(home, binaryPath, report, model);
 };
 

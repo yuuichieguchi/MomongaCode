@@ -140,7 +140,7 @@ describe('models.billingChanges of the user settings reaches the alias walk (P5a
     const refused = await startWith(undefined);
     const failed = await refused.post();
     expect(failed.status).toBe(401);
-    expect(failed.body.error.message).toContain('Model target "paid" was not tried');
+    expect(failed.body.error.message).toContain('Model "paid/m" was not tried');
     expect(refused.serving.requests).toHaveLength(0);
 
     const allowed = await startWith([{ from: 'local', to: 'metered' }]);

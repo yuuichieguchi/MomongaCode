@@ -7,7 +7,7 @@ import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gat
 import { FM_SERVER } from '@momonga/protocol';
 import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
-import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
+import { FAKE_FM_LISTED_MODEL, FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -25,6 +25,7 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   instance: context.instance,
   description: FM_SERVER,
   target: 'apple',
+  model: FAKE_FM_LISTED_MODEL,
   binary: context.binary,
   readyTimeoutMs: FM_SERVER.ready.limitMs,
   env: { PATH: '/usr/bin:/bin', HOME: context.dir },

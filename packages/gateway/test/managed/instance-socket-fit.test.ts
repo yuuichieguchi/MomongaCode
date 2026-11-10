@@ -43,14 +43,14 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const client = clientFor(handle.socketPath);
 
-    const refused = await readJson(await postJson(client, '/v1/responses', { model: 'long', input: userInput('hello') }));
+    const refused = await readJson(await postJson(client, '/v1/responses', { model: `${longTarget}/system`, input: userInput('hello') }));
     expect(refused.status).toBe(412);
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
-    expect(refused.body.error.message).toBe(unfitText(longTarget, limit + 1, limit));
+    expect(refused.body.error.message).toBe(unfitText(`${longTarget}/system`, limit + 1, limit));
     expect(fs.existsSync(longSocket)).toBe(false);
     expect(fs.existsSync(instanceMarkers(home, `${longTarget}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
 
-    const served = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));
+    const served = await readJson(await postJson(client, '/v1/responses', { model: `${FITTING_TARGET}/system`, input: userInput('hello') }));
     expect(served.status).toBe(200);
   });
 });

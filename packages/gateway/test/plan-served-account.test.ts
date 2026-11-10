@@ -26,7 +26,7 @@ const TARGET_B: AdapterTarget = { name: 'b', display: 'b', model: 'plan-model' }
 
 const PLAIN_REQUEST: AdapterRequest = { model: 'plan-model', input: [{ type: 'message', role: 'user', content: 'hello' }] };
 
-const ask = async (gateway: PlanGateway) => readJson(await postJson(clientFor(gateway.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
+const ask = async (gateway: PlanGateway) => readJson(await postJson(clientFor(gateway.socketPath), '/v1/responses', { model: 'gpt/plan-model', input: userInput('hi') }));
 
 const planAdapter = async (authSource: (target: AdapterTarget) => FakeAuth, script: FakeUpstreamReply[] = []) => {
   const fake = await startFakePlanResponses({ verifyBearer: () => 'valid', script });

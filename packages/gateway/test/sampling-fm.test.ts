@@ -21,7 +21,7 @@ const servePidsIn = (dumpFile: string): number[] =>
     : [];
 
 describe('an fm target renders no sampling field', () => {
-  it('refuses temperature with a 400 naming the field and the target, instead of dropping it', async () => {
+  it('refuses temperature with a 400 naming the field and the model, instead of dropping it', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
     fm.configure({ envDumpFile: dumpFile });
@@ -35,6 +35,6 @@ describe('an fm target renders no sampling field', () => {
     expect(response.body.error.type).toBe('invalid_request');
     expect(response.body.error.param).toBe('temperature');
     expect(response.body.error.message).toContain('temperature');
-    expect(response.body.error.message).toContain('local-fm/system');
+    expect(response.body.error.message).toContain('model "system"');
   });
 });

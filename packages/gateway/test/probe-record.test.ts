@@ -46,7 +46,7 @@ describe('probe records (design-managed-servers section 6.6: one file per key, n
   it.each([
     ['the binary hash', fmRecordKey('b'.repeat(64), '27A100')],
     ['the OS build', fmRecordKey('a'.repeat(64), '27A200')],
-    ['the declared model', fmRecordKey('a'.repeat(64), '27A100', 'system')],
+    ['the declared model', fmRecordKey('a'.repeat(64), '27A100', 'another-model')],
   ])('reads no record when %s differs', async (_label, other) => {
     const dir = makeDir();
     await saveProbeRecord(dir, key, makeReport(1, 1), FM_CURRENCY);

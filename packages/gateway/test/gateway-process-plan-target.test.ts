@@ -17,7 +17,7 @@ const targetHealth = async (home: string) => {
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore: createFakeSecretStore({}) });
   const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
   expect(health.status).toBe(200);
-  return health.body.targets['gpt/gpt-fake'];
+  return health.body.models['gpt/gpt-fake'];
 };
 
 describe('the gateway serves a plan target through the session engine (P5a-w)', () => {

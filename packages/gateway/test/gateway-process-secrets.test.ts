@@ -64,7 +64,7 @@ type Stack = {
 const startStack = async (
   context: CleanupContext,
   store: HostStore,
-  options: { secrets: Record<string, string>; anthropicScript: FakeUpstreamReply[]; aliasOrder?: string[]; env?: Record<string, string> },
+  options: { secrets: Record<string, string>; anthropicScript: FakeUpstreamReply[]; fallbackTo?: string[]; env?: Record<string, string> },
 ): Promise<Stack> => {
   const anthropic = await startFakeAnthropic({ apiKey: SECRET, script: options.anthropicScript });
   registerCleanup(context, () => anthropic.close());
@@ -72,10 +72,13 @@ const startStack = async (
   registerCleanup(context, () => openResponses.close());
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, {
-    models: modelsOf({
+    models: modelsOf(
+      {
         claude: { adapter: 'anthropic', model: 'claude-fake', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
         local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
-      }),
+      },
+      options.fallbackTo === undefined ? {} : { fallbackTo: options.fallbackTo },
+    ),
   });
   const host = fakeHostPath(context, store);
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets), store, host);
@@ -130,10 +133,10 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect((await post(stack.client, request)).status).toBe(200);
     expect(stack.security.calls).toHaveLength(1);
     const file = homePaths(stack.home).settings;
-    const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { models: { targets: Record<string, Record<string, unknown>> } };
-    const claude = settings.models.targets['claude/claude-fake'] as Record<string, unknown>;
+    const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { models: { connections: Array<Record<string, unknown>> } };
+    const connections = settings.models.connections.map((connection) => (connection['provider'] === 'claude' ? { ...connection, maxConcurrency: 2 } : connection));
     const staging = `${file}.changed.tmp`;
-    fs.writeFileSync(staging, JSON.stringify({ ...settings, models: { ...settings.models, targets: { ...settings.models.targets, claude: { ...claude, model: 'claude-fake-changed' } } } }), { mode: 0o600 });
+    fs.writeFileSync(staging, JSON.stringify({ ...settings, models: { ...settings.models, connections } }), { mode: 0o600 });
     fs.renameSync(staging, file);
     expect((await post(stack.client, request)).status).toBe(200);
     expect(stack.security.calls).toHaveLength(2);
@@ -195,7 +198,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
   });
 
   it('falls through to the next target of the alias when a target secret is unavailable', async (context) => {
-    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [], aliasOrder: ['claude/claude-fake', 'fake/local-fake'] });
+    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [], fallbackTo: ['local'] });
     const response = await post(stack.client, request);
     expect(response.status).toBe(200);
     const resource = JSON.parse(response.text);
@@ -211,7 +214,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     const home = withTempDir(context, { asHome: true });
     writeSettings(home, {
       models: modelsOf({
-          claude: { adapter: 'anthropic', model: 'm', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
+          claude: { adapter: 'anthropic', model: 'claude-fake', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
           local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
         }),
     });

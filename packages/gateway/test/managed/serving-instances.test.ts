@@ -56,8 +56,8 @@ describe('each managed target has its own serving instance, named by the target 
     });
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('second')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('apple/system')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('banana/system')))).status).toBe(200);
     const serves = launched(dumpFile, 'serve');
     const places = generationTargets(home);
     expect(serves.map(socketOf).sort()).toEqual([path.join(places.sockets, 'apple-1.sock'), path.join(places.sockets, 'banana-1.sock')]);
@@ -81,7 +81,7 @@ describe('a second kind of server, declared in the user settings, runs through t
     });
     const handle = await launch(home, { exec: fakeExec });
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('workbench/fake-1')))).status).toBe(200);
     const runs = launched(dumpFile, 'run');
     expect(runs).toHaveLength(1);
     expect(socketOf(runs[0] as DumpRecord)).toBe(path.join(generationTargets(home).sockets, 'workbench-1.sock'));

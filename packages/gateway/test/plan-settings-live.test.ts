@@ -285,12 +285,12 @@ const entryOf = async (gateway: PlanGateway, account: string): Promise<{ state: 
   return (listed.body.accounts as { label: string; state: string; pinnedBy: string[] }[]).find((entry) => entry.label === account);
 };
 
-const askAlias = async (gateway: PlanGateway, alias: string): Promise<number> => {
+const askModelOf = async (gateway: PlanGateway, account: string): Promise<number> => {
   const response = await clientFor(gateway.socketPath).request({
     method: 'POST',
     path: '/v1/responses',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: alias, input: userInput('hi'), stream: false }),
+    body: JSON.stringify({ model: `gpt-${account}/plan-model`, input: userInput('hi'), stream: false }),
   });
   await response.text();
   return response.status;
@@ -315,9 +315,9 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     const gateway = await withSpareSigningOut();
     expect(gateway.auth.calls.revoke).toBe(0);
     replaceSettings(gateway.home, planSettings([ACCOUNT, SPARE]));
-    await askAlias(gateway, SPARE);
+    await askModelOf(gateway, SPARE);
     await vi.waitFor(() => expect(gateway.auth.calls.revoke).toBe(1), CONDITION_WAIT);
-    await vi.waitFor(async () => expect(await entryOf(gateway, SPARE)).toMatchObject({ state: 'registered', pinnedBy: [`gpt-${SPARE}`] }), CONDITION_WAIT);
+    await vi.waitFor(async () => expect(await entryOf(gateway, SPARE)).toMatchObject({ state: 'registered', pinnedBy: [`gpt-${SPARE}/plan-model`] }), CONDITION_WAIT);
     await gateway.close();
   });
 
@@ -333,7 +333,7 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     try {
       expect(first.connects()).toEqual([]);
       replaceSettings(stack.home, { credentials: { plaintextTokenFiles: true }, models: pinnedTargets([ACCOUNT, SPARE]), network: proxied(second) });
-      const answered = await postJsonOf(stack.client, '/v1/responses', { model: SPARE, input: userInput('hi'), stream: false });
+      const answered = await postJsonOf(stack.client, '/v1/responses', { model: `gpt-${SPARE}/plan-model`, input: userInput('hi'), stream: false });
       expect(answered.status).toBe(401);
       expect(answered.body.error.code).toBe('sign_in_required');
       await waitFor(() => second.connects().length === 1, CHANGE_WAIT);
@@ -351,7 +351,7 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     await signInAs(gateway, ACCOUNT);
     await signInAs(gateway, SPARE);
     replaceSettings(gateway.home, planSettings([SPARE]));
-    await askAlias(gateway, SPARE);
+    await askModelOf(gateway, SPARE);
     expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active', pinnedBy: [] });
     expect(fs.existsSync(recordFile(gateway, ACCOUNT))).toBe(true);
     expect(gateway.auth.calls.revoke).toBe(0);

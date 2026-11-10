@@ -6,15 +6,16 @@ import type { EndpointKey } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
-import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings, modelOf, modelsOf } from './gateway-process-helpers.ts';
+import { OLLAMA_LISTED, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const launchWith = async (target: Record<string, unknown>) => {
+  const servers = { local: target };
   const home = makeHome();
-  writeSettings(home, { models: modelsOf({ local: target }) });
+  writeSettings(home, { models: modelsOf(servers) });
   const measured: EndpointKey[] = [];
   const pending = <T,>(key: EndpointKey): Promise<T> => {
     measured.push(key);
@@ -30,7 +31,7 @@ const launchWith = async (target: Record<string, unknown>) => {
     measureOllama: ({ key }) => pending(key),
   });
   const client = clientFor(handle.socketPath);
-  const ask = async () => readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
+  const ask = async () => readJson(await postJson(client, '/v1/responses', { model: modelOf(servers, 'local'), input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
   return { home, measured, ask };
 };
 
@@ -62,13 +63,13 @@ describe('P10 RecordUnderLock: every probe-able auto target takes the automatic 
 
   it('answers an ollama target with no record 503 target_probing and measures its endpoint key', async () => {
     const fake = await startFakeOllama({ chat: [] });
-    const gateway = await launchWith({ adapter: 'ollama', model: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } });
+    const gateway = await launchWith({ adapter: 'ollama', model: OLLAMA_LISTED, baseUrl: fake.origin, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } });
 
     const response = await gateway.ask();
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe(TARGET_PROBING);
-    expect(gateway.measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }]);
+    expect(gateway.measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_LISTED }]);
   });
 
   it('refuses the CLI probe of a chat-completions target while another holder has the lock of its record, so no record is written outside the lock', async () => {

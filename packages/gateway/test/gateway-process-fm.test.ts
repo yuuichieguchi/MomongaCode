@@ -164,7 +164,7 @@ describe('managed fm under startGatewayProcess', () => {
     expect(health.body.models['fm/system']).toMatchObject({
       ok: false,
       reason: 'precondition_failed',
-      detail: `the model "fm": the executable was not found at ${missing}`,
+      detail: `the model "system": the executable was not found at ${missing}`,
     });
   });
 

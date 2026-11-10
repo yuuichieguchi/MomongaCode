@@ -3,13 +3,8 @@ import { gatewayConfigOf } from '@momonga/gateway';
 
 describe('models.billingChanges of the user settings reaches the gateway config (P5a-w, M9)', () => {
   it('carries the resolved pairs into GatewayConfig.models.billingChanges', () => {
-    const config = (gatewayConfigOf as unknown as (...args: unknown[]) => { models: Record<string, unknown> })(
-      {},
-      {},
-      undefined,
-      undefined,
-      [{ from: 'plan', to: 'metered', alias: 'default' }],
-    );
-    expect(config.models['billingChanges']).toEqual([{ from: 'plan', to: 'metered', alias: 'default' }]);
+    const billingChanges = [{ from: 'plan', to: 'metered', model: 'gpt/plan-model' }] as const;
+    const config = gatewayConfigOf({ models: new Map(), chains: new Map(), start: undefined, roles: {}, billingChanges });
+    expect(config.models.billingChanges).toEqual([{ from: 'plan', to: 'metered', model: 'gpt/plan-model' }]);
   });
 });

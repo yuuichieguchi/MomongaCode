@@ -10,7 +10,7 @@ import type { GatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, createScriptedAdapter, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
-import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
+import { HMAC_KEY, PRIMARY, START_MS, TEST_VERSION, buildConfig, postJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -314,7 +314,7 @@ describe('gateway fatal (§4.2, §4.3)', () => {
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { [PRIMARY]: createScriptedAdapter({ calls: [] }) },
       clock,
       timers: createFakeTimers(clock),
       dbPath: path.join(dir, 'gateway.db'),

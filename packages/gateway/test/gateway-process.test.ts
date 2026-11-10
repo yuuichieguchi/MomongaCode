@@ -175,7 +175,7 @@ describe('startGatewayProcess credentials', () => {
       models: modelsOf({ keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }), backup: ccTarget(backup.socketPath) }, { fallbackTo: ['backup'] }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, extraEnv), version: PROCESS_VERSION });
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { ...body, model: 'keyed/system' }));
     expect(response.status).toBe(200);
     expect(response.body.momonga.target).toBe('backup/system');
     expect(response.body.momonga.fallbackFrom).toEqual(['keyed/system']);
@@ -190,7 +190,7 @@ describe('startGatewayProcess credentials', () => {
       models: modelsOf({ keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }) }),
     });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { ...body, model: 'keyed/system' }));
     expect(response.status).toBe(401);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'missing_api_key', param: 'MOMONGA_MISSING_KEY' });
     expect(response.body.error.message).toContain('MOMONGA_MISSING_KEY');

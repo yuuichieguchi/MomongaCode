@@ -69,7 +69,7 @@ const ask = async (gateway: PlanGateway): Promise<number> => {
     method: 'POST',
     path: '/v1/responses',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }),
+    body: JSON.stringify({ model: 'gpt/plan-model', input: userInput('hi'), stream: false }),
   });
   await response.text();
   return response.status;

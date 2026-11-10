@@ -202,7 +202,8 @@ describe('the automatic probe of an fm target with no probe record', () => {
         paths,
         instance,
         description: FM_SERVER,
-        target: 'fm',
+        target: 'fm/system',
+        model: 'system',
         binary: gateway.fm.binaryPath,
         readyTimeoutMs: FM_SERVER.ready.limitMs,
         env: baseEnv(gateway.home),
@@ -370,7 +371,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
       expect(isAlive(pgid)).toBe(false);
       expect(fs.readdirSync(markers)).toEqual([]);
-      expect(gateway.logLines.some((line) => line.includes('the automatic probe of the target fm was stopped'))).toBe(true);
+      expect(gateway.logLines.some((line) => line.includes('the automatic probe of the model fm/system was stopped'))).toBe(true);
       expect(gateway.logLines.some((line) => line.includes('failed and recorded nothing'))).toBe(false);
     });
   });

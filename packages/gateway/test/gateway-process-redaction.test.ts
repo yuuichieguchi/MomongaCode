@@ -335,7 +335,7 @@ describe('T5: fm text with a configured key on another target', () => {
     const response = await client.request({ method: 'GET', path: '/v1/momonga/health' });
     const text = await response.text();
     expect(response.status).toBe(200);
-    expect(JSON.parse(text).targets.fm).toMatchObject({ ok: false, reason: 'precondition_failed', detail: `license status: ${REDACTED}` });
+    expect(JSON.parse(text).models['fm/system']).toMatchObject({ ok: false, reason: 'precondition_failed', detail: `license status: ${REDACTED}` });
     expectRedacted(text, TEST_API_KEY);
   });
 
@@ -352,7 +352,7 @@ describe('T5: fm text with a configured key on another target', () => {
     });
     const text = await response.text();
     expect(response.status).toBe(502);
-    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `the model "fm": the token counter failed with exit code 2: bad ${REDACTED}` });
+    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `the model "fm/system": the token counter failed with exit code 2: bad ${REDACTED}` });
     expectRedacted(text, TEST_API_KEY);
   });
 });

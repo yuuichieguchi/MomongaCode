@@ -46,7 +46,7 @@ describe('malformed upstream events', () => {
     expect(last.response.error.code).toBe('upstream_protocol_error');
     expect(validator.validate('ResponseFailedStreamingEvent', last).errors).toEqual([]);
     expect(frames.filter((frame) => frame.data.type === 'response.failed')).toHaveLength(1);
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker).toBe('open');
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker).toBe('open');
   });
 
   it('maps the same failure for a non-stream request to a model_error 502 with the code', async () => {

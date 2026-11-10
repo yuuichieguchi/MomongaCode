@@ -46,7 +46,7 @@ describe('the accounts route lists every stored account of this home, also after
     expect(listed.body.accounts).toHaveLength(2);
     expect(listed.body.accounts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ profile: PROFILE_ID, label: ACCOUNT, state: 'active', active: true, pinnedBy: ['gpt'] }),
+        expect.objectContaining({ profile: PROFILE_ID, label: ACCOUNT, state: 'active', active: true, pinnedBy: ['gpt/plan-model'] }),
         expect.objectContaining({ profile: PROFILE_ID, label: SPARE, email: gateway.auth.identity.email, state: 'active', active: false, pinnedBy: [] }),
       ]),
     );

@@ -1,5 +1,5 @@
 import { canonicalJson, createUdsClient, fixedSocket, probeKeyComponentLabel } from '@momonga/foundation';
-import { MODEL_ID_CHANGED_CODE, countReplyOf } from '@momonga/protocol';
+import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterStop,
   ChainRoomFacts,
@@ -27,8 +27,6 @@ import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
 import { vocabularyOf } from '../adapters/chat-completions/vocabulary.ts';
 import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
-import { invalidRequest } from '../core/errors.ts';
-import type { GatewayError } from '../core/errors.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { ProbeOutputPolicy } from '../probe/decide.ts';
@@ -42,6 +40,7 @@ import { valueAtPath, parseJson } from '../probe/json.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ManagedRecordCurrency } from '../probe/record.ts';
 import { targetProbingError } from '../probe/auto-probe.ts';
+import { modelIdChangedError } from '../probe/model-id-changed.ts';
 import type { InstanceProbe } from '../probe/instance-probe.ts';
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
 import { missingExecutableVerdict, notReadyText } from './preconditions.ts';
@@ -179,8 +178,6 @@ const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: 
 
 type Recorded = { report: ProbeReport | null; capabilities: (policy?: ProbeOutputPolicy) => Capabilities; isGuardrail: (body: unknown) => boolean };
 
-const MODEL_ID_CHANGED_STATUS = 412;
-
 const keyText = (description: ManagedServerDescription, key: KnownProbeKey): string => {
   return description.identity.map((component) => `${probeKeyComponentLabel(component)} ${String(key.fields[component])}`).join(', ');
 };
@@ -263,11 +260,9 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     recorded = recordedOf(`the probe key of the model "${targetName}" (${keyText(description, key)})`, report);
     return recorded;
   };
-  const idChangedError = (listed: string, entry: string): GatewayError =>
-    invalidRequest(MODEL_ID_CHANGED_CODE, `The server of ${targetName} lists "${listed}", not "${entry}". Run /models add to add the model it serves now.`, 'model', MODEL_ID_CHANGED_STATUS);
   const checkServedId = (listed: string | undefined): void => {
     const entry = options.declaredModel;
-    if (entry !== undefined && listed !== undefined && listed !== entry) throw idChangedError(listed, entry);
+    if (entry !== undefined && listed !== undefined && listed !== entry) throw modelIdChangedError(targetName, listed, entry);
   };
   const lastRecorded = (): Recorded => {
     if (recorded === undefined) throw new Error(`the probe record of the model "${targetName}" was read by no request yet`);

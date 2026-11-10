@@ -42,7 +42,7 @@ describe('the counters a started gateway lists', () => {
 
     const counters = await listedCounters(handle.socketPath);
 
-    expect(counters).toEqual({ primary: targetCounterOf({ target: await resolvedPrimary(home), codeDigest: await codeDigestOfRunningProcess() }) });
+    expect(counters).toEqual({ 'primary/system': targetCounterOf({ target: await resolvedPrimary(home), codeDigest: await codeDigestOfRunningProcess() }) });
   });
 
   it('keeps the value of a key out of the counter: two values of the same apiKeyEnv give the same counter', async () => {
@@ -104,8 +104,8 @@ describe('the counters a started gateway lists', () => {
     const two = await launchWithRecord('identity-two');
 
     const codeDigest = await codeDigestOfRunningProcess();
-    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
-    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
+    expect(one.counters).toEqual({ 'primary/system': targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
+    expect(two.counters).toEqual({ 'primary/system': targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
     expect(two.counters['primary/system']).not.toBe(one.counters['primary/system']);
   });
 });

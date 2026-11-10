@@ -117,7 +117,7 @@ describe('chat-completions target with toolCalling auto', () => {
     expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(response.headers['retry-after']).toBe('120');
     expect(measured).toEqual([{ endpoint, model: 'system' }]);
-    expect(listing.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities.toolCalling.state).toBe('probing');
+    expect(listing.body.data.find((entry: { id: string }) => entry.id === 'local/system').capabilities.toolCalling.state).toBe('probing');
     expect(completions(fake)).toEqual([]);
   });
 
@@ -138,7 +138,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const { home, fake } = await probedSetup(() => [{ id: 'qwen-fake', object: 'model', created: (stamp += 7), owned_by: 'vllm' }]);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { ...request, model: 'local/qwen-fake' }));
 
     expect(response.status).toBe(200);
     expect(fake.requests.filter((entry) => entry.path === '/v1/models')).toHaveLength(1);
@@ -160,7 +160,7 @@ describe('chat-completions target with toolCalling auto', () => {
       },
     });
 
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { ...request, model: 'local/qwen-fake' }));
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe(TARGET_PROBING);
