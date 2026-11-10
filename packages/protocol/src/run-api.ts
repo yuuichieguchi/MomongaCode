@@ -439,6 +439,18 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
     required: ['approvalId', 'reason'],
   },
+  'tool.unknown.requested': {
+    properties: { approvalId: string, callIds: { type: 'array', items: string }, options: { type: 'array', items: permissionOption }, subjectDigest: string },
+    required: ['approvalId', 'callIds', 'options', 'subjectDigest'],
+  },
+  'tool.unknown.resolved': {
+    properties: { approvalId: string, optionId: string },
+    required: ['approvalId', 'optionId'],
+  },
+  'tool.unknown.cancelled': {
+    properties: { approvalId: string, reason: enumOf(['expired', 'withdrawn', 'superseded']) },
+    required: ['approvalId', 'reason'],
+  },
   'tool.elicitation.requested': {
     properties: { inputId: string, callId: string, server: string, requests: { type: 'array', items: elicitationRequest } },
     required: ['inputId', 'callId', 'server', 'requests'],
@@ -1376,6 +1388,7 @@ export const RUN_API_SCHEMAS = {
     closed(
       {
         id: string,
+        kind: enumOf(['permission', 'unknown_effect']),
         runId: string,
         callId: string,
         status: storedEnumOf(APPROVAL_STATUSES),
@@ -1395,7 +1408,7 @@ export const RUN_API_SCHEMAS = {
           ['callId', 'name', 'title', 'kind', 'rawInput'],
         ),
       },
-      ['id', 'runId', 'callId', 'status', 'options', 'createdAt', 'reason', 'toolCall'],
+      ['id', 'kind', 'runId', 'callId', 'status', 'options', 'createdAt', 'reason', 'toolCall'],
     ),
   ),
   JobView: root(jobView),

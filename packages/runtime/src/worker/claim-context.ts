@@ -64,6 +64,7 @@ export type ClaimContext = {
   verificationCommands: readonly string[];
   autoCompact: boolean;
   token: TokenPolicy;
+  policyFingerprint: string | undefined;
 };
 
 export type RunMemory = { streak: number; interruptions: number; deadlineAt: number; narrowingsNoticed: Set<string> };

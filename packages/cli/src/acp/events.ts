@@ -1,5 +1,6 @@
 import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallContent, ToolCallStatus, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import { isRecord } from '@momonga/foundation';
+import { unknownEffectLines, unknownEffectTitle } from '@momonga/protocol';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, hookLevel } from '../policy-messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
@@ -30,12 +31,13 @@ export type Effect =
 
 export type MapperState = {
   readonly calls: Map<string, ToolCall>;
+  readonly found: Map<string, string>;
   readonly firstSeq: Map<string, number>;
   contextTokens: number | undefined;
   lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
 };
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), firstSeq: new Map(), contextTokens: undefined, lastFailure: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), found: new Map(), firstSeq: new Map(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -124,8 +126,30 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       if (toolCall === undefined) throw new Error(`approval ${event.approvalId} asks about call ${event.callId}, which no tool.call event announced`);
       return [{ kind: 'permission', approvalId: event.approvalId, toolCall: { ...toolCall, status: 'pending' }, options: event.options }];
     }
+    case 'tool.unknown.requested': {
+      const asked = event.callIds.map((callId) => {
+        const toolCallId = toolCallIdOf(event.runId, callId);
+        const toolCall = state.calls.get(toolCallId);
+        if (toolCall === undefined) throw new Error(`approval ${event.approvalId} asks about call ${callId}, which no tool.call event announced`);
+        const found = state.found.get(toolCallId);
+        return { toolCall, text: { title: toolCall.title, ...(found === undefined ? {} : { found }) } };
+      });
+      const [first] = asked;
+      if (first === undefined) throw new Error(`approval ${event.approvalId} asks about no call`);
+      const texts = asked.map((entry) => entry.text);
+      return [
+        {
+          kind: 'permission',
+          approvalId: event.approvalId,
+          toolCall: { ...first.toolCall, status: 'pending', title: unknownEffectTitle(texts), content: outputContent(unknownEffectLines(texts).join('\n')) },
+          options: event.options,
+        },
+      ];
+    }
     case 'tool.permission.resolved':
     case 'tool.permission.cancelled':
+    case 'tool.unknown.resolved':
+    case 'tool.unknown.cancelled':
       return [{ kind: 'withdraw', id: event.approvalId }];
     case 'tool.elicitation.requested':
       return [{ kind: 'elicitation', inputId: event.inputId, toolCallId: toolCallIdOf(event.runId, event.callId), server: event.server, requests: event.requests }];
@@ -150,6 +174,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
         }),
       ];
     case 'tool.reconciled':
+      state.found.set(toolCallIdOf(event.runId, event.callId), event.output);
       return [
         toolUpdate(toolCallIdOf(event.runId, event.callId), { status: reconciledStatus(event.outcome), content: outputContent(event.output), rawOutput: event.output }),
       ];

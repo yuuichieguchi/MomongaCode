@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadSettings, parseGovernanceRule } from '@momonga/config';
 import { canonicalDirectory, canonicalPath, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { RULE_VERIFY_BUDGET_MS } from '@momonga/protocol';
 import type { PermissionMode, PolicyGovernanceResponse } from '@momonga/protocol';
 import { formatGovernanceVerification } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -12,7 +13,7 @@ import type { PolicyVerifyHost } from '../verify/host.ts';
 
 export const policyWarningsText = (warnings: readonly string[]): string => `${escapedLines(warnings.map((warning) => `warning: ${warning}`))}\n`;
 
-export const VERIFY_BUDGET_MS = 60_000;
+export const VERIFY_BUDGET_MS = RULE_VERIFY_BUDGET_MS;
 
 export type PolicyVerifyOptions = { json: boolean; mode?: PermissionMode; secrets: readonly string[] };
 

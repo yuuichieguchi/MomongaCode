@@ -3,6 +3,7 @@ import { getRawAsset, isSea } from 'node:sea';
 import { nodeFileSystem } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { CliPorts } from '../ports.ts';
+import { randomFraction } from '../ripgrep/host.ts';
 
 export type VerifyModule = typeof import('@momonga/verify');
 export type VerifyRequestShape = Parameters<VerifyModule['verifyPermissions']>[1];
@@ -43,3 +44,21 @@ export const nodePolicyVerifyHost = (ports: Pick<CliPorts, 'random'>, paths: Pic
     return verifier.openZ3(bundled);
   },
 });
+
+type RuntimeEntry = typeof import('@momonga/runtime/entry');
+type RuleSolverSource = NonNullable<Parameters<RuntimeEntry['runRuntimeEntry']>[1]['ruleSolver']>;
+
+export const embeddedRuleSolver = (): RuleSolverSource | undefined => {
+  if (!isSea()) return undefined;
+  return (paths) => {
+    const host = nodePolicyVerifyHost({ random: randomFraction }, paths);
+    return {
+      loadVerifier: host.loadVerifier,
+      openSolver: host.openSolver,
+      solverVersion: async () => {
+        const verifier = await host.loadVerifier();
+        return `z3 ${verifier.parseZ3Manifest(new TextDecoder().decode(getRawAsset(verifier.Z3_MANIFEST_ASSET))).contentHash}`;
+      },
+    };
+  };
+};

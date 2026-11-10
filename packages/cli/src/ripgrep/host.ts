@@ -22,7 +22,7 @@ export const ownOwnerIdWith = (inspector: ProcessInspector, pid: number): ((opti
   };
 };
 
-const randomFraction = (): number => randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
+export const randomFraction = (): number => randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
 
 export const embeddedRipgrepSource = ({ RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep }: Pick<RuntimeEntry, 'RIPGREP_MANIFEST_ASSET' | 'ensureBundledRipgrep'>): BundledRipgrepSource | undefined => {
   if (!isSea() || !getAssetKeys().includes(RIPGREP_MANIFEST_ASSET)) return undefined;

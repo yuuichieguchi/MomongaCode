@@ -1087,6 +1087,40 @@ ALTER TABLE run_facts RENAME COLUMN model_alias TO model;
 UPDATE facts_cursor SET definitions_version = 0, after_event_id = 0 WHERE id = 1;
 `;
 
+const UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS = `
+CREATE TABLE approvals_with_unknown_effect (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'resolved', 'superseded', 'expired', 'withdrawn')),
+  options_json TEXT NOT NULL,
+  option_id TEXT,
+  expires_at INTEGER,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  subject_digest TEXT,
+  kind TEXT NOT NULL DEFAULT 'permission' CHECK (kind IN ('permission', 'elicitation', 'unknown_effect')),
+  server TEXT,
+  requests_json TEXT,
+  responses_json TEXT,
+  CHECK ((kind = 'elicitation') = (expires_at IS NOT NULL))
+);
+INSERT INTO approvals_with_unknown_effect (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json)
+  SELECT id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json
+  FROM approvals ORDER BY rowid;
+DROP TABLE approvals;
+ALTER TABLE approvals_with_unknown_effect RENAME TO approvals;
+CREATE INDEX approvals_by_expiry ON approvals (status, expires_at);
+CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
+CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
+CREATE TABLE rule_verdicts (
+  fingerprint TEXT PRIMARY KEY,
+  verdict_json TEXT NOT NULL,
+  solver_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+`;
+
 const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
   version: 33,
   name: 'call the model of a session and of a run by its own name',
@@ -1177,4 +1211,9 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: RUN_INBOX,
   },
   MODEL_BY_ITS_OWN_NAME_MIGRATION,
+  {
+    version: 34,
+    name: 'let an approval ask a person about a tool call whose effect is unknown, by rebuilding approvals with the kind unknown_effect in its CHECK list, and store the verdict of a rule set under the fingerprint of its input in rule_verdicts',
+    sql: UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS,
+  },
 ];

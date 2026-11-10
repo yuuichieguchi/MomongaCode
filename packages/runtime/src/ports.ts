@@ -11,7 +11,7 @@ import type {
   HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
-import type { MemoryView, TargetAnswers } from '@momonga/protocol';
+import type { MemoryView, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
 import type { GatewayListing, GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -116,6 +116,21 @@ export type RecoveryContext = { roots: readonly string[]; tmpDir: string; env: T
 export type SandboxBinding = { readonly sandbox: Sandbox; readonly ruleEnforcement: RuleEnforcement };
 
 export type SandboxBindings = { acquire(signal: AbortSignal): Promise<Lease<SandboxBinding>> };
+
+export type RuleVerifyRequest = {
+  rules: readonly PermissionRule[];
+  roots: readonly string[];
+  mode: PermissionMode;
+  home: string;
+  cwd: string;
+  enforcement: RuleEnforcement;
+};
+
+export type RuleVerifierPort = {
+  solverVersion(): Promise<string>;
+  inputOf(request: RuleVerifyRequest): Promise<unknown>;
+  verify(input: unknown, signal: AbortSignal): Promise<RuleVerdict>;
+};
 
 export type ToolRuntimePort = {
   envFor(session: Session): ToolEnv;

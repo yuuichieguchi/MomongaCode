@@ -164,6 +164,8 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, reco
     touchedNewest: guarded(records.touchedNewest),
     permissionRequestOf: guarded(records.permissionRequestOf),
     elicitationRequested: guarded(records.elicitationRequested),
+    unknownRequestOf: guarded(records.unknownRequestOf),
+    reconciledOf: guarded(records.reconciledOf),
     toolCallEventOf: guarded(records.toolCallEventOf),
   };
 

@@ -174,9 +174,21 @@ describe('b2: Bash under the platform sandbox', () => {
       process.kill(oldRuntimePid, 'SIGKILL');
       if (!SANDBOX_ENDS_WITH_RUNTIME[productSandbox()]) expect(groupAlive(pgid)).toBe(true);
 
+      await until(async () => (await runtime.getRun(run.id)).run.status === 'WAITING_HUMAN', {
+        deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+        description: `run ${run.id} WAITING_HUMAN after recovery`,
+      });
+      expect(chatCompletions(stack.fake)).toHaveLength(1);
+      const pending = await runtime.approvals(run.id);
+      expect(pending.map((approval) => approval.kind)).toEqual(['unknown_effect']);
+      const [unknownAsk] = pending;
+      if (unknownAsk === undefined) throw new Error('expected one approval about the unknown effect');
+      expect(unknownAsk.options.map((option) => option.optionId)).toEqual(['allow_once']);
+      await runtime.resolveApproval(unknownAsk.id, 'allow_once');
+
       await until(async () => (await runtime.getRun(run.id)).run.status === 'COMPLETED', {
         deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
-        description: `run ${run.id} COMPLETED after recovery`,
+        description: `run ${run.id} COMPLETED after the answer`,
       });
 
       expect(groupAlive(pgid)).toBe(false);

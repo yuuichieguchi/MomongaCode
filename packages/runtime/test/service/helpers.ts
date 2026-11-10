@@ -1,3 +1,4 @@
+import { createFakeRuleVerifier } from '../worker/fake-rule-verifier.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -803,6 +804,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools,
+      ruleVerifier: createFakeRuleVerifier(),
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,

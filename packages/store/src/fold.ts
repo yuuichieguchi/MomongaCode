@@ -42,6 +42,7 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   compactions: 0,
   lastCompactionSeq: 0,
   callResults: {},
+  unknownEffects: {},
   formsSinceCompaction: {},
   activatedSkills: [],
   loadedTools: [],
@@ -204,8 +205,20 @@ const withReconciledFacts = (facts: WorkingFacts, event: Extract<RunEvent, { typ
 
 const reconcileCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.reconciled' }>): RunState => {
   const finished = finishCall(state, event.callId, event.type, 'reconciled', event.output, event.seq);
-  return { ...finished, workingFacts: withReconciledFacts(finished.workingFacts, event) };
+  const asks = event.outcome === 'unknown' && event.interrupted === undefined;
+  return {
+    ...finished,
+    workingFacts: withReconciledFacts(finished.workingFacts, event),
+    ...(asks ? { unknownEffects: { ...finished.unknownEffects, [event.callId]: { acknowledged: false } } } : {}),
+  };
 };
+
+type UnknownEffect = RunState['unknownEffects'][string];
+
+const withUnknownAsk = (state: RunState, approvalId: string, change: (effect: UnknownEffect) => UnknownEffect): RunState => ({
+  ...state,
+  unknownEffects: Object.fromEntries(Object.entries(state.unknownEffects).map(([callId, effect]) => [callId, effect.approvalId === approvalId ? change(effect) : effect])),
+});
 
 const completeCall = (state: RunState, event: Extract<RunEvent, { type: 'tool.completed' }>): RunState => {
   const call = requireCall(state, event.callId, event.type);
@@ -462,6 +475,18 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
         return { ...rest, status: 'requested' };
       });
     }
+    case 'tool.unknown.requested': {
+      const missing = event.callIds.find((callId) => state.unknownEffects[callId] === undefined);
+      if (missing !== undefined) throw new Error(`run ${state.runId}: ${event.type} names call ${missing}, whose effect is not unknown`);
+      return {
+        ...state,
+        unknownEffects: { ...state.unknownEffects, ...Object.fromEntries(event.callIds.map((callId) => [callId, { approvalId: event.approvalId, acknowledged: false }])) },
+      };
+    }
+    case 'tool.unknown.resolved':
+      return withUnknownAsk(state, event.approvalId, (effect) => ({ ...effect, acknowledged: true }));
+    case 'tool.unknown.cancelled':
+      return withUnknownAsk(state, event.approvalId, (effect) => (effect.acknowledged ? effect : { acknowledged: false }));
     case 'tool.elicitation.requested':
       return withCall(state, event.callId, event.type, ({ inputResolution: _stale, ...call }) => ({
         ...call,

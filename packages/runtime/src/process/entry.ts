@@ -4,6 +4,7 @@ import type { EntryIo, FlagSpec } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
 import type { BundledRipgrepSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
+import type { RuleSolverSource } from './rule-verifier.ts';
 
 export const RUNTIME_ENTRY_FLAGS = {
   ...CHILD_ENTRY_FLAGS,
@@ -13,7 +14,7 @@ export const RUNTIME_ENTRY_FLAGS = {
   'sandbox-exec-path': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource };
+export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource; ruleSolver?: RuleSolverSource };
 
 export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> =>
   runDaemonEntry(io, {
@@ -44,6 +45,7 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         requestShutdown: () => requestShutdown(),
         ...tuning,
         ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
+        ...(deps.ruleSolver === undefined ? {} : { ruleSolver: deps.ruleSolver }),
       });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },

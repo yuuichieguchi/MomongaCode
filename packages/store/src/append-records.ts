@@ -25,6 +25,8 @@ export const columnsOf = (payload: RunEventPayload | SessionEventPayload): Event
       return { ...NO_COLUMNS, callId: payload.callId, approvalId: payload.approvalId };
     case 'tool.elicitation.requested':
       return { ...NO_COLUMNS, callId: payload.callId, approvalId: payload.inputId };
+    case 'tool.unknown.requested':
+      return { ...NO_COLUMNS, callId: payload.callIds[0] ?? null, approvalId: payload.approvalId };
     case 'notice':
       return { ...NO_COLUMNS, noticeCode: payload.code ?? null };
     case 'model.requested':
@@ -84,6 +86,8 @@ export type AppendRecords = {
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
   permissionRequestOf(runId: string, approvalId: string): Row | undefined;
   elicitationRequested(runId: string, approvalId: string): boolean;
+  unknownRequestOf(runId: string, approvalId: string): Row | undefined;
+  reconciledOf(runId: string, callId: string): Row | undefined;
   toolCallEventOf(runId: string, callId: string): Row | undefined;
 };
 
@@ -121,6 +125,8 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
   const sql = {
     permissionRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1"),
     elicitationRequest: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1"),
+    unknownRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.unknown.requested' AND approval_id = :approvalId LIMIT 1"),
+    reconciled: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.reconciled' AND json_extract(payload_json, '$.callId') = :callId ORDER BY seq DESC LIMIT 1"),
     toolCallEvent: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallSeq: db.prepare("SELECT seq FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallRow: db.prepare("SELECT seq, tool_name FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
@@ -297,6 +303,8 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       }),
     permissionRequestOf: (runId, approvalId) => sql.permissionRequest.get({ runId, approvalId }),
     elicitationRequested: (runId, approvalId) => sql.elicitationRequest.get({ runId, approvalId }) !== undefined,
+    unknownRequestOf: (runId, approvalId) => sql.unknownRequest.get({ runId, approvalId }),
+    reconciledOf: (runId, callId) => sql.reconciled.get({ runId, callId }),
     toolCallEventOf: (runId, callId) => sql.toolCallEvent.get({ runId, callId }),
     modelCallRowsOf: (runId) => sql.modelCallRows.all({ runId }).sort((a, b) => readerFor('events', runId, a).number('seq') - readerFor('events', runId, b).number('seq')),
     toolCallNamesOf: (rootRunId) => sql.toolCallNames.all({ runId: rootRunId }).map((row) => readerFor('events', rootRunId, row).string('name')),

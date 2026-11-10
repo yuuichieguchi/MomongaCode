@@ -37,7 +37,7 @@ describe('worker tool runtime options', () => {
     expect(computed).toBeDefined();
     expect(env.portCalls.toolSet).toHaveLength(1);
     expect(env.portCalls.toolSet[0]?.env).toBe(computed);
-    expect(env.portCalls.policyFor).toHaveLength(2);
+    expect(env.portCalls.policyFor).toHaveLength(3);
     for (const call of env.portCalls.policyFor) expect(call.env).toBe(computed);
   });
 
@@ -78,7 +78,7 @@ describe('worker tool runtime options', () => {
 
     expect(await env.runOnce(worker)).toBe('yielded');
 
-    expect(seen.map((options) => options?.env)).toEqual([stripped]);
+    expect(seen.map((options) => options?.env)).toEqual([stripped, stripped]);
     expect(seen[0]?.env).toBe(stripped);
     expect(env.batches).toHaveLength(1);
     expect(env.batches[0]?.env).toBe(policyEnv);
