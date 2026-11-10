@@ -1,6 +1,6 @@
 import type { ContributionKind, SummaryFidelity, SummarySource } from './context-record.ts';
 import type { ToolFile, WorkingFacts } from './working-facts.ts';
-import type { HookExecution } from './hooks.ts';
+import type { HookExecution, HookStart } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
@@ -24,7 +24,15 @@ export const TERMINAL_STATUSES = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED']
 
 export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit'] as const;
 
-export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
+export const PERMISSION_MODES = ['manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
+
+export const PERMISSION_MODE_DESCRIPTIONS: Readonly<Record<(typeof PERMISSION_MODES)[number], string>> = {
+  manual: 'asks before every file change and command',
+  acceptEdits: 'accepts file edits inside the workspace, asks before commands',
+  plan: 'read-only tools, the agent proposes a plan',
+  auto: 'an automatic classifier decides which calls are allowed',
+  bypassPermissions: 'runs every tool without asking',
+};
 
 export const APPROVAL_STATUSES = ['pending', 'resolved', 'superseded', 'expired', 'withdrawn'] as const;
 
@@ -166,6 +174,8 @@ export type RunEventPayload =
       rationale?: string;
       failure?: string;
     }
+  | { type: 'tool.permission.classifying'; callId: string; subjectDigest: string }
+  | ({ type: 'hook.started' } & HookStart)
   | ({ type: 'hook.completed' } & HookExecution)
   | { type: 'tool.permission.resolved'; approvalId: string; optionId: string; rulePersisted?: boolean }
   | { type: 'tool.permission.cancelled'; approvalId: string; reason: 'expired' | 'withdrawn' | 'superseded' }
@@ -254,6 +264,7 @@ export type RunEventPayload =
   | { type: 'context.governing_loaded'; active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] }
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
+  | { type: 'context.compacting'; step: number; attempt: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
   | InheritedCopyPayload
   | InheritedReferencePayload

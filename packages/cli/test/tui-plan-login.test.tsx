@@ -12,7 +12,7 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 const SENTENCE ='Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance.';
 
 const ready = async (app: Instance): Promise<void> => {
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
 };
 
 const routesOf = (backend: FakePlanBackend): string[] => backend.planCalls.map((call) => call.route);

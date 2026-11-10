@@ -255,7 +255,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
   });
 
   describe('P5 FailedWritesNothing and P9 NoProbeInBackoff', () => {
-    it('writes no record when the probe fails, answers 503 with the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
+    it('writes no record when the probe fails, answers 503 target_probe_failed with the cause and the remaining interval inside it, and starts the next probe only after one Retry-After interval', async () => {
       const clock = createFakeClock(START_MS);
       const gateway = await setup({ clock, probe: 'fail' });
       expectProbing(await gateway.send(false));
@@ -264,7 +264,10 @@ describe('the automatic probe of an fm target with no probe record', () => {
       clock.advance(30_000);
 
       const inside = await gateway.sendRaw(false);
-      expectProbing(await readJson(inside));
+      const failed = await readJson(inside);
+      expect(failed.status).toBe(503);
+      expect(failed.body.error.code).toBe('target_probe_failed');
+      expect(failed.body.error.message).toMatch(/^measuring this model failed: \S/);
       expect(inside.headers['retry-after']).toBe('90');
       expect(gateway.probes()).toHaveLength(1);
       expect(gateway.anyRecord()).toBe(false);
@@ -387,6 +390,7 @@ type InstanceProbeOptions = {
   dir: string;
   measure: (signal: AbortSignal) => Promise<Report>;
   retryAfterMs: number;
+  clock: { now(): number };
   onNotice: (text: string) => void;
 };
 
@@ -422,6 +426,7 @@ const setupInstance = () => {
       return next.promise;
     },
     retryAfterMs: RETRY_AFTER_MS,
+    clock: { now: () => 0 },
     onNotice: (text) => notices.push(text),
   });
   return { probe, notices, pending, dir };

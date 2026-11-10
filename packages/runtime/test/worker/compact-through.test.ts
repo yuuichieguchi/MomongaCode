@@ -28,7 +28,12 @@ type ContextOptions = {
   notes?: RunState['notes'];
   attested?: (tokens: string[]) => string[];
   unreadable?: { handle: string; reason: string }[];
+  step?: number;
 };
+
+const COMPACTING = { type: 'context.compacting', step: 0, attempt: 1 } as const;
+
+const announcesTheCall = (payloads: readonly RunEventPayload[]): boolean => payloads.every((payload) => payload.type === 'context.compacting');
 
 const contextFor = (options: ContextOptions = {}) => {
   const appended: RunEventPayload[] = [];
@@ -37,6 +42,7 @@ const contextFor = (options: ContextOptions = {}) => {
   const produced = new Map<string, CompactResource>();
   const blobReads = { count: 0 };
   const asked: FidelityAsked[] = [];
+  const appendedAtRequest: RunEventPayload[][] = [];
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
   let tick = 0;
   const ctx = {
@@ -62,6 +68,7 @@ const contextFor = (options: ContextOptions = {}) => {
       gateway: {
         compact: async (request: CompactRequest, callOptions: { idempotencyKey: string }) => {
           requests.push({ request: structuredClone(request), idempotencyKey: callOptions.idempotencyKey });
+          appendedAtRequest.push([...appended]);
           if (options.failCompaction === true) throw new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'context_length_exceeded', message: 'too long' });
           const known = produced.get(callOptions.idempotencyKey);
           if (known !== undefined) return known;
@@ -95,11 +102,12 @@ const contextFor = (options: ContextOptions = {}) => {
       state: {
         ...initialRunState({ runId: 'run_compact', sessionId: 'session_compact' }),
         taskSeq: 1,
+        ...(options.step === undefined ? {} : { step: options.step }),
         ...(options.notes === undefined ? {} : { notes: options.notes }),
         ...(options.history === undefined ? {} : { history: options.history, nextItemSeq: options.history.length + 1 }),
       } as RunState,
       append: (payloads: readonly RunEventPayload[]) => {
-        if (appendFailures > 0) {
+        if (appendFailures > 0 && !announcesTheCall(payloads)) {
           appendFailures -= 1;
           throw new Error('the claim ended before the compaction was recorded');
         }
@@ -114,7 +122,7 @@ const contextFor = (options: ContextOptions = {}) => {
     },
     agentSpan: { traceparent: undefined },
   } as unknown as ClaimContext;
-  return { ctx, appended, batches, requests, produced, blobReads, asked };
+  return { ctx, appended, batches, requests, produced, blobReads, asked, appendedAtRequest };
 };
 
 const keyOf = (request: CompactRequest): string => sha256Hex(canonicalJson(['run_compact', 'compact', sha256Hex(canonicalJson(request))]));
@@ -134,6 +142,7 @@ describe('compactThrough', () => {
     expect('instructions' in (sent?.request ?? {})).toBe(false);
     expect(sent?.idempotencyKey).toBe(keyOf(sent?.request as CompactRequest));
     expect(appended).toEqual([
+      COMPACTING,
       expect.objectContaining({ type: 'usage.charged', purpose: 'compaction' }),
       expect.objectContaining({ type: 'context.compacted', replacedThroughSeq: 3, summary: 'S1', source: 'model' }),
     ]);
@@ -144,7 +153,7 @@ describe('compactThrough', () => {
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
-    expect(appended[0]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
+    expect(appended[1]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
   });
 
   it('derives a new key when only the cap differs', async () => {
@@ -222,6 +231,56 @@ describe('compactThrough', () => {
   });
 });
 
+describe('context.compacting: the event that backs the wait for a compaction (design-screens 6.1.1)', () => {
+  const input: InputItem[] = [TASK, { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: 'ok' }];
+  const pinnedText = 'You are the compact-through test agent.';
+  const plan = { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] };
+
+  it('is in the journal, alone in its batch, when the gateway is asked for the summary', async () => {
+    const { ctx, batches, appendedAtRequest } = contextFor();
+
+    await compactThrough(ctx, plan);
+
+    expect(appendedAtRequest).toEqual([[COMPACTING]]);
+    expect(batches[0]).toEqual([COMPACTING]);
+  });
+
+  it('carries the step of the run at that moment and attempt 1, and nothing else', async () => {
+    const { ctx, appended } = contextFor({ step: 4 });
+
+    await compactThrough(ctx, plan);
+
+    expect(appended[0]).toEqual({ type: 'context.compacting', step: 4, attempt: 1 });
+  });
+
+  it('is followed by context.compacted when the model summary is used', async () => {
+    const { ctx, appended } = contextFor();
+
+    await compactThrough(ctx, plan);
+
+    expect(appended.map((payload) => payload.type)).toEqual(['context.compacting', 'usage.charged', 'context.compacted']);
+  });
+
+  it('is followed by context.compacted when the summary call failed and the deterministic summary is used', async () => {
+    const { ctx, appended } = contextFor({ failCompaction: true });
+
+    await compactThrough(ctx, plan);
+
+    expect(appended.map((payload) => payload.type)).toEqual(['context.compacting', 'notice', 'context.compacted']);
+    expect(appended.at(-1)).toMatchObject({ source: 'deterministic' });
+  });
+
+  it('is written once per call of the gateway', async () => {
+    const { ctx, appended, requests } = contextFor();
+
+    await compactThrough(ctx, plan);
+    await compactThrough(ctx, { ...plan, summaryTokenCap: 241 });
+
+    expect(requests).toHaveLength(2);
+    expect(appended.filter((payload) => payload.type === 'context.compacting')).toEqual([COMPACTING, COMPACTING]);
+  });
+});
+
 describe('the protection-reduction notices of a compaction', () => {
   const input: InputItem[] = [TASK, { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' }, { type: 'function_call_output', call_id: 'c1', output: 'ok' }];
   const pinnedText = 'You are the compact-through test agent.';
@@ -237,9 +296,10 @@ describe('the protection-reduction notices of a compaction', () => {
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [stepsNotice(0, 4, 1)] });
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0]?.map((payload) => payload.type)).toEqual(expect.arrayContaining(['context.compacted', 'notice']));
-    expect(noticesIn(batches[0] ?? [])).toEqual([expect.objectContaining({ code: 'recent_steps_shrunk', reduction: { turn: 0, from: 4, to: 1 } })]);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toEqual([COMPACTING]);
+    expect(batches[1]?.map((payload) => payload.type)).toEqual(expect.arrayContaining(['context.compacted', 'notice']));
+    expect(noticesIn(batches[1] ?? [])).toEqual([expect.objectContaining({ code: 'recent_steps_shrunk', reduction: { turn: 0, from: 4, to: 1 } })]);
   });
 
   it('writes the notice in the batch that holds context.compacted when the summary call failed', async () => {
@@ -247,9 +307,10 @@ describe('the protection-reduction notices of a compaction', () => {
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [stepsNotice(0, 4, 1)] });
 
-    expect(batches).toHaveLength(1);
-    expect(batches[0]?.map((payload) => payload.type)).toContain('context.compacted');
-    expect(noticesIn(batches[0] ?? []).map((payload) => (payload.type === 'notice' ? payload.code : ''))).toEqual(['compaction_failed', 'recent_steps_shrunk']);
+    expect(batches).toHaveLength(2);
+    expect(batches[0]).toEqual([COMPACTING]);
+    expect(batches[1]?.map((payload) => payload.type)).toContain('context.compacted');
+    expect(noticesIn(batches[1] ?? []).map((payload) => (payload.type === 'notice' ? payload.code : ''))).toEqual(['compaction_failed', 'recent_steps_shrunk']);
   });
 
   it('announces a reduction in a later turn although the text is the same as an earlier one', async () => {

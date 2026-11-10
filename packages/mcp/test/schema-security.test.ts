@@ -38,7 +38,7 @@ describe('untrusted MCP input schemas', () => {
       required: ['code'],
     };
     expect(set.get('mcp__modern__patterned')?.inputSchema).toEqual(written);
-    const parameters = set.forModel({ mode: 'default', rules: [] }).find((tool) => tool.name === 'mcp__modern__patterned')?.parameters;
+    const parameters = set.forModel({ mode: 'manual', rules: [] }).find((tool) => tool.name === 'mcp__modern__patterned')?.parameters;
     expect(parameters).toMatchObject({ properties: { code: { pattern: '^[0-9]+$' } }, patternProperties: { '^x-': { type: 'number' } } });
   });
 

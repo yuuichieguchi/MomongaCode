@@ -374,6 +374,8 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['callId', 'subjectDigest', 'outcome'],
   },
+  'tool.permission.classifying': { properties: { callId: string, subjectDigest: string }, required: ['callId', 'subjectDigest'] },
+  'hook.started': { properties: { event: enumOf(HOOK_EVENTS), command: string, callId: string }, required: ['event', 'command'] },
   'hook.completed': {
     properties: {
       hookEvent: enumOf(HOOK_EVENTS),
@@ -536,6 +538,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     },
     required: ['items'],
   },
+  'context.compacting': { properties: { step: nonNegativeInteger, attempt: integer }, required: ['attempt'] },
   'context.compaction_rejected': { properties: { attempt: integer }, required: [] },
   'context.inherited': {
     properties: {

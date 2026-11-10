@@ -1,0 +1,14 @@
+{
+  "name": "legacy-ctrl-j",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "0a",
+  "events": [
+    {
+      "type": "key",
+      "text": "j",
+      "ctrl": true,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

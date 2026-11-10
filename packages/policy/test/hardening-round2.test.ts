@@ -15,7 +15,7 @@ const decision = (command: string, spec: Spec = {}) => {
   return decide({
     tool: BASH,
     subject: { kind: 'command', tool: 'Bash', command },
-    mode: spec.mode ?? 'default',
+    mode: spec.mode ?? 'manual',
     rules: [
       ...(spec.allow ?? []).map((t) => make('allow', t)),
       ...(spec.ask ?? []).map((t) => make('ask', t)),
@@ -241,7 +241,7 @@ describe('F6: readers and interpreters', () => {
     expect(kind('grep ~/.ssh/id file.txt', { allow: ['Bash(grep:*)'], deny: DENY })).toBe('allow');
   });
 
-  it('asks for reader files outside the roots in default mode', () => {
+  it('asks for reader files outside the roots in manual mode', () => {
     expect(kind('cat /etc/hosts', { allow: ['Bash(cat:*)'] })).toBe('ask');
     expect(kind('cat notes.txt', { allow: ['Bash(cat:*)'] })).toBe('allow');
   });
@@ -285,7 +285,7 @@ describe('U1: any-offset deny matches ask instead of deny', () => {
     'command-position match %j stays denied in every mode',
     (command) => {
       const deny = ['Bash(rm:*)'];
-      for (const mode of ['default', 'acceptEdits', 'bypassPermissions'] as const) expect(kind(command, { deny, mode })).toBe('deny');
+      for (const mode of ['manual', 'acceptEdits', 'bypassPermissions'] as const) expect(kind(command, { deny, mode })).toBe('deny');
     },
   );
 });

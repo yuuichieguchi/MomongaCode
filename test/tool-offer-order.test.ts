@@ -22,7 +22,7 @@ const deferringSet = async (): Promise<ToolSet> =>
   );
 
 const offerOf = (set: ToolSet, deferred: readonly string[] | undefined, loaded: readonly string[]): FunctionTool[] =>
-  offerFor({ toolSet: set, visible: set.forModel({ mode: 'default', rules: [] }), deferred, loaded, keepCompanionsWithoutHost: false, required: new Set<string>() }).tools;
+  offerFor({ toolSet: set, visible: set.forModel({ mode: 'manual', rules: [] }), deferred, loaded, keepCompanionsWithoutHost: false, required: new Set<string>() }).tools;
 
 const keptAt = async (offered: readonly FunctionTool[], contextWindow: number) => {
   const capabilities = capabilitiesFor(contextWindow, { maxOutputTokens: 1024 });

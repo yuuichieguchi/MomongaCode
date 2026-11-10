@@ -490,7 +490,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .command('verify')
     .description('prove that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect; states what is proved and what is not')
     .option('--json', 'print the report as JSON')
-    .addOption(new Option('--mode <mode>', 'the permission mode to check; the default mode of the settings when omitted').choices(PERMISSION_MODES))
+    .addOption(new Option('--mode <mode>', 'the permission mode to check; the starting mode of the settings when omitted').choices(PERMISSION_MODES))
     .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
       deps.complete(

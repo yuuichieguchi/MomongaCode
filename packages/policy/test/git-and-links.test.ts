@@ -55,7 +55,7 @@ describe('.git name components', () => {
 });
 
 describe('GF6: a lexical target protected for approval after the obstacle changed', () => {
-  it.each(['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const)('asks for a Write to x/y/config in %s', (mode) => {
+  it.each(['manual', 'acceptEdits', 'plan', 'bypassPermissions'] as const)('asks for a Write to x/y/config in %s', (mode) => {
     const row: Row = {
       id: 'GF6',
       write: (layout) => P(layout, 'x', 'y', 'config'),
@@ -76,12 +76,12 @@ describe('GF6: a lexical target protected for approval after the obstacle change
 describe('git approval follows repository discovery from the persisted cwd', () => {
   it('approves git status in project/sub without a .git there, as after an earlier cd sub', () => {
     const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => fs.mkdirSync(P(layout, 'sub')) });
-    expect(kindIn(row, 'default')).toBe('allow');
+    expect(kindIn(row, 'manual')).toBe('allow');
   });
 
   it('refuses the approval in project/sub when sub/.git exists on disk (pin)', () => {
     const row = commandRow('git status', { cwd: (layout) => P(layout, 'sub'), prepare: (layout) => validGitDirectory(layout, 'sub') });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
   });
 
   it('refuses the approval when a .git file in sub points at a git directory the workspace can write (pin)', () => {
@@ -93,7 +93,7 @@ describe('git approval follows repository discovery from the persisted cwd', () 
         fs.writeFileSync(P(layout, 'sub', '.git'), `gitdir: ${P(layout, 'other', '.git')}\n`);
       },
     });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
   });
 
   it.each([
@@ -107,7 +107,7 @@ describe('git approval follows repository discovery from the persisted cwd', () 
         fs.writeFileSync(P(layout, 'sub', '.git'), text(layout));
       },
     });
-    expect(kindIn(row, 'default')).toBe('allow');
+    expect(kindIn(row, 'manual')).toBe('allow');
   });
 });
 
@@ -136,7 +136,7 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
+    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
   it.each(['EIO', 'EMFILE', 'ENFILE'])('FE4a: rethrows %s from readHead and never approves the command', (code) => {
@@ -152,7 +152,7 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    for (const mode of ['default', 'acceptEdits'] as const) expect(thrownBy(() => decideRow(row, mode))).toBe(error);
+    for (const mode of ['manual', 'acceptEdits'] as const) expect(thrownBy(() => decideRow(row, mode))).toBe(error);
   });
 
   it('FE4b: rethrows EMFILE from isSearchable and never approves the command', () => {
@@ -169,7 +169,7 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
+    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
   it('FE5: rethrows EIO from expandGlob', () => {
@@ -183,7 +183,7 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
+    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 
   it('FE6: rethrows EIO from resolveProgram', () => {
@@ -197,6 +197,6 @@ describe('port errors are rethrown by decide', () => {
         },
       }),
     });
-    expect(thrownBy(() => decideRow(row, 'default'))).toBe(error);
+    expect(thrownBy(() => decideRow(row, 'manual'))).toBe(error);
   });
 });

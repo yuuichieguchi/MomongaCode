@@ -23,7 +23,7 @@ describe('startup screen', () => {
     const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', modelAlias: 'smart' }, targets: ['local-fm', 'cloud'] }, { startup: config() });
     const screen = await untilFrame(app, 'smart → local-fm, cloud');
     expect(screen).toContain('MomongaCode v1.2.3');
-    expect(screen).toContain('mode: default');
+    expect(screen).toContain('mode: manual');
     expect(screen).toContain('~/projects/demo');
     expect(screen).toContain('•ᴥ•');
     expect(screen).not.toContain('! ');
@@ -35,7 +35,7 @@ describe('startup screen', () => {
     const { app } = await start({ modelPending: pending.promise }, { startup: config() });
     const before = await untilFrame(app, 'model: default');
     expect(before).not.toContain('→');
-    expect(before).toContain('mode: default (shift+tab)');
+    expect(before).toContain('mode: manual (shift+tab)');
     pending.resolve();
     await untilFrame(app, 'model: default → primary');
     app.unmount();

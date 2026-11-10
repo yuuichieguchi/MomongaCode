@@ -252,7 +252,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       seen.add(key);
       additionalDirectories.push(entry);
     }
-    const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
+    const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);

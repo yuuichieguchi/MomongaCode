@@ -4,7 +4,7 @@ import { callsStep, textStep } from './scripts.ts';
 
 describe('rule 5: tool.started records the basis', () => {
   it('records read_only for a Bash call the analysis approved', async () => {
-    const env = await makeEnv({ mode: 'default' });
+    const env = await makeEnv({ mode: 'manual' });
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'ls' } }]), textStep('Done.'));
     const run = env.enqueue('List');
     await env.runOnce(env.worker());

@@ -28,14 +28,14 @@ describe('cli: interactive TUI through a pty', () => {
     const pty = await spawnPty(home, []);
     await pty.waitFor('Do you trust the files in');
     pty.write('1');
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
 
     pty.write(KEYS.shiftTab);
     await pty.waitFor('mode: acceptEdits');
     pty.write(KEYS.shiftTab);
     await pty.waitFor('mode: plan');
     pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
 
     pty.write('change the greeting');
     await pty.waitFor('> change the greeting');
@@ -73,7 +73,7 @@ describe('cli: interactive TUI through a pty', () => {
     const pty = await spawnPty(home, []);
     await pty.waitFor('Do you trust the files in');
     pty.write('1');
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
     pty.write('change the greeting');
     await pty.waitFor('> change the greeting');
     pty.write(KEYS.enter);
@@ -97,7 +97,7 @@ describe('cli: interactive TUI through a pty', () => {
     const pty = await spawnPty(home, []);
     await pty.waitFor('Do you trust the files in');
     pty.write('2');
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
 
     pty.write('/help');
     await pty.waitFor('> /help');
@@ -110,7 +110,7 @@ describe('cli: interactive TUI through a pty', () => {
     pty.write(KEYS.enter);
     await pty.waitFor('mode: plan');
     pty.write(KEYS.shiftTab);
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
 
     pty.write('line one\\');
     await pty.waitFor('line one\\');
@@ -125,7 +125,7 @@ describe('cli: interactive TUI through a pty', () => {
 
     pty.write(KEYS.escape);
     await pty.waitFor('CANCELLED');
-    await untilRunEnds(pty, 'default');
+    await untilRunEnds(pty, 'manual');
 
     pty.write(KEYS.up);
     await pty.waitFor('line two');
@@ -146,7 +146,7 @@ describe('cli: interactive TUI through a pty', () => {
     const pty = await spawnPty(home, []);
     await pty.waitFor('Do you trust the files in');
     pty.write('1');
-    await pty.waitFor('mode: default');
+    await pty.waitFor('mode: manual');
     pty.write('a long task');
     await pty.waitFor('> a long task');
     pty.write(KEYS.enter);

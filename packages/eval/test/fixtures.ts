@@ -89,7 +89,7 @@ export const callsTranscript = (caseId: string, calls: readonly ScriptedCall[], 
 
 export const goldenCase = (overrides: Partial<GoldenCase> & Pick<GoldenCase, 'id' | 'graders'>): GoldenCase => ({
   input: 'do it',
-  permissionMode: 'default',
+  permissionMode: 'manual',
   onAsk: 'reject_once',
   runs: 1,
   minPassRate: 1,

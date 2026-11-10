@@ -41,7 +41,7 @@ describe('a mode change ends the claim (Q19, 0.2 #20, 4.6)', () => {
     expect(requests).toHaveLength(2);
     expect(toolNamesOf(requests[0]?.body)).toContain('Write');
     expect(toolNamesOf(requests[1]?.body)).not.toContain('Write');
-    expect(env.ofType(run.id, 'run.started').map((event) => event.mode)).toEqual(['default', 'plan']);
+    expect(env.ofType(run.id, 'run.started').map((event) => event.mode)).toEqual(['manual', 'plan']);
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
 });

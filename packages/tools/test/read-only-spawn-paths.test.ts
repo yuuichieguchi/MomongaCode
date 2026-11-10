@@ -30,7 +30,7 @@ const expectReadOnlyCall = (spawn: RecordedSpawn | undefined): void => {
 };
 
 describe('rule 2: the sandbox policy of each path that approves a Bash call', () => {
-  it.each(['default', 'plan', 'acceptEdits'] as const)('a read-only analysis in %s mode leaves no path writable but the scratch directory of the spawn', async (mode) => {
+  it.each(['manual', 'plan', 'acceptEdits'] as const)('a read-only analysis in %s mode leaves no path writable but the scratch directory of the spawn', async (mode) => {
     const built = await setup();
     resultOf(await built.run('Bash', { command: 'pwd' }, { mode }));
     expectReadOnlyCall(built.spawns[0]);

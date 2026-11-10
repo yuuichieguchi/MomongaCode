@@ -10,7 +10,7 @@ const reachesTheTerminal = (output: string): boolean => /\u001b|‮|\u009b/u.tes
 describe('the TUI prints text a person did not write escaped', () => {
   it('escapes assistant text, a tool title, the output of a failed tool and a notice', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: `first\n${HOSTILE}` }));
     await untilOutput(app, 'first');
@@ -28,7 +28,7 @@ describe('the TUI prints text a person did not write escaped', () => {
 
   it('escapes the title, the reason and the option names of a permission prompt', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: HOSTILE, rawInput: { command: 'ls' } }));
     backend.emit(

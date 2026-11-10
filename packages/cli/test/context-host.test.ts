@@ -64,7 +64,7 @@ const caseOf = (id: string, compaction: 'on' | 'off') => ({
   scenario: 'a',
   compaction,
   input: 'work on a',
-  permissionMode: 'default',
+  permissionMode: 'manual',
   onAsk: 'reject_once',
   runs: 1,
   minPassRate: 1,

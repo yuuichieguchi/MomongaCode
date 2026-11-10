@@ -229,7 +229,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       onWarning: (_message, toolKey) => codes.add(toolKey),
       toolUnavailable: (toolKey) => codes.has(toolKey),
       step: 1,
-      mode: 'default',
+      mode: 'manual',
       rules: [],
       home,
       roots: [project],

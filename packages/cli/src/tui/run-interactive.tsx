@@ -16,6 +16,11 @@ import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPort
 import { createTuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
 import { defaultNoticeSources } from './notices.ts';
+import { TerminalFrame } from './terminal/frame.tsx';
+import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
+import { inkInputOf } from './terminal/ink-bridge.ts';
+import { createInkStdin } from './terminal/ink-stdin.ts';
+import { createTerminalLayer } from './terminal/layer.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
@@ -30,18 +35,35 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
   };
-  const instance = render(
-    <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
-      {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
-      {...(options.images === undefined ? {} : { initialImages: options.images })}
-      tasks={tasks}
-      autoMode={autoMode}
-      shell={shell}
-      onExit={onExit}
-    />,
-    { stdin: terminal.stdin, stdout: terminal.stdout, exitOnCtrlC: false },
-  );
-  await instance.waitUntilExit();
+  const inkStdin = createInkStdin();
+  const layer = createTerminalLayer({
+    input: terminal.stdin,
+    output: hostTerminalOutput(terminal.stdout),
+    process: hostProcess,
+    screen: 'scrollback',
+    screenSetByUser: true,
+    mouse: true,
+    onEvents: (events) => inkStdin.push(inkInputOf(events)),
+  });
+  layer.start();
+  try {
+    const instance = render(
+      <TerminalFrame layer={layer}>
+        <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+          {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
+          {...(options.images === undefined ? {} : { initialImages: options.images })}
+          tasks={tasks}
+          autoMode={autoMode}
+          shell={shell}
+          onExit={onExit}
+        />
+      </TerminalFrame>,
+      { stdin: inkStdin.stream, stdout: terminal.stdout, exitOnCtrlC: false },
+    );
+    await instance.waitUntilExit();
+  } finally {
+    layer.close();
+  }
   await tasks.settle();
   await backend.close();
   return exitCodeOf(ports, refusalOf(outcome, paths));

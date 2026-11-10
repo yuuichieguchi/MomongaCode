@@ -118,7 +118,7 @@ describe('context.contribution at terminal', () => {
   it('records the event before the terminal status when a run is cancelled while it waits for a person', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     const id = await saveNote(env, NOTE);
-    env.setMode('default');
+    env.setMode('manual');
     env.gateway.script.push(textThenCallsStep('Running zorpLauncher.', [{ callId: 'call_w', name: 'MemorySave', args: { text: 'other', scope: 'user' } }]));
     const run = env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));

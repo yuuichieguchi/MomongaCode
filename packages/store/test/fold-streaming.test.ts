@@ -163,7 +163,7 @@ describe('snapshot plus tail equals the full fold', () => {
   const journal: RunEventPayload[] = [
     task,
     { type: 'run.status', from: 'QUEUED', to: 'RUNNING' },
-    { type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm' }, mode: 'default' },
+    { type: 'run.started', attempt: 1, now: 1, pins: { model: 'fm' }, mode: 'manual' },
     requested(1),
     message(1, 'm', 'hello'),
     thought(1, 'r', 'hmm'),

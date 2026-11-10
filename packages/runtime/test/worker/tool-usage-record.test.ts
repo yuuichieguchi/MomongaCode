@@ -38,7 +38,7 @@ const called = (callId: string, name: string): RunEventPayload => ({
 const pastRun = async (env: Env, payloads: readonly RunEventPayload[]): Promise<string> => {
   env.clock.advance(1);
   const run = env.enqueue('Past work', { history: 'fresh' });
-  const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, ...payloads], 'hold');
+  const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' }, ...payloads], 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
 };

@@ -51,7 +51,7 @@ export const policyVerify = async (ports: CliPorts, paths: MomongaPaths, host: P
   const loaded = await loadSettings({ home: ports.home, projectDir: ports.cwd, cli: {}, trust: { isTrusted: () => trusted } });
   const governanceRules = governance.rules.map((entry) => parseGovernanceRule(entry, { home: ports.home, project: ports.cwd }));
   const roots = rootsOf(ports.cwd, loaded.settings.permissions.additionalDirectories);
-  const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'default';
+  const mode = options.mode ?? loaded.settings.permissions.defaultMode ?? 'manual';
   const verifier = await host.loadVerifier();
   const fs = await host.loadPolicyFilesystem();
   const home = canonicalPath(ports.home);

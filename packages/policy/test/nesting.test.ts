@@ -35,7 +35,7 @@ describe('MAX_NESTING (CON-9)', () => {
   it('approves the deepest analysable command and denies one level deeper under an unrelated Bash deny rule', () => {
     expect(typeof MAX_NESTING).toBe('number');
     const rules = [['deny', 'Bash(curl:*)']] as const;
-    expect(kindIn(commandRow(nest(MAX_NESTING), { rules }), 'default')).toBe('allow');
-    expect(kindIn(commandRow(nest(MAX_NESTING + 1), { rules }), 'default')).toBe('deny');
+    expect(kindIn(commandRow(nest(MAX_NESTING), { rules }), 'manual')).toBe('allow');
+    expect(kindIn(commandRow(nest(MAX_NESTING + 1), { rules }), 'manual')).toBe('deny');
   });
 });

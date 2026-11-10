@@ -85,6 +85,8 @@ export type ModelList = { object: 'list'; data: ModelListEntry[] };
 
 export const TARGET_PROBING = 'target_probing';
 
+export const TARGET_PROBE_FAILED = 'target_probe_failed';
+
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
 export type MomongaModelEntry = {

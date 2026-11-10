@@ -7,7 +7,7 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { noneSandbox, ruleFor, minimalPolicyFor } from './helpers.ts';
 
-const MODES: PermissionMode[] = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+const MODES: PermissionMode[] = ['manual', 'acceptEdits', 'plan', 'bypassPermissions'];
 
 const pathTool = (access: 'read' | 'write', target: string, runs: string[]) =>
   makeTool('PathTool', {

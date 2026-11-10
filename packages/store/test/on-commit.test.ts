@@ -67,7 +67,7 @@ describe('store onCommit', () => {
     const claim = mustClaim(store, 'w1');
     store.heartbeat(claim);
     store.getRun(run.id);
-    store.setPermissionMode(session.id, 'default');
+    store.setPermissionMode(session.id, 'manual');
     await settle();
 
     expect(calls).toEqual([]);

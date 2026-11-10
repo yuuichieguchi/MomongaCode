@@ -79,7 +79,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       expect(stdout).not.toContain('HTTP/1');
       expect(stdout).not.toContain('"status"');
 
-      expect(env.store.getSession(session.id)?.permissionMode).toBe('default');
+      expect(env.store.getSession(session.id)?.permissionMode).toBe('manual');
       expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('pending');
       expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
     },

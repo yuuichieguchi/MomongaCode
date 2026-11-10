@@ -357,7 +357,7 @@ export function App(props: AppProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [transcript, dispatch] = useReducer(transcriptReducer, initialTranscript);
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
-  const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? 'default');
+  const [mode, setModeState] = useState<PermissionMode>(props.initialMode ?? 'manual');
   const [bypassAllowed, setBypassAllowed] = useState(false);
   const [autoAvailable, setAutoAvailable] = useState(false);
   const [busy, setBusy] = useState(false);

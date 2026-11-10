@@ -157,7 +157,7 @@ export const createSession = (
   store.createSession({
     cwd,
     env: extra.env ?? {},
-    permissionMode: 'default',
+    permissionMode: 'manual',
     modelAlias: 'default',
     ...(extra.additionalDirectories === undefined ? {} : { additionalDirectories: extra.additionalDirectories }),
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
@@ -348,7 +348,7 @@ export const runBashThroughPort = async (
   session: Session,
   runId: string,
   command: string,
-  mode: 'default' | 'bypassPermissions' = 'bypassPermissions',
+  mode: 'manual' | 'bypassPermissions' = 'bypassPermissions',
   options: { fence?: { runId: string; workerId: string; leaseToken: number }; callId?: string } = {},
 ) => {
   const port = f.toolRuntime.port;

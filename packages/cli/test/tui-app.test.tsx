@@ -9,7 +9,7 @@ import { startPlan } from './fake-plan-gateway.tsx';
 describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default (shift+tab)');
+    await untilFrame(app, 'mode: manual (shift+tab)');
     expect(backend.calls).toEqual(['boot', 'openSession']);
     app.unmount();
   });
@@ -19,7 +19,7 @@ describe('App startup', () => {
     await untilFrame(app, 'Do you trust the files in /work/project?');
     expect(backend.calls).toEqual(['boot']);
     app.stdin.write('1');
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     expect(backend.calls).toEqual(['boot', 'trust:trusted', 'openSession']);
     app.unmount();
   });
@@ -28,7 +28,7 @@ describe('App startup', () => {
     const { backend, app } = await start({ trust: { path: '/work/project', decision: null } });
     await untilFrame(app, 'Do you trust');
     app.stdin.write('2');
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     expect(backend.calls).toEqual(['boot', 'trust:untrusted', 'openSession']);
     app.unmount();
   });
@@ -52,7 +52,7 @@ describe('App startup', () => {
 describe('App run rendering', () => {
   it('streams assistant text, shows tool calls with their status and reports usage and context', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'what is here');
     backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'Looking' }));
     await untilFrame(app, 'Looking');
@@ -69,13 +69,13 @@ describe('App run rendering', () => {
     await untilFrame(app, 'tokens: 1.6k · context: 20%');
     backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
     backend.finish(runView());
-    await untilFrame(app, /mode: default \(shift\+tab\) · tokens: 1\.6k · context: 20%$/m);
+    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 1\.6k · context: 20%$/m);
     app.unmount();
   });
 
   it('reports a failed run with its reason', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.finish(runView({ status: 'FAILED', error: { code: 'provider_unavailable', message: 'run `sudo fm license`' } }));
     await untilOutput(app, 'provider_unavailable: run `sudo fm license`');
@@ -84,7 +84,7 @@ describe('App run rendering', () => {
 
   it('shows the permission prompt with a diff for Edit and resolves the chosen option', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'edit it');
     backend.emit(
       frame({
@@ -123,7 +123,7 @@ describe('App run rendering', () => {
 
   it('shows why the policy asked in the approval prompt', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'x');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Write', kind: 'edit', title: 'Write /elsewhere/out.txt', rawInput: { file_path: '/elsewhere/out.txt', content: 'x' } }));
     backend.emit(
@@ -151,7 +151,7 @@ describe('App run rendering', () => {
     ['a relative path that leaves the working directory', '../elsewhere/a.toml', '/work/elsewhere/a.toml'],
   ])('heads the approval diff for %s with its display form', async (_label, filePath, header) => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'edit it');
     backend.emit(
       frame({
@@ -183,7 +183,7 @@ describe('App run rendering', () => {
 
   it('confirms the highlighted option with enter after moving with the arrow keys', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'x');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Bash', kind: 'execute', title: 'Bash ls', rawInput: { command: 'ls' } }));
     backend.emit(
@@ -208,7 +208,7 @@ describe('App run rendering', () => {
 
   it('starts the highlight of the next queued approval at its first option', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'x');
     const options = [
       { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
@@ -229,7 +229,7 @@ describe('App run rendering', () => {
 
   it('cancels the run on escape, also while a permission prompt is open', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'long task');
     await untilFrame(app, 'working (esc to cancel)');
     app.stdin.write(KEYS.escape);
@@ -241,25 +241,25 @@ describe('App run rendering', () => {
 describe('App input', () => {
   it('cycles the permission modes with shift+tab and never offers bypassPermissions to a session that may not use it', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     app.stdin.write(KEYS.shiftTab);
     await untilFrame(app, 'mode: acceptEdits');
     app.stdin.write(KEYS.shiftTab);
     await untilFrame(app, 'mode: plan');
     app.stdin.write(KEYS.shiftTab);
-    await untilFrame(app, 'mode: default');
-    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:default']);
+    await untilFrame(app, 'mode: manual');
+    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:manual']);
     app.unmount();
   });
 
   it('includes auto in the cycle only when a classifier is configured', async () => {
     const { backend, app } = await start({ autoModeAvailable: true });
-    await untilFrame(app, 'mode: default');
-    for (const mode of ['acceptEdits', 'plan', 'auto', 'default']) {
+    await untilFrame(app, 'mode: manual');
+    for (const mode of ['acceptEdits', 'plan', 'auto', 'manual']) {
       app.stdin.write(KEYS.shiftTab);
       await untilFrame(app, `mode: ${mode}`);
     }
-    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:auto', 'mode:default']);
+    expect(backend.calls.filter((call) => call.startsWith('mode:'))).toEqual(['mode:acceptEdits', 'mode:plan', 'mode:auto', 'mode:manual']);
     app.unmount();
   });
 
@@ -274,7 +274,7 @@ describe('App input', () => {
 
   it('keeps a multi-line message together: backslash enter and ctrl+j add lines, enter submits all of it', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, 'first\\', 'first\\');
     app.stdin.write(KEYS.enter);
     app.stdin.write('second');
@@ -289,10 +289,10 @@ describe('App input', () => {
 
   it('recalls earlier messages with the up arrow', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     backend.finish(runView());
-    await untilFrame(app, /mode: default \(shift\+tab\) · tokens: 0$/m);
+    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 0$/m);
     app.stdin.write(KEYS.up);
     await untilFrame(app, '> one');
     app.unmount();
@@ -300,7 +300,7 @@ describe('App input', () => {
 
   it('starts with the history of earlier sessions and records every submission', async () => {
     const { backend, app } = await start({ history: ['from yesterday'] });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     app.stdin.write(KEYS.up);
     await untilFrame(app, '> from yesterday');
     app.stdin.write(KEYS.ctrlC);
@@ -313,7 +313,7 @@ describe('App input', () => {
 
   it('refuses a second message while a run is active and says how to cancel', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
@@ -326,7 +326,7 @@ describe('App input', () => {
 describe('App slash commands', () => {
   it('/help lists the commands', async () => {
     const { app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
     const output = await untilOutput(app, 'Slash commands');
@@ -336,7 +336,7 @@ describe('App slash commands', () => {
 
   it('/mode sets the permission mode and rejects an unknown one', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/mode plan', '> /mode plan');
     app.stdin.write(KEYS.enter);
     await untilFrame(app, 'mode: plan');
@@ -349,7 +349,7 @@ describe('App slash commands', () => {
 
   it('/model opens the model picker with a row per alias and the current one marked', async () => {
     const { app } = await startPlan({ aliases: ['default', 'qwen-local'] });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
     const picker = await untilFrame(app, 'qwen-local · primary');
@@ -360,7 +360,7 @@ describe('App slash commands', () => {
 
   it('/model switches the model of the session and the context size the status line measures against', async () => {
     const { backend, app } = await start({ aliases: ['default', 'qwen-local'], windows: { default: 8192, 'qwen-local': 32768 } });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/model qwen-local', '> /model qwen-local');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'model: qwen-local; applies from the next task');
@@ -374,7 +374,7 @@ describe('App slash commands', () => {
 
   it('/model refuses an alias that is not listed', async () => {
     const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/model turbo', '> /model turbo');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'unknown model turbo; available: default, qwen-local');
@@ -384,7 +384,7 @@ describe('App slash commands', () => {
 
   it('/model says that a running task keeps its model', async () => {
     const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'long task');
     await type(app, '/model qwen-local', '> /model qwen-local');
     app.stdin.write(KEYS.enter);
@@ -394,10 +394,10 @@ describe('App slash commands', () => {
 
   it('/clear starts a fresh conversation for the next run', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/clear', '> /clear');
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, /mode: default \(shift\+tab\) · tokens: 0$/m);
+    await untilFrame(app, /mode: manual \(shift\+tab\) · tokens: 0$/m);
     await type(app, 'again', '> again');
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
@@ -408,7 +408,7 @@ describe('App slash commands', () => {
 
   it('/exit leaves the application', async () => {
     const { app, exited } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/exit', '> /exit');
     app.stdin.write(KEYS.enter);
     expect(await exited).toEqual({});
@@ -416,14 +416,14 @@ describe('App slash commands', () => {
 
   it('ctrl+d leaves the application when the input is empty', async () => {
     const { app, exited } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     app.stdin.write(KEYS.ctrlD);
     expect(await exited).toEqual({});
   });
 
   it('an unknown command is reported and not sent to the model', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/frobnicate', '> /frobnicate');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'unknown command /frobnicate; /help lists the commands');
@@ -439,10 +439,10 @@ describe('App slash commands', () => {
     ]);
     const backend = fakeBackend();
     const app = renderObservable(<App backend={backend} initialMode={undefined} slash={registry} onExit={() => undefined} />);
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/review main', '> /review main');
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     expect(seen).toEqual(['main']);
     app.unmount();
   });

@@ -424,6 +424,7 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
         dir: paths.probe,
         measure: (signal) => measure({ key: {}, signal }),
         retryAfterMs: PROBE_RETRY_AFTER_MS,
+        clock: wiring.timers,
         onNotice: wiring.onWarning,
         onFailure: (error) => wiring.onWarning(`the measurement of the target ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
       }),

@@ -16,7 +16,7 @@ const decideCommand = (layout: Layout, rules: readonly PermissionRule[], command
   return decide({
     tool: { name: 'Bash', kind: 'execute', sideEffect: 'exec', subjectKind: 'command' },
     subject: { kind: 'command', tool: 'Bash', command },
-    mode: 'default',
+    mode: 'manual',
     rules: [...rules],
     roots,
     home: layout.home,

@@ -361,6 +361,8 @@ const deterministicCompaction = (plan: CompactionSource, guidelineVersion: numbe
   guidelineVersion,
 });
 
+const FIRST_REQUEST_ATTEMPT = 1;
+
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
   const roleAlias = ctx.roles.compaction;
@@ -371,6 +373,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
   const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
+  journal.append([{ type: 'context.compacting', step: journal.state.step, attempt: FIRST_REQUEST_ATTEMPT }]);
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
   const startedAt = options.clock.now();

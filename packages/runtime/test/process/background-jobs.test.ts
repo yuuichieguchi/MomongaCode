@@ -79,7 +79,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const store: RuntimeStore = openRuntimeStore({ path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
-  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'default', modelAlias: 'fm' });
+  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', modelAlias: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
   const run: Run = created.run;
@@ -335,7 +335,7 @@ describe('background jobs', () => {
   it('refuses a job id that belongs to another session tree', async () => {
     const t = setup();
     const { jobId } = await t.start('call-1');
-    const other = t.store.createSession({ cwd: t.root, env: {}, permissionMode: 'default', modelAlias: 'fm' });
+    const other = t.store.createSession({ cwd: t.root, env: {}, permissionMode: 'manual', modelAlias: 'fm' });
     const created = t.store.createRunAndEnqueue(other.id, { input: 'x', timeoutMs: 1000, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error('expected a run');
     expect(() => t.jobs.status(created.run.id, jobId)).toThrow(`Unknown job ${jobId}`);

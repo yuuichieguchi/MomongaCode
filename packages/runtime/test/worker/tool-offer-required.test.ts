@@ -35,7 +35,7 @@ const namesOf = (tools: readonly FunctionTool[]): string[] => tools.map((tool) =
 
 const offer = async (required: readonly string[]) => {
   const set = await toolSet();
-  const visible = set.forModel({ mode: 'default', rules: [] });
+  const visible = set.forModel({ mode: 'manual', rules: [] });
   return offerFor({ toolSet: set, visible, deferred: ['Alpha', 'HistoryRead', 'ReadOutput'], loaded: [], keepCompanionsWithoutHost: false, required: new Set(required) } as ToolOfferInput);
 };
 

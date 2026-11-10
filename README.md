@@ -82,7 +82,7 @@ The first command starts a background daemon if it is not running. `momonga daem
 - **Terminal UI and headless mode.** An interactive session, or `-p/--print` with `--output-format text|json|stream-json`.
 - **Models.** Targets for Apple's `fm`, chat-completions servers, Open Responses servers, Anthropic, and Ollama. An alias names one target or an ordered list of targets. `momonga gateway probe <target>` measures a target's capabilities and records the result.
 - **Built-in tools.** `Bash` (with `BashOutput` and `KillBash` for background jobs), `Read`, `Write`, `Edit`, `Glob`, `Grep`, `ReadOutput`, `UpdatePlan`, `MemorySave`, `MemorySearch`, `HistorySearch`, `HistoryRead`, `RulePropose`, `Agent` (subagents), and `activate_skill`.
-- **Permission modes.** `default`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
+- **Permission modes.** `manual`, `acceptEdits`, `plan`, `auto`, and `bypassPermissions`. Rules are written as `Tool(specifier)`, for example `Bash(npm test:*)`, and set in `permissions.allow`, `permissions.ask`, and `permissions.deny`. `momonga approve` lists and resolves pending approvals with `allow_once`, `allow_always`, `reject_once`, or `reject_always`. A `Bash(...)` allow rule matches the command text literally, so it also allows options that run other programs; see [docs/threat-model.md](docs/threat-model.md) for what still bounds such a command.
 - **Policy verification.** `momonga policy verify` checks the rules of the folder: that no allow rule gets around a deny rule, that no rule leaves a route to secrets, and that every rule can take effect. It states what is proved and what is not.
 - **Auto mode.** `momonga auto-mode` measures how well a model judges approvals for auto mode. Auto mode is honored only from user settings or the command line.
 - **Sandbox.** Bash runs under Seatbelt on macOS and bubblewrap on Linux. Windows has no sandbox in this release: Bash asks before every command.
@@ -104,7 +104,7 @@ momonga [options] [prompt]
 | --- | --- |
 | `-p, --print <prompt>` | Run the prompt without a terminal UI and print the result |
 | `--output-format <format>` | `text`, `json`, or `stream-json` (for `--print` and `attach`) |
-| `--permission-mode <mode>` | `default`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
+| `--permission-mode <mode>` | `manual`, `acceptEdits`, `plan`, `auto`, or `bypassPermissions` |
 | `--model <alias>` | The model alias of the session |
 | `--dangerously-skip-permissions` | Run in `bypassPermissions` mode |
 | `--skill <name>` | Run the prompt with this skill activated |
@@ -198,7 +198,7 @@ Example:
     "billingChanges": [{ "from": "metered", "to": "local", "alias": "cloud" }]
   },
   "permissions": {
-    "defaultMode": "default",
+    "defaultMode": "manual",
     "allow": ["Bash(npm test:*)"],
     "deny": ["Bash(rm:*)"]
   }

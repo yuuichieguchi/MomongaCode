@@ -35,7 +35,7 @@ const pasted = (text: string): string => `\u001b[200~${text}\u001b[201~`;
 describe('elicitation in the TUI', () => {
   it('names the server, validates each field and sends the accepted content to the elicitation', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'ask the calculator');
     backend.emit(toolCall('c1'));
     backend.emit(requestInput('in1', 'c1', [FORM]));
@@ -64,7 +64,7 @@ describe('elicitation in the TUI', () => {
 
   it('lets an optional field be skipped and a person decline instead of answering', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'ask');
     backend.emit(toolCall('c1'));
     backend.emit(requestInput('in1', 'c1', [FORM]));
@@ -79,7 +79,7 @@ describe('elicitation in the TUI', () => {
 
   it('shows the whole url of a url request and opens it only after the person consents', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'ask');
     backend.emit(toolCall('c1'));
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
@@ -95,7 +95,7 @@ describe('elicitation in the TUI', () => {
 
   it('answers the URL elicitation and reports a failed browser launch as a notice', { timeout: 3 * FRAME_BOUND_MS }, async () => {
     const { backend, app } = await start({ openUrlFailure: new Error('no browser') });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'ask');
     backend.emit(toolCall('c1'));
     backend.emit(requestInput('in2', 'c1', [URL_REQUEST]));
@@ -111,7 +111,7 @@ describe('elicitation in the TUI', () => {
 
   it('clears the prompt when the runtime reports the elicitation resolved', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'ask');
     backend.emit(toolCall('c1'));
     backend.emit(requestInput('in1', 'c1', [URL_REQUEST]));
@@ -126,7 +126,7 @@ describe('elicitation in the TUI', () => {
 describe('MCP authorization in the TUI', () => {
   it('tells the person which command authorizes the server', async () => {
     const { backend, app } = await start();
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'use remote');
     backend.emit(frame({ type: 'mcp.authorization.required', callId: 'c1', server: 'remote' }));
     await untilOutput(app, 'MCP server remote needs authorization; run: momonga mcp login remote');
@@ -137,7 +137,7 @@ describe('MCP authorization in the TUI', () => {
 describe('skills in the TUI', () => {
   it('completes a skill name with tab and starts the run with the skill field', async () => {
     const { backend, app } = await start({ skills: [PDF] });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/pd', '> /pd');
     await untilFrame(app, '/pdf (tab completes)');
     app.stdin.write('\t');
@@ -176,7 +176,7 @@ describe('images in the TUI', () => {
 
   it('inserts a pasted path as text when the model does not declare image input', async () => {
     const { backend, app } = await start({ imageInput: false, images: { '/tmp/shot.png': PNG } });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'first');
     backend.emit(frame({ type: 'usage.updated', inputTokens: 1, outputTokens: 1, totalTokens: 2 }));
     await untilFrame(app, 'tokens: 2');
@@ -202,7 +202,7 @@ describe('approval diff size', () => {
   it('clips the diff to the rows the terminal leaves after the prompt chrome', async () => {
     const { backend, app } = await start();
     (app.stdout as unknown as { rows: number }).rows = 20;
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'write a file');
     const content = Array.from({ length: 30 }, (_, index) => `line ${index}`).join('\n');
     backend.emit(frame({ type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Write', kind: 'edit', title: 'Write /work/a.txt', rawInput: { file_path: '/work/a.txt', content } }));

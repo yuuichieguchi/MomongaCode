@@ -9,7 +9,7 @@ vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 describe('the TUI starts the browser through the opener port and hears of a failed launch (P-C7)', () => {
   it('a reported launch failure adds the copy-manually line to the waiting screen', async () => {
     const { app } = await startPlan({ accounts: [], callbackArrives: false, openUrlFailure: new Error('no opener') });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'Continue with ChatGPT');
     const screen = await untilFrame(app, 'Could not open the browser (no opener). Copy the URL and continue manually.');
@@ -19,7 +19,7 @@ describe('the TUI starts the browser through the opener port and hears of a fail
 
   it('Manage usage reports a failed launch as an info line', async () => {
     const { app, backend } = await startPlan({ accounts: [account({ paused: {} })], openUrlFailure: new Error('no opener') });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'go');
     backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
     await choose(app, 'Manage usage');
@@ -31,7 +31,7 @@ describe('the TUI starts the browser through the opener port and hears of a fail
 
   it('the watch signal handed by the sign-in flow aborts when the flow ends', async () => {
     const { app, backend } = await startPlan({ accounts: [], callbackArrives: true });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await submitLine(app, '/login chatgpt');
     await choose(app, 'Continue with ChatGPT');
     await untilOutput(app, 'Signed in as chatgpt (ada@example.com)');

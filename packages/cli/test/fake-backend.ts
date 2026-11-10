@@ -9,7 +9,7 @@ import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/bac
 export const SESSION: SessionView = {
   id: 'session-1',
   cwd: '/work/project',
-  permissionMode: 'default',
+  permissionMode: 'manual',
   modelAlias: 'default',
   bypassAllowed: false,
   createdAt: 1,

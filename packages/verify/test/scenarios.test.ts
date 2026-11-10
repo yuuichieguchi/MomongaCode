@@ -210,7 +210,7 @@ describe('rules that cannot take effect or that contradict', () => {
     expect(findingsOf(resultOf(report, 'rule-consistency'))).toHaveLength(2);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('flags an allow edit rule that plan mode never lets take effect, and not in default mode', async () => {
+  it('flags an allow edit rule that plan mode never lets take effect, and not in manual mode', async () => {
     const plan = await run([['allow', 'Edit(./src/**)']], { mode: 'plan' });
     expect(resultOf(plan.report, 'rule-consistency').verdict.status).toBe('refuted');
 

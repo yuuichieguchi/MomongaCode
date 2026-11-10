@@ -40,9 +40,9 @@ const reclaimedAfter = async (recorded: Recorded) => {
   await env.seed(
     run.id,
     [
-      { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
+      { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'manual' },
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: bodyOf(recorded) },
-      { type: 'run.started', attempt: 2, now: env.clock.now(), pins: {}, mode: 'default' },
+      { type: 'run.started', attempt: 2, now: env.clock.now(), pins: {}, mode: 'manual' },
     ],
     'hold',
   );

@@ -165,20 +165,20 @@ describe('hooks, auto mode and denials', () => {
 
 describe('nextMode', () => {
   it('cycles default, acceptEdits, plan and back, skipping bypassPermissions unless the session may use it', () => {
-    expect(nextMode({ current: 'default', bypassAllowed: false, autoAvailable: false })).toBe('acceptEdits');
+    expect(nextMode({ current: 'manual', bypassAllowed: false, autoAvailable: false })).toBe('acceptEdits');
     expect(nextMode({ current: 'acceptEdits', bypassAllowed: false, autoAvailable: false })).toBe('plan');
-    expect(nextMode({ current: 'plan', bypassAllowed: false, autoAvailable: false })).toBe('default');
+    expect(nextMode({ current: 'plan', bypassAllowed: false, autoAvailable: false })).toBe('manual');
     expect(nextMode({ current: 'plan', bypassAllowed: true, autoAvailable: false })).toBe('bypassPermissions');
-    expect(nextMode({ current: 'bypassPermissions', bypassAllowed: true, autoAvailable: false })).toBe('default');
+    expect(nextMode({ current: 'bypassPermissions', bypassAllowed: true, autoAvailable: false })).toBe('manual');
   });
 
   it('leaves the unavailable auto mode for the first mode', () => {
-    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: false })).toBe('default');
+    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: false })).toBe('manual');
   });
 
   it('puts auto between plan and bypassPermissions when a classifier is configured', () => {
     expect(nextMode({ current: 'plan', bypassAllowed: false, autoAvailable: true })).toBe('auto');
-    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: true })).toBe('default');
+    expect(nextMode({ current: 'auto', bypassAllowed: false, autoAvailable: true })).toBe('manual');
     expect(nextMode({ current: 'auto', bypassAllowed: true, autoAvailable: true })).toBe('bypassPermissions');
   });
 });

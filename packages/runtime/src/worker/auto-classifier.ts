@@ -63,6 +63,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       stream: true,
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },
     };
+    ctx.journal.append([{ type: 'tool.permission.classifying', callId: request.callId, subjectDigest: request.subjectDigest }]);
     let terminal: ModelResult | undefined;
     let firstEventMs: number | undefined;
     const { clock } = ctx.options;

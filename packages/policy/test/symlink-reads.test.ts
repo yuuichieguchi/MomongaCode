@@ -8,7 +8,7 @@ import { BASH } from './decision-rows.ts';
 import { TEST_SEARCH_PATH, fakeFs, fileRulesFor, isWritableFor, makeLayout } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
-type SymlinkReadLine = { program: string; argv: string[]; link: 'tree' | 'operand'; mode: 'default' | 'acceptEdits'; exit: number; readsThrough: boolean };
+type SymlinkReadLine = { program: string; argv: string[]; link: 'tree' | 'operand'; mode: 'manual' | 'acceptEdits'; exit: number; readsThrough: boolean };
 
 type Measured = 'darwin' | 'linux';
 

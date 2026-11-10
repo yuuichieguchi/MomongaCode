@@ -186,7 +186,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       modelAlias: 'fm',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -204,7 +204,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       modelAlias: 'fm',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -223,7 +223,7 @@ describe('response schemas', () => {
     const view = {
       id: 'sess-1',
       cwd: '/work/a',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       modelAlias: 'fm',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
@@ -474,7 +474,7 @@ describe('PublicRunEvent projection', () => {
         { callId: 'call_b', seq: 7, effect: 'unknown', announced: false },
       ],
       markers: [{ seq: 8, kind: 'mode_changed' }],
-      fromMode: 'default',
+      fromMode: 'manual',
       mode: 'plan',
       digest: 'e'.repeat(64),
     } as unknown as RunEvent;
@@ -518,7 +518,7 @@ describe('PublicRunEvent projection', () => {
       closures: [],
       partial: { seq: 2 },
       markers: [{ seq: 3, kind: 'interrupted' }],
-      mode: 'default',
+      mode: 'manual',
       digest: 'f'.repeat(64),
     } as unknown as RunEvent;
     const publicEvent = toPublicRunEvent(event);

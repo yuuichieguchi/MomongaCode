@@ -1,0 +1,13 @@
+{
+  "name": "reply-decrqm-1006",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b3f313030363b312479",
+  "events": [
+    {
+      "type": "report",
+      "kind": "mode",
+      "mode": 1006,
+      "value": 1
+    }
+  ]
+}

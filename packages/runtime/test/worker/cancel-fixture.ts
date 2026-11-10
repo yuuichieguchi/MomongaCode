@@ -29,7 +29,7 @@ export const pinnedStart = (): RunEventPayload => ({
   attempt: 1,
   now: START_MS,
   pins: { modelAlias: 'fm', systemPromptDigest: 'seeded', toolSetDigest: 'seeded', capabilities: capabilitiesFor(100_000), roles: {}, targets: {} },
-  mode: 'default',
+  mode: 'manual',
 });
 
 export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown> };

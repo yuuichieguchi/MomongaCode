@@ -192,7 +192,7 @@ describe('executor admission of a call with an existing record', () => {
     });
 
     const [outcome] = await harness.executor.runBatch(
-      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { mode: 'default' }),
+      harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { mode: 'manual' }),
     );
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'result', reconciled: 'not_applied', result: { status: 'completed', output: 'edited' } });
@@ -219,7 +219,7 @@ describe('executor admission of a call with an existing record', () => {
       },
     });
 
-    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit')], { mode: 'default' }));
+    const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit')], { mode: 'manual' }));
 
     expect(outcome).toMatchObject({ callId: 'c1', kind: 'needs_approval', decision: { kind: 'ask' } });
     expect((outcome as { subjectDigest?: string }).subjectDigest).toMatch(/^[0-9a-f]{64}$/);

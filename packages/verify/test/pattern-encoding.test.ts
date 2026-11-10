@@ -59,7 +59,7 @@ const modelMatches = async (layout: Layout, specifier: string, fileSystem: Polic
   const context = buildQueryContext(z3.engine().api, {
     rules: [rule],
     roots,
-    mode: 'default',
+    mode: 'manual',
     home: layout.home,
     cwd: layout.project,
     protectedSet: protectedSetFor(roots, fileSystem),

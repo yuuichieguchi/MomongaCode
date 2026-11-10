@@ -280,7 +280,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   const session: Session = store.createSession({
     cwd: project,
     env: { PATH: '/usr/bin:/bin', LANG: 'C' },
-    permissionMode: options.mode ?? 'default',
+    permissionMode: options.mode ?? 'manual',
     modelAlias: MODEL_ALIAS,
   });
 

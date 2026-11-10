@@ -51,7 +51,7 @@ describe('built-in commands', () => {
     const modes: string[] = [];
     const models: string[] = [];
     const context: SlashContext = {
-      mode: 'default',
+      mode: 'manual',
       modelAlias: 'default',
       bypassAllowed: false,
       autoAvailable: false,
@@ -83,7 +83,7 @@ describe('built-in commands', () => {
   it('/mode lists auto when a classifier is configured', async () => {
     const { context, infos } = contextOf({ autoAvailable: true });
     await run('mode', '', context);
-    expect(infos[0]).toBe('permission mode: default (available: default, acceptEdits, plan, auto)');
+    expect(infos[0]).toBe('permission mode: manual (available: manual, acceptEdits, plan, auto)');
   });
 
   it('/mode sets a known mode and refuses an unknown one', async () => {
@@ -91,7 +91,15 @@ describe('built-in commands', () => {
     await run('mode', 'acceptEdits', context);
     await run('mode', 'turbo', context);
     expect(modes).toEqual(['acceptEdits']);
-    expect(infos).toEqual(['unknown permission mode turbo; available: default, acceptEdits, plan']);
+    expect(infos).toEqual(['unknown permission mode turbo; available: manual, acceptEdits, plan']);
+  });
+
+  it('/mode manual sets the asking mode, and /mode default is refused with the list of valid modes', async () => {
+    const { context, infos, modes } = contextOf({ mode: 'plan' });
+    await run('mode', 'manual', context);
+    await run('mode', 'default', context);
+    expect(modes).toEqual(['manual']);
+    expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan']);
   });
 
   it('/model without an argument lists the aliases with the current one marked and says when a switch applies', async () => {
@@ -152,7 +160,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
   const runs: { text: string; skill?: string }[] = [];
   const backend = fakeBackend(backendOptions);
   const context: SlashContext = {
-    mode: 'default',
+    mode: 'manual',
     modelAlias: 'default',
     bypassAllowed: false,
     autoAvailable: false,

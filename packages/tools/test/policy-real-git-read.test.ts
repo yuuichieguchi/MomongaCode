@@ -27,9 +27,9 @@ describe('git reflog goes through the option table (real git 2.54)', () => {
     "git reflog delete 'HEAD@{0}'",
     'git reflog drop --all',
     'git reflog list --output=pwn',
-  ])('asks for %s in default and plan mode', (command) => {
+  ])('asks for %s in manual and plan mode', (command) => {
     const workspace = prepared();
-    expect(workspace.decide(command, { mode: 'default' }).kind).toBe('ask');
+    expect(workspace.decide(command, { mode: 'manual' }).kind).toBe('ask');
     expect(workspace.decide(command, { mode: 'plan' }).kind).toBe('ask');
   });
 

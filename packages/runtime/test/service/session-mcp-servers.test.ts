@@ -42,7 +42,7 @@ describe('session MCP servers', () => {
     const session = await env.createSession({ mcpServers: { editor: STDIO } });
 
     expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan', mcpServers: { editor: { nonsense: true } } } }), 400, 'invalid_request');
-    expect(env.store.getSession(session.id)).toMatchObject({ permissionMode: 'default', mcpServers: { editor: STDIO } });
+    expect(env.store.getSession(session.id)).toMatchObject({ permissionMode: 'manual', mcpServers: { editor: STDIO } });
     expectError(await env.http('PATCH', '/v1/sessions/ses_missing', { body: { mcpServers: {} } }), 404, 'not_found');
   });
 });

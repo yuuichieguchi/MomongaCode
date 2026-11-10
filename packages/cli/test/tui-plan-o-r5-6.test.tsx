@@ -13,7 +13,7 @@ const NOT_ELIGIBLE_MESSAGE = 'This account is not eligible for plan use in this 
 const PLAN = { profile: 'chatgpt', account: 'work' };
 
 const ready = async (app: Instance): Promise<void> => {
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
 };
 
 const failWith = (backend: FakePlanBackend, code: string, message: string): void => {

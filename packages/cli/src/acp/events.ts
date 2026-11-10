@@ -218,6 +218,9 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'context.governing_loaded':
     case 'context.memories_loaded':
     case 'context.contribution':
+    case 'context.compacting':
+    case 'tool.permission.classifying':
+    case 'hook.started':
       return [];
     case 'hook.completed':
       return phase === 'live' ? liveNotice(features, event.runId, event.seq, hookLevel(event), describeHook(event).join('\n')) : [];

@@ -37,7 +37,7 @@ const SOURCE = 'user-settings';
 const ruleOf = (tools: Builtins, effect: RuleEffect, text: string): PermissionRule =>
   parseRule(text, { effect, origin: 'user', source: SOURCE, settingsRoot: tools.layout.project, home: tools.layout.home, cwd: tools.layout.project });
 
-type Extra = { sandbox?: Sandbox; env?: Record<string, string>; mode?: 'default' | 'acceptEdits' };
+type Extra = { sandbox?: Sandbox; env?: Record<string, string>; mode?: 'manual' | 'acceptEdits' };
 
 const withFileRules = (tools: Builtins, rules: PermissionRule[], fileRules: FileRuleSet, extra: Extra = {}) => {
   const sandboxPolicy = { ...tools.sandboxPolicy, fileRules } as SandboxPolicy;

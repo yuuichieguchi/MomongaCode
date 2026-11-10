@@ -1,0 +1,12 @@
+{
+  "name": "paste-with-embedded-sequence",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "1b5b3230307e611b5b41621b5b3230317e",
+  "events": [
+    {
+      "type": "paste",
+      "text": "a\u001b[Ab",
+      "overflow": false
+    }
+  ]
+}

@@ -515,6 +515,9 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'hook.completed':
       return withHookCompleted(state, event);
     case 'job.finished':
+    case 'context.compacting':
+    case 'tool.permission.classifying':
+    case 'hook.started':
     case 'attempt.failed':
     case 'attempt.lost':
     case 'tool.updated':

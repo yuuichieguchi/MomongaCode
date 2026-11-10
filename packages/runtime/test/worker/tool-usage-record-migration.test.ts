@@ -28,7 +28,7 @@ const loader = (catalog: readonly string[]) => ({
 const requested = (step: number, tools: readonly unknown[]): RunEventPayload =>
   ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: 'fm', input: [], tools: [...tools], tool_choice: 'auto' } }) as RunEventPayload;
 
-const started = (deferred: readonly string[]): RunEventPayload => ({ type: 'run.started', attempt: 1, now: START_MS, pins: { token: { deferred: [...deferred] } }, mode: 'default' });
+const started = (deferred: readonly string[]): RunEventPayload => ({ type: 'run.started', attempt: 1, now: START_MS, pins: { token: { deferred: [...deferred] } }, mode: 'manual' });
 
 const call = (callId: string, name: string): RunEventPayload => ({ type: 'tool.call', callId, providerCallId: callId, name, kind: 'read', title: name, rawInput: {} });
 

@@ -39,7 +39,7 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
     const run = enqueue(store, session.id);
     writeUnknown(dbPath, 'sessions', 'permission_mode', 'supervised', session.id);
     expect(store.claim('w-old')).toBeNull();
-    writeUnknown(dbPath, 'sessions', 'permission_mode', 'default', session.id);
+    writeUnknown(dbPath, 'sessions', 'permission_mode', 'manual', session.id);
     expect(store.claim('w-old')?.runId).toBe(run.id);
   });
 });

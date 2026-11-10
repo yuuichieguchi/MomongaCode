@@ -27,7 +27,7 @@ const fullToolSet = async (): Promise<FunctionTool[]> => {
   const registry = createToolRegistry();
   for (const tool of createBuiltinTools()) registry.register(tool);
   const snapshot = await registry.snapshot();
-  return snapshot.forModel({ mode: 'default', rules: [] }).map((tool) => Object.fromEntries(Object.entries(tool).filter(([key]) => key !== 'fitRank' && key !== 'fitTier')) as FunctionTool);
+  return snapshot.forModel({ mode: 'manual', rules: [] }).map((tool) => Object.fromEntries(Object.entries(tool).filter(([key]) => key !== 'fitRank' && key !== 'fitTier')) as FunctionTool);
 };
 
 const firstRequest = async (): Promise<AdapterRequest> => ({

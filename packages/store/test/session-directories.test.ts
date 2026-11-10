@@ -27,7 +27,7 @@ describe('session additionalDirectories', () => {
     const created = store.createSession({
       cwd: '/work/a',
       env: { PATH: '/usr/bin' },
-      permissionMode: 'default',
+      permissionMode: 'manual',
       modelAlias: 'fm',
       additionalDirectories: ['/work/shared', '/opt/extra'],
     });
@@ -39,7 +39,7 @@ describe('session additionalDirectories', () => {
 
   it('defaults to an empty list', () => {
     const { dbPath, store } = harness();
-    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm' });
+    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm' });
 
     expect(created.additionalDirectories).toEqual([]);
     expect(store.getSession(created.id)?.additionalDirectories).toEqual([]);
@@ -53,7 +53,7 @@ describe('session additionalDirectories', () => {
 
     expect(store.getSession('sess-old')).toMatchObject({ cwd: '/work/old', env: { PATH: '/usr/bin' }, additionalDirectories: [] });
     const db = rawDb(dbPath);
-    expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+    expect(db.prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
     expect(db.prepare('SELECT additional_directories_json FROM sessions').all()).toEqual([{ additional_directories_json: '[]' }]);
   });
 
@@ -66,7 +66,7 @@ describe('session additionalDirectories', () => {
     ['an empty-string entry', '[""]'],
   ])('a malformed additional_directories_json is reported as corrupt (%s)', (_label, value) => {
     const { dbPath, store } = harness();
-    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'default', modelAlias: 'fm' });
+    const created = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm' });
     rawDb(dbPath).prepare('UPDATE sessions SET additional_directories_json = ? WHERE id = ?').run(value, created.id);
 
     expect(() => store.getSession(created.id)).toThrow(/corrupt/);

@@ -33,7 +33,7 @@ const longCheck = () => {
 const startWith = async (command: SlashCommand, tasks = createBackgroundTasks()) => {
   const backend = fakeBackend();
   const app = renderObservable(<App backend={backend} initialMode={undefined} slash={createSlashRegistry([...BUILTIN_SLASH_COMMANDS, command])} {...({ tasks } as object)} onExit={() => undefined} />);
-  await untilFrame(app, 'mode: default');
+  await untilFrame(app, 'mode: manual');
   return { backend, app, tasks };
 };
 

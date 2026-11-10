@@ -9,7 +9,7 @@ import { callsStep, textStep } from './scripts.ts';
 
 describe('worker re-reads session mode and rules for every batch', () => {
   it('applies a permission mode changed between batches', async () => {
-    const env = await makeEnv({ mode: 'default' });
+    const env = await makeEnv({ mode: 'manual' });
     const target = path.join(env.project, 'mode.txt');
     env.toolbox.hooks['Echo'] = () => env.setMode('acceptEdits');
     env.gateway.script.push(

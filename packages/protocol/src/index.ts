@@ -473,10 +473,10 @@ export {
   hookMatcherMatches,
   hookTimeoutMs,
 } from './hooks.ts';
-export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
+export type { HookCommand, HookEvent, HookExecution, HookStart, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, PERMISSION_MODE_DESCRIPTIONS, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -566,7 +566,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, TARGET_PROBE_FAILED, TARGET_PROBING, TARGET_PROBING_MESSAGE } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,

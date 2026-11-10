@@ -19,7 +19,7 @@ const seedSessions = async (temp: RunHome): Promise<Seeded> => {
   await ensureMomongaDirs(temp.paths);
   const clock = createFakeClock(START_MS);
   const store = openRuntimeStore({ path: temp.paths.databases.runtime, home: temp.home, clock, leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 20 });
-  const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'default', modelAlias: 'default' }).id;
+  const session = () => store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'manual', modelAlias: 'default' }).id;
   try {
     const idle = session();
     const active = session();

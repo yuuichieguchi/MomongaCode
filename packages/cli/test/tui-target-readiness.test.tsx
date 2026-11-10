@@ -27,14 +27,14 @@ describe('the TUI shows the readiness verdict before any request', () => {
 
   it('shows no readiness notice for a target that calls tools', BOUND, async () => {
     const { app } = await start();
-    const frame = await untilFrame(app, 'mode: default');
+    const frame = await untilFrame(app, 'mode: manual');
     expect(frame).not.toContain(NO_TOOLS_NOTICE);
     app.unmount();
   });
 
   it('shows the no-tools notice when /model switches to a target that reports no tool calling', BOUND, async () => {
     const { backend, app } = await start({ aliases: ['default', 'chat-only'], toolCalling: { 'chat-only': 'none' } });
-    await untilFrame(app, 'mode: default');
+    await untilFrame(app, 'mode: manual');
     await type(app, '/model chat-only', '> /model chat-only');
     app.stdin.write(KEYS.enter);
     await untilOutput(app, 'model: chat-only');

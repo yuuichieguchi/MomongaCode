@@ -198,7 +198,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
       const decision = decide({
         tool: { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' },
         subject: { kind: 'path', tool: 'Write', paths: [innerConfig], access: 'write' },
-        mode: 'default',
+        mode: 'manual',
         rules: [],
         roots: [repositoryRoot],
         home: path.join(root, 'home'),

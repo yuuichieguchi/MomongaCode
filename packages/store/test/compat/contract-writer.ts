@@ -52,7 +52,7 @@ export const ok = <T extends { kind: string }>(result: T, label: string): Extrac
 };
 
 export const writeContractRows = async (store: RuntimeStore, tag: string): Promise<void> => {
-  const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
+  const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'manual', modelAlias: 'fm' });
   const run = enqueue(store, session.id, `written by ${tag}`);
   const claim = claimOf(store, run.id, `writer-${tag}`);
   ok(store.append(claim, [call(`${tag}-c1`), { type: 'notice', level: 'info', message: `written by ${tag}`, code: 'contract.writer' }]), 'append');

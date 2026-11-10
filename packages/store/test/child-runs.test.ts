@@ -9,11 +9,11 @@ const spawn = (store: RuntimeStore, parent: Run, callId: string, input = 'child 
   return result;
 };
 
-const runningParent = (h: ReturnType<typeof harness>, sessionOptions: { mode?: 'default' | 'acceptEdits' } = {}) => {
+const runningParent = (h: ReturnType<typeof harness>, sessionOptions: { mode?: 'manual' | 'acceptEdits' } = {}) => {
   const session = h.store.createSession({
     cwd: '/work/a',
     env: { PATH: '/usr/bin' },
-    permissionMode: sessionOptions.mode ?? 'default',
+    permissionMode: sessionOptions.mode ?? 'manual',
     modelAlias: 'fm',
     bypassAllowed: true,
     additionalDirectories: ['/work/extra'],
@@ -33,7 +33,7 @@ describe('createChildRun', () => {
     expect(childSession).toMatchObject({
       cwd: '/work/a',
       env: { PATH: '/usr/bin' },
-      permissionMode: 'default',
+      permissionMode: 'manual',
       bypassAllowed: true,
       additionalDirectories: ['/work/extra'],
       modelAlias: 'fm',
@@ -283,7 +283,7 @@ describe('permission inheritance', () => {
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     await h.store.transition(mustClaim(h.store, 'w-child'), ['RUNNING'], 'COMPLETED');
     h.store.setPermissionMode(session.id, 'plan');
-    expect(h.store.getSession(child.session.id)?.permissionMode).toBe('default');
+    expect(h.store.getSession(child.session.id)?.permissionMode).toBe('manual');
   });
 });
 

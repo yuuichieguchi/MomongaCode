@@ -1,0 +1,14 @@
+{
+  "name": "kitty-text",
+  "source": "kitty keyboard protocol page (sw.kovidgoyal.net/kitty/keyboard-protocol)",
+  "hex": "1b5b39373b3b393775",
+  "events": [
+    {
+      "type": "key",
+      "text": "a",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

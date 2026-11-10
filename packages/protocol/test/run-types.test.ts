@@ -68,7 +68,7 @@ describe('run status types', () => {
     expectTypeOf<StopReason>().toEqualTypeOf<
       'max_steps' | 'budget' | 'max_tokens' | 'timeout' | 'loop' | 'approval_timeout' | 'refusal' | 'usage_limit'
     >();
-    expectTypeOf<PermissionMode>().toEqualTypeOf<'default' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
+    expectTypeOf<PermissionMode>().toEqualTypeOf<'manual' | 'acceptEdits' | 'plan' | 'auto' | 'bypassPermissions'>();
     expectTypeOf<ToolKind>().toEqualTypeOf<
       'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other'
     >();
@@ -79,6 +79,9 @@ describe('run event payloads', () => {
   it('discriminates on exactly these types', () => {
     expectTypeOf<RunEventPayload['type']>().toEqualTypeOf<
       | 'user.message'
+      | 'context.compacting'
+      | 'tool.permission.classifying'
+      | 'hook.started'
       | 'run.started'
       | 'attempt.failed'
       | 'attempt.lost'

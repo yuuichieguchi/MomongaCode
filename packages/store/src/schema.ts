@@ -1031,6 +1031,32 @@ CREATE TRIGGER runs_cancelling_has_cancel_origin_update BEFORE UPDATE OF status,
 END;
 `;
 
+const SESSIONS_MODE_MANUAL = `
+CREATE TABLE sessions_manual (
+  id TEXT PRIMARY KEY,
+  cwd TEXT NOT NULL,
+  env_json TEXT NOT NULL,
+  permission_mode TEXT NOT NULL CHECK (permission_mode IN ('manual', 'acceptEdits', 'plan', 'auto', 'bypassPermissions')),
+  model_alias TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  bypass_allowed INTEGER NOT NULL DEFAULT 0 CHECK (bypass_allowed IN (0, 1)),
+  additional_directories_json TEXT NOT NULL DEFAULT '[]',
+  mcp_servers_json TEXT NOT NULL DEFAULT '{}'
+);
+INSERT INTO sessions_manual (rowid, id, cwd, env_json, permission_mode, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json)
+  SELECT rowid, id, cwd, env_json, CASE permission_mode WHEN 'default' THEN 'manual' ELSE permission_mode END, model_alias, created_at, bypass_allowed, additional_directories_json, mcp_servers_json
+  FROM sessions ORDER BY rowid;
+DROP TABLE sessions;
+ALTER TABLE sessions_manual RENAME TO sessions;
+CREATE INDEX sessions_by_cwd ON sessions (cwd, created_at);
+CREATE TRIGGER search_docs_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM search_docs WHERE session_id = OLD.id;
+END;
+CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM fidelity_verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_id = OLD.id);
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1096,6 +1122,12 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 29,
     name: 'widen the runs.stop_reason CHECK list to every stop reason, usage_limit and conditions_unmet included, by rebuilding runs with its indexes and triggers and re-creating the sessions trigger that reads runs',
     sql: RUNS_STOP_REASONS_WIDENED,
+    rebuildsReferencedTable: true,
+  },
+  {
+    version: 30,
+    name: "name the asking mode manual: rebuild sessions with a permission_mode CHECK list that holds 'manual' in place of 'default', rewrite each stored 'default' to 'manual', and re-create the index and the two triggers of sessions",
+    sql: SESSIONS_MODE_MANUAL,
     rebuildsReferencedTable: true,
   },
 ];

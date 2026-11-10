@@ -24,7 +24,7 @@ const shareWindowWith = async (noticesPerRun: number) => {
     const dropped: RunEventPayload[] = index === WINDOW_RUNS - 1 ? [{ type: 'notice', level: 'warning', message: 'dropped', code: 'memories_dropped' }] : [];
     const claim = await env.seed(
       run.id,
-      [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'default' }, { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] }, ...Array.from({ length: noticesPerRun }, (_unused, at) => plainNotice(at)), ...dropped],
+      [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'manual' }, { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] }, ...Array.from({ length: noticesPerRun }, (_unused, at) => plainNotice(at)), ...dropped],
       'hold',
     );
     env.scriptContribution(run.id, [{ kind: 'memory', id: `past-${index}`, contributed: true }]);

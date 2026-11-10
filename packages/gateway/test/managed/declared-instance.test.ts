@@ -119,6 +119,7 @@ describe('a declared server whose binary exists but cannot be read for its hash 
             return makeReport(1, 1);
           },
           retryAfterMs: 120_000,
+          clock: { now: () => 0 },
           onNotice: (text) => notices.push(text),
         }),
       currency: managedCurrencyOf(description, { userDialects: {} }),

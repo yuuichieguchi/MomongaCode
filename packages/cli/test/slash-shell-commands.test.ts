@@ -62,7 +62,7 @@ const slashContext = () => {
   const backgrounds: { label: string; done: Promise<unknown> }[] = [];
   const controller = new AbortController();
   const context = {
-    mode: 'default',
+    mode: 'manual',
     modelAlias: 'm',
     bypassAllowed: false,
     autoAvailable: false,

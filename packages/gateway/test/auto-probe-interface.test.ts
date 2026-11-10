@@ -77,14 +77,19 @@ describe('the automatic probe through its one interface, with an adapter no othe
     expect(state.measures).toBe(1);
   });
 
-  it('starts no probe of a key for one Retry-After interval after a started probe failed, answering the remaining interval', async () => {
+  it('starts no probe of a key for one Retry-After interval after a started probe failed, answering 503 target_probe_failed with the cause and the remaining interval', async () => {
     const { autoProbe, clock, events, state, subject } = setup();
     await autoProbe.ensure(subject, KEY);
     state.pending[0]?.reject(new Error('the lantern went out'));
     await until(() => events.some((event) => event.kind === 'failed'), 'the failure is reported');
 
     clock.advance(45_000);
-    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 75 });
+    const failed = await autoProbe.ensure(subject, KEY).catch((error: unknown) => error);
+    expect(failed).toMatchObject({
+      status: 503,
+      body: { type: 'server_error', code: 'target_probe_failed', message: 'measuring this model failed: the lantern went out' },
+      headers: { 'retry-after': '75' },
+    });
     expect(state.measures).toBe(1);
 
     clock.advance(75_000);

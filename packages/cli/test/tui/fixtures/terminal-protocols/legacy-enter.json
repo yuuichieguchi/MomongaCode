@@ -1,0 +1,14 @@
+{
+  "name": "legacy-enter",
+  "source": "xterm control sequences (invisible-island.net/xterm/ctlseqs/ctlseqs.html)",
+  "hex": "0d",
+  "events": [
+    {
+      "type": "key",
+      "name": "enter",
+      "ctrl": false,
+      "alt": false,
+      "shift": false
+    }
+  ]
+}

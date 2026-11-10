@@ -98,7 +98,7 @@ describe('controls (pins)', () => {
 
   it('asks for a wrapper with a directory change under a deny rule, allows it in bypass (pin)', () => {
     const row = commandRow('env -C /outside tee x', { rules: [['deny', 'Write(//outside/**)']] });
-    expect(kindIn(row, 'default')).toBe('ask');
+    expect(kindIn(row, 'manual')).toBe('ask');
     expect(kindIn(row, 'acceptEdits')).toBe('ask');
     expect(kindIn(row, 'bypassPermissions')).toBe('allow');
   });

@@ -16,7 +16,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
     const context = buildQueryContext(z3.engine().api, {
       rules: rulesOf(layout, [['allow', 'Read(./a/**)']]),
       roots,
-      mode: 'default',
+      mode: 'manual',
       home: layout.home,
       cwd: layout.project,
       protectedSet: protectedSetFor(roots, fileSystem),

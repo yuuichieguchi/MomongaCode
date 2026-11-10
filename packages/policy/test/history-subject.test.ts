@@ -28,7 +28,7 @@ const decideHistory = (mode: PermissionMode, rules: PermissionRule[] = [], subje
 };
 
 describe('history subjects', () => {
-  it.each(['default', 'acceptEdits', 'plan'] as const)('asks before reaching another project in %s mode', (mode) => {
+  it.each(['manual', 'acceptEdits', 'plan'] as const)('asks before reaching another project in %s mode', (mode) => {
     const decision = decideHistory(mode);
     expect(decision.kind).toBe('ask');
     expect(decision.source).toBe('mode');
@@ -45,7 +45,7 @@ describe('history subjects', () => {
   });
 
   it('asks nothing for a search within the project', () => {
-    expect(decideHistory('default', [], { kind: 'none', tool: 'HistorySearch' }).kind).toBe('allow');
+    expect(decideHistory('manual', [], { kind: 'none', tool: 'HistorySearch' }).kind).toBe('allow');
   });
 
   it('suggests no allow rule, because a bare tool rule would open every project', () => {

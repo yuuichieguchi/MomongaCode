@@ -8,7 +8,7 @@ const valid = {
     {
       id: 'c1',
       input: 'hi',
-      permissionMode: 'default',
+      permissionMode: 'manual',
       onAsk: 'reject_once',
       runs: 3,
       minPassRate: 0.66,
@@ -20,6 +20,10 @@ const valid = {
 const parse = (value: unknown) => parseDataset(JSON.stringify(value), 'sample.json');
 
 describe('parseDataset', () => {
+  it('refuses the old mode name default in a case', () => {
+    expect(() => parse({ ...valid, cases: [{ ...valid.cases[0], permissionMode: 'default' }] })).toThrow(/sample\.json: invalid dataset at \/cases\/0\/permissionMode/);
+  });
+
   it('accepts a well-formed dataset', () => {
     expect(parse(valid).cases[0]?.runs).toBe(3);
   });

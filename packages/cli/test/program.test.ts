@@ -84,6 +84,19 @@ describe('root command', () => {
     const { program } = harness();
     await expect(run(program, '-p', 'x', '--output-format', 'xml')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
     await expect(run(harness().program, '-p', 'x', '--permission-mode', 'yolo')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    const refused = harness();
+    await expect(run(refused.program, '-p', 'x', '--permission-mode', 'default')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    expect(refused.out.join('')).toContain('Allowed choices are manual, acceptEdits, plan, auto, bypassPermissions.');
+  });
+
+  it('policy verify --mode refuses default and names the starting mode in its help', async () => {
+    const { program, out } = harness();
+    const verify = program.commands.find((command) => command.name() === 'policy')?.commands.find((command) => command.name() === 'verify');
+    if (verify === undefined) throw new Error('no policy verify command');
+    verify.exitOverride().configureOutput({ writeOut: (text) => out.push(text), writeErr: (text) => out.push(text) });
+    await expect(run(program, 'policy', 'verify', '--mode', 'default')).rejects.toMatchObject({ code: 'commander.invalidArgument' });
+    expect(out.join('')).toContain('Allowed choices are manual, acceptEdits, plan, auto, bypassPermissions.');
+    expect(verify.helpInformation().replace(/\s+/g, ' ')).toContain('the permission mode to check; the starting mode of the settings when omitted');
   });
 
   it('needs a terminal for the interactive session', async () => {
