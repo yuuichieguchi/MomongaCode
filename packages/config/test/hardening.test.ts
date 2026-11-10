@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError, appendPermissionRule, systemFileLockPorts, loadMcpServers, loadSettings } from '@momonga/config';
 import type { FileLockPorts } from '@momonga/config';
 import { hostKernelLock } from '@momonga/foundation';
@@ -21,6 +21,8 @@ import {
   writeJson,
   writeText,
 } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const load = (tree: ReturnType<typeof makeTree>) =>
   loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
@@ -130,7 +132,7 @@ const steppedFileLockPorts = (): FileLockPorts => {
   };
 };
 
-describe('B8 lock hardening', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('B8 lock hardening', () => {
   const lockPathOf = (tree: ReturnType<typeof makeTree>): string => settingsLockPath(tree.home, localSettingsPath(tree));
   const fileLock = hostKernelLock().name === 'file-lock';
 

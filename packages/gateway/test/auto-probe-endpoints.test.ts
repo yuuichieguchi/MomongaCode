@@ -1,14 +1,16 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TARGET_NOT_READY, TARGET_PROBING } from '@momonga/protocol';
 import { ProbeInProgressError, acquireProbeLock, endpointKeyOf, endpointLockKeyOf, probeEndpointTarget } from '@momonga/gateway';
 import type { EndpointKey } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, fakeExec } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const launchWith = async (target: Record<string, unknown>) => {
   const home = makeHome();
@@ -32,7 +34,7 @@ const launchWith = async (target: Record<string, unknown>) => {
   return { home, measured, ask };
 };
 
-describe('P10 RecordUnderLock: every probe-able auto target takes the automatic probe and its lock', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('P10 RecordUnderLock: every probe-able auto target takes the automatic probe and its lock', () => {
   it('answers a chat-completions auto target with no record 503 target_probing and measures its endpoint key once', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const gateway = await launchWith(ccTarget(fake.socketPath, { toolCalling: 'auto' }));

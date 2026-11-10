@@ -21,8 +21,9 @@ import {
   withReader,
 } from './support/reference.ts';
 import type { ChainBuilder, ReferenceHarness, WindowEntry } from './support/reference.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 300_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = 40;
 const CHAIN_LENGTHS = [1, 1, 2, 2, 3, 10] as const;

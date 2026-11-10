@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { InspectProcessLockOptions, ProcessLockInspection } from '@momonga/foundation';
 import { ProbeFailedError, createKernelLockMechanism, probeFailed } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeKernelLock, createFakeTimers, registerCleanup, startLockHolder, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
@@ -10,6 +10,8 @@ import { PROBE_HEADERS_TIMEOUT_MS, createExternalHealthProbe, holderPidOf, label
 import type { ExternalProbe, LockWatchOptions, ProbeOutcome } from '../src/lock-watch.ts';
 import type { ChildRole } from '../src/launcher.ts';
 import { createRealWorkScope, pump, pumpUntil, quiesce, startHarness } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('labelHealthResponse', () => {
   it('external probe labels', () => {
@@ -367,7 +369,7 @@ const realWatch = (lockPath: string) => {
   return { clock, timers, events, watch };
 };
 
-describe('watchLock with the real kernel lock', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('watchLock with the real kernel lock', () => {
   it('stays waiting while a real process holds the lock and sees it free the moment that process is SIGKILLed', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const holder = await startLockHolder(context, lockPath);

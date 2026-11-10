@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { launchRuntime, readDb, startStack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('health through startRuntimeProcess (system timers, in-process gateway)', () => {
-  it('health startedAt equals the ready line', PROCESS_TIMEOUT, async () => {
+  it('health startedAt equals the ready line', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const ready = JSON.parse(launched.stdout.lines()[0] ?? '{}');
@@ -14,7 +14,7 @@ describe('health through startRuntimeProcess (system timers, in-process gateway)
     expect(health.json.startedAt).toBe(launched.handle.ready.startedAt);
   });
 
-  it('health state is draining during close', PROCESS_TIMEOUT, async () => {
+  it('health state is draining during close', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp, { drainTimeoutMs: 60_000 });
     const hold = stack.hold();
@@ -32,7 +32,7 @@ describe('health through startRuntimeProcess (system timers, in-process gateway)
     expect(await closing).toMatchObject({ abandoned: [], stragglers: [] });
   });
 
-  it('the lease and health pid equal the ready pid', PROCESS_TIMEOUT, async () => {
+  it('the lease and health pid equal the ready pid', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const hold = stack.hold();

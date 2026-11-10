@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TestContext } from 'vitest';
 import { alwaysWriteDenied, createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -10,6 +10,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, wi
 import { run } from './helpers.ts';
 import { createLauncherFixture, recordLauncherLinks } from './launcher-fixture.ts';
 import type { LauncherFixture, LauncherLayout } from './launcher-fixture.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -122,7 +124,7 @@ const layouts: Array<{ layout: LauncherLayout; title: string; attacks: Attack[] 
   { layout: 'custom', title: 'custom link recorded in launcher-links', attacks: commonAttacks },
 ];
 
-describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher link (real sandbox-exec, fake HOME)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('seatbelt protects the launcher link (real sandbox-exec, fake HOME)', () => {
   for (const { layout, title, attacks } of layouts) {
     describe(title, () => {
       it.for(attacks)('refuses: $name', async ({ script }, context) => {

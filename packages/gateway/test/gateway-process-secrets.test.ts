@@ -1,24 +1,17 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import {
-  anthropicErrorReply,
-  anthropicTextReply,
-  createFakeSecurityPort,
-  openResponsesTextReply,
-  registerCleanup,
-  startFakeAnthropic,
-  startFakeOpenResponses,
-  withTempDir,
-} from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, anthropicErrorReply, anthropicTextReply, createFakeSecurityPort, openResponsesTextReply, registerCleanup, startFakeAnthropic, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeSecurityPort, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, fakeSecretHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
 import type { SecretHost } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED, expectNoCredential } from './credential-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SECRET = 'sk-ant-api03-stored-in-keychain-0001';
 const SECRET_NAME = 'anthropic-main';

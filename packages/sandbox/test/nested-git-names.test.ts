@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, protectedSetFor } from '@momonga/foundation';
 import { createSeatbeltSandbox, planBubblewrap } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { buildSeatbeltProfile } from '../src/profile.ts';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -63,7 +65,7 @@ describe('the .git name rule of the protected set reaches the sandbox', () => {
     expect(readOnly).not.toContain(path.join(work, 'vendor', 'lib', '.git', 'objects'));
   });
 
-  it.runIf(process.platform === 'darwin')('refuses a real sandboxed write to a nested .git hook and config, even in a .git that does not exist yet', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(process.platform === 'darwin')('refuses a real sandboxed write to a nested .git hook and config, even in a .git that does not exist yet', async () => {
     const sandbox = createSeatbeltSandbox({ tmpRoot: base, killGraceMs: 300 });
     const sh = async (script: string) => {
       const proc = sandbox.spawn({ argv: ['/bin/sh', '-c', script], cwd: work, env: { PATH: BASE_PATH, HOME: work } }, policy(), new AbortController().signal);

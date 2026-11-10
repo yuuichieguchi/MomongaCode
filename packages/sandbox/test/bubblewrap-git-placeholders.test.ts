@@ -1,18 +1,20 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, protectedSetFor } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin' };
 const HAS_BWRAP = process.platform === 'linux' && fs.existsSync(DEFAULT_BWRAP_PATH);
 
-describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholders (real bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholders (real bwrap)', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let repo = '';
@@ -107,7 +109,7 @@ describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholde
   });
 });
 
-describe.runIf(HAS_BWRAP)('git in a root that is not a repository, inside a parent repository (real bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_BWRAP)('git in a root that is not a repository, inside a parent repository (real bwrap)', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let parent = '';

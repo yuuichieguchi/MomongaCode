@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalPath, generationLayout, nodeFileSystem } from '@momonga/foundation';
 import type { AtomicWriteFileSystem } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import { TEST_VERSION, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
 import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Rename = { from: string; to: string };
 
@@ -84,7 +86,7 @@ const published = async (h: Harness): Promise<void> => {
   await quiesce(h.realWork);
 };
 
-describe('the supervisor publishes run/current', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the supervisor publishes run/current', () => {
   it('does not publish while only one child is ready, and publishes once both are', async (context) => {
     const h = await startHarness(context, { behaviours: { runtime: { autoReady: false } } });
     await h.waitForState('gateway', 'ready', 10_000);

@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, generationLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import { INVALID_SETTINGS_TEXT, fakeSettingsWatch, pump, startHarness, validSettings, writeSettings, writeSettingsText } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const RECORD_ENV = 'MOMONGA_SETTINGS_APPLIED';
 
@@ -34,7 +36,7 @@ const settle = async (h: Watched): Promise<void> => {
   await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50);
 };
 
-describe('S7: the supervisor writes the applied record (design-settings-live 15.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S7: the supervisor writes the applied record (design-settings-live 15.1)', () => {
   it('writes the settings at its start, before any child is spawned, and hands every child the record path', async (context) => {
     const h = await watched(context);
     expect(readRecord(h.home)).toEqual({ seq: 1, settings: validSettings({ model: 'gpt-a' }) });

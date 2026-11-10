@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { FileRuleSet, FileRuleSpec } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
@@ -9,6 +9,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/tes
 import { fileRulesOf, fileSpec } from './file-rule-specs.ts';
 import type { FileSpecOptions } from './file-rule-specs.ts';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KILL_GRACE_MS = 300;
 const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -23,7 +25,7 @@ const python3 = (): string => {
 
 type Fixture = { base: string; root: string; home: string; outside: string; tmpRoot: string };
 
-describe.runIf(process.platform === 'darwin')('user file rules under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('user file rules under real Seatbelt', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
 

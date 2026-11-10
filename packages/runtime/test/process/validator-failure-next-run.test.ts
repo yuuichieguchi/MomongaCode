@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
 import { launchRuntime, readDb, scriptedToolCall, startStack, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../foundation/src/untrusted-engine.ts')>();
@@ -9,7 +11,6 @@ vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) =>
   return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const THROWING = 'mcp__fx__validator_throws';
 const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 const MCP_SETTINGS = { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' } } } };
@@ -37,7 +38,7 @@ const settledOrRetried = async (temp: RunHome, runId: string): Promise<{ status:
 const offeredToolNames = (body: any): string[] => (Array.isArray(body?.tools) ? body.tools.map((tool: any) => tool?.function?.name ?? tool?.name) : []);
 
 describe('the run after a validate-time validator failure in the same daemon (system timers, in-process gateway)', () => {
-  it('does not offer the tool and records a registration notice, as a compile failure does', PROCESS_TIMEOUT, async () => {
+  it('does not offer the tool and records a registration notice, as a compile failure does', async () => {
     const stack = await startStack({ script: [scriptedToolCall(THROWING, {}, 'call_1'), answer('first done'), answer('second done')] }, MCP_SETTINGS);
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession({ permissionMode: 'bypassPermissions', bypassAllowed: true });

@@ -1,14 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const TOOL_INPUT = 'Use the Read tool';
 
 describe('policyFor failures at run level (system timers, in-process gateway)', () => {
-  it('a session tmp dir replaced by a symlink fails the run with config_error', PROCESS_TIMEOUT, async () => {
+  it('a session tmp dir replaced by a symlink fails the run with config_error', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession();
@@ -22,7 +23,7 @@ describe('policyFor failures at run level (system timers, in-process gateway)', 
     expect(fs.readdirSync(elsewhere)).toEqual([]);
   });
 
-  it('EACCES on the sessions root (mode 000) fails the run with config_error instead of requeueing it', PROCESS_TIMEOUT, async () => {
+  it('EACCES on the sessions root (mode 000) fails the run with config_error instead of requeueing it', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession();

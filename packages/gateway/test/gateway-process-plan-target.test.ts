@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { openResponsesTextReply, startFakeOpenResponses } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, startFakeOpenResponses } from '@momonga/testkit';
 import { postJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, makeHome, writeSettings } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PLAN_TEXT = 'target gpt uses plan profile chatgpt, which this gateway does not serve yet';
 

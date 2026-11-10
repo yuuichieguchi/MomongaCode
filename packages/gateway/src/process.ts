@@ -49,7 +49,7 @@ import {
 } from '@momonga/foundation';
 import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
-import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
+import { installTrust, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
   definePriceTable,
@@ -756,13 +756,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     if ('error' in started) throw started.error;
     const { settings } = started;
     stopValues.remember(settings.gateway);
-    const outboundNetworkOf = async (section: ResolvedSettings['network']): Promise<OutboundNetwork> => {
+    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
       const config = resolveNetwork(section, options.env);
-      const outbound: OutboundNetwork = { config, trust: await installTrust(config, files) };
-      for (const failure of outbound.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+      const outbound: OutboundNetwork = { config, trust: await installTrust(config, files, installSignal === undefined ? {} : { signal: installSignal }) };
+      for (const failure of outbound.trust.failures) logger.warn(trustFailureText(failure));
       return outbound;
     };
-    const network = await outboundNetworkOf(settings.network);
+    const network = await outboundNetworkOf(settings.network, signal);
     signal?.throwIfAborted();
     await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
     const hmacKey = secretKeyFile(paths.gatewayKey, {
@@ -787,7 +787,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       cache,
       signal: lifetime.signal,
       inputsOf: derivedInputsOf('D2'),
-      derive: async (current) => telemetryOf(current, await outboundNetworkOf(current.network)),
+      derive: async (current, _previous, deriveSignal) => telemetryOf(current, await outboundNetworkOf(current.network, deriveSignal)),
       retire: async (retired) => {
         await retired.forceFlush();
         await retired.shutdown();
@@ -957,7 +957,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
     const deriveEpoch = async (shared: GatewayEpochsShared, current: ResolvedSettings, previous: ProcessEpoch | undefined, keySignal: AbortSignal): Promise<ProcessEpoch> => {
       const networkDigest = settingsInputsDigest(current.network ?? null);
-      const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network);
+      const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
       const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];

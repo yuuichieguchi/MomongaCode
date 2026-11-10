@@ -1,6 +1,6 @@
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
@@ -10,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-pro
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const PROXY_PASSWORD = 'proxy-password-0123456789';
 const body = { model: 'fast', input: userInput('hi') };
@@ -98,7 +100,7 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
   return { status: response.status, text: await response.text() };
 };
 
-describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: the proxy password is a credential', () => {
   it.for([
     { label: 'the network.httpsProxy setting', network: { httpsProxy: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` }, env: {} },
     { label: 'the HTTPS_PROXY variable', network: undefined, env: { HTTPS_PROXY: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` } },
@@ -120,7 +122,7 @@ describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_
   });
 });
 
-describe('gateway: a model call to a remote target goes through the configured proxy', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call to a remote target goes through the configured proxy', () => {
   it('sends the CONNECT to the proxy from network.httpsProxy and names the proxy hop and its source when it refuses', async (context) => {
     const proxy = await startRefusingProxy(context);
     const remote = {
@@ -156,7 +158,7 @@ const REMOTE_TARGET = {
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
 };
 
-describe('gateway: a model call through a proxy that never answers CONNECT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call through a proxy that never answers CONNECT', () => {
   it('ends every attempt at the model headers bound and names the proxy hop and its source', async (context) => {
     const proxy = await startSilentProxy(context);
     const clock = createFakeClock(Date.now());

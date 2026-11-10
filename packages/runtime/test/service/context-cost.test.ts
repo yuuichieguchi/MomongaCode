@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
 import { expectSchema, startService } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const TOTALS = { calls: 1, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 2, outputTokens: 3, cachedInputTokens: 0, cacheReadNotReportedCalls: 0, cacheReadUnpricedCalls: 0, priceNotRecordedCalls: 0, amount: 0.5, currency: 'USD', priceVersions: ['v1'], unpriced: {}, roles: {} };
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, createPinnedDerivation, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import type { ResolvedSettings } from '@momonga/config';
-import { installTrust } from '@momonga/foundation';
+import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -331,10 +331,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const outboundNetworkOf = async (section: ResolvedSettings['network']): Promise<OutboundNetwork> => {
+    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal): Promise<OutboundNetwork> => {
       const networkConfig = resolveNetwork(section, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem);
-      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+      const trust = await installTrust(networkConfig, nodeFileSystem, { signal: installSignal });
+      for (const failure of trust.failures) logger.warn(trustFailureText(failure));
       return { config: networkConfig, trust };
     };
     const { cache, settings } = await step('settings', async () => {
@@ -468,9 +468,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       cache,
       signal: lifetime.signal,
       inputsOf: derivedInputsOf('D2'),
-      derive: async (current) => {
+      derive: async (current, _previous, deriveSignal) => {
         const resolved = resolveTelemetrySettings(current.telemetry);
-        const outbound = await outboundNetworkOf(current.network);
+        const outbound = await outboundNetworkOf(current.network, deriveSignal);
         const telemetry = createTelemetry({
           serviceName: 'momonga-runtime',
           serviceVersion: version,

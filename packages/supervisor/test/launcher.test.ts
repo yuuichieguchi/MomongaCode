@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DAEMON_MARKER_FD, LIFELINE_FD, isProcessAlive, FIRST_GENERATION } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { childStdio, contractArgs, resolveLaunch } from '../src/launcher.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CHILD_FIXTURE = fileURLToPath(new URL('./fixtures/p2-child.ts', import.meta.url));
 const MANAGER_FIXTURE = fileURLToPath(new URL('./fixtures/p2-manager-fixture.ts', import.meta.url));
@@ -103,7 +105,7 @@ describe('stdio layout', () => {
   });
 });
 
-describe('spawn options', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('spawn options', () => {
   it('children are spawned detached', (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
@@ -157,7 +159,7 @@ describe('spawn options', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   });
 });
 
-describe('signals with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('signals with real processes', () => {
   it('a group SIGTERM to the supervisor\'s group does not reach a child', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const termFile = path.join(home, 'terms.log');

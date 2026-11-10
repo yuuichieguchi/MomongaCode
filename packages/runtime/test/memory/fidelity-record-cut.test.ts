@@ -7,8 +7,9 @@ import { seeded } from '../../../store/test/support/seeded.ts';
 import { mustRun, rawDb } from '../../../store/test/helpers.ts';
 import { chainBound, directFidelity, oracleAttested, threadFidelity, threadOf } from './record-cut-support.ts';
 import type { FidelityReply } from './fidelity-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 600_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const ABSENT: ClaimedToken = { token: 'npm run never-recorded', claim: 'executed' };
 

@@ -4,8 +4,9 @@ import { FIDELITY_EVENT_TYPES, createFidelityFold } from '../../src/memory/fidel
 import { enqueue, mustClaim, rawDb } from '../../../store/test/helpers.ts';
 import { deniedCall, fidelityEnv, modelSaid, reconciledCall, startedCall, unfinishedCall } from './fidelity-fixture.ts';
 import type { Claim } from './fidelity-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 300_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const TOKEN = 'make deploy-staging';
 

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@momonga/config';
 import { HOST_RULE_ENFORCEMENT, ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import type { MemoryRecord } from '@momonga/protocol';
@@ -18,6 +18,8 @@ import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
 
@@ -72,7 +74,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   return { head, candidates };
 };
 
-describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('a candidate and the real evidence runner', () => {
   it('binds the commit that git reports for HEAD, beside the file and the passing check', async (context) => {
     const { head, candidates } = await reflectInRepository(context, { trusted: true });
     expect(candidates).toHaveLength(1);

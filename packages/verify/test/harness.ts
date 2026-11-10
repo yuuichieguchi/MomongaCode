@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, afterEach, beforeAll } from 'vitest';
+import { afterAll, afterEach, beforeAll, vi } from 'vitest';
 import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { PermissionRule, PolicyFilesystem, RuleEffect } from '@momonga/policy';
@@ -9,6 +9,8 @@ import type { PermissionMode } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import { openZ3, resolveInstalledZ3, verifyPermissions } from '../src/index.ts';
 import type { SecretLocation, VerificationReport, Z3Engine } from '../src/index.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const cleanups: Array<() => void> = [];
 

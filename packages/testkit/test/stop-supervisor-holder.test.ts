@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, acquireProcessLock, ensureGenerationDirs, ensureMomongaDirs, inspectProcessLock, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, registerCleanup, startLockHolder, stopSupervisorHolder, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const preparedHome = async (context: CleanupContext): Promise<{ home: string; lockPath: string }> => {
   const home = withTempDir(context, { asHome: true });
@@ -11,7 +13,7 @@ const preparedHome = async (context: CleanupContext): Promise<{ home: string; lo
   return { home, lockPath: firstGeneration(paths).locks.supervisor };
 };
 
-describe('stopSupervisorHolder', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('stopSupervisorHolder', () => {
   it('kills the process that holds the supervisor lock of a home and returns once the lock is free', async (context) => {
     const { home, lockPath } = await preparedHome(context);
     const holder = await startLockHolder(context, lockPath);

@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, UNMEASURED_CAPABILITY, createLockCapability, createMarker, momongaLayout, readAttemptRecord, readMarkerGroup, recordMarkerGroup } from '@momonga/foundation';
 import type { LockCapabilityProbe } from '@momonga/foundation';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { trackGroup } from './builtins/fixtures.ts';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, createHostSandbox, makeLayout } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -47,7 +49,7 @@ describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under
     return { marker, handle, runChild };
   };
 
-  it('refuses the child opening its marker file for writing by path, even when a session root contains the whole home', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('refuses the child opening its marker file for writing by path, even when a session root contains the whole home', async () => {
     const { marker, handle, runChild } = await setup();
     try {
       const before = fs.readFileSync(marker, 'utf8');
@@ -66,7 +68,7 @@ describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under
     }
   });
 
-  it('refuses the child writing through the marker descriptor it inherits', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('refuses the child writing through the marker descriptor it inherits', async () => {
     const { marker, handle, runChild } = await setup();
     try {
       const before = fs.readFileSync(marker, 'utf8');
@@ -79,7 +81,7 @@ describe.runIf(HAS_REAL_SANDBOX).each(capabilities)(`a spawn's marker file under
     }
   });
 
-  it('refuses the child forging the attempt record through the inherited descriptor, so the ignored byte and every spent byte stay as the host wrote them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('refuses the child forging the attempt record through the inherited descriptor, so the ignored byte and every spent byte stay as the host wrote them', async () => {
     const { marker, handle, runChild } = await setup();
     try {
       const before = fs.readFileSync(marker, 'utf8');

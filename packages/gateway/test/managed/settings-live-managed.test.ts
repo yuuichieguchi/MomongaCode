@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import type { ManagedInstance } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
 import { makeDir, postJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
 import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome } from '../gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type DumpRecord = { argv: string[]; pid: number };
 
@@ -75,7 +77,7 @@ describe('S1 managed incarnations: the stem of a serving instance names its inca
   });
 });
 
-describe('S1 managed targets under a settings change (design-settings-live 3.1)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 managed targets under a settings change (design-settings-live 3.1)', () => {
   it('a changed managed definition starts a second incarnation while the first call is in flight, and the new request does not wait on the old lock', async () => {
     const { fm, dumpFile, home } = await setup();
     replaceSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(512) } }, aliases: { default: ['apple'] } } });

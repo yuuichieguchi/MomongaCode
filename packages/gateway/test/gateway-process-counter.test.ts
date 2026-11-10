@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { SECURITY_BINARY, codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
@@ -10,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePath
 import type { SecretHostProgram } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
 const SECRET_NAME = 'counter-test-secret';
@@ -29,7 +31,7 @@ const resolvedPrimary = async (home: string) => {
   return target;
 };
 
-describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the counters a started gateway lists', () => {
   it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

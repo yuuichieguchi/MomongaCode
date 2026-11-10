@@ -1,13 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
 import { keyFor } from '../helpers.ts';
 import { HAS_RG, RG_PATH, makeBuiltins, onCleanup, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_TIME = 1_700_000_000;
 const ACCEPT = { mode: 'acceptEdits' } as const;
@@ -84,7 +86,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
       expect(result.output).not.toContain('deeper');
     });
 
-    it('adds no unreadable-path note for readDenied entries under Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    it('adds no unreadable-path note for readDenied entries under Seatbelt', async () => {
       const { tools, visible, vault } = await makeVaultTree(true);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha', output_mode: outputMode }, { sandboxPolicy: withReadDenied(tools, vault), env: { PATH: RG_PATH } }));
       expect(result.output).toContain(path.relative(tools.layout.project, visible));
@@ -97,7 +99,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
 describe('review 2: non-regular files are refused without opening them', () => {
   const PROMPT_MS = 3000;
 
-  it('Read refuses a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('Read refuses a FIFO promptly', async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     const outcome = await runWithin(tools, 'Read', { file_path: fifo }, {}, PROMPT_MS, () => unblockFifo(fifo));
@@ -106,7 +108,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
   });
 
-  it('Edit refuses a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('Edit refuses a FIFO promptly', async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     tools.session.readLedger.set(fifo, { sha256: sha256(''), mtimeMs: fs.statSync(fifo).mtimeMs });
@@ -116,7 +118,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(outcome.result?.output).toMatch(/^pipe is not a regular file/);
   });
 
-  it('Write refuses to overwrite a FIFO promptly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('Write refuses to overwrite a FIFO promptly', async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     tools.session.readLedger.set(fifo, { sha256: sha256(''), mtimeMs: fs.statSync(fifo).mtimeMs });
@@ -127,7 +129,7 @@ describe('review 2: non-regular files are refused without opening them', () => {
     expect(fs.lstatSync(fifo).isFIFO()).toBe(true);
   });
 
-  it('Grep refuses a FIFO path promptly, before it locates ripgrep', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('Grep refuses a FIFO path promptly, before it locates ripgrep', async () => {
     const tools = await makeBuiltins();
     const fifo = makeFifo(tools.layout.project, 'pipe');
     let located = 0;
@@ -324,7 +326,7 @@ describe('review 7: symlinked files into readDenied and dangling symlinks', () =
     expect(result.output.split('\n')).toEqual([newer, older].map((file) => path.relative(tools.layout.project, file)));
   });
 
-  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips them', async () => {
     const { tools, older, newer } = await makeLinkedTree(true);
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: RG_PATH } }));
     expect(result.status).toBe('completed');
@@ -352,7 +354,7 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
     expect(result.output.split('\n')).toEqual([path.relative(tools.layout.project, visible)]);
   });
 
-  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips a subtree whose readDenied entry differs in case', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox skips a subtree whose readDenied entry differs in case', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const visible = put(tools, 'visible.txt', 'alpha', 1);
     put(tools, 'vault/secret.txt', 'alpha', 2);
@@ -378,7 +380,7 @@ describe('review 9: Grep parity for type and .rgignore', () => {
       expect(result.output).toContain('swift');
     });
 
-    it.runIf(available)('honors .rgignore over .ignore over .gitignore', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    it.runIf(available)('honors .rgignore over .ignore over .gitignore', async () => {
       const tools = await makeBuiltins({ realSandbox });
       const tree = makeIgnoreTree(tools);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: envPath } }));

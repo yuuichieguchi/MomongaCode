@@ -13,6 +13,8 @@ import { CHILD_FIXTURE } from './support/p2-real-children.ts';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const SUPERVISOR_FIXTURE = fileURLToPath(new URL('./fixtures/p2-supervisor-fixture.ts', import.meta.url));
 const MARKER_NAME = /^runtime-[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -93,7 +95,7 @@ describe('openDaemonMarker', () => {
   });
 });
 
-describe('daemon markers at spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('daemon markers at spawn', () => {
   it('marker is created 0600 before spawn and its fd is passed read-only as stdio[4]', (context) => {
     const harness = createManagerHarness(context);
     const scratchDir = withTempDir(context);
@@ -174,7 +176,7 @@ describe('daemon markers at spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (
   });
 });
 
-describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('daemon markers at child exit', () => {
   it('reap failure at child exit is a warning and the role still restarts', async (context) => {
     const rejections = trackUnhandled(context);
     for (const error of [new Error('lsof failed with status 2'), errnoError('ENOENT', 'spawn /usr/sbin/lsof ENOENT')]) {

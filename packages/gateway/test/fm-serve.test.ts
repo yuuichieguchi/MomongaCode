@@ -10,6 +10,8 @@ import { createManagedServer, type ExecOptions, type ExecResult, type ManagedSer
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 interface FakeChildOptions {
   manualServe?: boolean;
   healthy?: boolean;
@@ -457,7 +459,7 @@ describe('createManagedServer start', () => {
   });
 });
 
-describe('createManagedServer socket ownership', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createManagedServer socket ownership', () => {
   it('waits for a live server that owns the socket path without the instance lock only until the start deadline, then ends unhealthy with no launch and leaves that socket (items 12 and 18; section 18, item 7)', async () => {
     const socketPath = makeSocketPath();
     const owner = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath });

@@ -1,7 +1,7 @@
 import { createDecipheriv } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CREDENTIAL_KEY_LOCK_NAME,
   CREDENTIAL_KEY_MARKER_FILE,
@@ -16,6 +16,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit'
 import { createFakeKeyStore, recordFileOf, steppedPorts } from './support/credential-key-fakes.ts';
 import type { FakeKeyStore } from './support/credential-key-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FORMAT = 'momonga-credential/1';
 
@@ -235,7 +237,7 @@ describe('encrypted credential store: no OS secret store on the host (N81, NoPla
   });
 });
 
-describe('encrypted credential store: waits use the signal of the operation (N81)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('encrypted credential store: waits use the signal of the operation (N81)', () => {
   it('a writer waiting on credential-key.lock keeps waiting past any fixed timeout and stops only on its own signal', async (context) => {
     const given = setup();
     fs.mkdirSync(given.stateDirectory, { recursive: true });

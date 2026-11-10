@@ -1,17 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { request } from 'undici';
 import { FIRST_GENERATION, generationLayout, momongaPaths } from '@momonga/foundation';
 import { runGatewayEntry } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeEntryIo } from '@momonga/testkit';
 import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const VERSION = '1.10.0-debug-tcp-test';
 const TOKEN = 'momonga-entry-debug-token';
-const ENTRY_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
-
 const launch = async (context: CleanupContext, extraFlags: (home: string, aux: string) => string[]): Promise<{ io: FakeEntryIo; exit: Promise<number>; home: string; aux: string }> => {
   const aux = withTempDir(context);
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
@@ -39,7 +39,7 @@ const tokenFile = (aux: string, mode = 0o600, contents = `${TOKEN}\n`): string =
 };
 
 describe('gateway entry debug listener flags', () => {
-  it('opens the loopback listener on the requested port, logs the bound port and demands the token', ENTRY_TIMEOUT, async (context) => {
+  it('opens the loopback listener on the requested port, logs the bound port and demands the token', async (context) => {
     const { io } = await launch(context, (_home, aux) => ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile(aux)}`]);
     await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(io.exits).toEqual([]);
@@ -55,7 +55,7 @@ describe('gateway entry debug listener flags', () => {
     await authorized.body.dump();
   });
 
-  it('opens no TCP listener without the flags', ENTRY_TIMEOUT, async (context) => {
+  it('opens no TCP listener without the flags', async (context) => {
     const { io, home } = await launch(context, () => []);
     await until(() => io.stdoutLines().length > 0 || io.exits.length > 0, 'the ready line or an exit', 30_000);
     expect(parseJsonLines(io.stderrLines()).some((line) => line['msg'] === 'gateway.debug_listener')).toBe(false);
@@ -68,7 +68,7 @@ describe('gateway entry debug listener flags', () => {
     { name: 'a relative token file', flags: () => ['--debug-tcp-port=0', '--debug-tcp-token-file=relative.token'] },
     { name: 'a token file readable by others', flags: (aux: string) => ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile(aux, 0o644)}`] },
     { name: 'an empty token file', flags: (aux: string) => ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile(aux, 0o600, '\n')}`] },
-  ])('exits 78 for $name', ENTRY_TIMEOUT, async ({ flags }, context) => {
+  ])('exits 78 for $name', async ({ flags }, context) => {
     const { exit, io } = await launch(context, (_home, aux) => flags(aux));
     expect(await exit).toBe(78);
     expect(io.stdoutText()).toBe('');

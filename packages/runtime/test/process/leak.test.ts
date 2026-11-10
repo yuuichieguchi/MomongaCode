@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, waitFor } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, waitFor } from '@momonga/testkit';
 import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 import type { Stack } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const RUNTIME_RESOURCE_KINDS = new Set(['Timeout', 'PipeServerWrap', 'PipeWrap', 'ProcessWrap']);
 
 const counts = (): Map<string, number> => {
@@ -31,7 +32,7 @@ const runOnce = async (stack: Stack): Promise<void> => {
 };
 
 describe('leak contract (system timers, in-process gateway)', () => {
-  it('leaves no runtime-created handles after a clean close', PROCESS_TIMEOUT, async () => {
+  it('leaves no runtime-created handles after a clean close', async () => {
     const stack = await startStack();
     await runOnce(stack);
     await afterMicrotasks();

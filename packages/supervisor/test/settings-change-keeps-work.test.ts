@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SHUTDOWN_MARGIN_MS, runtimeMaxCloseMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import { fakeSettingsWatch, pump, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, HarnessOptions } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const STOP_WOULD_COMPLETE_WITHIN_MS = runtimeMaxCloseMs(30_000) + SHUTDOWN_MARGIN_MS;
 
@@ -39,7 +41,7 @@ const expectServingProcessesUntouched = (h: Watched): void => {
 
 const OTLP = { otlp: { endpoint: 'http://127.0.0.1:4318' } };
 
-describe('decision 76: a user settings change never stops the processes serving in-flight work', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('decision 76: a user settings change never stops the processes serving in-flight work', () => {
   it('a models change signals no child, spawns none and logs settings.changed', async (context) => {
     const h = await watched(context);
     await changeSettingsAndLetItSettle(h, validSettings({ model: 'gpt-y' }));

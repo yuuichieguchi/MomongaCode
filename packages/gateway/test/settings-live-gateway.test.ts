@@ -3,7 +3,7 @@ import http from 'node:http';
 import net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, generationLayout, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
@@ -25,6 +25,8 @@ import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, Otlp
 import { PROCESS_VERSION, baseEnv, ccTarget, homePaths } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const NO_GRACE = { closeGraceMs: 0, managedServerStopGraceMs: 0 };
 
@@ -94,7 +96,7 @@ const heldRequest = async (client: UdsClient, fake: FakeChatCompletionsServer, p
   return { hold, settled };
 };
 
-describe('S1 gateway: each request pins the router it started with (design-settings-live 3.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: each request pins the router it started with (design-settings-live 3.1)', () => {
   it('a request in flight keeps its adapter after the alias is repointed; a request that starts after the change uses the new target', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
@@ -162,7 +164,7 @@ describe('S1 gateway: each request pins the router it started with (design-setti
   });
 });
 
-describe('S1 gateway: breaker and gate are carried over by the identity of the target (design-settings-live 3.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: breaker and gate are carried over by the identity of the target (design-settings-live 3.1)', () => {
   const gated = (fake: FakeChatCompletionsServer, extra: Record<string, unknown> = {}) => ccTarget(fake.socketPath, { maxConcurrency: 1, ...extra });
 
   it('a change that leaves the target unchanged keeps one gate: a request of the new epoch waits for the in-flight one of the old epoch', async (context) => {
@@ -196,7 +198,7 @@ describe('S1 gateway: breaker and gate are carried over by the identity of the t
   });
 });
 
-describe('S1 gateway: the redactor learns the credentials of a target added by a change (design-settings-live 3.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: the redactor learns the credentials of a target added by a change (design-settings-live 3.1)', () => {
   it('redacts the apiKeyEnv value of a target added after start', async (context) => {
     const KEY_ENV = 'MOMONGA_TEST_ADDED_KEY';
     const KEY = 'added-target-credential-0123456789';
@@ -212,7 +214,7 @@ describe('S1 gateway: the redactor learns the credentials of a target added by a
   });
 });
 
-describe('S1 gateway: pricing applies from the next request (design-settings-live 3.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: pricing applies from the next request (design-settings-live 3.3)', () => {
   it('a request that starts after a pricing change is priced with the new table', async (context) => {
     const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'], usageOf(11, 3))] });
     registerCleanup(context, () => upstream.close());
@@ -276,7 +278,7 @@ const remoteTarget = {
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
 };
 
-describe('S1 gateway: a changed network applies from the next connection (design-settings-live 3.4)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: a changed network applies from the next connection (design-settings-live 3.4)', () => {
   it('a request that starts after the change goes through the new proxy, and the running request keeps its connection open', async (context) => {
     const before = await startProxy(context, 'silent');
     const after = await startProxy(context, 'refuse');
@@ -299,7 +301,7 @@ describe('S1 gateway: a changed network applies from the next connection (design
 
 const spanTraces = (collector: OtlpCollector): Set<string> => new Set(decodeOtlpSpans(collector.requests).map((span) => span.traceId));
 
-describe('S1 gateway: the redactor learns the proxy password of a changed network (design-settings-live 3.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: the redactor learns the proxy password of a changed network (design-settings-live 3.1)', () => {
   it('redacts the password of a proxy set by a change from the answer and the log', async (context) => {
     const PROXY_PASSWORD = 'changed-proxy-password-0123456789';
     const initial = await startProxy(context, 'refuse');
@@ -318,7 +320,7 @@ describe('S1 gateway: the redactor learns the proxy password of a changed networ
   });
 });
 
-describe('S2 gateway telemetry: a span ends on the provider it started on (design-settings-live 3.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S2 gateway telemetry: a span ends on the provider it started on (design-settings-live 3.3)', () => {
   it('a span started before the change is exported by the old provider; a request after the change is exported by the new one', async (context) => {
     const first = await startOtlpCollector();
     registerCleanup(context, () => first.close());
@@ -339,7 +341,7 @@ describe('S2 gateway telemetry: a span ends on the provider it started on (desig
   });
 });
 
-describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)', () => {
   it('an edit a to b to a with a call in flight on the first epoch shares one gate for the counter of a', async (context) => {
     const a = await fakeUpstream(context);
     const definitionA = { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath, { maxConcurrency: 1 }) } } };
@@ -362,7 +364,7 @@ describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)
   });
 });
 
-describe('S1 gateway: a plan target added by a change is applied and served as unserved (design-settings-live 15.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S1 gateway: a plan target added by a change is applied and served as unserved (design-settings-live 15.3)', () => {
   it('a change that adds a plan target is applied: its alias fails each call with the unserved text, other targets serve', async (context) => {
     const a = await fakeUpstream(context);
     const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } });
@@ -415,7 +417,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   return client;
 };
 
-describe('S8 gateway side of the credential hand-over (design-settings-live 15.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S8 gateway side of the credential hand-over (design-settings-live 15.2)', () => {
   it('with the capability and the variable unset in its own environment, the gateway asks its supervisor and uses the value', async (context) => {
     const a = await fakeUpstream(context);
     let supervisor: { asked: Array<{ path: string; capability: string | undefined }> } | undefined;
@@ -463,7 +465,7 @@ const replyingSupervisor = async (context: CleanupContext, home: string, status:
   registerCleanup(context, () => new Promise<void>((resolve) => server.close(() => resolve())));
 };
 
-describe('S8 gateway: every supervisor reply that is not a value is unset, and its text goes nowhere (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S8 gateway: every supervisor reply that is not a value is unset, and its text goes nowhere (design-settings-live 15.6)', () => {
   it.for([
     { label: 'a status other than 200', status: 500, body: JSON.stringify({ error: { message: REPLY_MARKER } }) },
     { label: 'a body that does not parse', status: 200, body: `not json ${REPLY_MARKER}` },

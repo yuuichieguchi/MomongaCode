@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
@@ -6,6 +6,8 @@ import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, createUdsClien
 import { registerCleanup } from '@momonga/testkit';
 import { chatTarget, fakeSettingsWatch, pump, pumpUntil, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, SimpleResponse } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CREDENTIAL_ROUTE = '/v1/credentials/';
 const DECLARED_LATER = 'MOMONGA_TEST_ADDED_TARGET_KEY';
@@ -59,7 +61,7 @@ const gatewayCapability = (h: Watched): string => {
 
 const askForCredential = (context: CleanupContext, h: Watched, name: string): Promise<SimpleResponse> => requestCredential(context, h, name, gatewayCapability(h));
 
-describe('S6: the supervisor hands a declared environment credential to the gateway (design-settings-live section 12)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S6: the supervisor hands a declared environment credential to the gateway (design-settings-live section 12)', () => {
   it('a target added with apiKeyEnv naming a variable of the start environment gets its value with no restart', async (context) => {
     const h = await watched(context);
     await declareTargetsWithKeys(h, DECLARED_LATER);
@@ -111,7 +113,7 @@ describe('S6: the supervisor hands a declared environment credential to the gate
   });
 });
 
-describe('S6: the per-spawn capability ends with the child (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S6: the per-spawn capability ends with the child (design-settings-live 15.6)', () => {
   it('the capability of a gateway that exited answers nothing', async (context) => {
     const h = await watched(context);
     await declareTargetsWithKeys(h, DECLARED_LATER);
@@ -127,7 +129,7 @@ describe('S6: the per-spawn capability ends with the child (design-settings-live
   });
 });
 
-describe('S6: the per-spawn capability ends when a stop has confirmed the child gone (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('S6: the per-spawn capability ends when a stop has confirmed the child gone (design-settings-live 15.6)', () => {
   it('a gateway draining after SIGTERM keeps its capability; once its exit is confirmed the capability answers nothing', async (context) => {
     const h = await watched(context);
     await declareTargetsWithKeys(h, DECLARED_LATER);

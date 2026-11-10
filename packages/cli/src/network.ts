@@ -1,6 +1,6 @@
 import { createPinnedDerivation, createUserSettingsCache, derivedInputsOf, noKeptRecords, resolveNetwork } from '@momonga/config';
 import type { PinnedDerivation, ResolvedSettings } from '@momonga/config';
-import { createOutboundDispatcher, installTrust, outboundFetch } from '@momonga/foundation';
+import { HOST_READ_BOUND_MS, createOutboundDispatcher, systemTiming, installTrust, trustFailureText, outboundFetch } from '@momonga/foundation';
 import type { OutboundFetch, OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from './ports.ts';
 import { escapedLines } from './terminal-writer.ts';
@@ -11,10 +11,12 @@ const warn = (ports: NetworkPorts, message: string): void => {
   ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`);
 };
 
-const resolveAndInstall = async (ports: NetworkPorts, settings: ResolvedSettings): Promise<OutboundNetwork> => {
+const resolveAndInstall = async (ports: NetworkPorts, settings: ResolvedSettings, signal: AbortSignal): Promise<OutboundNetwork> => {
   const config = resolveNetwork(settings.network, ports.env);
-  const trust = await installTrust(config, ports.files);
-  for (const failure of trust.failures) warn(ports, `the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+  const bound = new AbortController();
+  const timer = systemTiming.setTimeout(() => bound.abort(new Error(`the read took longer than ${HOST_READ_BOUND_MS} ms`)), HOST_READ_BOUND_MS);
+  const trust = await installTrust(config, ports.files, { signal: AbortSignal.any([signal, bound.signal]) }).finally(() => systemTiming.clearTimeout(timer));
+  for (const failure of trust.failures) warn(ports, trustFailureText(failure));
   return { config, trust };
 };
 
@@ -29,7 +31,7 @@ const networksOf = (ports: NetworkPorts): PinnedDerivation<OutboundNetwork> => {
     cache: createUserSettingsCache({ home: ports.home, onWarning: (message) => warn(ports, message), keptRecords: noKeptRecords }),
     signal: processLifetime.signal,
     inputsOf: derivedInputsOf('D4'),
-    derive: (settings) => resolveAndInstall(ports, settings),
+    derive: (settings, _previous, signal) => resolveAndInstall(ports, settings, signal),
     retire: () => undefined,
     onWarning: (message) => warn(ports, message),
   });

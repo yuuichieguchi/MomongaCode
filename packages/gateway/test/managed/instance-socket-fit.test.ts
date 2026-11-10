@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } };
 const FITTING_TARGET = 'fm';
@@ -23,7 +25,7 @@ const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
 const unfitText = (target: string, byteLength: number, limit: number): string =>
   `the target "${target}": its server socket path is ${byteLength} bytes, longer than the ${limit} bytes this platform allows; choose a shorter target name`;
 
-describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of 18.2.5 (design-managed-servers section 18, item 4)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of 18.2.5 (design-managed-servers section 18, item 4)', () => {
   it('starts the gateway, answers the long-path target 412 target_not_ready with the 18.2.5 text, creates no socket or marker for it, and still serves the other target', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();

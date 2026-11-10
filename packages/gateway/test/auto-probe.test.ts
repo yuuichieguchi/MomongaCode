@@ -1,19 +1,21 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, createJsonLogger, FIRST_GENERATION, managedInstancePaths, momongaPaths, readMarkerGroup } from '@momonga/foundation';
 import { FM_SERVER, TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing } from '@momonga/protocol';
 import type { KnownProbeKey } from '@momonga/config';
 import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { readFileTool } from './cc-support.ts';
 import { fmRecordKey } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type ProbeServer = 'stall' | 'fail' | 'complete';
 
@@ -114,7 +116,7 @@ const expectProbing = (response: { status: number; body: { error: { code: string
 
 const probeStarted = (gateway: Awaited<ReturnType<typeof setup>>, count = 1) => until(() => gateway.probes().length === count, `probe fm serve number ${count} to start`);
 
-describe('the automatic probe of an fm target with no probe record', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the automatic probe of an fm target with no probe record', () => {
   describe('P3 NoRecordGets503 and RetryAfterIsHonest', () => {
     it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key', async () => {
       const gateway = await setup();
@@ -342,8 +344,16 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       const markers = path.join(gateway.home, '.momonga', 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', '_probe-fm');
 
       expectProbing(await gateway.send(false));
-      await until(() => fs.existsSync(markers) && fs.readdirSync(markers).length === 1, 'the probe fm serve is marked');
-      const pgid = await readMarkerGroup(path.join(markers, fs.readdirSync(markers)[0] as string));
+      const markerFile = (): string | undefined => {
+        if (!fs.existsSync(markers)) return undefined;
+        const entries = fs.readdirSync(markers);
+        return entries.length === 1 ? path.join(markers, entries[0] as string) : undefined;
+      };
+      await until(async () => {
+        const file = markerFile();
+        return file !== undefined && (await readMarkerGroup(file)) !== undefined;
+      }, 'the probe marker records the process group of the probe fm serve');
+      const pgid = await readMarkerGroup(markerFile() as string);
       if (pgid === undefined) throw new Error('the probe marker records no process group');
       registerCleanup(() => killGroupsForCleanup([pgid]));
 

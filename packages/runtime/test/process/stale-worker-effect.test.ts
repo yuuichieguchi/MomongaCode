@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import { HAS_SEATBELT, createRun, createSession, fenceFor, makeRuntimeFixture, makeTempHome, runBashThroughPort, writeUserSettings } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const LEASE_EXPIRY_MS = 30_001;
 const CALL_ID = 'call-1';
 
@@ -28,7 +29,7 @@ const takeOver = async () => {
 };
 
 describe.runIf(HAS_SEATBELT)('a worker whose lease was taken over, with a real Bash tool', () => {
-  it('starts no process when it reaches the first ledger write', PROCESS_TIMEOUT, async () => {
+  it('starts no process when it reaches the first ledger write', async () => {
     const { f, stale, fresh, key, effect, bash } = await takeOver();
     expect(stale.leaseToken).toBeLessThan(fresh.leaseToken);
 
@@ -45,7 +46,7 @@ describe.runIf(HAS_SEATBELT)('a worker whose lease was taken over, with a real B
     expect(f.store.idempotency.get(key)).toMatchObject({ s: 'COMPLETED' });
   });
 
-  it('starts no process when it resumes a record that the current holder created', PROCESS_TIMEOUT, async () => {
+  it('starts no process when it resumes a record that the current holder created', async () => {
     const { f, stale, fresh, key, effect, bash } = await takeOver();
     expect(f.store.idempotency.holding(fresh).begin(key, { expiresAt: f.clock.now() + 60_000, meta: { tool: 'Bash' } })).toEqual({ s: 'NEW' });
 

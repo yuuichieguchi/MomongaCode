@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { HISTORY_SNIPPET_MAX_CHARS } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { anchorsOf, harness } from './helpers.ts';
 import { finishedRun, indexAll, projectDir } from './search-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const OWN = { trusted: true, project: '/work/a' } as const;
 

@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
 import { onCleanup, writeInvalidUserSettings } from './helpers.ts';
 import { finishApprovingPrompts, launchRuntime, prepareStack, scriptedToolCall, startGateway, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const FINAL = ['COMPLETED', 'FAILED', 'CANCELLED'];
 const HOST_KIND = process.platform === 'darwin' ? 'seatbelt' : 'bubblewrap';
 const OTHER_KIND = process.platform === 'darwin' ? 'bubblewrap' : 'seatbelt';
@@ -17,7 +18,7 @@ const textReply = (text: string) => ({ kind: 'stream' as const, chunks: [{ delta
 const waitThenTouch = (go: string, started: string, target: string, done = `${started}.done`): string => `touch ${started}; while [ ! -e ${go} ]; do sleep 0.05; done; touch ${target}; touch ${done}`;
 
 describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (design-settings-live 3.2)', () => {
-  it('a batch started under the host sandbox keeps it after the setting changes to none; the next batch runs under none', PROCESS_TIMEOUT, async () => {
+  it('a batch started under the host sandbox keeps it after the setting changes to none; the next batch runs under none', async () => {
     const stack = await prepareStack((temp) => ({
       script: [
         scriptedToolCall('Bash', { command: waitThenTouch(path.join(temp.root, 'go'), path.join(temp.project, 'started'), path.join(temp.root, 'outside-1')) }),
@@ -40,7 +41,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect(fs.existsSync(path.join(stack.temp.root, 'outside-2'))).toBe(true);
   });
 
-  it('a background job started under the host sandbox keeps it after the setting changes to none, while the next batch runs under none', PROCESS_TIMEOUT, async () => {
+  it('a background job started under the host sandbox keeps it after the setting changes to none, while the next batch runs under none', async () => {
     const stack = await prepareStack((temp) => ({
       script: [
         scriptedToolCall('Bash', { command: waitThenTouch(path.join(temp.root, 'go'), path.join(temp.project, 'job-started'), path.join(temp.root, 'outside-job')), run_in_background: true }),
@@ -64,7 +65,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect(fs.existsSync(path.join(stack.temp.root, 'outside-job'))).toBe(false);
   });
 
-  it('health.sandbox alone, with no session or tool call before it, shows the kind set by a change', PROCESS_TIMEOUT, async () => {
+  it('health.sandbox alone, with no session or tool call before it, shows the kind set by a change', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
@@ -72,7 +73,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: HOST_KIND });
   });
 
-  it('health.sandbox shows the kind of the object the next batch takes', PROCESS_TIMEOUT, async () => {
+  it('health.sandbox shows the kind of the object the next batch takes', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
@@ -81,7 +82,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: HOST_KIND });
   });
 
-  it('a sandbox kind this host cannot run: admission refuses with the exact text and the R22-Q15 suffix, and the running run completes on the last good sandbox', PROCESS_TIMEOUT, async () => {
+  it('a sandbox kind this host cannot run: admission refuses with the exact text and the R22-Q15 suffix, and the running run completes on the last good sandbox', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const hold = stack.hold();
@@ -102,7 +103,7 @@ describe('S3 runtime sandbox: each tool batch pins the sandbox it started with (
 });
 
 describe('S2 runtime telemetry: a span ends on the provider it started on (design-settings-live 3.3)', () => {
-  it('a run that starts after a telemetry change is exported by the new provider', PROCESS_TIMEOUT, async () => {
+  it('a run that starts after a telemetry change is exported by the new provider', async () => {
     const before = await startOtlpCollector();
     onCleanup(() => before.close());
     const after = await startOtlpCollector();
@@ -123,7 +124,7 @@ describe('S2 runtime telemetry: a span ends on the provider it started on (desig
 });
 
 describe('S7 no rollback after apply: a tightened sandbox survives a broken file (design-settings-live 15.1, NoRollbackAfterApply)', () => {
-  it('c tightened and not yet recorded, the file breaks during a run, the next Bash call runs under c', PROCESS_TIMEOUT, async () => {
+  it('c tightened and not yet recorded, the file breaks during a run, the next Bash call runs under c', async () => {
     const stack = await prepareStack((temp) => ({ script: [scriptedToolCall('Bash', { command: `touch ${path.join(temp.root, 'outside-after-break')}` })] }));
     const record = firstGeneration(stack.temp.paths).settingsApplied;
     fs.mkdirSync(path.dirname(record), { recursive: true, mode: 0o700 });
@@ -150,7 +151,7 @@ describe('S7 no rollback after apply: a tightened sandbox survives a broken file
 });
 
 describe('S2 runtime telemetry: the tracer lease is held for the agent span of a run (design-settings-live 15.6)', () => {
-  it('a running run keeps its child spans on the old provider; the next run goes to the new one', PROCESS_TIMEOUT, async () => {
+  it('a running run keeps its child spans on the old provider; the next run goes to the new one', async () => {
     const before = await startOtlpCollector();
     onCleanup(() => before.close());
     const after = await startOtlpCollector();

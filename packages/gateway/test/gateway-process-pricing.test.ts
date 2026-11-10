@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const PRICE = { provider: 'acme', model: 'local-fake', effectiveFrom: '2026-01-01', inputPerMTok: 1_000_000, outputPerMTok: 2_000_000, currency: 'USD' };

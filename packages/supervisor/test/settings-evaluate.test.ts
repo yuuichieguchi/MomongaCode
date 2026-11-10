@@ -17,6 +17,8 @@ import {
 } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 type Watched = Harness & { watch: FakeSettingsWatch };
 
 const watched = async (context: CleanupContext, options: HarnessOptions = {}, waitReady = true): Promise<Watched> => {
@@ -49,7 +51,7 @@ const appliedModel = (h: Harness): unknown => {
   return Object.values(record.settings?.models?.targets ?? {})[0]?.model;
 };
 
-describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('supervisor-level settings evaluation', () => {
   it('a settings watch that cannot be established is one settings.warning, not a fatal', async (context) => {
     const throwingWatch = (() => {
       throw Object.assign(new Error('watch EMFILE'), { code: 'EMFILE' });

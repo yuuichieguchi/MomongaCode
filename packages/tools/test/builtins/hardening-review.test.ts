@@ -8,6 +8,8 @@ import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
 import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -93,7 +95,7 @@ describe('walking toward an allowed entry never reads inside the denied dir', ()
     expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
   });
 
-  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox finds the allowed file despite an ignore-all file in the denied dir', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox finds the allowed file despite an ignore-all file in the denied dir', async () => {
     const fx = await fixture(true);
     const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: RG_PATH, LANG: 'C' } }));
     expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
@@ -151,7 +153,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
   const grepFrom = async (tools: Builtins, sandboxPolicy: Builtins['sandboxPolicy']) =>
     resultOf(await tools.run('Grep', { pattern: 'needle', output_mode: 'content' }, { sandboxPolicy, env: { PATH: envPath, LANG: 'C' } }));
 
-  it.runIf(available)('reports a match under nested allowed entries exactly once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(available)('reports a match under nested allowed entries exactly once', async () => {
     const tools = await makeBuiltins({ realSandbox });
     const vault = path.join(tools.layout.project, 'vault');
     const deepFile = tools.write('vault/ok/deep/a.txt', 'needle here\n');
@@ -167,7 +169,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
     expect(matches[0]).toContain(path.relative(tools.layout.project, deepFile));
   });
 
-  it.runIf(available)('does not reach an allowed entry whose denied parent is ignored by the project', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(available)('does not reach an allowed entry whose denied parent is ignored by the project', async () => {
     const tools = await makeBuiltins({ realSandbox });
     const vault = path.join(tools.layout.project, 'vault');
     tools.write('.gitignore', 'vault/\n');
@@ -198,7 +200,7 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
   const grepIn = async (tools: Builtins, target: string, sandboxPolicy: Builtins['sandboxPolicy']) =>
     resultOf(await tools.run('Grep', { pattern: 'needle', path: target, output_mode: 'content' }, { sandboxPolicy, env: { PATH: envPath, LANG: 'C' } }));
 
-  it.runIf(available)('reports a match under a nested allowed entry exactly once when the target is the outer allowed entry', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(available)('reports a match under a nested allowed entry exactly once when the target is the outer allowed entry', async () => {
     const tools = await makeBuiltins({ realSandbox });
     const vault = path.join(tools.layout.project, 'vault');
     const deepFile = tools.write('vault/ok/deep/a.txt', 'needle deep\n');
@@ -214,7 +216,7 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
     expect(matches[0]).toContain(path.relative(tools.layout.project, deepFile));
   });
 
-  it.runIf(available)('finds a match in an allowed entry below a denied dir inside the target exactly once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(available)('finds a match in an allowed entry below a denied dir inside the target exactly once', async () => {
     const tools = await makeBuiltins({ realSandbox });
     const target = path.join(tools.layout.project, 'T');
     const denied = path.join(target, 'a', 'D');

@@ -12,8 +12,9 @@ import { callsStep, textStep } from './scripts.ts';
 import { envNeutralJson, requestInputs, settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, newFactsTrace, plantOldShapeChild, tracedStore } from './inherit-reference-support.ts';
 import type { FactsTrace } from './inherit-reference-support.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 
-vi.setConfig({ testTimeout: 600_000 });
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Shape = 'copy' | 'reference';
 
