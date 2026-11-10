@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Gateway, Upkeep, Variant
 
-ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds"}
+ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds", "noReconcile", "noTakeover"}
 ASSUME MaxV \in Nat \ {0, 1}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxSteps \in Nat \ {0}
@@ -446,6 +446,32 @@ GiveUpPromotion(g) ==
     /\ sup' = [sup EXCEPT ![g] = FALSE]
     /\ UNCHANGED <<jvars, gwv, xvars, tvars, dir, ver, stl, prom, dr, claimed, know, cvars, rvars, kvars>>
 
+PromotedCrash(g) ==
+    /\ crashes < MaxCrash
+    /\ g \in Gens
+    /\ sup[g]
+    /\ prom[g]
+    /\ crashes' = crashes + 1
+    /\ faulted' = TRUE
+    /\ sup' = [sup EXCEPT ![g] = FALSE]
+    /\ cs' = [c \in Clients |-> IF cs[c] = "connected" /\ conn[c] = g THEN "starting" ELSE cs[c]]
+    /\ msg' = [c \in Clients |-> IF cs[c] = "connected" /\ conn[c] = g THEN NoticeFor("reconnecting") ELSE msg[c]]
+    /\ conn' = [c \in Clients |-> IF conn[c] = g THEN 0 ELSE conn[c]]
+    /\ rq' = [c \in Clients |-> IF rq[c] = "open" /\ rqg[c] = g THEN "cut" ELSE rq[c]]
+    /\ rqg' = [c \in Clients |-> IF rq[c] = "open" /\ rqg[c] = g THEN 0 ELSE rqg[c]]
+    /\ gw' = [gw EXCEPT ![g] = IF gw[g] = "none" THEN "none" ELSE "gone"]
+    /\ gwOpen' = [gwOpen EXCEPT ![g] = 0]
+    /\ gwProbe' = [gwProbe EXCEPT ![g] = 0]
+    /\ UNCHANGED <<jvars, xvars, rvars, iv, nextGen, stopped, dir, ver, stl, prom, dr, claimed, know, cvars, cv, pend, starts, abortedRun, draft, rec, execFails, modal, modals, pin, gwUnanswered>>
+
+Takeover(r) ==
+    /\ Variant # "noTakeover"
+    /\ run[r] = "stepping"
+    /\ ~sup[at[r]]
+    /\ run' = [run EXCEPT ![r] = "queued"]
+    /\ at' = [at EXCEPT ![r] = 0]
+    /\ UNCHANGED <<jvars, gwv, xvars, tvars, gvars, cvars, stepsLeft, job, jat, kvars>>
+
 ChildMismatch(g) ==
     /\ g \in Gens
     /\ g = cur
@@ -482,6 +508,7 @@ Claim(r, g) ==
 
 StepEnd(r) ==
     /\ run[r] = "stepping"
+    /\ sup[at[r]]
     /\ stepsLeft' = [stepsLeft EXCEPT ![r] = stepsLeft[r] - 1]
     /\ run' = [run EXCEPT ![r] = IF stepsLeft[r] = 1 THEN "done" ELSE "queued"]
     /\ at' = [at EXCEPT ![r] = 0]
@@ -499,6 +526,7 @@ JobStart(j, r) ==
 
 JobEnd(j) ==
     /\ job[j] = "live"
+    /\ sup[jat[j]]
     /\ job' = [job EXCEPT ![j] = "ended"]
     /\ UNCHANGED <<jvars, gwv, xvars, tvars, gvars, cvars, run, stepsLeft, at, jat, kvars>>
 
@@ -683,6 +711,7 @@ OwnerStop(j) ==
     /\ UNCHANGED <<tvars, gvars, cvars, run, stepsLeft, at, jat, kvars, jvars, gwv, xvars>>
 
 Reconcile(j) ==
+    /\ Variant # "noReconcile"
     /\ job[j] = "live" /\ (~sup[jat[j]] \/ Variant = "reconcileLive")
     /\ job' = [job EXCEPT ![j] = "killed"]
     /\ UNCHANGED <<tvars, gvars, cvars, run, stepsLeft, at, jat, kvars, jvars, gwv, xvars>>
@@ -710,9 +739,9 @@ Next ==
         \/ GiveUp(c) \/ StarterCrash(c) \/ OpenModal(c) \/ CloseModal(c) \/ Exec(c) \/ ExecFail(c) \/ Finish(c)
         \/ Type(c) \/ Send(c) \/ SendRead(c) \/ AnswerRead(c) \/ Notified(c)
     \/ \E c \in Clients, v \in 1..MaxV : StartClient(c, v)
-    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ GiveUpPromotion(g) \/ ChildMismatch(g)
+    \/ \E g \in Gens : SupCrash(g) \/ SupClaim(g) \/ Promote(g) \/ Notify(g) \/ Exit(g) \/ Reap(g) \/ GiveUpPromotion(g) \/ PromotedCrash(g) \/ ChildMismatch(g)
     \/ UserStop
-    \/ \E r \in Runs : Submit(r) \/ StepEnd(r) \/ \E g \in Gens : Claim(r, g)
+    \/ \E r \in Runs : Submit(r) \/ StepEnd(r) \/ Takeover(r) \/ \E g \in Gens : Claim(r, g)
     \/ \E j \in Jobs, r \in Runs : JobStart(j, r)
     \/ \E j \in Jobs : JobEnd(j)
     \/ \E g \in Gens : Expire(g)
@@ -731,6 +760,8 @@ Fairness ==
     /\ \A g \in Gens : WF_vars(SupClaim(g)) /\ WF_vars(Promote(g)) /\ WF_vars(Notify(g)) /\ WF_vars(Exit(g)) /\ WF_vars(Reap(g))
     /\ \A r \in Runs : WF_vars(StepEnd(r)) /\ \A g \in Gens : WF_vars(Claim(r, g))
     /\ (Variant # "killDropped" => \A j \in Jobs : WF_vars(JobEnd(j)))
+    /\ \A j \in Jobs : WF_vars(Reconcile(j))
+    /\ \A r \in Runs : WF_vars(Takeover(r))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -759,6 +790,10 @@ PruneBelowLive == [][pb' # pb => (\A h \in Gens : sup[h] => ver[h] >= pb')]_vars
 GwNoNewCallWhileRetiring == [][\A g \in Gens : gwOpen'[g] > gwOpen[g] => gw[g] = "serving"]_vars
 
 GwEnds == \A g \in Gens : gw[g] = "retiring" ~> gw[g] = "gone"
+
+OrphanJobEnds == \A j \in Jobs : (job[j] = "live" /\ ~sup[jat[j]]) ~> job[j] # "live"
+
+OrphanRunYields == \A r \in Runs : (run[r] = "stepping" /\ ~sup[at[r]]) ~> run[r] # "stepping"
 
 StopEnds == \A g \in Gens : (dr[g] /\ sup[g]) ~> ~sup[g]
 

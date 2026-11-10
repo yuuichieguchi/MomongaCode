@@ -3612,6 +3612,51 @@
       "note": "new row (gateway together with jobs and kill, one client, MaxV 2, no sweep or prune); one worker, the only TLC process of the session, 1-minute load 5.3 at start"
     },
     {
+      "config": "UpdateSwitch.crashJobs",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 317324,
+      "measuredSeconds": 436.93,
+      "measuredCpuSeconds": 450.79,
+      "budgetCpuSeconds": 905,
+      "note": "new row (a promoted generation crashes under MaxCrash 1 with a live job or a stepping run; one client, MaxV 2); one worker, 1-minute load 5.6 at start"
+    },
+    {
+      "config": "UpdateSwitch.noReconcile",
+      "role": "evidence",
+      "expect": {
+        "violates": "OrphanJobEnds",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 22159,
+      "measuredSeconds": 4.39,
+      "measuredCpuSeconds": 6.5,
+      "budgetCpuSeconds": 16,
+      "note": "new row; one worker, 1-minute load 6.5 at start"
+    },
+    {
+      "config": "UpdateSwitch.noTakeover",
+      "role": "evidence",
+      "expect": {
+        "violates": "OrphanRunYields",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 22036,
+      "measuredSeconds": 4.35,
+      "measuredCpuSeconds": 6.49,
+      "budgetCpuSeconds": 16,
+      "note": "new row; one worker, 1-minute load 6.5 at start"
+    },
+    {
       "config": "UpdateSwitch.sessions",
       "role": "check",
       "expect": "holds",
@@ -4528,11 +4573,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 142214,
-      "measuredSeconds": 6.14,
-      "measuredCpuSeconds": 13.82,
-      "budgetCpuSeconds": 31,
-      "note": "state space changed by the 2026-11-10 model edits; time not re-measured (run started at 1-minute load 25.9, gate 15): re-measure in the quiet window"
+      "distinctStates": 306695,
+      "measuredSeconds": 15.11,
+      "measuredCpuSeconds": 19.46,
+      "budgetCpuSeconds": 42
     },
     {
       "config": "UpdateSwitch.sessionsDeep",
