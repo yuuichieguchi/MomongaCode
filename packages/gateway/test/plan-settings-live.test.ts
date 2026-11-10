@@ -7,13 +7,16 @@ import { planProfileOf } from '@momonga/config';
 import type { PlanProfile, PlanProfileOAuth } from '@momonga/config';
 import { FIRST_GENERATION, createFileCredentialStore, createUdsClient, credentialFileFor, fixedSocket, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
-import { startGatewayProcess } from '@momonga/gateway';
+import { saveEndpointRecord, startGatewayProcess } from '@momonga/gateway';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
 import { getJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, homePaths } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { startFake } from './cc-support.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { makeReport } from './report-fixture.ts';
 import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, sessionsDirectory, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
@@ -372,5 +375,119 @@ describe('O-R5-6 (K) 5: the plan paths that read settings follow the one rule of
     await signInAs(gateway, SPARE);
     expect(JSON.parse(fs.readFileSync(recordFile(gateway, SPARE), 'utf8'))).toMatchObject({ state: 'active', account: SPARE });
     await gateway.close();
+  });
+});
+
+const NO_STOP_GRACE = { closeGraceMs: 0, managedServerStopGraceMs: 0 };
+
+const unpinnedSettings = (capabilities: boolean) => ({
+  credentials: { plaintextTokenFiles: true },
+  gateway: NO_STOP_GRACE,
+  models: {
+    aliases: { default: ['gpt'] },
+    targets: { gpt: { adapter: 'open-responses', model: 'plan-model', ...(capabilities ? { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } } : {}), plan: { profile: PROFILE_ID } } },
+  },
+});
+
+const accessTokenOf = (gateway: PlanGateway, account: string): string => String((JSON.parse(fs.readFileSync(recordFile(gateway, account), 'utf8')) as Record<string, unknown>)['access_token']);
+
+const responsePosts = (gateway: PlanGateway) => gateway.upstream.requests.filter((request) => request.method === 'POST');
+
+const bearerOf = (request: { headers: Record<string, unknown> }): string => String(request.headers['authorization'] ?? '');
+
+const askDefault = async (gateway: PlanGateway): Promise<{ status: number; body: any }> => {
+  const response = await clientFor(gateway.socketPath).request({
+    method: 'POST',
+    path: '/v1/responses',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }),
+  });
+  const text = await response.text();
+  return { status: response.status, body: text === '' ? undefined : JSON.parse(text) };
+};
+
+describe('O-R5-6 L3: the served account, the reported numbers and the output policy are components of the part key and the counter', () => {
+  it('a request in flight keeps its part when the active account switches', async () => {
+    let answered = 0;
+    const gateway = await startPlanGateway({
+      plaintextTokenFiles: true,
+      respond: () => {
+        answered += 1;
+        return answered === 1 ? { kind: 'hang' } : openResponsesTextReply(['hi']);
+      },
+    });
+    const heldClient = createUdsClient(fixedSocket(gateway.socketPath));
+    try {
+      await signInAs(gateway, ACCOUNT);
+      await signInAs(gateway, SPARE);
+      expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: ACCOUNT })).status).toBe(200);
+      replaceSettings(gateway.home, unpinnedSettings(true));
+      const onFirst = await listedTarget(gateway);
+      void heldClient
+        .request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }) })
+        .then((response) => response.text())
+        .catch(() => undefined);
+      await vi.waitFor(() => expect(responsePosts(gateway)).toHaveLength(1), CONDITION_WAIT);
+      expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: SPARE })).status).toBe(200);
+      expect((await askDefault(gateway)).status).toBe(200);
+      const onSecond = await listedTarget(gateway);
+      const [first, second] = responsePosts(gateway);
+      expect(bearerOf(first ?? { headers: {} })).toBe(`Bearer ${accessTokenOf(gateway, ACCOUNT)}`);
+      expect(bearerOf(second ?? { headers: {} })).toBe(`Bearer ${accessTokenOf(gateway, SPARE)}`);
+      expect(onSecond.counter).not.toBe(onFirst.counter);
+    } finally {
+      heldClient.destroy();
+      await gateway.close();
+    }
+  });
+
+  it('a catalog read made after the part exists reaches a pinned target', async () => {
+    const gateway = await startPlanGateway({ models: [catalogEntry(200000)], declaredCapabilities: false });
+    await signInAs(gateway, ACCOUNT);
+    const before = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
+    const reportedBefore = before.status === 200 ? (before.body.data as Array<{ id: string; targetCapabilities: Record<string, { contextWindow?: unknown }> }>).find((model) => model.id === 'default')?.targetCapabilities['gpt']?.contextWindow : undefined;
+    expect(reportedBefore).toBeUndefined();
+    expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
+    const after = await listedTarget(gateway);
+    expect(after.contextWindow).toBe(200000);
+    await gateway.close();
+  });
+
+  it('a signed-out profile gives a part whose read fails sign_in_required and the first sign-in replaces the part', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true, respond: () => openResponsesTextReply(['hi']) });
+    replaceSettings(gateway.home, unpinnedSettings(true));
+    const signedOut = await askDefault(gateway);
+    expect(signedOut.status).toBe(401);
+    expect(signedOut.body?.error?.code).toBe('sign_in_required');
+    expect(responsePosts(gateway)).toHaveLength(0);
+    await signInAs(gateway, ACCOUNT);
+    expect((await askDefault(gateway)).status).toBe(200);
+    const [sent] = responsePosts(gateway);
+    expect(bearerOf(sent ?? { headers: {} })).toBe(`Bearer ${accessTokenOf(gateway, ACCOUNT)}`);
+    await gateway.close();
+  });
+
+  it('toggling context.unboundedOutputReserve gives a new counter for a probed target and a kept part for a keyed target', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const home = makeHome();
+    const models = {
+      aliases: { probed: ['probed'], keyed: ['keyed'] },
+      targets: { probed: ccTarget(fake.socketPath, { toolCalling: 'auto' }), keyed: ccTarget(fake.socketPath, { toolCalling: 'native' }) },
+    };
+    writeSettings(home, { models, context: { unboundedOutputReserve: false } });
+    await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS);
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
+    const countersOf = async (): Promise<Record<string, string>> => {
+      const listed = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+      expect(listed.status).toBe(200);
+      const entries = listed.body.data as Array<{ id: string; targetCounters: Record<string, string> }>;
+      return Object.fromEntries(['probed', 'keyed'].map((alias) => [alias, String(entries.find((entry) => entry.id === alias)?.targetCounters[alias])]));
+    };
+    const off = await countersOf();
+    replaceSettings(home, { models, context: { unboundedOutputReserve: true } });
+    const on = await countersOf();
+    expect(on['probed']).not.toBe(off['probed']);
+    expect(on['keyed']).toBe(off['keyed']);
+    await handle.close();
   });
 });

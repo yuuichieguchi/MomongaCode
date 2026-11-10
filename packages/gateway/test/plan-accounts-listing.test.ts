@@ -9,7 +9,7 @@ import { PlanCredentialError } from '../src/plan/auth-source.ts';
 import { GatewayError, statusFor } from '../src/core/errors.ts';
 import { ACCOUNT, accountRoute, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
-import { PROFILE_ID } from './plan-support.ts';
+import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -211,6 +211,66 @@ describe('the refusals answered by the routes themselves (O-R5-6 G 7 and 8)', ()
     } finally {
       revoke.release();
       await signingOut;
+      await gateway.close();
+    }
+  });
+});
+
+const markSigningOut = (gateway: PlanGateway, account: string): void => {
+  const file = recordFile(gateway, account);
+  const record = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+  fs.writeFileSync(file, JSON.stringify({ ...record, state: 'signing_out' }), { mode: 0o600 });
+  fs.chmodSync(file, 0o600);
+};
+
+const stateOf = async (gateway: PlanGateway, account: string): Promise<string | undefined> => {
+  const listed = await gateway.get(PLAN_ROUTES.accounts);
+  expect(listed.status).toBe(200);
+  return (listed.body.accounts as { label: string; state: string }[]).find((entry) => entry.label === account)?.state;
+};
+
+describe('O-R5-6 L4: the load resumes an interrupted sign-out', () => {
+  it('a signing_out record found on disk is resumed when the accounts route loads it', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true });
+    await signInAs(gateway, ACCOUNT);
+    await signInAs(gateway, SPARE);
+    await gateway.close();
+    markSigningOut(gateway, SPARE);
+    await gateway.restart();
+    expect(gateway.auth.calls.revoke).toBe(0);
+    expect((await gateway.get(PLAN_ROUTES.accounts)).status).toBe(200);
+    await vi.waitFor(() => expect(gateway.auth.calls.revoke).toBe(1), CONDITION_WAIT);
+    await vi.waitFor(async () => expect(await stateOf(gateway, SPARE)).toBe('registered'), CONDITION_WAIT);
+    expect(gateway.auth.calls.revoke).toBe(1);
+    await gateway.close();
+  });
+
+  it('begin on it answers 409 plan_sign_out_in_progress until the resumed sign-out ends, then succeeds', async () => {
+    const gateway = await startPlanGateway({ plaintextTokenFiles: true });
+    const revoke = hold();
+    try {
+      await signInAs(gateway, ACCOUNT);
+      await signInAs(gateway, SPARE);
+      await gateway.close();
+      markSigningOut(gateway, SPARE);
+      gateway.auth.scriptRevoke([{ kind: 'hold', reached: revoke.reach, released: revoke.released }]);
+      await gateway.restart();
+      const refused = await begin(gateway, { account: SPARE });
+      expect(refused.status).toBe(409);
+      expect(refused.body.error).toEqual({
+        type: 'invalid_request',
+        code: 'plan_sign_out_in_progress',
+        message: `${SPARE} is still signing out. Try again in a moment.`,
+        param: null,
+      });
+      await vi.waitFor(() => expect(gateway.auth.calls.revoke).toBe(1), CONDITION_WAIT);
+      expect((await begin(gateway, { account: SPARE })).status).toBe(409);
+      revoke.release();
+      await vi.waitFor(async () => expect(await stateOf(gateway, SPARE)).toBe('registered'), CONDITION_WAIT);
+      expect(gateway.auth.calls.revoke).toBe(1);
+      expect((await begin(gateway, { account: SPARE })).status).toBe(200);
+    } finally {
+      revoke.release();
       await gateway.close();
     }
   });

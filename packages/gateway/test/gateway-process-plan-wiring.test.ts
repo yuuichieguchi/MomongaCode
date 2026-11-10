@@ -76,7 +76,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
       fileSystem: nodeFileSystem,
       accounts: [],
       clock: createFakeClock(Date.now()),
-      fetch: (url, init) => fetch(url, init),
+      outbound: (_signal, use) => use((url, init) => fetch(url, init)),
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       onSecret: () => undefined,
       warn: () => undefined,

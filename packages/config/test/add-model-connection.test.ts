@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as config from '@momonga/config';
 import { addModelConnection } from '@momonga/config';
+import { systemFileLockPorts, withFileLock } from '@momonga/foundation';
 import type { ModelConnection } from '@momonga/config';
 
 const homes: string[] = [];
@@ -101,5 +103,51 @@ describe('addModelConnection, the one writer of a chosen local model', () => {
     expect(pick(targets[ollamaTarget])).toEqual({ billing: 'local', maxConcurrency: 1, provider: undefined });
     expect(pick(targets[openaiTarget])).toEqual({ billing: 'local', maxConcurrency: 1, provider: 'local-1234' });
     expect(pick(targets[managedTarget])).toEqual({ billing: undefined, maxConcurrency: 1, provider: undefined });
+  });
+});
+
+type EditUserSettings = (settingsFile: string, edit: (document: Record<string, unknown>) => boolean) => Promise<unknown>;
+
+const editUserSettings: EditUserSettings = (settingsFile, edit) => {
+  const value = (config as Record<string, unknown>)['editUserSettings'];
+  if (typeof value !== 'function') throw new Error('@momonga/config does not export editUserSettings (design-chatgpt-plan O-R5-6 L10, build step 3)');
+  return (value as EditUserSettings)(settingsFile, edit);
+};
+
+describe('O-R5-6 L10: editUserSettings, the writer addModelConnection shares', () => {
+  it('editUserSettings keeps every other key, writes under the settings lock with mode 0600, skips the write when edit returns false', async () => {
+    const file = settingsFileIn({ network: { httpsProxy: 'http://proxy.corp:3128' }, models: { aliases: { a: ['a'] }, targets: { a: { adapter: 'ollama', model: 'm' } } } });
+    fs.chmodSync(file, 0o644);
+    let lockHeld = true;
+    let editedWhileLocked = false;
+    let release = (): void => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const holder = withFileLock(path.join(path.dirname(file), `${path.basename(file)}.lock`), () => released, { ports: systemFileLockPorts });
+    const edited = editUserSettings(file, (document) => {
+      editedWhileLocked = lockHeld;
+      (document['models'] as { aliases: Record<string, string[]> }).aliases['b'] = ['a'];
+      return true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    lockHeld = false;
+    release();
+    await holder;
+    await edited;
+    expect(editedWhileLocked).toBe(false);
+    expect(read(file)).toEqual({ network: { httpsProxy: 'http://proxy.corp:3128' }, models: { aliases: { a: ['a'], b: ['a'] }, targets: { a: { adapter: 'ollama', model: 'm' } } } });
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+
+    const compact = '{"models":{"aliases":{},"targets":{}}}';
+    fs.writeFileSync(file, compact, { mode: 0o600 });
+    let called = 0;
+    await editUserSettings(file, (document) => {
+      called += 1;
+      document['network'] = { httpsProxy: 'http://ignored:1' };
+      return false;
+    });
+    expect(called).toBe(1);
+    expect(fs.readFileSync(file, 'utf8')).toBe(compact);
   });
 });

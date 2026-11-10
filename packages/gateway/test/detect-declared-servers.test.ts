@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { loadUserSettings, registeredIds, registeredServer } from '@momonga/config';
+import * as config from '@momonga/config';
+import { loadUserSettings } from '@momonga/config';
+import type { ServerRegistry } from '@momonga/config';
 import { FM_SERVER, MANAGED_SERVERS } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import { detectLocalServers } from '../src/index.ts';
 import { makeHome, writeSettings } from './gateway-process-helpers.ts';
+
+const registeredServersOf = (registry: ServerRegistry): readonly ManagedServerDescription[] => {
+  const value = (config as Record<string, unknown>)['registeredServers'];
+  if (typeof value !== 'function') throw new Error('@momonga/config does not export registeredServers (design-chatgpt-plan O-R5-6 L9)');
+  return (value as (registry: ServerRegistry) => readonly ManagedServerDescription[])(registry);
+};
 
 const DECLARED_ID = 'workbench';
 const DECLARED_COMMAND = '/opt/workbench/bin/serve';
@@ -19,10 +27,7 @@ const declaredServers = async (): Promise<ManagedServerDescription[]> => {
   });
   const { settings } = await loadUserSettings({ home });
   const registry = settings.models.servers;
-  return registeredIds(registry).flatMap((id) => {
-    const server = registeredServer(registry, id);
-    return server === undefined ? [] : [server];
-  });
+  return [...registeredServersOf(registry)];
 };
 
 type ExecAnswer = { exitCode: number; stdout: string; stderr: string };

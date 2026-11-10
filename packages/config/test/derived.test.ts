@@ -248,11 +248,13 @@ describe('S0: the pinned derivation (design-settings-live section 2)', () => {
   });
 });
 
-type DerivedId = 'D1' | 'D2' | 'D3' | 'D4';
+type DerivedId = 'D1' | 'D2' | 'D3' | 'D4' | 'D5';
+
+const declaredObjects = (): readonly { id: DerivedId; inputs: readonly string[] }[] => config.DERIVED_OBJECTS as unknown as readonly { id: DerivedId; inputs: readonly string[] }[];
 
 const derivedDigestsOf = (settings: Record<string, unknown>): Record<DerivedId, string> => {
   const inputsOf = exported<(id: DerivedId) => (settings: ResolvedSettings) => unknown>('derivedInputsOf');
-  const ids: DerivedId[] = ['D1', 'D2', 'D3', 'D4'];
+  const ids = declaredObjects().map((object) => object.id);
   return Object.fromEntries(ids.map((id) => [id, settingsInputsDigest(inputsOf(id)(settings as unknown as ResolvedSettings))])) as Record<DerivedId, string>;
 };
 
@@ -281,9 +283,9 @@ describe('S0: the digest cases moved from the deleted supervisor plan tests (des
     expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, telemetry: { otlp: { endpoint: 'http://127.0.0.1:4318' } } })).toEqual(['D2']);
   });
 
-  it('a network change, present against absent, rebuilds every object that makes outbound connections (D1, D2, D4) and not the sandbox', () => {
-    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } })).toEqual(['D1', 'D2', 'D4']);
-    expect(changedObjects({ ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } }, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:8080' } })).toEqual(['D1', 'D2', 'D4']);
+  it('a network change, present against absent, rebuilds every object that makes outbound connections (D1, D2, D4, D5) and not the sandbox', () => {
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } })).toEqual(['D1', 'D2', 'D4', 'D5']);
+    expect(changedObjects({ ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } }, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:8080' } })).toEqual(['D1', 'D2', 'D4', 'D5']);
   });
 
   it('a change of the stop values rebuilds nothing (they are read at the stop begin)', () => {
@@ -299,12 +301,35 @@ describe('S0: the digest cases moved from the deleted supervisor plan tests (des
 describe('O-R5-6 (K) 3: context.unboundedOutputReserve is an input of the gateway object D1 (design-chatgpt-plan section 2 item 7)', () => {
   const withReserve = (unboundedOutputReserve: boolean): Record<string, unknown> => ({ ...BASE_SETTINGS, context: { unboundedOutputReserve } });
 
-  it('turning the reserve on rebuilds exactly D1', () => {
+  it('turning the reserve on rebuilds exactly D1, whose inputs are models, network, pricing and the key context.unboundedOutputReserve', () => {
+    expect(declaredObjects().find((object) => object.id === 'D1')?.inputs).toEqual(['models', 'network', 'pricing', 'context.unboundedOutputReserve']);
     expect(changedObjects(withReserve(false), withReserve(true))).toEqual(['D1']);
   });
 
   it('turning the reserve off rebuilds exactly D1', () => {
+    expect(declaredObjects().find((object) => object.id === 'D1')?.inputs).toEqual(['models', 'network', 'pricing', 'context.unboundedOutputReserve']);
     expect(changedObjects(withReserve(true), withReserve(false))).toEqual(['D1']);
+  });
+});
+
+describe('O-R5-6 L5: a key-path input and the plan scope object D5 (design-chatgpt-plan O-R5-6 L1, L5)', () => {
+  const withContext = (context: Record<string, unknown>): Record<string, unknown> => ({ ...BASE_SETTINGS, context });
+  const withPlaintext = (plaintextTokenFiles: boolean): Record<string, unknown> => ({ ...BASE_SETTINGS, credentials: { plaintextTokenFiles } });
+
+  it('a key path input digests the key, not the section', () => {
+    const inputsOf = exported<(id: DerivedId) => (settings: ResolvedSettings) => Record<string, unknown>>('derivedInputsOf');
+    const settings = withContext({ unboundedOutputReserve: true, other: 1 }) as unknown as ResolvedSettings;
+    expect(inputsOf('D1')(settings)).toEqual({ models: BASE_SETTINGS['models'], network: null, pricing: null, 'context.unboundedOutputReserve': true });
+    expect(inputsOf('D1')(BASE_SETTINGS as unknown as ResolvedSettings)).toEqual({ models: BASE_SETTINGS['models'], network: null, pricing: null, 'context.unboundedOutputReserve': null });
+    expect(changedObjects(withContext({ unboundedOutputReserve: true, other: 1 }), withContext({ unboundedOutputReserve: true, other: 2 }))).toEqual([]);
+  });
+
+  it('D5 rebuilds on network or credentials.plaintextTokenFiles only', () => {
+    expect(declaredObjects().find((object) => object.id === 'D5')?.inputs).toEqual(['network', 'credentials.plaintextTokenFiles']);
+    expect(changedObjects(withPlaintext(false), withPlaintext(true))).toEqual(['D5']);
+    expect(changedObjects(withContext({ unboundedOutputReserve: false }), withContext({ unboundedOutputReserve: true }))).toEqual(['D1']);
+    expect(changedObjects(withContext({ unboundedOutputReserve: false }), withContext({ unboundedOutputReserve: false, compactAt: 0.5 }))).toEqual([]);
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, network: { httpsProxy: 'http://proxy.corp:3128' } })).toContain('D5');
   });
 });
 

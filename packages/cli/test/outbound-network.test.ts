@@ -60,7 +60,7 @@ describe('the CLI network', () => {
 
     const interrupt = new AbortController().signal;
     const code = await withIdentityReadFetch(ports, interrupt, (fetch) =>
-      detectModels(ports, { settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
+      detectModels(ports, { home: ports.home, settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
     );
 
     expect(code).toBe(0);

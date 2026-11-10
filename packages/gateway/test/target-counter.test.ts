@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { targetCounterOf } from '@momonga/gateway';
+import * as targetCounterModule from '../src/target-counter.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { fmRecordKey } from './fm-record-support.ts';
 
@@ -77,5 +78,55 @@ describe('targetCounterOf', () => {
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, upstreamIdentity: 'identity-one' })).toBe(first);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, upstreamIdentity: 'identity-two' })).not.toBe(first);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST })).not.toBe(first);
+  });
+});
+
+type ServedInput = { profile: string; account: string | null };
+type ReportedInput = { contextWindow: number; maxOutputTokens: number } | null;
+type OutputPolicyInput = { unboundedOutputReserve: boolean };
+type CounterInput = Parameters<typeof targetCounterOf>[0] & { served?: ServedInput; reported?: ReportedInput; outputPolicy?: OutputPolicyInput };
+
+const counterOf = (input: CounterInput): string => targetCounterOf(input as Parameters<typeof targetCounterOf>[0]);
+
+const readsOutputPolicyOf = (target: unknown): boolean => {
+  const value = (targetCounterModule as Record<string, unknown>)['readsOutputPolicy'];
+  if (typeof value !== 'function') throw new Error('gateway/src/target-counter.ts does not export readsOutputPolicy (design-chatgpt-plan O-R5-6 L3)');
+  return (value as (target: unknown) => boolean)(target);
+};
+
+const PLAN_TARGET = { adapter: 'open-responses', model: 'plan-model', capabilities: CAPABILITIES, plan: { profile: 'chatgpt', account: 'work' } };
+const OLLAMA = { adapter: 'ollama', model: 'qwen', baseUrl: 'http://127.0.0.1:11434', capabilities: CAPABILITIES };
+
+describe('O-R5-6 L3: counter inputs', () => {
+  it('served, reported and outputPolicy each change the counter; equal inputs give equal counters', async () => {
+    const target = await resolvedTarget(PLAN_TARGET);
+    const served: ServedInput = { profile: 'chatgpt', account: 'work' };
+    const reported: ReportedInput = { contextWindow: 200000, maxOutputTokens: 32000 };
+    const base = counterOf({ target, codeDigest: CODE_DIGEST, served, reported });
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served: { profile: 'chatgpt', account: 'work' }, reported: { contextWindow: 200000, maxOutputTokens: 32000 } })).toBe(base);
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served: { profile: 'chatgpt', account: 'spare' }, reported })).not.toBe(base);
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served: { profile: 'chatgpt', account: null }, reported })).not.toBe(base);
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served, reported: { contextWindow: 100000, maxOutputTokens: 32000 } })).not.toBe(base);
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served, reported: { contextWindow: 200000, maxOutputTokens: 16000 } })).not.toBe(base);
+    expect(counterOf({ target, codeDigest: CODE_DIGEST, served, reported: null })).not.toBe(base);
+    const probed = await resolvedTarget({ ...HOSTED, toolCalling: 'auto' });
+    expect(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } })).not.toBe(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: false } }));
+    expect(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } })).toBe(counterOf({ target: probed, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } }));
+  });
+
+  it('outputPolicy changes only the three kinds that read it: managed, ollama and chat-completions with toolCalling auto', async () => {
+    const managed = await resolvedTarget({ adapter: 'managed', server: 'fm' });
+    const ollama = await resolvedTarget(OLLAMA);
+    const probed = await resolvedTarget({ ...HOSTED, toolCalling: 'auto' });
+    const native = await resolvedTarget(HOSTED);
+    const { toolCalling: _toolCalling, ...withoutToolCalling } = HOSTED;
+    const responses = await resolvedTarget({ ...withoutToolCalling, adapter: 'open-responses' });
+    const plan = await resolvedTarget(PLAN_TARGET);
+    const differs = (target: CounterInput['target']): boolean =>
+      counterOf({ target, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: true } }) !== counterOf({ target, codeDigest: CODE_DIGEST, outputPolicy: { unboundedOutputReserve: false } });
+    expect([managed, ollama, probed].map(readsOutputPolicyOf)).toEqual([true, true, true]);
+    expect([native, responses, plan].map(readsOutputPolicyOf)).toEqual([false, false, false]);
+    expect([managed, ollama, probed].map(differs)).toEqual([true, true, true]);
+    expect([native, responses, plan].map(differs)).toEqual([false, false, false]);
   });
 });

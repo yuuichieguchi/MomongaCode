@@ -17,7 +17,7 @@ const SETTINGS_FILE = '/home/u/.momonga/settings.json';
 
 const portsOf = (written: string[]): CliPorts => ({ stdout: { write: (text: string) => void written.push(text) } }) as unknown as CliPorts;
 
-const pathsOf = { settingsFile: SETTINGS_FILE } as unknown as MomongaPaths;
+const pathsOf = { home: '/home/u', settingsFile: SETTINGS_FILE } as unknown as MomongaPaths;
 
 const answering = (routes: Readonly<Record<string, unknown>>): { fetch: typeof fetch; asked: string[] } => {
   const asked: string[] = [];
