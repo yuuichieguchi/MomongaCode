@@ -1,5 +1,5 @@
 import type { CallStop } from './call-stop.ts';
-import type { Clock, NetworkScope } from '@momonga/foundation';
+import type { Clock, NetworkScope, OutboundNetwork } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
@@ -75,6 +75,7 @@ export type ToolContext = ReconcileContext & {
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   network?: NetworkScope;
+  outboundNetwork: OutboundNetwork;
   ripgrep: RipgrepLocator;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;

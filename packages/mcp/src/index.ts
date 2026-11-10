@@ -27,7 +27,6 @@ export { createMcpOAuthProvider, credentialKey, mcpCredentialDirectory } from '.
 export type { McpCredentialStore, McpOAuthProvider, McpOAuthProviderOptions } from './mcp-oauth.ts';
 export { McpAuthorizationError, McpRemotePolicyError, authorizationRequiredFor, McpTaskError, isTransientRemoteFailure } from './remote-errors.ts';
 export type { AuthorizationFailure, RemotePolicyViolation } from './remote-errors.ts';
-export { isPublicAddress } from './ip-address.ts';
 export { assertRemoteUrl, createGuardedFetch, systemResolver } from './remote-policy.ts';
 export type { GuardedFetch, GuardedFetchOptions, HostResolver, ResolvedAddress } from './remote-policy.ts';
 export type { McpRemotePorts } from './remote-ports.ts';

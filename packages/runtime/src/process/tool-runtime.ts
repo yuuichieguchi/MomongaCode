@@ -133,6 +133,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const executor = createToolExecutor({
     jobs,
+    outboundNetwork: options.network,
     fs: policyFilesystem,
     leaseMs: options.leaseMs,
     heartbeatMs: options.heartbeatMs,

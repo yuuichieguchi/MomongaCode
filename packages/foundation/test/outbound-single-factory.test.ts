@@ -16,7 +16,7 @@ const KEPT: readonly Kept[] = [{ file: 'foundation/src/uds.ts', reason: 'a Unix-
 
 const EXCLUDED_PACKAGES: readonly Kept[] = [{ file: 'testkit', reason: 'test support that drives fake servers on loopback; never shipped' }];
 
-const BURN_DOWN: readonly BurnDown[] = [{ file: 'sandbox/src/egress-proxy.ts', owner: 'design-proxy-ca 3.7: the per-command proxy dials upstream through the factory' }];
+const BURN_DOWN: readonly BurnDown[] = [];
 
 const sourceFiles = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

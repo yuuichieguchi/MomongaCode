@@ -183,14 +183,15 @@ describe('a project-scope server behind a proxy keeps the resolved-address guard
     expect(proxy.connections()).toBe(0);
   });
 
-  it('uses the proxy once the name has resolved here to public addresses', async () => {
+  it('asks the proxy for the address the name resolved to here, once that address is public', async () => {
     const proxy = await replyingProxy('HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n');
     const { connection } = projectConnection(proxy, resolverTo('93.184.216.34'));
 
     const failure = await rejectionOf(connection.listTools());
 
     expect(failure).not.toBeInstanceOf(McpRemotePolicyError);
-    expect(proxy.received()).toContain('CONNECT mcp.example.test:443');
+    expect(proxy.received()).toContain('CONNECT 93.184.216.34:443');
+    expect(proxy.received()).not.toContain('mcp.example.test');
   });
 
   it('a user-scope server goes through the proxy without a local resolution', async () => {

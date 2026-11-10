@@ -1,11 +1,11 @@
 import dns from 'node:dns';
+import { isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import type { RequestInit as UndiciRequestInit } from 'undici';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
-import { createOutboundDispatcher, findOutboundError, outboundFetch } from '@momonga/foundation';
+import { createOutboundDispatcher, findOutboundError, isAcceptableAddress, outboundFetch } from '@momonga/foundation';
 import type { OutboundNetwork } from '@momonga/foundation';
-import { isAddressLiteral, isPublicAddress, stripBrackets } from './ip-address.ts';
 import { McpRemotePolicyError } from './remote-errors.ts';
 
 export type ResolvedAddress = { address: string; family: number };
@@ -13,6 +13,10 @@ export type ResolvedAddress = { address: string; family: number };
 export type HostResolver = (hostname: string) => Promise<readonly ResolvedAddress[]>;
 
 export const systemResolver: HostResolver = (hostname) => dns.promises.lookup(hostname, { all: true, verbatim: true });
+
+const PUBLIC_ONLY = { loopback: false } as const;
+
+const withoutBrackets = (hostname: string): string => (hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname);
 
 const LOOPBACK_NAME = /(^|\.)localhost$/;
 
@@ -28,7 +32,8 @@ export const assertRemoteUrl = (text: string, scope: McpServerScope): URL => {
   }
   if (scope === 'project') {
     const host = url.hostname.replace(/\.$/, '');
-    if (isAddressLiteral(host) && !isPublicAddress(stripBrackets(host))) {
+    const literal = withoutBrackets(host);
+    if (isIP(literal) !== 0 && !isAcceptableAddress(literal, PUBLIC_ONLY)) {
       throw new McpRemotePolicyError('non_public_address_literal', `project-scope MCP server URL points at a non-public address (${host})`);
     }
     if (LOOPBACK_NAME.test(host)) {
@@ -60,7 +65,7 @@ const lookupVia = (resolver: HostResolver): LookupFunction => {
           callback(new McpRemotePolicyError('unresolvable_host', `${hostname} did not resolve to any address, so its address could not be verified; ${USER_SCOPE_NOTE}`));
           return;
         }
-        const refused = addresses.find((entry) => !isPublicAddress(entry.address));
+        const refused = addresses.find((entry) => !isAcceptableAddress(entry.address, PUBLIC_ONLY));
         if (refused !== undefined) {
           callback(new McpRemotePolicyError('non_public_resolved_address', `${hostname} resolves to a non-public address (${refused.address}); ${USER_SCOPE_NOTE}`));
           return;
