@@ -820,6 +820,31 @@
       "budgetCpuSeconds": 9
     },
     {
+      "config": "PlanCredential.signOutAbort",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 342401,
+      "measuredSeconds": 92.93,
+      "measuredCpuSeconds": 101.01,
+      "budgetCpuSeconds": 206
+    },
+    {
+      "config": "PlanCredential.signOutNoReload",
+      "role": "evidence",
+      "expect": {
+        "violates": "SigningOutResolves",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14431,
+      "measuredSeconds": 4.33,
+      "measuredCpuSeconds": 6.92,
+      "budgetCpuSeconds": 17
+    },
+    {
       "config": "PlanCredential.noCoalesceGen",
       "role": "evidence",
       "expect": {
