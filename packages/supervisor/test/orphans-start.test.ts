@@ -92,7 +92,7 @@ describe('reapOrphans', () => {
     fs.writeFileSync(path.join(dir, 'runtime-04'), '', { mode: 0o600 });
     const ports: MarkerPorts = {
       findHolders: async (_marker, { onUninspectable }) => {
-        onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startedAt: 616161 });
+        onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startedAt: 616161n });
         return [];
       },
       reapMarkerDirectory: async () => ({ reaped: 2, kept: 0 }),
