@@ -275,6 +275,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
       session: options.tools.sessionState(session),
       sandbox: held.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
+      ...(policy.sandboxNetwork === undefined ? {} : { sandboxNetwork: policy.sandboxNetwork }),
       ripgrep: options.tools.ripgrepLocator(policy.env),
       workTreeObserver: options.tools.workTreeObserver(session, options.settings.trusted(session)),
       windowShared: ctx.windowShared,

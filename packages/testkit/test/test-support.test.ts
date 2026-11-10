@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { isProcessAlive } from '@momonga/foundation';
+import { isProcessAlive, setSocketBind } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, assertHomeSocketBudget, registerCleanup, spawnTracked, tempDirPrefixFor, testRunToken, withTempDir } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -49,21 +49,51 @@ describe('withTempDir', () => {
     expect(fs.existsSync(created[0] as string)).toBe(false);
   });
 
-  it('returns a home whose longest socket stays below the limit', (context) => {
+  it.skipIf(process.platform === 'win32')('returns a home whose longest socket the host binds', async (context) => {
     const home = withTempDir(context, { asHome: true });
-    expect(Buffer.byteLength(path.join(home, '.momonga', 'run', 'supervisor.sock'))).toBeLessThan(104);
+    await expect(assertHomeSocketBudget(home)).resolves.toBeUndefined();
   });
 });
 
 describe('assertHomeSocketBudget', () => {
-  it('accepts a home whose supervisor socket is 103 bytes', () => {
-    expect(() => assertHomeSocketBudget(`/${'h'.repeat(70)}`)).not.toThrow();
+  const HOME = `/${'h'.repeat(71)}`;
+  const LONGEST_SOCKET = `${HOME}/.momonga/run/g1/supervisor.sock`;
+
+  const bindAnswering = (context: Parameters<typeof registerCleanup>[0], answer: (socketPath: string) => void): string[] => {
+    const bound: string[] = [];
+    setSocketBind(async (socketPath) => {
+      bound.push(socketPath);
+      answer(socketPath);
+    });
+    registerCleanup(context, () => setSocketBind(undefined));
+    return bound;
+  };
+
+  it('accepts a home when the host binds a path of the length of its longest socket inside it', async (context) => {
+    const bound = bindAnswering(context, () => undefined);
+    await expect(assertHomeSocketBudget(HOME)).resolves.toBeUndefined();
+    expect(bound).toHaveLength(1);
+    expect(Buffer.byteLength(bound[0] ?? '')).toBe(Buffer.byteLength(LONGEST_SOCKET));
+    expect(path.dirname(bound[0] ?? '')).toBe(HOME);
   });
 
-  it('rejects a home whose supervisor socket reaches 104 bytes, naming the socket and the budget', () => {
-    const home = `/${'h'.repeat(71)}`;
-    expect(() => assertHomeSocketBudget(home)).toThrow(`${home}/.momonga/run/g1/supervisor.sock is 104 bytes`);
-    expect(() => assertHomeSocketBudget(home)).toThrow(/budget/);
+  it('rejects a home when the host refuses that length, naming the socket, its length and the budget', async (context) => {
+    bindAnswering(context, () => {
+      throw Object.assign(new Error('invalid argument'), { code: 'EINVAL' });
+    });
+    await expect(assertHomeSocketBudget(HOME)).rejects.toThrow(`home ${HOME} leaves no socket-path budget: ${LONGEST_SOCKET} is ${Buffer.byteLength(LONGEST_SOCKET)} bytes`);
+  });
+
+  it('rejects a home when the length could not be tested', async (context) => {
+    bindAnswering(context, () => {
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    });
+    const error = await assertHomeSocketBudget(HOME).then(
+      () => undefined,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(String((error as Error).cause)).toContain('could not be tested: EACCES');
   });
 });
 

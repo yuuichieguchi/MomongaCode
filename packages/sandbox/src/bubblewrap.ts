@@ -133,6 +133,9 @@ const blockedPaths = (set: FileRuleSet, entry: FileRuleEntry, port: Inspector): 
 
 export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions, port: FilesystemPort = nodeFilesystemPort): BubblewrapPlan {
   validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
+  if (typeof policy.network === 'object') {
+    throw new SandboxPolicyError('network_scope_unsupported', 'the bubblewrap sandbox cannot limit a command to one loopback port, so it cannot limit its network to named hosts');
+  }
   const heldPlaceholders = options.heldPlaceholders ?? new Set<string>();
   const canonicalize = (target: string): string => {
     const placeholder = [...heldPlaceholders].find((held) => target.startsWith(`${held}/`));
@@ -306,7 +309,7 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   const args = [
     '--unshare-pid',
     '--unshare-ipc',
-    ...(policy.network === 'deny' ? ['--unshare-net'] : []),
+    ...(policy.network === 'allow' ? [] : ['--unshare-net']),
     '--die-with-parent',
     ...base,
     ...writableBinds,

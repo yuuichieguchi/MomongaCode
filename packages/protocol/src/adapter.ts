@@ -47,6 +47,7 @@ export type AdapterContext = {
   attempt: number;
   reasoningOrigin: ReasoningOrigin;
   capabilities: Capabilities;
+  idempotencyKey?: string;
 };
 
 export type UpstreamFailureFacts = {

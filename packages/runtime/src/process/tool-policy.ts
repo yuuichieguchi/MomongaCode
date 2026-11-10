@@ -46,20 +46,20 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
   };
 };
 
-export type EnforcedPolicyFor = (session: Parameters<ToolRuntimePort['policyFor']>[0], options: Omit<Parameters<ToolRuntimePort['policyFor']>[1], 'ruleEnforcement'>) => ReturnType<ToolRuntimePort['policyFor']>;
+export type EnforcedPolicyFor = (session: Parameters<ToolRuntimePort['policyFor']>[0], options: Omit<Parameters<ToolRuntimePort['policyFor']>[1], 'ruleEnforcement'> & { unixSocketAllow?: readonly string[] }) => ReturnType<ToolRuntimePort['policyFor']>;
 
 export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor => {
   const { paths, home, fs, ruleEnforcement } = options;
   const contextFor = contextBuilder(options);
 
-  return async (session, { env, rules, readableDirectories }) => {
+  return async (session, { env, rules, readableDirectories, unixSocketAllow }) => {
     const { roots, tmpDir, wrap } = await contextFor(session);
     try {
       const fileRules = computeFileRules(rules, roots, tmpDir, ruleEnforcement);
       const protectedSet = protectedSetFor(roots, fs);
       const skillsRoot = canonicalPath(paths.skills);
       const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed });
+      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, ...(unixSocketAllow === undefined ? {} : { unixSocketAllow }) });
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       if (isTransientErrno(error)) throw error;

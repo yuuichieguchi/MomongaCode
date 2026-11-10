@@ -1,5 +1,5 @@
 import { SdkError, SdkErrorCode, SdkHttpError } from '@modelcontextprotocol/client';
-import { CredentialStoreError, OAuthAuthorizationError as McpAuthorizationError } from '@momonga/foundation';
+import { CredentialStoreError, OAuthAuthorizationError as McpAuthorizationError, OutboundConnectionError } from '@momonga/foundation';
 import type { AuthorizationFailure } from '@momonga/foundation';
 
 export type RemotePolicyViolation =
@@ -14,8 +14,8 @@ export type RemotePolicyViolation =
 export class McpRemotePolicyError extends Error {
   readonly violation: RemotePolicyViolation;
 
-  constructor(violation: RemotePolicyViolation, message: string) {
-    super(message);
+  constructor(violation: RemotePolicyViolation, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'McpRemotePolicyError';
     this.violation = violation;
   }
@@ -57,6 +57,11 @@ const causeCode = (error: unknown): string | undefined => {
 export const isTransientRemoteFailure = (error: unknown): boolean => {
   if (error instanceof SdkHttpError) return TRANSIENT_HTTP_STATUSES.has(error.status);
   if (error instanceof SdkError) return false;
+  if (error instanceof OutboundConnectionError) {
+    if (error.failure.kind === 'proxy-unreachable') return true;
+    if (error.failure.kind !== 'origin-connection') return false;
+    return error.failure.code !== undefined && TRANSIENT_SOCKET_CODES.has(error.failure.code);
+  }
   if (error instanceof TypeError && error.message === 'fetch failed') {
     const code = causeCode(error);
     return code !== undefined && TRANSIENT_SOCKET_CODES.has(code);

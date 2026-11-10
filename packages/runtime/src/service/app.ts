@@ -88,7 +88,7 @@ export type RunAppDeps = {
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
-  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;
@@ -260,12 +260,12 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const sessionSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionCreateSettings(cwd, signal));
 
-  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd));
+  const sessionReadSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd, signal));
 
-  const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
+  const sessionViewOf = async (session: Session, signal: AbortSignal, loaded?: SessionCreateSettings) => {
     const view = toSessionView(store, session);
     if (session.permissionMode !== 'auto') return view;
-    const settings = loaded ?? (await sessionReadSettingsOf(session.cwd));
+    const settings = loaded ?? (await sessionReadSettingsOf(session.cwd, signal));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
     const autoClassifier = await readAutoClassifierView({ model: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
     return { ...view, autoClassifier };
@@ -303,7 +303,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, additionalDirectories, mcpServers });
-    return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
+    return json({ session: await sessionViewOf(session, context.req.raw.signal, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
   const listSessions: Handler = (context) => {
@@ -320,14 +320,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ sessions: store.listSessions({ cwd }).map((session) => toSessionView(store, session)) });
   };
 
-  const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? '')) });
+  const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? ''), context.req.raw.signal) });
 
   const patchSession: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
-      const settings = await sessionReadSettingsOf(session.cwd);
+      const settings = await sessionReadSettingsOf(session.cwd, context.req.raw.signal);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, (await gatewayListing(context.req.raw.signal)).views);
     }
     const model = body.model === undefined ? undefined : requestedModelOf(body.model, (await gatewayListing(context.req.raw.signal)).views);
@@ -348,7 +348,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = result.session;
     }
-    return json({ session: await sessionViewOf(current) });
+    return json({ session: await sessionViewOf(current, context.req.raw.signal) });
   };
 
   const listRuns: Handler = (context) => {

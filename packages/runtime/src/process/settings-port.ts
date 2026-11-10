@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
-import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
+import { createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -22,8 +22,8 @@ export type SettingsCompositionOptions = {
 
 export type SettingsComposition = {
   settings: SettingsPort;
-  sessionCreateSettings(cwd: string): Promise<SessionCreateSettings>;
-  sessionReadSettings(cwd: string): Promise<SessionCreateSettings>;
+  sessionCreateSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
+  sessionReadSettings(cwd: string, signal: AbortSignal): Promise<SessionCreateSettings>;
   keptLayers(use: SettingsUse): KeptLayers;
   envFor(session: Session): ToolEnv;
   takeUserSnapshot(): UserSnapshot;
@@ -40,10 +40,10 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const classifierKeyPorts = { exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
-  const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
+  const autoFitKeyFor = async (resolved: ResolvedSettings, signal: AbortSignal): Promise<AutoFitKey | undefined> => {
     const { classifier } = resolved.models;
     if (classifier === undefined) return undefined;
-    const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS) });
+    const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal });
     const result = autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE, probeKeys);
     return result.kind === 'known' ? result.key : undefined;
   };
@@ -75,11 +75,11 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read');
 
-  const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult): Promise<SessionCreateSettings> => {
+  const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
     const { classifier } = snapshot.settings.models;
-    const autoModeKey = await autoFitKeyFor(snapshot.settings);
+    const autoModeKey = await autoFitKeyFor(snapshot.settings, signal);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
@@ -91,14 +91,14 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
     };
   };
 
-  const sessionCreateSettings = async (cwd: string): Promise<SessionCreateSettings> => {
+  const sessionCreateSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = admitUserSnapshot();
-    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit')));
+    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit')), signal);
   };
 
-  const sessionReadSettings = async (cwd: string): Promise<SessionCreateSettings> => {
+  const sessionReadSettings = async (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => {
     const snapshot = takeUserSnapshot();
-    return sessionSettingsFrom(snapshot, await loadSessionSettings(cwd, snapshot));
+    return sessionSettingsFrom(snapshot, await loadSessionSettings(cwd, snapshot), signal);
   };
 
   const envFor = (session: Session): ToolEnv => {

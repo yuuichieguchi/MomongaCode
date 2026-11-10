@@ -27,6 +27,7 @@ export type ChatSpanInput = {
   runId?: string;
   step?: number;
   attempt: number;
+  retryOf?: number;
   target?: string;
   role?: string;
   startTimeMs?: number;
@@ -108,6 +109,7 @@ export const startChatSpan = (tracer: Tracer, input: ChatSpanInput, parent?: Con
         ...(input.runId === undefined ? {} : { [MOMONGA_ATTRIBUTES.runId]: input.runId }),
         ...(input.step === undefined ? {} : { [MOMONGA_ATTRIBUTES.step]: input.step }),
         [MOMONGA_ATTRIBUTES.attempt]: input.attempt,
+        ...(input.retryOf === undefined ? {} : { [MOMONGA_ATTRIBUTES.retryOf]: input.retryOf }),
         ...(input.target === undefined ? {} : { [MOMONGA_ATTRIBUTES.target]: input.target }),
         ...(input.role === undefined ? {} : { [MOMONGA_ATTRIBUTES.role]: input.role }),
       },

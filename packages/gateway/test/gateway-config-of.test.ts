@@ -70,3 +70,16 @@ describe('gatewayConfigOf server names', () => {
     expect(models).not.toHaveProperty('start');
   });
 });
+
+describe('gatewayConfigOf idempotency key header (Q20)', () => {
+  it('carries the header a connection declares to each of its models, and none for a connection that declares none', async () => {
+    const { targets } = await configFor({
+      models: [
+        { provider: 'acme', adapter: 'chat-completions', id: 'm', baseUrl: 'https://api.example.com/v1', idempotencyKeyHeader: 'Idempotency-Key' },
+        { provider: 'plain', adapter: 'chat-completions', id: 'm', baseUrl: 'https://plain.example.com/v1' },
+      ],
+    });
+    expect(targets['acme/m']).toMatchObject({ idempotencyKeyHeader: 'Idempotency-Key' });
+    expect(targets['plain/m']).not.toHaveProperty('idempotencyKeyHeader');
+  });
+});

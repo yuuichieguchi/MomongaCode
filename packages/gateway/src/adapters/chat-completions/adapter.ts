@@ -37,6 +37,7 @@ import { RenderLedger } from '../../dialect/ledger.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../dialect/keyword-support.ts';
 import { unavailableError } from '../../core/unavailable.ts';
 import { targetProbingError } from '../../probe/auto-probe.ts';
+import { idempotencyHeaderOf } from '../shared/idempotency-header.ts';
 
 const DONE_MARKER = '[DONE]';
 
@@ -141,6 +142,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const response = await sendAuthorized(options.authSource(ctx.target), signal, (bearer) =>
         pool.clientFor(endpoint).post({
           headers: {
+            ...idempotencyHeaderOf(ctx),
             'content-type': 'application/json',
             accept: 'text/event-stream',
             ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),

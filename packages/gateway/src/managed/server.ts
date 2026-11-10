@@ -202,7 +202,9 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     if (refusal === undefined) return undefined;
     return new TargetNotReadyError(
       said(
-        `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter server name`,
+        refusal.kind === 'unsupported'
+          ? `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter server name`
+          : `a socket path of ${refusal.byteLength} bytes could not be tested in ${refusal.directory}: ${refusal.reason}`,
       ),
     );
   };

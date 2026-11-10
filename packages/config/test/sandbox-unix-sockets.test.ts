@@ -1,0 +1,68 @@
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { SETTINGS_SCHEMA, loadSettings, loadUserSettings } from '@momonga/config';
+import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+
+const UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
+
+describe('sandboxUnixSockets setting', () => {
+  it('is declared in the settings schema as an object with a list of paths', () => {
+    const properties = SETTINGS_SCHEMA.properties as Record<string, unknown>;
+    expect(properties['sandboxUnixSockets']).toEqual({ type: 'object', properties: { allow: { type: 'array', items: { type: 'string', minLength: 1 } } }, additionalProperties: false });
+  });
+
+  it('is empty by default', async () => {
+    const tree = makeTree();
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: [] });
+  });
+
+  it('is honoured from user settings', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: ['/var/run/agent', '/tmp/x.sock'] } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent', '/tmp/x.sock'] });
+    expect(result.warnings).toEqual([]);
+  });
+
+  it.each([
+    ['project', projectSettingsPath],
+    ['local', localSettingsPath],
+  ] as const)('is discarded from %s settings with a warning naming the file', async (_name, fileOf) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: ['/var/run/agent'] } });
+    const file = writeJson(fileOf(tree), { sandboxUnixSockets: { allow: ['/var/run/docker.sock'] } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
+    expect(result.warnings).toEqual([`${file}: sandboxUnixSockets is only honored in user settings; discarded`]);
+  });
+
+  it('refuses an entry that is not an absolute path, naming the pointer', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { sandboxUnixSockets: { allow: ['/ok', 'agent.sock'] } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(`${file}: invalid settings at /sandboxUnixSockets/allow/1: not an absolute path`);
+  });
+
+  it('drops an entry inside a directory momonga owns, with a warning', async () => {
+    const tree = makeTree();
+    const owned = path.join(tree.home, '.momonga', 'run');
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'seatbelt', sandboxUnixSockets: { allow: [owned, '/var/run/agent'] } });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: ['/var/run/agent'] });
+    expect(result.warnings).toEqual([`${file}: sandboxUnixSockets.allow entry ${JSON.stringify(owned)} is inside a directory momonga owns; its sockets are always denied; discarded`]);
+  });
+
+  it('applies no entry under the bubblewrap sandbox and says so', async () => {
+    const tree = makeTree();
+    const file = writeJson(userSettingsPath(tree), { sandbox: 'bubblewrap', sandboxUnixSockets: { allow: ['/var/run/agent'] } });
+    const result = await loadUserSettings({ home: tree.home });
+    expect(result.settings.sandboxUnixSockets).toEqual({ allow: [] });
+    expect(result.warnings).toEqual([`${file}: ${UNSUPPORTED}`]);
+  });
+
+  it('says nothing under the bubblewrap sandbox when the list is empty', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { sandbox: 'bubblewrap', sandboxUnixSockets: { allow: [] } });
+    expect((await loadUserSettings({ home: tree.home })).warnings).toEqual([]);
+  });
+});

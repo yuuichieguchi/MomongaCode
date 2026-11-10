@@ -825,6 +825,7 @@ export const gatewayConfigOf = (resolved: Pick<ResolvedModels, 'models' | 'chain
           model: target.model,
           ...(target.defaultTag === undefined ? {} : { defaultTag: target.defaultTag }),
           ...(target.answers === undefined ? {} : { answers: target.answers }),
+          ...(target.idempotencyKeyHeader === undefined ? {} : { idempotencyKeyHeader: target.idempotencyKeyHeader }),
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,

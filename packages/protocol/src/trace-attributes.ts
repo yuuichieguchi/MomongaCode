@@ -2,6 +2,7 @@ export const MOMONGA_ATTRIBUTES = {
   runId: 'momonga.run_id',
   step: 'momonga.step',
   attempt: 'momonga.attempt',
+  retryOf: 'momonga.retry_of',
   billing: 'momonga.billing',
   cacheWriteInputTokens: 'momonga.usage.cache_write_input_tokens',
   usageSource: 'momonga.usage_source',

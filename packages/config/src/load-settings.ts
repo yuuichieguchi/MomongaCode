@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
-import { DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains } from '@momonga/foundation';
-import type { StopValues } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains, lexicallyWithin } from '@momonga/foundation';
+import type { SandboxNetworkSetting, StopValues } from '@momonga/foundation';
 
 export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
@@ -17,12 +17,13 @@ import {
   mergeVerificationSettings,
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
+import { layoutOf } from './layout.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
 import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedSandboxUnixSockets, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -52,6 +53,8 @@ export type ResolvedSettings = {
   gateway: GatewayStopValues;
   runtime: RuntimeSettings;
   sandbox: SandboxSetting;
+  sandboxNetwork: SandboxNetworkSetting;
+  sandboxUnixSockets: ResolvedSandboxUnixSockets;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
@@ -130,6 +133,23 @@ const resolveDirectory = (directory: string, layer: Layer, home: string): string
   return resolved.path;
 };
 
+const UNIX_SOCKET_ALLOW_UNSUPPORTED = 'unix socket allow-lists are not supported by the Linux sandbox; all Unix sockets are denied';
+
+const enforceableUnixSockets = ({ source, allow }: { source: string; allow: string[] }, sandbox: SandboxSetting, home: string, warnings: string[]): string[] => {
+  if (allow.length === 0) return [];
+  if (sandbox === 'bubblewrap') {
+    warnings.push(`${source}: ${UNIX_SOCKET_ALLOW_UNSUPPORTED}`);
+    return [];
+  }
+  const layout = layoutOf(home);
+  const owned = [layout.root, layout.keychains];
+  return allow.filter((entry) => {
+    if (!owned.some((directory) => lexicallyWithin(entry, directory))) return true;
+    warnings.push(`${source}: sandboxUnixSockets.allow entry ${JSON.stringify(entry)} is inside a directory momonga owns; its sockets are always denied; discarded`);
+    return false;
+  });
+};
+
 export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: string, projectDir: string, warnings: string[]): ResolvedSettings => {
   let projectReal: string;
   try {
@@ -153,11 +173,14 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
     runtime: {},
     sandbox: defaultSandboxSetting(),
+    sandboxNetwork: DEFAULT_SANDBOX_NETWORK,
+    sandboxUnixSockets: { allow: [] },
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
     context: defaultContextSettings(),
     tools: defaultToolsSettings(),
   };
+  let unixSockets: { source: string; allow: string[] } | undefined;
   for (const layer of layers) {
     const {
       permissions,
@@ -175,6 +198,8 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       gateway,
       runtime,
       sandbox,
+      sandboxNetwork,
+      sandboxUnixSockets,
       telemetry,
       network,
       pricing,
@@ -221,10 +246,13 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
     if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };
     if (sandbox !== undefined) merged.sandbox = sandbox;
+    if (sandboxNetwork !== undefined) merged.sandboxNetwork = sandboxNetwork;
+    if (sandboxUnixSockets !== undefined) unixSockets = { source: layer.source, allow: sandboxUnixSockets.allow ?? [] };
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
   }
+  if (unixSockets !== undefined) merged.sandboxUnixSockets = { allow: enforceableUnixSockets(unixSockets, merged.sandbox, home, warnings) };
   return merged;
 };
 

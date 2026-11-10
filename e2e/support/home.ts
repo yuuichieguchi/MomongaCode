@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { FIRST_GENERATION, SOCKET_PATH_LIMIT, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, assertUnixSocketPathFits, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolders } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
@@ -64,10 +64,14 @@ const longestSocketBytes = (tmpRoot: string, run: string): number => {
   return Math.max(...sockets.map((socket) => Buffer.byteLength(socket)));
 };
 
-const assertSocketBudget = (tmpRoot: string, run: string): void => {
+const assertSocketBudget = async (tmpRoot: string, run: string): Promise<void> => {
   const longest = longestSocketBytes(tmpRoot, run);
-  const maximum = SOCKET_PATH_LIMIT - 1;
-  if (longest > maximum) throw new Error(`longest socket must be at most ${maximum} bytes in ${tmpRoot}, got ${longest}`);
+  const standIn = path.join(tmpRoot, 's'.repeat(longest - Buffer.byteLength(tmpRoot) - 1));
+  try {
+    await assertUnixSocketPathFits(standIn);
+  } catch (error) {
+    throw new Error(`the longest socket of a home in ${tmpRoot} is ${longest} bytes, which leaves no socket-path budget`, { cause: error });
+  }
 };
 
 const writeLiveMarker = (marker: string): void => {
@@ -97,7 +101,7 @@ export const createE2eHome = async (options: CreateE2eHomeOptions = {}): Promise
   const realTmp = e2eTmpRoot();
   const tmpRoot = options.tmpRoot === undefined ? realTmp : fs.realpathSync(options.tmpRoot);
   assertInside(tmpRoot, realTmp);
-  assertSocketBudget(tmpRoot, run);
+  await assertSocketBudget(tmpRoot, run);
   acquireLiveMarker(liveMarkerPath(tmpRoot, run));
   const root = fs.mkdtempSync(path.join(tmpRoot, e2eEntryPrefix(run)));
   if (root === os.userInfo().homedir) throw new Error(`refusing to use the user home ${root} as an e2e home`);

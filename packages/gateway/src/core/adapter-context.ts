@@ -11,10 +11,12 @@ export const adapterContextOf = (
   capabilities: Capabilities,
   signal: AbortSignal,
   attempt: number,
+  idempotencyKey?: string,
 ): AdapterContext => ({
   signal,
   target: adapterTargetOf(target),
   attempt,
   reasoningOrigin: originOf(services, target),
   capabilities,
+  ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
 });

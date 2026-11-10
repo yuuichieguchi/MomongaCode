@@ -44,6 +44,27 @@ export const LIFELINE_FD = 3;
 export const DAEMON_MARKER_FD = 4;
 export const LOCK_FD = 5;
 
+export const KEEPER_JOB_PREFIX = 'Local\\momonga-';
+export const KEEPER_PIPE_PREFIX = '\\\\.\\pipe\\momonga-keeper-';
+export const KEEPER_NAME_BYTES = 16;
+export const KEEPER_NAME_FORM = new RegExp(`^[0-9a-f]{${KEEPER_NAME_BYTES * 2}}$`);
+
+export const KEEPER_EXIT_CODES = {
+  usage: 0x4d4b0001,
+  'pipe-unavailable': 0x4d4b0002,
+  'name-taken': 0x4d4b0003,
+  'containment-unavailable': 0x4d4b0004,
+  'marker-unavailable': 0x4d4b0005,
+  'launch-failed': 0x4d4b0006,
+  'job-absent': 0x4d4b0007,
+  'owner-lost': 0x4d4b0008,
+  terminated: 0x4d4b0009,
+} as const;
+
+export type KeeperExitName = keyof typeof KEEPER_EXIT_CODES;
+
+export const keeperExitName = (code: number): KeeperExitName | undefined => (Object.keys(KEEPER_EXIT_CODES) as KeeperExitName[]).find((name) => KEEPER_EXIT_CODES[name] === code);
+
 export type StopValues = {
   readonly closeGraceMs: number;
   readonly managedServerStopGraceMs: number;

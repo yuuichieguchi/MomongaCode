@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { EMPTY_FILE_RULES, isProtectedWrite, lexicallyWithin } from '@momonga/foundation';
-import type { FileRuleSet, ProtectedSet, UnresolvableReason } from '@momonga/foundation';
+import { DEFAULT_SANDBOX_NETWORK, EMPTY_FILE_RULES, describeNetworkScope, isProtectedWrite, lexicallyWithin, networkScopeOfRequest } from '@momonga/foundation';
+import type { FileRuleSet, ProtectedSet, SandboxNetworkSetting, UnresolvableReason } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { ApprovalBasis, PermissionMode } from '@momonga/protocol';
 import { commandApproval } from './approval.ts';
@@ -32,6 +32,7 @@ export type DecideInput = {
   fs: PolicyFilesystem;
   searchPath: string | undefined;
   isWritable: (absolute: string) => boolean;
+  sandboxNetwork?: SandboxNetworkSetting;
 };
 
 export type Decision = {
@@ -41,6 +42,7 @@ export type Decision = {
   rule?: PermissionRule;
   humanOnly?: true;
   basis?: ApprovalBasis;
+  network?: true;
 };
 
 const WRITE_TOOL: PolicyTool = { name: 'Write', kind: 'edit', sideEffect: 'write', subjectKind: 'path' };
@@ -265,7 +267,7 @@ const decidePathAccess = (input: DecideInput, plan: PathPlan, tool: PolicyTool, 
 
 export const decidePrimary = (input: DecideInput): Decision => decideSubject(input, input.tool, input.subject, false);
 
-export const decide = (input: DecideInput): Decision => {
+const decideWithoutNetwork = (input: DecideInput): Decision => {
   const primary = decidePrimary(input);
   if (input.subject.kind !== 'command' || primary.kind === 'deny') return primary;
 
@@ -290,3 +292,18 @@ const withWriteBasis = (primary: Decision, writes: PathPlan, writeDecisions: rea
   if (writing?.basis === undefined) throw new Error('a command with write targets was allowed without an allowing write decision');
   return { ...primary, basis: writing.basis };
 };
+
+const PROXY_NOTE = 'through the sandbox proxy, which carries HTTP and HTTPS; a program that does not use the proxy variables stays without network';
+
+const withNetworkRequest = (input: DecideInput, decision: Decision): Decision => {
+  if (input.subject.kind !== 'command' || input.subject.network === undefined || decision.kind === 'deny') return decision;
+  const scope = networkScopeOfRequest(input.subject.network);
+  const requests = `the command requests ${describeNetworkScope(scope)}${scope.kind === 'hosts' ? ` (${PROXY_NOTE})` : ''}`;
+  const setting = input.sandboxNetwork ?? DEFAULT_SANDBOX_NETWORK;
+  if (setting === 'deny') return { kind: 'deny', source: 'mode', reason: `${requests}, and the setting sandboxNetwork is deny`, network: true };
+  if (setting === 'allow' || input.mode === 'bypassPermissions') return decision.kind === 'ask' ? { ...decision, reason: `${decision.reason}; ${requests}` } : decision;
+  if (decision.kind === 'ask') return { ...decision, reason: `${decision.reason}; ${requests}`, humanOnly: true, network: true };
+  return { kind: 'ask', source: 'mode', reason: requests, humanOnly: true, network: true };
+};
+
+export const decide = (input: DecideInput): Decision => withNetworkRequest(input, decideWithoutNetwork(input));

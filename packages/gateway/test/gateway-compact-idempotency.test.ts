@@ -75,7 +75,7 @@ describe('gateway.db migration v2', () => {
       expect(columns.map((column) => column.name)).toEqual(['key', 'digest', 'resource_json', 'created_at', 'expires_at']);
       expect(columns.filter((column) => column.pk > 0).map((column) => column.name)).toEqual(['key']);
       const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>;
-      expect(versions.map((row) => row.version)).toEqual([1, 2]);
+      expect(versions.map((row) => row.version)).toEqual([1, 2, 3]);
     } finally {
       db.close();
     }

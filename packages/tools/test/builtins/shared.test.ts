@@ -128,7 +128,7 @@ describe('createBuiltinTools', () => {
       Edit: ['file_path', 'new_string', 'old_string', 'replace_all'],
       Glob: ['path', 'pattern'],
       Grep: ['-A', '-B', '-C', '-i', '-n', 'glob', 'head_limit', 'multiline', 'offset', 'output_mode', 'path', 'pattern', 'type'],
-      Bash: ['command', 'description', 'run_in_background', 'timeout'],
+      Bash: ['command', 'description', 'network', 'run_in_background', 'timeout'],
       BashOutput: ['bash_id', 'block', 'filter', 'timeout'],
       KillBash: ['shell_id'],
       ReadOutput: ['handle', 'limit', 'offset'],
@@ -167,6 +167,7 @@ describe('buildSandboxPolicy', () => {
       protectedSet,
       readAllowed: ['/s/sessions/one'],
       network: 'deny',
+      unixSocketAllow: [],
     });
   });
 
@@ -206,6 +207,7 @@ describe('buildSandboxPolicy', () => {
       protectedSet,
       readAllowed: ['/s/sessions/one'],
       network: 'allow',
+      unixSocketAllow: [],
     });
   });
 });

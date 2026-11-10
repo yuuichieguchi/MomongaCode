@@ -17,7 +17,7 @@ import { PLAN_PROFILES, planModelsEdit, probeRecordKeyOf, registeredServer } fro
 import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, socketPathLimit, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
@@ -58,7 +58,7 @@ export type ContextHostEffects = {
   ownerPid: number;
   ownerHome: string;
   readSecret(name: string, signal: AbortSignal): Promise<string>;
-  copyProbeRecord(source: ManagedRecordSource, paths: MomongaPaths): Promise<void>;
+  copyProbeRecord(source: ManagedRecordSource, paths: MomongaPaths, signal: AbortSignal): Promise<void>;
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
   readOwner(root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined>;
@@ -453,7 +453,7 @@ export const createHomes = <Runtime extends ContextRuntime = ContextRuntime>(eff
     await effects.prepare(paths);
     await assertSocketsFit(momongaLayout(await effects.canonical(root), effects.platform, {}), effects.refuseUnfitSockets);
     await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
-    for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths);
+    for (const source of options.managedTargets) await effects.copyProbeRecord(source, paths, options.interrupt);
     for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);

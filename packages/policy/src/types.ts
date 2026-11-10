@@ -1,3 +1,4 @@
+import type { NetworkRequest } from '@momonga/foundation';
 import type { GoverningEnforcement, GoverningFactView, GoverningKind, MemoryKind, MemoryScope, SideEffect, ToolKind } from '@momonga/protocol';
 
 export type PolicyTool = { name: string; kind: ToolKind } & (
@@ -7,7 +8,7 @@ export type PolicyTool = { name: string; kind: ToolKind } & (
 
 export type PermissionSubject =
   | { kind: 'path'; tool: string; paths: readonly string[]; access: 'read' | 'write' }
-  | { kind: 'command'; tool: string; command: string }
+  | { kind: 'command'; tool: string; command: string; network?: NetworkRequest }
   | { kind: 'mcp'; server: string; tool: string }
   | {
       kind: 'memory';

@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, hostKernelLock, isProcessAlive, refuseUnfitGenerationSocketsBeforeCreation, shortTempBase } from '@momonga/foundation';
+import { createBinaryHashCache, createHostExec, createOwnedDirectory, ensureMomongaDirs, hostKernelLock, isProcessAlive, refuseUnfitGenerationSocketsBeforeCreation, shortTempBase } from '@momonga/foundation';
 import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
 import { loadUserModels, registeredServer } from '@momonga/config';
 import type { ServerRegistry } from '@momonga/config';
@@ -10,6 +10,7 @@ import { stopAllGenerations } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
+import { withinCommandLimit } from '../command-limit.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
 import type { ContextHostEffects, EvalOwner, ManagedRecordSource } from './context-host.ts';
 import type { YieldHostEffects } from './yield-host.ts';
@@ -118,7 +119,10 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     copyEndpointProbeRecord: async (probe, paths) => {
       await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
     },
-    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, ports.platform, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
+    copyProbeRecord: async (source, paths, command) => {
+      const from = (await pathsOf(ports)).probe;
+      await withinCommandLimit(command, (signal) => copyProbeRecord(ports.files, from, paths.probe, source, loadUserModels({ home: ports.home }).resolved.servers, ports.platform, signal));
+    },
     listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
     readOwner: (root) => readEvalOwner(ports.files, root),
     sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),

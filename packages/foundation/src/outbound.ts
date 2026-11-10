@@ -1,4 +1,7 @@
 import { X509Certificate } from 'node:crypto';
+import net, { isIP } from 'node:net';
+import type { LookupFunction } from 'node:net';
+import type { Duplex } from 'node:stream';
 import tls from 'node:tls';
 import { Worker } from 'node:worker_threads';
 import { Agent, Dispatcher, Pool, ProxyAgent, fetch as undiciFetch } from 'undici';
@@ -216,6 +219,7 @@ export type OutboundOptions = {
   readonly connectReplyTimeoutMs: number;
   readonly headersTimeout?: number;
   readonly bodyTimeout?: number;
+  readonly lookup?: LookupFunction;
 };
 
 const PROXY_HOP = Symbol('momonga.proxyHop');
@@ -355,12 +359,18 @@ export type OutboundPlan =
   | { readonly kind: 'refuse'; readonly error: OutboundConnectionError }
   | { readonly kind: 'route'; readonly route: Exclude<Route, { kind: 'unsupported' }>; readonly label: (error: Error) => Error };
 
-export const outboundPlan = (destination: URL, network: OutboundNetwork, client: { readonly forwardsPlainHttp: boolean; readonly signal: unknown }): OutboundPlan => {
-  const caSources = caSourceNames(network.trust);
+type OutboundClient = { readonly forwardsPlainHttp: boolean; readonly signal: unknown };
+
+export const outboundPlan = (destination: URL, network: OutboundNetwork, client: OutboundClient): OutboundPlan => {
   const trustFailure = network.trust.failures.find(isFileFailure);
   if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
     return { kind: 'refuse', error: new OutboundConnectionError({ kind: 'ca-file', ...trustFailure }) };
   }
+  return routePlan(destination, network, client);
+};
+
+const routePlan = (destination: URL, network: OutboundNetwork, client: OutboundClient): OutboundPlan => {
+  const caSources = caSourceNames(network.trust);
   const route = routeOf(destination, network.config);
   if (route.kind === 'unsupported') {
     return { kind: 'refuse', error: new OutboundConnectionError({ kind: 'proxy-unsupported', source: route.source, text: route.message }) };
@@ -377,6 +387,117 @@ export const outboundPlan = (destination: URL, network: OutboundNetwork, client:
     return new OutboundConnectionError({ kind: 'origin-connection', origin: destination.origin, ...(code === undefined ? {} : { code }) }, { cause: error });
   };
   return { kind: 'route', route, label };
+};
+
+const unbracketed = (hostname: string): string => hostname.replace(/^\[|\]$/g, '');
+
+const hostOfAddress = (address: string): string => (isIP(address) === 6 ? `[${address}]` : address);
+
+type CheckedRoute = Exclude<Route, { kind: 'unsupported' }>;
+
+const routeToChecked = (named: CheckedRoute, checked: URL, config: NetworkConfig): CheckedRoute => {
+  if (named.kind !== 'proxy') return named;
+  const ofAddress = routeOf(checked, config);
+  return ofAddress.kind === 'proxy' || ofAddress.kind === 'unsupported' ? named : ofAddress;
+};
+
+type HeaderValue = string | string[] | undefined;
+
+const headerPairs = (headers: Dispatcher.DispatchOptions['headers']): Array<[string, HeaderValue]> => {
+  if (headers === undefined || headers === null) return [];
+  if (Array.isArray(headers)) {
+    const pairs: Array<[string, HeaderValue]> = [];
+    for (let index = 0; index + 1 < headers.length; index += 2) pairs.push([headers[index] as string, headers[index + 1] as string]);
+    return pairs;
+  }
+  if (Symbol.iterator in headers) return [...(headers as Iterable<[string, HeaderValue]>)];
+  return Object.entries(headers).map(([name, value]) => [name, typeof value === 'number' ? String(value) : value]);
+};
+
+const headersNaming = (headers: Dispatcher.DispatchOptions['headers'], host: string): Record<string, HeaderValue> => {
+  const named: Record<string, HeaderValue> = {};
+  for (const [name, value] of headerPairs(headers)) {
+    const held = named[name];
+    named[name] = held === undefined || value === undefined ? value : [held, value].flat();
+  }
+  if (!Object.keys(named).some((name) => name.toLowerCase() === 'host')) named['host'] = host;
+  return named;
+};
+
+const dispatchToChecked = (options: Dispatcher.DispatchOptions, destination: URL, checked: URL): Dispatcher.DispatchOptions => ({
+  ...options,
+  origin: checked.origin,
+  headers: headersNaming(options.headers, destination.host),
+  ...(TLS_SCHEMES.has(destination.protocol) ? { servername: unbracketed(destination.hostname) } : {}),
+});
+
+const checkedUrlOf = (destination: URL, address: string): URL => {
+  if (isIP(address) === 0) throw new TypeError(`${JSON.stringify(address)} is not an IP address, so no connection for ${destination.hostname} can be bound to it`);
+  return new URL(`${destination.protocol}//${hostOfAddress(address)}${destination.port === '' ? '' : `:${destination.port}`}`);
+};
+
+type AnsweredAddress = string | ReadonlyArray<{ readonly address: string }> | undefined;
+
+const firstAddressOf = (hostname: string, answered: AnsweredAddress): string => {
+  const address = typeof answered === 'string' ? answered : answered?.[0]?.address;
+  if (address === undefined) throw new TypeError(`the lookup for ${hostname} answered no address`);
+  return address;
+};
+
+const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+export type OutboundTunnelTarget = { readonly host: string; readonly address: string; readonly port: number };
+
+export type OutboundTunnelOptions = { readonly connectReplyTimeoutMs: number; readonly signal?: AbortSignal };
+
+const proxyAuthorization = (proxy: URL): Record<string, string> =>
+  proxy.username === '' || proxy.password === '' ? {} : { 'proxy-authorization': `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString('base64')}` };
+
+const dialed = (address: string, port: number, signal: AbortSignal | undefined): Promise<Duplex> =>
+  new Promise((resolve, reject) => {
+    const socket = net.connect({ host: address, port, ...(signal === undefined ? {} : { signal }) });
+    socket.once('error', reject);
+    socket.once('connect', () => {
+      socket.off('error', reject);
+      resolve(socket);
+    });
+  });
+
+const tunnelledBy = async (proxy: URL, authority: string, options: OutboundTunnelOptions): Promise<Duplex> => {
+  const pool = tunnelClient(new URL(proxy.origin), { connections: 1 }, options.connectReplyTimeoutMs);
+  try {
+    const { socket } = await pool.connect({
+      origin: proxy.origin,
+      path: authority,
+      headers: { host: authority, ...proxyAuthorization(proxy) },
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    socket.once('close', () => void pool.destroy());
+    return socket;
+  } catch (error) {
+    await pool.destroy();
+    throw error;
+  }
+};
+
+export const openOutboundTunnel = async (network: OutboundNetwork, target: OutboundTunnelTarget, options: OutboundTunnelOptions): Promise<Duplex> => {
+  assertConnectBound(options.connectReplyTimeoutMs);
+  const destination = new URL(`https://${hostOfAddress(target.host)}:${target.port}`);
+  const checked = checkedUrlOf(destination, target.address);
+  const plan = routePlan(destination, network, { forwardsPlainHttp: false, signal: options.signal });
+  if (plan.kind === 'refuse') throw plan.error;
+  const route = routeToChecked(plan.route, checked, network.config);
+  try {
+    return await (route.kind === 'proxy' ? tunnelledBy(route.url, `${checked.hostname}:${target.port}`, options) : dialed(target.address, target.port, options.signal));
+  } catch (error) {
+    throw plan.label(errorOf(error));
+  }
+};
+
+const assertConnectBound = (connectReplyTimeoutMs: number): void => {
+  if (!Number.isSafeInteger(connectReplyTimeoutMs) || connectReplyTimeoutMs < 0) {
+    throw new RangeError(`the outbound dispatcher needs the operation's CONNECT bound as a whole number of milliseconds, not ${connectReplyTimeoutMs}`);
+  }
 };
 
 export const proxyHopError = <T>(error: T): T => {
@@ -396,12 +517,44 @@ class OutboundDispatcher extends Dispatcher {
   readonly #direct: Agent;
   readonly #proxies = new Map<string, ProxyAgent>();
   readonly #refusals = new Map<string, Agent>();
+  readonly #siteRefusals = new WeakSet<object>();
+  readonly #siteLookup: LookupFunction | undefined;
 
   constructor(network: OutboundNetwork, options: OutboundOptions) {
     super();
     this.#network = network;
     this.#options = options;
-    this.#direct = new Agent(siteTimeouts(options));
+    this.#siteLookup = options.lookup === undefined ? undefined : this.#recordingRefusals(options.lookup);
+    this.#direct = new Agent({ ...siteTimeouts(options), ...(this.#siteLookup === undefined ? {} : { connect: { lookup: this.#siteLookup } }) });
+  }
+
+  #recordingRefusals(lookup: LookupFunction): LookupFunction {
+    return (hostname, options, callback) =>
+      lookup(hostname, options, (error, address, family) => {
+        if (error !== null) this.#siteRefusals.add(error);
+        callback(error, address, family);
+      });
+  }
+
+  #refusedBySite(error: unknown): boolean {
+    return causeChain(error).some((entry) => typeof entry === 'object' && entry !== null && this.#siteRefusals.has(entry));
+  }
+
+  #checkedBySite(lookup: LookupFunction, destination: URL): Promise<URL> {
+    const hostname = unbracketed(destination.hostname);
+    return new Promise((resolve, reject) => {
+      lookup(hostname, { all: true }, (error, answered) => {
+        if (error !== null) {
+          reject(error);
+          return;
+        }
+        try {
+          resolve(checkedUrlOf(destination, firstAddressOf(hostname, answered as AnsweredAddress)));
+        } catch (unusable) {
+          reject(errorOf(unusable));
+        }
+      });
+    });
   }
 
   override dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
@@ -409,11 +562,21 @@ class OutboundDispatcher extends Dispatcher {
     const signal: unknown = 'signal' in options ? options.signal : undefined;
     const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true, signal });
     if (plan.kind === 'refuse') return this.#refuse(plan.error, options, handler);
-    const target = plan.route.kind === 'proxy' ? this.#proxyFor(plan.route) : this.#direct;
-    return target.dispatch(options, labelledHandler(handler, plan.label));
+    const labelled = labelledHandler(handler, (error) => (this.#refusedBySite(error) ? error : plan.label(error)));
+    if (plan.route.kind !== 'proxy') return this.#direct.dispatch(options, labelled);
+    const named = plan.route;
+    if (this.#siteLookup === undefined || isIP(unbracketed(destination.hostname)) !== 0) return this.#proxyFor(named).dispatch(options, labelled);
+    void this.#checkedBySite(this.#siteLookup, destination)
+      .then((checked) => {
+        const route = routeToChecked(named, checked, this.#network.config);
+        const bound = dispatchToChecked(options, destination, checked);
+        return route.kind === 'proxy' ? this.#proxyFor(route).dispatch(bound, labelled) : this.#direct.dispatch(bound, labelled);
+      })
+      .catch((error: unknown) => this.#refuse(errorOf(error), options, handler));
+    return true;
   }
 
-  #refuse(error: OutboundConnectionError, options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+  #refuse(error: Error, options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
     let refusal = this.#refusals.get(error.message);
     if (refusal === undefined) {
       refusal = new Agent({ connect: (_options, callback) => callback(error, null) });
@@ -468,9 +631,7 @@ class OutboundDispatcher extends Dispatcher {
 }
 
 export const createOutboundDispatcher = (network: OutboundNetwork, options: OutboundOptions): Dispatcher => {
-  if (!Number.isSafeInteger(options.connectReplyTimeoutMs) || options.connectReplyTimeoutMs < 0) {
-    throw new RangeError(`the outbound dispatcher needs the operation's CONNECT bound as a whole number of milliseconds, not ${options.connectReplyTimeoutMs}`);
-  }
+  assertConnectBound(options.connectReplyTimeoutMs);
   return new OutboundDispatcher(network, options);
 };
 

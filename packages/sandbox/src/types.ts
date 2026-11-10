@@ -1,4 +1,6 @@
-import type { FileRuleSet, ProtectedSet } from '@momonga/foundation';
+import type { FileRuleSet, NetworkScopeKind, ProtectedSet } from '@momonga/foundation';
+
+export type SandboxNetwork = 'deny' | 'allow' | { readonly loopbackPort: number };
 
 export interface SandboxPolicy {
   writableRoots: readonly string[];
@@ -6,7 +8,8 @@ export interface SandboxPolicy {
   writeDeniedLiterals: readonly string[];
   readDenied: readonly string[];
   readAllowed?: readonly string[];
-  network: 'deny' | 'allow';
+  network: SandboxNetwork;
+  unixSocketAllow?: readonly string[];
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
 }
@@ -44,3 +47,9 @@ export interface Sandbox {
   sweep?(): void;
   spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess;
 }
+
+export const SANDBOX_NETWORK_SCOPES: Readonly<Record<Sandbox['kind'], readonly NetworkScopeKind[]>> = {
+  seatbelt: ['none', 'hosts', 'open'],
+  bubblewrap: ['none', 'open'],
+  none: ['open'],
+};

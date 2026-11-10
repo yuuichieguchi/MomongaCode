@@ -48,7 +48,7 @@ export type RunServiceOptions = {
   modelListing: (signal: AbortSignal) => Promise<ModelListing>;
   modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
-  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionReadSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   permissionRules: (session: Session) => Promise<readonly PermissionRule[]>;

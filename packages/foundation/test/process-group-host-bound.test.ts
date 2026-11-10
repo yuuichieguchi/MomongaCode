@@ -13,13 +13,13 @@ const fakeTiming = (clock: FakeClock): GroupTiming => ({
   },
 });
 
-const groupThatSurvivesSigkillFor = (survivalMs: number, clock: FakeClock): ProcessGroupPort & { signals: NodeJS.Signals[] } => {
+const groupThatSurvivesSigkillFor = (survivalMs: number, clock: FakeClock): ProcessGroupPort & { sent: NodeJS.Signals[] } => {
   let killedAt: number | undefined;
-  const signals: NodeJS.Signals[] = [];
+  const sent: NodeJS.Signals[] = [];
   return {
-    signals,
+    sent,
     signal: async (_pgid, signal) => {
-      signals.push(signal);
+      sent.push(signal);
       if (signal === 'SIGKILL' && killedAt === undefined) killedAt = clock.ms;
     },
     alive: async () => killedAt === undefined || clock.ms - killedAt < survivalMs,
@@ -31,8 +31,8 @@ describe('stopping a process group whose members stay visible after SIGKILL (the
     const clock = { ms: 0 };
     const port = groupThatSurvivesSigkillFor(1500, clock);
     await expect(terminateGroup(4242, { graceMs, port, timing: fakeTiming(clock) })).resolves.toBe('killed');
-    expect(port.signals[0]).toBe('SIGTERM');
-    expect(port.signals).toContain('SIGKILL');
+    expect(port.sent[0]).toBe('SIGTERM');
+    expect(port.sent).toContain('SIGKILL');
     expect(clock.ms).toBeGreaterThanOrEqual(graceMs + 1500);
     expect(clock.ms).toBeLessThan(graceMs + KILL_CONFIRM_MS);
   });

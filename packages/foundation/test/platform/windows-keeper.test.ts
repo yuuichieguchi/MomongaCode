@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { groupTerminationBoundMs } from '../../src/process-group.ts';
 import {
-  KEEPER_EXIT_CODES,
   KEEPER_LINE_LIMIT,
   KeeperLostError,
   KeeperProtocolError,
@@ -10,7 +9,6 @@ import {
   confirmByAttach,
   createKeeperLineDecoder,
   keeperAttachArguments,
-  keeperExitName,
   keeperJobName,
   keeperLaunchArguments,
   keeperPipeName,
@@ -18,6 +16,7 @@ import {
   parseKeeperLine,
   stopKeptGroup,
 } from '../../src/platform/windows-keeper.ts';
+import { KEEPER_EXIT_CODES, keeperExitName } from '../../src/process-contract.ts';
 import type { KeeperConnection, KeeperHost, KeeperRun } from '../../src/platform/windows-keeper.ts';
 
 const turn = async (): Promise<void> => {
@@ -98,8 +97,8 @@ const fakeKeeper = (): FakeKeeper => {
     exit: (code) => exited?.(code),
     start,
     host: {
-      executable: async () => 'C:\\cache\\momonga-keeper.exe',
-      listen: async (name) => {
+      executable: () => 'C:\\cache\\momonga-keeper.exe',
+      listen: (name) => {
         listened.push(name);
         return {
           accept: (signal) =>

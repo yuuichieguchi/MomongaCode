@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { loadUserSettings, probeKeyOf } from '@momonga/config';
 import type { KnownProbeKey } from '@momonga/config';
 import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, firstRefusedSocketPathBytes, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
@@ -215,11 +215,11 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
   it('answers 412 with the bind-measurement text and creates no marker directory or socket for the instance', async () => {
     const fake = await createFakeManagedServer({ dir: makeDir() });
     const home = makeHome();
-    const limit = socketPathLimit(process.platform);
+    const refused = await firstRefusedSocketPathBytes(home);
     const prefix = Buffer.byteLength(path.join(targetsDir(home), 'x-1.sock')) - 1;
-    const name = `t${'n'.repeat(limit + 1 - prefix - 1)}`;
+    const name = `t${'n'.repeat(refused - prefix - 1)}`;
     const socket = path.join(targetsDir(home), `${name}-1.sock`);
-    expect(Buffer.byteLength(socket)).toBe(limit + 1);
+    expect(Buffer.byteLength(socket)).toBe(refused);
     writeSettings(home, {
       models: modelsOf({ [name]: { adapter: 'managed', server: 'loom', model: 'fake-1', ...DECLARED_BOUNDS, toolCalling: 'auto' } }, { servers: { loom: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     });
@@ -228,7 +228,7 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(`${name}/fake-1`)));
     expect(answered.status).toBe(412);
-    expect(answered.body.error.message).toContain(`the model "fake-1": its server socket path is ${limit + 1} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
+    expect(answered.body.error.message).toContain(`the model "fake-1": its server socket path is ${refused} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
     expect(answered.body.error.message).toMatch(/\((ENAMETOOLONG|EINVAL)\); choose a shorter server name/);
     expect(fs.existsSync(targetMarkers(home, `${name}-1`))).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);
