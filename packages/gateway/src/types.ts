@@ -16,6 +16,7 @@ export type GatewayTargetConfig = {
   maxConcurrency: number;
   admissionTimeoutMs: number;
   counter: string;
+  idempotencyKeyHeader?: string;
   capabilities?: CapabilityOverride;
   plan?: { profile: string; account?: string };
   keyGroup?: string;

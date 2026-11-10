@@ -359,9 +359,21 @@ const resolveAdapter = (target: ModelTarget, provider: string, where: Where, { h
   }
 };
 
+const REQUEST_OWN_HEADERS: readonly string[] = ['accept', 'anthropic-version', 'authorization', 'connection', 'content-length', 'content-type', 'host', 'transfer-encoding', 'user-agent', 'x-api-key'];
+
+const idempotencyKeyHeaderOf = (target: ModelTarget, where: string): { idempotencyKeyHeader?: string } => {
+  const { idempotencyKeyHeader } = target;
+  if (idempotencyKeyHeader === undefined) return {};
+  if (REQUEST_OWN_HEADERS.includes(idempotencyKeyHeader.toLowerCase())) {
+    throw new Error(`${where}: idempotencyKeyHeader ${JSON.stringify(idempotencyKeyHeader)} is a header the request already carries; write the header this server reads an idempotency key from`);
+  }
+  return { idempotencyKeyHeader };
+};
+
 const resolveTarget = (target: ModelTarget, provider: string, where: Where, context: ResolveContext): ResolvedModelTarget => ({
   ...resolveAdapter(target, provider, where, context),
   ...(target.answers === undefined ? {} : { answers: target.answers }),
+  ...idempotencyKeyHeaderOf(target, where.connection),
 });
 
 const declaredCapabilitiesOf = (target: ResolvedModelTarget): { contextWindow?: number | undefined; maxOutputTokens?: number | undefined } | undefined => target.capabilities;

@@ -216,6 +216,8 @@ Other keys under `models`: `roles` (the model for `compaction`, `reflection`, or
 
 You can make every one of these changes without editing the file: `momonga models add`, `remove`, `start`, `fallback`, `billing`, `role`, and `set` in a shell, or `/models` in a session.
 
+A model request can be sent twice. After a crash of the gateway or the runtime, or when a server fails before its answer starts, Momonga Code sends the same request again, and the server may run and bill it twice. A second send is recorded and marked `retry_of`: the usage record of its answer carries `retry_of_seq` and its trace span carries `momonga.retry_of`, both naming the first send. If a server accepts an idempotency key, set `idempotencyKeyHeader` on its connection to the name of the header the server reads the key from, for example `"idempotencyKeyHeader": "Idempotency-Key"`. Momonga Code then sends the same key on a request and on every resend of it, so that such a server answers and bills it once. Without the setting no key is sent. [docs/threat-model.md](docs/threat-model.md) states this risk in full.
+
 ### Permission rules
 
 In the example above, `Bash(npm test:*)` allows every command whose first words are `npm test`, with any options after them. A rule matches only when its words are the first words of the command, with nothing between them: `git -c core.pager=<program> log` does not match `Bash(git log:*)`, but it does match `Bash(git:*)`.

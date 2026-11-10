@@ -84,6 +84,7 @@ export type TargetSpec = {
   admissionTimeoutMs?: number;
   capabilities?: ConfiguredTarget['capabilities'];
   counter?: string;
+  idempotencyKeyHeader?: string;
   plan?: ConfiguredTarget['plan'];
   keyGroup?: string;
 };
@@ -125,6 +126,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
       counter: spec.counter ?? counterForTest(canon),
+      ...(spec.idempotencyKeyHeader === undefined ? {} : { idempotencyKeyHeader: spec.idempotencyKeyHeader }),
       ...(spec.capabilities === undefined ? {} : { capabilities: spec.capabilities }),
       ...(spec.plan === undefined ? {} : { plan: spec.plan }),
       ...(spec.keyGroup === undefined ? {} : { keyGroup: spec.keyGroup }),

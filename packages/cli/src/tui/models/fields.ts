@@ -19,7 +19,7 @@ export type FieldRow = { readonly field: string; readonly path: readonly string[
 
 const ENTRY_PREFIX = 'models[].';
 
-const CONNECTION_ORDER = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'maxConcurrency', 'admissionTimeoutMs'] as const;
+const CONNECTION_ORDER = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'idempotencyKeyHeader', 'maxConcurrency', 'admissionTimeoutMs'] as const;
 
 const ENTRY_ORDER = [
   'maxConcurrency',

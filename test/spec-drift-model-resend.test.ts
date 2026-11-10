@@ -50,7 +50,7 @@ describe('ModelResend.tla matches the code', () => {
     ['packages/store/src/fold.ts', 424, 'attempt: event.attempt + 1'],
     ['packages/gateway/src/core/idempotency.ts', 43, "kind: 'inflight'"],
     ['packages/gateway/src/core/idempotency.ts', 52, "kind: 'stored'"],
-    ['packages/gateway/src/core/store.ts', 235, 'putIdempotency.run(key, digest'],
+    ['packages/gateway/src/core/store.ts', 264, 'putIdempotency.run(key, digest'],
   ];
 
   it('cites code lines that still hold the code it names, each cited in the spec header, and no retired symbol', () => {
