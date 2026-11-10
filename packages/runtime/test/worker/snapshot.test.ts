@@ -17,13 +17,13 @@ const expectSnapshotAtYield = (env: Env, runId: string): void => {
 };
 
 describe('worker snapshots', () => {
-  it('writes a snapshot right before a terminal transition', async () => {
+  it('writes no snapshot at a terminal transition: nothing reads the state of a run that ended (O14)', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Done.'));
     const run = env.enqueue();
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expectSnapshotAtYield(env, run.id);
+    expect(env.store.load(run.id).snapshot).toBeUndefined();
   });
 
   it('writes a snapshot right before releasing to WAITING_HUMAN, carrying pins and the suggested rule', async () => {
@@ -41,9 +41,10 @@ describe('worker snapshots', () => {
 
   it('writes the snapshot with state version 11, carrying the recorded mode, the task seq, the loop groups and the working facts', async (context) => {
     const env = await makeEnv({ mode: 'acceptEdits' });
-    env.gateway.script.push(textStep('Done.'));
+    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'echo $(date)' } }]));
     const run = env.enqueue();
     await env.runOnce(env.worker());
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const db = new DatabaseSync(env.dbPath);
     context.onTestFinished(() => db.close());
     const row = db.prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(run.id) as { state_json: string } | undefined;

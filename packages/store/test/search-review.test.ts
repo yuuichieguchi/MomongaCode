@@ -13,7 +13,7 @@ describe('the denial callback of a search', () => {
     store.trust.set(b, 'trusted');
     await finishedRun(store, a, 'task', [{ tool: { name: 'Read', path: '/p/a.txt', output: 'projectterm in a' } }]);
     await finishedRun(store, b, 'task', [{ tool: { name: 'Read', path: '/p/b.txt', output: 'projectterm in b' } }]);
-    indexAll(store);
+    await indexAll(store);
     const seen: Array<[string, string]> = [];
     store.search.query({ trusted: true, project: a }, { query: 'projectterm', scope: 'all', readDenied: (target, project) => (seen.push([target, project]), false) });
     const judged = [...new Set(seen.map(([target, project]) => `${target} ${project}`))].sort();
@@ -28,7 +28,7 @@ describe('the denial callback of a search', () => {
     await finishedRun(store, a, 'one');
     await finishedRun(store, b, 'two');
     await finishedRun(store, c, 'three');
-    indexAll(store);
+    await indexAll(store);
     expect(store.search.visibleProjects({ trusted: true, project: a }, 'all').sort()).toEqual([a, b].sort());
     expect(store.search.visibleProjects({ trusted: true, project: a }, 'project')).toEqual([a]);
     expect(store.search.visibleProjects({ trusted: false, project: c }, 'all')).toEqual([c]);
@@ -41,7 +41,7 @@ describe('a denied path in the touched paths of a run document', () => {
   it('is dropped from the document at query time, so neither the path nor a hit on it remains', async () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: secret, output: 'unrelated output' } }]);
-    indexAll(store);
+    await indexAll(store);
     const denied = (target: string) => target.startsWith('/work/a/secret/');
     const plain = store.search.query(OWN, { query: 'key.txt', scope: 'project' });
     expect(anchorsOf(plain)).toHaveLength(1);
@@ -53,7 +53,7 @@ describe('a denied path in the touched paths of a run document', () => {
   it('is absent from the snippet of a run that matched through another word', async () => {
     const { store } = harness();
     await finishedRun(store, '/work/a', 'rename the widgetterm parser', [{ tool: { name: 'Read', path: secret, output: 'unrelated output' } }]);
-    indexAll(store);
+    await indexAll(store);
     const result = store.search.query(OWN, { query: 'widgetterm', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
     expect(JSON.stringify(result)).not.toContain('key.txt');
     expect(anchorsOf(result)).toHaveLength(1);
@@ -68,7 +68,7 @@ describe('the candidate bound of an indexed query', () => {
     const middle = await finishedRun(store, '/work/a', 'candidateterm middle');
     clock.advance(1000);
     const newest = await finishedRun(store, '/work/a', 'candidateterm newest');
-    indexAll(store);
+    await indexAll(store);
     const bounded = store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 2 });
     expect(anchorsOf(bounded).map((anchor) => anchor.runId).sort()).toEqual([middle.id, newest.id].sort());
     expect(bounded.searched).toBe(2);
@@ -86,9 +86,9 @@ describe('the budget of an indexing batch', () => {
     await finishedRun(store, '/work/a', 'one', steps);
     await finishedRun(store, '/work/a', 'two', steps);
     await finishedRun(store, '/work/a', 'three', steps);
-    expect(store.search.indexBatch({ limit: 10, redactor, maxChars: 6000 })).toEqual({ runs: 2 });
-    expect(store.search.indexBatch({ limit: 10, redactor, maxChars: 10 })).toEqual({ runs: 1 });
-    expect(store.search.indexBatch({ limit: 10, redactor, maxChars: 10 })).toEqual({ runs: 0 });
+    expect(await store.search.indexBatch({ limit: 10, redactor, maxChars: 6000 })).toEqual({ runs: 2 });
+    expect(await store.search.indexBatch({ limit: 10, redactor, maxChars: 10 })).toEqual({ runs: 1 });
+    expect(await store.search.indexBatch({ limit: 10, redactor, maxChars: 10 })).toEqual({ runs: 0 });
   });
 });
 

@@ -5,7 +5,7 @@ import { readRunLimits } from '../../src/worker/limits.ts';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
 import { TOOL_OFFERED, bodyWatchedStore } from './body-watched-store.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
-import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
+import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS } from './pause-budget.ts';
 const STEPS = readRunLimits({}).maxSteps;
 const LOG_CHARS = 8_000;
 const HISTORY_IN_REQUEST = 8;
@@ -58,8 +58,16 @@ const runEvents = (now: number): RunEventPayload[] => [
 ];
 
 describe('the cost of the tool usage window at root run start (person item 9)', () => {
-  it('reads one offered-names record per window run, never the request bodies, within the pause budget of run start', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+  it('reads one offered-names record per window run and decodes no request body on the main thread', async () => {
+    const counting = { on: false, rows: 0, bytes: 0 };
+    const env = await makeEnv({
+      mode: 'bypassPermissions',
+      onDecode: (rows, bytes) => {
+        if (!counting.on) return;
+        counting.rows += rows;
+        counting.bytes += bytes;
+      },
+    });
     let bodyBytes = 0;
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
       env.clock.advance(1);
@@ -72,13 +80,15 @@ describe('the cost of the tool usage window at root run start (person item 9)', 
 
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const { value: window, millis } = await threadCpuMillisOf(() => toolUsageWindowOf(store, env.session.cwd));
+    counting.on = true;
+    const window = await toolUsageWindowOf(store, env.session.cwd);
+    counting.on = false;
 
-    console.info(`${TOOL_USAGE_WINDOW_RUNS} runs of ${STEPS} requests, ${bodyBytes} body bytes: tool usage window ${millis.toFixed(1)} ms of thread CPU time, ${reads.eventsReturned} events read`);
     expect(reads.bodyReads).toEqual([]);
     expect(reads.eventsReturned).toBeLessThanOrEqual(TOOL_USAGE_WINDOW_RUNS);
     expect(window).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
     expect(window[0]).toEqual({ offered: TOOLS.map((tool) => tool.name), called: ['Tool00'] });
-    expect(millis).toBeLessThan(PAUSE_BUDGET_MS);
+    expect(counting.rows).toBeLessThanOrEqual(TOOL_USAGE_WINDOW_RUNS);
+    expect(counting.bytes).toBeLessThan(bodyBytes / (TOOL_USAGE_WINDOW_RUNS * STEPS));
   }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 });

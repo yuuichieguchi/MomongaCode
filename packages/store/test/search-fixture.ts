@@ -66,6 +66,6 @@ export const openRun = (store: RuntimeStore, cwd: string, task: string, steps: r
 
 export const finishedRun = async (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = [], outcome: Outcome = 'COMPLETED'): Promise<Run> => openRun(store, cwd, task, steps).finish(outcome);
 
-export const indexAll = (store: RuntimeStore): void => {
-  store.search.indexBatch({ limit: 1000, redactor });
+export const indexAll = async (store: RuntimeStore): Promise<void> => {
+  await store.search.indexBatch({ limit: 1000, redactor });
 };

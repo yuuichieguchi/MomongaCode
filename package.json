@@ -15,6 +15,7 @@
     "test:tlc-deep": "MOMONGA_TLC_REUSE=0 MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
     "test:e2e": "vitest run --project e2e",
     "test:packaging": "vitest run --project packaging",
+    "calibrate:offloop": "vitest run --project calibration --silent=false packages/runtime/test/calibration/offloop-cost.test.ts",
     "typecheck": "node scripts/bundle.ts --threads && tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.ts",
     "sea": "node scripts/sea.ts",

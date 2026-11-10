@@ -15,13 +15,13 @@ import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, Memory
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
-import type { Claim, ContributionPreparer, Run, RuntimeStore, Session } from '@momonga/store';
+import type { Claim, ContributionPreparer, ReportReply, Run, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
-import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
+import { evidenceHandler, fidelityHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, reportHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
@@ -181,6 +181,14 @@ export const journalReaderPreparer = (dbPath: string): ContributionPreparer => (
   evidence: inProcessFacts(dbPath, evidenceHandler),
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
   fidelity: inProcessFidelity(dbPath),
+  report: async (request) => {
+    const db = openDatabase(dbPath);
+    try {
+      return (await reportHandler(db, createJournalReader(db))(request, () => undefined)) as ReportReply;
+    } finally {
+      db.close();
+    }
+  },
   measure: async (request) => {
     const db = openDatabase(dbPath);
     try {

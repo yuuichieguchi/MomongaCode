@@ -25,6 +25,7 @@ import type {
   PlanAccountRef,
   RunEvent,
   RunEventPayload,
+  RunReport,
   RunState,
   RunStatus,
   OpaqueEvent,
@@ -531,7 +532,7 @@ export type RunFactsStore = {
 };
 
 export type SearchStore = {
-  indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
+  indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): Promise<{ runs: number }>;
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
   query(visibility: HistoryVisibility, request: HistoryQueryRequest): HistoryQueryResult;
   readRange(visibility: HistoryVisibility, request: HistoryReadRequest): Promise<HistoryReadResult>;
@@ -777,6 +778,10 @@ export type FidelityReply = {
   verdicts: FidelityVerdict[];
 };
 
+export type ReportRequest = { runId: string };
+
+export type ReportReply = { lastSeq: number; report: RunReport };
+
 export type JournalFacts = {
   inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;
   inheritedWindow(request: InheritedWindowRequest, signal?: AbortSignal): Promise<InheritedWindowReply>;
@@ -784,6 +789,7 @@ export type JournalFacts = {
   evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;
   fidelity(request: FidelityRequest, signal?: AbortSignal): Promise<FidelityReply>;
+  report(request: ReportRequest, signal?: AbortSignal): Promise<ReportReply>;
 };
 
 export type ContributionPreparer = JournalFacts & {

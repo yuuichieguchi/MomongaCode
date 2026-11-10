@@ -4,7 +4,7 @@ import { ERROR_WINDOW, UNKNOWN_ANSWERER, assistantTextOf } from '@momonga/protoc
 import type { RunEventPayload, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import { locationPathsOf } from './search-documents.ts';
+import { INDEXED_PAYLOAD_TYPES, locationPathsOf } from './search-documents.ts';
 import type { MeterKey, MeterRecord, SessionTouched, StartedCall } from './types.ts';
 
 export type EventColumns = {
@@ -65,8 +65,9 @@ export type RecordedEvent = { eventId: number; runId: string; sessionId: string;
 export const APPEND_TIME_RECORDS_DERIVATION = 20;
 export const SESSION_TOUCHED_DERIVATION = 23;
 export const RUN_ANSWERERS_DERIVATION = 24;
+export const INDEXED_CHARS_DERIVATION = 35;
 
-export const RECORD_DERIVATIONS = [RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
+export const RECORD_DERIVATIONS = [INDEXED_CHARS_DERIVATION, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
 
 export type RecordDerivation = (typeof RECORD_DERIVATIONS)[number];
 
@@ -82,6 +83,7 @@ export type AppendRecords = {
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   answeringTargetsOf(runId: string): string[];
+  indexedCharsOf(runId: string): number;
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
   permissionRequestOf(runId: string, approvalId: string): Row | undefined;
@@ -158,6 +160,11 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     touchedNewest: db.prepare('SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId ORDER BY first_event_id DESC, path DESC LIMIT :limit'),
     insertAnswerer: db.prepare('INSERT OR IGNORE INTO run_answerers (run_id, target) VALUES (:runId, :target)'),
     answerers: db.prepare('SELECT target FROM run_answerers WHERE run_id = :runId ORDER BY target'),
+    addIndexedChars: db.prepare(
+      `INSERT INTO run_indexed_chars (run_id, chars) SELECT :runId, length(payload_json) FROM events WHERE id = :eventId
+       ON CONFLICT (run_id) DO UPDATE SET chars = chars + excluded.chars`,
+    ),
+    indexedChars: db.prepare('SELECT COALESCE((SELECT chars FROM run_indexed_chars WHERE run_id = :runId), 0) AS chars'),
     modelCallRows: db.prepare(
       `SELECT seq, step, type, model_call_json
        FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
@@ -223,6 +230,10 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     if (answerer !== undefined) sql.insertAnswerer.run({ runId: event.runId, target: answerer });
   };
 
+  const recordIndexedChars = (event: RecordedEvent): void => {
+    if (INDEXED_PAYLOAD_TYPES.some((type) => type === event.payload.type)) sql.addIndexedChars.run({ runId: event.runId, eventId: event.eventId });
+  };
+
   const recordTouched = (event: RecordedEvent): void => {
     if (event.payload.type !== 'tool.call') return;
     for (const path of locationPathsOf(event.payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
@@ -274,6 +285,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     [APPEND_TIME_RECORDS_DERIVATION]: recordRunFacts,
     [SESSION_TOUCHED_DERIVATION]: recordTouched,
     [RUN_ANSWERERS_DERIVATION]: recordAnswerer,
+    [INDEXED_CHARS_DERIVATION]: recordIndexedChars,
   };
 
   const recordFor = (derivation: RecordDerivation, event: RecordedEvent): void => RECORDERS[derivation](event);
@@ -310,6 +322,11 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     toolCallNamesOf: (rootRunId) => sql.toolCallNames.all({ runId: rootRunId }).map((row) => readerFor('events', rootRunId, row).string('name')),
     hasNoticeCode: (runId, code) => sql.noticeCode.get({ runId, code }) !== undefined,
     answeringTargetsOf: (runId) => sql.answerers.all({ runId }).map((row) => readerFor('run_answerers', runId, row).string('target')),
+    indexedCharsOf: (runId) => {
+      const row: Row | undefined = sql.indexedChars.get({ runId });
+      if (row === undefined) throw new Error(`the indexed characters of run ${runId} could not be read`);
+      return readerFor('run_indexed_chars', runId, row).number('chars');
+    },
     touchedAfter: (sessionId, afterEventId, limit, afterPath) =>
       touchedOf(afterPath === undefined ? sql.touchedAfter.all({ sessionId, after: afterEventId, limit }) : sql.touchedAfterPath.all({ sessionId, after: afterEventId, afterPath, limit }), sessionId),
     touchedNewest: (sessionId, limit) => touchedOf(sql.touchedNewest.all({ sessionId, limit }), sessionId),

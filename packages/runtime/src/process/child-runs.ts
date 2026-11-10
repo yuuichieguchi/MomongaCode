@@ -1,14 +1,12 @@
 import { ChildRunError, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
-import { buildRunReport } from '@momonga/observability';
 import { TERMINAL_STATUSES, assistantTextOf, displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 import type { InputItem, ModelViews, RunState } from '@momonga/protocol';
 import type { Run, RuntimeStore } from '@momonga/store';
 import { parentPinsOf } from '../worker/pins.ts';
-import { readAllRunEvents } from './run-events.ts';
 
 export type ChildRunsOptions = {
-  store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes' | 'readRunEvents'>;
+  store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes' | 'journalFacts'>;
   modelViews(): Promise<ModelViews>;
 };
 
@@ -52,7 +50,7 @@ export const createChildRuns = ({ store, modelViews }: ChildRunsOptions): ChildR
       ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
       ...(run.error === undefined ? {} : { error: run.error }),
       text: await store.finalTextOf(run.id),
-      report: buildRunReport(readAllRunEvents(store, run.id)),
+      report: (await store.journalFacts.report({ runId: run.id })).report,
     };
   };
 

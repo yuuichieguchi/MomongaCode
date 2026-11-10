@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import v8 from 'node:v8';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
@@ -12,7 +13,7 @@ import { answeredRun, chainBuilder, referenceHarness } from '../../../store/test
 import type { InheritPlanReply, InheritedWindowReply, PlanRequest, ReferenceHarness, WindowRequest } from '../../../store/test/support/reference.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { textStep } from './scripts.ts';
+import { callsStep, textStep } from './scripts.ts';
 import { settle } from './inheritance-support.ts';
 import { builderOf, harnessOf, referenceFactsOf } from './inherit-reference-support.ts';
 
@@ -208,16 +209,16 @@ const childSnapshotBytes = async (steps: number): Promise<number> => {
   for (let step = 0; step < steps; step += 1) b.text(claim, 20);
   await b.end(claim, { to: 'COMPLETED' });
   const child = b.createRun('child task');
-  env.gateway.script.push(textStep('Done.'));
-  await settle(env, child.id);
-  expect(env.run(child.id).status).toBe('COMPLETED');
+  env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
+  expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
+  expect(env.run(child.id).status).toBe('WAITING_HUMAN');
   const row = env.raw().prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(child.id) as { state_json: string } | undefined;
   if (row === undefined) throw new Error(`run ${child.id} has no snapshot`);
   return Buffer.byteLength(row.state_json);
 };
 
 describe('R13: a snapshot never holds the window', () => {
-  it('the snapshot of a child is the same size whether its source has 15 or 1000 steps', async () => {
+  it('the snapshot a child writes at its yield is the same size whether its source has 15 or 1000 steps', async () => {
     const small = await childSnapshotBytes(15);
     const large = await childSnapshotBytes(1000);
     expect(Math.abs(large - small)).toBeLessThan(256);

@@ -22,7 +22,7 @@ describe('the origin of a run in a grouped session', () => {
     store.trust.set(project, 'trusted');
     clock.advance(1000);
     const after = await finishInSession(store, session.id, 'quokka after trust');
-    indexAll(store);
+    await indexAll(store);
     store.trust.set(project, 'untrusted');
     store.trust.set(project, 'trusted');
     const result = store.search.query({ trusted: true, project }, { query: 'quokka', scope: 'project' });

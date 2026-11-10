@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, readTx, safeSlice } from '@momonga/foundation';
+import { readTx, safeSlice } from '@momonga/foundation';
 import type { Redactor } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { MemoryOrigin, RunEvent } from '@momonga/protocol';
@@ -121,44 +121,58 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     };
   };
 
-  const indexedChars = db.prepare(`SELECT COALESCE(SUM(length(payload_json)), 0) AS chars FROM events WHERE run_id = :runId AND type IN (${INDEXED_EVENT_TYPES})`);
+  const cursorOf = (): number => {
+    const cursorRow = readCursor.get();
+    if (cursorRow === undefined) throw new Error('the search cursor row is missing');
+    return readerFor('search_cursor', '1', cursorRow).number('last_event_id');
+  };
 
-  const indexNext = (redactor: Redactor, budget: number): number | undefined =>
-    immediateTx(db, () => {
-      const cursorRow = readCursor.get();
-      if (cursorRow === undefined) throw new Error('the search cursor row is missing');
-      const cursor = readerFor('search_cursor', '1', cursorRow).number('last_event_id');
-      const row = nextTerminal.get({ cursor });
-      if (row === undefined) return undefined;
-      const reader = readerFor('events', String(row['event_id']), row);
-      const runId = reader.string('run_id');
-      const sizeRow = indexedChars.get({ runId });
-      if (sizeRow === undefined) throw new Error(`the size of run ${runId} could not be computed`);
-      const chars = readerFor('events', runId, sizeRow).number('chars');
-      if (chars > budget) return undefined;
-      const outcome = reader.string('status');
-      const common = {
-        sessionId: reader.string('session_id'),
-        runId,
-        project: reader.string('project'),
-        origin: storedOneOf(context, 'runs', runId, 'origin', ORIGINS, reader.string('origin')),
-        outcome,
-        at: reader.number('ended_at'),
-      };
-      for (const document of buildDocuments(recordedEventsOf(runId), outcome, redactor)) {
-        insertDocument.run({
-          ...common,
-          level: document.level,
-          step: document.step,
-          seqFrom: document.seqFrom,
-          seqTo: document.seqTo,
-          body: document.body,
-          pathsJson: JSON.stringify(document.paths),
-        });
-      }
-      writeCursor.run({ eventId: reader.number('event_id') });
-      return chars;
-    });
+  const nextTerminalRow = (): Row | undefined => nextTerminal.get({ cursor: cursorOf() });
+
+  const runIdOf = (row: Row): string => readerFor('events', String(row['event_id']), row).string('run_id');
+
+  type Indexed = { kind: 'indexed'; chars: number } | { kind: 'none' } | { kind: 'over_budget' } | { kind: 'moved' };
+
+  const indexRun = (runId: string, chars: number, redactor: Redactor, budget: number): Indexed => {
+    const row = nextTerminalRow();
+    if (row === undefined) return { kind: 'none' };
+    if (runIdOf(row) !== runId) return { kind: 'moved' };
+    if (chars > budget) return { kind: 'over_budget' };
+    const reader = readerFor('events', String(row['event_id']), row);
+    const outcome = reader.string('status');
+    const common = {
+      sessionId: reader.string('session_id'),
+      runId,
+      project: reader.string('project'),
+      origin: storedOneOf(context, 'runs', runId, 'origin', ORIGINS, reader.string('origin')),
+      outcome,
+      at: reader.number('ended_at'),
+    };
+    for (const document of buildDocuments(recordedEventsOf(runId), outcome, redactor)) {
+      insertDocument.run({
+        ...common,
+        level: document.level,
+        step: document.step,
+        seqFrom: document.seqFrom,
+        seqTo: document.seqTo,
+        body: document.body,
+        pathsJson: JSON.stringify(document.paths),
+      });
+    }
+    writeCursor.run({ eventId: reader.number('event_id') });
+    return { kind: 'indexed', chars };
+  };
+
+  const indexNext = async (redactor: Redactor, budget: number): Promise<number | undefined> => {
+    for (;;) {
+      const next = readTx(db, nextTerminalRow);
+      if (next === undefined) return undefined;
+      const runId = runIdOf(next);
+      const indexed = await reads.write({ runId }, (view) => indexRun(runId, view.indexedCharsOf(runId), redactor, budget));
+      if (indexed.kind === 'indexed') return indexed.chars;
+      if (indexed.kind !== 'moved') return undefined;
+    }
+  };
 
   const visibilityClause = (visibility: HistoryVisibility, scope: HistoryScope): string =>
     visibility.trusted && scope === 'all' ? "(d.project = :project OR d.origin = 'trusted')" : 'd.project = :project';
@@ -328,12 +342,12 @@ export const createSearchStore = (db: DatabaseSync, context: DecodeContext, read
     });
 
   return {
-    indexBatch: ({ limit, redactor, maxChars }) => {
+    indexBatch: async ({ limit, redactor, maxChars }) => {
       let runs = 0;
       let spent = 0;
       while (runs < limit) {
         const budget = maxChars === undefined || runs === 0 ? Number.POSITIVE_INFINITY : maxChars - spent;
-        const chars = indexNext(redactor, budget);
+        const chars = await indexNext(redactor, budget);
         if (chars === undefined) break;
         runs += 1;
         spent += chars;

@@ -1121,6 +1121,20 @@ CREATE TABLE rule_verdicts (
 );
 `;
 
+const RUN_INDEXED_CHARS_RECORD = `
+CREATE TABLE run_indexed_chars (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  chars INTEGER NOT NULL
+) WITHOUT ROWID;
+
+INSERT INTO run_indexed_chars (run_id, chars)
+SELECT run_id, SUM(length(payload_json)) FROM events
+WHERE run_id IS NOT NULL AND type IN ('user.message', 'model.responded', 'tool.call', 'tool.completed')
+GROUP BY run_id;
+
+INSERT INTO derived_through (run_id, derivation, through_seq) SELECT id, 35, last_seq FROM runs;
+`;
+
 const MODEL_BY_ITS_OWN_NAME_MIGRATION: Migration = {
   version: 33,
   name: 'call the model of a session and of a run by its own name',
@@ -1215,5 +1229,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 34,
     name: 'let an approval ask a person about a tool call whose effect is unknown, by rebuilding approvals with the kind unknown_effect in its CHECK list, and store the verdict of a rule set under the fingerprint of its input in rule_verdicts',
     sql: UNKNOWN_EFFECT_APPROVALS_AND_RULE_VERDICTS,
+  },
+  {
+    version: 35,
+    name: 'add up, per run, the characters of the events the history index reads, at append and once for the runs written before, so the indexing batch reads one number and scans no payload to learn the size of a run',
+    sql: RUN_INDEXED_CHARS_RECORD,
   },
 ];

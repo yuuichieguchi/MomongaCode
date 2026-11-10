@@ -67,7 +67,9 @@ describe('startSearchSweeper', () => {
     timers.advance(1000);
     await afterMicrotasks();
     expect(found()).toBe(1);
-    timers.advance(2000);
+    timers.advance(1000);
+    await afterMicrotasks();
+    timers.advance(1000);
     await afterMicrotasks();
     expect(found()).toBe(done.length);
     expect(anchorsOf(store.search.query({ trusted: false, project: '/work/a2' }, { query: 'alphaterm', scope: 'project' }))).toEqual([]);

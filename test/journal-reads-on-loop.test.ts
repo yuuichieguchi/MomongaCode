@@ -23,7 +23,7 @@ const filesMatching = (pattern: RegExp): string[] =>
 
 const PAYLOAD_SQL = /(json_extract|json_each|jsonb|json_tree|length)\(\s*(?:[a-z]\.)?payload_json/;
 
-const MAIN_THREAD_STORE_FILES = ['store/src/runtime-store.ts', 'store/src/search.ts', 'store/src/memories.ts'];
+const MAIN_THREAD_STORE_FILES = ['store/src/runtime-store.ts', 'store/src/search.ts', 'store/src/memories.ts', 'store/src/append-records.ts'];
 
 const payloadSqlLines = (file: string): string[] =>
   fs
@@ -33,16 +33,23 @@ const payloadSqlLines = (file: string): string[] =>
     .map((line) => line.trim());
 
 describe('statements that read inside payload_json on the main thread (section 7: SQL-side reads are invisible to onDecode)', () => {
-  it('are only the classified ones once I2 lands: ids (row 16), anatomy (row 10) and called names (row 8b) are columns or records', () => {
+  it('are only the classified ones: ids (row 16), anatomy (row 10) and called names (row 8b) are columns or records, and the indexed characters of a run add up one appended event at a time (row 12)', () => {
     expect(Object.fromEntries(MAIN_THREAD_STORE_FILES.map((file) => [file, payloadSqlLines(file)]))).toEqual({
       'store/src/runtime-store.ts': ["JOIN json_each(e.payload_json, '$.names') n"],
       'store/src/search.ts': [
         "WHERE e.id > :cursor AND e.type = 'run.status' AND json_extract(e.payload_json, '$.to') IN (${TERMINAL_LIST})",
         '`SELECT *, length(payload_json) AS payload_chars FROM events WHERE run_id = :runId AND seq >= :seqFrom AND seq <= :seqTo AND (:step IS NULL OR step = :step) ORDER BY seq LIMIT :limit`,',
-        'const indexedChars = db.prepare(`SELECT COALESCE(SUM(length(payload_json)), 0) AS chars FROM events WHERE run_id = :runId AND type IN (${INDEXED_EVENT_TYPES})`);',
       ],
       'store/src/memories.ts': [],
+      'store/src/append-records.ts': [
+        `reconciled: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.reconciled' AND json_extract(payload_json, '$.callId') = :callId ORDER BY seq DESC LIMIT 1"),`,
+        '`INSERT INTO run_indexed_chars (run_id, chars) SELECT :runId, length(payload_json) FROM events WHERE id = :eventId',
+      ],
     });
+  });
+
+  it('the size probe of search indexing reads no payload: no statement of search.ts sums a length over the events of a run (row 12, O9)', () => {
+    expect(payloadSqlLines('store/src/search.ts').filter((line) => /SUM\(/.test(line))).toEqual([]);
   });
 });
 
