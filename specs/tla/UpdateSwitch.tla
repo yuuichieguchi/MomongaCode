@@ -1,7 +1,7 @@
 ---------------------------- MODULE UpdateSwitch ----------------------------
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Variant
+CONSTANTS Runs, Jobs, Clients, Sessions, Lifeline, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, MaxCrash, MaxOut, MaxCalls, Extended, Gateway, Upkeep, Variant
 
 ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath", "scanAlloc", "noJoin", "releaseEarly", "failSetsNone", "publishNoCheck", "staleStarter", "claimUnchecked", "killWithoutRequest", "readOwnGenOnly", "reconcileLive", "jobRetiring", "sweepRetiring", "pruneAll", "gwAcceptsWhileRetiring", "gwExitEarly", "gwGraceAbort", "gwSilentRefuse", "killDropped", "gwRefuseNoYield", "userStopNeverEnds"}
 ASSUME MaxV \in Nat \ {0, 1}
@@ -14,6 +14,10 @@ ASSUME MaxCrash \in Nat
 ASSUME MaxOut \in Nat \ {0}
 ASSUME MaxCalls \in Nat \ {0}
 ASSUME Extended \in BOOLEAN
+ASSUME Gateway \in BOOLEAN
+ASSUME Gateway => Extended
+ASSUME Upkeep \in BOOLEAN
+ASSUME Upkeep => Extended
 ASSUME Sessions \subseteq Clients
 ASSUME Lifeline \subseteq Clients
 
@@ -712,9 +716,10 @@ Next ==
     \/ \E j \in Jobs, r \in Runs : JobStart(j, r)
     \/ \E j \in Jobs : JobEnd(j)
     \/ \E g \in Gens : Expire(g)
-    \/ Extended /\ (\E g \in Gens : GwStart(g) \/ GwCallStart(g) \/ GwCallEnd(g) \/ GwFlightStart(g) \/ GwFlightEnd(g)
-                       \/ GwRetire(g) \/ GwExit(g) \/ GwClose(g) \/ Sweep(g) \/ Prune(g))
-    \/ Extended /\ (\E r \in Runs : GwRefuse(r))
+    \/ Gateway /\ (\E g \in Gens : GwStart(g) \/ GwCallStart(g) \/ GwCallEnd(g) \/ GwFlightStart(g) \/ GwFlightEnd(g)
+                       \/ GwRetire(g) \/ GwExit(g) \/ GwClose(g))
+    \/ Upkeep /\ (\E g \in Gens : Sweep(g) \/ Prune(g))
+    \/ Gateway /\ (\E r \in Runs : GwRefuse(r))
     \/ Extended /\ (\E j \in Jobs : OwnerStop(j) \/ Reconcile(j) \/ OutWrite(j))
     \/ Extended /\ (\E j \in Jobs, g \in Gens : KillReq(j, g) \/ OutputRead(j, g))
 
