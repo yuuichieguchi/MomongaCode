@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { MANAGED_SERVERS, autoModeNotice } from '@momonga/protocol';
+import { autoModeNotice } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -33,7 +33,7 @@ export type AutoModeCheckOptions = { classifier?: string; agent: string; signal?
 
 export type AutoModeCheckOutcome = { measurement: 'passed' | 'did_not_pass' | 'unmeasurable' };
 
-export type AutoModeStatusPorts = { models: UserModels; configuredClassifier: string | undefined; home: string; write(text: string): void };
+export type AutoModeStatusPorts = { models: UserModels; configuredClassifier: string | undefined; home: string; platform: NodeJS.Platform; write(text: string): void };
 
 export type AutoModeStatusOptions = { classifier?: string; surface: AutoModeSurface };
 
@@ -53,10 +53,10 @@ const requireDefinedClassifier = (models: UserModels, classifier: string): void 
   }
 };
 
-const classifierKeyOf = async (models: UserModels, classifier: string, given: AbortSignal | undefined): Promise<AutoFitKey> => {
+const classifierKeyOf = async (models: UserModels, classifier: string, platform: NodeJS.Platform, given: AbortSignal | undefined): Promise<AutoFitKey> => {
   const bound = AbortSignal.timeout(STARTUP_TIMEOUT_MS);
   const signal = given === undefined ? bound : AbortSignal.any([given, bound]);
-  const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), platform: process.platform, signal });
+  const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { exec: createHostExec(), hashes: createBinaryHashCache(), platform, signal });
   const result = autoFitKeyOf(models.resolved, classifier, await classifierCodeOf(), probeKeys);
   if (result.kind === 'unknown') throw new AutoModeCheckError(`the classifier target ${result.target} has no probe key: its ${probeKeyComponentLabel(result.component)} could not be read (${result.reason})`);
   return result.key;
@@ -80,7 +80,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
   requireDefinedClassifier(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
-  const key = await classifierKeyOf(ports.models, classifier, signal);
+  const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
   const aliases = [options.agent, classifier];
   const relay = needsPlanRelay(ports.models, aliases) ? { planRelaySocket: await currentSocketResolver(momongaPaths(ports.home), 'gateway')() } : undefined;
   const settings = liveSettingsFor(ports.models, aliases, relay);
@@ -133,7 +133,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
 
 export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoModeStatusOptions): Promise<AutoModeStatusOutcome> => {
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
-  const key = await classifierKeyOf(ports.models, classifier, undefined);
+  const key = await classifierKeyOf(ports.models, classifier, ports.platform, undefined);
   const view = autoFitViewOf(classifier, key, await readAutoFitRecord(autoFitDirectoryOf(ports.home), key));
   ports.write(`${autoModeNotice({ view, surface: options.surface })}\n`);
   return { measurement: view.measurement };
@@ -157,5 +157,5 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
 
 export const autoModeStatusPortsOf = (ports: CliPorts, write: (text: string) => void): AutoModeStatusPorts => {
   const models = loadUserModels({ home: ports.home });
-  return { models, configuredClassifier: models.autoModeClassifier, home: ports.home, write };
+  return { models, configuredClassifier: models.autoModeClassifier, home: ports.home, platform: ports.platform, write };
 };

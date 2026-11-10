@@ -40,7 +40,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
         },
       },
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
-      history: createHistoryPort({ store: env.store, settings: env.settings, clock: env.clock, home: env.home, redactor: createRedactor({ credentials: [] }), enforcement: ruleEnforcementOf('none') }),
+      history: createHistoryPort({ store: env.store, settings: env.settings, clock: env.clock, home: env.home, redactor: createRedactor({ credentials: [] }), enforcement: () => ruleEnforcementOf('none') }),
       governance: createGovernancePort({ store: env.store, settings: env.settings }),
       agents: createAgentsPort({
         home: env.home,

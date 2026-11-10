@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { FAKE_DETERMINISTIC_REPLY, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLockHolder } from '@momonga/testkit';
@@ -20,6 +20,8 @@ import {
 } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION, inspectProcessLock } from '@momonga/foundation';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const API_KEY_VALUE = 'momonga-test-api-key';
 const body = { model: 'fast', input: userInput('hi') };
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -34,7 +36,7 @@ const ccHome = async () => {
   return { fake, home };
 };
 
-describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('startGatewayProcess', () => {
   it('listens on its generation\'s run/g1/gateway.sock and prints exactly one ready line', async () => {
     const { home } = await ccHome();
     const stdout = captureStdout();
@@ -146,7 +148,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
   });
 });
 
-describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('startGatewayProcess credentials', () => {
   it('sends the apiKeyEnv value upstream as a bearer token', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

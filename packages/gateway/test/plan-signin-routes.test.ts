@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { ACCOUNT, CALLBACK_PORT, accountRoute, begin, browse, holdNextExchange, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const failureOf = (answer: { status: number; body: any }) => ({ status: answer.status, type: answer.body.error?.type, code: answer.body.error?.code, message: answer.body.error?.message });
 
@@ -24,7 +26,7 @@ const callbackWith = (begun: { body: any }, params: Record<string, string>): str
 
 const complete = (gateway: PlanGateway, attemptId: string, callbackUrl: string) => gateway.post(PLAN_ROUTES.signInComplete, { attemptId, callbackUrl });
 
-describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1, 5.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1, 5.2)', () => {
   it('asks for a new registration with PKCE S256, state, nonce, the full scope set and the host id', async () => {
     const gateway = await startPlanGateway();
     const begun = await begin(gateway);
@@ -61,7 +63,7 @@ describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1,
   });
 });
 
-describe('sign-in complete installs a validated identity (P5b, 5.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('sign-in complete installs a validated identity (P5b, 5.3)', () => {
   it('signs in, sets welcomeShown in the install write, makes the account active and stores the record encrypted', async () => {
     const gateway = await startPlanGateway();
     const { completed } = await signIn(gateway);
@@ -96,7 +98,7 @@ describe('sign-in complete installs a validated identity (P5b, 5.3)', { timeout:
   });
 });
 
-describe('every way complete ends other than signed_in, plan_disabled and retry has one code, status and text (P5b table)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('every way complete ends other than signed_in, plan_disabled and retry has one code, status and text (P5b table)', () => {
   it('attempt_not_found: 404 not_found for an unknown or already consumed attempt', async () => {
     const gateway = await startPlanGateway();
     const { begun, callback } = await signIn(gateway);
@@ -228,7 +230,7 @@ describe('every way complete ends other than signed_in, plan_disabled and retry 
   });
 });
 
-describe('the attempt lifecycle (P5b, 5.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the attempt lifecycle (P5b, 5.2)', () => {
   it('replaces a pending attempt that no complete consumed, so the old one is no longer open', async () => {
     const gateway = await startPlanGateway();
     const first = await begin(gateway);
@@ -264,7 +266,7 @@ describe('the attempt lifecycle (P5b, 5.2)', { timeout: REAL_PROCESS_TEST_TIMEOU
   });
 });
 
-describe('the five sign-in failures settled in O-R5-4', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the five sign-in failures settled in O-R5-4', () => {
   it('attempt_expired: a complete at or after expiresAt answers 400 and consumes the attempt', async () => {
     const clock = createFakeClock(Date.now());
     const gateway = await startPlanGateway({ clock });
@@ -356,7 +358,7 @@ describe('the five sign-in failures settled in O-R5-4', { timeout: REAL_PROCESS_
   });
 });
 
-describe('the {error} of authorization_failed and exchange_rejected is sanitised (O-R5-4 e)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the {error} of authorization_failed and exchange_rejected is sanitised (O-R5-4 e)', () => {
   const LONG = 'a'.repeat(70);
 
   it.each([
@@ -386,7 +388,7 @@ describe('the {error} of authorization_failed and exchange_rejected is sanitised
   });
 });
 
-describe('nothing depends on the form of the access token (O-R5-6 F)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('nothing depends on the form of the access token (O-R5-6 F)', () => {
   it('signs in, sends a request and refreshes with an opaque access token', async () => {
     const clock = createFakeClock(Date.now());
     const gateway = await startPlanGateway({ accessTokenForm: 'opaque', clock, models: [{ slug: 'listed-model', display_name: 'Listed Model', visibility: 'list', context_window: 200000 }] });

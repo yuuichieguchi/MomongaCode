@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import type { AttributeValue } from '@opentelemetry/api';
 import { ExportResultCode } from '@opentelemetry/core';
@@ -18,9 +18,11 @@ import {
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { MOMONGA_ATTRIBUTES } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { QUIET_BATCH, RUN_ID, SENTINEL, START_MS, dumpAllRows, openStore, registerCleanup } from './helpers.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];
 const RETENTION_MS = 30 * 86_400_000;

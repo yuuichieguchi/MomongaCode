@@ -133,7 +133,7 @@ export const createTuiBackend = (
     signInTimers: systemTiming,
     detectLocalServers: async (typed) => {
       const { detectLocalServers } = await import('@momonga/gateway');
-      return withIdentityReadFetch(ports, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts() }));
+      return withIdentityReadFetch(ports, closing.signal, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts() }));
     },
     addModelConnection: (connection) => addModelConnection(paths.settingsFile, connection),
     dismissedNotices: () => readDismissedNotices(paths.state, onNotice),

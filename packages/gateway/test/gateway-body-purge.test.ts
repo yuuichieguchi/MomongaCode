@@ -1,10 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Purge = { ticks: (() => void)[]; legacyRetentionMs: number | undefined; stops: number };
 

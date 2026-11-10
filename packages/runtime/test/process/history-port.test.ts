@@ -18,7 +18,7 @@ const toolsFor = (store: RuntimeStore, session: Session, rules: RulesOf = [], cl
     trusted: (candidate: Session) => store.trust.decisionFor(candidate.cwd).decision === 'trusted',
     rules: async (candidate: Session) => (typeof rules === 'function' ? rules(candidate.cwd) : rules),
   };
-  return createHistoryPort({ store, settings, clock, home: '/home/user', redactor, enforcement: ruleEnforcementOf('none') }).load(session).tools as AnyTool[];
+  return createHistoryPort({ store, settings, clock, home: '/home/user', redactor, enforcement: () => ruleEnforcementOf('none') }).load(session).tools as AnyTool[];
 };
 
 const execute = async (tools: AnyTool[], name: string, input: unknown, runId = 'current'): Promise<ToolResult> => {

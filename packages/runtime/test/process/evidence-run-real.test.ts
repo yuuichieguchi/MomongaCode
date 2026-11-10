@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
@@ -9,6 +9,9 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, withTempDir } from 
 import type { TestContext } from 'vitest';
 import { createEvidencePorts, readGitHead } from '../../src/memory/evidence.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const HAS_REAL_SANDBOX = process.platform === 'darwin' || process.platform === 'linux';
 
@@ -53,7 +56,7 @@ const setup = async (context: TestContext) => {
   return { home, paths, root, project, git, gitEnv };
 };
 
-describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of this host', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of this host', () => {
   it('answers git rev-parse HEAD and git merge-base --is-ancestor in a temporary repository', async (context) => {
     const { home, paths, root, project, git } = await setup(context);
     const first = git('rev-parse', 'HEAD');
@@ -61,7 +64,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
     git('commit', '-q', '-am', 'two');
     const head = git('rev-parse', 'HEAD');
     const unrelated = git('commit-tree', '-m', 'unrelated', `${head}^{tree}`);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: ruleEnforcementOf(HOST_SANDBOX_KIND),sandbox: realSandbox(path.join(root, 'scratch')), env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(realSandbox(path.join(root, 'scratch'))), env: { PATH: '/usr/bin:/bin' } })(project);
     const options = { project, trusted: true, run, signal: new AbortController().signal };
 
     await expect(readGitHead(options)).resolves.toBe(head);
@@ -83,7 +86,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the evidence runner on the real sandbox of thi
 
     const captured: string[] = [];
     const sandbox = teeingStderr(realSandbox(path.join(root, 'scratch')), captured);
-    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), enforcement: ruleEnforcementOf(HOST_SANDBOX_KIND),sandbox, env: { PATH: '/usr/bin:/bin' } })(project);
+    const run = createEvidenceRunner({ paths, home, fs: fakePolicyFilesystem(), sandboxes: fixedSandboxBindings(sandbox), env: { PATH: '/usr/bin:/bin' } })(project);
     const result = await run(
       { argv: ['git', 'status'], cwd: project, env: { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' }, network: 'deny' },
       new AbortController().signal,

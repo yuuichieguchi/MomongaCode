@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, startFakeOpenResponses } from '@momonga/testkit';
 import { getJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const KEY_VARIABLE = 'MOMONGA_TARGET_KEY_TEST';
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 16000 };
 
-describe('the models listing names the key group of every API-key target, never the variable (O-R5-4 S6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the models listing names the key group of every API-key target, never the variable (O-R5-4 S6)', () => {
   it('reports targetKey { group: provider } for key targets and nothing for a target without a key', async () => {
     const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['unused'])] });
     registerCleanup(() => fake.close());

@@ -6,6 +6,7 @@ import { writeFileAtomically } from './atomic-file.ts';
 import { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
 import type { CredentialEntry, CredentialKeyListing, ListableCredentialStore } from './credential-store.ts';
 import { systemFileLockPorts, withFileLock } from './file-lock.ts';
+import { parseOutsideJson } from './json-depth.ts';
 import type { FileLockPorts } from './file-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import type { SecretStore } from './secret-store.ts';
@@ -74,7 +75,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const envelopeOf = (text: string): Envelope | undefined => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch {
     return undefined;
   }
@@ -134,7 +135,7 @@ const errorCodeOf = (error: unknown): unknown => (isRecord(error) ? error['code'
 const KEY_NAME_SHAPE = new RegExp(`^${CREDENTIAL_KEY_PREFIX}[0-9a-f]{${KEY_NAME_BYTES * 2}}$`);
 
 const keyNameOfMarker = (text: string, markerFile: string): string => {
-  const parsed: unknown = JSON.parse(text);
+  const parsed: unknown = parseOutsideJson(text);
   const name = isRecord(parsed) ? parsed['name'] : undefined;
   if (typeof name !== 'string' || !KEY_NAME_SHAPE.test(name)) throw new Error(`the marker ${markerFile} does not name a credential key`);
   return name;

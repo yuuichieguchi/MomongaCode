@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, reapMarkerDirectory } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -9,6 +9,8 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { createToolHooks, nodeShellHost, runStop, runUserPromptSubmit, runSessionStart } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 let dir = '';
 
@@ -60,7 +62,7 @@ const contextFor = (hooks: HooksSettings, overrides: Partial<HookRunContext> = {
 
 const call = { callId: 'c1', toolName: 'Bash', input: { command: 'ls' } };
 
-describe('PreToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('PreToolUse hook processes', () => {
   it('delivers the Claude Code input shape on stdin and the project directory in the environment', async () => {
     const out = path.join(dir, 'stdin.json');
     const { context } = contextFor(settings('PreToolUse', `cat > ${out}; echo "$MOMONGA_PROJECT_DIR" > ${out}.env`, 'Bash'));
@@ -195,7 +197,7 @@ describe('PreToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
   });
 });
 
-describe('updated input, halting and process markers', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('updated input, halting and process markers', () => {
   it('returns an updated input with the decision', async () => {
     const json = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: 'ls -la' } } });
     const { context, executions } = contextFor(settings('PreToolUse', `echo '${json}'`));
@@ -243,14 +245,14 @@ describe('updated input, halting and process markers', { timeout: REAL_PROCESS_T
     }
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     const markerDir = path.join(dir, 'markers');
-    await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
+    await reapMarkerDirectory({ dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
     expect(() => process.kill(pid, 0)).toThrow();
     controller.abort();
     await pending;
   });
 });
 
-describe('PostToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('PostToolUse hook processes', () => {
   it('returns stderr of an exit 2 hook, a block reason and additional context as feedback', async () => {
     const json = JSON.stringify({ decision: 'block', reason: 'tests fail', hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: 'see log' } });
     const { context } = contextFor({
@@ -266,7 +268,7 @@ describe('PostToolUse hook processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }
   });
 });
 
-describe('prompt, start and stop hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('prompt, start and stop hooks', () => {
   it('blocks a prompt on exit 2 and on a block decision', async () => {
     const exit2 = contextFor(settings('UserPromptSubmit', 'echo "no secrets" >&2; exit 2'));
     expect(await runUserPromptSubmit(exit2.context, 'p')).toEqual({ blocked: 'no secrets', context: [] });

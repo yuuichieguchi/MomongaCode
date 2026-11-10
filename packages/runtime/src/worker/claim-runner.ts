@@ -40,7 +40,8 @@ import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
-import type { TraceSpan } from '../ports.ts';
+import type { TracerPort, TraceSpan } from '../ports.ts';
+import type { Lease } from '@momonga/config';
 import { modelKey } from '../model-key.ts';
 import { MEMORY_PAGE_ROWS, REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import { createGoverningActivation, createInstructionProbes } from './touched-paths.ts';
@@ -107,7 +108,7 @@ const touchedOf = (session: Session, options: WorkerOptions): ClaimTouched => {
 };
 
 export const runClaim = async (options: WorkerOptions, claim: Claim, host: ClaimHost): Promise<void> => {
-  const { store, tracer } = options;
+  const { store } = options;
   const control = startClaimControl({
     store,
     timers: options.timers,
@@ -120,13 +121,15 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   let journal: Journal | undefined;
   let terminals: Terminals | undefined;
   let agentSpan: TraceSpan | undefined;
+  let tracerLease: Lease<TracerPort> | undefined;
   let escaping = false;
   let fatal = false;
   try {
     journal = openJournal({ store, claim, lost: control.lost });
     terminals = createTerminals({ store, claim, journal, control, clock: options.clock });
-    agentSpan = tracer.startAgentSpan({ runId: claim.runId, sessionId: claim.sessionId, attempt: claim.attempt });
-    await drive(options, claim, journal, control, terminals, agentSpan, memory);
+    tracerLease = await options.tracers.acquire(control.signal);
+    agentSpan = tracerLease.value.startAgentSpan({ runId: claim.runId, sessionId: claim.sessionId, attempt: claim.attempt });
+    await drive(options, claim, journal, control, terminals, agentSpan, tracerLease.value, memory);
     agentSpan.end();
   } catch (error) {
     const cause = control.failure() ?? error;
@@ -169,6 +172,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       }
     }
   } finally {
+    tracerLease?.release();
     control.stop();
     detach();
     if (!fatal) {
@@ -273,6 +277,7 @@ const drive = async (
   control: ClaimContext['control'],
   terminals: ClaimContext['terminals'],
   agentSpan: ClaimContext['agentSpan'],
+  tracer: TracerPort,
   memory: RunMemory,
 ): Promise<void> => {
   const { store, gateway, tools, clock } = options;
@@ -512,6 +517,7 @@ const drive = async (
     control,
     terminals,
     agentSpan,
+    tracer,
     meter: aliasMeter,
     fallbackMeters,
     counter: aliasCounter,

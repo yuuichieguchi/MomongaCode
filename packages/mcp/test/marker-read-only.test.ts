@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createTransport, eventually, makeDir } from './raw-transport.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const WRITE_THROUGH_MARKER = [
   "const fs = require('node:fs');",
@@ -13,7 +15,7 @@ const WRITE_THROUGH_MARKER = [
 ].join(' ');
 
 describe('the marker descriptor the MCP stdio transport hands to its server', () => {
-  it('is read-only: the server writing through fd 3 gets EBADF', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('is read-only: the server writing through fd 3 gets EBADF', async () => {
     const root = makeDir();
     const dir = path.join(root, 'markers');
     fs.mkdirSync(dir, { mode: 0o700 });

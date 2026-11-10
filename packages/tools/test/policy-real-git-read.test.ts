@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const prepared = () => {
   const workspace = makeRealWorkspace();
@@ -9,7 +11,7 @@ const prepared = () => {
   return workspace;
 };
 
-describe('git reflog goes through the option table (real git 2.54)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('git reflog goes through the option table (real git 2.54)', () => {
   it('real git writes the chosen content to the chosen file for show --output', () => {
     const workspace = prepared();
     const result = workspace.git(workspace.project, 'reflog', 'show', '--output=Makefile', '--format=format:EVIL');
@@ -49,7 +51,7 @@ describe('git reflog goes through the option table (real git 2.54)', { timeout: 
   });
 });
 
-describe('numeric count options (-1, -5) are non-path flags where the program takes them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('numeric count options (-1, -5) are non-path flags where the program takes them', () => {
   it.each(['git log -1', 'git log -3 --oneline', 'head -2 tracked', 'tail -1 tracked'])('allows %s and real tools accept it', (command) => {
     const workspace = prepared();
     expect(workspace.decide(command).kind).toBe('allow');
@@ -62,7 +64,7 @@ describe('numeric count options (-1, -5) are non-path flags where the program ta
   });
 });
 
-describe('git branch, tag and remote: listing grammar per subcommand', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('git branch, tag and remote: listing grammar per subcommand', () => {
   it.each(['git tag -v -l v1', 'git tag -a -l', 'git tag -d v1', 'git tag newtag', 'git branch newbranch', 'git branch -d x', 'git branch -m a b', 'git branch -a -l -D'])(
     'asks for %s',
     (command) => {

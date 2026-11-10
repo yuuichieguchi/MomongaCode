@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
 import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
@@ -25,9 +25,11 @@ import {
   validSettings,
 } from './fixtures/p3-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('startSupervisor', () => {
   it('startup order', async (context) => {
     const watch = fakeSettingsWatch();
     const order: string[] = [];

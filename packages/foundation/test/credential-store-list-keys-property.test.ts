@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createEncryptedCredentialStore, createMemoryCredentialStore, credentialFileFor } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createFakeKeyStore } from './support/credential-key-fakes.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
 import { seededRandom } from './seeded-random.ts';
 import type { Random } from './seeded-random.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Listing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
 
@@ -42,7 +44,7 @@ const caseOf = (random: Random): Case => {
 
 const nameOf = (file: string): string => path.basename(file);
 
-describe('listKeys of the encrypted store equals the set of records created (O-R5-6 D)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('listKeys of the encrypted store equals the set of records created (O-R5-6 D)', () => {
   it('over crash-left temporaries, copied files, files that are not JSON and loose modes', async () => {
     for (let seed = 1; seed <= RUNS; seed += 1) {
       const random = seededRandom(seed);

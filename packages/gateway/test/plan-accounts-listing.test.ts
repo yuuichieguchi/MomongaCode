@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -10,6 +10,8 @@ import { GatewayError, statusFor } from '../src/core/errors.ts';
 import { ACCOUNT, accountRoute, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID } from './plan-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SPARE = 'spare';
 
@@ -43,7 +45,7 @@ const hold = (): { reached: Promise<void>; reach(): void; released: Promise<void
   return { reached, reach, released, release };
 };
 
-describe('the accounts the gateway lists are the record files of plan-sessions (O-R5-6 D)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the accounts the gateway lists are the record files of plan-sessions (O-R5-6 D)', () => {
   it('lists an untouched account after a restart when the records are in the plaintext form', async () => {
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
@@ -152,7 +154,7 @@ describe('the accounts the gateway lists are the record files of plan-sessions (
   });
 });
 
-describe('the refusals answered by the routes themselves (O-R5-6 G 7 and 8)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the refusals answered by the routes themselves (O-R5-6 G 7 and 8)', () => {
   it('accounts/active of an account with no verified sign-in is 409 plan_account_not_selectable', async () => {
     const gateway = await startPlanGateway();
     expect((await signIn(gateway)).completed.status).toBe(200);

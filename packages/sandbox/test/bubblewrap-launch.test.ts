@@ -2,12 +2,14 @@ import { execFileSync, spawn } from 'node:child_process';
 import type { SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const FAKE_BWRAP = `#!/bin/sh
 while [ "$1" != "--" ]; do
@@ -49,7 +51,7 @@ const journal = () => createPlaceholderJournal(path.join(base, 'journal'));
 
 const sandbox = () => createBubblewrapSandbox({ bwrapPath: bwrap, tmpRoot: path.join(base, 'tmp'), killGraceMs: 300, journal: journal(), holders: () => new Set() });
 
-describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('bubblewrap launch (a stand-in bwrap that creates the /dev/null mount points; the real bwrap is exercised in bubblewrap-real.test.ts)', () => {
   it('refuses to start a command in a workspace whose protected .git is a symlink loop, with a typed error that names it', () => {
     const git = path.join(work, '.git');
     fs.symlinkSync('.git', git);
@@ -174,7 +176,7 @@ const psGroupMembers = (pgid: number): number[] =>
       return pid !== undefined && group === pgid ? [pid] : [];
     });
 
-describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', () => {
   const GRACE_MS = 300;
 
   const cancelAfterReady = async (script: (ready: string) => string): Promise<{ elapsedMs: number; exit: Awaited<ReturnType<typeof run>> }> => {

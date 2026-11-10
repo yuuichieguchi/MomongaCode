@@ -1,11 +1,13 @@
 import http from 'node:http';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const healthNaming = (pid: number): SupervisorHealth => ({
   status: 'ok',
@@ -44,7 +46,7 @@ const capturedCleanups = (): { context: CleanupContext; run(): Promise<void> } =
   };
 };
 
-describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('trackSupervisorChildren', () => {
   it('kills the recorded pids even when the health fetch fails, then rethrows', async (context) => {
     const socketPath = await serveSupervisorSocket(context, (_request, response) => {
       response.writeHead(500, { 'content-type': 'application/json' });

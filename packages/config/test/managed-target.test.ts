@@ -3,20 +3,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import * as protocol from '@momonga/protocol';
-import { FAKE_SERVER } from '@momonga/testkit';
+import { FAKE_SERVER, withTempDir } from '@momonga/testkit';
+import type { CleanupContext } from '@momonga/testkit';
 
 const homes: string[] = [];
 
 afterEach(() => {
   for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
 });
-
-const fmServer = (): unknown => {
-  const value = (protocol as Record<string, unknown>)['FM_SERVER'];
-  if (value === undefined) throw new Error('@momonga/protocol does not export FM_SERVER');
-  return value;
-};
 
 const makeHome = (): string => {
   const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mm-managed-'));
@@ -31,12 +25,20 @@ const writeTarget = (home: string, target: Record<string, unknown>): void => {
   fs.writeFileSync(settingsFile(home), JSON.stringify({ models: { targets: { apple: target }, aliases: { default: 'apple' } } }), { mode: 0o600 });
 };
 
-type LoadOptions = Parameters<typeof loadUserSettings>[0];
-
-const load = async (target: Record<string, unknown>, managedServers?: readonly unknown[]) => {
+const load = async (target: Record<string, unknown>) => {
   const home = makeHome();
   writeTarget(home, target);
-  return loadUserSettings((managedServers === undefined ? { home } : { home, managedServers }) as LoadOptions);
+  return loadUserSettings({ home });
+};
+
+const FAKE_DECLARATION = { command: FAKE_SERVER.binary.defaultPath, args: [...FAKE_SERVER.launch.argv], readyPath: FAKE_SERVER.ready.path };
+
+const loadWithServers = async (context: CleanupContext, target: Record<string, unknown>, servers: Record<string, unknown> | undefined) => {
+  const home = withTempDir(context, { asHome: true });
+  fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
+  const models = { ...(servers === undefined ? {} : { servers }), targets: { apple: target }, aliases: { default: 'apple' } };
+  fs.writeFileSync(settingsFile(home), JSON.stringify({ models }), { mode: 0o600 });
+  return loadUserSettings({ home });
 };
 
 const messageOf = async (loading: Promise<unknown>): Promise<string> => {
@@ -99,17 +101,21 @@ describe('a target served by a managed server (design-managed-servers section 3.
   });
 });
 
-describe('the registration entry point: the list of descriptions the loader validates against (design section 3.1, test injection)', () => {
-  it('loads a target of a second kind when its description is registered, with that description defaults', async () => {
-    const { settings } = await load({ adapter: 'managed', server: 'fake' }, [fmServer(), FAKE_SERVER]);
-    expect(settings.models.targets['apple']).toMatchObject({ adapter: 'managed', server: 'fake', binary: '/nonexistent/fake-server', readyTimeoutMs: 25_000 });
+describe('the registry of the loaded user settings: the list of descriptions the loader validates against (design section 3.1; 19.12)', () => {
+  it('loads a target of a kind declared in the user settings, with the declared description defaults', async (context) => {
+    const { settings } = await loadWithServers(context, { adapter: 'managed', server: 'fake', model: 'fake-1' }, { fake: FAKE_DECLARATION });
+    expect(settings.models.targets['apple']).toMatchObject({ adapter: 'managed', server: 'fake', binary: '/nonexistent/fake-server', readyTimeoutMs: 10_000 });
   });
 
-  it('refuses the second kind when only the built-in list is registered', async () => {
-    expect(await messageOf(load({ adapter: 'managed', server: 'fake' }, [fmServer()]))).toContain('models.targets.apple: server "fake" is not a managed server this build supports; supported: fm');
+  it('refuses the second kind when the user settings declare no server', async (context) => {
+    expect(await messageOf(loadWithServers(context, { adapter: 'managed', server: 'fake', model: 'fake-1' }, undefined))).toContain(
+      'models.targets.apple: server "fake" is not a managed server this build supports; supported: fm',
+    );
   });
 
-  it('lists every registered id in the refusal of an unknown id', async () => {
-    expect(await messageOf(load({ adapter: 'managed', server: 'llama' }, [fmServer(), FAKE_SERVER]))).toContain('models.targets.apple: server "llama" is not a managed server this build supports; supported: fm, fake');
+  it('lists every registered id, sorted, in the refusal of an unknown id', async (context) => {
+    expect(await messageOf(loadWithServers(context, { adapter: 'managed', server: 'llama' }, { fake: FAKE_DECLARATION }))).toContain(
+      'models.targets.apple: server "llama" is not a managed server this build supports; supported: fake, fm',
+    );
   });
 });

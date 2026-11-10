@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Readable } from 'node:stream';
 import { createKernelLockMechanism, hostKernelLock, momongaPaths } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
@@ -9,6 +9,8 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, startClaimHolder } from '@m
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import type { HeldKernelLock } from '@momonga/foundation';
 import { sweepSessionTmp, sweepSpawnTmp } from '../src/process/tmp-sweep.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SEVEN_DAYS_MS = 7 * 86_400_000;
 const NOW = 1_800_000_000_000;
@@ -126,7 +128,6 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       await sweepSpawnTmp({ dir, onWarning: noWarning });
       expect(fs.readdirSync(dir)).toEqual([]);
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 
   it(
@@ -144,7 +145,6 @@ describe('S2: spawn and session scratch are directories with a sidecar, on real 
       await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: noWarning });
       expect(fs.readdirSync(root)).toEqual([]);
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 });
 
@@ -185,7 +185,6 @@ describe('S9: session scratch made by ensureSessionTmpDir is kept while its owne
         await sweepSessionTmp({ root: paths.tmp.sessions, store: old, now: NOW, hasInMemoryState: () => false, onWarning: noWarning, lock });
         expect(fs.readdirSync(paths.tmp.sessions)).toEqual([]);
       },
-      REAL_PROCESS_TEST_TIMEOUT_MS,
     );
   }
 });

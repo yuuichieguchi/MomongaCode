@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
@@ -8,6 +8,8 @@ import { getJson } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const LISTED = [
   { slug: 'reported-model', display_name: 'Reported Model', visibility: 'list', context_window: 200000 },
@@ -32,7 +34,7 @@ const listReads = (gateway: PlanGateway): number => gateway.upstream.requests.fi
 
 const settingsOf = (gateway: PlanGateway): any => JSON.parse(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8'));
 
-describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => {
   it('lists the server models in order through the probe reader, marks an entry without a window unusable, and filters by visibility', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
@@ -116,7 +118,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', { time
   });
 });
 
-describe('accounts/{account}/targets adds an unpinned target named by the P6.8 rule (O-R5-4 c)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('accounts/{account}/targets adds an unpinned target named by the P6.8 rule (O-R5-4 c)', () => {
   const add = (gateway: PlanGateway, slug: string) => gateway.post(accountRoute(PLAN_ROUTES.accountTargets), { profile: 'chatgpt', slug });
 
   it('writes { adapter, model: slug, plan: { profile } } under the slug name with an alias of the same name, and is idempotent', async () => {

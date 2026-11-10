@@ -8,7 +8,8 @@ import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
-import { invalidRequest, notFound } from './errors.ts';
+import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from './errors.ts';
+import { plainError } from './retry.ts';
 import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
@@ -64,6 +65,7 @@ export type Router = {
   candidates(alias: string, requirements: CandidateRequirements): Promise<Narrowed>;
   narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
+  target(name: string): TargetRuntime | undefined;
 };
 
 export type RouterOptions = {
@@ -73,6 +75,8 @@ export type RouterOptions = {
   timers: GatewayTimers;
   redactor: Redactor;
   reasoningOrigin: ReasoningOriginCodec;
+  previous?: Router;
+  live?: readonly Router[];
 };
 
 const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string): T => {
@@ -167,6 +171,9 @@ export const createRouter = (options: RouterOptions): Router => {
   const { config, adapters, clock, timers } = options;
   const targets = new Map<string, TargetRuntime>();
   for (const [name, target] of Object.entries(config.models.targets)) {
+    const sameTarget = [options.previous, ...(options.live ?? [])]
+      .map((router) => router?.target(name))
+      .find((carried) => carried !== undefined && carried.counter === target.counter);
     targets.set(name, {
       name,
       provider: target.provider,
@@ -174,13 +181,15 @@ export const createRouter = (options: RouterOptions): Router => {
       billing: target.billing,
       counter: target.counter,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor, options.reasoningOrigin),
-      breaker: new TargetBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
-      gate: createAdmissionGate({
-        targetName: name,
-        maxConcurrency: target.maxConcurrency,
-        admissionTimeoutMs: target.admissionTimeoutMs,
-        timers,
-      }),
+      breaker: sameTarget?.breaker ?? new TargetBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
+      gate:
+        sameTarget?.gate ??
+        createAdmissionGate({
+          targetName: name,
+          maxConcurrency: target.maxConcurrency,
+          admissionTimeoutMs: target.admissionTimeoutMs,
+          timers,
+        }),
       capabilityOverride: target.capabilities,
       plan: target.plan,
       keyGroup: target.keyGroup,
@@ -204,11 +213,20 @@ export const createRouter = (options: RouterOptions): Router => {
     return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
-  const roomMemberOf = async (target: TargetRuntime): Promise<AliasMember> => {
+  const readRoomMember = async (target: TargetRuntime): Promise<AliasMember> => {
     const adapterTarget = { name: target.name, model: target.model };
     if (target.adapter.roomFacts !== undefined) return { target: target.name, measuring: false, ...(await target.adapter.roomFacts(adapterTarget)) };
     const capabilities = await capabilitiesOf(target);
     return { target: target.name, measuring: false, outputBounded: capabilities.outputBoundField !== 'none', contextWindow: capabilities.contextWindow, maxOutputTokens: capabilities.maxOutputTokens };
+  };
+
+  const roomMemberOf = async (target: TargetRuntime): Promise<AliasMember> => {
+    try {
+      return await readRoomMember(target);
+    } catch (error) {
+      if (error instanceof GatewayError || error instanceof ClientDisconnectedError) throw error;
+      throw plainError(target.adapter.classify(error));
+    }
   };
 
   const checkAliasRoom = async (alias: string, members: readonly TargetRuntime[]): Promise<void> => {
@@ -349,6 +367,7 @@ export const createRouter = (options: RouterOptions): Router => {
   };
 
   return {
+    target: (name) => targets.get(name),
     aliases: () => [...aliasTargets.keys()],
     hasAlias: (alias) => aliasTargets.has(alias),
     targetsOf,

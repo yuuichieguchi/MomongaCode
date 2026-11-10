@@ -12,6 +12,8 @@ import { HOST_SANDBOX_KIND, makeLayout, policyFor, ruleFor } from './helpers.ts'
 import { HAS_REAL_SANDBOX, REFUSED_WRITE_MESSAGE, realSandbox, recordingSandbox, scratchRootOf, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const forced = vi.hoisted(() => ({ decision: { kind: 'allow', source: 'mode', reason: 'forced by the test', basis: 'read_only' } }));
 
 vi.mock('@momonga/policy', async (original) => ({ ...(await original<typeof import('@momonga/policy')>()), decide: () => forced.decision }));
@@ -57,7 +59,7 @@ const HIDING_OPTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ['blame', '--reverse', 'tracked'],
 ];
 
-describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', () => {
   let stage: Stage;
 
   beforeEach(async () => {

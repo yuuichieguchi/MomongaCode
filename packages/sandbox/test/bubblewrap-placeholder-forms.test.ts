@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { PlaceholderForm } from '@momonga/foundation';
 import { createBubblewrapSandbox, createPlaceholderJournal, identityOf, nodeFilesystemPort, planBubblewrap } from '@momonga/sandbox';
 import type { PlaceholderJournal, SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const EMPTY_FILE: PlaceholderForm = { kind: 'file', bytes: '' };
 const COMMONDIR_FORM: PlaceholderForm = { kind: 'file', bytes: '.\n' };
@@ -129,7 +131,7 @@ describe('the host creates a placeholder in its form', () => {
   });
 });
 
-describe('a command holds placeholders in their form and release removes them (stand-in bwrap)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a command holds placeholders in their form and release removes them (stand-in bwrap)', () => {
   let tmpRoot = '';
   let journal: PlaceholderJournal;
 

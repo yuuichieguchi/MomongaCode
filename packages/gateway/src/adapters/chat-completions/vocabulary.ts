@@ -3,7 +3,6 @@ import { transportKindOf } from '../shared/vocabulary.ts';
 import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 import type { ManagedServerDescription } from '@momonga/protocol';
 
-const HTTP_ERROR_FROM = 400;
 const CONTEXT_OVERFLOW_CODE = 'context_length_exceeded';
 export const CONTEXT_OVERFLOW_WORDING = /\bcontext (?:length|size|window)\b/i;
 
@@ -31,8 +30,7 @@ export const vocabularyOf = (description: Pick<ManagedServerDescription, 'errors
   kindOf: (status, body) => {
     const message = upstreamErrorText(body);
     const known = description.errors.find((entry) => entry.message === message);
-    if (known !== undefined) return known.kind;
-    return status >= HTTP_ERROR_FROM ? transportKindOf(status) : 'failure';
+    return known === undefined ? CHAT_COMPLETIONS_VOCABULARY.kindOf(status, body) : known.kind;
   },
 });
 

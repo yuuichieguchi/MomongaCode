@@ -12,7 +12,7 @@
 (*       claim that finds a recorded model.requested without its answer    *)
 (*       resends the recorded body with the recorded attempt (Claim,       *)
 (*       Record, Send)                                                     *)
-(*   packages/runtime/src/worker/model-step.ts:163  reject: the rejection  *)
+(*   packages/runtime/src/worker/model-step.ts:167  reject: the rejection  *)
 (*       is appended as model.rejected with its usage.charged              *)
 (*   packages/store/src/fold.ts:381  model.requested carries the attempt   *)
 (*       (recAtt)                                                          *)

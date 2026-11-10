@@ -480,7 +480,7 @@ const registerModels: CommandGroup = (program, deps) => {
     .option('--json', 'print the servers as JSON')
     .action(async (typed: string[], options: { json?: true }) => {
       const paths = await pathsOf(deps.ports);
-      deps.complete(await withIdentityReadFetch(deps.ports, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
+      deps.complete(await withIdentityReadFetch(deps.ports, deps.interrupt, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
     });
 };
 

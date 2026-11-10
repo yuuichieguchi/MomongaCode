@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
 import type { FakeUpstreamReply, RecordedUpstreamRequest } from '@momonga/testkit';
@@ -19,6 +19,8 @@ import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSett
 import { PROFILE_ID, profileFor, signInAtFake } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 16000 };
 
 const bearerOf = (request: RecordedUpstreamRequest): string => String(request.headers['authorization'] ?? '').replace(/^Bearer /, '');
@@ -31,7 +33,7 @@ const filesUnder = (directory: string): string[] =>
       })
     : [];
 
-describe('the gateway process loads plan profiles from the injected planProfiles (O-R5-3 g)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway process loads plan profiles from the injected planProfiles (O-R5-3 g)', () => {
   it('refuses a profile id that the injected planProfiles do not hold, even a shipped one', async () => {
     const home = makeHome();
     writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: 'chatgpt' } } } } });
@@ -43,7 +45,7 @@ describe('the gateway process loads plan profiles from the injected planProfiles
 
 const TOKEN_PREFIX_CHARS = 64;
 
-describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('plan tokens are redacted in every generation (M6, I-C1)', () => {
   it('keeps the loaded and the refreshed token, each echoed by the upstream in an error body after the refresh, out of the response, the log and every file under the home', async () => {
     const home = makeHome();
     const layout = momongaLayout(home);
@@ -109,7 +111,7 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: R
   });
 });
 
-describe('models.billingChanges of the user settings reaches the alias walk (P5a-w, M9)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('models.billingChanges of the user settings reaches the alias walk (P5a-w, M9)', () => {
   const startWith = async (billingChanges: unknown[] | undefined) => {
     const failing = await startFakeOpenResponses({ script: [{ kind: 'error', status: 401, body: { error: { message: 'key refused' } } } as FakeUpstreamReply] });
     const serving = await startFakeOpenResponses({ script: [openResponsesTextReply(['served'])] });

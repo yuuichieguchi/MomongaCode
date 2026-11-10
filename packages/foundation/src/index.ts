@@ -172,8 +172,9 @@ export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError } from './outbound.ts';
-export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
+export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, readSystemCertificatesInWorker, trustFailureText } from './outbound.ts';
+export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
@@ -326,3 +327,5 @@ export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
+export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
+export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';

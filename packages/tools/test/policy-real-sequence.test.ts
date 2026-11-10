@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 import type { RealWorkspace } from './real-workspace.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const withLinkToSecret = (workspace: RealWorkspace): void => {
   workspace.write('../outside/secret', 'TOP\n');
@@ -11,7 +13,7 @@ const withLinkToSecret = (workspace: RealWorkspace): void => {
   workspace.write('src/plain', 'ok\n');
 };
 
-describe('an earlier segment of the same command can change what a later operand resolves to (real /bin/bash)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('an earlier segment of the same command can change what a later operand resolves to (real /bin/bash)', () => {
   it('bash reads through the repository-shipped link after the directory was moved', () => {
     const workspace = makeRealWorkspace();
     withLinkToSecret(workspace);

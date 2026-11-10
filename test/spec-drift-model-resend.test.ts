@@ -44,7 +44,7 @@ describe('ModelResend.tla matches the code', () => {
     ['packages/runtime/src/worker/model-step.ts', 305, 'modelKey(ctx.run.id, position.step, position.attempt)'],
     ['packages/runtime/src/worker/model-step.ts', 313, 'export const resumeInFlight'],
     ['packages/runtime/src/worker/model-step.ts', 317, 'attempt: inFlight.attempt'],
-    ['packages/runtime/src/worker/model-step.ts', 163, 'const reject = '],
+    ['packages/runtime/src/worker/model-step.ts', 167, 'const reject = '],
     ['packages/store/src/fold.ts', 381, "case 'model.requested'"],
     ['packages/store/src/fold.ts', 408, "case 'model.rejected'"],
     ['packages/store/src/fold.ts', 411, 'attempt: event.attempt + 1'],

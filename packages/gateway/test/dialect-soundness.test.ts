@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { BUILTIN_DIALECTS, DIALECT_DEFINITION_SCHEMA } from '@momonga/protocol';
 import type { DialectDefinition } from '@momonga/protocol';
@@ -21,9 +21,11 @@ import {
   withNulls,
 } from './dialect-support.ts';
 import type { Rng } from './dialect-support.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = Number(process.env['MOMONGA_DIALECT_GATE_CASES'] ?? 400);
-const PROPERTY_TIMEOUT_MS = 600_000;
 const TOOL = 'gen';
 
 type Klass = 'P' | 'N' | 'W' | 'R';
@@ -127,7 +129,7 @@ describe('soundness of classes N and P (drop disabled)', () => {
       checkClass(rng, klass, schema, site, resolvedOf(`only-${name.replaceAll(' ', '-')}`, [rule]), tally);
     }
     expect(tally.rendered).toBeGreaterThan(CASES / 4);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 
   it.each(Object.keys(BUILTIN_DIALECTS))('the built-in %s without drop and nullable-optional narrows or preserves', (id) => {
     const rng = seeded(0xb11 + id.length);
@@ -138,7 +140,7 @@ describe('soundness of classes N and P (drop disabled)', () => {
       checkClass(rng, 'N', schema, site, { id, definition }, tally);
     }
     expect(tally.rendered).toBeGreaterThan(0);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 
   it('random valid user definitions without drop and nullable-optional narrow or preserve', () => {
     const rng = seeded(0xdef1);
@@ -161,7 +163,7 @@ describe('soundness of classes N and P (drop disabled)', () => {
       checkClass(rng, 'N', schema, site, resolvedOf('random-user', rules), tally);
     }
     expect(accepted).toBeGreaterThan(CASES / 2);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 });
 
 describe('soundness of class W (only drop)', () => {
@@ -183,7 +185,7 @@ describe('soundness of class W (only drop)', () => {
       }
     }
     expect(tally.rendered).toBeGreaterThan(CASES / 4);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 });
 
 describe('soundness of class R (nullable-optional with the production invertReply)', () => {
@@ -221,7 +223,7 @@ describe('soundness of class R (nullable-optional with the production invertRepl
       }
     }
     expect(rendered).toBeGreaterThan(CASES / 2);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 
   it('(2) every original-valid instance pads to a rendered-valid one and inverts back to itself', () => {
     const rng = seeded(0x4e2);
@@ -246,7 +248,7 @@ describe('soundness of class R (nullable-optional with the production invertRepl
       }
     }
     expect(checked).toBeGreaterThan(CASES);
-  }, PROPERTY_TIMEOUT_MS);
+  });
 
   it('never wraps a property whose original schema admits null', () => {
     const rng = seeded(0x4e3);
@@ -266,5 +268,5 @@ describe('soundness of class R (nullable-optional with the production invertRepl
         expect({ at, property, schema, admitsNull }).toMatchObject({ admitsNull: false });
       }
     }
-  }, PROPERTY_TIMEOUT_MS);
+  });
 });

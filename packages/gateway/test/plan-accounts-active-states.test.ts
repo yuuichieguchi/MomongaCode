@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { credentialFileFor } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
@@ -8,6 +8,8 @@ import { ACCOUNT, begin, browse, sessionsDirectory, signIn, startPlanGateway } f
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID, START_MS, errno, failingWrites, readRecord, signedIn, startHarness, toRefreshWindow } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SPARE = 'spare';
 
@@ -61,7 +63,7 @@ const hold = (): { reached: Promise<void>; reach(): void; released: Promise<void
   return { reached, reach, released, release };
 };
 
-describe('accounts/active accepts exactly the states whose saved-account action is activate (O-R5-6 J 2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('accounts/active accepts exactly the states whose saved-account action is activate (O-R5-6 J 2)', () => {
   it.each([
     ['plan_disabled', (record: Record<string, unknown>) => ({ ...record, state: 'plan_disabled' })],
     ['needs_sign_in', (record: Record<string, unknown>) => ({ ...record, state: 'needs_sign_in', cause: 'refresh_token_expired' })],

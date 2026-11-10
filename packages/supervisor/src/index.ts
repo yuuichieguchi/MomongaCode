@@ -62,8 +62,6 @@ export { DEFAULT_OUTPUT_LIMITS, captureStream, createOutputLimiter, truncateRaw 
 export type { CaptureKind, CaptureOptions, OutputLimiter, OutputLimiterOptions, RawPart } from './capture.ts';
 export { PROBE_HEADERS_TIMEOUT_MS, holderPidOf, labelHealthResponse, probeExternalHealth, watchLock } from './lock-watch.ts';
 export type { ExternalProbe, HealthProbe, LockWatch, LockWatchOptions, ProbeOutcome } from './lock-watch.ts';
-export { digestsOf, planRoles, runRestartPlan } from './plan.ts';
-export type { AppliedDigests, RestartPlanPort, SettingsDigests } from './plan.ts';
 export { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from './settings-watch.ts';
 export type { SettingsWatch, WatchSettingsOptions } from './settings-watch.ts';
 export { createControlRequestHandler, respondShutdown, startControlServer } from './control-server.ts';
@@ -97,10 +95,7 @@ export {
   orphansWaiting,
   orphansWarning,
   phaseChange,
-  planBegin,
-  planEnd,
   settingsChanged,
-  settingsEvaluated,
   settingsInvalid,
   settingsReadFailed,
   settingsWarning,

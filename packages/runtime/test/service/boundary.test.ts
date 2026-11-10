@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import http from 'node:http';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox } from '@momonga/sandbox';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { START_MS, onCleanup, requestManualApproval, startService, toolCallPayload } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SANDBOX_EXEC = '/usr/bin/sandbox-exec';
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', LANG: 'C' };
@@ -20,7 +22,7 @@ const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 
 const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
-describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatbelt', () => {
   it.each([
     { network: 'allow' as const, controlLine: 'control-ok control=0', controlRequests: ['GET /control'] },
     { network: 'deny' as const, controlLine: ' control=7', controlRequests: [] },
@@ -81,6 +83,5 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('pending');
       expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 });

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
@@ -10,6 +10,8 @@ import type { AnyTool, SubjectContext } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, keyFor } from '../helpers.ts';
 import { HAS_RG, RG_PATH, approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_TIME = 1_700_000_000;
 
@@ -600,7 +602,7 @@ describe('Bash locations', () => {
 });
 
 describe.runIf(HAS_REAL_SANDBOX)('a real Bash cd', () => {
-  it('moves the shell but not the base of relative file paths', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('moves the shell but not the base of relative file paths', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('a.txt', 'top\n');
     tools.write('sub/a.txt', 'nested\n');

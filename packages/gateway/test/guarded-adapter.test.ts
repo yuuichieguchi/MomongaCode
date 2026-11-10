@@ -64,6 +64,7 @@ const optionalImplementations = (record: (member: string, self: unknown) => void
     return {
       summary: 'short',
       usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } },
+      usageSource: 'reported',
     };
   },
   renderCompactWire: function (this: unknown) {

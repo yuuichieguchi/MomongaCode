@@ -6,6 +6,9 @@ import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, clientFor, homePaths, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { startGatewayProcess } from '../src/process.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({ serviceNames: [] as string[] }));
 

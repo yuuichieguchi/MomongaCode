@@ -10,6 +10,8 @@ export const EXIT_CONFIG = 78;
 
 export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as const;
 export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
+export const CREDENTIAL_CAPABILITY_ENV = 'MOMONGA_CREDENTIAL_CAPABILITY';
+export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
 
 export const RUNTIME_ABORT_BUDGET_MS = 5000;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;

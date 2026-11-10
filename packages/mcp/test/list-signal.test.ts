@@ -6,6 +6,8 @@ import type { McpConnectionOptions, McpPoolOptions, McpServerConnection } from '
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_TOOL_NAMES, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { BASE_ENV, groupExists, makeDir, onCleanup } from './raw-transport.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const transportCalls = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 
 vi.mock('../src/stdio-transport.ts', async (importOriginal) => {
@@ -18,8 +20,6 @@ vi.mock('../src/stdio-transport.ts', async (importOriginal) => {
     },
   };
 });
-
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
 const modernServer = { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] };
 
@@ -41,7 +41,7 @@ const connectionFor = (extra: Partial<McpConnectionOptions> = {}): McpServerConn
 type ListWithSignal = (options?: { signal?: AbortSignal }) => Promise<Array<{ name: string }>>;
 
 describe('MCP listTools signal', () => {
-  it('an aborted signal rejects listTools with the reason while the shared connect still serves another caller', PROCESS_TIMEOUT, async () => {
+  it('an aborted signal rejects listTools with the reason while the shared connect still serves another caller', async () => {
     const connection = connectionFor();
     const listTools = connection.listTools.bind(connection) as ListWithSignal;
     const controller = new AbortController();
@@ -58,7 +58,7 @@ describe('MCP listTools signal', () => {
     expect(connection.diagnostics().state).toBe('connected');
   });
 
-  it('an already aborted signal rejects listTools on an established session without closing it', PROCESS_TIMEOUT, async () => {
+  it('an already aborted signal rejects listTools on an established session without closing it', async () => {
     const connection = connectionFor();
     const listTools = connection.listTools.bind(connection) as ListWithSignal;
     await connection.listTools();
@@ -71,7 +71,7 @@ describe('MCP listTools signal', () => {
     expect((await connection.listTools()).length).toBeGreaterThan(0);
   });
 
-  it('close aborts a pending connect', PROCESS_TIMEOUT, async () => {
+  it('close aborts a pending connect', async () => {
     const connection = connectionFor();
     const pending = connection.listTools();
     pending.catch(() => undefined);
@@ -83,7 +83,7 @@ describe('MCP listTools signal', () => {
     if (pgid !== undefined) expect(await groupExists(pgid)).toBe(false);
   });
 
-  it('closeGraceMs threads from pool to transport', PROCESS_TIMEOUT, async () => {
+  it('closeGraceMs threads from pool to transport', async () => {
     const markerDir = path.join(makeDir(), 'markers');
     fs.mkdirSync(markerDir, { mode: 0o700 });
     const onWarning = (): void => undefined;
@@ -105,7 +105,7 @@ describe('MCP listTools signal', () => {
     expect(transportCalls[0]).toMatchObject({ name: 'modern', closeGraceMs: 1234, markers: { dir: markerDir, onWarning } });
   });
 
-  it('closeGraceMs and markers thread from a connection to its transport', PROCESS_TIMEOUT, async () => {
+  it('closeGraceMs and markers thread from a connection to its transport', async () => {
     const markerDir = path.join(makeDir(), 'markers');
     fs.mkdirSync(markerDir, { mode: 0o700 });
     const onWarning = (): void => undefined;

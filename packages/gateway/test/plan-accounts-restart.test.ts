@@ -1,10 +1,12 @@
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { ACCOUNT, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 import { PROFILE_ID } from './plan-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SPARE = 'spare';
 
@@ -27,7 +29,7 @@ const makeWorkActive = async (gateway: PlanGateway): Promise<void> => {
   expect(moved.status).toBe(200);
 };
 
-describe('the accounts route lists every stored account of this home, also after a restart (P6.4, 5.5)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the accounts route lists every stored account of this home, also after a restart (P6.4, 5.5)', () => {
   it('lists an account that is not pinned, not active and not touched since the restart', async () => {
     const gateway = await startPlanGateway();
     expect((await signIn(gateway)).completed.status).toBe(200);

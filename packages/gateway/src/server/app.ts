@@ -19,7 +19,8 @@ import type { ResponsesService, SubmitHeaders } from '../core/responses-service.
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { roleOfHeader } from '../core/role.ts';
-import type { Services } from '../core/services.ts';
+import { withPinnedServices } from '../core/services.ts';
+import type { GatewayServices } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
 import { readJsonBody } from './body.ts';
 import { collectTerminalResource } from './response-body.ts';
@@ -27,15 +28,15 @@ import { compactSseResponse, sseResponse } from './sse.ts';
 import type { RequestTracker } from './tracker.ts';
 
 export type AppDependencies = {
-  services: Services;
+  services: GatewayServices;
   responses: ResponsesService;
   unary: UnaryService;
   tracker: RequestTracker;
   startedAtSeconds: number;
   startedAt: string;
   version: string;
-  costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
-  billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>) | undefined;
+  costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
+  billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>) | undefined;
   onError: ((error: unknown) => void) | undefined;
   plan: PlanApi | undefined;
 };
@@ -92,7 +93,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     let streaming = false;
     try {
       const idleBoundMs = streamIdleBoundOf(context.req.header(STREAM_IDLE_HEADER));
-      const submission = responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
+      const submission = await responses.submit(raw, submitHeadersOf(context), context.req.raw.signal);
       const streamOptions = {
         timers: services.timers,
         readerStallMs: services.config.limits.readerStallMs,
@@ -155,53 +156,57 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     }
   });
 
-  app.get('/v1/models', (context) => {
-    const list: ModelList = {
-      object: 'list',
-      data: services.router
-        .aliases()
-        .map((id) => ({ id, object: 'model', created: dependencies.startedAtSeconds, owned_by: 'momonga' })),
-    };
-    return context.json(list);
-  });
+  app.get('/v1/models', (context) =>
+    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+      const list: ModelList = {
+        object: 'list',
+        data: router.aliases().map((id) => ({ id, object: 'model', created: dependencies.startedAtSeconds, owned_by: 'momonga' })),
+      };
+      return context.json(list);
+    }),
+  );
 
-  app.get('/v1/momonga/models', async (context) => {
-    const data = await Promise.all(
-      services.router.aliases().map(async (id) => {
-        const targets = services.router.targetsOf(id);
-        const planned = targets.flatMap((target) => (target.plan === undefined ? [] : [[target.name, target.plan] as const]));
-        const keyed = targets.flatMap((target) => (target.keyGroup === undefined ? [] : [[target.name, { group: target.keyGroup }] as const]));
-        const identity = {
-          id,
-          object: 'model' as const,
-          targets: targets.map((target) => target.name),
-          targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
-          targetBilling: Object.fromEntries(targets.map((target) => [target.name, target.billing])),
-          ...(planned.length === 0 ? {} : { targetPlan: Object.fromEntries(planned) }),
-          ...(keyed.length === 0 ? {} : { targetKey: Object.fromEntries(keyed) }),
-        };
-        return {
-          ...identity,
-          capabilities: await probingOr(services.router.aliasCapabilitiesOf(id)),
-          targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await probingOr(services.router.capabilitiesOf(target))] as const))),
-        };
-      }),
-    );
-    const list: MomongaModelList = { object: 'list', data };
-    return context.json(list);
-  });
+  app.get('/v1/momonga/models', (context) =>
+    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+      const data = await Promise.all(
+        router.aliases().map(async (id) => {
+          const targets = router.targetsOf(id);
+          const planned = targets.flatMap((target) => (target.plan === undefined ? [] : [[target.name, target.plan] as const]));
+          const keyed = targets.flatMap((target) => (target.keyGroup === undefined ? [] : [[target.name, { group: target.keyGroup }] as const]));
+          const identity = {
+            id,
+            object: 'model' as const,
+            targets: targets.map((target) => target.name),
+            targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
+            targetBilling: Object.fromEntries(targets.map((target) => [target.name, target.billing])),
+            ...(planned.length === 0 ? {} : { targetPlan: Object.fromEntries(planned) }),
+            ...(keyed.length === 0 ? {} : { targetKey: Object.fromEntries(keyed) }),
+          };
+          return {
+            ...identity,
+            capabilities: await probingOr(router.aliasCapabilitiesOf(id)),
+            targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await probingOr(router.capabilitiesOf(target))] as const))),
+          };
+        }),
+      );
+      const list: MomongaModelList = { object: 'list', data };
+      return context.json(list);
+    }),
+  );
 
-  app.get('/v1/momonga/health', async (context) => {
-    const report: GatewayHealth = {
-      ...(await services.router.health()),
-      version: dependencies.version,
-      apiVersion: 1,
-      pid: process.pid,
-      startedAt: dependencies.startedAt,
-      state: services.closeSignal.aborted ? 'draining' : 'running',
-    };
-    return context.json(report);
-  });
+  app.get('/v1/momonga/health', (context) =>
+    withPinnedServices(services, requestSignalOf(context), async ({ router }) => {
+      const report: GatewayHealth = {
+        ...(await router.health()),
+        version: dependencies.version,
+        apiVersion: 1,
+        pid: process.pid,
+        startedAt: dependencies.startedAt,
+        state: services.closeSignal.aborted ? 'draining' : 'running',
+      };
+      return context.json(report);
+    }),
+  );
 
   app.post('/v1/momonga/responses/cancel', (context) =>
     context.json({
@@ -229,7 +234,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     }
     const includeRunless = (raw as { includeRunless?: unknown }).includeRunless;
     if (typeof includeRunless !== 'boolean') throw invalidRequest('invalid_body', 'includeRunless must be a boolean', 'includeRunless');
-    return context.json(await dependencies.costReport(runs, includeRunless));
+    return context.json(await dependencies.costReport(runs, includeRunless, requestSignalOf(context)));
   });
 
   app.post('/v1/momonga/cost/calls', async (context) => {
@@ -246,7 +251,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     if (!isCount(limit) || limit < 1 || limit > MAX_BILLED_CALLS_PAGE) {
       throw invalidRequest('invalid_body', `limit must be an integer from 1 to ${MAX_BILLED_CALLS_PAGE}`, 'limit');
     }
-    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless));
+    return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless, requestSignalOf(context)));
   });
 
   const planRoute = (route: string): string => `${PLAN_API_PREFIX}${route}`;

@@ -55,6 +55,7 @@ describe('chat-completions reasoning output (R2b)', () => {
     const { events, output } = await firstTurn(fake);
 
     expect(expectSpecValid(events)).toEqual([]);
+    expect(terminalOf(events).response.usage.input_tokens_details).not.toHaveProperty('cached_tokens');
     expect(reasoningOf(events)).toBe(recorded.reasoning);
     expect(ofType(events, 'response.reasoning.done').map((event) => event.text)).toEqual([recorded.reasoning]);
     expect(outputTextOf(events)).toBe(recorded.text);

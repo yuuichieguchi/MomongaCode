@@ -3,11 +3,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 const REFUSED_CACHE_WRITE = /^[A-Za-z][A-Za-z0-9._+-]*: error: couldn't create cache file '[^'\n]*\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)$/;
@@ -18,7 +20,7 @@ const outputOf = (command: string, args: string[]): string => {
   return result.stdout.trim();
 };
 
-describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache unwritable (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('seatbelt keeps the xcrun cache unwritable (real sandbox-exec)', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let root = '';

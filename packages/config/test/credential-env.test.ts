@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isCredentialEnvName as looksLikeCredentialName, stripCredentialEnv } from '@momonga/config';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type CredentialSettings = { env?: readonly string[]; keep?: readonly string[]; valuePatterns?: readonly string[] };
 

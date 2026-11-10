@@ -18,8 +18,8 @@ import type {
   Usage,
   UsageSource,
 } from '@momonga/protocol';
-import { modelCostOf } from './model-cost.ts';
-import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
+import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
+import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
@@ -413,19 +413,21 @@ async function* relaySteps(
   const momongaFor = (
     usageSource: UsageSource,
     contextInputTokens?: number,
-    billed?: { usage: Usage; cacheWriteInputTokens: number | undefined },
+    billed?: { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined },
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
     jsonReply?: JsonReplyPath,
+    cacheReadNotReported?: true,
   ): MomongaResponseExtension => {
-    const cost =
-      billed === undefined || services.priceTable === undefined
-        ? null
+    const pricing =
+      billed === undefined
+        ? undefined
         : modelCostOf({
             provider: target.provider,
             model: target.model,
             billing: target.billing,
             usage: billed.usage,
+            usageSource: billed.usageSource,
             cacheWriteInputTokens: billed.cacheWriteInputTokens,
             at: opened.span.startedAtMs,
             table: services.priceTable,
@@ -441,7 +443,8 @@ async function* relaySteps(
       usageSource,
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
-      ...(cost === null ? {} : { cost }),
+      ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
+      ...(pricing === undefined ? {} : pricingFieldsOf(pricing)),
       ...(retryable === undefined ? {} : { retryable }),
     };
   };
@@ -494,6 +497,7 @@ async function* relaySteps(
       estimateOutputTokens(upstreamOutput),
     );
   const usageSource: UsageSource = reported === null ? 'estimated' : 'reported';
+  const wire = wireUsageOf(usage);
   const status = terminalEvent.type === 'response.completed' ? 'completed' : 'incomplete';
   const resource: ResponseResource = {
     ...base,
@@ -501,14 +505,15 @@ async function* relaySteps(
     completed_at: completedAt,
     incomplete_details: upstream.incomplete_details,
     output: upstreamOutput,
-    usage,
+    usage: wire.usage,
     momonga: momongaFor(
       usageSource,
       upstream.contextInputTokens,
-      reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+      { usage, usageSource, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
       undefined,
       upstream.schemaNarrowings,
       upstream.jsonReply,
+      wire.cacheReadNotReported,
     ),
   };
   const terminal: StreamEvent = {
@@ -571,6 +576,7 @@ async function* relaySteps(
     responseId,
     finishReason: finishReasonOf(resource),
     usage,
+    usageSource,
     ...(upstream.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: upstream.cacheWriteInputTokens }),
     output: resource.output,
     fallbackCauses,

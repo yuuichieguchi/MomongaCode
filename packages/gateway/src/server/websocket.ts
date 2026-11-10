@@ -7,8 +7,8 @@ import type { StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
 import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
-import type { ResponsesService } from '../core/responses-service.ts';
-import type { Services } from '../core/services.ts';
+import type { ResponsesService, Submission } from '../core/responses-service.ts';
+import type { GatewayServices } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
 import { isRecord } from '@momonga/foundation';
 import { parseRequestJson } from './body.ts';
@@ -25,7 +25,7 @@ const FORBIDDEN_FIELDS = ['stream', 'stream_options', 'background'] as const;
 const DEADLINE_HEADER = 'momonga-deadline-ms';
 
 export type WebSocketTransportOptions = {
-  services: Services;
+  services: GatewayServices;
   responses: ResponsesService;
   tracker: RequestTracker;
   connectionLimitMs: number;
@@ -178,11 +178,11 @@ export const createWebSocketTransport = (options: WebSocketTransportOptions): We
       const release = tracker.begin();
       let previousId: string | undefined;
       let failed = false;
-      let submission: ReturnType<ResponsesService['submit']> | undefined;
+      let submission: Submission | undefined;
       try {
         const body = parseCreateEvent(text);
         previousId = typeof body['previous_response_id'] === 'string' ? body['previous_response_id'] : undefined;
-        submission = responses.submit(
+        submission = await responses.submit(
           { ...body, stream: true },
           { idempotencyKey: undefined, deadlineMs: this.deadlineMs, traceparent: undefined, tracestate: undefined, role: RUN_ROLE },
           this.lifetime.signal,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess, momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { endpointKeyOf, probeOllamaTarget, targetCounterOf } from '@momonga/gateway';
@@ -17,6 +17,8 @@ import {
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CONTEXT_WINDOW = 12288;
 
@@ -42,7 +44,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   return { fake, home };
 };
 
-describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('an ollama target in a started gateway', () => {
   it('answers a request 503 target_probing and starts the probe while no probe record exists, without calling /api/chat', async () => {
     const fake = await startFakeOllama({ chat: [textReply('never sent')] });
     const home = makeHome();

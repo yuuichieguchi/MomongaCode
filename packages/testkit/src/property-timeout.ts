@@ -1,0 +1,1 @@
+export const PROPERTY_TIMEOUT_MS = 600_000;

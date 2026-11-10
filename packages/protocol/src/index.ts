@@ -139,7 +139,7 @@ export {
 export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
 export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
-export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
+export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
   BREAKER_VERDICTS,
@@ -339,7 +339,7 @@ export type {
   SkillsResponse,
 } from './run-api.ts';
 export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
-export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
+export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, CACHE_READS_NOT_REPORTED, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledDetail,
   BilledCallsCursorView,
@@ -350,11 +350,16 @@ export type {
   UnjoinedView,
   CostBreakdownView,
   ModelCost,
+  ModelPricing,
+  PriceNotRecorded,
   RoleBreakdownView,
   TimingSummaryView,
   TokenAnatomy,
   TokenAnatomyLayers,
   UnpricedCallView,
+  InconsistentUsageView,
+  UnpricedCode,
+  UnpricedOutcome,
 } from './token-anatomy.ts';
 export {
   DEFAULT_MEMORY_KIND,
@@ -482,7 +487,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { BILLING_CHANGE_REASONS, CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { BILLING_CHANGE_REASONS, cachedDetailOf, CHAT_REASONING_FIELDS, reportedCachedTokensOf, wireUsageOf, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -557,7 +562,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { BillingChangeReason, FallbackCauseRecord, JsonReplyPath, MomongaResponseExtension } from './open-responses.ts';
+export type { BillingChangeReason, FallbackCauseRecord, JsonReplyPath, MomongaResponseExtension, WireUsage } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,

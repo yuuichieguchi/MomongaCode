@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord } from '@momonga/gateway';
 import type { ProbeReport } from '@momonga/protocol';
@@ -10,9 +10,11 @@ import { getJson } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const honoursNoBound: ProbeReport = { ...makeReport(1, 1), outputBoundField: 'none' };
 
-describe('the gateway reads context.unboundedOutputReserve from user settings per operation (O-R5-3 a, P2 item 7)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway reads context.unboundedOutputReserve from user settings per operation (O-R5-3 a, P2 item 7)', () => {
   it('lists outputBoundField none for a probed-none record only while the user setting is on, with no restart', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

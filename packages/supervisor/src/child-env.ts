@@ -17,6 +17,8 @@ const collidesWithMinimalEnv = (name: string): boolean => MINIMAL_NAMES.has(name
 export const definedEnv = (env: SourceEnv): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
+export const handedCredentialNames = (settings: CredentialSettings): readonly string[] => credentialEnvNames(settings).filter((name) => !collidesWithMinimalEnv(name));
+
 export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: string, onSkipped: (name: string) => void = () => undefined): Record<string, string> => {
   const source = definedEnv(env);
   const result: Record<string, string> = {};

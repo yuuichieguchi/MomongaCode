@@ -233,7 +233,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined, reasoning: capabilities.reasoning, dialect: resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS) }, ctx.reasoningOrigin), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
-      return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };
+      return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const), ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };

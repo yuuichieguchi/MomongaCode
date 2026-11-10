@@ -72,7 +72,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       if (collected.usage === null) throw new UpstreamProtocolError('the upstream reported no usage for the summary');
-      return { summary: collected.summary, usage: collected.usage };
+      return { summary: collected.summary, usage: collected.usage, usageSource: 'reported' };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };

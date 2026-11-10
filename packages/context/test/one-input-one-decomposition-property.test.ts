@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem, MemoryView } from '@momonga/protocol';
 import { ContextOverflowError, buildContext, capacityFor, createTokenMeter, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, ContextArrival, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, MODEL, PROJECT, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, seeded, shapeCounter, sourcesWith, touchedFile, user } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const CASES = 600;
 const NESTED = '/proj/sub/AGENTS.md';

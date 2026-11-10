@@ -1,16 +1,16 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { groupAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor } from './helpers.ts';
 
-const KEY = keyFor('run-1', 1, 'c1');
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const KEY = keyFor('run-1', 1, 'c1');
 const groups: number[] = [];
 
 afterEach(async () => {
@@ -170,7 +170,7 @@ describe('a superseded worker starts no external effect', () => {
 });
 
 describe('a taken-over call reaps the earlier attempt before it reconciles', () => {
-  it('has killed the process group of the earlier attempt when reconcile runs', PROCESS_TIMEOUT, async () => {
+  it('has killed the process group of the earlier attempt when reconcile runs', async () => {
     const harness = makeHarness();
     const { marker, pgid } = seedEarlierAttempt(harness);
     const { tool, seen, watch } = effectTool('already_applied');
@@ -183,7 +183,7 @@ describe('a taken-over call reaps the earlier attempt before it reconciles', () 
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('leaves the process of the current holder alone when the caller is superseded', PROCESS_TIMEOUT, async () => {
+  it('leaves the process of the current holder alone when the caller is superseded', async () => {
     const harness = makeHarness();
     const { pgid } = seedEarlierAttempt(harness);
     harness.idempotency.lease.held = false;

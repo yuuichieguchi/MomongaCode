@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
-import type { ManagedServerDescription } from '@momonga/protocol';
+import { registeredIds, registeredServer } from './server-registry.ts';
+import type { ServerRegistry } from './server-registry.ts';
 import { aliasRoomVerdict } from './alias-room.ts';
 import type { AliasMember } from './alias-room.ts';
 import { DEFAULT_ANTHROPIC_API_VERSION, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
@@ -44,13 +44,14 @@ export type ResolvedModels = {
   billingChanges: BillingChange[];
   headersTimeoutMs: number;
   idleTimeoutMs: number;
+  servers: ServerRegistry;
 };
 
 const FIVE_MINUTES_MS = 300_000;
 
 export type PlanProfiles = Readonly<Record<string, PlanProfile>>;
 
-export type ResolveModelsOptions = { source: string; home: string; warnings: string[]; managedServers?: readonly ManagedServerDescription[]; planProfiles?: PlanProfiles };
+export type ResolveModelsOptions = { source: string; home: string; warnings: string[]; servers: ServerRegistry; planProfiles?: PlanProfiles };
 
 const DEFAULT_ALIAS = 'default';
 
@@ -58,11 +59,11 @@ const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const s
 
 const DEFAULT_ADMISSION_TIMEOUT_MS = 30_000;
 
-const unknownServerMessage = (where: string, id: string, servers: readonly ManagedServerDescription[]): string =>
-  `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`;
+const unknownServerMessage = (where: string, id: string, servers: ServerRegistry): string =>
+  `${where}: server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`;
 
-const resolveManaged = (target: ManagedTarget, where: string, servers: readonly ManagedServerDescription[]): ResolvedManagedTarget => {
-  const description = managedServerOf(servers, target.server);
+const resolveManaged = (target: ManagedTarget, where: string, servers: ServerRegistry): ResolvedManagedTarget => {
+  const description = registeredServer(servers, target.server);
   if (description === undefined) throw new Error(unknownServerMessage(where, target.server, servers));
   for (const field of Object.keys(target.capabilities ?? {})) {
     if (!(description.declarable as readonly string[]).includes(field)) throw new Error(`${where}: capabilities.${field} is not a field the server ${JSON.stringify(description.id)} lets a target declare; declarable: ${description.declarable.join(', ')}`);
@@ -291,12 +292,12 @@ const checkJsonMode = (name: string, target: ModelTarget, source: string): void 
   );
 };
 
-const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[], profiles: PlanProfiles): ResolvedModelTarget => ({
+const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[], servers: ServerRegistry, profiles: PlanProfiles): ResolvedModelTarget => ({
   ...resolveAdapter(target, home, where, warnings, servers, profiles),
   ...(target.answers === undefined ? {} : { answers: target.answers }),
 });
 
-const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: readonly ManagedServerDescription[], profiles: PlanProfiles): ResolvedModelTarget => {
+const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[], servers: ServerRegistry, profiles: PlanProfiles): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'managed':
       return resolveManaged(target, where, servers);
@@ -373,7 +374,7 @@ const warnUnallowedBillingChanges = (
   }
 };
 
-export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, managedServers = MANAGED_SERVERS, planProfiles = PLAN_PROFILES }: ResolveModelsOptions): ResolvedModels => {
+export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings, servers, planProfiles = PLAN_PROFILES }: ResolveModelsOptions): ResolvedModels => {
   const dialects = resolveDialects(models?.dialects, source);
   const configured = Object.entries(models?.targets ?? {});
   const targets: Record<string, ResolvedModelTarget> = {};
@@ -381,7 +382,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     const where = `${source}: models.targets.${name}`;
     if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
     checkJsonMode(name, target, source);
-    targets[name] = resolveTarget(target, home, where, warnings, managedServers, planProfiles);
+    targets[name] = resolveTarget(target, home, where, warnings, servers, planProfiles);
   }
   checkTargetDialects(targets, dialects, source);
 
@@ -420,6 +421,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     billingChanges,
     headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,
     idleTimeoutMs: models?.idleTimeoutMs ?? FIVE_MINUTES_MS,
+    servers,
   };
 };
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { FakeScenario } from './fake-chat-completions.ts';
 
 export const FAKE_SERVER_ID = 'fake';
 export const FAKE_SERVER_MODEL = 'fake-1';
@@ -40,6 +41,7 @@ export const FAKE_SERVER = {
 export interface FakeManagedServerConfig {
   keySet?: boolean;
   envDumpFile?: string;
+  scenario?: FakeScenario;
 }
 
 export interface FakeManagedServer {

@@ -2,10 +2,12 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { REAP_POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, ReapTiming } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const spawnedGroups: number[] = [];
 const spawnedPids: number[] = [];
@@ -134,7 +136,7 @@ const expectLeftAlone = async (group: Group, result: { outcome: string; output: 
 };
 
 describe('reconcileProcessGroup', () => {
-  it('reports unknown when the group is gone and nothing holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reports unknown when the group is gone and nothing holds the marker', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const pgid = await deadGroup(dir);
@@ -143,7 +145,7 @@ describe('reconcileProcessGroup', () => {
     expect(result.output).toMatch(/no longer running/i);
   });
 
-  it('sends SIGTERM to a live group whose leader holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('sends SIGTERM to a live group whose leader holds the marker', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -155,7 +157,7 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('kills a member that ignores SIGTERM after the grace period', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('kills a member that ignores SIGTERM after the grace period', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, IGNORING_MEMBER_SCRIPT, { fd3: marker, readyFiles: ['ready', 'member'] });
@@ -166,7 +168,7 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('kills a group whose leader exited when a surviving member holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('kills a group whose leader exited when a surviving member holds the marker', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, ORPHAN_SCRIPT, { fd3: marker });
@@ -179,7 +181,7 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('kills a marker holder that escaped the group individually', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('kills a marker holder that escaped the group individually', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const pgid = await deadGroup(dir);
@@ -191,7 +193,7 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(holder), 5000)).toBe(true);
   });
 
-  it('recognizes a group running under the platform sandbox launcher through the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('recognizes a group running under the platform sandbox launcher through the marker', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker, sandboxed: true });
@@ -202,14 +204,14 @@ describe('reconcileProcessGroup', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('leaves a group alone when it was spawned without the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('leaves a group alone when it was spawned without the marker', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT);
     await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
   });
 
-  it('leaves a group alone when it holds a different marker file', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('leaves a group alone when it holds a different marker file', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const other = makeMarker(dir, 'other-marker');
@@ -217,14 +219,14 @@ describe('reconcileProcessGroup', () => {
     await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
   });
 
-  it('leaves a group alone when its members closed the inherited descriptor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('leaves a group alone when its members closed the inherited descriptor', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
     await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
   });
 
-  it('leaves a live group alone when the marker file is missing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('leaves a live group alone when the marker file is missing', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -232,7 +234,7 @@ describe('reconcileProcessGroup', () => {
     await expectLeftAlone(group, await reconcileProcessGroup({ pgid: group.pgid, marker }, { killGraceMs: 100 }));
   });
 
-  it('does not SIGKILL a surviving non-holder after the only holder exited on TERM', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('does not SIGKILL a surviving non-holder after the only holder exited on TERM', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
@@ -245,7 +247,7 @@ describe('reconcileProcessGroup', () => {
     expect(holdersOf(marker)).toEqual([]);
   });
 
-  it('keeps signalling other targets when one cannot be signalled and names it', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('keeps signalling other targets when one cannot be signalled and names it', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -281,7 +283,7 @@ describe('reconcileProcessGroup structured result', () => {
     return { signals, kill };
   };
 
-  it('reports a live recorded group with no holder in it as leftAloneGroup and signals nothing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reports a live recorded group with no holder in it as leftAloneGroup and signals nothing', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, CLOSED_FD_SCRIPT, { fd3: marker });
@@ -293,7 +295,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(alive(-group.pgid)).toBe(true);
   });
 
-  it('reports no leftAloneGroup and no unsignalledPids when a verified group is stopped', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reports no leftAloneGroup and no unsignalledPids when a verified group is stopped', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -304,7 +306,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('reports leftAloneGroup when the verified holder exits on TERM and a non-holder member survives', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reports leftAloneGroup when the verified holder exits on TERM and a non-holder member survives', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const script = `/bin/sh -c 'exec 3<&-; trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & trap 'exit 0' TERM; touch "$DIR/ready"; wait`;
@@ -316,7 +318,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(alive(-group.pgid)).toBe(true);
   });
 
-  it('reports a former holder that dropped the marker and stays alive in leftAlonePids', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reports a former holder that dropped the marker and stays alive in leftAlonePids', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const fd = fs.openSync(marker, 'r');
@@ -338,7 +340,7 @@ describe('reconcileProcessGroup structured result', () => {
     expect(holdersOf(marker)).toEqual([]);
   });
 
-  it('lists a pid whose signal failed with EPERM in unsignalledPids', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('lists a pid whose signal failed with EPERM in unsignalledPids', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -358,12 +360,12 @@ describe('reconcileProcessGroup structured result', () => {
 });
 
 describe('findHolders', () => {
-  it('returns an empty list when nothing holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('returns an empty list when nothing holds the marker', async () => {
     const marker = makeMarker(makeDir());
     expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
   });
 
-  it('excludes the current process even when it holds the marker open', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('excludes the current process even when it holds the marker open', async () => {
     const marker = makeMarker(makeDir());
     const fd = fs.openSync(marker, 'r');
     try {
@@ -373,7 +375,7 @@ describe('findHolders', () => {
     }
   });
 
-  it('returns the pid of a child that inherited the marker descriptor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('returns the pid of a child that inherited the marker descriptor', async () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
@@ -382,7 +384,7 @@ describe('findHolders', () => {
 });
 
 describe('holderGroups', () => {
-  it('maps each holder to its process group id', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('maps each holder to its process group id', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
@@ -393,7 +395,7 @@ describe('holderGroups', () => {
     expect(new Set(groups)).toEqual(new Set([group.pgid]));
   });
 
-  it('maps a detached escaped holder to its own group', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('maps a detached escaped holder to its own group', async () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
@@ -404,7 +406,7 @@ describe('holderGroups', () => {
 describe('reconcileProcessGroup timing injection', () => {
   const IGNORING_GROUP_SCRIPT = `trap '' TERM; touch "$DIR/ready"; while :; do sleep 1; done`;
 
-  it('reconcileProcessGroup waits only through the injected timing', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('reconcileProcessGroup waits only through the injected timing', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, IGNORING_GROUP_SCRIPT, { fd3: marker });
@@ -435,7 +437,7 @@ describe('reconcileProcessGroup timing injection', () => {
     expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   });
 
-  it('throws a signalling error other than EPERM and ESRCH', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('throws a signalling error other than EPERM and ESRCH', async () => {
     const dir = makeDir();
     const marker = makeMarker(dir);
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
