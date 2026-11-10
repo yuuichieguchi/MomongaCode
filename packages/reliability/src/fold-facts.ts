@@ -1,4 +1,4 @@
-import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES, pinnedCompletionOf } from '@momonga/protocol';
 import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
@@ -17,15 +17,7 @@ const basisKey = (basis: keyof typeof BASIS_KEYS): (typeof BASIS_KEYS)[keyof typ
 
 const isTerminal = (status: string): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
-const declaredCompletion = (event: Extract<RunEvent, { type: 'run.started' }>): boolean => {
-  const { mandate } = event.pins;
-  if (mandate === undefined) return false;
-  if (typeof mandate !== 'object' || mandate === null) throw new TypeError(`run ${event.runId}: run.started pins.mandate must be an object`);
-  const completion = (mandate as Record<string, unknown>)['completion'];
-  if (completion === undefined) return false;
-  if (!Array.isArray(completion)) throw new TypeError(`run ${event.runId}: run.started pins.mandate.completion must be a list`);
-  return completion.length > 0;
-};
+const declaredCompletion = (event: Extract<RunEvent, { type: 'run.started' }>): boolean => (pinnedCompletionOf(event.pins)?.conditions.length ?? 0) > 0;
 
 export const FACTS_EVENT_TYPES = [
   'run.started',

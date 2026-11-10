@@ -247,7 +247,7 @@ export const fakeRuntime = (): FakeRuntime => {
       return runView({ id: 'run-compact', status: 'QUEUED' });
     },
     createRun: async (sessionId, input, options) => {
-      record(`createRun ${sessionId} ${JSON.stringify({ input, ...(options?.skill === undefined ? {} : { skill: options.skill }) })}`);
+      record(`createRun ${sessionId} ${JSON.stringify({ input, ...(options?.skill === undefined ? {} : { skill: options.skill }), ...(options?.mandate === undefined ? {} : { mandate: options.mandate }) })}`);
       const failure = runtime.failures.get('createRun');
       if (failure !== undefined) throw failure;
       return { run: await runtime.createRunResult(input), location: '/v1/runs/run-1' };

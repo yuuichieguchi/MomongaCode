@@ -1,4 +1,7 @@
-import type { PublicRunEvent } from '@momonga/protocol';
+import type { Mandate, PublicRunEvent } from '@momonga/protocol';
+import { gradeChecks } from './bench-grade.ts';
+import type { WorkspaceProbe } from './bench-grade.ts';
+import { gateVerdictOf } from './oracle.ts';
 import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
@@ -11,7 +14,7 @@ export type EvalSessionInput = { cwd: string; env?: Record<string, string>; perm
 
 export type EvalRunApi = {
   createSession(input: EvalSessionInput): Promise<{ id: string }>;
-  createRun(sessionId: string, input: { input: string; timeoutMs?: number }): Promise<{ id: string }>;
+  createRun(sessionId: string, input: { input: string; timeoutMs?: number; mandate?: Mandate }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
   answeredBy(runId: string): Promise<Answerer[]>;
@@ -20,7 +23,9 @@ export type EvalRunApi = {
   cancelRun(runId: string): Promise<void>;
 };
 
-export type EvalRunScope = { api: EvalRunApi; workspace: EvalWorkspace; close(): Promise<void> };
+export type EvalOracle = { base: string; probe: WorkspaceProbe };
+
+export type EvalRunScope = { api: EvalRunApi; workspace: EvalWorkspace; oracle?: EvalOracle; close(): Promise<void> };
 
 export type EvalPorts = {
   open(golden: GoldenCase, runIndex: number): Promise<EvalRunScope>;
@@ -99,9 +104,26 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
       permissionMode: golden.permissionMode,
       ...(ports.model === undefined ? {} : { model: ports.model }),
     });
-    const run = await scope.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
+    if (golden.oracle !== undefined && scope.oracle === undefined) throw new EvalError(`case ${golden.id} declares an oracle but the run has no way to run it`);
+    const run = await scope.api.createRun(session.id, {
+      input: golden.input,
+      ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }),
+      ...(golden.completion === undefined ? {} : { mandate: { completion: golden.completion } }),
+    });
     const { events, children } = await driveRun(scope.api, golden, run.id);
-    const transcript: RecordedRun = { caseId: golden.id, runIndex, run: await scope.api.getRun(run.id), events, children, reflection: await scope.api.reflectionOf(run.id) };
+    const oracle =
+      golden.oracle === undefined || scope.oracle === undefined
+        ? undefined
+        : await gradeChecks({ checks: golden.oracle, graderFiles: {}, workspace: scope.workspace.cwd, base: scope.oracle.base, probe: scope.oracle.probe });
+    const transcript: RecordedRun = {
+      caseId: golden.id,
+      runIndex,
+      run: await scope.api.getRun(run.id),
+      events,
+      children,
+      reflection: await scope.api.reflectionOf(run.id),
+      ...(oracle === undefined ? {} : { oracle }),
+    };
     if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
     return transcript;
   } finally {
@@ -111,7 +133,12 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
 
 const resultOf = (golden: GoldenCase, transcripts: readonly RecordedRun[]): CaseResult => ({
   golden,
-  runs: transcripts.map((transcript) => ({ runIndex: transcript.runIndex, runId: transcript.run.id, graded: grade(golden.graders, transcript) })),
+  runs: transcripts.map((transcript) => ({
+    runIndex: transcript.runIndex,
+    runId: transcript.run.id,
+    graded: grade(golden.graders, transcript),
+    ...(transcript.oracle === undefined ? {} : { completion: { gate: gateVerdictOf(transcript.run, transcript.events), oracle: transcript.oracle.met } }),
+  })),
 });
 
 export const runDataset = async (dataset: GoldenDataset, ports: EvalPorts): Promise<EvalReport> => {

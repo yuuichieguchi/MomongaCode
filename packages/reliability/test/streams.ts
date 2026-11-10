@@ -12,7 +12,7 @@ export const eventsOf = (runId: string, timed: readonly Timed[]): RunEvent[] =>
       ({ ...payload, id: index + 1, runId, sessionId: SESSION_ID, seq: index + 1, step: 0, leaseToken: 1, createdAt }) as RunEvent,
   );
 
-export const COMPLETION = [{ id: 'tests', command: 'npm test' }];
+export const COMPLETION = { conditions: [{ id: 'tests', command: 'npm test', when: 'always', source: 'request' }], requirements: [] };
 
 export const started = (
   attempt: number,

@@ -14,9 +14,22 @@ export type CheckResult = { id: string; passed: boolean; reason?: 'timeout' | 'e
 
 export type TrialGrade = { met: boolean; checks: CheckResult[] };
 
+export type ChecksInput = { checks: readonly OracleCheck[]; graderFiles: Readonly<Record<string, string>>; workspace: string; base: string; probe: WorkspaceProbe };
+
 export type GradeInput = { task: BenchTask; workspace: string; base: string; probe: WorkspaceProbe };
 
-const within = (changed: string, allowed: string): boolean => (allowed.endsWith('/') ? changed.startsWith(allowed) : changed === allowed || changed.startsWith(`${allowed}/`));
+type Location = Pick<ChecksInput, 'workspace' | 'base' | 'probe'>;
+
+const segmentsOf = (entry: string): string[] | undefined => {
+  const segments = entry.split('/').filter((segment) => segment !== '' && segment !== '.');
+  return segments.includes('..') ? undefined : segments;
+};
+
+const within = (changed: string, allowed: string): boolean => {
+  const target = segmentsOf(changed);
+  const root = segmentsOf(allowed);
+  return target !== undefined && root !== undefined && root.length <= target.length && root.every((segment, index) => segment === target[index]);
+};
 
 const filesUnder = async (root: string, relative: string): Promise<string[]> => {
   const stat = await nodeFileSystem.stat(path.join(root, relative)).then(
@@ -37,7 +50,7 @@ const filesOfPaths = async (paths: readonly string[], roots: readonly string[]):
   return [...new Set(found.flat())].sort();
 };
 
-const pathCheck = async (check: Exclude<OracleCheck, { kind: 'command' }>, { workspace, base, probe }: GradeInput): Promise<CheckResult> => {
+const pathCheck = async (check: Exclude<OracleCheck, { kind: 'command' }>, { workspace, base, probe }: Location): Promise<CheckResult> => {
   if (check.kind === 'unchangedPaths') {
     const files = await filesOfPaths(check.paths, [workspace, base]);
     const [after, before] = await Promise.all([probe.digest(workspace, files), probe.digest(base, files)]);
@@ -48,34 +61,36 @@ const pathCheck = async (check: Exclude<OracleCheck, { kind: 'command' }>, { wor
   return stray ? { id: check.id, passed: false, reason: 'out_of_scope' } : { id: check.id, passed: true };
 };
 
-const commandCheck = async (check: Extract<OracleCheck, { kind: 'command' }>, { workspace, probe }: GradeInput): Promise<CheckResult> => {
+const commandCheck = async (check: Extract<OracleCheck, { kind: 'command' }>, { workspace, probe }: Location): Promise<CheckResult> => {
   const outcome = await probe.run(check.run, check.timeoutMs, workspace);
   if (outcome.timedOut) return { id: check.id, passed: false, reason: 'timeout' };
   return outcome.exitCode === check.expectExit ? { id: check.id, passed: true } : { id: check.id, passed: false, reason: 'exit' };
 };
 
-const writeGraderFiles = async (task: BenchTask, workspace: string): Promise<void> => {
-  for (const [relative, content] of Object.entries(task.graderFiles)) {
+const writeGraderFiles = async (graderFiles: Readonly<Record<string, string>>, workspace: string): Promise<void> => {
+  for (const [relative, content] of Object.entries(graderFiles)) {
     await nodeFileSystem.mkdir(path.dirname(path.join(workspace, relative)));
     await nodeFileSystem.writeFile(path.join(workspace, relative), content);
   }
 };
 
-export const gradeTrial = async (input: GradeInput): Promise<TrialGrade> => {
-  const { task } = input;
+export const gradeChecks = async (input: ChecksInput): Promise<TrialGrade> => {
   const pathResults = new Map<string, CheckResult>();
-  for (const check of task.oracle) {
+  for (const check of input.checks) {
     if (check.kind !== 'command') pathResults.set(check.id, await pathCheck(check, input));
   }
-  await writeGraderFiles(task, input.workspace);
+  await writeGraderFiles(input.graderFiles, input.workspace);
   const checks: CheckResult[] = [];
-  for (const check of task.oracle) {
+  for (const check of input.checks) {
     const result = check.kind === 'command' ? await commandCheck(check, input) : pathResults.get(check.id);
-    if (result === undefined) throw new Error(`oracle check ${check.id} of task ${task.id} produced no result`);
+    if (result === undefined) throw new Error(`oracle check ${check.id} produced no result`);
     checks.push(result);
   }
   return { met: checks.every((check) => check.passed), checks };
 };
+
+export const gradeTrial = ({ task, workspace, base, probe }: GradeInput): Promise<TrialGrade> =>
+  gradeChecks({ checks: task.oracle, graderFiles: task.graderFiles, workspace, base, probe });
 
 export const BENCH_PROBLEMS = ['digest_mismatch', 'grader_file_in_repository', 'setup_failed', 'already_passing', 'unsolvable'] as const;
 export type BenchProblem = (typeof BENCH_PROBLEMS)[number];

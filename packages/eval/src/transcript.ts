@@ -3,6 +3,7 @@ import type { ProductValidator } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validateResolvedPolicy } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
+import type { CheckResult, TrialGrade } from './bench-grade.ts';
 import { RETIRED_POLICY_REASON, NEW_PAIR_COMMANDS } from './retired-formats.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
@@ -46,6 +47,7 @@ export type Transcript = {
   codeDigest: string | null;
   answeredBy?: Answerer[];
   reflection?: TranscriptReflection;
+  oracle?: TrialGrade;
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
   noiseTokens?: number;
@@ -123,6 +125,20 @@ const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
 };
 
 type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'noiseReflectionsUnsettled' | 'stopped'>;
+
+const ORACLE_REASONS: readonly NonNullable<CheckResult['reason']>[] = ['timeout', 'exit', 'changed', 'out_of_scope'];
+
+const oracleOf = (value: unknown, where: string): TrialGrade => {
+  const malformed = (): TranscriptError => new TranscriptError(`${where}: oracle must hold met and a list of checks with an id, passed and an optional reason`);
+  if (!isRecord(value) || typeof value['met'] !== 'boolean' || !Array.isArray(value['checks'])) throw malformed();
+  const checks = value['checks'].map((entry: unknown): CheckResult => {
+    if (!isRecord(entry) || typeof entry['id'] !== 'string' || typeof entry['passed'] !== 'boolean') throw malformed();
+    const reason = ORACLE_REASONS.find((known) => known === entry['reason']);
+    if (entry['reason'] !== undefined && reason === undefined) throw malformed();
+    return { id: entry['id'], passed: entry['passed'], ...(reason === undefined ? {} : { reason }) };
+  });
+  return { met: value['met'], checks };
+};
 
 const validateReflectionView: ProductValidator<unknown> = defineProductSchema('run-api/RunReflection', RUN_API_SCHEMAS.RunReflection);
 
@@ -203,6 +219,7 @@ export const encodeTranscript = (transcript: Transcript): string => {
     codeDigest: transcript.codeDigest,
     ...(transcript.answeredBy === undefined ? {} : { answeredBy: transcript.answeredBy }),
     ...(transcript.reflection === undefined ? {} : { reflection: transcript.reflection }),
+    ...(transcript.oracle === undefined ? {} : { oracle: transcript.oracle }),
     ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
     ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
     ...(transcript.noiseTokens === undefined ? {} : { noiseTokens: transcript.noiseTokens }),
@@ -281,6 +298,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     codeDigest,
     ...(header['answeredBy'] === undefined ? {} : { answeredBy: answeredByOf(header['answeredBy'], `${source}:1`) }),
     ...(header['reflection'] === undefined ? {} : { reflection: reflectionOf(header['reflection'], `${source}:1`) }),
+    ...(header['oracle'] === undefined ? {} : { oracle: oracleOf(header['oracle'], `${source}:1`) }),
     ...liveFieldsOf(header, `${source}:1`),
   };
 };
