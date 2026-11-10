@@ -3,7 +3,7 @@ import type { ProductValidator } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validateResolvedPolicy } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
-import type { CheckResult, TrialGrade } from './bench-grade.ts';
+import type { CheckResult, TrialGrade } from './oracle-grade.ts';
 import { RETIRED_POLICY_REASON, NEW_PAIR_COMMANDS } from './retired-formats.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
 

@@ -122,8 +122,10 @@ export { BENCH_DEFAULT_RUNS, BENCH_DIFFICULTIES, BENCH_FORMAT, BENCH_SCHEMA, BEN
 export { GATE_VERDICTS, completionAgreement, gateVerdictOf } from './oracle.ts';
 export type { Agreement, GateVerdict } from './oracle.ts';
 export type { BenchDifficulty, BenchTask, BenchTaskType, Benchmark, OracleCheck } from './bench.ts';
-export { BENCH_PROBLEMS, gradeChecks, gradeTrial, validateBenchmark } from './bench-grade.ts';
-export type { BenchProblem, CheckResult, ChecksInput, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
+export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts';
+export type { BenchProblem, GradeInput, TaskValidation, Validation } from './bench-grade.ts';
+export { gradeChecks } from './oracle-grade.ts';
+export type { CheckResult, ChecksInput, TrialGrade, WorkspaceProbe } from './oracle-grade.ts';
 export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
 export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';
 export { EPISODE_OUTCOMES, INJECTION_FAULTS, INJECT_FORMAT, INJECT_SCHEMA, POINT_EVENT_TYPES, RECONCILE_OUTCOMES, parseInjectionScenarios } from './inject.ts';

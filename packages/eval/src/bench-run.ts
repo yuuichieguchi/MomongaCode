@@ -6,7 +6,7 @@ import type { FactsEvent, GroupKey, ReliabilityReport } from '@momonga/reliabili
 import { BENCH_DEFAULT_RUNS, mandateOfTask, parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, Benchmark } from './bench.ts';
 import { gradeTrial } from './bench-grade.ts';
-import type { WorkspaceProbe } from './bench-grade.ts';
+import type { WorkspaceProbe } from './oracle-grade.ts';
 import { buildBenchmarkReport } from './bench-report.ts';
 import type { BenchmarkTrial } from './bench-report.ts';
 import { EvalError, driveRun } from './runner.ts';

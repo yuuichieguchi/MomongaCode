@@ -2,93 +2,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { createOwnedDirectory, nodeFileSystem } from '@momonga/foundation';
 import { parseBenchmark, treeDigest } from './bench.ts';
-import type { BenchTask, OracleCheck } from './bench.ts';
+import type { BenchTask } from './bench.ts';
 import { diffLines } from './context-improve.ts';
-
-export type WorkspaceProbe = {
-  run(command: string, timeoutMs: number, cwd: string): Promise<{ exitCode: number | null; timedOut: boolean }>;
-  digest(cwd: string, paths: readonly string[]): Promise<string>;
-  changedPaths(cwd: string, baseDir: string): Promise<string[]>;
-};
-
-export type CheckResult = { id: string; passed: boolean; reason?: 'timeout' | 'exit' | 'changed' | 'out_of_scope' };
-
-export type TrialGrade = { met: boolean; checks: CheckResult[] };
-
-export type ChecksInput = { checks: readonly OracleCheck[]; graderFiles: Readonly<Record<string, string>>; workspace: string; base: string; probe: WorkspaceProbe };
+import { filesUnder, gradeChecks } from './oracle-grade.ts';
+import type { TrialGrade, WorkspaceProbe } from './oracle-grade.ts';
 
 export type GradeInput = { task: BenchTask; workspace: string; base: string; probe: WorkspaceProbe };
-
-type Location = Pick<ChecksInput, 'workspace' | 'base' | 'probe'>;
-
-const segmentsOf = (entry: string): string[] | undefined => {
-  const segments = entry.split('/').filter((segment) => segment !== '' && segment !== '.');
-  return segments.includes('..') ? undefined : segments;
-};
-
-const within = (changed: string, allowed: string): boolean => {
-  const target = segmentsOf(changed);
-  const root = segmentsOf(allowed);
-  return target !== undefined && root !== undefined && root.length <= target.length && root.every((segment, index) => segment === target[index]);
-};
-
-const filesUnder = async (root: string, relative: string): Promise<string[]> => {
-  const stat = await nodeFileSystem.stat(path.join(root, relative)).then(
-    (found) => found,
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return undefined;
-      throw error;
-    },
-  );
-  if (stat === undefined || !stat.isDirectory()) return stat === undefined ? [] : [relative];
-  const children = await nodeFileSystem.readdir(path.join(root, relative));
-  const nested = await Promise.all(children.map((child) => filesUnder(root, path.posix.join(relative, child))));
-  return nested.flat();
-};
-
-const filesOfPaths = async (paths: readonly string[], roots: readonly string[]): Promise<string[]> => {
-  const found = await Promise.all(paths.flatMap((entry) => roots.map((root) => filesUnder(root, entry.replace(/\/$/, '')))));
-  return [...new Set(found.flat())].sort();
-};
-
-const pathCheck = async (check: Exclude<OracleCheck, { kind: 'command' }>, { workspace, base, probe }: Location): Promise<CheckResult> => {
-  if (check.kind === 'unchangedPaths') {
-    const files = await filesOfPaths(check.paths, [workspace, base]);
-    const [after, before] = await Promise.all([probe.digest(workspace, files), probe.digest(base, files)]);
-    return after === before ? { id: check.id, passed: true } : { id: check.id, passed: false, reason: 'changed' };
-  }
-  const changed = await probe.changedPaths(workspace, base);
-  const stray = changed.some((entry) => !check.paths.some((allowed) => within(entry, allowed)));
-  return stray ? { id: check.id, passed: false, reason: 'out_of_scope' } : { id: check.id, passed: true };
-};
-
-const commandCheck = async (check: Extract<OracleCheck, { kind: 'command' }>, { workspace, probe }: Location): Promise<CheckResult> => {
-  const outcome = await probe.run(check.run, check.timeoutMs, workspace);
-  if (outcome.timedOut) return { id: check.id, passed: false, reason: 'timeout' };
-  return outcome.exitCode === check.expectExit ? { id: check.id, passed: true } : { id: check.id, passed: false, reason: 'exit' };
-};
-
-const writeGraderFiles = async (graderFiles: Readonly<Record<string, string>>, workspace: string): Promise<void> => {
-  for (const [relative, content] of Object.entries(graderFiles)) {
-    await nodeFileSystem.mkdir(path.dirname(path.join(workspace, relative)));
-    await nodeFileSystem.writeFile(path.join(workspace, relative), content);
-  }
-};
-
-export const gradeChecks = async (input: ChecksInput): Promise<TrialGrade> => {
-  const pathResults = new Map<string, CheckResult>();
-  for (const check of input.checks) {
-    if (check.kind !== 'command') pathResults.set(check.id, await pathCheck(check, input));
-  }
-  await writeGraderFiles(input.graderFiles, input.workspace);
-  const checks: CheckResult[] = [];
-  for (const check of input.checks) {
-    const result = check.kind === 'command' ? await commandCheck(check, input) : pathResults.get(check.id);
-    if (result === undefined) throw new Error(`oracle check ${check.id} produced no result`);
-    checks.push(result);
-  }
-  return { met: checks.every((check) => check.passed), checks };
-};
 
 export const gradeTrial = ({ task, workspace, base, probe }: GradeInput): Promise<TrialGrade> =>
   gradeChecks({ checks: task.oracle, graderFiles: task.graderFiles, workspace, base, probe });

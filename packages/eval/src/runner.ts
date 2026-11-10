@@ -1,6 +1,6 @@
 import type { Mandate, PublicRunEvent } from '@momonga/protocol';
-import { gradeChecks } from './bench-grade.ts';
-import type { WorkspaceProbe } from './bench-grade.ts';
+import { gradeChecks } from './oracle-grade.ts';
+import type { WorkspaceProbe } from './oracle-grade.ts';
 import { gateVerdictOf } from './oracle.ts';
 import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
