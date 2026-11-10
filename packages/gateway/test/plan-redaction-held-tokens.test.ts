@@ -25,7 +25,7 @@ const sorted = (values: readonly string[]): string[] => [...values].sort();
 const restarted = async (h: Harness): Promise<void> => {
   h.fed.clear();
   await h.reopen({ accounts: [work] });
-  await h.sessions.load(work);
+  await h.sessions.load(work, new AbortController().signal);
 };
 
 const terminallyRefused = async (h: Harness): Promise<void> => {
@@ -73,7 +73,7 @@ describe('a record that holds any token feeds the redactor from the moment it is
       email: again.email,
       idToken: again.idToken,
       tokens: again.tokens,
-    });
+    }, new AbortController().signal);
     expect(installed.outcome).toBe('signed_in');
     expect(sorted(h.fed.get(KEY) ?? [])).toEqual(sorted([again.tokens.access_token, String(again.tokens.refresh_token), again.idToken, signIn.idToken]));
   });
@@ -81,7 +81,7 @@ describe('a record that holds any token feeds the redactor from the moment it is
   it('a loaded record with no token feeds nothing', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
-    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId })).toEqual({ outcome: 'registered' });
+    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId }, new AbortController().signal)).toEqual({ outcome: 'registered' });
     await restarted(h);
     expect((await readRecord(h, 'work'))?.['state']).toBe('registered');
     expect(h.fed.has(KEY)).toBe(false);

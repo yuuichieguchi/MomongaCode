@@ -21,6 +21,7 @@ import { createReadAccessMatcher } from './read-access.ts';
 import type { ReadFamilyTool } from './read-access.ts';
 import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
+import { RetiringYield } from './ports.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
 import { callStopOf } from './call-stop.ts';
@@ -157,6 +158,7 @@ export type ToolExecutorOptions = {
   maxParallel?: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
+  earlierMarkerDirs?: () => Promise<readonly string[]>;
   owners?: MarkerOwners;
   callLockDir: string;
   kernelLock?: KernelLockMechanism;
@@ -1146,8 +1148,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
-    const marker = path.join(options.processMarkerDir, key);
+  const reapEarlierMarker = async (marker: string, key: string, pgid: number | undefined, signal: AbortSignal): Promise<boolean> => {
     let reaped: ReapReport;
     try {
       reaped = await reapMarkedProcessesWithReport({
@@ -1178,7 +1179,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
     }
-    return { stopped: reaped.stopped };
+    return reaped.stopped;
+  };
+
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+    let stopped = await reapEarlierMarker(path.join(options.processMarkerDir, key), key, pgid, signal);
+    if (options.earlierMarkerDirs !== undefined) {
+      for (const directory of await options.earlierMarkerDirs()) {
+        if (directory === options.processMarkerDir) continue;
+        stopped = (await reapEarlierMarker(path.join(directory, key), key, pgid, signal)) || stopped;
+      }
+    }
+    return { stopped };
   };
 
   type Resumed = { kind: 'reconciled'; result: ReconcileResult } | { kind: 'outcome'; outcome: CallOutcome };
@@ -1357,6 +1369,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
               return await tool.execute(target.input, executionCtx, prepared);
             } catch (error) {
               if (error instanceof ToolInputRequired) return error;
+              if (error instanceof RetiringYield) throw error;
               const retryable =
                 error instanceof TransientToolError &&
                 tool.sideEffect === 'read_only' &&

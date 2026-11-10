@@ -1,11 +1,12 @@
 import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
-import { canonicalPath, comparableContains, listenUnix, startDeadlineSignal } from '@momonga/foundation';
+import { SWEEP_INTERVAL_MS, canonicalPath, comparableContains, encodeSse, listenUnix, startDeadlineSignal } from '@momonga/foundation';
 import { createMarkerOwners } from '@momonga/tools';
 import type { MarkerOwners } from '@momonga/tools';
-import type { Clock, Redactor } from '@momonga/foundation';
-import type { Capabilities, CostBreakdownView, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
+import type { Clock, Redactor, RolePort } from '@momonga/foundation';
+import { DAEMON_CURRENT_EVENT } from '@momonga/protocol';
+import type { Capabilities, CostBreakdownView, DaemonCurrentFrame, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from '../process/as-error.ts';
@@ -23,7 +24,7 @@ import { startTerminalSweeper } from './terminal-sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
 
-export const SWEEP_INTERVAL_MS = 1000;
+export { SWEEP_INTERVAL_MS };
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const TWO_MIB = 2 * 1024 * 1024;
@@ -62,11 +63,30 @@ export type RunServiceOptions = {
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
   mcp: McpAdminPort;
+  role: RolePort;
+  work: { steps(): number; jobs(): number };
+  ignorableMarkerDirectories: () => Promise<readonly string[]>;
+  onRequestEnd?: () => void;
   onError?: (error: unknown) => void;
   onFatal?: (error: Error) => void;
 };
 
-export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
+export type RunService = {
+  socketPath: string;
+  beginDraining(): void;
+  applyRole(): void;
+  openRequests(): number;
+  stopListening(): void;
+  retire(current: DaemonCurrentFrame | undefined): Promise<void>;
+  close(): Promise<void>;
+};
+
+const STREAM_REQUEST = /^\/v1\/(?:runs|sessions)\/[^/?]+\/events(?:\?|$)/;
+
+const isStreamRequest = (request: http.IncomingMessage): boolean => (request.method === 'GET' || request.method === 'HEAD') && STREAM_REQUEST.test(request.url ?? '');
+
+const frameOf = (current: DaemonCurrentFrame): Uint8Array =>
+  new TextEncoder().encode(encodeSse({ event: DAEMON_CURRENT_EVENT, data: JSON.stringify({ generation: current.generation, version: current.version }) }));
 
 const reportToStderr = (error: unknown): void => {
   console.error(error);
@@ -102,7 +122,10 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     else onError(error);
   };
   const closeController = new AbortController();
+  const retireController = new AbortController();
+  let retireFrame: Uint8Array | undefined;
   let draining = false;
+  const runTimeoutMs = options.defaults.runTimeoutMs ?? SIX_HOURS_MS;
   const app = createRunApp({
     store: options.store,
     clock: options.clock,
@@ -120,34 +143,116 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     beginDraining: () => {
       draining = true;
     },
+    role: () => options.role.current(),
+    work: options.work,
     health: { pid: options.pid, startedAt: options.startedAt, sandbox: options.sandboxKind },
     protectedRootAreas: options.protectedRootAreas,
-    defaults: { modelAlias: options.defaults.modelAlias, runTimeoutMs: options.defaults.runTimeoutMs ?? SIX_HOURS_MS, limits: options.defaults.limits },
+    defaults: { modelAlias: options.defaults.modelAlias, runTimeoutMs, limits: options.defaults.limits },
     notifier: options.notifier,
     timers,
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
+    retireSignal: retireController.signal,
+    retireFrame: () => retireFrame,
     runTrace: options.runTrace,
     runCost: options.runCost,
     runCostBreakdown: options.runCostBreakdown,
     mcp: options.mcp,
     markerOwners: options.markerOwners ?? createMarkerOwners(),
+    ignorableMarkerDirectories: options.ignorableMarkerDirectories,
     onError: report,
   });
-
-  const server = http.createServer(getRequestListener((request, env) => app.fetch(request, env)));
+  const listener = getRequestListener((request, env) => app.fetch(request, env));
+  let openRequests = 0;
+  const openStreams = new Set<http.ServerResponse>();
+  let streamsEnded: (() => void) | undefined;
+  const server = http.createServer((request, response) => {
+    if (options.role.current() === 'retiring') response.setHeader('connection', 'close');
+    if (isStreamRequest(request)) {
+      openStreams.add(response);
+      response.once('close', () => {
+        openStreams.delete(response);
+        if (openStreams.size === 0) streamsEnded?.();
+      });
+    } else {
+      openRequests += 1;
+      const bound = timers.setTimeout(() => request.destroy(new Error(`the request outlasted the run deadline of ${runTimeoutMs} ms`)), runTimeoutMs);
+      response.once('close', () => {
+        timers.clearTimeout(bound);
+        openRequests -= 1;
+        options.onRequestEnd?.();
+      });
+    }
+    void listener(request, response);
+  });
   await listenUnix(server, options.socketPath, undefined, startDeadlineSignal(options.startSignal));
 
-  let sweeper: { close(): Promise<void> } | undefined;
-  let searchSweeper: { close(): Promise<void> } | undefined;
-  let terminalSweeper: { close(): Promise<void> } | undefined;
+  type Sweepers = { approval: { close(): Promise<void> }; terminal: { close(): Promise<void> }; search: { close(): Promise<void> } };
+  let sweepers: Sweepers | undefined;
+  let sweepersClosing: Promise<void> = Promise.resolve();
   let poll: { close(): void } | undefined;
   let startupRelease: Promise<void> = Promise.resolve();
+  let startupReleased = false;
+
+  const closeSweepers = (): Promise<void> => {
+    const running = sweepers;
+    sweepers = undefined;
+    if (running === undefined) return sweepersClosing;
+    sweepersClosing = sweepersClosing.then(async () => {
+      await running.search.close();
+      await running.terminal.close();
+      await running.approval.close();
+    });
+    return sweepersClosing;
+  };
+
+  const startSweepers = (): Sweepers => ({
+    approval: startApprovalSweeper({
+      store: options.store,
+      clock: options.clock,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
+      releaseStopped: options.releaseStopped,
+      onError: report,
+    }),
+    terminal: startTerminalSweeper({
+      store: options.store,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
+      ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
+      releaseStopped: options.releaseStopped,
+      onError: report,
+    }),
+    search: startSearchSweeper({
+      store: options.store,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
+      batchSize: SEARCH_INDEX_BATCH_RUNS,
+      redactor: options.redactor,
+      onError: report,
+    }),
+  });
+
+  const applyRole = (): void => {
+    if (closeController.signal.aborted) return;
+    if (options.role.current() !== 'serving') {
+      void closeSweepers().catch(report);
+      return;
+    }
+    sweepers ??= startSweepers();
+    if (startupReleased) return;
+    startupReleased = true;
+    startupRelease = releaseStoppedRunsAtStartup({
+      store: options.store,
+      releaseStopped: options.releaseStopped,
+      signal: closeController.signal,
+      onError: report,
+    });
+  };
+
   const stop = async (): Promise<void> => {
-    await searchSweeper?.close();
-    await terminalSweeper?.close();
-    await sweeper?.close();
+    await closeSweepers();
     closeController.abort();
     await startupRelease;
     poll?.close();
@@ -161,36 +266,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       if (onFatal !== undefined) onFatal(asError(error));
       else onError(error);
     });
-    sweeper = startApprovalSweeper({
-      store: options.store,
-      clock: options.clock,
-      timers,
-      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
-      releaseStopped: options.releaseStopped,
-      onError: report,
-    });
-    terminalSweeper = startTerminalSweeper({
-      store: options.store,
-      timers,
-      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
-      ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
-      releaseStopped: options.releaseStopped,
-      onError: report,
-    });
-    searchSweeper = startSearchSweeper({
-      store: options.store,
-      timers,
-      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
-      batchSize: SEARCH_INDEX_BATCH_RUNS,
-      redactor: options.redactor,
-      onError: report,
-    });
-    startupRelease = releaseStoppedRunsAtStartup({
-      store: options.store,
-      releaseStopped: options.releaseStopped,
-      signal: closeController.signal,
-      onError: report,
-    });
+    applyRole();
     poll = startDataVersionPoll({
       store: options.store,
       notifier: options.notifier,
@@ -209,6 +285,24 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     socketPath: options.socketPath,
     beginDraining: () => {
       draining = true;
+    },
+    applyRole,
+    openRequests: () => openRequests,
+    stopListening: () => {
+      if (server.listening) server.close();
+      server.closeIdleConnections();
+    },
+    retire: (current) => {
+      closing ??= (async () => {
+        retireFrame = current === undefined ? undefined : frameOf(current);
+        const ended = new Promise<void>((resolve) => {
+          streamsEnded = resolve;
+        });
+        retireController.abort();
+        if (openStreams.size > 0) await ended;
+        await stop();
+      })();
+      return closing;
     },
     close: () => {
       closing ??= stop();

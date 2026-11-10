@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { CredentialStoreError, createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
+import { CredentialStoreError, createEncryptedCredentialStore, endedStoreCall, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import type { CredentialEntry, FileSystem, KernelLockMechanism, LimitTiming, ListableCredentialStore, SecretStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
@@ -154,6 +154,10 @@ export const REVOCATION_ATTEMPT_BOUND_MS = 10_000;
 
 type PendingBound = { ms: number; resolve(): void };
 
+type PendingLimit = { ms: number; fire(): void };
+
+export const NEVER_ENDED = new AbortController().signal;
+
 export type Harness = {
   home: string;
   paths: { sessions: string; host: string; active: string };
@@ -175,6 +179,9 @@ export type Harness = {
   failNextOutbound(error: Error): void;
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
+  timing: LimitTiming;
+  pendingLimits(): number[];
+  fireLimit(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
   reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: ListableCredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
   close(): Promise<void>;
@@ -193,7 +200,9 @@ export const profileFor = (auth: SiwcAuth): PlanProfile => {
 const isRefreshPost = (url: string, init: RequestInit, tokenUrl: string): boolean =>
   url === tokenUrl && typeof init.body !== 'undefined' && new URLSearchParams(String(init.body)).get('grant_type') === 'refresh_token';
 
-export const startHarness = async (options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial } = {}): Promise<Harness> => {
+export const startHarness = async (
+  options: { profile?: (auth: SiwcAuth) => PlanProfile; wrapFileSystem?: (base: FileSystem) => FileSystem; pointerSerial?: Serial; secretStore?: SecretStore } = {},
+): Promise<Harness> => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-plan-'));
   const layout = momongaLayout(home);
   const paths = { sessions: layout.planSessions, host: layout.planHost, active: layout.planActive };
@@ -203,8 +212,8 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const store = createEncryptedCredentialStore({
     directory: paths.sessions,
     stateDirectory: layout.state,
-    secretStore: { kind: 'none', reason: 'the harness keeps plaintext records' },
-    plaintextTokenFiles: () => true,
+    secretStore: options.secretStore === undefined ? { kind: 'none', reason: 'the harness keeps plaintext records' } : { kind: 'available', store: options.secretStore },
+    plaintextTokenFiles: () => options.secretStore === undefined,
     keyOfPlaintext: planRecordKeyOfPlaintext,
   });
   const sleeps: number[] = [];
@@ -220,6 +229,18 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const gates: Gate[] = [];
   const revokeGates: Gate[] = [];
   const bounds: PendingBound[] = [];
+  const limits: PendingLimit[] = [];
+  const timing: LimitTiming = {
+    setTimeout: (callback, ms) => {
+      const entry: PendingLimit = { ms, fire: callback };
+      limits.push(entry);
+      return entry as unknown as ReturnType<LimitTiming['setTimeout']>;
+    },
+    clearTimeout: (handle) => {
+      const index = limits.indexOf(handle as unknown as PendingLimit);
+      if (index !== -1) limits.splice(index, 1);
+    },
+  };
   const heldUntilAbort = (gate: Gate, signal: AbortSignal | null | undefined): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       void gate.held.then(resolve);
@@ -257,6 +278,8 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       ...(options.pointerSerial === undefined ? {} : { pointerSerial: options.pointerSerial }),
       profiles: { [PROFILE_ID]: profile },
       paths,
+      signal: NEVER_ENDED,
+      timing,
       store: chosenStore,
       fileSystem,
       accounts,
@@ -348,6 +371,14 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       const [bound] = bounds.splice(index, 1);
       bound?.resolve();
     },
+    timing,
+    pendingLimits: () => limits.map((limit) => limit.ms),
+    fireLimit: (ms) => {
+      const index = limits.map((limit) => limit.ms).lastIndexOf(ms);
+      if (index === -1) throw new Error(`no pending ${ms} ms limit`);
+      const [limit] = limits.splice(index, 1);
+      limit?.fire();
+    },
     rewriteRefresh: (change) => {
       rewrites.push(change);
     },
@@ -414,39 +445,42 @@ export const signInAtFake = async (h: Harness, options: { clientId?: string; res
 
 export const signedIn = async (h: Harness, account: string): Promise<FakeSignIn> => {
   const signIn = await signInAtFake(h);
-  const registered = await h.sessions.register({ profile: PROFILE_ID, account, clientId: signIn.clientId, hostId: signIn.hostId });
+  const registered = await h.sessions.register({ profile: PROFILE_ID, account, clientId: signIn.clientId, hostId: signIn.hostId }, NEVER_ENDED);
   if (registered.outcome !== 'registered') throw new Error(`register failed: ${JSON.stringify(registered)}`);
-  const installed = await h.sessions.install({
-    profile: PROFILE_ID,
-    account,
-    clientId: signIn.clientId,
-    hostId: signIn.hostId,
-    subject: signIn.subject,
-    email: signIn.email,
-    idToken: signIn.idToken,
-    tokens: signIn.tokens,
-  });
+  const installed = await h.sessions.install(
+    {
+      profile: PROFILE_ID,
+      account,
+      clientId: signIn.clientId,
+      hostId: signIn.hostId,
+      subject: signIn.subject,
+      email: signIn.email,
+      idToken: signIn.idToken,
+      tokens: signIn.tokens,
+    },
+    NEVER_ENDED,
+  );
   if (installed.outcome !== 'signed_in') throw new Error(`install failed: ${JSON.stringify(installed)}`);
   return signIn;
 };
 
 export const readRecord = async (h: Harness, account: string): Promise<Record<string, unknown> | undefined> => {
-  const raw = await h.store.read(recordKey(account));
+  const raw = await h.store.read(recordKey(account), NEVER_ENDED);
   return raw === undefined ? undefined : (JSON.parse(raw) as Record<string, unknown>);
 };
 
 export const writeSigningOut = async (h: Harness, account: string): Promise<void> => {
   const current = await readRecord(h, account);
   if (current === undefined) throw new Error(`no record for ${account}`);
-  await h.store.write(recordKey(account), JSON.stringify({ ...current, state: 'signing_out' }));
+  await h.store.write(recordKey(account), JSON.stringify({ ...current, state: 'signing_out' }), NEVER_ENDED);
 };
 
-export const rawRecord = (h: Harness, account: string): Promise<string | undefined> => h.store.read(recordKey(account));
+export const rawRecord = (h: Harness, account: string): Promise<string | undefined> => h.store.read(recordKey(account), NEVER_ENDED);
 
 export const editRecord = async (h: Harness, account: string, change: (record: Record<string, unknown>) => Record<string, unknown>): Promise<void> => {
   const current = await readRecord(h, account);
   if (current === undefined) throw new Error(`no record for ${account}`);
-  await h.store.write(recordKey(account), JSON.stringify(change(current)));
+  await h.store.write(recordKey(account), JSON.stringify(change(current)), NEVER_ENDED);
 };
 
 export const recordFileOf = (h: Harness, account: string): string =>
@@ -466,43 +500,50 @@ export const rotateAtFake = async (h: Harness, clientId: string, refreshToken: s
 };
 
 export const failingWrites = (inner: ListableCredentialStore, fails: (value: string) => Error | undefined): ListableCredentialStore => ({
-  read: (key) => inner.read(key),
-  remove: (key) => inner.remove(key),
-  write: (key, value) => {
+  read: (key, signal) => inner.read(key, signal),
+  remove: (key, signal) => inner.remove(key, signal),
+  write: (key, value, signal) => {
     const error = fails(value);
-    return error === undefined ? inner.write(key, value) : Promise.reject(error);
+    return error === undefined ? inner.write(key, value, signal) : Promise.reject(error);
   },
-  withKey: (key, action) =>
-    inner.withKey(key, (entry) =>
-      action({
-        read: () => entry.read(),
-        remove: () => entry.remove(),
-        write: (value) => {
-          const error = fails(value);
-          return error === undefined ? entry.write(value) : Promise.reject(error);
-        },
-      }),
+  withKey: (key, action, signal) =>
+    inner.withKey(
+      key,
+      (entry) =>
+        action({
+          read: () => entry.read(),
+          remove: () => entry.remove(),
+          write: (value) => {
+            const error = fails(value);
+            return error === undefined ? entry.write(value) : Promise.reject(error);
+          },
+        }),
+      signal,
     ),
-  update: (key, change) =>
-    inner.update(key, (current) => {
-      const next = change(current);
-      const error = fails(next);
-      if (error !== undefined) throw error;
-      return next;
-    }),
-  listKeys: () => inner.listKeys(),
+  update: (key, change, signal) =>
+    inner.update(
+      key,
+      (current) => {
+        const next = change(current);
+        const error = fails(next);
+        if (error !== undefined) throw error;
+        return next;
+      },
+      signal,
+    ),
+  listKeys: (signal) => inner.listKeys(signal),
 });
 
 export const refusingLocks = (inner: ListableCredentialStore, refuses: () => Error | undefined): ListableCredentialStore => ({
-  read: (key) => inner.read(key),
-  remove: (key) => inner.remove(key),
-  write: (key, value) => inner.write(key, value),
-  update: (key, change) => inner.update(key, change),
-  withKey: (key, action) => {
+  read: (key, signal) => inner.read(key, signal),
+  remove: (key, signal) => inner.remove(key, signal),
+  write: (key, value, signal) => inner.write(key, value, signal),
+  update: (key, change, signal) => inner.update(key, change, signal),
+  withKey: (key, action, signal) => {
     const error = refuses();
-    return error === undefined ? inner.withKey(key, action) : Promise.reject(error);
+    return error === undefined ? inner.withKey(key, action, signal) : Promise.reject(error);
   },
-  listKeys: () => inner.listKeys(),
+  listKeys: (signal) => inner.listKeys(signal),
 });
 
 export type HeldWrite = { store: ListableCredentialStore; lockRequests(): number; reached: Promise<void>; fail(error: Error): void };
@@ -519,28 +560,102 @@ export const holdingOneWrite = (inner: ListableCredentialStore, matches: (value:
     fail = reject;
   });
   const store: ListableCredentialStore = {
-    read: (key) => inner.read(key),
-    remove: (key) => inner.remove(key),
-    write: (key, value) => inner.write(key, value),
-    update: (key, change) => inner.update(key, change),
-    withKey: (key, action) => {
+    read: (key, signal) => inner.read(key, signal),
+    remove: (key, signal) => inner.remove(key, signal),
+    write: (key, value, signal) => inner.write(key, value, signal),
+    update: (key, change, signal) => inner.update(key, change, signal),
+    withKey: (key, action, signal) => {
       requests += 1;
-      return inner.withKey(key, (entry) =>
-        action({
-          read: () => entry.read(),
-          remove: () => entry.remove(),
-          write: (value) => {
-            if (!armed || !matches(value)) return entry.write(value);
-            armed = false;
-            arrive();
-            return parked;
-          },
-        }),
+      return inner.withKey(
+        key,
+        (entry) =>
+          action({
+            read: () => entry.read(),
+            remove: () => entry.remove(),
+            write: (value) => {
+              if (!armed || !matches(value)) return entry.write(value);
+              armed = false;
+              arrive();
+              return parked;
+            },
+          }),
+        signal,
       );
     },
-    listKeys: () => inner.listKeys(),
+    listKeys: (signal) => inner.listKeys(signal),
   };
   return { store, lockRequests: () => requests, reached, fail: (error) => fail(error) };
+};
+
+export type WatchedCall = { operation: 'read' | 'withKey' | 'listKeys'; key: string | undefined; signal: unknown };
+
+export type WatchedStore = {
+  store: ListableCredentialStore;
+  calls: WatchedCall[];
+  hang: { read: boolean; lock: boolean; write: (value: string) => boolean };
+  fail: { write: (value: string) => Error | undefined };
+  hung: number;
+};
+
+const endedWith = <T>(action: 'read' | 'write', signal: AbortSignal): Promise<T> =>
+  new Promise<T>((_resolve, reject) => {
+    const end = (): void => reject(endedStoreCall({ action, name: undefined, backend: undefined }, signal.reason));
+    if (signal.aborted) end();
+    else signal.addEventListener('abort', end, { once: true });
+  });
+
+const leftWith = <T>(signal: AbortSignal): Promise<T> =>
+  new Promise<T>((_resolve, reject) => {
+    const end = (): void => reject(signal.reason);
+    if (signal.aborted) end();
+    else signal.addEventListener('abort', end, { once: true });
+  });
+
+export const watchedStore = (inner: ListableCredentialStore): WatchedStore => {
+  const hanging = <T>(pending: Promise<T>): Promise<T> => {
+    watched.hung += 1;
+    return pending;
+  };
+  const watched: WatchedStore = {
+    calls: [],
+    hang: { read: false, lock: false, write: () => false },
+    fail: { write: () => undefined },
+    hung: 0,
+    store: {
+      read: (key, signal) => {
+        watched.calls.push({ operation: 'read', key, signal });
+        return watched.hang.read ? hanging(endedWith('read', signal)) : inner.read(key, signal);
+      },
+      remove: (key, signal) => inner.remove(key, signal),
+      write: (key, value, signal) => inner.write(key, value, signal),
+      update: (key, change, signal) => inner.update(key, change, signal),
+      withKey: (key, action, signal) => {
+        watched.calls.push({ operation: 'withKey', key, signal });
+        if (watched.hang.lock) return hanging(leftWith(signal));
+        return inner.withKey(
+          key,
+          (entry) => {
+            const guarded: CredentialEntry = {
+              read: () => entry.read(),
+              remove: () => entry.remove(),
+              write: (value) => {
+                if (watched.hang.write(value)) return hanging(endedWith('write', signal));
+                const failure = watched.fail.write(value);
+                return failure === undefined ? entry.write(value) : Promise.reject(failure);
+              },
+            };
+            return action(guarded);
+          },
+          signal,
+        );
+      },
+      listKeys: (signal) => {
+        watched.calls.push({ operation: 'listKeys', key: undefined, signal });
+        return inner.listKeys(signal);
+      },
+    },
+  };
+  return watched;
 };
 
 export const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: simulated`), { code });

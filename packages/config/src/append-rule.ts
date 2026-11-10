@@ -14,6 +14,7 @@ export type AppendPermissionRuleOptions = {
   lockTimeoutMs?: number;
   rule: string;
   effect: RuleEffect;
+  signal: AbortSignal;
 };
 
 const addRule = (document: Record<string, unknown>, file: string, rule: string, effect: RuleEffect): boolean => {
@@ -28,12 +29,12 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
   return true;
 };
 
-export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs }: AppendPermissionRuleOptions): Promise<void> => {
+export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs, signal }: AppendPermissionRuleOptions): Promise<void> => {
   const directory = await localSettingsDirectory(home, projectDir);
   const file = path.join(directory, 'settings.local.json');
   const root = await worktreeRootOf(home, projectDir);
   const stored = reRootedRule(rule, await fs.promises.realpath(projectDir), root);
   parseRule(stored, { effect, origin: 'local', source: file, settingsRoot: root, home, cwd: projectDir });
 
-  await editUserSettings(home, file, (document) => addRule(document, file, stored, effect), { ports, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
+  await editUserSettings(home, file, (document) => addRule(document, file, stored, effect), { ports, signal, ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }) });
 };

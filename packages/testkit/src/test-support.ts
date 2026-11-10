@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
 import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
-import { stopSupervisorHolder } from './process-groups.ts';
+import { stopSupervisorHolders } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
@@ -16,7 +16,11 @@ const PROCESS_KILL_DEADLINE_MS = 5000;
 
 export const realProcessTestSignal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
 
-export const testRunToken = (): string => process.env[TEST_RUN_ENV] ?? 'x';
+export const testRunToken = (): string => {
+  const token = process.env[TEST_RUN_ENV];
+  if (token === undefined) throw new Error(`${TEST_RUN_ENV} is not set; run through a vitest project whose global setup sets the run token`);
+  return token;
+};
 
 export const tempDirPrefixFor = (token: string): string => `${TEMP_DIR_PREFIX}${token}-`;
 
@@ -63,7 +67,7 @@ const restoreWritable = (target: string): void => {
   for (const entry of fs.readdirSync(target)) restoreWritable(path.join(target, entry));
 };
 
-const removeTempDir = (dir: string): void => {
+const removeDirectoryTree = (dir: string): void => {
   restoreWritable(dir);
   fs.rmSync(dir, { recursive: true, force: true });
   if (fs.existsSync(dir)) throw new Error(`test temp dir ${dir} still exists after cleanup`);
@@ -73,21 +77,52 @@ export type TempDirOptions = { asHome?: boolean };
 
 const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
 
-export const isUnderTestTempBase = (dir: string): boolean =>
-  [tempDirBase(true), tempDirBase(false)].some((base) => dir.startsWith(`${fs.realpathSync(base)}${path.sep}`));
+export const testTempBases = (): string[] => [...new Set([tempDirBase(true), tempDirBase(false)].map((base) => fs.realpathSync(base)))];
+
+export const isUnderTestTempBase = (dir: string): boolean => testTempBases().some((base) => dir.startsWith(`${base}${path.sep}`));
+
+const createdHomes = new Set<string>();
+
+export const createTempDir = (options: TempDirOptions = {}): string => {
+  const asHome = options.asHome === true;
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken()))));
+  fs.chmodSync(dir, 0o700);
+  if (!asHome) return dir;
+  try {
+    assertHomeSocketBudget(dir);
+  } catch (error) {
+    removeDirectoryTree(dir);
+    throw error;
+  }
+  createdHomes.add(dir);
+  return dir;
+};
+
+export const removeTempDir = async (dir: string): Promise<void> => {
+  if (createdHomes.delete(dir)) await stopSupervisorHolders(dir);
+  removeDirectoryTree(dir);
+};
 
 export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
   assertTestContext(context, 'withTempDir');
-  const asHome = options.asHome === true;
-  const created = fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken())));
-  context.onTestFinished(async () => {
-    if (asHome) await stopSupervisorHolder(created);
-    removeTempDir(created);
-  });
-  const dir = fs.realpathSync(created);
-  fs.chmodSync(dir, 0o700);
-  if (asHome) assertHomeSocketBudget(dir);
+  const dir = createTempDir(options);
+  context.onTestFinished(() => removeTempDir(dir));
   return dir;
+};
+
+type Closable = { close: () => Promise<unknown> };
+
+export const closeOnceStarted =
+  <Handle extends Closable>(started: Promise<Handle>): (() => Promise<void>) =>
+  async () => {
+    const handle = await started.catch(() => undefined);
+    await handle?.close();
+  };
+
+export const ownedStart = <Handle extends Closable>(context: CleanupContext | undefined, started: Promise<Handle>): Promise<Handle> => {
+  started.catch(() => undefined);
+  registerCleanup(context, closeOnceStarted(started), REAL_PROCESS_TEST_TIMEOUT_MS);
+  return started;
 };
 
 export type TrackedChild = ChildProcess & { readonly pid: number };

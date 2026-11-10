@@ -4,6 +4,8 @@ import { ProcessLockHeldError, acquireProcessLock, createKeyedSerializer, inspec
 import type { FileLockPorts } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 
+const NEVER_ABORTED = new AbortController().signal;
+
 const steppedPorts = (): FileLockPorts => {
   let now = 1_000_000;
   return {
@@ -65,10 +67,10 @@ describe('createKeyedSerializer', () => {
       await gate.promise;
       order.push('first');
       throw new Error('first failed');
-    });
+    }, NEVER_ABORTED);
     const second = serialize('k', async () => {
       order.push('second');
-    });
+    }, NEVER_ABORTED);
     gate.resolve();
     await expect(first).rejects.toThrow('first failed');
     await second;
@@ -78,8 +80,8 @@ describe('createKeyedSerializer', () => {
   it('does not make different keys wait for each other', async () => {
     const serialize = createKeyedSerializer();
     const gate = Promise.withResolvers<void>();
-    const blocked = serialize('a', () => gate.promise);
-    await serialize('b', async () => undefined);
+    const blocked = serialize('a', () => gate.promise, NEVER_ABORTED);
+    await serialize('b', async () => undefined, NEVER_ABORTED);
     gate.resolve();
     await blocked;
   });

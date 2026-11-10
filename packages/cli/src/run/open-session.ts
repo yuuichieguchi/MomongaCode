@@ -4,8 +4,8 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
 import type { CreatedSession, RuntimeClient } from '../client/runtime-client.ts';
-import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { stderrStopNotice } from '../daemon/stop-notice.ts';
+import { ensureSessionDaemon } from '../daemon/ensure-daemon.ts';
+import { endSessionWhenMovedAway, sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
 import { reopenedSession } from './resolve-session.ts';
@@ -34,10 +34,12 @@ export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Prom
 
 export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
 
+export const connectSessionRuntime = (ports: Pick<DaemonPorts, 'version'>, paths: MomongaPaths): RuntimeClient =>
+  createRuntimeClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'runtime'), onMoved: endSessionWhenMovedAway(paths, ports.version) });
+
 export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
-  const onNotice = stderrStopNotice(ports);
-  await ensureDaemon(ports, paths, options.signal === undefined ? { onNotice } : { signal: options.signal, onNotice });
-  const client = connectRuntime(paths);
+  await ensureSessionDaemon(ports, paths, options.signal === undefined ? {} : { signal: options.signal });
+  const client = connectSessionRuntime(ports, paths);
   try {
     if (options.reopen !== undefined) {
       const reopened: CreatedSession = { session: await reopenedSession(client, ports.cwd, options.reopen), strippedEnvKeys: [] };

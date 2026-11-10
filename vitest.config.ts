@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { DEFAULT_TEST_TIMEOUT_MS, E2E_HOOK_TIMEOUT_MS } from './e2e/support/wait.ts';
+import { RUN_CLASS_KEY } from './scripts/support/run-class.ts';
 
 export default defineConfig({
   test: {
@@ -10,8 +11,9 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          provide: { [RUN_CLASS_KEY]: 'heavy-when-whole' },
           setupFiles: ['test/support/child-process-guard.ts'],
-          globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts'],
+          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'test/support/leak-guard.ts'],
           include: ['packages/*/test/**/*.test.ts', 'packages/*/test/**/*.test.tsx', 'test/**/*.test.ts'],
         },
       },
@@ -21,7 +23,7 @@ export default defineConfig({
           name: 'packaging',
           include: ['scripts/**/*.test.ts'],
           setupFiles: ['test/support/child-process-guard.ts'],
-          globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/leak-guard.ts'],
+          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/leak-guard.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,
@@ -31,9 +33,10 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'e2e',
+          provide: { [RUN_CLASS_KEY]: 'heavy' },
           include: ['e2e/**/*.test.ts'],
           setupFiles: ['test/support/child-process-guard.ts'],
-          globalSetup: ['test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts'],
+          globalSetup: ['test/support/run-lock.ts', 'test/support/fake-secret-programs.ts', 'test/support/journal-thread-module.ts', 'test/support/pinned-ripgrep.ts', 'e2e/global-setup.ts'],
           fileParallelism: false,
           hookTimeout: E2E_HOOK_TIMEOUT_MS,
           testTimeout: DEFAULT_TEST_TIMEOUT_MS,

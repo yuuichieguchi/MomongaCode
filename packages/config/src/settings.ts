@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_SCREEN_MODES, TUI_SETTING_VALUES, TUI_THEMES } from './settings-schema.ts';
@@ -260,7 +260,7 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 
 export type BillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
 
-export type DeclaredServer = { command: string; args: string[]; readyPath: string };
+export type DeclaredServer = { command: string; args: string[]; readyPath: string; endpoint?: { forms: ManagedEndpointForm[] } };
 
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;

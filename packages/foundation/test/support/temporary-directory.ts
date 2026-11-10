@@ -1,21 +1,19 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { afterEach } from 'vitest';
-import { shortTempBase } from '@momonga/foundation';
+import { createTempDir, removeTempDir } from '@momonga/testkit';
+import type { TempDirOptions } from '@momonga/testkit';
 
 const created: string[] = [];
 
-afterEach(() => {
-  for (const directory of created.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+afterEach(async () => {
+  for (const directory of created.splice(0)) await removeTempDir(directory);
 });
 
-const makeUnder = (base: string): string => {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(base, 'mm-foundation-')));
+const make = (options: TempDirOptions): string => {
+  const directory = createTempDir(options);
   created.push(directory);
   return directory;
 };
 
-export const makeTemporaryDirectory = (): string => makeUnder(os.tmpdir());
+export const makeTemporaryDirectory = (): string => make({});
 
-export const makeShortHomeDirectory = (): string => makeUnder(shortTempBase(process.platform));
+export const makeShortHomeDirectory = (): string => make({ asHome: true });

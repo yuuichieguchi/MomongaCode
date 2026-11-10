@@ -21,7 +21,7 @@ describe('the built-in managed server descriptions (design-managed-servers secti
       wire: 'chat-completions',
       binary: { defaultPath: '/usr/bin/fm' },
       launch: { argv: ['serve', '--socket', '{socket}'] },
-      endpoint: { kind: 'unix' },
+      endpoint: { forms: ['unix'] },
       ready: { method: 'GET', path: '/health', status: 200, limitMs: 10_000 },
     });
   });

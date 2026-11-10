@@ -7,6 +7,8 @@ import type { PermissionRule } from '@momonga/config';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeDir, makeTree } from './helpers.ts';
 
+const NEVER_ABORTED = new AbortController().signal;
+
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const git = (cwd: string, ...args: string[]): void => {
@@ -24,7 +26,7 @@ const repository = (root: string): string => {
 };
 
 const persist = (home: string, projectDir: string, rule: string): Promise<void> =>
-  appendPermissionRule({ ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow' });
+  appendPermissionRule({ ports: systemFileLockPorts, home, projectDir, rule, effect: 'allow', signal: NEVER_ABORTED });
 
 const localRules = async (home: string, projectDir: string): Promise<PermissionRule[]> => {
   const trust = { isTrusted: (): boolean => true };

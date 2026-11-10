@@ -24,7 +24,7 @@ export type SettingsOperation =
 
 export type SettingsPlace = { readonly home: string; readonly projectDir: string };
 
-export type EditSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal?: AbortSignal };
+export type EditSettingsOptions = { ports?: FileLockPorts; lockTimeoutMs?: number; signal: AbortSignal };
 
 export type SettingsLayerView = { readonly layer: SettingsLayer; readonly file: string; readonly document: Readonly<Record<string, unknown>> };
 
@@ -123,7 +123,7 @@ const apply = (document: Record<string, unknown>, file: string, operation: Setti
   }
 };
 
-export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions = {}): Promise<void> => {
+export const editSettings = async (settingsPlace: SettingsPlace, layer: SettingsLayer, operation: SettingsOperation, options: EditSettingsOptions): Promise<void> => {
   const located = await configError(() => locate(settingsPlace, layer));
   if (layer === 'local' && operation.kind === 'addRule') {
     await configError(() =>
@@ -133,6 +133,7 @@ export const editSettings = async (settingsPlace: SettingsPlace, layer: Settings
         rule: operation.rule,
         effect: operation.effect,
         ports: options.ports ?? systemFileLockPorts,
+        signal: options.signal,
         ...(options.lockTimeoutMs === undefined ? {} : { lockTimeoutMs: options.lockTimeoutMs }),
       }),
     );

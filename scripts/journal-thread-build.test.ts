@@ -59,8 +59,8 @@ describe('the plugins of the two builds', () => {
     root = createTempRoot();
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it(

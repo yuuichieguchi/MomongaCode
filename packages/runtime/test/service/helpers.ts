@@ -1,13 +1,12 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterEach, expect } from 'vitest';
-import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedSocket } from '@momonga/foundation';
-import type { UdsClient } from '@momonga/foundation';
+import { createRedactor, createUdsClient, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, momongaLayout, momongaPaths, EMPTY_PROTECTED_SET, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
@@ -18,7 +17,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
+import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -71,9 +70,10 @@ export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup)
 export type Layout = { root: string; home: string; momonga: string; runDir: string; project: string; projectReal: string; socketPath: string; dbPath: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ms-')));
-  onCleanup(() => fs.rmSync(root, { recursive: true, force: true }));
-  const home = path.join(root, 'h');
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const momonga = path.join(home, '.momonga');
   const runDir = path.join(momonga, 'run');
   fs.mkdirSync(runDir, { recursive: true, mode: 0o700 });
@@ -425,6 +425,10 @@ const unusedUserInput: runtime.UserInputPort = {
 };
 
 export type ServiceOverrides = {
+  role?: RolePort;
+  work?: { steps(): number; jobs(): number };
+  ignorableMarkerDirectories?: () => Promise<readonly string[]>;
+  onRequestEnd?: () => void;
   timers?: FakeTimers;
   keepAliveMs?: number;
   sweepIntervalMs?: number;
@@ -453,7 +457,15 @@ export type ServiceOverrides = {
 
 export type Notifier = { onCommit(touched: { runId?: string; sessionId: string }[]): void; subscriberCount(): number };
 
-export type RunService = { socketPath: string; beginDraining(): void; close(): Promise<void> };
+export type RunService = {
+  socketPath: string;
+  beginDraining(): void;
+  applyRole(): void;
+  openRequests(): number;
+  stopListening(): void;
+  retire(current: { generation: number; version: string } | undefined): Promise<void>;
+  close(): Promise<void>;
+};
 
 export type ServiceEnv = Awaited<ReturnType<typeof startService>>;
 
@@ -541,6 +553,10 @@ export const serviceOptions = (
       },
       text: 'cost report',
     })),
+  role: overrides.role ?? fixedRolePort('serving'),
+  work: overrides.work ?? { steps: () => 0, jobs: () => 0 },
+  ignorableMarkerDirectories: overrides.ignorableMarkerDirectories ?? (async () => [momongaLayout(base.home).markers.root]),
+  ...(overrides.onRequestEnd === undefined ? {} : { onRequestEnd: overrides.onRequestEnd }),
   onError: (error: unknown) => base.errors.push(error),
   ...(base.fatals === undefined ? {} : { onFatal: (error: Error) => base.fatals?.push(error) }),
 });
@@ -779,6 +795,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,
+      role: fixedRolePort('serving'),
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: 'darwin',

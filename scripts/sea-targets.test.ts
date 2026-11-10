@@ -51,8 +51,8 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('cross
     root = createTempRoot();
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it.each([

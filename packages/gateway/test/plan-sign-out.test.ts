@@ -79,7 +79,7 @@ describe('sign-out (F11, I-C10)', () => {
     const signedOut = (await readRecord(h, 'work'))?.['generation'] as number;
     expect(signedOut).toBeGreaterThanOrEqual(Math.max(...seen));
     const again = await signInAtFake(h, { clientId: signIn.clientId });
-    expect(await h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens })).toMatchObject({ outcome: 'signed_in' });
+    expect(await h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens }, new AbortController().signal)).toMatchObject({ outcome: 'signed_in' });
     const reinstalled = await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
     expect(reinstalled.generation).toBeGreaterThan(Math.max(...seen, signedOut));
     expect((await readRecord(h, 'work'))?.['generation']).toBe(reinstalled.generation);

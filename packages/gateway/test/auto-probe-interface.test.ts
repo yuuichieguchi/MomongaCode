@@ -12,6 +12,7 @@ type LanternKey = { target: string; lamp: string; wick: string };
 type LanternReport = { brightness: number };
 
 const KEY: LanternKey = { target: 'lantern', lamp: 'brass-7', wick: 'cotton' };
+const OTHER_KEY: LanternKey = { target: 'lantern', lamp: 'copper-2', wick: 'cotton' };
 const LANTERN_REMEDY = 'trim the wick of the lantern';
 
 const lantern = (dir: string) => {
@@ -106,6 +107,57 @@ describe('the automatic probe through its one interface, with an adapter no othe
 
     expect(state.lockedDuringSave).toEqual([true]);
     expect(events).toEqual([]);
+  });
+
+  it('counts its open flights: a key that is starting or in progress counts once, and none is left after close (design-update 18.1.4)', async () => {
+    const { autoProbe, state, subject } = setup();
+    const other = { ...subject, readKey: async () => OTHER_KEY };
+    expect(autoProbe.openFlights()).toBe(0);
+
+    state.verdict = 'never';
+    const starting = autoProbe.ensure(subject, KEY);
+    expect(autoProbe.openFlights()).toBe(0);
+    await starting;
+    expect(autoProbe.openFlights()).toBe(1);
+
+    state.verdict = { kind: 'met' };
+    await autoProbe.ensure(other, OTHER_KEY);
+    expect(autoProbe.openFlights()).toBe(2);
+    await autoProbe.ensure(subject, KEY);
+    expect(autoProbe.openFlights()).toBe(2);
+
+    await autoProbe.close();
+    expect(autoProbe.openFlights()).toBe(0);
+  });
+
+  it('starts no flight while its gateway is retiring', async () => {
+    const dir = makeDir();
+    const { state, subject } = lantern(dir);
+    const autoProbe = createAutoProbe({ dir, clock: createFakeClock(START_MS), retryAfterMs: 120_000, onEvent: () => undefined, role: { current: () => 'retiring' } });
+
+    expect(await autoProbe.ensure(subject, KEY)).toEqual({ state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
+
+    expect(state.measures).toBe(0);
+    expect(autoProbe.openFlights()).toBe(0);
+  });
+
+  it('runs the flights of two gateways for one key in parallel, and each writes the record while it holds the key lock (design-update 18.3, 20.56)', async () => {
+    const dir = makeDir();
+    const first = lantern(dir);
+    const second = lantern(dir);
+    const probes = [first, second].map(() => createAutoProbe({ dir, clock: createFakeClock(START_MS), retryAfterMs: 120_000, onEvent: () => undefined }));
+
+    await probes[0]?.ensure(first.subject, KEY);
+    await probes[1]?.ensure(second.subject, KEY);
+    expect([first.state.measures, second.state.measures]).toEqual([1, 1]);
+    expect(probes.map((probe) => probe.openFlights())).toEqual([1, 1]);
+
+    first.state.pending[0]?.resolve({ brightness: 3 });
+    second.state.pending[0]?.resolve({ brightness: 3 });
+    await until(() => first.state.saved.length === 1 && second.state.saved.length === 1, 'both measurements are saved');
+
+    expect([first.state.lockedDuringSave, second.state.lockedDuringSave]).toEqual([[true], [true]]);
+    expect(probes.map((probe) => probe.openFlights())).toEqual([0, 0]);
   });
 
   it('reports a probe ended by close as stopped, not failed, and leaves no backoff behind', async () => {

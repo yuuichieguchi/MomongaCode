@@ -8,7 +8,7 @@ export const writeTuiSetting = async <Name extends keyof ResolvedTuiSettings>(
   settingsFile: string,
   name: Name,
   value: ResolvedTuiSettings[Name],
-  options: EditUserSettingsOptions = {},
+  options: EditUserSettingsOptions,
 ): Promise<void> => {
   await editUserSettings(
     home,

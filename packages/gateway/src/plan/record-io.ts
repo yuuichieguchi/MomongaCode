@@ -1,3 +1,4 @@
+import { limitEndOf } from '@momonga/foundation';
 import type { CredentialEntry, CredentialStore } from '@momonga/foundation';
 import { PLAN_STORE_UNREADABLE_CODE, PLAN_STORE_UNWRITABLE_CODE } from '@momonga/protocol';
 import { PlanCredentialError } from './auth-source.ts';
@@ -9,11 +10,13 @@ export const storeWriteFailure = (what: string, cause: unknown): PlanCredentialE
 
 export const storeReadFailure = (message: string, cause: unknown): PlanCredentialError => new PlanCredentialError(PLAN_STORE_UNREADABLE_CODE, message, false, { cause });
 
-export const recordAccess = async <T>(kind: 'read' | 'write', what: string, action: () => Promise<T>): Promise<T> => {
+export const endedByOperation = (error: unknown, signal: AbortSignal): boolean => (signal.aborted && error === signal.reason) || limitEndOf(error) !== undefined;
+
+export const recordAccess = async <T>(kind: 'read' | 'write', what: string, action: () => Promise<T>, signal: AbortSignal): Promise<T> => {
   try {
     return await action();
   } catch (error) {
-    if (error instanceof PlanCredentialError) throw error;
+    if (error instanceof PlanCredentialError || endedByOperation(error, signal)) throw error;
     throw kind === 'read' ? storeReadFailure(`${what} cannot be read: ${describeError(error)}`, error) : storeWriteFailure(what, error);
   }
 };
@@ -24,15 +27,25 @@ const refusedEntry = (failure: PlanCredentialError): CredentialEntry => ({
   remove: () => Promise.reject(failure),
 });
 
-export const withRecord = async <T>(store: Pick<CredentialStore, 'withKey'>, key: string, what: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T> => {
+export const withRecord = async <T>(
+  store: Pick<CredentialStore, 'withKey'>,
+  key: string,
+  what: string,
+  action: (entry: CredentialEntry) => Promise<T>,
+  signal: AbortSignal,
+): Promise<T> => {
   let started = false;
   try {
-    return await store.withKey(key, (entry) => {
-      started = true;
-      return action(entry);
-    });
+    return await store.withKey(
+      key,
+      (entry) => {
+        started = true;
+        return action(entry);
+      },
+      signal,
+    );
   } catch (error) {
-    if (started) throw error;
+    if (started || endedByOperation(error, signal)) throw error;
     return action(refusedEntry(storeWriteFailure(what, error)));
   }
 };

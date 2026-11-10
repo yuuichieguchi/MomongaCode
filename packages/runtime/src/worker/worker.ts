@@ -69,6 +69,8 @@ export const createWorker = (options: WorkerOptions): Worker => {
 
   const runOnce = async (onClaim?: (claim: Claim) => void): Promise<'idle' | 'yielded'> => {
     if (aborted || stopping) return 'idle';
+    if ((await options.role.refresh()) !== 'serving') return 'idle';
+    if (aborted || stopping) return 'idle';
     const claim = options.store.claim(options.workerId);
     if (claim === null) return 'idle';
     onClaim?.(claim);
@@ -78,6 +80,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
       await running;
     } finally {
       inFlight.delete(running);
+      options.onClaimSettled?.();
     }
     return 'yielded';
   };
@@ -132,7 +135,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     while (!stopping) {
       const outcome = await pollOnce();
       if (stopping) return;
-      sweepMemories();
+      if (options.role.current() === 'serving') sweepMemories();
       if (outcome === 'idle') await sleep();
     }
   };
@@ -158,6 +161,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
       await Promise.allSettled([...inFlight]);
     },
     memorySize: () => memories.size,
+    claimsInFlight: () => inFlight.size,
     abort: async () => {
       aborted = true;
       stopping = true;

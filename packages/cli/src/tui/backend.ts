@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver, findProgramOnPath, systemTiming } from '@momonga/foundation';
+import { findProgramOnPath, systemTiming } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, UserShellRecord, McpServerView, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
@@ -16,7 +16,8 @@ import type { DismissedNotices } from './dismissed-notices.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient, UserShellEnd } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
-import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { daemonReadyBoundMs, ensureSessionDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { sessionSocketResolver } from '../daemon/generations.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
 import { continuedSession, hasRun, newestFirst, resolveSession } from '../run/resolve-session.ts';
@@ -27,7 +28,7 @@ import type { ClipboardPrograms } from './screen/clipboard-host.ts';
 import { copyThroughRoutes, readClipboardThroughRoutes } from './screen/clipboard.ts';
 import type { ClipboardContent, CopyOutcome } from './screen/clipboard.ts';
 import { readImageAttachment } from '../images.ts';
-import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { autoModeConfigured, connectSessionRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 
 export type FollowHandlers = {
@@ -131,7 +132,7 @@ export const createTuiBackend = (
   };
 
   const withGateway = async <T>(use: (gateway: GatewayClient) => Promise<T>): Promise<T> => {
-    const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
+    const gateway = createGatewayClient({ resolveSocket: sessionSocketResolver(paths, ports.version, 'gateway') });
     try {
       return await use(gateway);
     } finally {
@@ -189,16 +190,16 @@ export const createTuiBackend = (
         detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers, ports) }),
       );
     },
-    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection),
+    addModelConnection: (connection) => addModelConnection(paths.home, paths.settingsFile, connection, closing.signal),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
-    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now())),
+    dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal),
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted' }),
     editSettings: (layer, operation, signal) => editSettings({ home: paths.home, projectDir: ports.cwd }, layer, operation, { signal }),
     mcpServers: () => runtime().mcpServers(current().id),
     initInstruction: async () => (await import('@momonga/runtime')).INIT_INSTRUCTION,
     boot: async () => {
-      await ensureDaemon(ports, paths, { signal: closing.signal, onNotice });
-      client = connectRuntime(paths);
+      await ensureSessionDaemon(ports, paths, { signal: closing.signal });
+      client = connectSessionRuntime(ports, paths);
       return client.trust(ports.cwd);
     },
     decideTrust: async (decision) => {
@@ -246,7 +247,7 @@ export const createTuiBackend = (
         random: ports.random,
         runId,
         reconnectBoundMs: await daemonReadyBoundMs(),
-        restoreConnection: restoreDaemon(ports, paths, onNotice),
+        restoreConnection: restoreDaemon(ports, paths),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,
         onChildStarted: handlers.onChildStarted,

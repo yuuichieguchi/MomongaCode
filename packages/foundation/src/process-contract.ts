@@ -5,8 +5,11 @@ import { parseOutsideJson } from './json-depth.ts';
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
 export const EXIT_ALREADY_RUNNING = 75;
-export const EXIT_VERSION_MISMATCH = 76;
 export const EXIT_CONFIG = 78;
+export const EXIT_RETIRED = 79;
+
+export const SWEEP_INTERVAL_MS = 1000;
+export const GENERATION_POLL_INTERVAL_MS = SWEEP_INTERVAL_MS;
 
 export const MINIMAL_CHILD_ENV_NAMES = ['PATH', 'HOME', 'LANG', 'TMPDIR'] as const;
 export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
@@ -297,6 +300,16 @@ export const createJsonLogger = ({ service, clock, stream = process.stderr, leve
     info: (msg, fields) => emit('info', msg, fields),
     warn: (msg, fields) => emit('warn', msg, fields),
     error: (msg, fields) => emit('error', msg, fields),
+  };
+};
+
+export const withLogData = (logger: JsonLogger, data: NonNullable<LogFields['data']>): JsonLogger => {
+  const merged = (fields: LogFields | undefined): LogFields => ({ ...fields, data: { ...data, ...fields?.data } });
+  return {
+    debug: (msg, fields) => logger.debug(msg, merged(fields)),
+    info: (msg, fields) => logger.info(msg, merged(fields)),
+    warn: (msg, fields) => logger.warn(msg, merged(fields)),
+    error: (msg, fields) => logger.error(msg, merged(fields)),
   };
 };
 

@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, gatewayClosedError, generationRetiredError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
@@ -23,6 +23,8 @@ export type AppDependencies = {
   responses: ResponsesService;
   unary: UnaryService;
   tracker: RequestTracker;
+  isRetiring: () => boolean;
+  activeRequests: () => number;
   startedAtSeconds: number;
   startedAt: string;
   version: string;
@@ -66,6 +68,14 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   const keepAliveMsFor = (idleBoundMs: number): number =>
     Math.min(services.config.sseKeepAliveMs, Math.max(1, Math.floor(idleBoundMs / KEEP_ALIVES_PER_IDLE_BOUND)));
   const app = new Hono();
+  const refuseWhileRetiring = (): void => {
+    if (dependencies.isRetiring()) throw generationRetiredError();
+  };
+
+  app.use(async (context, next) => {
+    await next();
+    if (dependencies.isRetiring()) context.header('connection', 'close');
+  });
 
   app.notFound(() => errorResponse(notFound('route_not_found', 'no such route')));
 
@@ -75,6 +85,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     let streaming = false;
@@ -110,6 +121,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/responses/compact', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     let streaming = false;
@@ -138,6 +150,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
 
   app.post('/v1/momonga/count_tokens', async (context) => {
+    refuseWhileRetiring();
     const raw = await readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
     const release = tracker.begin();
     try {
@@ -190,7 +203,8 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         apiVersion: 1,
         pid: process.pid,
         startedAt: dependencies.startedAt,
-        state: services.closeSignal.aborted ? 'draining' : 'running',
+        state: services.closeSignal.aborted ? 'draining' : dependencies.isRetiring() ? 'retiring' : 'running',
+        activeRequests: dependencies.activeRequests(),
       };
       return context.json(report);
     }),
@@ -259,10 +273,10 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   };
 
   app.get(planRoute(PLAN_ROUTES.accounts), (context) =>
-    withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().accounts(planTargets))),
+    withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().accounts(planTargets, requestSignalOf(context)))),
   );
-  app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context))));
-  app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context), requestSignalOf(context))));
+  app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context), requestSignalOf(context))));
   app.post(planRoute(PLAN_ROUTES.signInComplete), async (context) => {
     const body = await planBody(context);
     const signal = requestSignalOf(context);
@@ -275,7 +289,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
   });
   app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => {
     const body = await planBody(context);
-    return withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().resume(accountParam(context), body, planTargets)));
+    return withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().resume(accountParam(context), body, planTargets, requestSignalOf(context))));
   });
   app.get(planRoute(PLAN_ROUTES.accountModels), async (context) =>
     context.json(
@@ -284,7 +298,7 @@ export const createApp = (dependencies: AppDependencies): Hono => {
         .catch(closedOr),
     ),
   );
-  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context), requestSignalOf(context))));
   app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
 
   return app;

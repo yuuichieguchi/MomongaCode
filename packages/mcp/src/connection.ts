@@ -2,10 +2,11 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, JsonDepthError, MIN_CREDENTIAL_CHARS, checkJsonDepth, computeBackoff } from '@momonga/foundation';
-import type { Clock } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
+import type { Clock, OperationLimit } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
+import { CLOSE_LIMIT_LABEL, CONNECT_LIMIT_LABEL, CONNECT_SUBJECT, CREDENTIAL_STORE_WAIT, REQUEST_LIMIT_LABEL, REQUEST_SUBJECT } from './limit-texts.ts';
 import { createMcpOAuthProvider } from './mcp-oauth.ts';
 import type { McpOAuthProvider } from './mcp-oauth.ts';
 import { parseInputRequests } from './input-requests.ts';
@@ -22,6 +23,8 @@ import type { ConnectionTransport } from './remote-transport.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
+import { createStoreScope, runInStoreScope, storeCallSignal, storeCallsSettled, storeUnderCallSignals } from './store-scope.ts';
+import type { StoreScope } from './store-scope.ts';
 import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
@@ -65,7 +68,7 @@ export type McpServerDiagnostics = {
 export type McpCallToolInput = {
   name: string;
   arguments: Record<string, unknown>;
-  signal?: AbortSignal;
+  signal: AbortSignal;
   timeoutMs?: number;
   traceparent?: string;
   tracestate?: string;
@@ -142,6 +145,23 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const SHORTEST_CLOSE_LIMIT_MS = 1;
+
+const closeLimitMsOf = (closeGraceMs: number): number => (closeGraceMs > 0 ? closeGraceMs : SHORTEST_CLOSE_LIMIT_MS);
+
+const ownLimitOf = (limit: OperationLimit, parent: AbortSignal): OperationLimitError | undefined => {
+  const reason: unknown = limit.signal.reason;
+  return limit.signal.aborted && reason instanceof OperationLimitError && reason !== parent.reason ? reason : undefined;
+};
+
+const endedByItsLimit = async (limit: OperationLimit, parent: AbortSignal, scope: StoreScope, bareSubject: string): Promise<Error | undefined> => {
+  const own = ownLimitOf(limit, parent);
+  if (own === undefined) return undefined;
+  await storeCallsSettled(scope);
+  const cause = scope.endedStoreCall ?? own;
+  return new Error(limitEndText(limitEndOf(cause) ?? { call: undefined, limit: own }, bareSubject), { cause });
+};
 
 const idOf = (message: JSONRPCMessage): string | number | undefined => ('id' in message ? message.id : undefined);
 
@@ -278,16 +298,17 @@ class ManagedConnection implements McpServerConnection {
     await this.ensureSession();
   }
 
-  async authState(): Promise<McpAuthProbe> {
+  async authState(signal: AbortSignal): Promise<McpAuthProbe> {
     const { config, remote } = this.options;
     if (!('url' in config)) return { state: 'not_applicable' };
     if (Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization')) return { state: 'static_header' };
     if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
     const live = this.session;
     try {
-      if (live === undefined) await this.ensureSession();
-      else await this.listTools();
+      if (live === undefined) await this.ensureSessionUnless(signal);
+      else await this.listTools({ signal });
     } catch (error) {
+      if (signal.aborted) throw signal.reason;
       if (authorizationRequiredFor(error) !== undefined) {
         if (live !== undefined && this.session === live) await this.discardSession(live);
         return { state: 'required' };
@@ -296,8 +317,17 @@ class ManagedConnection implements McpServerConnection {
       if (refusal !== undefined) return { state: 'refused', detail: this.redact(refusal.message) };
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
-    const stored = await remote.credentials.read(credentialKey(this.name, config.url), this.lifetime.signal);
-    return { state: stored === undefined ? 'not_required' : 'authorized' };
+    const limit = this.connectLimit(signal);
+    try {
+      const stored = await remote.credentials.read(credentialKey(this.name, config.url), limit.signal);
+      return { state: stored === undefined ? 'not_required' : 'authorized' };
+    } catch (error) {
+      if (signal.aborted) throw signal.reason;
+      const end = limitEndOf(error);
+      return { state: 'unreachable', detail: this.redact(end === undefined ? errorMessage(error) : limitEndText(end, CREDENTIAL_STORE_WAIT)) };
+    } finally {
+      limit.dispose();
+    }
   }
 
   async authorize(signal: AbortSignal): Promise<void> {
@@ -314,6 +344,7 @@ class ManagedConnection implements McpServerConnection {
         fetch: guarded.fetch,
         ports: { store: remote.credentials, timers: this.timers, randomToken: remote.randomToken, openAuthorizationUrl: remote.openAuthorizationUrl },
         signal,
+        storeLimitMs: this.connectLimitMs(),
       });
     } finally {
       await guarded.close();
@@ -322,20 +353,19 @@ class ManagedConnection implements McpServerConnection {
   }
 
   async listTools(options?: { signal?: AbortSignal }): Promise<Tool[]> {
-    const signal = options?.signal;
-    signal?.throwIfAborted();
-    return this.withLiveSession(signal, async (session) => {
-      try {
-        const { tools } = await session.client.listTools(undefined, signal === undefined ? undefined : { signal });
-        session.tools = new Map(tools.map((tool) => [tool.name, tool]));
-        return tools;
-      } catch (error) {
-        throw this.failure(session.transport, error);
-      }
+    options?.signal?.throwIfAborted();
+    return this.withinRequestLimit(options?.signal ?? this.lifetime.signal, async (session, signal) => {
+      const { tools } = await session.client.listTools(undefined, { signal, timeout: SDK_TIMER_CEILING_MS });
+      session.tools = new Map(tools.map((tool) => [tool.name, tool]));
+      return tools;
     });
   }
 
   async callTool(input: McpCallToolInput): Promise<CallToolResult> {
+    return runInStoreScope(this.storeScopeUnder(input.signal), () => this.callToolInItsScope(input));
+  }
+
+  private callToolInItsScope(input: McpCallToolInput): Promise<CallToolResult> {
     return this.withLiveSession(undefined, async (session, attempt) => {
       const timeout = input.timeoutMs;
       const resume = attempt.taskCheckpoint === undefined ? input.resume : { checkpoint: attempt.taskCheckpoint, answers: input.resume?.answers ?? {} };
@@ -360,13 +390,8 @@ class ManagedConnection implements McpServerConnection {
       return;
     }
     if (checkpoint.kind !== 'task') return;
-    const signal = options?.signal;
-    await this.withLiveSession(signal, async (session) => {
-      try {
-        await this.taskRequester(session.client)('tasks/cancel', { taskId: checkpoint.taskId }, signal);
-      } catch (error) {
-        throw this.failure(session.transport, error);
-      }
+    await this.withinRequestLimit(options?.signal ?? this.lifetime.signal, async (session, signal) => {
+      await this.taskRequester(session.client, SDK_TIMER_CEILING_MS)('tasks/cancel', { taskId: checkpoint.taskId }, signal);
     });
   }
 
@@ -383,10 +408,42 @@ class ManagedConnection implements McpServerConnection {
     if (value.length >= MIN_CREDENTIAL_CHARS) this.secrets.add(value);
   }
 
-  private async definitionOf(session: Session, name: string, signal: AbortSignal | undefined): Promise<Tool> {
+  private connectLimitMs(): number {
+    return this.options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+  }
+
+  private connectLimit(parent: AbortSignal): OperationLimit {
+    return operationLimit(parent, this.connectLimitMs(), CONNECT_LIMIT_LABEL, this.timers);
+  }
+
+  private storeScopeUnder(operation: AbortSignal): StoreScope {
+    return createStoreScope(operation, () => this.connectLimit(this.lifetime.signal));
+  }
+
+  private async withinRequestLimit<T>(parent: AbortSignal, request: (session: Session, signal: AbortSignal) => Promise<T>): Promise<T> {
+    const limit = operationLimit(parent, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS, REQUEST_LIMIT_LABEL, this.timers);
+    const scope = this.storeScopeUnder(limit.signal);
+    try {
+      return await runInStoreScope(scope, () =>
+        this.withLiveSession(limit.signal, async (session) => {
+          try {
+            return await request(session, limit.signal);
+          } catch (error) {
+            throw this.failure(session.transport, (await endedByItsLimit(limit, parent, scope, REQUEST_SUBJECT)) ?? error);
+          }
+        }),
+      );
+    } catch (error) {
+      throw error === ownLimitOf(limit, parent) ? ((await endedByItsLimit(limit, parent, scope, REQUEST_SUBJECT)) ?? error) : error;
+    } finally {
+      limit.dispose();
+    }
+  }
+
+  private async definitionOf(session: Session, name: string, signal: AbortSignal): Promise<Tool> {
     const known = session.tools.get(name);
     if (known !== undefined) return known;
-    await this.listTools(signal === undefined ? undefined : { signal });
+    await this.listTools({ signal });
     const listed = this.session?.tools.get(name);
     if (listed === undefined) throw new McpUnknownToolError(this.name, name);
     return listed;
@@ -395,7 +452,7 @@ class ManagedConnection implements McpServerConnection {
   private async driveRounds(session: Session, tool: Tool, input: McpCallToolInput, attempt: Attempt, timeout: number | undefined, endBudget: () => void): Promise<CallToolResult> {
     const { client } = session;
     const maxRounds = this.options.mrtrMaxRounds ?? MRTR_MAX_ROUNDS;
-    const stop = input.signal ?? this.lifetime.signal;
+    const stop = input.signal;
     const meta: Record<string, string> = {};
     if (input.traceparent !== undefined) meta[TRACEPARENT_META_KEY] = input.traceparent;
     if (input.tracestate !== undefined) meta[TRACESTATE_META_KEY] = input.tracestate;
@@ -457,11 +514,11 @@ class ManagedConnection implements McpServerConnection {
   ): Promise<CallToolResult> {
     const { signal } = input;
     const stop = new AbortController();
-    const forward = (): void => stop.abort(signal?.reason);
-    if (signal?.aborted === true) forward();
-    signal?.addEventListener('abort', forward, { once: true });
+    const forward = (): void => stop.abort(signal.reason);
+    if (signal.aborted) forward();
+    signal.addEventListener('abort', forward, { once: true });
     const deadline = timeout === undefined ? undefined : this.timers.setTimeout(() => stop.abort(new Error(`task did not finish within ${timeout}ms`)), timeout);
-    const request = this.taskRequester(client);
+    const request = this.taskRequester(client, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
     try {
       return await settleTask({
         start,
@@ -495,14 +552,14 @@ class ManagedConnection implements McpServerConnection {
       });
     } finally {
       if (deadline !== undefined) this.timers.clearTimeout(deadline);
-      signal?.removeEventListener('abort', forward);
+      signal.removeEventListener('abort', forward);
     }
   }
 
-  private taskRequester(client: Session['client']): TaskRequester {
+  private taskRequester(client: Session['client'], timeout: number): TaskRequester {
     return async (method, params, requestSignal) =>
       client.request({ method, params }, PASS_THROUGH, {
-        timeout: this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+        timeout,
         ...(requestSignal === undefined ? {} : { signal: requestSignal }),
       });
   }
@@ -553,17 +610,20 @@ class ManagedConnection implements McpServerConnection {
 
   private async endSession(transport: ConnectionTransport): Promise<void> {
     const graceMs = this.options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
-    const expired = new AbortController();
-    const handle = this.timers.setTimeout(() => expired.abort(), graceMs);
+    const close = new AbortController();
+    const limit = operationLimit(close.signal, closeLimitMsOf(graceMs), CLOSE_LIMIT_LABEL, this.timers);
+    const scope = this.storeScopeUnder(limit.signal);
     try {
-      await Promise.race([
-        transport.terminateSession(),
-        new Promise<never>((_resolve, reject) => {
-          expired.signal.addEventListener('abort', () => reject(new Error(`MCP server "${this.name}" did not end its session within ${graceMs}ms`)), { once: true });
-        }),
-      ]);
+      await runInStoreScope(scope, () => settledOrAborted(transport.terminateSession(), limit.signal));
+    } catch (error) {
+      if (ownLimitOf(limit, close.signal) === undefined) throw error;
+      await storeCallsSettled(scope);
+      const unfinished = `MCP server "${this.name}" did not end its session within ${graceMs}ms`;
+      const ended = scope.endedStoreCall;
+      if (ended === undefined) throw new Error(unfinished);
+      throw new Error(`${unfinished}: ${limitEndText({ call: ended.call, limit: ended.limit }, CREDENTIAL_STORE_WAIT)}`, { cause: ended });
     } finally {
-      this.timers.clearTimeout(handle);
+      limit.dispose();
     }
   }
 
@@ -634,8 +694,8 @@ class ManagedConnection implements McpServerConnection {
           server: this.name,
           resourceUrl: config.url,
           scope,
-          store: remote.credentials,
-          signal: this.lifetime.signal,
+          store: storeUnderCallSignals(remote.credentials),
+          signalForCall: () => storeCallSignal(() => this.connectLimit(this.lifetime.signal)),
           redirectUrl: undefined,
           randomToken: remote.randomToken,
           ...(config.oauth?.clientId === undefined ? {} : { preregisteredClientId: config.oauth.clientId }),
@@ -666,7 +726,7 @@ class ManagedConnection implements McpServerConnection {
       if (delay > 0) await pause(this.timers, delay, this.lifetime.signal);
     }
     this.assertOpen();
-    const { connectTimeoutMs, config } = this.options;
+    const { config } = this.options;
     let opened: ReturnType<ManagedConnection['openTransport']>;
     try {
       opened = this.openTransport();
@@ -694,8 +754,10 @@ class ManagedConnection implements McpServerConnection {
       this.lastError = error.message;
     };
     client.onclose = () => this.handleClose(client, transport);
+    const limit = this.connectLimit(this.lifetime.signal);
+    const scope = this.storeScopeUnder(limit.signal);
     try {
-      await client.connect(transport, { timeout: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS, signal: this.lifetime.signal });
+      await runInStoreScope(scope, () => settledOrAborted(client.connect(transport, { timeout: SDK_TIMER_CEILING_MS, signal: limit.signal }), limit.signal));
     } catch (error) {
       this.pendingTransport = undefined;
       if (this.lifetime.signal.aborted) {
@@ -703,11 +765,11 @@ class ManagedConnection implements McpServerConnection {
         await guarded?.close();
         throw error instanceof Error ? error : new Error(String(error));
       }
-      const failure = this.failure(transport, error);
+      const deterministic = deterministicRemoteFailureOf(error);
+      const failure = this.failure(transport, (await endedByItsLimit(limit, this.lifetime.signal, scope, CONNECT_SUBJECT)) ?? (deterministic instanceof CredentialStoreError ? deterministic : error));
       this.lastError = failure.message;
       await client.close();
       await guarded?.close();
-      const deterministic = deterministicRemoteFailureOf(error);
       if (deterministic !== undefined) {
         this.state = 'disconnected';
         this.lastError = deterministic.message;
@@ -717,6 +779,8 @@ class ManagedConnection implements McpServerConnection {
       this.breaker.onFailure();
       this.state = this.breaker.state === 'open' ? 'unavailable' : 'disconnected';
       throw failure;
+    } finally {
+      limit.dispose();
     }
     this.pendingTransport = undefined;
     this.consecutiveFailures = 0;

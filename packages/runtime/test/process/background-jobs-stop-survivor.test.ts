@@ -13,6 +13,7 @@ import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime
 import { launch } from '../../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../../sandbox/src/process.ts';
 import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
+import { jobGenerationOptions } from './job-fixture.ts';
 
 const START_MS = 1_800_000_000_000;
 const KILL_GRACE_MS = 300;
@@ -51,6 +52,7 @@ const runJob = async (survives: boolean) => {
     clock,
     timers,
     markerDir,
+    ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
     reapTiming: { now: () => clock.now(), sleep: async () => undefined },

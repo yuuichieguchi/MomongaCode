@@ -1,4 +1,4 @@
-import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, daemonStopBoundMs, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import {
   LOCK_WATCH_INTERVAL_MS,
   SETTINGS_DEBOUNCE_MS,
@@ -70,7 +70,7 @@ export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUND
 export const E2E_TEST_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_LONGEST_WAIT_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 export const E2E_SOLVER_LOAD_ALLOWANCE_MS = STARTUP_TIMEOUT_MS + E2E_MARGIN_MS;
 export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + VERIFY_BUDGET_MS;
-export const daemonReplacingRunBoundMs = async (): Promise<number> => daemonStopBoundMs(DEFAULT_STOP_VALUES) + (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
+export const newerClientRunBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
 
 export type Truthy<T> = Exclude<T, false | null | undefined | 0 | ''>;

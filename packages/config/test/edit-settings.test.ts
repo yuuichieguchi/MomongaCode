@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { ConfigError, SETTINGS_SCHEMA, TUI_SCREEN_MODES, editSettings, loadSettings, loadUserSettings, readSettingsSnapshot } from '@momonga/config';
 import { localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
+const UNABORTED = { signal: new AbortController().signal };
+
 
 const placeOf = (tree: Tree) => ({ home: tree.home, projectDir: tree.project });
 
@@ -13,7 +15,7 @@ describe('editSettings', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false, context: { cachePrefix: true } });
-    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['context', 'autoCompact'], value: false });
+    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['context', 'autoCompact'], value: false }, UNABORTED);
     expect(stored(file)).toEqual({ autoUpdates: false, context: { cachePrefix: true, autoCompact: false } });
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect((await loadUserSettings({ home: tree.home })).settings.context.autoCompact).toBe(false);
@@ -21,7 +23,7 @@ describe('editSettings', () => {
 
   it('creates the file and the objects on the way when there are none', async () => {
     const tree = makeTree();
-    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['memory', 'reflection', 'maxTokens'], value: 900 });
+    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['memory', 'reflection', 'maxTokens'], value: 900 }, UNABORTED);
     expect(stored(userSettingsPath(tree))).toEqual({ memory: { reflection: { maxTokens: 900 } } });
   });
 
@@ -29,7 +31,7 @@ describe('editSettings', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false, telemetry: { otlp: { endpoint: 'http://127.0.0.1:4318' } } });
-    await editSettings(placeOf(tree), 'user', { kind: 'unset', path: ['telemetry', 'otlp', 'endpoint'] });
+    await editSettings(placeOf(tree), 'user', { kind: 'unset', path: ['telemetry', 'otlp', 'endpoint'] }, UNABORTED);
     expect(stored(file)).toEqual({ autoUpdates: false });
   });
 
@@ -37,7 +39,7 @@ describe('editSettings', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { verification: { commands: ['npm test'] } });
-    await editSettings(placeOf(tree), 'user', { kind: 'update', path: ['verification', 'commands'], update: (current) => [...(current as string[]), 'npm run typecheck'] });
+    await editSettings(placeOf(tree), 'user', { kind: 'update', path: ['verification', 'commands'], update: (current) => [...(current as string[]), 'npm run typecheck'] }, UNABORTED);
     expect(stored(file)).toEqual({ verification: { commands: ['npm test', 'npm run typecheck'] } });
   });
 
@@ -46,7 +48,7 @@ describe('editSettings', () => {
     const file = userSettingsPath(tree);
     fs.mkdirSync(`${tree.home}/.momonga`, { recursive: true });
     fs.writeFileSync(file, '{"autoUpdates":false}');
-    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['autoUpdates'], value: false });
+    await editSettings(placeOf(tree), 'user', { kind: 'set', path: ['autoUpdates'], value: false }, UNABORTED);
     expect(fs.readFileSync(file, 'utf8')).toBe('{"autoUpdates":false}');
   });
 
@@ -54,7 +56,7 @@ describe('editSettings', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false });
-    const refused = editSettings(placeOf(tree), 'user', { kind: 'set', path: ['mcp', 'toolTotalTimeoutMs'], value: 0 });
+    const refused = editSettings(placeOf(tree), 'user', { kind: 'set', path: ['mcp', 'toolTotalTimeoutMs'], value: 0 }, UNABORTED);
     await expect(refused).rejects.toBeInstanceOf(ConfigError);
     await expect(refused).rejects.toThrow(`${file}: invalid settings at /mcp/toolTotalTimeoutMs`);
     expect(stored(file)).toEqual({ autoUpdates: false });
@@ -63,17 +65,17 @@ describe('editSettings', () => {
   it('refuses a value the loader refuses beyond the schema with the same sentence the loader gives', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
-    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'theme'], value: 'solarized' })).rejects.toThrow(
+    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tui', 'theme'], value: 'solarized' }, UNABORTED)).rejects.toThrow(
       `${file}: tui.theme must be one of auto, dark, light, dark-colorblind, light-colorblind; got "solarized"`,
     );
-    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: 'rg' })).rejects.toThrow(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got "rg"`);
+    await expect(editSettings(placeOf(tree), 'user', { kind: 'set', path: ['tools', 'ripgrep'], value: 'rg' }, UNABORTED)).rejects.toThrow(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got "rg"`);
     expect(fs.existsSync(file)).toBe(false);
   });
 
   it('writes into the project file and the local file of the project', async () => {
     const tree = makeTree();
-    await editSettings(placeOf(tree), 'project', { kind: 'set', path: ['context', 'loopGuidance'], value: false });
-    await editSettings(placeOf(tree), 'local', { kind: 'set', path: ['context', 'cachePrefix'], value: true });
+    await editSettings(placeOf(tree), 'project', { kind: 'set', path: ['context', 'loopGuidance'], value: false }, UNABORTED);
+    await editSettings(placeOf(tree), 'local', { kind: 'set', path: ['context', 'cachePrefix'], value: true }, UNABORTED);
     expect(stored(projectSettingsPath(tree))).toEqual({ context: { loopGuidance: false } });
     expect(stored(localSettingsPath(tree))).toEqual({ context: { cachePrefix: true } });
     const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
@@ -87,29 +89,29 @@ describe('editSettings', () => {
   ] as const)('refuses %j in the project file with the sentence the loader would warn with', async (path, value, sentence) => {
     const tree = makeTree();
     const file = projectSettingsPath(tree);
-    await expect(editSettings(placeOf(tree), 'project', { kind: 'set', path, value })).rejects.toThrow(`${file}: ${sentence}`);
+    await expect(editSettings(placeOf(tree), 'project', { kind: 'set', path, value }, UNABORTED)).rejects.toThrow(`${file}: ${sentence}`);
     expect(fs.existsSync(file)).toBe(false);
   });
 
   it('adds a permission rule once, checked by the parser of the loader', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
-    await editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'allow', rule: 'Bash(npm test:*)' });
-    await editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'allow', rule: 'Bash(npm test:*)' });
+    await editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'allow', rule: 'Bash(npm test:*)' }, UNABORTED);
+    await editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'allow', rule: 'Bash(npm test:*)' }, UNABORTED);
     expect(stored(file)).toEqual({ permissions: { allow: ['Bash(npm test:*)'] } });
-    await expect(editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'deny', rule: 'Bash(' })).rejects.toBeInstanceOf(ConfigError);
+    await expect(editSettings(placeOf(tree), 'user', { kind: 'addRule', effect: 'deny', rule: 'Bash(' }, UNABORTED)).rejects.toBeInstanceOf(ConfigError);
     expect(stored(file)).toEqual({ permissions: { allow: ['Bash(npm test:*)'] } });
   });
 
   it('adds a rule of the local layer through the rule writer of the approval prompt', async () => {
     const tree = makeTree();
-    await editSettings(placeOf(tree), 'local', { kind: 'addRule', effect: 'ask', rule: 'Bash(git push:*)' });
+    await editSettings(placeOf(tree), 'local', { kind: 'addRule', effect: 'ask', rule: 'Bash(git push:*)' }, UNABORTED);
     expect(stored(localSettingsPath(tree))).toEqual({ permissions: { ask: ['Bash(git push:*)'] } });
   });
 
   it('has no project or local file for the home directory', async () => {
     const tree = makeTree();
-    await expect(editSettings({ home: tree.home, projectDir: tree.home }, 'project', { kind: 'set', path: ['autoUpdates'], value: false })).rejects.toThrow(`${tree.home} is the home directory; it has no project settings`);
+    await expect(editSettings({ home: tree.home, projectDir: tree.home }, 'project', { kind: 'set', path: ['autoUpdates'], value: false }, UNABORTED)).rejects.toThrow(`${tree.home} is the home directory; it has no project settings`);
   });
 });
 

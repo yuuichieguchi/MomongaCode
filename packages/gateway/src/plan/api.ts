@@ -19,6 +19,7 @@ import type {
 } from '@momonga/protocol';
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
+import { limitFailureOf } from './request-limit.ts';
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
@@ -30,16 +31,16 @@ import type { PlanSignIn } from './signin.ts';
 export type PlanTargetRef = { name: string; profile: string; account?: string };
 
 export type PlanApi = {
-  accounts(targets: readonly PlanTargetRef[]): Promise<PlanAccountsResponse>;
-  setActive(body: unknown): Promise<PlanActiveResponse>;
-  begin(body: unknown): Promise<PlanSignInBeginResponse>;
+  accounts(targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountsResponse>;
+  setActive(body: unknown, signal: AbortSignal): Promise<PlanActiveResponse>;
+  begin(body: unknown, signal: AbortSignal): Promise<PlanSignInBeginResponse>;
   complete(body: unknown, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanSignInCompleteResponse>;
   cancel(body: unknown): PlanSignInCancelResponse;
   signOut(body: unknown, signal: AbortSignal): Promise<PlanSignOutResponse>;
-  resume(account: string, body: unknown, targets: readonly PlanTargetRef[]): Promise<PlanResumeResponse>;
+  resume(account: string, body: unknown, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanResumeResponse>;
   resetHost(): Promise<PlanHostResetResponse>;
   models(account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse>;
-  addTarget(account: string, body: unknown): Promise<PlanTargetResponse>;
+  addTarget(account: string, body: unknown, signal: AbortSignal): Promise<PlanTargetResponse>;
 };
 
 export type PlanApiOptions = {
@@ -83,9 +84,10 @@ const CONFLICT_STATUS = 409;
 
 export const gatewayErrorOfCredential = (error: unknown): unknown => {
   if (error instanceof PlanAccountNotSelectableError) return invalidRequest(PLAN_ACCOUNT_NOT_SELECTABLE_CODE, error.message, null, CONFLICT_STATUS);
-  if (!(error instanceof PlanCredentialError)) return error;
-  const type = credentialErrorType(error.code);
-  return new GatewayError({ status: error.retryable ? RETRYABLE_STATUS : statusFor(type, error.code), type, code: error.code, message: error.message });
+  const failure = error instanceof PlanCredentialError ? error : limitFailureOf(error);
+  if (failure === undefined) return error;
+  const type = credentialErrorType(failure.code);
+  return new GatewayError({ status: failure.retryable ? RETRYABLE_STATUS : statusFor(type, failure.code), type, code: failure.code, message: failure.message });
 };
 
 const translated = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -131,23 +133,23 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
 
   const pinnedBy = (ref: PlanAccountRef, targets: readonly PlanTargetRef[]): string[] => targets.filter((target) => target.profile === ref.profile && target.account === ref.account).map((target) => target.name);
 
-  const viewNamed = async (ref: PlanAccountRef, targets: readonly PlanTargetRef[]): Promise<PlanAccountView> => {
+  const viewNamed = async (ref: PlanAccountRef, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountView> => {
     const active = activeLabels();
-    await sessions.load(ref);
-    const found = (await sessions.known()).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
+    await sessions.load(ref, signal);
+    const found = (await sessions.known(signal)).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
     const view = found === undefined ? undefined : accountViewOf(ref, found.view, active.get(ref.profile) === ref.account, pinnedBy(ref, targets), options.clock.now());
     if (view === undefined) throw notFound('plan_account_not_found', `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
     return view;
   };
 
-  const accounts = async (targets: readonly PlanTargetRef[]): Promise<PlanAccountsResponse> => {
+  const accounts = async (targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanAccountsResponse> => {
     const active = activeLabels();
     const referenced: PlanAccountRef[] = [
       ...[...active].map(([profile, account]) => ({ profile, account })),
       ...targets.flatMap((target) => (target.account === undefined ? [] : [{ profile: target.profile, account: target.account }])),
     ];
-    await Promise.all(referenced.map((ref) => sessions.load(ref)));
-    const known = await sessions.known();
+    await Promise.all(referenced.map((ref) => sessions.load(ref, signal)));
+    const known = await sessions.known(signal);
     const listProblems = sessions.listProblems();
     return {
       ...(listProblems.length === 0 ? {} : { listProblems }),
@@ -160,11 +162,11 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     };
   };
 
-  const signedInRef = async (profile: string | undefined, label: string): Promise<{ profile: PlanProfile; account: string }> => {
+  const signedInRef = async (profile: string | undefined, label: string, signal: AbortSignal): Promise<{ profile: PlanProfile; account: string }> => {
     const account = accountLabelOf(label);
     if (profile === undefined || profile === '') throw invalidRequest('invalid_query', 'the profile query parameter is required', 'profile');
     const chosen = profileOf(profile);
-    if ((await sessions.registration({ profile: chosen.id, account })) === undefined) {
+    if ((await sessions.registration({ profile: chosen.id, account }, signal)) === undefined) {
       throw notFound('plan_account_not_found', `no ${chosen.id} account is labelled ${JSON.stringify(account)}`, 'account');
     }
     return { profile: chosen, account };
@@ -172,56 +174,56 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
 
   const models = (account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse> =>
     translated(async () => {
-      const ref = await signedInRef(query.profile, account);
+      const ref = await signedInRef(query.profile, account, signal);
       return options.catalog.read({ ...ref, refresh: query.refresh === '1', auth: sessions.authSource({ profile: ref.profile.id, account }), signal });
     });
 
-  const addTarget = (account: string, body: unknown): Promise<PlanTargetResponse> =>
+  const addTarget = (account: string, body: unknown, signal: AbortSignal): Promise<PlanTargetResponse> =>
     translated(async () => {
-      const ref = await signedInRef(stringField(body, 'profile'), account);
+      const ref = await signedInRef(stringField(body, 'profile'), account, signal);
       const slug = stringField(body, 'slug');
-      const entry = (await options.catalog.record(ref.profile.id, account))?.models[slug];
+      const entry = (await options.catalog.record(ref.profile.id, account, signal))?.models[slug];
       if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models --catalog lists them`, 'slug');
       if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
-      return addModelConnection(options.home, options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug });
+      return addModelConnection(options.home, options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug }, signal);
     });
 
   return {
     models,
     addTarget,
     accounts,
-    setActive: (body) =>
+    setActive: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
         profileOf(ref.profile);
-        await sessions.selectActive(ref);
+        await sessions.selectActive(ref, signal);
         return { active: ref };
       }),
-    begin: (body) =>
+    begin: (body, signal) =>
       translated(async () => {
         const reconsent = optionalBoolean(body, 'reconsent');
-        return options.signIn.begin({ ...accountRefOf(body), port: portOf(body), ...(reconsent === undefined ? {} : { reconsent }) });
+        return options.signIn.begin({ ...accountRefOf(body), port: portOf(body), ...(reconsent === undefined ? {} : { reconsent }) }, signal);
       }),
     complete: (body, targets, signal) =>
       translated(async () => {
         const end = await options.signIn.complete(stringField(body, 'attemptId'), stringField(body, 'callbackUrl'), signal);
         if (end.outcome === 'retry') return end;
-        return { outcome: end.outcome, account: await viewNamed(end.ref, targets), firstSignIn: end.firstSignIn };
+        return { outcome: end.outcome, account: await viewNamed(end.ref, targets, signal), firstSignIn: end.firstSignIn };
       }),
     cancel: (body) => ({ cancelled: options.signIn.cancel(stringField(body, 'attemptId')) }),
     signOut: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
-        await signedInRef(ref.profile, ref.account);
+        await signedInRef(ref.profile, ref.account, signal);
         const report = await sessions.signOut(ref, signal);
         return { revocation: report.revocation, usageUrl: report.usageUrl };
       }),
-    resume: (account, body, targets) =>
+    resume: (account, body, targets, signal) =>
       translated(async () => {
         const ref = { profile: stringField(body, 'profile'), account: accountLabelOf(account) };
         profileOf(ref.profile);
-        await viewNamed(ref, targets);
-        return { resumed: await sessions.resume(ref) };
+        await viewNamed(ref, targets, signal);
+        return { resumed: await sessions.resume(ref, signal) };
       }),
     resetHost: async () => {
       const { hostId } = await options.signIn.resetHost();

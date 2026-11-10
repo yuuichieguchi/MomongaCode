@@ -15,7 +15,7 @@ export const FAKE_SERVER = {
   wire: 'chat-completions',
   binary: { defaultPath: '/nonexistent/fake-server' },
   launch: { argv: ['run', '--socket', '{socket}'] },
-  endpoint: { kind: 'unix' },
+  endpoint: { forms: ['unix'] },
   ready: { method: 'GET', path: '/ready', status: 200, limitMs: 25_000 },
   preconditions: [
     {

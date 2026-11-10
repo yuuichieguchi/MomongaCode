@@ -11,6 +11,7 @@ import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { createJobOutput } from '../../src/process/job-output.ts';
 import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
+import { jobGenerationOptions } from './job-fixture.ts';
 
 const START_MS = 1_800_000_000_000;
 
@@ -93,6 +94,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
     clock,
     timers,
     markerDir,
+    ...jobGenerationOptions(root),
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: 10,
     reapTiming: { now: () => clock.now(), sleep: async () => undefined },
@@ -226,9 +228,9 @@ describe('background jobs', () => {
     const t = setup();
     const { jobId } = await t.start('call-1');
     const killed = await t.jobs.kill(t.run.id, jobId);
-    expect(killed).toMatchObject({ id: jobId, status: 'killed', signal: 'SIGTERM' });
+    expect(killed).toMatchObject({ kill: 'stopped', view: { id: jobId, status: 'killed', signal: 'SIGTERM' } });
     expect(t.spawned[0]?.signal.aborted).toBe(true);
-    expect((await t.jobs.kill(t.run.id, jobId)).status).toBe('killed');
+    expect(await t.jobs.kill(t.run.id, jobId)).toMatchObject({ kill: 'stopped', view: { status: 'killed' } });
   });
 
   it('stops a job at its time limit', async () => {

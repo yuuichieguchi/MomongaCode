@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedSocket } from '@momonga/foundation';
-import type { UdsClient, UdsResponse } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedRolePort, fixedSocket } from '@momonga/foundation';
+import type { GenerationRole, RolePort, UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
 import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
 import type { StreamEvent, TargetBilling } from '@momonga/protocol';
-import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
+import { CLEANUP_KILL_DEADLINE_MS, closeOnceStarted, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -39,6 +39,11 @@ export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
   cleanups.push(cleanup);
 };
 
+export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
+  registerCleanup(closeOnceStarted(started));
+  return started;
+};
+
 export const makeDir = (): string => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-'));
   fs.chmodSync(dir, 0o700);
@@ -47,6 +52,19 @@ export const makeDir = (): string => {
 };
 
 export const TEST_VERSION = '0.0.0-test';
+
+export type SwitchableRole = RolePort & { become(role: GenerationRole): void };
+
+export const switchableRole = (initial: GenerationRole = 'serving'): SwitchableRole => {
+  let role = initial;
+  return {
+    current: () => role,
+    refresh: async () => role,
+    become: (next) => {
+      role = next;
+    },
+  };
+};
 
 export const counterForTest = (target: string): string => createHash('sha256').update(`test counter of ${target}`).digest('hex');
 
@@ -132,6 +150,8 @@ export type HarnessOptions = {
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: FixedModelsOptions['priceTable'];
   random?: () => number;
+  role?: RolePort;
+  probeFlights?: () => number;
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -141,6 +161,8 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
+    role: options.role ?? fixedRolePort('serving'),
+    ...(options.probeFlights === undefined ? {} : { probeFlights: options.probeFlights }),
     random: options.random ?? (() => 0.5),
     credentials: options.credentials ?? [],
     ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),

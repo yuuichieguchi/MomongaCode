@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { systemClock } from './clock.ts';
 import type { Clock } from './clock.ts';
+import { settledOrAborted } from './operation-limit.ts';
 import { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -56,17 +57,16 @@ export const withFileLock = async <T>(lockPath: string, task: () => Promise<T>, 
   }
 };
 
-export type KeyedSerializer = <T>(key: string, task: () => Promise<T>) => Promise<T>;
+export type KeyedSerializer = <T>(key: string, task: () => Promise<T>, signal: AbortSignal) => Promise<T>;
+
+const settledEitherWay = (): void => undefined;
 
 export const createKeyedSerializer = (): KeyedSerializer => {
   const queues = new Map<string, Promise<void>>();
-  return <T>(key: string, task: () => Promise<T>): Promise<T> => {
+  return <T>(key: string, task: () => Promise<T>, signal: AbortSignal): Promise<T> => {
     const previous = queues.get(key) ?? Promise.resolve();
-    const run = previous.then(task);
-    const settled = run.then(
-      () => undefined,
-      () => undefined,
-    );
+    const run = settledOrAborted(previous, signal).then(task);
+    const settled = previous.then(() => run.then(settledEitherWay, settledEitherWay));
     queues.set(key, settled);
     void settled.then(() => {
       if (queues.get(key) === settled) queues.delete(key);

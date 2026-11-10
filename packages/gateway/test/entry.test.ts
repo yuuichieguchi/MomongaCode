@@ -1,3 +1,4 @@
+import { prepareHome } from './gateway-process-helpers.ts';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -23,6 +24,7 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'up.sock') });
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
+  prepareHome(home);
   writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, target) } } });
   return { home, paths: momongaPaths(home, process.platform, {}), fake };
 };
@@ -55,6 +57,7 @@ const lastLine = (lines: readonly JsonLine[]): JsonLine | undefined => lines[lin
 describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)', () => {
   it('gateway: invalid settings give 78 and an entry.exit start-failed line', async (context) => {
     const home = withTempDir(context, { asHome: true });
+    prepareHome(home);
     writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 

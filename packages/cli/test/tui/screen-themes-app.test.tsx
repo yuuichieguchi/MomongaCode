@@ -12,6 +12,8 @@ import { freshHome } from '../fresh-home.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { fakeScreenTerminal } from './screen-fakes.ts';
+const UNABORTED = { signal: new AbortController().signal };
+
 
 vi.hoisted(() => {
   process.env['FORCE_COLOR'] = '3';
@@ -159,7 +161,7 @@ describe('/theme', () => {
 
   it('NO_COLOR wins over a stored theme and over a preview: no colour sequence is written', async () => {
     const home = freshHome();
-    await writeTuiSetting(home, settingsFileOf(home), 'theme', 'dark-colorblind');
+    await writeTuiSetting(home, settingsFileOf(home), 'theme', 'dark-colorblind', UNABORTED);
     const { app } = await startIn(home, { noColor: true, level: 3 });
     await openThemes(app);
     app.stdin.write(KEYS.down);

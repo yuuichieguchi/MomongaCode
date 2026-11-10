@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, fixedRolePort, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -343,6 +343,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       tracers: fixedTracers(tracer),
       clock,
       workerId,
+      role: fixedRolePort('serving'),
       leaseMs: LEASE_MS,
       random: () => 0.5,
       platform: process.platform,

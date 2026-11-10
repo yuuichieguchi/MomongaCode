@@ -147,8 +147,8 @@ export {
 export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
 export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
-export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
-export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
+export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
+export type { ManagedDeclarableField, ManagedEndpointForm, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
   BREAKER_VERDICTS,
   USAGE_LIMIT_CODES,
@@ -318,7 +318,8 @@ export type {
   UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
-export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export { DAEMON_CURRENT_EVENT, EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
+export type { DaemonCurrentFrame } from './run-api.ts';
 export { INBOX_WITHDRAW_OUTCOMES, MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, attachmentSummaryOf, modelKindOf } from './run-api.ts';
 export type { AttachmentSummary, InboxAddResponse, InboxResponse, InboxWithdrawOutcome, InboxWithdrawResponse, ModelKind, UserShellFrame, UserShellPendingResponse, UserShellRequest, CompactSessionRequest } from './run-api.ts';
 export type {

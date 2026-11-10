@@ -1,4 +1,5 @@
-export { EarlierAttemptNotStoppedError, clearCallLocks } from './call-lock.ts';
+export { EarlierAttemptNotStoppedError, sweepCallLocks } from './call-lock.ts';
+export { RetiringYield } from './ports.ts';
 export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
 export { callStopOf } from './call-stop.ts';
 export type { CallStop, CallStopTerms } from './call-stop.ts';
@@ -27,6 +28,7 @@ export type { PostToolHookResult, PreToolHookVerdict, PromptHookResult, SessionS
 export type { HookReply, HookRunContext } from './hooks/run.ts';
 export { selectHookCommands } from './hooks/run.ts';
 export type {
+  BackgroundJobKill,
   BackgroundJobRead,
   BackgroundJobStart,
   BackgroundJobs,

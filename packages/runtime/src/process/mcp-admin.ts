@@ -136,7 +136,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       const views: McpServerView[] = [];
       for (const entry of loaded.enabled) {
         signal.throwIfAborted();
-        const probe = await pool.authState(entry.name);
+        const probe = await pool.authState(entry.name, signal);
         const attempt = attempts.get(keyOf(sessionId, entry.name));
         views.push({
           name: entry.name,

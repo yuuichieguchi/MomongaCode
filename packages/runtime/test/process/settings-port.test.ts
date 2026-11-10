@@ -276,7 +276,7 @@ describe('settings composition (fake timers, not used by the code under test)', 
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project);
 
-    await f.composition.settings.appendRule(session, { effect: 'allow', rule: 'Bash(npm test)' });
+    await f.composition.settings.appendRule(session, { effect: 'allow', rule: 'Bash(npm test)' }, signalNever());
 
     const file = path.join(f.temp.home, '.momonga', 'projects', sha256Hex(fs.realpathSync.native(f.temp.project)), 'settings.local.json');
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ permissions: { allow: ['Bash(npm test)'] } });

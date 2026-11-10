@@ -183,7 +183,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     });
 
   const daemon = program.command('daemon').description('manage the background daemon');
-  daemon.command('start').description('start the daemon, or restart it when it runs another version').action(async () => {
+  daemon.command('start').description('start the daemon, or start a new one beside it when this program is newer').action(async () => {
     deps.complete(await daemonStart(ports, await pathsOf(ports)));
   });
   daemon.command('status').action(async () => {

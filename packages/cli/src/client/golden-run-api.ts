@@ -1,5 +1,6 @@
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { EvalRunApi } from '@momonga/eval';
+import { DaemonMoved } from './runtime-client.ts';
 import type { RuntimeClient } from './runtime-client.ts';
 
 export type ReflectionSettle = {
@@ -32,7 +33,18 @@ export const goldenRunApi = (
   settle: ReflectionSettle,
 ): EvalRunApi => {
   async function* events(runId: string): AsyncGenerator<PublicRunEvent> {
-    for await (const frame of client.streamEvents(runId)) yield frame.data;
+    let cursor: number | undefined;
+    for (;;) {
+      try {
+        for await (const frame of client.streamEvents(runId, cursor === undefined ? {} : { lastEventId: cursor })) {
+          cursor = frame.id;
+          yield frame.data;
+        }
+        return;
+      } catch (error) {
+        if (!(error instanceof DaemonMoved)) throw error;
+      }
+    }
   }
   const pinnedAliases = new Map<string, string>();
   const envOf = (given: Readonly<Record<string, string>> | undefined): Readonly<Record<string, string>> => {

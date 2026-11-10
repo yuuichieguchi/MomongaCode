@@ -161,10 +161,14 @@ describe('response schemas', () => {
     expect(accepts('Health', { ...health, apiVersion: 2 })).toBe(false);
   });
 
-  it('Health accepts the seven fields and rejects a missing or extra field, an unknown state and an unknown sandbox', () => {
+  it('Health accepts the seven fields with or without the optional role, steps and jobs, and rejects a missing or extra field, an unknown state and an unknown sandbox', () => {
     const health = { status: 'ok', version: '0.0.0', apiVersion: 1, pid: 4242, startedAt: '2027-01-15T08:00:00.000Z', state: 'running', sandbox: 'seatbelt' };
     expect(accepts('Health', health)).toBe(true);
     expect(accepts('Health', { ...health, state: 'draining', sandbox: 'none' })).toBe(true);
+    expect(accepts('Health', { ...health, state: 'retiring', role: 'retiring', steps: 2, jobs: 1 })).toBe(true);
+    expect(accepts('Health', { ...health, role: 'starting' })).toBe(true);
+    expect(accepts('Health', { ...health, role: 'draining' })).toBe(false);
+    expect(accepts('Health', { ...health, steps: 0.5 })).toBe(false);
     for (const field of Object.keys(health)) {
       const { [field]: _omitted, ...missing } = health as Record<string, unknown>;
       expect(accepts('Health', missing), field).toBe(false);

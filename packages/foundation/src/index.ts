@@ -36,12 +36,13 @@ export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
-export type { CredentialEntry, CredentialKeyListing, CredentialStore, FileCredentialStoreOptions, ListableCredentialStore } from './credential-store.ts';
+export type { CredentialEntry, CredentialKeyListing, CredentialStore, FileCredentialStoreOptions, ListableCredentialStore, ScopedOperations } from './credential-store.ts';
 export {
   CREDENTIAL_ENVELOPE_FORMAT,
   CREDENTIAL_KEY_CREATION_STEPS,
   CREDENTIAL_KEY_LOCK_NAME,
   CREDENTIAL_KEY_MARKER_FILE,
+  CREDENTIAL_KEY_OS_POINTS,
   CREDENTIAL_KEY_PREFIX,
   CREDENTIAL_STORE_ERROR_CODES,
   CredentialStoreError,
@@ -135,14 +136,98 @@ export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-wi
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
-export { FIRST_GENERATION, GENERATION_ROLES, MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureGenerationDirs, ensureMomongaDirs, ensureSessionTmpDir, generationLayout, leftoverDirectories, managedInstancePaths, momongaLayout, momongaPaths, roleEndpoint, rotatedLogPath } from './momonga-paths.ts';
-export type { GenerationLayout, GenerationRole, GenerationSockets, ManagedInstance, ManagedInstancePaths, RoleEndpoint } from './momonga-paths.ts';
+export {
+  FIRST_GENERATION,
+  GENERATION_JOBS_DIRECTORY,
+  GENERATION_MEMBERS,
+  GENERATION_ROLES,
+  GENERATION_TARGETS_DIRECTORY,
+  GenerationDirectoryMissingError,
+  MARKER_KINDS,
+  MomongaDirectoryError,
+  START_RECORD_FILE,
+  STARTING_LOCK_FILE,
+  SessionTmpDirError,
+  adapterSocketPath,
+  createGenerationDirs,
+  ensureGenerationDirs,
+  ensureMomongaDirs,
+  ensureSessionTmpDir,
+  releaseSessionScratch,
+  generationLayout,
+  generationMarkerDirectories,
+  generationMemberOf,
+  generationOfDirectoryName,
+  generationSpawnScratch,
+  leftoverDirectories,
+  managedInstancePaths,
+  momongaLayout,
+  momongaPaths,
+  refuseUnfitGenerationSocketsBeforeCreation,
+  requireGenerationDirs,
+  roleEndpoint,
+  rotatedLogPath,
+  scopeToGeneration,
+} from './momonga-paths.ts';
+export type { GenerationLayout, GenerationMember, GenerationProcessRole, GenerationSockets, ManagedInstance, ManagedInstancePaths, MarkerKind, RoleEndpoint } from './momonga-paths.ts';
+export { GENERATION_ROLE_UNREADABLE_EVENT, createRolePort, fixedRolePort, readGenerationRole, roleOfGeneration } from './generation-role.ts';
+export type { GenerationRole, RolePort, RolePortOptions, UnreadableGenerationRole } from './generation-role.ts';
+export { GENERATION_RETIRED_CODE, GENERATION_RETIRED_STATUS, GenerationRetiredError, MOVED_CODE } from './generation-codes.ts';
+export { START_RECORD_MODE, formatStartRecord, generationIsLive, listGenerationNumbers, listGenerations, lockReadsHeld, parseStartRecord, probeGenerationLocks, readStartRecord } from './generation-registry.ts';
+export type { GenerationLocks, ListGenerationsOptions, ListedGeneration, LockProbeOptions, StartRecord, StartRecordRead } from './generation-registry.ts';
+export {
+  ABANDON_REASONS,
+  ABANDON_REASON_TEXTS,
+  CurrentGenerationUnreadableError,
+  GENERATION_COUNTER_READ_BYTES,
+  GenerationCounterError,
+  GenerationPrepareError,
+  beginGenerationStart,
+  claimGeneration,
+  decideGenerationStart,
+  nodeGenerationStartFiles,
+  parseGenerationCounter,
+  readGenerationCounter,
+  starterOutcome,
+} from './generation-start.ts';
+export type {
+  AbandonReason,
+  BeginGenerationStartOptions,
+  ClaimGenerationOptions,
+  GenerationClaim,
+  GenerationCounterReason,
+  GenerationRef,
+  GenerationStartFiles,
+  HeldStart,
+  StartDecision,
+  StartOutcome,
+  StartTrigger,
+  StartView,
+  StarterOutcome,
+  StarterView,
+} from './generation-start.ts';
+export {
+  GENERATION_MARKER_LABELS,
+  GENERATION_MARKER_REAP_ORDER,
+  GENERATION_REAPER_OCCASION,
+  GENERATION_REAPER_STEPS,
+  GENERATION_REAPER_STEP_ACTIONS,
+  nodeGenerationReaperFiles,
+  reapDeadGenerations,
+} from './generation-reaper.ts';
+export type { GenerationMarkerReap, GenerationReaperFiles, GenerationReaperOptions, GenerationReaperResult, GenerationReaperStep } from './generation-reaper.ts';
+export { compareVersions, isAtLeastVersion, orderVersions, tryParseVersion } from './version-order.ts';
+export type { Version, VersionOrder } from './version-order.ts';
 export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';
-export { NoCurrentGenerationError, currentGenerationLock, currentSocketResolver, publishCurrentGeneration, readCurrentGeneration, startingSocketResolver } from './current-generation.ts';
-export type { CurrentGeneration } from './current-generation.ts';
-export type { MomongaPaths } from './momonga-paths.ts';
+export { CurrentGenerationMalformedError, NoCurrentGenerationError, NoGenerationOfVersionError, currentSocketResolver, formatCurrentGeneration, publishCurrentGeneration, readCurrentGeneration, resolveGenerationFor, versionSocketResolver } from './current-generation.ts';
+export type { CurrentGeneration, PublishOptions, PublishOutcome, ResolvedGeneration } from './current-generation.ts';
+export type { MomongaPaths, SessionScratch, SessionScratchClaim } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
+export { OperationLimitError, operationLimit, settledOrAborted } from './operation-limit.ts';
+export type { LimitTiming, OperationLimit } from './operation-limit.ts';
+export { SecretStoreAbsentError, SecretStoreAnswerError, StoreCallEndedError, endedStoreCall, limitEndOf, limitEndText } from './secret-store-failures.ts';
+export type { LimitEnd, NamedSecretCall, SecretAction, SecretCall, SecretStoreAbsence } from './secret-store-failures.ts';
 export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
@@ -167,8 +252,9 @@ export {
   createCredentialManagerStore,
   credentialReadScript,
   SECRET_TOOL_BINARY,
+  nodeSecretStoreFiles,
 } from './secret-store.ts';
-export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
+export type { FileKind, Readiness, ReadinessReading, SecretBackend, SecretProcessPort, SecretProcessResult, SecretStore, SecretStoreFiles } from './secret-store.ts';
 export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
@@ -179,7 +265,10 @@ export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, 
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
-  EXIT_VERSION_MISMATCH,
+  EXIT_RETIRED,
+  withLogData,
+  GENERATION_POLL_INTERVAL_MS,
+  SWEEP_INTERVAL_MS,
   EXIT_CONFIG,
   EXIT_FAILURE,
   EXIT_OK,
@@ -251,9 +340,9 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor, socketPathLimit } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
-export type { SocketBind } from './socket-path.ts';
+export type { EndpointForm, SocketBind, SocketBindRefusal } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
 export type { CapabilityResult } from './capability-probe.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';

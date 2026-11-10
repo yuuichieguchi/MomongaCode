@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import { McpInputSuspension } from '@momonga/mcp';
 import { nestedArraysJsonText, nestedNotJsonText } from '@momonga/testkit';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture, textOf } from './remote-harness.ts';
 
 const STACK_BREAKING_NESTING = 10_000;
@@ -43,7 +44,7 @@ describe('MCP responses are measured once, at the message that enters', () => {
     const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    return outcomeOf(connection.callTool({ name: 'deep_result', arguments: { nesting: messageDepth - RESULT_META_WRAPPING } }));
+    return outcomeOf(connection.callTool({ name: 'deep_result', arguments: { nesting: messageDepth - RESULT_META_WRAPPING }, signal: NEVER_ABORTED }));
   };
 
   it(`returns a tools/call response that is exactly ${MAX_JSON_DEPTH} deep`, async () => {
@@ -65,7 +66,7 @@ describe('MCP notifications are measured at the message that enters', () => {
     const { connection } = makeRemoteConnection({ fixture, connection: { onNotice: (message: string) => notices.push(message) } });
     await connection.listTools();
     const outcome = await outcomeOf(
-      connection.callTool({ name: 'deep_result', arguments: { nesting: 1, notifyNesting: notificationDepth - NOTIFICATION_DATA_WRAPPING } }),
+      connection.callTool({ name: 'deep_result', arguments: { nesting: 1, notifyNesting: notificationDepth - NOTIFICATION_DATA_WRAPPING }, signal: NEVER_ABORTED }),
     );
     return { notices, outcome };
   };
@@ -120,7 +121,7 @@ describe('an elicitation input request is measured with the message that carries
     const fixture = await startHttpFixture({ era: 'modern', deepTools: { elicitationMetaNesting: messageDepth - ELICITATION_META_WRAPPING } });
     const { connection } = makeRemoteConnection({ fixture });
     await connection.listTools();
-    return outcomeOf(connection.callTool({ name: 'mrtr_elicit', arguments: {} }));
+    return outcomeOf(connection.callTool({ name: 'mrtr_elicit', arguments: {}, signal: NEVER_ABORTED }));
   };
 
   it(`hands back an input request whose message is exactly ${MAX_JSON_DEPTH} deep`, async () => {

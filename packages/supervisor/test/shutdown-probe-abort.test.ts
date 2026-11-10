@@ -43,6 +43,8 @@ const fakeManager = (role: ChildRole, unreaped: readonly string[]): ChildManager
   holdsCapability: () => false,
   stop: async () => ({ killed: false, leaked: false }),
   enterDraining: () => undefined,
+  enterRetiring: () => undefined,
+  hasEnded: () => true,
   unreapedMarkers: () => unreaped,
   inFlightReaps: () => new Map(),
   awaitLeave: unexpected('awaitLeave'),

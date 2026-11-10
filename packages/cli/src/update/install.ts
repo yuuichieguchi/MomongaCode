@@ -4,7 +4,7 @@ import { RELEASE_SIGNATURE_ASSET, RELEASE_SIGNATURE_TOOL, parseChecksumListing, 
 import type { PlaceFile, ReleaseSignatureVerdict } from '@momonga/foundation';
 import { escapedLines } from '../terminal-writer.ts';
 import { UpdateError } from './errors.ts';
-import type { StagedFile, UpdatePorts } from './ports.ts';
+import type { RetiringWork, StagedFile, UpdatePorts } from './ports.ts';
 import { readText, requestOrFail } from './release.ts';
 import type { Release } from './release.ts';
 import { CHECKSUMS_ASSET, assetNameFor, resolveUpdateSource } from './source.ts';
@@ -185,14 +185,17 @@ const abandon = async (ports: UpdatePorts, staged: StagedFile, original: unknown
 
 export type InstallOptions = { signal: AbortSignal };
 
-export type DaemonRestart = { kind: 'not_running' } | { kind: 'restarted' } | { kind: 'failed'; error: unknown };
+export type DaemonRestart = { kind: 'not_running' } | { kind: 'restarted'; retiring: RetiringWork } | { kind: 'failed'; error: unknown };
+
+export const daemonNotStartedText = (to: string, reason: string, from: string | undefined): string =>
+  `The new daemon (v${to}) did not start (${reason})${from === undefined ? '.' : `; v${from} keeps running.`}`;
 
 export type InstallResult = { from: string; to: string; target: string; restart: DaemonRestart };
 
-const restartDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<void> => {
+const startNewDaemon = async (ports: UpdatePorts, target: string, to: string, signal: AbortSignal): Promise<void> => {
   const result = await ports.run(target, MOMONGA_LAUNCHES.startDaemon.args, { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
   if (result.exitCode !== 0) {
-    throw new UpdateError('daemon_restart_failed', `the update was installed but the new daemon did not start (exit code ${result.exitCode})`, {
+    throw new UpdateError('daemon_restart_failed', daemonNotStartedText(to, `exit code ${result.exitCode}`, ports.version), {
       detail: `${result.stdout}${result.stderr}`.trim(),
       remediation: DAEMON_RESTART_REMEDIATION,
     });
@@ -221,16 +224,16 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   } catch (error) {
     return abandon(ports, staged, error);
   }
-  return { from: ports.version, to: release.version.text, target, restart: daemonWasRunning ? await restartRunningDaemon(ports, target, signal) : { kind: 'not_running' } };
+  return { from: ports.version, to: release.version.text, target, restart: daemonWasRunning ? await startBesideRunningDaemon(ports, target, release.version.text, signal) : { kind: 'not_running' } };
 };
 
-const restartRunningDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<DaemonRestart> => {
+const startBesideRunningDaemon = async (ports: UpdatePorts, target: string, to: string, signal: AbortSignal): Promise<DaemonRestart> => {
   try {
-    await restartDaemon(ports, target, signal);
-    return { kind: 'restarted' };
+    await startNewDaemon(ports, target, to, signal);
   } catch (error) {
     return { kind: 'failed', error };
   }
+  return { kind: 'restarted', retiring: await ports.daemon.retiring() };
 };
 
 export const installRelease = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {

@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, TUI_NOTIFY_MODES, TUI_THEMES, loadSettings, loadUserSettings, writeTuiSetting } from '@momonga/config';
 import { makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+const UNABORTED = { signal: new AbortController().signal };
+
 
 const userTui = async (tui: Record<string, unknown> | undefined) => {
   const tree = makeTree();
@@ -66,7 +68,7 @@ describe('writeTuiSetting', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { autoUpdates: false, tui: { notify: 'bell' } });
-    await writeTuiSetting(tree.home, file, 'theme', 'dark-colorblind');
+    await writeTuiSetting(tree.home, file, 'theme', 'dark-colorblind', UNABORTED);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ autoUpdates: false, tui: { notify: 'bell', theme: 'dark-colorblind' } });
     expect((await loadUserSettings({ home: tree.home })).settings.tui).toEqual({ theme: 'dark-colorblind', notify: 'bell', ...A11Y_OFF });
   });
@@ -74,7 +76,7 @@ describe('writeTuiSetting', () => {
   it('creates the file when there is none', async () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
-    await writeTuiSetting(tree.home, file, 'notify', 'bell');
+    await writeTuiSetting(tree.home, file, 'notify', 'bell', UNABORTED);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ tui: { notify: 'bell' } });
   });
 
@@ -82,7 +84,7 @@ describe('writeTuiSetting', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { tui: 'dark' });
-    await expect(writeTuiSetting(tree.home, file, 'theme', 'dark')).rejects.toThrow(`${file}: tui must be a JSON object`);
+    await expect(writeTuiSetting(tree.home, file, 'theme', 'dark', UNABORTED)).rejects.toThrow(`${file}: tui must be a JSON object`);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ tui: 'dark' });
   });
 
@@ -115,8 +117,8 @@ describe('tui.screenReader and tui.reducedMotion', () => {
     const tree = makeTree();
     const file = userSettingsPath(tree);
     writeJson(file, { tui: { theme: 'dark' } });
-    await writeTuiSetting(tree.home, file, 'screenReader', true);
-    await writeTuiSetting(tree.home, file, 'reducedMotion', true);
+    await writeTuiSetting(tree.home, file, 'screenReader', true, UNABORTED);
+    await writeTuiSetting(tree.home, file, 'reducedMotion', true, UNABORTED);
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ tui: { theme: 'dark', screenReader: true, reducedMotion: true } });
   });
 });
@@ -135,7 +137,7 @@ describe('tui.attachFileMentions', () => {
 
   it('is written by the settings writer', async () => {
     const tree = makeTree();
-    await writeTuiSetting(tree.home, userSettingsPath(tree), 'attachFileMentions', false);
+    await writeTuiSetting(tree.home, userSettingsPath(tree), 'attachFileMentions', false, UNABORTED);
     expect((await loadUserSettings({ home: tree.home })).settings.tui.attachFileMentions).toBe(false);
   });
 });

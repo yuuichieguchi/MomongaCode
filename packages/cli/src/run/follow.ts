@@ -2,6 +2,7 @@ import { computeBackoff } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { RunStatus } from '@momonga/protocol';
 import { RECONNECT_FIRST_RETRY_MS, RECONNECT_MAX_INTERVAL_MS } from '../constants.ts';
+import { DaemonMoved } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import type { CliClock } from '../ports.ts';
@@ -118,6 +119,10 @@ export const followEvents = async <Result>(options: FollowEventsOptions<Result>)
       const result = await options.finished();
       if (result !== undefined) return result;
     } catch (error) {
+      if (options.signal?.aborted !== true && error instanceof DaemonMoved) {
+        await options.restoreConnection(options.signal);
+        continue;
+      }
       if (options.signal?.aborted === true || !isTransientStreamError(error)) throw error;
       failure = error;
     }

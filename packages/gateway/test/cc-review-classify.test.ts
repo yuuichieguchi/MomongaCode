@@ -12,8 +12,8 @@ const RECORD_KEY: KnownProbeKey = fmRecordKey('cd'.repeat(32), '25A100');
 
 const idleServe: ManagedServer = {
   restarts: 0,
-  start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
-  ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  start: async () => ({ kind: 'unix', path: '/unused.sock' }),
+  ensureRunning: async () => ({ kind: 'unix', path: '/unused.sock' }),
   stop: async () => undefined,
   health: async () => ({ ok: true }),
 };

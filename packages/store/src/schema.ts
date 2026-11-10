@@ -913,6 +913,13 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const GENERATION_OWNERSHIP = `
+ALTER TABLE runs ADD COLUMN lease_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN owner_generation INTEGER;
+ALTER TABLE jobs ADD COLUMN kill_requested_at INTEGER;
+ALTER TABLE jobs ADD COLUMN output_path TEXT;
+`;
+
 const STORE_COMPATIBILITY = `
 CREATE TABLE store_compat (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -1143,12 +1150,17 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 30,
+    name: 'record the generation that holds a run lease, and for a background job the generation that owns it, the time a kill was requested and the file its owner writes the output to',
+    sql: GENERATION_OWNERSHIP,
+  },
+  {
+    version: 31,
     name: "name the asking mode manual: rebuild sessions with a permission_mode CHECK list that holds 'manual' in place of 'default', rewrite each stored 'default' to 'manual', and re-create the index and the two triggers of sessions",
     sql: SESSIONS_MODE_MANUAL,
     rebuildsReferencedTable: true,
   },
   {
-    version: 31,
+    version: 32,
     name: 'hold the messages typed while a run works in run_inbox, each to steer the run or queued as the next run, pending until delivered or withdrawn',
     sql: RUN_INBOX,
   },

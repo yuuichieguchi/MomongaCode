@@ -608,6 +608,7 @@ export type RuntimeStore = {
   findRunByIdempotencyKey(sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined;
   sessionActivity(sessionId: string): { lastActivityAt: number; hasActiveRun: boolean } | undefined;
   checkIdentity(): void;
+  pruneFidelityVerdicts(bound: number): number;
   readonly maxTotalAttempts: number;
   getRun(id: string): Run | undefined;
   claim(workerId: string): Claim | null;
@@ -705,6 +706,7 @@ export type RuntimeStoreOptions = {
   leaseMs: number;
   maxAttempts: number;
   maxTotalAttempts: number;
+  generation?: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
   preparer?: ContributionPreparer;
   onDecode?: (rows: number, bytes: number) => void;
@@ -812,9 +814,12 @@ export type Job = {
   lastRead?: { call: string; from: number };
   startedAt: number;
   endedAt?: number;
+  ownerGeneration?: number;
+  killRequestedAt?: number;
+  outputPath?: string;
 };
 
-export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string };
+export type StartJobInput = { id: string; idemKey: string; sessionId: string; runId: string; callId: string; command: string; ownerGeneration?: number; outputPath?: string };
 
 export type JobOutputRef = { handle: string; start: number; total: number };
 
@@ -831,6 +836,8 @@ export type JobStore = {
   listForSession(sessionId: string): Job[];
   finish(id: string, result: JobResult): FinishJobResult;
   advanceRead(id: string, offset: number, call: string): void;
+  requestKill(id: string): boolean;
+  clearOutputPath(id: string): void;
 };
 
 export type ChildRunInput = {

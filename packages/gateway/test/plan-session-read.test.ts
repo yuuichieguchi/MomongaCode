@@ -166,7 +166,7 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     h.auth.identity = { sub: 'sub-second-user', email: 'second@example.com' };
     const home = await signedIn(h, 'home');
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(home.tokens.access_token);
-    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
     await fs.writeFile(h.paths.active, JSON.stringify({ [PROFILE_ID]: 'home' }));
     expect((await unpinned.read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
@@ -236,7 +236,7 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     await fs.writeFile(h.paths.active, '"x"');
     await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
     await fs.writeFile(h.paths.active, '{}');
-    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' });
+    await h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal);
     await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
     expect(h.sessions.authSource({ profile: PROFILE_ID }).health()).toEqual(unpinnedBefore);
     expect(h.sessions.signedOutSource(PROFILE_ID).health()).toEqual(signedOutBefore);
@@ -260,7 +260,7 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
       }
       expect((await pinned(h, 'work').read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
       const before = await pointerContent(h.paths.active);
-      await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' })).rejects.toThrow(cause);
+      await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' }, new AbortController().signal)).rejects.toThrow(cause);
       expect(await pointerContent(h.paths.active)).toEqual(before);
     });
   }

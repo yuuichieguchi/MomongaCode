@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPlatformSecretStore } from '@momonga/foundation';
 import type { SecretProcessPort } from '@momonga/foundation';
+import type { SecretStoreFiles } from '@momonga/foundation/secret-store';
 
 const tempDirs: string[] = [];
 
@@ -22,23 +23,36 @@ const recordingRun = () => {
   const calls: { file: string; args: readonly string[] }[] = [];
   const run: SecretProcessPort = async (file, args) => {
     calls.push({ file, args });
+    if (args.length === 1 && args[0] === 'default-keychain') return { exitCode: 0, stdout: `    "${KEYCHAIN_PATH}"\n`, stderr: '' };
     return { exitCode: 0, stdout: 'fake-secret', stderr: '' };
   };
   return { run, calls };
+};
+
+const KEYCHAIN_PATH = '/Users/x/Library/Keychains/login.keychain-db';
+
+const keychainFilePresent: SecretStoreFiles = {
+  stat: async (file) => {
+    if (file !== KEYCHAIN_PATH) throw Object.assign(new Error(`ENOENT: no such file or directory, stat '${file}'`), { code: 'ENOENT' });
+    return { isFile: () => true };
+  },
 };
 
 const SIGNAL = new AbortController().signal;
 const DBUS = 'unix:path=/run/user/1000/bus';
 
 const readWith = async (run: SecretProcessPort, env: Record<string, string | undefined>): Promise<string> =>
-  createPlatformSecretStore(run, env).read('anthropic', SIGNAL);
+  createPlatformSecretStore(run, env, keychainFilePresent).read('anthropic', SIGNAL);
 
 describe('secret store chosen by tool and service presence (B13)', () => {
   it('uses the Keychain through the security program found on PATH', async () => {
     const bin = binDirWith('security');
     const { run, calls } = recordingRun();
     expect(await readWith(run, { PATH: bin })).toBe('fake-secret');
-    expect(calls).toEqual([{ file: path.join(bin, 'security'), args: ['find-generic-password', '-s', 'momonga', '-a', 'anthropic', '-w'] }]);
+    expect(calls).toEqual([
+      { file: path.join(bin, 'security'), args: ['default-keychain'] },
+      { file: path.join(bin, 'security'), args: ['find-generic-password', '-s', 'momonga', '-a', 'anthropic', '-w'] },
+    ]);
   });
 
   it('uses the Secret Service through secret-tool found on PATH when a D-Bus session is present', async () => {
@@ -114,7 +128,8 @@ describe('secret store chosen by tool and service presence (B13)', () => {
     const bin = binDirWith('security', 'secret-tool', 'cmdkey');
     const { run, calls } = recordingRun();
     await readWith(run, { PATH: bin, DBUS_SESSION_BUS_ADDRESS: DBUS, SystemRoot: 'C:\\Windows' });
-    expect(calls.map((call) => call.file)).toEqual([path.join(bin, 'security')]);
+    expect(calls.map((call) => call.file)).toEqual([path.join(bin, 'security'), path.join(bin, 'security')]);
+    expect(calls.map((call) => call.args[0])).toEqual(['default-keychain', 'find-generic-password']);
   });
 
   it('prefers the Secret Service over the Credential Manager when secret-tool has a D-Bus session', async () => {

@@ -52,7 +52,7 @@ describe('a sign-out acts on the record it finds: an account with nothing to sig
   it('a sign-out of a registered record sends nothing, writes nothing and no event', async () => {
     const h = await harness();
     const signedInAtFake = await signInAtFake(h);
-    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signedInAtFake.clientId, hostId: signedInAtFake.hostId })).toEqual({ outcome: 'registered' });
+    expect(await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signedInAtFake.clientId, hostId: signedInAtFake.hostId }, new AbortController().signal)).toEqual({ outcome: 'registered' });
     const before = await rawRecord(h, 'work');
     expect(before).toBeTypeOf('string');
     expect(await signOut(h)).toEqual({ revocation: 'none', usageUrl: h.profile.usageUrl });

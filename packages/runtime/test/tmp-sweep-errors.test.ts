@@ -75,7 +75,7 @@ describe('S7: an error on one entry keeps that entry, warns once, and the sweep 
     const present = new Set(NAMES);
     const warnings: string[] = [];
     const store = { sessionActivity: () => undefined };
-    const result = await sweepSessionTmp({ root, store, now: NOW, hasInMemoryState: () => false, onWarning: (message) => void warnings.push(message), files: failingFiles(root, present), lock: entryLock([]) });
+    const result = await sweepSessionTmp({ root, store, now: NOW, onWarning: (message) => void warnings.push(message), files: failingFiles(root, present), lock: entryLock([]) });
     expect(warnings).toEqual(expectedWarnings(root));
     expect(result).toEqual({ removed: 1, kept: 3 });
     expect(present.has(REMOVABLE)).toBe(false);

@@ -72,7 +72,7 @@ const signInOver = (h: Harness, sessions: PlanSessions, fileSystem = nodeFileSys
   });
 
 const completeSignIn = async (signIn: ReturnType<typeof signInOver>) => {
-  const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT });
+  const { attemptId, authorizationUrl } = await signIn.begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal);
   const browsed = await siwcBrowse(authorizationUrl);
   if (browsed.redirect === undefined) throw new Error(`the fake refused the authorization: ${JSON.stringify(browsed.body)}`);
   return signIn.complete(attemptId, browsed.redirect.href, signal());
@@ -131,7 +131,7 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
     harnesses.push(h);
     const gated = createGatedFileSystem(nodeFileSystem);
     const read = gated.gate('readOwnerOnlyTextFile', (file) => file === h.paths.host);
-    const begun = signInOver(h, h.sessions, gated.fileSystem).begin({ profile: PROFILE_ID, account: 'work', port: PORT }).catch((error: unknown) => error);
+    const begun = signInOver(h, h.sessions, gated.fileSystem).begin({ profile: PROFILE_ID, account: 'work', port: PORT }, new AbortController().signal).catch((error: unknown) => error);
     await read.reached;
     read.fail(new Error('read failed'));
     expect(await begun).toMatchObject({ code: 'plan_host_identity_unavailable' });
@@ -227,10 +227,10 @@ describe('every started plan operation writes its event at every end (P-G6)', ()
     const h = await startHarness();
     harnesses.push(h);
     await signedIn(h, 'work');
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE });
-    await h.sessions.resume(work);
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal);
+    await h.sessions.resume(work, new AbortController().signal);
     await h.reopen({ accounts: [work], store: failingWrites(h.store, (value) => (valueOf('paused')(value) ? errno('EACCES') : undefined)) });
-    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }).catch(() => undefined);
+    await h.sessions.authSource(work).pause({ code: PAUSE_CODE }, new AbortController().signal).catch(() => undefined);
     expect(named(h, 'plan.pause').map((event) => event['saved'])).toEqual([true, false]);
     expect((await readRecord(h, 'work'))?.['paused']).toBeUndefined();
   });

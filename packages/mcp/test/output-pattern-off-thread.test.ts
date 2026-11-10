@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PATTERN_CHECK_LIMIT_MS } from '@momonga/foundation';
+import { NEVER_ABORTED } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture, textOf } from './remote-harness.ts';
 
 const HOSTILE = `${'a'.repeat(48)}b`;
@@ -22,18 +23,18 @@ const connected = async () => {
 describe('structured output under a pattern the linear engine cannot read', () => {
   it('is accepted by the SDK and by the off-thread check when it matches', async () => {
     const connection = await connected();
-    expect(textOf(await connection.callTool({ name: 'structured_pattern', arguments: { s: 'aaaa' } }))).toBe('structured_pattern');
+    expect(textOf(await connection.callTool({ name: 'structured_pattern', arguments: { s: 'aaaa' }, signal: NEVER_ABORTED }))).toBe('structured_pattern');
   });
 
   it('is refused as not matching the output schema when the off-thread check says it does not match', async () => {
     const connection = await connected();
-    const failure = await failureOf(connection.callTool({ name: 'structured_pattern', arguments: { s: 'aab' } }));
+    const failure = await failureOf(connection.callTool({ name: 'structured_pattern', arguments: { s: 'aab' }, signal: NEVER_ABORTED }));
     expect(failure.message).toContain("Structured content does not match the tool's output schema");
   });
 
   it('is refused with the English refusal when the check passes the limit', async () => {
     const connection = await connected();
-    const failure = await failureOf(connection.callTool({ name: 'structured_pattern', arguments: { s: HOSTILE }, timeoutMs: 60_000 }));
+    const failure = await failureOf(connection.callTool({ name: 'structured_pattern', arguments: { s: HOSTILE }, signal: NEVER_ABORTED, timeoutMs: 60_000 }));
     expect(failure.message).toContain(
       `The output of structured_pattern could not be checked against its schema within ${PATTERN_CHECK_LIMIT_MS / 1000} seconds: the pattern of s is too costly to match.`,
     );

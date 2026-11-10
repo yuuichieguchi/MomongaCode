@@ -9,8 +9,8 @@ import { isAtomicWriteTemporary } from './atomic-file.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
-import { claimNewEntry } from './platform/lock-form.ts';
-import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
+import { EntryLockHeldError, claimNewEntry } from './platform/lock-form.ts';
+import { SocketPathUnsupportedError, assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
   home: string;
@@ -20,6 +20,8 @@ export interface MomongaPaths {
   run: string;
   current: string;
   generationLock: string;
+  generationCounter: string;
+  jobs: string;
   callLocks: string;
   grepArguments: string;
   lockProof: string;
@@ -69,25 +71,46 @@ export const adapterSocketPath = (home: string, name: string, platform: NodeJS.P
 
 export const FIRST_GENERATION = 1;
 
-export type GenerationRole = 'gateway' | 'runtime' | 'supervisor';
+export type GenerationProcessRole = 'gateway' | 'runtime' | 'supervisor';
 
-export const GENERATION_ROLES: readonly GenerationRole[] = ['gateway', 'runtime', 'supervisor'];
+export const GENERATION_ROLES: readonly GenerationProcessRole[] = ['gateway', 'runtime', 'supervisor'];
 
-export type GenerationSockets = Record<GenerationRole, string>;
+export type GenerationSockets = Record<GenerationProcessRole, string>;
 
 export type GenerationLayout = {
   generation: number;
   dir: string;
   sockets: GenerationSockets;
-  locks: Record<GenerationRole, string>;
+  locks: Record<GenerationProcessRole, string>;
   settingsApplied: string;
+  startRecord: string;
+  startingLock: string;
+  markers: string;
+};
+
+export const START_RECORD_FILE = 'start.json';
+
+export const STARTING_LOCK_FILE = 'starting.lock';
+
+export const GENERATION_JOBS_DIRECTORY = 'jobs';
+
+export const MARKER_KINDS = ['tools', 'mcp', 'targets', 'daemons'] as const;
+
+export type MarkerKind = (typeof MARKER_KINDS)[number];
+
+const GENERATION_DIRECTORY_NAME = /^g[1-9][0-9]*$/;
+
+export const generationOfDirectoryName = (name: string): number | undefined => {
+  if (!GENERATION_DIRECTORY_NAME.test(name)) return undefined;
+  const generation = Number(name.slice(1));
+  return Number.isSafeInteger(generation) ? generation : undefined;
 };
 
 export const SETTINGS_APPLIED_FILE = 'settings-applied.json';
 
 export const SETTINGS_APPLIED_ENV = 'MOMONGA_SETTINGS_APPLIED';
 
-const byRole = (value: (role: GenerationRole) => string): Record<GenerationRole, string> => ({
+const byRole = (value: (role: GenerationProcessRole) => string): Record<GenerationProcessRole, string> => ({
   gateway: value('gateway'),
   runtime: value('runtime'),
   supervisor: value('supervisor'),
@@ -103,6 +126,9 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
     locks: byRole((role) => join(dir, `${role}.lock`)),
     settingsApplied: join(dir, SETTINGS_APPLIED_FILE),
+    startRecord: join(dir, START_RECORD_FILE),
+    startingLock: join(dir, STARTING_LOCK_FILE),
+    markers: join(home, '.momonga', 'run', 'markers', `g${generation}`),
   };
 };
 
@@ -128,6 +154,8 @@ export const momongaLayout = (
     run,
     current: join(run, 'current'),
     generationLock: join(run, 'generation.lock'),
+    generationCounter: join(run, 'generation.counter'),
+    jobs: join(run, GENERATION_JOBS_DIRECTORY),
     callLocks: join(run, 'call-locks'),
     grepArguments: join(run, 'grep-arguments'),
     lockProof: join(run, 'lock-proof'),
@@ -183,7 +211,7 @@ const gatewayInstanceStem = (instance: GatewayInstance): string => {
 
 const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, target: string): string => `_cli-${purpose}-${target}`;
 
-const GENERATION_TARGETS_DIRECTORY = 'targets';
+export const GENERATION_TARGETS_DIRECTORY = 'targets';
 
 const CLI_MARKER_DIRECTORY = 'cli';
 
@@ -266,7 +294,7 @@ const ensurePrivateDirectory = async (directory: string, platform: NodeJS.Platfo
 
 export type RoleEndpoint = { socketPath: string; lockPath: string };
 
-export const roleEndpoint = (layout: GenerationLayout, role: GenerationRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
+export const roleEndpoint = (layout: GenerationLayout, role: GenerationProcessRole): RoleEndpoint => ({ socketPath: layout.sockets[role], lockPath: layout.locks[role] });
 
 const refuseUnfitGenerationSockets = async (layout: GenerationLayout): Promise<void> => {
   const sockets = Object.values(layout.sockets);
@@ -320,12 +348,110 @@ export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] =>
   { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
   { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
   { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
+  { directory: paths.run, isLeftover: isAtomicWriteTemporary },
 ];
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
-  await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));
   await createMomongaDirs(paths, ports);
 };
+
+const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
+
+const longestOf = (sockets: readonly string[]): string => sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
+
+export const refuseUnfitGenerationSocketsBeforeCreation = async (paths: MomongaPaths, generation: number): Promise<void> => {
+  const sockets = Object.values(generationLayout(homeOf(paths), generation).sockets);
+  for (const socket of sockets) assertSocketPathLength(socket);
+  const unixSockets = sockets.filter((socket) => !isPipePath(socket));
+  if (unixSockets.length === 0) return;
+  const longest = longestOf(unixSockets);
+  const fillerLength = Buffer.byteLength(longest) - Buffer.byteLength(paths.run) - 1;
+  const standIn = path.join(paths.run, 'g'.repeat(Math.max(1, fillerLength)));
+  try {
+    await refuseUnbindableUnixSocketPath(standIn);
+  } catch (error) {
+    if (error instanceof SocketPathUnsupportedError) throw new SocketPathUnsupportedError(error.message.replace(standIn, longest), { cause: error });
+    throw error;
+  }
+};
+
+export const generationMarkerDirectories = (paths: MomongaPaths, generation: number): Record<MarkerKind, string> => {
+  const root = path.join(paths.markers.root, generationDirectoryName(generation));
+  return { tools: path.join(root, 'tools'), mcp: path.join(root, 'mcp'), targets: path.join(root, 'targets'), daemons: path.join(root, 'daemons') };
+};
+
+export const scopeToGeneration = (paths: MomongaPaths, generation: number): MomongaPaths => {
+  const name = generationDirectoryName(generation);
+  const root = path.join(paths.markers.root, name);
+  return {
+    ...paths,
+    markers: { root, ...generationMarkerDirectories(paths, generation) },
+    jobs: path.join(paths.run, name, GENERATION_JOBS_DIRECTORY),
+    tmp: { ...paths.tmp, spawn: path.join(paths.tmp.spawn, name) },
+  };
+};
+
+export const createGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
+  const platform = ports.platform ?? process.platform;
+  const scoped = scopeToGeneration(paths, generation);
+  await fs.mkdir(path.join(paths.run, generationDirectoryName(generation)), { mode: 0o700 });
+  for (const directory of [paths.markers.root, scoped.markers.root, ...MARKER_KINDS.map((kind) => scoped.markers[kind])]) {
+    await ensurePrivateDirectory(directory, platform);
+  }
+};
+
+export class GenerationDirectoryMissingError extends Error {
+  readonly generation: number;
+  readonly directory: string;
+
+  constructor(generation: number, directory: string) {
+    super(`the directory of generation ${generation} is missing: ${directory}`);
+    this.name = 'GenerationDirectoryMissingError';
+    this.generation = generation;
+    this.directory = directory;
+  }
+}
+
+export const requireGenerationDirs = async (paths: MomongaPaths, generation: number): Promise<void> => {
+  const scoped = scopeToGeneration(paths, generation);
+  for (const directory of [path.join(paths.run, generationDirectoryName(generation)), scoped.markers.root]) {
+    const stat = await lstatIfPresent(directory);
+    if (stat === undefined || !stat.isDirectory()) throw new GenerationDirectoryMissingError(generation, directory);
+  }
+};
+
+export type GenerationMember = {
+  readonly name: string;
+  readonly kind: 'file' | 'directory';
+  readonly removal: 'always' | 'when-empty';
+  readonly hasAtomicTemporaries: boolean;
+};
+
+const SOCKET_LOCK_SUFFIX = '.lock';
+
+const fileMember = (name: string, hasAtomicTemporaries = false): GenerationMember => ({ name, kind: 'file', removal: 'always', hasAtomicTemporaries });
+
+export const GENERATION_MEMBERS: readonly GenerationMember[] = [
+  ...GENERATION_ROLES.map((role) => fileMember(`${role}.lock`)),
+  ...GENERATION_ROLES.map((role) => fileMember(`${role}.sock`)),
+  ...GENERATION_ROLES.map((role) => fileMember(`${role}.sock${SOCKET_LOCK_SUFFIX}`)),
+  fileMember(START_RECORD_FILE, true),
+  fileMember(STARTING_LOCK_FILE),
+  fileMember(SETTINGS_APPLIED_FILE, true),
+  { name: GENERATION_TARGETS_DIRECTORY, kind: 'directory', removal: 'always', hasAtomicTemporaries: false },
+  { name: GENERATION_JOBS_DIRECTORY, kind: 'directory', removal: 'when-empty', hasAtomicTemporaries: false },
+];
+
+const ATOMIC_TEMPORARY_OF = /^\.(.+)\.[0-9a-f]+\.tmp$/;
+
+export const generationMemberOf = (name: string): GenerationMember | undefined => {
+  const exact = GENERATION_MEMBERS.find((member) => member.name === name);
+  if (exact !== undefined) return exact;
+  const written = ATOMIC_TEMPORARY_OF.exec(name)?.[1];
+  return GENERATION_MEMBERS.find((member) => member.hasAtomicTemporaries && member.name === written);
+};
+
+export const generationSpawnScratch = (paths: MomongaPaths, generation: number): string => scopeToGeneration(paths, generation).tmp.spawn;
 
 export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const layout = generationLayout(path.dirname(paths.root), generation);
@@ -389,13 +515,22 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
 
 const heldSessionScratch = new Map<string, HeldKernelLock>();
 
-const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<boolean> => {
-  if (heldSessionScratch.has(directory)) return false;
-  heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
-  return true;
+export type SessionScratchClaim = 'owned' | 'shared';
+
+export type SessionScratch = { dir: string; claim: SessionScratchClaim };
+
+const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<{ claimedNow: boolean; claim: SessionScratchClaim }> => {
+  if (heldSessionScratch.has(directory)) return { claimedNow: false, claim: 'owned' };
+  try {
+    heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
+  } catch (error) {
+    if (error instanceof EntryLockHeldError) return { claimedNow: false, claim: 'shared' };
+    throw error;
+  }
+  return { claimedNow: true, claim: 'owned' };
 };
 
-const releaseSessionScratch = (directory: string): void => {
+export const releaseSessionScratch = (directory: string): void => {
   const held = heldSessionScratch.get(directory);
   heldSessionScratch.delete(directory);
   held?.release();
@@ -408,13 +543,13 @@ const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
   }
 };
 
-export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
+export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<SessionScratch> => {
   assertSessionId(sessionId);
   const directory = path.join(paths.tmp.sessions, sessionId);
   await assertSessionsRootIsDirectory(paths.tmp.sessions);
-  const claimedNow = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  const { claimedNow, claim } = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
   try {
-    return await ensureClaimedSessionTmpDir(paths, sessionId, ports);
+    return { dir: await ensureClaimedSessionTmpDir(paths, sessionId, ports), claim };
   } catch (error) {
     if (claimedNow) releaseSessionScratch(directory);
     throw error;

@@ -54,7 +54,7 @@ export type SettingsPort = {
   autoModeClassifier(): string | undefined;
   modelRoles(): ModelRoles;
   modelTargets(): Readonly<Record<string, TargetFacts>>;
-  appendRule(session: Session, entry: AppendedRule): Promise<void>;
+  appendRule(session: Session, entry: AppendedRule, signal: AbortSignal): Promise<void>;
   trusted(session: Session): boolean;
 };
 

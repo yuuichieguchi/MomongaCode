@@ -1,3 +1,4 @@
+import { fixedRolePort } from '@momonga/foundation';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -31,7 +32,7 @@ const cancellingRun = async (): Promise<{ env: Env; claim: Claim; leave: ReturnT
   if (claim === null) throw new Error('the run could not be claimed');
   await env.store.requestCancel(run.id);
   expect(env.run(run.id).status).toBe('CANCELLING');
-  const control = startClaimControl({ store: env.store, timers: createFakeTimers(env.clock), claim, heartbeatMs: 1000, cancelPollMs: 1000 });
+  const control = startClaimControl({ store: env.store, timers: createFakeTimers(env.clock), claim, role: fixedRolePort('serving'), heartbeatMs: 1000, cancelPollMs: 1000 });
   const journal = openJournal({ store: env.store, claim, lost: control.lost });
   return { env, claim, leave: createTerminals({ store: env.store, claim, journal, control, clock: env.clock }) };
 };
