@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { runBenchmark, validateBenchmark } from '@momonga/eval';
-import type { BenchProblem, BenchRunApi } from '@momonga/eval';
+import type { BenchProblem, BenchRunApi, TaskValidation } from '@momonga/eval';
 import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { MAIN_AGENT } from '@momonga/protocol';
@@ -32,9 +32,17 @@ const PROBLEM_TEXT: Record<BenchProblem, string> = {
 
 const tasksText = (count: number): string => `${count} ${count === 1 ? 'task' : 'tasks'}`;
 
+const countText = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+const validationLine = (task: TaskValidation): string => {
+  const verdict = task.problems.length === 0 ? 'valid' : task.problems.map((problem) => PROBLEM_TEXT[problem]).join('; ');
+  const { files, linesAdded, linesRemoved } = task.reference;
+  return `Task ${task.id}: ${verdict}; labelled ${task.difficulty} by ${task.labelledBy} on ${task.labelledAt}; the reference changes ${countText(files, 'file', 'files')}, ${countText(linesAdded, 'line', 'lines')} added and ${linesRemoved} removed\n`;
+};
+
 const validate = async (ports: Pick<CliPorts, 'stdout' | 'probe'>, benchmarkFile: string): Promise<number> => {
   const { name, tasks } = await validateBenchmark(benchmarkFile, ports.probe);
-  for (const task of tasks) ports.stdout.write(`Task ${task.id}: ${task.problems.length === 0 ? 'valid' : task.problems.map((problem) => PROBLEM_TEXT[problem]).join('; ')}\n`);
+  for (const task of tasks) ports.stdout.write(validationLine(task));
   const wrong = tasks.filter((task) => task.problems.length > 0).length;
   if (wrong === 0) {
     ports.stdout.write(`The benchmark ${name} is valid: ${tasksText(tasks.length)}.\n`);

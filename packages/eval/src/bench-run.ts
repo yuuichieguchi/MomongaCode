@@ -68,18 +68,13 @@ const setUp = async (task: BenchTask, workspace: string, probe: WorkspaceProbe):
   return true;
 };
 
-type Trial = { facts: RunFactsView; answeredBy: AnsweredByView[] };
+type Trial = { facts: RunFactsView; children: RunFactsView[]; answeredBy: AnsweredByView[] };
 
-const runTrial = async (task: BenchTask, repository: string, workspace: string, ports: BenchRunPorts): Promise<Trial> => {
-  const { api } = ports;
-  const session = await api.createSession({ cwd: workspace, permissionMode: task.permissionMode, model: ports.model });
-  const run = await api.createRun(session.id, { input: task.prompt, timeoutMs: task.budget.timeoutMs, limits: { maxSteps: task.budget.maxSteps, maxTotalTokens: task.budget.maxTotalTokens } });
-  const { events } = await driveRun(api, task, run.id);
-  const view = await api.runOf(run.id);
-  const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe });
-  const folded = foldFacts(factsEventsOf(events), {
-    runId: run.id,
-    rootRunId: run.id,
+const factsOfRun = async (api: BenchRunApi, runId: string, rootRunId: string, events: readonly PublicRunEvent[]): Promise<RunFactsView> => {
+  const view = await api.runOf(runId);
+  return foldFacts(factsEventsOf(events), {
+    runId,
+    rootRunId,
     sessionId: view.sessionId,
     status: view.status,
     ...(view.stopReason === undefined ? {} : { stopReason: view.stopReason }),
@@ -93,7 +88,18 @@ const runTrial = async (task: BenchTask, repository: string, workspace: string, 
     agent: view.agent,
     origin: view.origin,
   });
-  return { facts: { ...folded, declared: task.declaration.length > 0, met: grade.met }, answeredBy: await api.answeredBy(run.id) };
+};
+
+const runTrial = async (task: BenchTask, repository: string, workspace: string, ports: BenchRunPorts): Promise<Trial> => {
+  const { api } = ports;
+  const session = await api.createSession({ cwd: workspace, permissionMode: task.permissionMode, model: ports.model });
+  const run = await api.createRun(session.id, { input: task.prompt, timeoutMs: task.budget.timeoutMs, limits: { maxSteps: task.budget.maxSteps, maxTotalTokens: task.budget.maxTotalTokens } });
+  const driven = await driveRun(api, task, run.id);
+  const folded = await factsOfRun(api, run.id, run.id, driven.events);
+  const children: RunFactsView[] = [];
+  for (const child of driven.children) children.push(await factsOfRun(api, child.runId, run.id, child.events));
+  const grade = await gradeTrial({ task, workspace, base: repository, probe: ports.probe });
+  return { facts: { ...folded, declared: task.declaration.length > 0, met: grade.met }, children, answeredBy: await api.answeredBy(run.id) };
 };
 
 const verifiedRepositories = async (benchmark: Benchmark, root: string): Promise<Map<string, string>> => {
@@ -131,7 +137,7 @@ export const runBenchmark = async (benchmarkFile: string, ports: BenchRunPorts):
         continue;
       }
       const outcome = await runTrial(task, repository, workspace, ports);
-      trials.push({ taskId: task.id, trial, facts: outcome.facts });
+      trials.push({ taskId: task.id, trial, facts: outcome.facts, children: outcome.children });
       answeredBy.push(...outcome.answeredBy);
       if (outcome.answeredBy.length === 0) unrecordedAnswers += 1;
       ports.onTrial?.({ taskId: task.id, trial, met: outcome.facts.met });

@@ -21,7 +21,7 @@ import { listJobs } from './jobs.ts';
 import { checkModels, detectModels, listModels, modelsShellOf, runModelsForm } from './models.ts';
 import type { FormOption, ModelsForm, ModelsShell } from './models.ts';
 import { policyVerify } from './policy.ts';
-import { showReliability } from './reliability.ts';
+import { DEFAULT_REPORT_DAYS, showReliability } from './reliability.ts';
 import { evaluateBench } from './bench.ts';
 import { reviewPermissions } from './review.ts';
 import type { ReviewOptions } from './review.ts';
@@ -305,14 +305,21 @@ const registerCost: CommandGroup = (program, deps) => {
     });
 };
 
+const daysArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isSafeInteger(value) || value < 1) throw new InvalidArgumentError('expected a positive integer');
+  return value;
+};
+
 const registerReliability: CommandGroup = (program, deps) => {
   program
     .command('reliability')
-    .description('report the completion, recovery, duplicate, intervention, budget and time indicators of the terminal tasks in the record')
+    .description('report the completion, recovery, duplicate, intervention, budget, time and cost indicators of the terminal tasks of the period')
     .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by').choices(GROUP_KEYS).default('model'))
+    .option('--days <n>', 'the period: the tasks whose root run ended in the last n days', daysArgument, DEFAULT_REPORT_DAYS)
     .option('--explain', 'list the run ids behind each count')
-    .action(async (options: { groupBy: GroupKey; explain?: true }) => {
-      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, explain: options.explain === true }));
+    .action(async (options: { groupBy: GroupKey; days: number; explain?: true }) => {
+      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, days: options.days, explain: options.explain === true }));
     });
 };
 
@@ -376,7 +383,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
   evaluation
     .command('bench <directory>')
     .description('run every task of the benchmark in the directory on one model, each trial in a fresh copy of its repository, check each with the oracle of its task, and print the reliability report; with --validate, check the benchmark itself without a model')
-    .option('--validate', 'check that every task fails on its repository, passes with its reference solution, keeps its grader files out of the repository and names the digest of its repository')
+    .option('--validate', 'check that every task fails on its repository, passes with its reference solution, keeps its grader files out of the repository and names the digest of its repository, and print beside the label of each task the files and lines its reference changes')
     .option('--model <model>', 'the model every task runs on')
     .option('--report <file>', 'store the report as JSON for eval compare --gate reliability')
     .action(async (directory: string, options: { validate?: true; model?: string; report?: string }) => {

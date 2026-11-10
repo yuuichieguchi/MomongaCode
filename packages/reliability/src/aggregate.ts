@@ -4,6 +4,7 @@ import type { GroupKey, IndicatorGroups, Indicators, RunFacts } from './types.ts
 type TaskPartial = {
   root: RunFacts | undefined;
   earliest: RunFacts;
+  runIds: readonly string[];
   stale: boolean;
   unknownValues: boolean;
   intervened: boolean;
@@ -49,6 +50,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
   return {
     root: row.runId === row.rootRunId ? row : undefined,
     earliest: row,
+    runIds: [row.runId],
     stale: row.definitionsVersion !== INDICATOR_DEFINITIONS_VERSION,
     unknownValues: holdsUnknown(row),
     intervened: row.asked + row.elicited + row.authorizationRequired > 0,
@@ -72,6 +74,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
   return {
     root: left.root ?? right.root,
     earliest: left.earliest.runId <= right.earliest.runId ? left.earliest : right.earliest,
+    runIds: [...left.runIds, ...right.runIds],
     stale: left.stale || right.stale,
     unknownValues: left.unknownValues || right.unknownValues,
     intervened: left.intervened || right.intervened,
@@ -110,6 +113,20 @@ export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
     tasks.set(rootRunId, existing === undefined ? partial : combine(existing, partial));
   }
   return { groupBy: left.groupBy, tasks, unavailableRoots: new Set([...left.unavailableRoots, ...right.unavailableRoots]) };
+};
+
+export type Period = { days: number; fromMs: number; toMs: number };
+
+export const withinPeriod = (aggregated: Aggregate, period: Period): Aggregate => {
+  const outside = new Set<string>();
+  for (const [rootRunId, { root }] of aggregated.tasks) {
+    if (root !== undefined && (root.endedAt < period.fromMs || root.endedAt > period.toMs)) outside.add(rootRunId);
+  }
+  return {
+    groupBy: aggregated.groupBy,
+    tasks: new Map([...aggregated.tasks].filter(([rootRunId]) => !outside.has(rootRunId))),
+    unavailableRoots: new Set([...aggregated.unavailableRoots].filter((rootRunId) => !outside.has(rootRunId))),
+  };
 };
 
 const DAY_MS = 86_400_000;
@@ -213,21 +230,24 @@ const markOf = (marks: Marks | undefined, label: string, runId: string): void =>
   else ids.push(runId);
 };
 
+type Excluded = 'pendingFacts' | 'unknownValues' | 'cancelled';
+
+const EXCLUDED_LABELS: Record<Excluded, string> = { pendingFacts: 'pending facts', unknownValues: 'unknown values', cancelled: 'cancelled' };
+
+const exclusionOf = (task: TaskPartial): Excluded | undefined => {
+  if (task.root === undefined || task.stale) return 'pendingFacts';
+  if (task.unknownValues) return 'unknownValues';
+  return task.root.status === 'CANCELLED' ? 'cancelled' : undefined;
+};
+
 const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks): void => {
   const { root } = task;
-  if (root === undefined || task.stale) {
-    accumulator.pendingFacts += 1;
-    markOf(marks, 'pending facts', (root ?? task.earliest).rootRunId);
-    return;
-  }
-  if (task.unknownValues) {
-    accumulator.unknownValues += 1;
-    markOf(marks, 'unknown values', root.runId);
-    return;
-  }
-  if (root.status === 'CANCELLED') {
-    accumulator.cancelled += 1;
-    markOf(marks, 'cancelled', root.runId);
+  const excluded = exclusionOf(task);
+  if (root === undefined || excluded !== undefined) {
+    if (excluded !== undefined) {
+      accumulator[excluded] += 1;
+      markOf(marks, EXCLUDED_LABELS[excluded], (root ?? task.earliest).rootRunId);
+    }
     return;
   }
   accumulator.counted += 1;
@@ -358,3 +378,20 @@ export const explainOf = (aggregated: Aggregate): Marks => {
   for (const ids of marks.values()) ids.sort();
   return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };
+
+export type CountedTask = { rootRunId: string; group: string; met: boolean; tokens: number; runIds: string[] };
+
+export const countedTasksOf = (aggregated: Aggregate): CountedTask[] => {
+  const counted: CountedTask[] = [];
+  for (const [rootRunId, task] of aggregated.tasks) {
+    const { root } = task;
+    if (root === undefined || aggregated.unavailableRoots.has(rootRunId) || exclusionOf(task) !== undefined) continue;
+    counted.push({ rootRunId, group: groupOf(root, aggregated.groupBy), met: root.met, tokens: root.tokensTotal, runIds: [...task.runIds].sort() });
+  }
+  return counted.sort((left, right) => (left.rootRunId < right.rootRunId ? -1 : 1));
+};
+
+export const countedRunIdsOf = (aggregated: Aggregate): string[] =>
+  countedTasksOf(aggregated)
+    .flatMap((task) => task.runIds)
+    .sort();

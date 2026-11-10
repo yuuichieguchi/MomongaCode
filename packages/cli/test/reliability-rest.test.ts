@@ -227,7 +227,7 @@ describe('momonga eval bench --validate', () => {
     const dir = await benchmark(BUGGY);
     const { ports, out } = await portsOf(path.dirname(dir));
     expect(await evaluateBench(ports, undefined, path.basename(dir), { validate: true })).toBe(0);
-    expect(out.join('')).toBe('Task fix: valid\nThe benchmark fixture is valid: 1 task.\n');
+    expect(out.join('')).toBe('Task fix: valid; labelled easy by fixture on 2026-11-06; the reference changes 1 file, 1 line added and 1 removed\nThe benchmark fixture is valid: 1 task.\n');
   });
 
   it('exits 1 and says what is wrong with a task that already passes', async () => {
@@ -235,7 +235,7 @@ describe('momonga eval bench --validate', () => {
     const dir = await benchmark(FIXED);
     const { ports, out } = await portsOf(dir);
     expect(await evaluateBench(ports, undefined, dir, { validate: true })).toBe(1);
-    expect(out.join('')).toBe('Task fix: the oracle already passes on the initial repository\nThe benchmark fixture is not valid: 1 of 1 task has a problem.\n');
+    expect(out.join('')).toBe('Task fix: the oracle already passes on the initial repository; labelled easy by fixture on 2026-11-06; the reference changes 0 files, 0 lines added and 0 removed\nThe benchmark fixture is not valid: 1 of 1 task has a problem.\n');
   });
 
   it('a run needs --model, and --validate takes none', async () => {
@@ -277,6 +277,14 @@ describe('the commands of the reliability report are registered', () => {
     const bench = sub(sub(await program(), 'eval'), 'bench');
     expect(bench.registeredArguments.map((argument) => argument.name())).toEqual(['directory']);
     expect(flags(bench)).toEqual(expect.arrayContaining(['--validate', '--model', '--report']));
+  });
+
+  it('reliability takes --days, 30 when it is not given, and refuses a number that is not a positive integer', async () => {
+    const reliability = sub(await program(), 'reliability');
+    const days = reliability.options.find((option) => option.long === '--days');
+    expect(days?.defaultValue).toBe(30);
+    expect(days?.parseArg?.('7', 30)).toBe(7);
+    for (const wrong of ['0', '-1', '1.5', 'week']) expect(() => days?.parseArg?.(wrong, 30)).toThrow();
   });
 
   it('permissions review takes an optional run, --sample, --seed, --call and --label', async () => {

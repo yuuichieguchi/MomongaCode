@@ -1,5 +1,7 @@
-export { aggregate, explainOf, indicatorsOf, merge } from './aggregate.ts';
-export type { Aggregate, AggregateOptions, Marks } from './aggregate.ts';
+export { aggregate, countedRunIdsOf, countedTasksOf, explainOf, indicatorsOf, merge, withinPeriod } from './aggregate.ts';
+export type { Aggregate, AggregateOptions, CountedTask, Marks, Period } from './aggregate.ts';
+export { costOf } from './cost.ts';
+export type { CostAmount, CostGroups, CostIndicators, CostSide } from './cost.ts';
 export { decodeReliabilityReport, encodeReliabilityReport } from './codec.ts';
 export { createCallsFold, foldCalls, foldRunRecord } from './fold-calls.ts';
 export { FACTS_EVENT_TYPES, createFactsFold, foldFacts } from './fold-facts.ts';

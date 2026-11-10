@@ -89,6 +89,7 @@ export type StoreReviewRequest = { runId: string; callId: string; label: ReviewL
 export type StoreReviewResponse = { review: PermissionReviewView };
 
 export const COST_CURRENCY = 'USD';
+export const COST_UNIT_DIGITS = 15;
 
 export type RunCostView = { runId: string; calls: number; notPriced: number; priced: { currency: typeof COST_CURRENCY; priceVersion: string; units: string }[] };
 

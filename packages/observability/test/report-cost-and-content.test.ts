@@ -118,3 +118,10 @@ describe('the stored bodies of a run (trace --content)', () => {
     expect(() => pageRunBodies(store, 'run-1', 0, 0)).toThrow(RangeError);
   });
 });
+
+describe('the unit of a cost on the wire', () => {
+  it('COST_UNIT_DIGITS is the number of decimal places of one unit of the price table', async () => {
+    const { COST_UNIT_DIGITS } = (await import('@momonga/protocol')) as unknown as { COST_UNIT_DIGITS: number };
+    expect(exported<(units: bigint) => number>('amountOfUnits')(10n ** BigInt(COST_UNIT_DIGITS))).toBe(1);
+  });
+});

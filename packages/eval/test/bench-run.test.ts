@@ -47,12 +47,14 @@ const scratch = (): string => {
   return dir;
 };
 
-type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string };
+type Behaviour = { edit?(cwd: string, trial: number): void; ask?: boolean; delegate?: boolean; limits?: { maxSteps: number; maxTotalTokens: number }; mode?: string };
 
 const fakeApi = (behaviour: Behaviour = {}) => {
   const sessions = new Map<string, { cwd: string; permissionMode: string; model: string }>();
   const runs = new Map<string, { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number }; input: string }>();
   const resolved: { approvalId: string; optionId: string }[] = [];
+  const children = new Map<string, string>();
+  const asked: string[] = [];
   const api: Api = {
     createSession: async (input) => {
       const id = `sess-${sessions.size + 1}`;
@@ -65,6 +67,28 @@ const fakeApi = (behaviour: Behaviour = {}) => {
       return { id };
     },
     events: async function* (runId) {
+      const parent = children.get(runId);
+      if (parent !== undefined) {
+        const base = { runId, sessionId: `child-sess-${runId}`, step: 0 };
+        yield { ...base, id: 1, seq: 1, createdAt: T0 + 1, type: 'run.status', from: 'QUEUED', to: 'RUNNING' } as PublicRunEvent;
+        yield {
+          ...base,
+          id: 2,
+          seq: 2,
+          createdAt: T0 + 2,
+          type: 'tool.permission.requested',
+          approvalId: `approval-${runId}`,
+          callId: 'child-call-1',
+          options: [
+            { optionId: 'yes', kind: 'allow_once', name: 'Allow' },
+            { optionId: 'no', kind: 'reject_once', name: 'Reject' },
+          ],
+          subjectDigest: 'digest',
+          reason: 'ask',
+        } as PublicRunEvent;
+        yield { ...base, id: 3, seq: 3, createdAt: T0 + 3, type: 'run.status', from: 'RUNNING', to: 'COMPLETED' } as PublicRunEvent;
+        return;
+      }
       const run = runs.get(runId) as { sessionId: string };
       const session = sessions.get(run.sessionId) as { cwd: string };
       const envelope = (seq: number) => ({ id: seq, runId, sessionId: run.sessionId, seq, step: 0, createdAt: T0 + seq });
@@ -84,10 +108,19 @@ const fakeApi = (behaviour: Behaviour = {}) => {
           reason: 'ask',
         } as PublicRunEvent;
       }
+      if (behaviour.delegate === true) {
+        const childRunId = `child-of-${runId}`;
+        children.set(childRunId, runId);
+        yield { ...envelope(3), type: 'tool.waiting', callId: 'call-agent', awaits: { kind: 'run', runId: childRunId, sessionId: `child-sess-${childRunId}`, agent: 'explore' } } as PublicRunEvent;
+      }
       behaviour.edit?.(session.cwd, runs.size - 1);
       yield { ...envelope(4), type: 'run.status', from: 'RUNNING', to: 'COMPLETED' } as PublicRunEvent;
     },
     runOf: async (runId) => {
+      if (children.has(runId)) {
+        asked.push(runId);
+        return { sessionId: `child-sess-${runId}`, status: 'COMPLETED', createdAt: T0, deadlineAt: T0 + 1000, limits: {}, step: 1, tokensTotal: 5, origin: 'trusted', agent: 'explore', mode: 'acceptEdits', model: 'fake/system' };
+      }
       const run = runs.get(runId) as { sessionId: string; timeoutMs: number; limits: { maxSteps: number; maxTotalTokens: number } };
       const session = sessions.get(run.sessionId) as { permissionMode: string; model: string };
       return {
@@ -110,7 +143,7 @@ const fakeApi = (behaviour: Behaviour = {}) => {
     },
     cancelRun: async () => undefined,
   };
-  return { api, sessions, runs, resolved };
+  return { api, sessions, runs, resolved, asked };
 };
 
 const runBenchmark = (dir: string, api: Api, at: string): Promise<Result> =>
@@ -156,6 +189,16 @@ describe('momonga eval bench: the trials of a benchmark (3.3)', () => {
     const { report } = await runBenchmark(dir, fake.api, scratch());
     expect(fake.resolved.map((entry) => entry.optionId)).toEqual(['yes', 'yes', 'yes']);
     expect(report.total.intervention).toEqual({ k: 3, n: 3 });
+  });
+
+  it('folds the facts of the child runs of a trial into the trial: a child that asked makes the task one that needed a person, and stays one task (2.2)', async () => {
+    const dir = await benchmarkDir([{ id: 'fix', reference: { 'src/add.js': ADD_FIXED } }]);
+    const fake = fakeApi({ edit: fixTheBug, delegate: true });
+    const { report } = await runBenchmark(dir, fake.api, scratch());
+    expect(fake.resolved.map((entry) => entry.approvalId)).toEqual(['approval-child-of-run-1', 'approval-child-of-run-2', 'approval-child-of-run-3']);
+    expect(fake.asked).toEqual(['child-of-run-1', 'child-of-run-2', 'child-of-run-3']);
+    expect(report.total.intervention).toEqual({ k: 3, n: 3 });
+    expect(report.tasks).toEqual([expect.objectContaining({ task: 'fix', trials: 3, met: 3 })]);
   });
 
   it('writes the grader files after the run, so the run never sees them', async () => {

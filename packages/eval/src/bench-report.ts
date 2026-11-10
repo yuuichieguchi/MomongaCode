@@ -6,7 +6,7 @@ import type { Benchmark, BenchTask } from './bench.ts';
 import { uniqueAnswerers } from './context-report.ts';
 import { EvalError } from './runner.ts';
 
-export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsView };
+export type BenchmarkTrial = { taskId: string; trial: number; facts: RunFactsView; children: readonly RunFactsView[] };
 
 export type BuildBenchmarkReportInput = {
   benchmark: Benchmark;
@@ -57,7 +57,7 @@ export const buildBenchmarkReport = (input: BuildBenchmarkReportInput): Reliabil
   return buildReliabilityReport({
     kind: 'benchmark',
     aggregate: aggregate(
-      input.trials.map((trial) => trial.facts),
+      input.trials.flatMap((trial) => [trial.facts, ...trial.children]),
       { groupBy: input.groupBy },
     ),
     harness: {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { createOwnedDirectory, nodeFileSystem } from '@momonga/foundation';
 import { parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, OracleCheck } from './bench.ts';
+import { diffLines } from './context-improve.ts';
 
 export type WorkspaceProbe = {
   run(command: string, timeoutMs: number, cwd: string): Promise<{ exitCode: number | null; timedOut: boolean }>;
@@ -80,7 +81,9 @@ export const gradeTrial = async (input: GradeInput): Promise<TrialGrade> => {
 export const BENCH_PROBLEMS = ['digest_mismatch', 'grader_file_in_repository', 'setup_failed', 'already_passing', 'unsolvable'] as const;
 export type BenchProblem = (typeof BENCH_PROBLEMS)[number];
 
-export type TaskValidation = { id: string; problems: BenchProblem[] };
+export type ReferenceChange = { files: number; linesAdded: number; linesRemoved: number };
+
+export type TaskValidation = { id: string; difficulty: BenchTask['difficulty']; labelledBy: string; labelledAt: string; reference: ReferenceChange; problems: BenchProblem[] };
 
 export type Validation = { name: string; tasks: TaskValidation[] };
 
@@ -92,6 +95,32 @@ const exists = (file: string): Promise<boolean> =>
       throw error;
     },
   );
+
+const textOrAbsent = (file: string): Promise<string | undefined> =>
+  nodeFileSystem.readTextFile(file).then(
+    (text) => text,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    },
+  );
+
+const withoutLastLineBreak = (text: string): string => (text.endsWith('\n') ? text.slice(0, -1) : text);
+
+const referenceChangeOf = async (repository: string, reference: string): Promise<ReferenceChange> => {
+  const change: ReferenceChange = { files: 0, linesAdded: 0, linesRemoved: 0 };
+  for (const relative of await filesUnder(reference, '')) {
+    const after = await nodeFileSystem.readTextFile(path.join(reference, relative));
+    const before = await textOrAbsent(path.join(repository, relative));
+    if (before === after) continue;
+    change.files += 1;
+    for (const line of diffLines(withoutLastLineBreak(before ?? ''), withoutLastLineBreak(after))) {
+      if (line.startsWith('+')) change.linesAdded += 1;
+      else if (line.startsWith('-')) change.linesRemoved += 1;
+    }
+  }
+  return change;
+};
 
 const preparedWorkspace = async (scratch: string, name: string, repository: string, task: BenchTask, probe: WorkspaceProbe, reference?: string): Promise<string | undefined> => {
   const workspace = path.join(scratch, name);
@@ -114,15 +143,24 @@ const validateTask = async (task: BenchTask, root: string, repository: { directo
       break;
     }
   }
+  const referenceDirectory = path.join(root, task.reference.directory);
+  const validation: TaskValidation = {
+    id: task.id,
+    difficulty: task.difficulty,
+    labelledBy: task.labelledBy,
+    labelledAt: task.labelledAt,
+    reference: await referenceChangeOf(repositoryDirectory, referenceDirectory),
+    problems,
+  };
   const initial = await preparedWorkspace(scratch, `${task.id}-initial`, repositoryDirectory, task, probe);
-  const solved = await preparedWorkspace(scratch, `${task.id}-reference`, repositoryDirectory, task, probe, path.join(root, task.reference.directory));
+  const solved = await preparedWorkspace(scratch, `${task.id}-reference`, repositoryDirectory, task, probe, referenceDirectory);
   if (initial === undefined || solved === undefined) {
     problems.push('setup_failed');
-    return { id: task.id, problems };
+    return validation;
   }
   if ((await gradeTrial({ task, workspace: initial, base: repositoryDirectory, probe })).met) problems.push('already_passing');
   if (!(await gradeTrial({ task, workspace: solved, base: repositoryDirectory, probe })).met) problems.push('unsolvable');
-  return { id: task.id, problems };
+  return validation;
 };
 
 export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceProbe): Promise<Validation> => {
