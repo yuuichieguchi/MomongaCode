@@ -3,8 +3,10 @@ import { CONTEXT_DATASET_FORMAT, EvalError, TranscriptError, decodeTranscript, e
 import type { PolicyOverlay, Transcript } from '@momonga/eval';
 import { contextCase, recorded } from './context-fixtures.ts';
 import { buildReportAs } from './answered-fixtures.ts';
+import { RESOLVED_OFF_POLICY, RESOLVED_ON_POLICY } from './fixtures.ts';
 
-const ON: PolicyOverlay = { context: { cachePrefix: true, observedCapacity: true } };
+const ON = RESOLVED_ON_POLICY as unknown as PolicyOverlay;
+const OFF = RESOLVED_OFF_POLICY as unknown as PolicyOverlay;
 const HEAD_CODE = 'b'.repeat(64);
 const MAIN_CODE = 'a'.repeat(64);
 
@@ -57,7 +59,7 @@ describe('a report takes its identity from its transcripts', () => {
   });
 
   it('refuses transcripts that record different policies', () => {
-    const transcripts = transcriptsOf((index) => ({ policy: index === 0 ? {} : ON, codeDigest: HEAD_CODE }));
+    const transcripts = transcriptsOf((index) => ({ policy: index === 0 ? OFF : ON, codeDigest: HEAD_CODE }));
     expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(EvalError);
     expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(/policy/);
   });

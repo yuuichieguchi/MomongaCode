@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { OutputFormatterName } from '@momonga/protocol';
 import { freshHome } from './fresh-home.ts';
 import { CONTEXT_DATASET_FORMAT, DATASET_FORMAT, encodeTranscript } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
+import { canonicalJson } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { toPublicRunEvent } from '@momonga/protocol';
 import { fixtureCompactionItem, materializeEvents } from '@momonga/testkit';
@@ -49,6 +51,13 @@ const compactionEvents = (caseId: string): Transcript['events'] =>
 
 const RECORDED_CODE = 'c'.repeat(64);
 
+const RESOLVED_ON = {
+  context: { adaptiveBudget: true, autoCompact: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
+  tools: { conciseDescriptions: true, deferral: true },
+  memory: { reflection: { enabled: true }, repositoryFacts: true },
+};
+const CACHE_PREFIX_OFF = { ...RESOLVED_ON, context: { ...RESOLVED_ON.context, cachePrefix: false } };
+
 type Answers = 'model' | 'script';
 
 const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED', answers: Answers = 'script'): Transcript =>
@@ -58,7 +67,7 @@ const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'
     run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
     events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
     children: [],
-    policy: {},
+    policy: RESOLVED_ON,
     codeDigest: RECORDED_CODE,
     answeredBy: [{ target: answers === 'model' ? 'opus' : 'scripted', adapter: 'anthropic', upstreamModel: 'claude-opus', answers }],
   }) as Transcript;
@@ -276,9 +285,9 @@ describe('momonga eval context --settings', () => {
     await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
   });
 
-  it('refuses an overlay with a key outside the token design before any case runs, and names the file', async () => {
+  it('refuses an overlay with a non-core key (design-core-on 3.2, 3.5 item 2) before any case runs, and names the file', async () => {
     const { program, stored, completed } = harness();
-    stored.set('/w/bad.json', JSON.stringify({ context: { autoCompact: false } }));
+    stored.set('/w/bad.json', JSON.stringify({ tools: { ripgrep: 'system' } }));
     await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
     expect(completed).toEqual([]);
   });
@@ -287,7 +296,7 @@ describe('momonga eval context --settings', () => {
 describe('momonga eval compare --gate token, the policies and the code digests', () => {
   it('takes the policy and the code digest of a replay report from its transcripts', async () => {
     const context = harness();
-    const policy = { context: { cachePrefix: true } };
+    const policy = CACHE_PREFIX_OFF;
     for (const scenario of SCENARIOS) {
       for (const side of ['on', 'off'] as const) {
         context.stored.set(`/w/t/${scenario}-${side}.0.transcript.jsonl`, encodeTranscript({ ...transcript(`${scenario}-${side}`), policy, codeDigest: 'e'.repeat(64) }));
@@ -317,13 +326,14 @@ describe('momonga eval compare --gate token, the policies and the code digests',
   it('prints both policies when they differ', async () => {
     const context = harness();
     const baseline = JSON.parse(await reportFile('a.json', 0, 'real'));
-    const candidate = { ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } };
+    const candidate = { ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: CACHE_PREFIX_OFF };
     context.stored.set('/w/a.json', JSON.stringify(baseline));
     context.stored.set('/w/b.json', `${JSON.stringify(candidate, null, 2)}\n`);
     await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
     const text = context.stdout.join('');
-    expect(text).toContain('baseline policy: {}');
-    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
+    expect(text).toContain(`baseline policy: ${canonicalJson(RESOLVED_ON)}`);
+    expect(text).toContain(`candidate policy: ${canonicalJson(CACHE_PREFIX_OFF)}`);
+    expect(text).toContain('policy differs in: context.cachePrefix');
     expect(text).toMatch(/baseline codeDigest: [0-9a-f]{64}/);
     expect(text).toContain(`candidate codeDigest: ${String(candidate.codeDigest)}`);
   });

@@ -7,7 +7,7 @@ import { FIRST_GENERATION, SecretUnavailableError, SocketPathUnsupportedError, m
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
-import type { PublicRunEvent } from '@momonga/protocol';
+import type { OutputFormatterName, PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
 import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
@@ -612,27 +612,33 @@ describe('the isolation of a case', () => {
   });
 });
 
-describe('the identity a live run stamps on its transcripts', () => {
+const RESOLVED_ON = {
+  context: { adaptiveBudget: true, autoCompact: true, cachePrefix: true, loopGuidance: true, observedCapacity: true, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] as OutputFormatterName[], unboundedOutputReserve: true },
+  tools: { conciseDescriptions: true, deferral: true },
+  memory: { reflection: { enabled: true }, repositoryFacts: true },
+};
+
+describe('the identity a live run stamps on its transcripts (design core-on 3.2, test 9)', () => {
   const HEAD_CODE = 'b'.repeat(64);
 
-  it('records the --settings overlay and the code digest of the CLI in every transcript', async () => {
+  it('records the --settings overlay resolved over the defaults, and the code digest of the CLI, in every transcript', async () => {
     const context = harness();
     const stored: Transcript[] = [];
-    const policy = { context: { cachePrefix: true } };
+    const policy = { context: { cachePrefix: false } };
     const transcripts = await runContextLive(context.effects, input({ policy, codeDigest: HEAD_CODE, onTranscript: async (transcript) => void stored.push(transcript) }));
     expect(transcripts).toHaveLength(2);
     for (const transcript of [...transcripts, ...stored]) {
-      expect(transcript.policy).toEqual(policy);
+      expect(transcript.policy).toEqual({ ...RESOLVED_ON, context: { ...RESOLVED_ON.context, cachePrefix: false } });
       expect(transcript.codeDigest).toBe(HEAD_CODE);
     }
   });
 
-  it('records an empty policy without an overlay', async () => {
+  it('records the resolved on policy without an overlay', async () => {
     const context = harness();
     const transcripts = await runContextLive(context.effects, input({ codeDigest: HEAD_CODE }));
     expect(transcripts.map((transcript) => [transcript.policy, transcript.codeDigest])).toEqual([
-      [{}, HEAD_CODE],
-      [{}, HEAD_CODE],
+      [RESOLVED_ON, HEAD_CODE],
+      [RESOLVED_ON, HEAD_CODE],
     ]);
   });
 });

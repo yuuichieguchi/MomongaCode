@@ -98,54 +98,48 @@ describe('the token metrics count every billed call of a run', () => {
   });
 });
 
-describe('the token metrics count the reflection charge of a run', () => {
-  it('adds a finished reflection to the cost, the uncached input, the calls and the latency', () => {
-    const none = reportOf(undefined).metrics;
+describe('the token metrics keep the reflection charge of a run in its own column', () => {
+  it('leaves a finished reflection out of the cost, the uncached input, the calls and the latency per success', () => {
     const done = reportOf(undefined, { state: 'done', charges: [reflectionCharge] }).metrics;
 
-    expect(none.callsPerSuccess?.value).toBeCloseTo(1, 12);
-    expect(done.callsPerSuccess?.value).toBeCloseTo(2, 12);
-    expect(done.costPerSuccess?.value).toBeCloseTo(0.005, 12);
-    expect(done.uncachedInputPerSuccess?.value).toBeCloseTo(600 + 400, 9);
-    expect(done.latencyPerSuccess?.value).toBeCloseTo(170, 9);
+    expect(done.callsPerSuccess?.value).toBeCloseTo(1, 12);
+    expect(done.costPerSuccess?.value).toBeCloseTo(0.002, 12);
+    expect(done.uncachedInputPerSuccess?.value).toBeCloseTo(600, 9);
+    expect(done.latencyPerSuccess?.value).toBeCloseTo(100, 9);
   });
 
-  it('leaves every per-success metric unmeasured while a reflection is pending, and reports why', () => {
+  it('keeps the per-success metrics measured while a reflection is pending, and reports why the column is not', () => {
     for (const state of ['pending', 'running'] as const) {
       const report = reportOf(undefined, { state });
-      expect(report.metrics.costPerSuccess).toBeUndefined();
-      expect(report.metrics.callsPerSuccess).toBeUndefined();
-      expect(report.metrics.cacheHitRatio).toBeUndefined();
-      expect(report.cases[0]?.tokens?.unsettledReflections).toBe(1);
+      expect(report.metrics.costPerSuccess?.value).toBeCloseTo(0.002, 12);
+      expect(report.metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
+      expect((report.cases[0]?.tokens as { reflection?: { settled: boolean } } | undefined)?.reflection?.settled).toBe(false);
       expect(formatContextReport(report)).toContain('reflection');
     }
   });
 
-  it('treats a run with no recorded reflection as unmeasured rather than as a run without one', () => {
+  it('treats a run with no recorded reflection as an unsettled column rather than as a run without one', () => {
     const [first, ...rest] = transcripts(undefined);
     const { reflection: _recorded, ...unrecorded } = first as Transcript;
     const report = buildReportAs({ dataset, transcripts: [unrecorded, ...rest], model: 'real', seed: 1 });
+    const tokens = report.cases.find((entry) => entry.id === unrecorded.caseId)?.tokens as { reflection?: { settled: boolean } } | undefined;
 
-    expect(report.metrics.costPerSuccess).toBeUndefined();
-    expect(report.cases.find((entry) => entry.id === unrecorded.caseId)?.tokens?.unsettledReflections).toBe(1);
+    expect(report.metrics.costPerSuccess?.value).toBeCloseTo(0.002, 12);
+    expect(tokens?.reflection?.settled).toBe(false);
   });
 
-  it('counts a reflection that never ran as no call', () => {
-    expect(reportOf(undefined, { state: 'none' }).metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
-    expect(reportOf(undefined, { state: 'failed' }).metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
+  it('counts a reflection that never ran, or finished without a charge, as no reflection call', () => {
+    for (const reflection of [{ state: 'none' as const }, { state: 'failed' as const }, { state: 'done' as const }]) {
+      const tokens = reportOf(undefined, reflection).cases[0]?.tokens as { reflection?: unknown } | undefined;
+      expect(tokens?.reflection).toEqual({ calls: 0, inputTokens: 0, cost: 0, settled: true });
+    }
   });
 
-  it('settles a finished reflection without a charge as no call, since no call is made for an untrusted folder, with reflection off, after a run that was not a verified success, or with a role alias without structured output', () => {
-    const report = reportOf(undefined, { state: 'done' });
+  it('adds one reflection call per charge of a retried reflection to the column only', () => {
+    const report = reportOf(undefined, { state: 'done', charges: [reflectionCharge, { ...reflectionCharge, id: 2 }] });
+    const tokens = report.cases[0]?.tokens as { reflection?: unknown } | undefined;
+
     expect(report.metrics.callsPerSuccess?.value).toBeCloseTo(1, 12);
-    expect(report.cases[0]?.tokens?.unsettledReflections).toBe(0);
-  });
-
-  it('adds one call per charge of a retried reflection', () => {
-    const retried = { state: 'done' as const, charges: [reflectionCharge, { ...reflectionCharge, id: 2 }] };
-    const metrics = reportOf(undefined, retried).metrics;
-    expect(metrics.callsPerSuccess?.value).toBeCloseTo(3, 12);
-    expect(metrics.costPerSuccess?.value).toBeCloseTo(0.002 + 2 * 0.003, 12);
-    expect(metrics.latencyPerSuccess?.value).toBeCloseTo(100 + 2 * 70, 9);
+    expect(tokens?.reflection).toEqual({ calls: 2, inputTokens: 1000, cost: 0.006, settled: true });
   });
 });

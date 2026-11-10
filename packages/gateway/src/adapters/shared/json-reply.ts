@@ -1,3 +1,4 @@
+import { jsonReplyPathFor } from '@momonga/protocol';
 import type { AdapterRequest, Capabilities, JsonReplyPath, TextFormat } from '@momonga/protocol';
 import { renderSchema } from '../../dialect/render.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
@@ -12,9 +13,9 @@ export type JsonReplyFormat = { name: string; description?: string; strict?: boo
 
 export const jsonReplyPlanOf = (request: AdapterRequest, capabilities: Pick<Capabilities, 'structuredOutput' | 'jsonMode'>): JsonReplyPlan | undefined => {
   const format = request.text?.format;
-  if (format === undefined || format === null || format.type === 'text') return undefined;
-  if (format.type === 'json_object') return capabilities.jsonMode === 'json_object' ? { path: 'enforced', format } : { path: 'prompt' };
-  return capabilities.structuredOutput === 'json_schema' ? { path: 'enforced', format } : { path: 'prompt' };
+  const path = jsonReplyPathFor(format, capabilities);
+  if (path === undefined || format === undefined || format === null || format.type === 'text') return undefined;
+  return path === 'enforced' ? { path, format } : { path };
 };
 
 export const isJsonOnlyEnforced = (plan: JsonReplyPlan | undefined): boolean => plan?.path === 'enforced' && plan.format.type === 'json_object';

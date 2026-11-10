@@ -248,28 +248,26 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes the same call and stores the candidates when the run alias has no structured output', async () => {
+  it('makes no call, no charge and no candidate when the run alias reports no structured output, and ends done naming the role setting and the alias', async () => {
     const env = setup({ structured: false });
     const run = await queued(env);
-    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts'])));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts']), { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams).toHaveLength(1);
-    expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null });
-    expect(env.api.memories.candidates()).toHaveLength(1);
+    expect(env.gateway.streams).toEqual([]);
+    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.api.memories.candidates()).toEqual([]);
+    const job = env.api.reflection.get(run.id);
+    expect(job?.state).toBe('done');
+    expect(job?.lastError).toContain('models.roles.reflection');
+    expect(job?.lastError).toContain('fm');
   });
 
-  it('sends the same instructions whether or not the target has structured output, ending with the contract of the schema', async () => {
+  it('sends the fixed instructions, ending with the contract of the schema', async () => {
     const enforced = setup({ structured: true });
     await queued(enforced);
     enforced.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await enforced.reflector().runOne(SIGNAL);
-    const prompt = setup({ structured: false });
-    await queued(prompt);
-    prompt.gateway.script.push(textStep(CANDIDATE_REPLY([])));
-    await prompt.reflector().runOne(SIGNAL);
     const sent = enforced.gateway.streams[0]?.body.instructions;
-    expect(prompt.gateway.streams[0]?.body.instructions).toBe(sent);
     expect(sent?.endsWith(canonicalJson(REFLECTION_REPLY_SCHEMA))).toBe(true);
     expect(sent).toBe(REFLECTION_INSTRUCTIONS);
   });
@@ -284,7 +282,7 @@ describe('the reflection call', () => {
     ['a wrong kind', JSON.stringify({ candidates: [{ text: 'a fact', kind: 'rumour', paths: [] }] })],
     ['a text over the limit', JSON.stringify({ candidates: [{ text: 'x'.repeat(MEMORY_TEXT_MAX_CHARS + 1), kind: 'fact', paths: [] }] })],
   ])('ends the job once with the schema reason, keeps the charge and makes no candidate for %s', async (_label, reply) => {
-    const env = setup({ structured: false });
+    const env = setup({ structured: true });
     const run = await queued(env);
     env.gateway.script.push(textStep(reply, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
@@ -295,7 +293,7 @@ describe('the reflection call', () => {
   });
 
   it('treats an incomplete response as an invalid reply even when its text is a valid value', async () => {
-    const env = setup({ structured: false });
+    const env = setup({ structured: true });
     const run = await queued(env);
     env.gateway.script.push(incompleteStep([assistantMessage('m1', CANDIDATE_REPLY(['src/a.ts']))], 'max_output_tokens', usageOf(100, 20)));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');

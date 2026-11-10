@@ -15,7 +15,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const honoursNoBound: ProbeReport = { ...makeReport(1, 1), outputBoundField: 'none' };
 
 describe('the gateway reads context.unboundedOutputReserve from user settings per operation (O-R5-3 a, P2 item 7)', () => {
-  it('lists outputBoundField none for a probed-none record only while the user setting is on, with no restart', async () => {
+  it('lists outputBoundField none for a probed-none record by default and while the user setting is on, and not while it is off, with no restart', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     const models = { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } };
@@ -28,13 +28,13 @@ describe('the gateway reads context.unboundedOutputReserve from user settings pe
       return response.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities;
     };
 
-    expect((await listed()).outputBoundField).not.toBe('none');
-
-    writeSettings(home, { models, context: { unboundedOutputReserve: true } });
     expect((await listed()).outputBoundField).toBe('none');
 
     writeSettings(home, { models, context: { unboundedOutputReserve: false } });
     expect((await listed()).outputBoundField).not.toBe('none');
+
+    writeSettings(home, { models, context: { unboundedOutputReserve: true } });
+    expect((await listed()).outputBoundField).toBe('none');
     await handle.close();
   });
 });

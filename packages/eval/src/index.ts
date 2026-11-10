@@ -52,8 +52,8 @@ export {
   failedWithCleanup,
 } from './context-live.ts';
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
-export { parsePolicyOverlay } from './context-policy.ts';
-export type { PolicyOverlay } from './context-policy.ts';
+export { parsePolicyOverlay, policyDifferences, resolvePolicyOverlay } from './context-policy.ts';
+export type { PolicyOverlay, ResolvedPolicy } from './context-policy.ts';
 export { compactionFactsOf, goldRangesOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 export type { CompactionFacts, GoldRange, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
 export { QUALITY_METRICS } from './context-quality.ts';

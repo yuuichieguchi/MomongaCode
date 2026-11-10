@@ -21,6 +21,9 @@ const NON_QUALITY_METRICS = [
   'latencyPerSuccess',
   'cacheHitRatio',
   'layerShares',
+  'reflectionCostPerSuccess',
+  'reflectionCallsPerSuccess',
+  'costPerSuccessAll',
 ];
 
 const contextMetricsFields = (): string[] => {
@@ -62,7 +65,7 @@ describe('the quality metrics, the report and the gates cannot drift apart', () 
     for (const name of names()) expect(fields).toContain(name);
   });
 
-  it('ContextMetrics has no quality field outside the table', () => {
+  it('ContextMetrics has no quality field outside the table, the reflection column figures of design-core-on 3.4 Part A being reported and not gated', () => {
     const outside = contextMetricsFields().filter((field) => !names().includes(field) && !NON_QUALITY_METRICS.includes(field));
     expect(names().length).toBeGreaterThan(0);
     expect(outside).toEqual([]);

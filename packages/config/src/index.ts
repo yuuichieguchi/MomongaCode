@@ -52,6 +52,8 @@ export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpSe
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
+export { CORE_SETTING_KEYS, NON_CORE_SETTING_KEYS } from './core-settings.ts';
+export type { CoreSettingKey } from './core-settings.ts';
 export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
 export { resolveNetwork } from './network.ts';
 export type { NetworkEnvironment } from './network.ts';
@@ -62,6 +64,9 @@ export {
   defaultContextSettings,
   defaultMemorySettings,
   defaultToolsSettings,
+  mergeContextSettings,
+  mergeMemorySettings,
+  mergeToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 export type { RipgrepSetting } from './settings.ts';

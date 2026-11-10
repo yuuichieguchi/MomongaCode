@@ -72,6 +72,8 @@ const reportOf = (callsOf: (caseId: string) => readonly Call[]): ContextReport =
 const oneUnreported = (caseId: string): readonly Call[] => (caseId === 'a-off' ? [METERED_UNREPORTED] : [REPORTING]);
 const allOf = (call: Call) => (): readonly Call[] => [call];
 
+const NO_REFLECTION = { calls: 0, inputTokens: 0, cost: 0, settled: true };
+
 const tokensOf = (report: ContextReport, caseId: string) => report.cases.find((entry) => entry.id === caseId)?.tokens;
 
 const lineOf = (report: ContextReport, metric: string): string => formatContextReport(report).split('\n').find((line) => line.startsWith(`${metric} `)) ?? '';
@@ -82,11 +84,11 @@ const tokenGate = (baseline: ContextReport, candidate: ContextReport) =>
 const primaryOf = (comparison: ReturnType<typeof tokenGate>) =>
   comparison.gate.checks.find((check) => check.name === 'costPerSuccess' || check.name === 'uncachedInputPerSuccess');
 
-describe('eval reads the cache-read fact, not the wire 0', () => {
+describe('eval reads the cache-read fact, not the wire 0, beside a measured zero reflection column (design-core-on 3.5 item 3)', () => {
   it('leaves cachedInputTokens absent for a model.responded that carries the wire 0 and cacheReadNotReported', () => {
     const report = reportOf(oneUnreported);
 
-    expect(tokensOf(report, 'a-off')).toEqual({ calls: 1, unsettledReflections: 0, cacheReadNotReportedCalls: 1, inputTokens: 1000, latencyMs: 2000, unpriced: { cache_read_not_reported: 1 } });
+    expect(tokensOf(report, 'a-off')).toEqual({ calls: 1, unsettledReflections: 0, cacheReadNotReportedCalls: 1, inputTokens: 1000, latencyMs: 2000, unpriced: { cache_read_not_reported: 1 }, reflection: NO_REFLECTION });
   });
 
   it('gives a fully reporting case its sums, its reported input and a zero unreported count', () => {
@@ -102,6 +104,7 @@ describe('eval reads the cache-read fact, not the wire 0', () => {
       uncachedInputTokens: 500,
       cost: 0.002,
       latencyMs: 2000,
+      reflection: NO_REFLECTION,
     });
   });
 
@@ -118,6 +121,7 @@ describe('eval reads the cache-read fact, not the wire 0', () => {
       uncachedInputTokens: 500,
       latencyMs: 4000,
       unpriced: { cache_read_not_reported: 1 },
+      reflection: NO_REFLECTION,
     });
   });
 });
@@ -204,11 +208,11 @@ describe('the token gate on targets that do not report cache reads', () => {
 });
 
 describe('the context report format records the cache-read fact', () => {
-  it('is /6 and keeps a report with unreported calls through a round trip', () => {
+  it('is /7 and keeps a report with unreported calls through a round trip', () => {
     const report = reportOf(oneUnreported);
 
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/6');
-    expect(report.format).toBe('momonga-eval-context-report/6');
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/7');
+    expect(report.format).toBe('momonga-eval-context-report/7');
     expect(parseContextReport(encodeContextReport(report), 'stored.json')).toEqual(report);
   });
 
@@ -216,7 +220,7 @@ describe('the context report format records the cache-read fact', () => {
     const previous = encodeContextReport({ ...reportOf(oneUnreported), format: 'momonga-eval-context-report/4' } as unknown as ContextReport);
 
     expect(() => parseContextReport(previous, 'previous.json')).toThrow(
-      'previous.json: momonga-eval-context-report/4 reports do not record which calls the upstream reported cache reads for (an unreported cache read was recorded as 0), so momonga-eval-context-report/4 is retired and cannot be compared as momonga-eval-context-report/6;',
+      'previous.json: momonga-eval-context-report/4 reports do not record which calls the upstream reported cache reads for (an unreported cache read was recorded as 0), so momonga-eval-context-report/4 is retired and cannot be compared as momonga-eval-context-report/7;',
     );
   });
 

@@ -1,8 +1,8 @@
 import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock, RolePort } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, jsonReplyPathFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, TextFormat, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
@@ -178,12 +178,17 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const capabilities = await gateway.capabilities(alias, { signal });
+    const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
+    if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection target ${alias} reports no structured output` });
+      return;
+    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }],
-      text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } },
+      text: { format },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },
       ...outputBoundOf(capabilities, Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities))),

@@ -5,8 +5,9 @@ import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
-import { POLICY_OVERLAY_SCHEMA, normalisePolicyOverlay } from './context-policy.ts';
+import { RESOLVED_POLICY_SCHEMA } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
+import { NEW_PAIR_COMMANDS, RETIRED_POLICY_REASON } from './retired-formats.ts';
 import type { CompactionSetting, ContextDataset, ExpandedCase } from './context-dataset.ts';
 import { compactionFactsOf, goldRangesOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
 import { QUALITY_METRICS } from './context-quality.ts';
@@ -21,13 +22,14 @@ import { caseTotalsOf, hasInconsistentCacheRead, tokenFactsOf, tokenMetricsOf } 
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Answerer, Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/6';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/7';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
   'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
   'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
   'momonga-eval-context-report/4': 'which calls the upstream reported cache reads for (an unreported cache read was recorded as 0)',
   'momonga-eval-context-report/5': 'the price outcome of the calls (why a cost is unmeasured)',
+  'momonga-eval-context-report/6': `the resolved policy (${RETIRED_POLICY_REASON})`,
 };
 
 export const CONTEXT_MODELS = MODEL_KINDS;
@@ -88,6 +90,9 @@ export type ContextMetrics = {
   latencyPerSuccess?: RatioMetric;
   cacheHitRatio?: RatioMetric;
   layerShares?: Record<string, RatioMetric>;
+  reflectionCostPerSuccess?: RatioMetric;
+  reflectionCallsPerSuccess?: RatioMetric;
+  costPerSuccessAll?: RatioMetric;
 };
 
 export const DEFAULT_DATASET_SEED = 0;
@@ -294,14 +299,14 @@ type RunIdentity = { policy: PolicyOverlay; codeDigest: string };
 
 const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay | null; codeDigest: string | null } => {
   if (transcripts.length === 0) throw new EvalError('the report has no transcript to take the policy and the code digest from');
-  const known = transcripts.flatMap(({ policy, codeDigest }): RunIdentity[] => (policy === null || codeDigest === null ? [] : [{ policy: normalisePolicyOverlay(policy), codeDigest }]));
+  const known = transcripts.flatMap(({ policy, codeDigest }): RunIdentity[] => (policy === null || codeDigest === null ? [] : [{ policy, codeDigest }]));
   const [first] = known;
   if (first === undefined) return { policy: null, codeDigest: null };
   if (known.length < transcripts.length) {
     throw new EvalError(`${transcripts.length - known.length} of ${transcripts.length} transcripts record no policy and no code digest, so the report would mix runs of known and unknown identity`);
   }
   const policies = new Set(known.map((identity) => canonicalJson(identity.policy)));
-  if (policies.size > 1) throw new EvalError('the transcripts record different policy overlays, so they do not measure one run configuration');
+  if (policies.size > 1) throw new EvalError('the transcripts record more than one resolved policy, so they do not measure one run configuration');
   const digests = new Set(known.map((identity) => identity.codeDigest));
   if (digests.size > 1) throw new EvalError(`the transcripts record different codeDigest values (${[...digests].join(', ')}), so they were not produced by one build`);
   return first;
@@ -383,7 +388,6 @@ const CACHE_READ_CAUSES = {
   measuredOver: (counts: CacheReadCounts): string =>
     `over ${counts.calls - counts.notReported} of ${counts.calls} call(s), ${CACHE_READS_NOT_REPORTED} in ${counts.notReported} call(s) of ${counts.casesWithNotReported} case(s)`,
   inconsistent: 'a call reports more cached and written input than input',
-  unsettled: 'a reflection is pending, running past its bound or not recorded',
   noSuccess: 'no run succeeded',
   noInput: 'no input was sent',
 } as const;
@@ -402,7 +406,6 @@ const cacheReadCountsOf = (cases: readonly ContextCaseReport[]): CacheReadCounts
 export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly ContextCaseReport[]): string => {
   const totals = tokenTotalsOf(cases);
   const counts = cacheReadCountsOf(cases);
-  if (totals.some((entry) => entry.unsettledReflections > 0)) return CACHE_READ_CAUSES.unsettled;
   if (counts.calls === 0) return CACHE_READ_CAUSES.noInput;
   if (counts.notReported === counts.calls) return CACHE_READ_CAUSES.notReportedInAll(counts);
   if (metric === 'uncachedInputPerSuccess' && counts.notReported > 0) return CACHE_READ_CAUSES.notReportedInSome(counts);
@@ -421,7 +424,6 @@ export const unmeasuredCostCauseOf = (cases: readonly ContextCaseReport[]): stri
     const calls = totals.reduce((sum, entry) => sum + countOf(entry), 0);
     return calls === 0 ? [] : [pricedCallCount(calls, totals.filter((entry) => countOf(entry) > 0).length, text)];
   });
-  if (totals.some((entry) => entry.unsettledReflections > 0)) return CACHE_READ_CAUSES.unsettled;
   if (causes.length > 0) return causes.join('; ');
   return CACHE_READ_CAUSES.noSuccess;
 };
@@ -433,23 +435,32 @@ const cacheHitRatioLine = (metric: RatioMetric | undefined, cases: readonly Cont
   return `cacheHitRatio ${percent(metric.value)} (95% bootstrap ${percent(metric.low)}..${percent(metric.high)} over ${metric.clusters} case(s); ${metric.numerator} / ${metric.denominator}), n=${metric.clusters}${over}`;
 };
 
-const unsettledLine = (cases: readonly ContextCaseReport[]): string[] => {
-  const unsettled = cases.filter((entry) => (entry.tokens?.unsettledReflections ?? 0) > 0);
-  if (unsettled.length === 0) return [];
+const reflectionUnmeasuredCause = (cases: readonly ContextCaseReport[]): string => {
+  const unsettled = cases.filter((entry) => entry.tokens !== undefined && !entry.tokens.reflection.settled);
+  if (unsettled.length === 0) return 'a reflection charge has no recorded cost, or no run succeeded';
   const runs = unsettled.reduce((sum, entry) => sum + (entry.tokens?.unsettledReflections ?? 0), 0);
-  return [`reflection: ${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running past its bound or not recorded, so the per-success token metrics and cacheHitRatio are n/a`];
+  return `${runs} run(s) in ${unsettled.map((entry) => entry.id).join(', ')} have a reflection that is pending, running past its bound or not recorded`;
+};
+
+const reflectionLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]): string[] => {
+  const cause = reflectionUnmeasuredCause(cases);
+  return [
+    describeRatio('reflectionCostPerSuccess', metrics.reflectionCostPerSuccess, cause, decimals(6), ''),
+    describeRatio('reflectionCallsPerSuccess', metrics.reflectionCallsPerSuccess, cause, decimals(3), ''),
+    describeRatio('costPerSuccessAll', metrics.costPerSuccessAll, `${unmeasuredCostCauseOf(cases)}; ${cause}`, decimals(6), ''),
+  ];
 };
 
 const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]): string[] => {
   const shares = Object.entries(metrics.layerShares ?? {}).map(([name, share]) => `${name} ${percent(share.value)}`);
   return [
-    ...unsettledLine(cases),
     describeRatio('costPerSuccess', metrics.costPerSuccess, unmeasuredCostCauseOf(cases), decimals(6), ''),
     describeRatio('uncachedInputPerSuccess', metrics.uncachedInputPerSuccess, unmeasuredCauseOf('uncachedInputPerSuccess', cases), decimals(1), ''),
     describeRatio('callsPerSuccess', metrics.callsPerSuccess, 'no call was recorded or no run succeeded', decimals(3), ''),
     describeRatio('latencyPerSuccess', metrics.latencyPerSuccess, 'a call has no timing or no run succeeded', decimals(1), ' ms'),
     cacheHitRatioLine(metrics.cacheHitRatio, cases),
     shares.length === 0 ? 'layerShares n/a (no request recorded its layers)' : `layerShares ${shares.join(', ')} (estimated)`,
+    ...reflectionLines(metrics, cases),
   ];
 };
 
@@ -518,8 +529,11 @@ const clusteredSchema = closed({ successes: count, trials: count, rate, low: rat
 
 const ratioMetricSchema = closed({ value: rate, numerator: rate, denominator: rate, low: rate, high: rate, clusters: count }, ['value', 'numerator', 'denominator', 'low', 'high', 'clusters']);
 
+const reflectionColumnSchema = closed({ calls: count, inputTokens: count, cost: rate, settled: { type: 'boolean' } }, ['settled']);
+
 const caseTokensSchema = closed(
   {
+    reflection: reflectionColumnSchema,
     calls: count,
     unsettledReflections: count,
     cacheReadNotReportedCalls: count,
@@ -532,10 +546,8 @@ const caseTokensSchema = closed(
     unrecordedPrice: { type: 'integer', minimum: 1 },
     latencyMs: rate,
   },
-  ['calls', 'unsettledReflections', 'cacheReadNotReportedCalls'],
+  ['reflection', 'calls', 'unsettledReflections', 'cacheReadNotReportedCalls'],
 );
-
-const { $schema: _policyDialect, ...policySchema } = POLICY_OVERLAY_SCHEMA;
 
 const CONTEXT_REPORT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -555,7 +567,7 @@ const CONTEXT_REPORT_SCHEMA = {
       },
       unrecordedAnswers: count,
       modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
-      policy: { anyOf: [policySchema, { type: 'null' }] },
+      policy: { anyOf: [RESOLVED_POLICY_SCHEMA, { type: 'null' }] },
       codeDigest: { anyOf: [{ type: 'string', pattern: '^[0-9a-f]{64}$' }, { type: 'null' }] },
       metrics: closed(
         {
@@ -577,6 +589,9 @@ const CONTEXT_REPORT_SCHEMA = {
           latencyPerSuccess: ratioMetricSchema,
           cacheHitRatio: ratioMetricSchema,
           layerShares: { type: 'object', additionalProperties: ratioMetricSchema },
+          reflectionCostPerSuccess: ratioMetricSchema,
+          reflectionCallsPerSuccess: ratioMetricSchema,
+          costPerSuccessAll: ratioMetricSchema,
         },
         ['contrastiveFailures'],
       ),
@@ -646,7 +661,7 @@ export const parseContextReport = (text: string, source: string): ContextReport 
   const value = jsonOf(text, source);
   if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_CONTEXT_REPORT_FORMATS, value['format'])) {
     throw new EvalError(
-      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
+      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; every report older than ${CONTEXT_REPORT_FORMAT} has its ${RETIRED_POLICY_REASON}, so build a ${CONTEXT_REPORT_FORMAT} pair from one bundle: ${NEW_PAIR_COMMANDS}`,
     );
   }
   const verdict = validateContextReport(value);
