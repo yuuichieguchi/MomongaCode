@@ -5,6 +5,17 @@ export const SUPERVISED_ROLE_COMMANDS = { gateway: '__gateway', runtime: '__runt
 
 export const INTERNAL_COMMANDS = { supervise: '__supervise', updateCheck: '__update-check', ...SUPERVISED_ROLE_COMMANDS } as const;
 
+export type MomongaLaunch = { readonly args: readonly string[]; readonly choosesSecretStoreFromPath: boolean };
+
+export const MOMONGA_LAUNCHES = {
+  supervise: { args: [INTERNAL_COMMANDS.supervise], choosesSecretStoreFromPath: true },
+  updateCheck: { args: [INTERNAL_COMMANDS.updateCheck], choosesSecretStoreFromPath: true },
+  gateway: { args: [INTERNAL_COMMANDS.gateway], choosesSecretStoreFromPath: false },
+  runtime: { args: [INTERNAL_COMMANDS.runtime], choosesSecretStoreFromPath: false },
+  reportVersion: { args: ['--version'], choosesSecretStoreFromPath: false },
+  startDaemon: { args: ['daemon', 'start'], choosesSecretStoreFromPath: true },
+} as const satisfies Record<keyof typeof INTERNAL_COMMANDS | 'reportVersion' | 'startDaemon', MomongaLaunch>;
+
 export type SelfInvocation = { command: string; args: readonly string[] };
 
 export const selfInvocation = (self: SelfExecutable, subcommand: string, flags: readonly string[] = []): SelfInvocation =>

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { findProgramOnPath } from '@momonga/foundation/program-search';
 import { SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation/secret-store';
-import { INTERNAL_COMMANDS, SUPERVISED_ROLE_COMMANDS } from '../../packages/cli/src/daemon/launcher.ts';
+import { MOMONGA_LAUNCHES } from '../../packages/cli/src/daemon/launcher.ts';
 import { chosenSecretProgramOutsideFakes, givenSecretProgramOutsideFakes, isInsideFakeSecretPrograms, realFileOf } from '../../packages/testkit/src/secret-store-env-check.ts';
 
 const LAUNCHERS = ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork'] as const;
@@ -51,12 +51,15 @@ const realSecretProgram = (command: string | undefined, env: ProcessEnv, cwd: un
   return named && !isInsideFakeSecretPrograms(real) ? real : undefined;
 };
 
-const GIVEN_STORE_COMMANDS: ReadonlySet<string> = new Set(Object.values(SUPERVISED_ROLE_COMMANDS));
-const STORE_CHOOSING_COMMANDS: readonly string[] = Object.values(INTERNAL_COMMANDS).filter((command) => !GIVEN_STORE_COMMANDS.has(command));
+const STORE_CHOOSING_LAUNCHES: ReadonlyArray<readonly string[]> = Object.values(MOMONGA_LAUNCHES)
+  .filter((launch) => launch.choosesSecretStoreFromPath)
+  .map((launch) => launch.args);
 
-const storeChoosingSelfLaunch = (name: LauncherName, args: readonly unknown[]): string | undefined => {
-  const words = name === 'exec' || name === 'execSync' ? String(args[0]).split(/\s+/) : [String(args[0]), ...argvOf(args)];
-  return STORE_CHOOSING_COMMANDS.find((command) => words.includes(command));
+const startsWith = (words: readonly string[], args: readonly string[]): boolean => args.every((arg, index) => words[index] === arg);
+
+const storeChoosingLaunch = (name: LauncherName, args: readonly unknown[]): string | undefined => {
+  const argv = name === 'exec' || name === 'execSync' ? String(args[0]).trim().split(/\s+/).slice(1) : argvOf(args);
+  return STORE_CHOOSING_LAUNCHES.find((launch) => startsWith(argv, launch) || startsWith(argv.slice(1), launch))?.join(' ');
 };
 
 export const secretStoreLaunchRefusal = (name: LauncherName, args: readonly unknown[]): string | undefined => {
@@ -67,10 +70,10 @@ export const secretStoreLaunchRefusal = (name: LauncherName, args: readonly unkn
   if (program !== undefined) return `refused to launch ${command}: (i) it is the real secret store program ${program}, outside the fake directory`;
   const given = givenSecretProgramOutsideFakes(env);
   if (given !== undefined) return `refused to launch ${command}: (ii) its environment gives MOMONGA_SECRET_PROGRAM=${given}, outside the fake directory`;
-  const selfLaunch = storeChoosingSelfLaunch(name, args);
+  const selfLaunch = storeChoosingLaunch(name, args);
   if (selfLaunch !== undefined) {
     const chosen = chosenSecretProgramOutsideFakes(env);
-    if (chosen !== undefined) return `refused to launch ${command}: (iii) it is the product self-launch ${selfLaunch}, which would choose the secret store ${chosen} from its PATH, outside the fake directory`;
+    if (chosen !== undefined) return `refused to launch ${command}: (iii) it is the product launch of a MomongaCode binary with ${selfLaunch}, which would choose the secret store ${chosen} from its PATH, outside the fake directory`;
   }
   return undefined;
 };

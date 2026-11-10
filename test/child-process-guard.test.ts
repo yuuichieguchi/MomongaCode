@@ -4,12 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, minimalChildEnv } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_PROGRAM_ENV, minimalChildEnv, nodeCommandRunner } from '@momonga/foundation';
 import { fakeSecretProgramsBin, productTestEnv, spawnTracked, testHostPath } from '@momonga/testkit';
 import childProcessDefault, * as childProcessNamespace from '@momonga/testkit/child-process';
 import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from '@momonga/testkit/child-process';
-import { INTERNAL_COMMANDS, SUPERVISED_ROLE_COMMANDS, selfInvocation } from '../packages/cli/src/daemon/launcher.ts';
-import { UPDATE_CHECK_COMMAND } from '../packages/cli/src/update/background.ts';
+import { INTERNAL_COMMANDS, MOMONGA_LAUNCHES } from '../packages/cli/src/daemon/launcher.ts';
+import type { MomongaLaunch } from '../packages/cli/src/daemon/launcher.ts';
 import { nodeSpawnDetached } from '../packages/cli/src/node-ports.ts';
 import { secretStoreLaunchRefusal } from './support/child-process-guard.ts';
 
@@ -149,44 +149,61 @@ describe('the worker guard refuses a given MOMONGA_SECRET_PROGRAM outside the fa
   });
 });
 
-const GIVEN_STORE_COMMANDS: ReadonlySet<string> = new Set(Object.values(SUPERVISED_ROLE_COMMANDS));
-const STORE_CHOOSING_SELF_LAUNCHES = Object.values(INTERNAL_COMMANDS).filter((command) => !GIVEN_STORE_COMMANDS.has(command));
+const LAUNCHES = Object.entries(MOMONGA_LAUNCHES) as ReadonlyArray<readonly [string, MomongaLaunch]>;
+const STORE_CHOOSING = LAUNCHES.filter(([, launch]) => launch.choosesSecretStoreFromPath);
+const GIVEN_OR_NO_STORE = LAUNCHES.filter(([, launch]) => !launch.choosesSecretStoreFromPath);
 const SELF_KINDS = ['single-binary', 'script'] as const;
 
-describe('the worker guard refuses a product self-launch that would choose its store from a leaking PATH (iii)', () => {
-  const markerWriter = (marker: string): string => `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`;
-  const selfLaunchOf = (kind: (typeof SELF_KINDS)[number], subcommand: string, decoy: Decoy): { command: string; args: readonly string[] } => {
-    const invocation = selfInvocation(kind === 'script' ? { kind, execPath: process.execPath, script: path.join(decoy.dir, 'main.js') } : { kind, execPath: process.execPath }, subcommand);
-    if (kind === 'script') fs.writeFileSync(path.join(decoy.dir, 'main.js'), markerWriter(decoy.marker));
-    return kind === 'script' ? invocation : { command: invocation.command, args: ['-e', markerWriter(decoy.marker), ...invocation.args] };
+describe('the worker guard refuses a product launch of a MomongaCode binary that would choose its store from a leaking PATH (iii)', () => {
+  const binaryOf = (kind: (typeof SELF_KINDS)[number], args: readonly string[], decoy: Decoy): { command: string; args: readonly string[] } => {
+    if (kind === 'script') {
+      const script = path.join(decoy.dir, 'main.js');
+      fs.writeFileSync(script, `require('node:fs').writeFileSync(${JSON.stringify(decoy.marker)}, '')`);
+      return { command: process.execPath, args: [script, ...args] };
+    }
+    const binary = path.join(decoy.dir, 'momonga');
+    fs.writeFileSync(binary, `#!/bin/sh\n: > '${decoy.marker}'\n`, { mode: 0o755 });
+    return { command: binary, args };
   };
 
-  it('the store-choosing self-launches are the supervisor start and the update check', () => {
-    expect([...STORE_CHOOSING_SELF_LAUNCHES].sort()).toEqual([INTERNAL_COMMANDS.supervise, UPDATE_CHECK_COMMAND].sort());
+  it('the product marks the supervisor start, the update check and the daemon start as choosing their store from PATH', () => {
+    expect(STORE_CHOOSING.map(([name]) => name).sort()).toEqual(['startDaemon', 'supervise', 'updateCheck']);
+    expect(GIVEN_OR_NO_STORE.map(([name]) => name).sort()).toEqual(['gateway', 'reportVersion', 'runtime']);
   });
 
-  it('every product call of selfInvocation names its subcommand through INTERNAL_COMMANDS or SUPERVISED_ROLE_COMMANDS', () => {
-    const cliSources = fs.readdirSync(path.join(ROOT, 'packages/cli/src'), { recursive: true, encoding: 'utf8' }).filter((name) => name.endsWith('.ts') || name.endsWith('.tsx'));
-    const unnamed = cliSources.flatMap((name) =>
-      [...fs.readFileSync(path.join(ROOT, 'packages/cli/src', name), 'utf8').matchAll(/(?<!const )selfInvocation\(\s*[^,]+,\s*([^,)]+)/g)]
+  it('every internal command has a launch entry', () => {
+    expect(LAUNCHES.flatMap(([, launch]) => launch.args)).toEqual(expect.arrayContaining(Object.values(INTERNAL_COMMANDS)));
+  });
+
+  it('product sources name the arguments of a MomongaCode launch only through the launcher constants', () => {
+    const cliSources = fs.readdirSync(path.join(ROOT, 'packages/cli/src'), { recursive: true, encoding: 'utf8' }).filter((name) => (name.endsWith('.ts') || name.endsWith('.tsx')) && name !== 'daemon/launcher.ts');
+    const literalOf = (args: readonly string[]): RegExp => new RegExp(`\\[\\s*${args.map((arg) => `['"]${arg}['"]`).join('\\s*,\\s*')}\\s*\\]`);
+    const offenders = cliSources.flatMap((name) => {
+      const source = fs.readFileSync(path.join(ROOT, 'packages/cli/src', name), 'utf8');
+      const literalLists = LAUNCHES.filter(([, launch]) => literalOf(launch.args).test(source)).map(([launchName]) => `${name}: a literal argument list of ${launchName}`);
+      const unnamedSelf = [...source.matchAll(/selfInvocation\(\s*[^,]+,\s*([^,)]+)/g)]
         .map((match) => (match[1] as string).trim())
         .filter((subcommand) => !/^(INTERNAL_COMMANDS|SUPERVISED_ROLE_COMMANDS)[.[]/.test(subcommand) && subcommand !== 'UPDATE_CHECK_COMMAND')
-        .map((subcommand) => `${name}: ${subcommand}`),
-    );
-    expect(unnamed).toEqual([]);
+        .map((subcommand) => `${name}: selfInvocation with ${subcommand}`);
+      return [...literalLists, ...unnamedSelf];
+    });
+    expect(offenders).toEqual([]);
+    const install = fs.readFileSync(path.join(ROOT, 'packages/cli/src/update/install.ts'), 'utf8');
+    expect(install).toContain('MOMONGA_LAUNCHES.reportVersion.args');
+    expect(install).toContain('MOMONGA_LAUNCHES.startDaemon.args');
   });
 
-  describe.each(STORE_CHOOSING_SELF_LAUNCHES)('%s', (subcommand) => {
+  describe.each(STORE_CHOOSING)('%s', (_name, launch) => {
     it.each(SELF_KINDS)('through the real spawn port as a %s with a hand-built PATH of /usr/bin is refused before exec', async (kind) => {
-      await expectRefusedBeforeLaunch(new RegExp(`\\(iii\\) it is the product self-launch ${subcommand}, which would choose the secret store /usr/bin/security`), (d) =>
-        nodeSpawnDetached({ ...selfLaunchOf(kind, subcommand, d), env: { PATH: '/usr/bin:/bin', HOME: d.dir }, cwd: d.dir }),
+      await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with .*, which would choose the secret store \/usr\/bin\/security/, (d) =>
+        nodeSpawnDetached({ ...binaryOf(kind, launch.args, d), env: { PATH: '/usr/bin:/bin', HOME: d.dir }, cwd: d.dir }),
       );
     });
 
     it.each(SELF_KINDS)('through the real spawn port as a %s with productTestEnv starts', async (kind) => {
       const decoy = decoySecurity();
       try {
-        await nodeSpawnDetached({ ...selfLaunchOf(kind, subcommand, decoy), env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: decoy.dir }), cwd: decoy.dir }).exit;
+        await nodeSpawnDetached({ ...binaryOf(kind, launch.args, decoy), env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: decoy.dir }), cwd: decoy.dir }).exit;
         expect(fs.existsSync(decoy.marker)).toBe(true);
       } finally {
         fs.rmSync(decoy.dir, { recursive: true, force: true });
@@ -194,8 +211,18 @@ describe('the worker guard refuses a product self-launch that would choose its s
     });
   });
 
-  it.each(Object.values(SUPERVISED_ROLE_COMMANDS))('the supervised role %s, which uses the store it is given, is not judged by its PATH', (subcommand) => {
-    expect(secretStoreLaunchRefusal('spawn', [process.execPath, [subcommand], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+  it('the update restart, through the real command runner with a hand-built PATH of /usr/bin, is refused before exec', async () => {
+    await expectRefusedBeforeLaunch(/\(iii\) it is the product launch of a MomongaCode binary with daemon start/, (d) =>
+      nodeCommandRunner(binaryOf('single-binary', [], d).command, MOMONGA_LAUNCHES.startDaemon.args, { env: { PATH: '/usr/bin:/bin', HOME: d.dir }, timeoutMs: 30_000, signal: new AbortController().signal }),
+    );
+  });
+
+  it.each(GIVEN_OR_NO_STORE)('%s, which chooses no store from PATH, is not judged by its PATH', (_name, launch) => {
+    expect(secretStoreLaunchRefusal('spawn', [process.execPath, [...launch.args], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
+  });
+
+  it('a program whose arguments only mention the words later is not a MomongaCode launch', () => {
+    expect(secretStoreLaunchRefusal('spawn', ['/bin/echo', ['say', 'the', 'daemon', 'start'], { env: { PATH: MINIMAL_CHILD_PATH } }])).toBeUndefined();
   });
 });
 
