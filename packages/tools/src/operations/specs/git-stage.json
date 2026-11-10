@@ -1,0 +1,28 @@
+{
+  "name": "GitStage",
+  "description": "Stages the given files for the next commit as they are in the working tree: a changed or new file is added, a deleted file is staged as deleted. Each path is read literally, relative to the working directory. The result is checked against the repository: nothing under the given paths may be left unstaged.",
+  "kind": "execute",
+  "sideEffect": "exec",
+  "title": "Stage {input.paths}",
+  "subject": { "kind": "repo" },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "paths": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "The files or directories to stage" }
+    },
+    "required": ["paths"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 60000,
+  "observe": [
+    { "id": "indexTree", "via": { "argv": ["git", "write-tree"], "extract": "trim" } },
+    { "id": "unstaged", "via": { "argv": ["git", "--literal-pathspecs", "ls-files", "--modified", "--deleted", "--others", "--exclude-standard", "--", { "each": "input.paths" }], "extract": "trim" } }
+  ],
+  "effect": { "argv": ["git", "--literal-pathspecs", "add", "--", { "each": "input.paths" }] },
+  "applied": [["after.unstaged", { "literal": "" }]],
+  "unchanged": [["after.indexTree", "before.indexTree"]],
+  "guard": "compare_and_set",
+  "supersedes": [["git", "add"]],
+  "report": "Nothing under {input.paths} is left unstaged. The index tree is {after.indexTree}."
+}

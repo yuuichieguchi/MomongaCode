@@ -1,0 +1,29 @@
+{
+  "name": "GitUpdate",
+  "description": "Fast-forwards the checked-out branch to the fetched commits of a remote branch (run GitFetch first). It never creates a merge commit: when the checked-out branch and the remote branch have diverged the call fails and nothing changes.",
+  "kind": "execute",
+  "sideEffect": "exec",
+  "title": "Fast-forward to {input.remote}/{input.branch}",
+  "subject": { "kind": "repo", "refs": ["{input.branch}"] },
+  "approval": "rule",
+  "input": {
+    "type": "object",
+    "properties": {
+      "remote": { "type": "string", "pattern": "^[^-\\s][^\\s]*$", "description": "The remote name" },
+      "branch": { "type": "string", "refName": true, "description": "The branch name on the remote" }
+    },
+    "required": ["remote", "branch"],
+    "additionalProperties": false
+  },
+  "timeoutMs": 60000,
+  "observe": [
+    { "id": "head", "via": { "argv": ["git", "rev-parse", "--verify", "-q", "HEAD"], "extract": "trim", "emptyOnFailure": true } },
+    { "id": "behind", "via": { "argv": ["git", "rev-list", "--count", "HEAD..refs/remotes/{input.remote}/{input.branch}"], "extract": "trim" } }
+  ],
+  "effect": { "argv": ["git", "merge", "-q", "--ff-only", "refs/remotes/{input.remote}/{input.branch}"] },
+  "applied": [["after.behind", { "literal": "0" }]],
+  "unchanged": [["after.head", "before.head"]],
+  "guard": "compare_and_set",
+  "supersedes": [["git", "pull"]],
+  "report": "The checked-out branch is at {after.head} and contains every commit of {input.remote}/{input.branch}."
+}

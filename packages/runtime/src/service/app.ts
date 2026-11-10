@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { MarkerOwners } from '@momonga/tools';
 import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import type { ProjectMandate } from '@momonga/config';
 import type { AutoFitKey, CredentialRules, PermissionRule } from '@momonga/config';
 import { denyingRuleFor } from '@momonga/policy';
 import { shellCommandSubject } from '@momonga/tools';
@@ -63,6 +64,16 @@ import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
 import { runTermsOf } from './delegation.ts';
 import type { DelegationPort } from './delegation.ts';
+
+const projectMandateOf = async (delegation: DelegationPort | undefined, cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined> => {
+  if (delegation === undefined) return undefined;
+  try {
+    return await delegation.projectMandate(cwd, signal);
+  } catch (error) {
+    if (error instanceof ConfigError) throw invalidRequest(error.message, 'mandate');
+    throw error;
+  }
+};
 import { readAutoClassifierView } from './auto-classifier-view.ts';
 import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
@@ -452,6 +463,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       request: { ...(body.mandate === undefined ? {} : { mandate: body.mandate }), ...(body.limits === undefined ? {} : { limits: body.limits }), ...(body.timeoutMs === undefined ? {} : { timeoutMs: body.timeoutMs }) },
       defaults: deps.defaults,
       settings: deps.delegation?.settings() ?? {},
+      ...(deps.delegation === undefined ? {} : { project: () => projectMandateOf(deps.delegation, session.cwd, context.req.raw.signal) }),
       billing: async () => {
         if (deps.delegation === undefined || sessionModel === undefined) return { metered: false, priced: false };
         return deps.delegation.chainBilling(sessionModel.canon, context.req.raw.signal);

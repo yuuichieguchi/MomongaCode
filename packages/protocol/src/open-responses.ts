@@ -308,7 +308,7 @@ export type CreateResponseBody = {
   safety_identifier?: string | null;
   service_tier?: string | null;
   background?: boolean;
-  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean };
+  momonga?: { cache?: PromptCacheCounts; exact_model?: boolean; max_cost_nano?: number; max_input_tokens?: number };
 };
 
 type ResponseEvent<T extends string> = { type: T; sequence_number: number; response: ResponseResource };

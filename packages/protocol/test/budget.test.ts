@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import { admitRequest, composeBudget, nanoOfAmount, usdOfNano } from '@momonga/protocol';
+import { describe, expect, it, vi } from 'vitest';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+import { admitRequest, composeBudget, nanoOfAmount, nanoOfCost, nanoOfDecimal, nanoOfUnits, usdOfNano } from '@momonga/protocol';
 import type { AdmissionAsk, TreeSpend } from '@momonga/protocol';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
+
+const seeded = (seed: number) => {
+  let state = seed >>> 0;
+  return (): number => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
 
 const NOTHING: TreeSpend = { totalTokens: 0, costNano: 0, unpricedCalls: 0, reservedTokens: 0, reservedNano: 0 };
 
@@ -10,23 +24,53 @@ describe('the money meter counts in whole nano-USD, rounded up', () => {
     expect(nanoOfAmount(0)).toBe(0);
     expect(nanoOfAmount(0.000000001)).toBe(1);
     expect(nanoOfAmount(1.5)).toBe(1_500_000_000);
-    expect(nanoOfAmount(12)).toBe(12_000_000_001);
+    expect(nanoOfAmount(9)).toBe(9_000_000_000);
+    expect(nanoOfAmount(12)).toBe(12_000_000_000);
+    expect(nanoOfAmount(9.1)).toBe(9_100_000_000);
+    expect(nanoOfAmount(1_000_000)).toBe(1_000_000_000_000_000);
     expect(nanoOfAmount(0.0000000011)).toBe(2);
   });
 
-  it('never counts below the exact amount, and less than one nano above it (up to three where a double no longer holds fifteen decimals)', () => {
-    const digits = ['000000', '000001', '500000', '999999'];
-    for (const whole of [0n, 1n, 37n, 999n]) {
-      for (const nano of [0n, 1n, 123_456_789n, 999_999_999n]) {
-        for (const below of digits) {
-          const exact = (whole * 10n ** 9n + nano) * 1_000_000n + BigInt(below);
-          const amount = Number(`${whole}.${nano.toString().padStart(9, '0')}${below}`);
-          const counted = BigInt(nanoOfAmount(amount)) * 1_000_000n;
-          expect(counted, String(amount)).toBeGreaterThanOrEqual(exact);
-          expect(counted, String(amount)).toBeLessThan(exact + (whole >= 9n ? 3_000_000n : 1_000_000n));
-        }
-      }
+  it('counts a generated amount of whole nano exactly, at every size up to the largest limit', () => {
+    const random = seeded(20261111);
+    for (let round = 0; round < 20_000; round += 1) {
+      const whole = BigInt(Math.floor(random() * 10 ** Math.floor(random() * 7)));
+      const nano = BigInt(Math.floor(random() * 1_000_000_000));
+      const text = `${whole}.${nano.toString().padStart(9, '0')}`;
+      const exact = Number(whole * 1_000_000_000n + nano);
+      expect(nanoOfDecimal(text), text).toBe(exact);
+      expect(nanoOfAmount(Number(text)), text).toBe(exact);
     }
+  });
+
+  it('never counts a generated decimal text below its exact value, and less than one nano above it', () => {
+    const random = seeded(7);
+    for (let round = 0; round < 20_000; round += 1) {
+      const whole = BigInt(Math.floor(random() * 1_000_000));
+      const fractionDigits = Math.floor(random() * 16);
+      const fraction = Array.from({ length: fractionDigits }, () => String(Math.floor(random() * 10))).join('');
+      const text = fraction === '' ? String(whole) : `${whole}.${fraction}`;
+      const exactUnits = BigInt(`${whole}${fraction.padEnd(15, '0')}`);
+      const counted = BigInt(nanoOfDecimal(text)) * 1_000_000n;
+      expect(counted >= exactUnits, text).toBe(true);
+      expect(counted < exactUnits + 1_000_000n, text).toBe(true);
+      expect(nanoOfUnits(exactUnits.toString()), text).toBe(nanoOfDecimal(text));
+    }
+  });
+
+  it('reads the exponent form a number prints in', () => {
+    expect(nanoOfDecimal('1e-7')).toBe(100);
+    expect(nanoOfDecimal('1.5e-7')).toBe(150);
+    expect(nanoOfDecimal('2.5e+3')).toBe(2_500_000_000_000);
+    expect(() => nanoOfDecimal('1e+300')).toThrow(RangeError);
+    expect(() => nanoOfDecimal('-1')).toThrow(RangeError);
+    expect(() => nanoOfDecimal('1,5')).toThrow(RangeError);
+  });
+
+  it('counts a cost from its exact price units when the record carries them, and from the decimal text of the amount otherwise', () => {
+    expect(nanoOfCost({ amount: 17, units: '17000000000000001' })).toBe(17_000_000_001);
+    expect(nanoOfCost({ amount: 17 })).toBe(17_000_000_000);
+    expect(() => nanoOfUnits('1.5')).toThrow(RangeError);
   });
 
   it('keeps the sum of a thousand charges at or above the exact sum', () => {

@@ -15,7 +15,7 @@ import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 import { offeredInBody } from './tool-offer.ts';
 import type { OfferedInBody } from './tool-offer.ts';
-import { heldOutput, heldVerdictOf } from './held-calls.ts';
+import { hasHeld, heldOutput, heldVerdictOf, quiesce } from './held-calls.ts';
 import { heldSessionOf } from './known.ts';
 import type { HeldSession } from './known.ts';
 import { holdSandbox } from './held-sandbox.ts';
@@ -84,6 +84,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.added === undefined ? {} : { added: result.added }),
           ...(result.removed === undefined ? {} : { removed: result.removed }),
           ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+          ...(result.effect === undefined ? {} : { effect: result.effect }),
         }
       : {
           type: 'tool.reconciled',
@@ -93,6 +94,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(outcome.interrupted === undefined ? {} : { interrupted: outcome.interrupted }),
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
+          ...(result.effect === undefined ? {} : { effect: result.effect }),
         };
   return [
     settled,
@@ -139,16 +141,19 @@ const requireSuggestedRule = (callId: string, call: PendingCall): string => {
 
 const ONCE_OPTIONS: PermissionOption[] = approvalOptions(undefined);
 
-const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome, offeredOptions?: PermissionOption[]): Promise<string> => {
+type HeldRequest = { options: PermissionOption[]; late: boolean };
+
+const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome, held?: HeldRequest): Promise<string> => {
   const { options, journal } = ctx;
   const created = await options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
-    options: offeredOptions ?? approvalOptions(outcome.suggestedRule),
+    options: held?.options ?? approvalOptions(outcome.suggestedRule),
     event: {
       subjectDigest: outcome.subjectDigest,
       reason: outcome.decision.reason,
       ...(outcome.suggestedRule === undefined ? {} : { suggestedRule: outcome.suggestedRule }),
     },
+    ...(held === undefined ? {} : { held: { footprint: { reads: [...outcome.footprint.reads], writes: [...outcome.footprint.writes] }, ...(held.late ? {} : { placeholder: heldOutput }) } }),
   });
   if (created.kind === 'lease_lost') return ctx.control.lost();
   journal.sync();
@@ -249,15 +254,10 @@ const blockersOf = (ctx: ClaimContext, calls: readonly ToolCall[]) =>
     .map(([callId, heldCall]) => ({ callId, footprint: heldCall.footprint }));
 
 const holdCalls = async (ctx: ClaimContext, asking: readonly NeedsApprovalOutcome[], late: boolean): Promise<void> => {
-  for (const outcome of asking) {
-    const approvalId = await requestApproval(ctx, outcome, ONCE_OPTIONS);
-    const reason = outcome.decision.reason;
-    ctx.journal.append([
-      { type: 'tool.held', callId: outcome.callId, approvalId, reason, footprint: { reads: [...outcome.footprint.reads], writes: [...outcome.footprint.writes] } },
-      ...(late ? [] : [{ type: 'tool.completed' as const, callId: outcome.callId, status: 'failed' as const, output: heldOutput(approvalId), denial: { source: 'held' as const, reason } }]),
-    ]);
-  }
+  for (const outcome of asking) await requestApproval(ctx, outcome, { options: ONCE_OPTIONS, late });
 };
+
+const blockedByHeld = (outcome: CallOutcome): boolean => outcome.kind === 'result' && outcome.result.denial?.source === 'held';
 
 export const settleHeld = async (ctx: ClaimContext): Promise<Flow | number> => {
   const { journal, options, run } = ctx;
@@ -393,6 +393,8 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
   if (ctx.delegation !== undefined && asking.length > 0) {
     await holdCalls(ctx, asking, late);
     asking.length = 0;
+  } else if (!late && hasHeld(journal.state) && outcomes.length > 0 && outcomes.every(blockedByHeld)) {
+    return quiesce(ctx);
   }
   if (asking.length > 0 || inputs.length > 0) {
     for (const outcome of asking) await requestApproval(ctx, outcome);

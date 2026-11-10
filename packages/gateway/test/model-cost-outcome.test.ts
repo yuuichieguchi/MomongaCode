@@ -18,7 +18,7 @@ const outcomeOf = (billing: 'metered' | 'local' | 'plan' | 'unknown', table: Ret
 
 describe('modelCostOf returns the price outcome and never null', () => {
   it('returns the cost of a priced call as a priced outcome', () => {
-    expect(outcomeOf('metered', definePriceTable([ENTRY]))).toEqual({ kind: 'priced', cost: { amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' } });
+    expect(outcomeOf('metered', definePriceTable([ENTRY]))).toEqual({ kind: 'priced', cost: { amount: 0.000076, units: '76000000000', currency: 'USD', priceVersion: '1970-01-01' } });
   });
 
   it('returns no_price_entry with the reason "no price table" when there is no price table', () => {
@@ -75,7 +75,7 @@ describe('the response records exactly one of cost and unpriced (I-P1)', () => {
   it('records cost 0 at local and no unpriced for a local target, with no price table', async () => {
     const terminal = terminalOf(await streamResponse(await startAnthropicGateway({ script: [plainTurn()], config: billed('local') })));
 
-    expect(terminal.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
+    expect(terminal.response.momonga.cost).toEqual({ amount: 0, units: '0', currency: 'USD', priceVersion: 'local' });
     expect('unpriced' in terminal.response.momonga).toBe(false);
   });
 
@@ -90,7 +90,7 @@ describe('the response records exactly one of cost and unpriced (I-P1)', () => {
   it('records cost and no unpriced for a priced metered call', async () => {
     const terminal = terminalOf(await streamResponse(await startAnthropicGateway({ script: [plainTurn()], priceTable: definePriceTable([ENTRY]) })));
 
-    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' });
+    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, units: '76000000000', currency: 'USD', priceVersion: '1970-01-01' });
     expect('unpriced' in terminal.response.momonga).toBe(false);
     expect(outcomeOf('metered', undefined)).toMatchObject({ kind: 'unpriced' });
   });

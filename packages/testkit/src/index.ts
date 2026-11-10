@@ -245,6 +245,8 @@ export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
 export type { LoopbackHandler, LoopbackServer } from './loopback-http.ts';
 export { LAB_DESCRIPTOR, REPOSITORY_PATH, startFakeForge } from './fake-forge.ts';
 export type { FakeForge, FakeForgeRequest, FakePullRequest, Fault, ForgeShape } from './fake-forge.ts';
+export { startFakeGitHttp } from './fake-git-http.ts';
+export type { FakeGitHttp, FakeGitHttpOptions } from './fake-git-http.ts';
 export { startMcpOauthFixture } from './mcp-oauth-fixture.ts';
 export type { AuthorizeMode, McpOauthFixture, OauthFixtureRecord, TokenVerdict } from './mcp-oauth-fixture.ts';
 export {

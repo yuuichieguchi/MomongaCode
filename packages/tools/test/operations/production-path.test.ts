@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { Sandbox, SandboxCommand, SandboxPolicy } from '@momonga/sandbox';
@@ -8,7 +9,7 @@ import type { CallOutcome, ResultOutcome } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout, policyFor, ruleFor, sessionTmpDirOf } from '../helpers.ts';
 import type { Layout } from '../helpers.ts';
-import { NO_FORGE, contextFor, makeGitWorld, recordOf } from './support.ts';
+import { NO_FORGE, contextFor, makeGitWorld, onCleanup, recordOf } from './support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -49,7 +50,7 @@ const setup = async (options: { realSandbox: boolean; origin?: string }) => {
   const markerDir = path.join(world.base, 'markers');
   fs.mkdirSync(markerDir);
   const tools = createOperationTools({
-    runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir }),
+    runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: policyForReconcile(), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
     readGit: hostGitReader,
     forge: NO_FORGE,
     settings: { protectedRefs: ['release/*'] },
@@ -140,7 +141,7 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     const markerDir = path.join(world.base, 'markers');
     fs.mkdirSync(markerDir);
     const tools = createOperationTools({
-      runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir }),
+      runArgv: createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: reconcilePolicy, release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot: world.base }),
       readGit: hostGitReader,
       forge: NO_FORGE,
       settings: {},
@@ -156,6 +157,46 @@ describe.skipIf(!HAS_REAL_SANDBOX)('the reconcile of an operation, which has no 
     expect(reconciled.outcome).toBe('already_applied');
     expect(spawns.length).toBeGreaterThan(0);
     expect(spawns.every((spawn) => spawn.policy === reconcilePolicy && spawn.policy.network === 'deny')).toBe(true);
+  });
+});
+
+describe.skipIf(!HAS_REAL_SANDBOX)('the credential of a git child inside the real sandbox', () => {
+  const CREDENTIAL = 'fake-git-credential-for-tests';
+
+  it('reaches the child through its askpass program only: the sandbox lets the child ask, and no argument, environment value or output carries it', async () => {
+    const world = makeGitWorld();
+    const layout: Layout = { ...makeLayout(), root: world.base, home: world.home, project: world.work, outside: path.join(world.base, 'outside') };
+    const tmpDir = sessionTmpDirOf(layout);
+    const sandboxTmp = path.join(world.base, 'sandbox-tmp');
+    fs.mkdirSync(sandboxTmp);
+    const spawns: Array<Spawn & { env: Readonly<Record<string, string>> }> = [];
+    const host = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
+    const sandbox: Sandbox = {
+      kind: host.kind,
+      spawn: (command: SandboxCommand, policy, signal) => {
+        spawns.push({ argv: command.argv, policy, env: command.env });
+        return host.spawn(command, policy, signal);
+      },
+    };
+    const markerDir = path.join(world.base, 'markers');
+    fs.mkdirSync(markerDir);
+    const credentialRoot = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cred-')));
+    onCleanup(() => fs.rmSync(credentialRoot, { recursive: true, force: true }));
+    const runArgv = createSandboxedArgvRunner({ reconcileSandbox: async () => ({ sandbox, sandboxPolicy: policyFor({ layout, tmpDir }), release: () => undefined }), shellHost: nodeShellHost(), outboundNetwork: UNCONFIGURED_NETWORK, markerDir, credentialRoot });
+    const ctx = contextFor(world.work, world.env);
+    const ask = `"$GIT_ASKPASS" "Password for 'https://x-access-token@forge.example': "`;
+    const options = { cwd: world.work, env: world.env, signal: ctx.signal, network: 'none' as const, context: ctx, effect: false };
+
+    const answered = await runArgv(['/bin/sh', '-c', ask], { ...options, credentials: [{ host: 'forge.example', username: 'x-access-token', password: CREDENTIAL }] });
+    expect(answered).toMatchObject({ exitCode: 0, stdout: '[redacted]\n' });
+    const [spawn] = spawns;
+    expect(spawn?.policy.unixSocketAllow?.some((entry) => entry.startsWith(credentialRoot))).toBe(true);
+    expect(spawn?.argv.some((argument) => argument.includes(CREDENTIAL))).toBe(false);
+    expect(Object.values(spawn?.env ?? {}).some((value) => value.includes(CREDENTIAL))).toBe(false);
+    expect(fs.readdirSync(credentialRoot)).toEqual([]);
+
+    const unanswered = await runArgv(['/bin/sh', '-c', `[ -z "\${GIT_ASKPASS:-}" ] && echo none`], options);
+    expect(unanswered).toMatchObject({ exitCode: 0, stdout: 'none\n' });
   });
 });
 

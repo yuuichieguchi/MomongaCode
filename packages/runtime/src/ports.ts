@@ -11,7 +11,7 @@ import type {
   HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
-import type { MemoryView, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
+import type { MemoryView, ModelQuote, PermissionMode, RuleVerdict, TargetAnswers } from '@momonga/protocol';
 import type { GatewayListing, GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
@@ -39,6 +39,7 @@ export type GatewayPort = {
   model(model: string, options: { signal: AbortSignal }): Promise<GatewayModel>;
   listing(options: { signal: AbortSignal }): Promise<GatewayListing>;
   cancel(idempotencyKey: string, options: { signal: AbortSignal }): Promise<boolean>;
+  quote(model: string, options: { signal: AbortSignal }): Promise<ModelQuote>;
 };
 
 export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };

@@ -2,6 +2,7 @@ import type { CallStop } from './call-stop.ts';
 import type { Clock, NetworkScope, OutboundNetwork } from '@momonga/foundation';
 import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
+import { OPERATION_EFFECT_OUTCOMES } from '@momonga/protocol';
 import type { DiffHunk, ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { RipgrepLocator } from './ripgrep-locator.ts';
@@ -122,15 +123,18 @@ export type ReconcileContext = SubjectContext & {
 
 export const OPERATION_RECONCILE_OUTCOMES = ['already_applied', 'not_applied', 'unknown'] as const;
 
+export type OperationEffectOutcome = (typeof OPERATION_EFFECT_OUTCOMES)[number];
+
 export type GateFacts = Record<string, unknown>;
 
 export type GateCall = { signal: AbortSignal; env: Readonly<Record<string, string>> };
 
-export type OperationEffect = { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' };
+export type OperationEffect = { operation: string; target: string; outcome: OperationEffectOutcome };
 
 export type ReconcileResult = {
   outcome: (typeof OPERATION_RECONCILE_OUTCOMES)[number];
   output: string;
+  effect?: OperationEffect;
 };
 
 export const TOOL_TIERS = ['essential', 'common', 'optional'] as const;

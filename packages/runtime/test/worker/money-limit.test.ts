@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { definePriceTable } from '@momonga/observability';
 import type { CreateResponseBody } from '@momonga/protocol';
-import { chainPrice } from '../../src/worker/budget.ts';
+import { admitRequest } from '@momonga/protocol';
+import type { AdmissionAsk, TreeSpend } from '@momonga/protocol';
+import { OUTPUT_FLOOR_TOKENS, admitStep } from '../../src/worker/budget.ts';
 import { FAKE_ADAPTER, FAKE_PROVIDER, PRIMARY_TARGET } from './fake-gateway.ts';
 import { makeEnv } from './harness.ts';
-import { callsStep, textStep } from './scripts.ts';
+import { callsStep, failedStep, textStep } from './scripts.ts';
 
 const PRICES = definePriceTable([{ provider: FAKE_PROVIDER, model: 'upstream-a', effectiveFrom: '2026-01-01', inputPerMTok: 0.001, outputPerMTok: 15, currency: 'USD' }]);
 
@@ -14,9 +16,10 @@ const metered = (env: Env): void => {
   env.gateway.chainsByModel[env.session.model] = [PRIMARY_TARGET];
   env.gateway.memberFacts = { [PRIMARY_TARGET]: { adapter: FAKE_ADAPTER, upstream: 'upstream-a', answers: 'model', billing: 'metered', provider: FAKE_PROVIDER } };
   env.gateway.billed = { inputPerMTok: 0.001, outputPerMTok: 15 };
+  env.gateway.prices = PRICES;
 };
 
-const worker = (env: Env) => env.worker('worker-1', { priceTable: () => PRICES });
+const worker = (env: Env) => env.worker('worker-1');
 
 const requestBodies = (env: Env, runId: string): CreateResponseBody[] => env.ofType(runId, 'model.requested').map((event) => event.body as CreateResponseBody);
 
@@ -71,7 +74,9 @@ describe('the money limit of a run is a ceiling held by admission before each mo
     env.gateway.script.push(textStep('never sent'));
     const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
 
-    await env.runOnce(env.worker('worker-1', { priceTable: () => definePriceTable([]) }));
+    env.gateway.prices = definePriceTable([]);
+
+    await env.runOnce(worker(env));
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
     expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'cost', cause: 'unpriced', limit: 1_000_000_000 })]);
@@ -120,27 +125,85 @@ describe('the money limit of a run is a ceiling held by admission before each mo
   });
 });
 
-describe('the price of a request is the largest price of the chain it may fall back through', () => {
-  const member = (model: string, billed: { billing: string; provider?: string; upstream: string } | undefined) => ({ model, counter: 'c', capabilities: {} as never, ...(billed === undefined ? {} : { billed }) });
-  const table = definePriceTable([
-    { provider: 'p', model: 'cheap', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 2, currency: 'USD' },
-    { provider: 'p', model: 'dear', effectiveFrom: '2026-01-01', inputPerMTok: 0.5, cacheWritePerMTok: 4, outputPerMTok: 9, currency: 'USD' },
-  ]);
-  const at = Date.parse('2026-06-01T00:00:00Z');
+describe('the gateway is the authority on the price of a request', () => {
+  it('asks the gateway for one quote per model step, and for none when the run has no money limit', async () => {
+    const limited = await makeEnv();
+    metered(limited);
+    limited.gateway.script.push(read('call_1', limited), textStep('done'));
+    const run = limited.enqueue('Look around', { limits: { maxCostUsd: 1 } });
+    await limited.runOnce(worker(limited));
 
-  it('takes the larger input price (cache write included) and the larger output price over the members', () => {
-    const chain = [member('a', { billing: 'metered', provider: 'p', upstream: 'cheap' }), member('b', { billing: 'metered', provider: 'p', upstream: 'dear' }), member('c', { billing: 'local', upstream: 'x' })];
-    expect(chainPrice(chain, table, at)).toEqual({ inUnits: 4_000_000_000n, outUnits: 9_000_000_000n });
+    const free = await makeEnv();
+    metered(free);
+    free.gateway.script.push(textStep('done'));
+    free.enqueue('Say hello');
+    await free.runOnce(worker(free));
+
+    expect(limited.run(run.id).status).toBe('COMPLETED');
+    expect(limited.gateway.quotes).toEqual([limited.session.model, limited.session.model]);
+    expect(free.gateway.quotes).toEqual([]);
   });
 
-  it.each([
-    ['a member with no price entry', member('b', { billing: 'metered', provider: 'p', upstream: 'unknown' })],
-    ['a member billed by a plan', member('b', { billing: 'plan', provider: 'p', upstream: 'cheap' })],
-    ['a member whose billing is unknown', member('b', { billing: 'unknown', provider: 'p', upstream: 'cheap' })],
-    ['a member the listing gives no billing for', member('b', undefined)],
-    ['a price entry that is not yet in force', member('b', { billing: 'metered', provider: 'p', upstream: 'later' })],
-  ])('has no price when the chain holds %s', (_label, unpriced) => {
-    const chain = [member('a', { billing: 'metered', provider: 'p', upstream: 'cheap' }), unpriced];
-    expect(chainPrice(chain, definePriceTable([...table, { provider: 'p', model: 'later', effectiveFrom: '2027-01-01', inputPerMTok: 1, outputPerMTok: 1, currency: 'USD' }]), at)).toBeUndefined();
+  it('sends the most the request may cost and the input bound it was reserved for, and records the reservation with the quote', async () => {
+    const env = await makeEnv();
+    metered(env);
+    env.gateway.script.push(textStep('done'));
+    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
+
+    await env.runOnce(worker(env));
+
+    const [requested] = env.ofType(run.id, 'model.requested');
+    const body = requested?.body as CreateResponseBody;
+    const budget = requested?.budget;
+    expect(budget?.quote).toEqual({ inUnits: '1000000', outUnits: '15000000000', priceVersions: ['2026-01-01'] });
+    expect(budget?.maxOutputTokens).toBe(body.max_output_tokens);
+    const inputUpper = (budget?.reservedTokens as number) - (budget?.maxOutputTokens as number);
+    expect(body.momonga).toMatchObject({ max_cost_nano: budget?.reservedNano, max_input_tokens: inputUpper });
+    expect(budget?.reservedNano).toBe(Math.ceil((inputUpper * 1_000_000 + (body.max_output_tokens as number) * 15_000_000_000) / 1_000_000));
+  });
+
+  it('stops with the reason budget when the gateway refuses the request over its ceiling, since the price rose after the quote', async () => {
+    const env = await makeEnv();
+    metered(env);
+    env.gateway.script.push(failedStep('budget_exceeded'));
+    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 1 } });
+
+    await env.runOnce(worker(env));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'cost', cause: 'cap_too_small', limit: 1_000_000_000 })]);
+    expect(env.store.treeSpend(run.id)).toMatchObject({ reservedNano: 0, reservedTokens: 0 });
+  });
+});
+
+describe('the first request of a run is admitted by the same rule as every other', () => {
+  const price = { inUnits: 3_000_000n, outUnits: 15_000_000n };
+  const size = { inputTokens: 1000, marginTokens: 32, maxOutputTokens: 4096 };
+  const NOTHING: TreeSpend = { totalTokens: 0, costNano: 0, unpricedCalls: 0, reservedTokens: 0, reservedNano: 0 };
+  const firstRequest = (maxCostNano: number) =>
+    admitStep({ size, limits: { maxTotalTokens: 1_000_000, maxCostNano }, price, unpricedCalls: 0, spentNano: 0, ledger: { admitModelRequest: (ask: AdmissionAsk) => admitRequest(ask, NOTHING) } });
+  const worstCaseAtFloorNano = Math.ceil(((size.inputTokens + size.marginTokens) * 3_000_000 + OUTPUT_FLOOR_TOKENS * 15_000_000) / 1_000_000);
+
+  it('admits it at the output floor when the limit is exactly its worst case there', () => {
+    expect(firstRequest(worstCaseAtFloorNano)).toMatchObject({ kind: 'admitted', maxOutputTokens: OUTPUT_FLOOR_TOKENS, reservedNano: worstCaseAtFloorNano, inputUpper: 1032 });
+  });
+
+  it('refuses it one nano below, naming cap_too_small with nothing spent', () => {
+    expect(firstRequest(worstCaseAtFloorNano - 1)).toEqual({ kind: 'exhausted', exhausted: { dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: worstCaseAtFloorNano - 1 } });
+  });
+
+  it('stops a run whose money limit pays for no request before anything is sent, saying so', async () => {
+    const env = await makeEnv();
+    metered(env);
+    env.gateway.script.push(textStep('never sent'));
+    const run = env.enqueue('Say hello', { limits: { maxCostUsd: 0.000000001 } });
+
+    await env.runOnce(worker(env));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([{ ...env.ofType(run.id, 'budget.exhausted')[0], dimension: 'cost', cause: 'cap_too_small', spent: 0, limit: 1 }]);
+    expect(env.ofType(run.id, 'model.requested')).toEqual([]);
+    expect(env.gateway.script).toHaveLength(1);
+    expect(env.fold(run.id).notes.some((note) => note.code === 'budget_exhausted' && note.message.includes('does not pay for another model request'))).toBe(true);
   });
 });

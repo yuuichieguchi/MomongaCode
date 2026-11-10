@@ -1,6 +1,5 @@
 import type { Clock, RolePort } from '@momonga/foundation';
 import type { ContextOverflowError, InstructionReader } from '@momonga/context';
-import type { PriceTable } from '@momonga/observability';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, RuleVerifierPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerLeases } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -55,7 +54,6 @@ export type WorkerOptions = {
   random: () => number;
   platform: string;
   timers: ServiceTimers;
-  priceTable?: () => PriceTable;
 };
 
 export type Worker = {

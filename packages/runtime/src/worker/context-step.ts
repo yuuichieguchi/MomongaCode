@@ -179,6 +179,7 @@ const offeredInputOf = (
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
+      ...(ctx.delegation === undefined ? {} : { mandate: ctx.delegation.notice }),
       activatedSkills: state.activatedSkills,
       governing,
       memories: ctx.recalled.ranked(),

@@ -184,6 +184,7 @@ describe('run event payloads', () => {
       body: unknown;
       anatomy?: TokenAnatomy;
       prefix?: { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
+      budget?: { reservedTokens: number; reservedNano?: number; maxOutputTokens: number; quote?: { inUnits: string; outUnits: string; priceVersions: string[] } };
     }>();
     expectTypeOf<Payload<'model.responded'>>().toEqualTypeOf<{
       type: 'model.responded';
@@ -267,6 +268,7 @@ describe('run event payloads', () => {
       added?: number;
       removed?: number;
       diffOmitted?: string;
+      effect?: { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' | 'unknown' };
     }>();
     expectTypeOf<Payload<'tool.permission.classified'>>().toEqualTypeOf<{
       type: 'tool.permission.classified';
@@ -287,6 +289,7 @@ describe('run event payloads', () => {
       interrupted?: 'timeout' | 'cancelled';
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       command?: string;
+      effect?: { operation: string; target: string; outcome: 'applied' | 'already_applied' | 'failed' | 'unknown' };
     }>();
   });
 

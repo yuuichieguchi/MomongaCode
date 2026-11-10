@@ -8,6 +8,7 @@ import type { EditorState } from '../editor.ts';
 import type { KeyTable } from '../keys/table.ts';
 import { joinHint } from '../select.tsx';
 import type { SelectLine, SelectSpec } from '../select.tsx';
+import { HELD_PANEL_LINE } from '../transcript.ts';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
 import { currentA11y } from './a11y.ts';
 import { PanelInputBox } from './input-box.tsx';
@@ -43,7 +44,7 @@ const DIFF_STYLE = {
 
 export const approvalLines = (approval: PendingApproval, tool: ToolEntry | undefined, workingDirectory: string): SelectLine[] => {
   const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput, workingDirectory);
-  return [approval.reason, ...(diff ?? []).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] }))];
+  return [approval.reason, ...(approval.held === true ? [HELD_PANEL_LINE] : []), ...(diff ?? []).map((line): SelectLine => ({ text: line.text, ...DIFF_STYLE[line.kind] }))];
 };
 
 export const approvalWording = (approval: PendingApproval, toolOf: (callId: string) => ToolEntry | undefined, workingDirectory: string): { title: string; lines: SelectLine[] } => {

@@ -20,7 +20,7 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
     const gateway = await startAnthropicGateway({ script: [cachingTurn()], priceTable: definePriceTable([ENTRY]) });
     const terminal = terminalOf(await streamResponse(gateway));
 
-    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000351, currency: 'USD', priceVersion: '1970-01-01' });
+    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000351, units: '351000000000', currency: 'USD', priceVersion: '1970-01-01' });
   });
 
   it('leaves the cost out when there is no price table, no entry for the target, or cache-write tokens without a cache-write price', async () => {
@@ -42,7 +42,7 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
     const gateway = await startAnthropicGateway({ script: [plainTurn()], priceTable: definePriceTable([withoutWritePrice]) });
     const terminal = terminalOf(await streamResponse(gateway));
 
-    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' });
+    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, units: '76000000000', currency: 'USD', priceVersion: '1970-01-01' });
   });
 
   it('leaves the cost out and still answers when the provider reports more cached input than input, and when cached input has no cached rate', async () => {
@@ -75,7 +75,7 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
     );
     const unpriced = terminalOf(await streamResponse(await startAnthropicGateway({ script: [plainTurn()], config: local, priceTable: definePriceTable([]) })));
 
-    expect(priced.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
-    expect(unpriced.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
+    expect(priced.response.momonga.cost).toEqual({ amount: 0, units: '0', currency: 'USD', priceVersion: 'local' });
+    expect(unpriced.response.momonga.cost).toEqual({ amount: 0, units: '0', currency: 'USD', priceVersion: 'local' });
   });
 });

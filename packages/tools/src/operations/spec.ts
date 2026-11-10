@@ -26,9 +26,12 @@ export type Clause = readonly [Operand, Operand];
 export type ConditionalClauses = { readonly if: string; readonly then: readonly Clause[]; readonly else: readonly Clause[] };
 export type ClauseItem = Clause | ConditionalClauses;
 
-export type ArgvItem = string | { readonly if: string; readonly then: readonly string[]; readonly else?: readonly string[] };
+export type ArgvItem = string | { readonly if: string; readonly then: readonly string[]; readonly else?: readonly string[] } | { readonly each: string };
 export const NETWORK_TARGETS = ['none', 'destination', 'destinations'] as const;
 export type Network = (typeof NETWORK_TARGETS)[number];
+
+export const REMOTE_DIRECTIONS = ['push', 'fetch'] as const;
+export type RemoteDirection = (typeof REMOTE_DIRECTIONS)[number];
 
 export type ArgvCall = { readonly argv: readonly ArgvItem[]; readonly network?: Network };
 export type ForgeCall = { readonly forge: ForgeOperationName; readonly args: Readonly<Record<string, string>> };
@@ -41,7 +44,7 @@ export type Probe = { readonly id: string; readonly via: ProbeSource };
 
 export type SubjectSpec =
   | { readonly kind: 'none' }
-  | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[] }
+  | { readonly kind: 'repo'; readonly remote?: string; readonly refs?: readonly string[]; readonly alwaysWhen?: readonly string[]; readonly direction?: RemoteDirection }
   | { readonly kind: 'forge'; readonly pr?: string; readonly headSha?: string };
 
 export type OperationSpec = {
@@ -83,7 +86,11 @@ const ARGV = {
   type: 'array',
   minItems: 1,
   items: {
-    oneOf: [{ type: 'string' }, { type: 'object', properties: { if: REFERENCE, then: STRINGS, else: STRINGS }, required: ['if', 'then'], additionalProperties: false }],
+    oneOf: [
+      { type: 'string' },
+      { type: 'object', properties: { if: REFERENCE, then: STRINGS, else: STRINGS }, required: ['if', 'then'], additionalProperties: false },
+      { type: 'object', properties: { each: REFERENCE }, required: ['each'], additionalProperties: false },
+    ],
   },
 } as const;
 const NETWORK = { enum: [...NETWORK_TARGETS] } as const;
@@ -106,7 +113,7 @@ const SPEC_SCHEMA = {
         { type: 'object', properties: { kind: { const: 'none' } }, required: ['kind'], additionalProperties: false },
         {
           type: 'object',
-          properties: { kind: { const: 'repo' }, remote: { type: 'string' }, refs: STRINGS, alwaysWhen: STRINGS },
+          properties: { kind: { const: 'repo' }, remote: { type: 'string' }, refs: STRINGS, alwaysWhen: STRINGS, direction: { enum: [...REMOTE_DIRECTIONS] } },
           required: ['kind'],
           additionalProperties: false,
         },
@@ -175,7 +182,12 @@ const subjectInputs = (subject: SubjectSpec): string[] => {
 const isInputOperand = (operand: Operand): operand is string => typeof operand === 'string' && operand.startsWith('input.');
 
 const boundInputs = (effect: ArgvCall | ForgeCall, require: readonly ClauseItem[]): Set<string> => {
-  const fromEffect = 'argv' in effect ? effect.argv.flatMap((item) => (typeof item === 'string' ? inputsIn(item) : [item.if, ...item.then.flatMap(inputsIn), ...(item.else ?? []).flatMap(inputsIn)])) : Object.values(effect.args).flatMap(inputsIn);
+  const inputsOfItem = (item: ArgvItem): string[] => {
+    if (typeof item === 'string') return inputsIn(item);
+    if ('each' in item) return [item.each];
+    return [item.if, ...item.then.flatMap(inputsIn), ...(item.else ?? []).flatMap(inputsIn)];
+  };
+  const fromEffect = 'argv' in effect ? effect.argv.flatMap(inputsOfItem) : Object.values(effect.args).flatMap(inputsIn);
   const clauses = require.flatMap((item): Clause[] => (Array.isArray(item) ? [item as Clause] : [...(item as ConditionalClauses).then, ...(item as ConditionalClauses).else]));
   return new Set([...fromEffect, ...clauses.flatMap((clause) => clause.filter(isInputOperand))]);
 };

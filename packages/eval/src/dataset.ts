@@ -1,7 +1,7 @@
 import { defineProductSchema, describeFirstError, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { COMPLETION_DECLARATION_SCHEMA, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { CompletionDeclaration, PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
+import { COMPLETION_DECLARATION_SCHEMA, MANDATE_BUDGET_SCHEMA, MANDATE_SCOPE_SCHEMA, MAX_COST_USD, PERMISSION_MODES, QUIESCENT_BEHAVIOURS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
+import type { CompletionDeclaration, Mandate, PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
 import { GATE_VERDICTS } from './oracle.ts';
 import type { GateVerdict } from './oracle.ts';
 import { ORACLE_CHECKS_SCHEMA } from './oracle-check.ts';
@@ -29,8 +29,13 @@ export type GraderSpec =
   | { kind: 'stepsAtMost'; max: number }
   | { kind: 'tokensAtMost'; max: number }
   | { kind: 'permissionDecision'; tool: string; expected: PermissionDecision; inputPattern?: string }
+  | { kind: 'mustNotRun'; tool: string; inputPattern?: string }
   | { kind: 'verification'; equals: GateVerdict }
   | { kind: 'oracle' };
+
+export type CaseLimits = { maxSteps?: number; maxTotalTokens?: number; maxCostUsd?: number };
+
+export type CaseMandate = Pick<Mandate, 'profile' | 'scope' | 'budget' | 'hold'>;
 
 export type GoldenCase = {
   id: string;
@@ -43,6 +48,8 @@ export type GoldenCase = {
   timeoutMs?: number;
   files?: Record<string, string>;
   completion?: CompletionDeclaration;
+  limits?: CaseLimits;
+  mandate?: CaseMandate;
   oracle?: OracleCheck[];
   graders: GraderSpec[];
 };
@@ -93,6 +100,21 @@ export const DATASET_SCHEMA = {
           timeoutMs: { type: 'integer', minimum: 1000 },
           files: { type: 'object', additionalProperties: { type: 'string' } },
           completion: COMPLETION_DECLARATION_SCHEMA,
+          limits: {
+            type: 'object',
+            properties: { maxSteps: { type: 'integer', minimum: 1 }, maxTotalTokens: { type: 'integer', minimum: 1 }, maxCostUsd: { type: 'number', minimum: 0, maximum: MAX_COST_USD } },
+            additionalProperties: false,
+          },
+          mandate: {
+            type: 'object',
+            properties: {
+              profile: { type: 'string', minLength: 1 },
+              scope: MANDATE_SCOPE_SCHEMA,
+              budget: MANDATE_BUDGET_SCHEMA,
+              hold: { type: 'object', properties: { onQuiescent: { enum: [...QUIESCENT_BEHAVIOURS] } }, additionalProperties: false },
+            },
+            additionalProperties: false,
+          },
           oracle: ORACLE_CHECKS_SCHEMA,
           graders: {
             type: 'array',
@@ -110,6 +132,7 @@ export const DATASET_SCHEMA = {
                 grader('stepsAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
                 grader('tokensAtMost', { max: { type: 'integer', minimum: 0 } }, ['max']),
                 grader('permissionDecision', { tool: string, expected: { enum: [...PERMISSION_DECISIONS] }, inputPattern: string }, ['tool', 'expected']),
+                grader('mustNotRun', { tool: string, inputPattern: string }, ['tool']),
                 grader('verification', { equals: { enum: [...GATE_VERDICTS] } }, ['equals']),
                 grader('oracle', {}, []),
               ],
@@ -142,7 +165,7 @@ const assertUniqueCaseIds = (dataset: CasesHolder, source: string): void => {
 const assertPatternsCompile = (dataset: CasesHolder, source: string): void => {
   for (const golden of dataset.cases) {
     for (const spec of golden.graders) {
-      const pattern = spec.kind === 'finalTextMatches' ? spec.pattern : spec.kind === 'permissionDecision' ? spec.inputPattern : undefined;
+      const pattern = spec.kind === 'finalTextMatches' ? spec.pattern : spec.kind === 'permissionDecision' || spec.kind === 'mustNotRun' ? spec.inputPattern : undefined;
       if (pattern === undefined) continue;
       try {
         new RegExp(pattern, 'u');

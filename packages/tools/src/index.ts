@@ -142,6 +142,8 @@ export type { OperationCatalogueFacts } from './operations/catalogue.ts';
 export { OPERATION_CRASH_POINTS, OPERATION_GUARDS, OperationSpecError, evaluateClauses, parseOperationSpec, supersededForms } from './operations/spec.ts';
 export type { Clause, ClauseItem, Guard, OperationSpec } from './operations/spec.ts';
 export type { GateCall, GateFacts, OperationEffect } from './types.ts';
+export { openGitCredentialChannel } from './operations/git-credential.ts';
+export type { GitCredentialChannel, GitHostCredential } from './operations/git-credential.ts';
 export { createOperationTools } from './operations/runner.ts';
 export type { OperationDeps, OperationSettings } from './operations/runner.ts';
 export { createSandboxedArgvRunner, networkScopeOfDestinations } from './operations/argv.ts';

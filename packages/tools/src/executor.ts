@@ -647,6 +647,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.added === undefined ? {} : { added: result.added }),
       ...(result.removed === undefined ? {} : { removed: result.removed }),
       ...(result.diffOmitted === undefined ? {} : { diffOmitted: result.diffOmitted }),
+      ...(result.effect === undefined ? {} : { effect: result.effect }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };
@@ -1264,7 +1265,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1491,7 +1492,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output, ...(reconcileOutcome.effect === undefined ? {} : { effect: reconcileOutcome.effect }) }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }

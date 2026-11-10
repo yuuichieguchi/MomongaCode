@@ -3,6 +3,8 @@ import { gradeChecks } from './oracle-grade.ts';
 import type { WorkspaceProbe } from './oracle-grade.ts';
 import { gateVerdictOf } from './oracle.ts';
 import type { GoldenCase, GoldenDataset } from './dataset.ts';
+import { runFiguresOf } from './budget-metrics.ts';
+import type { CaseLimits } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
@@ -14,7 +16,7 @@ export type EvalSessionInput = { cwd: string; env?: Record<string, string>; perm
 
 export type EvalRunApi = {
   createSession(input: EvalSessionInput): Promise<{ id: string }>;
-  createRun(sessionId: string, input: { input: string; timeoutMs?: number; mandate?: Mandate }): Promise<{ id: string }>;
+  createRun(sessionId: string, input: { input: string; timeoutMs?: number; limits?: CaseLimits; mandate?: Mandate }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
   answeredBy(runId: string): Promise<Answerer[]>;
@@ -108,7 +110,8 @@ const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): 
     const run = await scope.api.createRun(session.id, {
       input: golden.input,
       ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }),
-      ...(golden.completion === undefined ? {} : { mandate: { completion: golden.completion } }),
+      ...(golden.limits === undefined ? {} : { limits: golden.limits }),
+      ...(golden.completion === undefined && golden.mandate === undefined ? {} : { mandate: { ...golden.mandate, ...(golden.completion === undefined ? {} : { completion: golden.completion }) } }),
     });
     const { events, children } = await driveRun(scope.api, golden, run.id);
     const oracle =
@@ -137,6 +140,7 @@ const resultOf = (golden: GoldenCase, transcripts: readonly RecordedRun[]): Case
     runIndex: transcript.runIndex,
     runId: transcript.run.id,
     graded: grade(golden.graders, transcript),
+    figures: runFiguresOf(golden, transcript),
     ...(transcript.oracle === undefined ? {} : { completion: { gate: gateVerdictOf(transcript.run, transcript.events), oracle: transcript.oracle.met } }),
   })),
 });

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { BudgetExhausted, HeldOutcome } from './budget.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { SideEffect } from './run-types.ts';
 
@@ -156,6 +157,18 @@ export const reconciliationMutates = (call: MutationFacts, outcome: 'already_app
 export const conditionOwed = (condition: { when: ConditionWhen }, lastMutationSeq: number, result: ConditionResult | undefined): boolean =>
   (condition.when === 'always' || lastMutationSeq > 0) && !(result?.outcome === 'passed' && result.mutationSeq === lastMutationSeq);
 
+export type RunBudgetReport = {
+  limits: { maxSteps?: number; maxTotalTokens?: number; maxCostNano?: number; deadlineAt: number };
+  spent: { steps: number; totalTokens: number; costNano: number; unpricedCalls: number };
+  reserved: { tokens: number; costNano: number };
+};
+
+export type RunHeldCallReport = { callId: string; tool: string; reason: string; heldSeq: number; outcome?: HeldOutcome; status?: 'completed' | 'failed'; resolvedSeq?: number };
+
+export type RunDeniedCallReport = { callId: string; tool: string; source: 'mandate' | 'held'; reason: string };
+
+export type RunDelegationReport = { held: RunHeldCallReport[]; denied: RunDeniedCallReport[]; quiescent: boolean };
+
 export type RunReport = {
   runId: string;
   status: string;
@@ -173,6 +186,9 @@ export type RunReport = {
   notRun: { what: string; reason: NotRunReason }[];
   residualRisk: { code: ResidualRiskCode; count: number }[];
   modelChecks: { command: string; exitCode: number; seq: number }[];
+  budget?: RunBudgetReport;
+  stoppedBy?: BudgetExhausted;
+  delegation?: RunDelegationReport;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);

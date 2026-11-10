@@ -45,6 +45,7 @@ export type ContextSources = {
   task: DeepReadonly<MessageInputItem>;
   taskSeq: number;
   skillCatalog?: string;
+  mandate?: string;
   activatedSkills: readonly ActivatedSkill[];
   governing?: ContextGoverning;
   memories?: readonly DeepReadonly<MemoryView>[];

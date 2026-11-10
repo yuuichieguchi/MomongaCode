@@ -7,7 +7,7 @@ import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
-import type { BudgetExhausted, CallFootprint, HeldCallView, HeldOutcome, RunUsage } from './budget.ts';
+import type { BudgetExhausted, CallFootprint, HeldCallView, HeldOutcome, RequestBudget, RunUsage } from './budget.ts';
 import type { CallTiming, ModelCost, TokenAnatomy, UnpricedOutcome } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
@@ -45,6 +45,10 @@ export type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 export type StopReason = (typeof STOP_REASONS)[number];
 export type PermissionMode = (typeof PERMISSION_MODES)[number];
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
+
+export const OPERATION_EFFECT_OUTCOMES = ['applied', 'already_applied', 'failed', 'unknown'] as const;
+
+export type OperationEffectRecord = { operation: string; target: string; outcome: (typeof OPERATION_EFFECT_OUTCOMES)[number] };
 
 export const APPROVAL_KINDS = ['permission', 'elicitation', 'unknown_effect'] as const;
 
@@ -211,6 +215,7 @@ export type RunEventPayload =
       body: unknown;
       anatomy?: TokenAnatomy;
       prefix?: { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
+      budget?: RequestBudget;
     }
   | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse; target?: string }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
@@ -281,6 +286,7 @@ export type RunEventPayload =
       added?: number;
       removed?: number;
       diffOmitted?: string;
+      effect?: OperationEffectRecord;
     }
   | { type: 'verification.started'; round: number; conditionId: string; command: string; mutationSeq: number; attempt: number }
   | {
@@ -329,7 +335,7 @@ export type RunEventPayload =
       tokenErrorRatio?: number;
       tokenCounting: 'exact' | 'calibrated' | 'estimated';
     }
-  | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string }
+  | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string; effect?: OperationEffectRecord }
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
   | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
   | {

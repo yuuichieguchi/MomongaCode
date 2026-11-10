@@ -1,6 +1,6 @@
 {
   "id": "github",
-  "auth": { "header": "Authorization", "prefix": "Bearer " },
+  "auth": { "header": "Authorization", "prefix": "Bearer ", "gitUsername": "x-access-token" },
   "operations": {
     "listPullRequests": {
       "method": "GET",

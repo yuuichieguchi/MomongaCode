@@ -59,7 +59,7 @@ export const EDIT_TOOLS: ReadonlySet<string> = new Set(PATH_TOOLS.filter((tool) 
 
 export const isPathTool = (tool: string): tool is PathToolName => Object.hasOwn(PATH_TOOL_RULES, tool);
 
-export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'] as const;
+export const OPERATION_RULE_TOOLS = ['GitBranch', 'GitStage', 'GitCommit', 'GitFetch', 'GitUpdate', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'] as const;
 
 const OPERATION_TOOLS: readonly string[] = OPERATION_RULE_TOOLS;
 const SPECIFIER_TOOLS: readonly string[] = [...PATH_TOOLS, 'Bash', ...OPERATION_TOOLS];

@@ -7,7 +7,7 @@ import { expectRejected } from './support.ts';
 
 const SPEC_DIR = path.resolve(import.meta.dirname, '../../src/operations/specs');
 
-const CATALOGUE = ['GitBranch', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'];
+const CATALOGUE = ['GitBranch', 'GitStage', 'GitFetch', 'GitUpdate', 'GitCommit', 'GitPush', 'PullRequestStatus', 'PullRequestCreate', 'PullRequestMerge', 'PullRequestComment'];
 
 const rawSpecs = (): Array<Record<string, unknown>> =>
   fs

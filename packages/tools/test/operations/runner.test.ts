@@ -7,14 +7,17 @@ const CREDENTIAL = 'fake-forge-credential-for-tests';
 
 const INPUTS: Record<string, unknown> = {
   GitBranch: { name: 'feature/x', create: true },
+  GitStage: { paths: ['a.txt'] },
   GitCommit: { message: 'Add x' },
+  GitFetch: { remote: 'origin', branch: 'main' },
+  GitUpdate: { remote: 'origin', branch: 'main' },
   GitPush: { remote: 'origin', branch: 'main' },
   PullRequestCreate: { head: 'feature/x', base: 'main', title: 'Add x', body: 'Adds x', headSha: 'a'.repeat(40) },
   PullRequestMerge: { number: 1, headSha: 'a'.repeat(40) },
   PullRequestComment: { number: 1, body: 'Thanks' },
 };
 
-const STORED_PREPARED = { before: { head: 'h', indexTree: 't', remoteRef: 'r', localSha: 'l', branch: 'main', existing: { count: '0' }, pr: { merged: 'false' }, markerCount: '0' }, observedAt: 1_000 };
+const STORED_PREPARED = { before: { head: 'h', indexTree: 't', unstaged: 'a.txt', trackingRef: 'o', behind: '1', remoteRef: 'r', localSha: 'l', branch: 'main', existing: { count: '0' }, pr: { merged: 'false' }, markerCount: '0' }, observedAt: 1_000 };
 
 const effectful = OPERATION_SPECS.filter((spec) => spec.sideEffect !== 'read_only').map((spec) => spec.name);
 

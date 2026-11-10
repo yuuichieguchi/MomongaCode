@@ -61,7 +61,7 @@ describe('a cache read the upstream never reported stays absent in the gateway',
     const terminal = terminalOf(await streamResponse(gateway));
     expect(terminal.response.usage.input_tokens_details.cached_tokens).toBe(0);
     expect('cacheReadNotReported' in terminal.response.momonga).toBe(false);
-    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' });
+    expect(terminal.response.momonga.cost).toEqual({ amount: 0.000076, units: '76000000000', currency: 'USD', priceVersion: '1970-01-01' });
   });
 
   it('model cost: a call whose cache read was not reported is unpriced with the code cache_read_not_reported', () => {

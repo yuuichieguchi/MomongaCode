@@ -16,6 +16,6 @@
   "observe": [{ "id": "pr", "via": { "forge": "getPullRequest", "args": { "number": "{input.number}" }, "shape": "one" } }],
   "applied": [],
   "unchanged": [],
-  "supersedes": [],
+  "supersedes": [["gh", "pr", "view"], ["gh", "pr", "status"], ["gh", "pr", "checks"]],
   "report": "Pull request #{input.number} is {after.pr.state}, merged {after.pr.merged}, head {after.pr.headSha}: {after.pr.url}"
 }

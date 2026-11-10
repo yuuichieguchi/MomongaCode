@@ -47,26 +47,30 @@ describe('token spend outside the main model calls counts against the run', () =
   });
 
   it('stops a run at its token budget when the classifier spend alone exhausts it', async () => {
+    const LIMIT = 200_000;
     const env = await makeEnv({ mode: 'auto' });
     env.settings.classifierModel = 'guard';
     env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }], usageOf(100, 10)),
-      textStep(verdict, { usage: usageOf(500, 450) }),
-      textStep('Summary.', { usage: usageOf(5, 5) }),
+      textStep(verdict, { usage: usageOf(LIMIT - 560, 450) }),
+      textStep('never sent'),
     );
-    const run = env.enqueue('Write out.txt', { limits: { maxTotalTokens: 1000 } });
+    const run = env.enqueue('Write out.txt', { limits: { maxTotalTokens: LIMIT } });
 
     await env.runOnce(env.worker());
 
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
     expect(env.ofType(run.id, 'usage.charged')).toEqual([
-      expect.objectContaining({ purpose: 'permission_classifier', inputTokens: 500, outputTokens: 450, totalTokens: 950 }),
+      expect.objectContaining({ purpose: 'permission_classifier', inputTokens: LIMIT - 560, outputTokens: 450, totalTokens: LIMIT - 110 }),
     ]);
-    expect(env.run(run.id).usage.totalTokens).toBe(110 + 950 + 10);
+    expect(env.run(run.id).usage.totalTokens).toBe(LIMIT);
     expect(env.fold(run.id).usage).toEqual(env.run(run.id).usage);
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'tokens', cause: 'limit', spent: LIMIT, limit: LIMIT })]);
+    expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
+    expect(env.gateway.script).toHaveLength(1);
   });
 
   it('copies the answering target of the compaction resource into its usage.charged (D17 section 7)', async () => {

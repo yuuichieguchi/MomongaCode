@@ -1,7 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { QUIESCENT_EXIT_CODE, TARGET_NOT_READY, agentReadiness, readinessShownText, unknownEffectLines, unknownEffectTitle, usdOfNano } from '@momonga/protocol';
-import type { Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
+import type { BudgetExhausted, Mandate, MomongaModelEntry, PermissionMode, PublicRunEvent, RunReport, UnknownEffectCall } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -69,7 +69,40 @@ export type RunResult = {
   usage: RunView['usage'];
   cost_usd?: string;
   unpriced_calls?: number;
+  budget?: ResultBudget;
   report?: RunReport;
+};
+
+type ResultStop = { dimension: BudgetExhausted['dimension']; cause: BudgetExhausted['cause'] } & ({ spent: number; limit: number } | { spent_usd: string; limit_usd: string });
+
+export type ResultBudget = {
+  limits: { max_steps?: number; max_total_tokens?: number; max_cost_usd?: string; deadline_at: number };
+  spent: { steps: number; total_tokens: number; cost_usd: string; unpriced_calls: number };
+  reserved: { tokens: number; cost_usd: string };
+  stopped_by?: ResultStop;
+};
+
+const resultStopOf = (stopped: BudgetExhausted): ResultStop =>
+  stopped.dimension === 'cost'
+    ? { dimension: stopped.dimension, cause: stopped.cause, spent_usd: usdOfNano(stopped.spent), limit_usd: usdOfNano(stopped.limit) }
+    : { dimension: stopped.dimension, cause: stopped.cause, spent: stopped.spent, limit: stopped.limit };
+
+const resultBudgetOf = (report: RunReport | undefined): { budget?: ResultBudget } => {
+  if (report?.budget === undefined) return {};
+  const { limits, spent, reserved } = report.budget;
+  return {
+    budget: {
+      limits: {
+        ...(limits.maxSteps === undefined ? {} : { max_steps: limits.maxSteps }),
+        ...(limits.maxTotalTokens === undefined ? {} : { max_total_tokens: limits.maxTotalTokens }),
+        ...(limits.maxCostNano === undefined ? {} : { max_cost_usd: usdOfNano(limits.maxCostNano) }),
+        deadline_at: limits.deadlineAt,
+      },
+      spent: { steps: spent.steps, total_tokens: spent.totalTokens, cost_usd: usdOfNano(spent.costNano), unpriced_calls: spent.unpricedCalls },
+      reserved: { tokens: reserved.tokens, cost_usd: usdOfNano(reserved.costNano) },
+      ...(report.stoppedBy === undefined ? {} : { stopped_by: resultStopOf(report.stoppedBy) }),
+    },
+  };
 };
 
 export const resultOf = (run: RunView, result: string): RunResult => ({
@@ -86,6 +119,7 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   usage: run.usage,
   ...(run.usage.costNano === undefined ? {} : { cost_usd: usdOfNano(run.usage.costNano) }),
   ...(run.usage.unpricedCalls === undefined ? {} : { unpriced_calls: run.usage.unpricedCalls }),
+  ...resultBudgetOf(run.report),
   ...(run.report === undefined ? {} : { report: run.report }),
 });
 

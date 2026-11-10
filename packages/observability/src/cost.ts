@@ -1,5 +1,5 @@
 import { COST_CURRENCY } from '@momonga/protocol';
-import type { RunCostView, UnpricedOutcome, UsageSource } from '@momonga/protocol';
+import type { ModelQuote, RunCostView, UnpricedOutcome, UsageSource } from '@momonga/protocol';
 import { UNKNOWN_BILLING } from './semconv.ts';
 
 export type PriceEntry = {
@@ -135,6 +135,41 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
     BigInt(written) * scaledPrice(entry.cacheWritePerMTok ?? 0) +
     BigInt(usage.outputTokens) * scaledPrice(entry.outputPerMTok);
   return { kind: 'priced', units, currency: entry.currency, priceVersion: entry.effectiveFrom };
+};
+
+export type QuotedMember = { billing: string | undefined; provider: string | undefined; model: string };
+
+type MemberPrice = { inUnits: bigint; outUnits: bigint; priceVersion: string };
+
+const larger = (left: bigint, right: bigint): bigint => (left > right ? left : right);
+
+const memberPriceOf = (member: QuotedMember, table: PriceTable, atMs: number): MemberPrice | undefined => {
+  if (member.billing === 'local') return { inUnits: 0n, outUnits: 0n, priceVersion: LOCAL_PRICE_VERSION };
+  if (member.billing !== 'metered' || member.provider === undefined) return undefined;
+  const entry = findPriceEntry(table, member.provider, member.model, atMs);
+  if (entry === undefined) return undefined;
+  return {
+    inUnits: larger(scaledPrice(entry.inputPerMTok), scaledPrice(entry.cacheWritePerMTok ?? 0)),
+    outUnits: scaledPrice(entry.outputPerMTok),
+    priceVersion: entry.effectiveFrom,
+  };
+};
+
+export const quoteChain = (model: string, members: readonly QuotedMember[], table: PriceTable, atMs: number): ModelQuote => {
+  const prices: MemberPrice[] = [];
+  for (const member of members) {
+    const price = memberPriceOf(member, table, atMs);
+    if (price === undefined) return { model, priced: false };
+    prices.push(price);
+  }
+  if (prices.length === 0) return { model, priced: false };
+  return {
+    model,
+    priced: true,
+    inUnits: prices.reduce((most, price) => larger(most, price.inUnits), 0n).toString(),
+    outUnits: prices.reduce((most, price) => larger(most, price.outUnits), 0n).toString(),
+    priceVersions: [...new Set(prices.map((price) => price.priceVersion))].sort(),
+  };
 };
 
 export type RunCostCall = { runId: string; price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced' } | { kind: 'not_recorded' } };

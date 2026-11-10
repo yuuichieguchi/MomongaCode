@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { usageOf } from '@momonga/testkit';
 import { START_MS, finalSummaryInstruction, makeEnv, modelKey } from './harness.ts';
 import { assistantMessage, callsStep, failedStep, functionCallItem, incompleteStep, refusalStep, textStep } from './scripts.ts';
+import { firstRequestOf, summaryOnlyBudget } from './token-budget.ts';
 
 const lastInputItem = (input: unknown): unknown => (Array.isArray(input) ? input.at(-1) : undefined);
 
@@ -42,13 +43,15 @@ describe('worker stop reasons', () => {
   });
 
   it('stops at the budget from run.limits after a final summary call', async () => {
+    const budget = await summaryOnlyBudget();
     const env = await makeEnv();
-    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 10)), textStep('Budget summary.'));
-    const run = env.enqueue('Work', { limits: { maxTotalTokens: 100 } });
+    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], budget.usageUpTo()), textStep('Budget summary.'));
+    const run = env.enqueue('Work', { limits: budget.limits });
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
+    expect(env.run(run.id).usage.totalTokens).toBeLessThanOrEqual(budget.limits.maxTotalTokens);
     expect(env.gateway.streams).toHaveLength(2);
     const summary = env.gateway.streams[1];
     expect(summary?.body.tool_choice).toBe('none');
@@ -56,26 +59,31 @@ describe('worker stop reasons', () => {
     expect(lastInputItem(summary?.body.input)).toEqual({ type: 'message', role: 'user', content: finalSummaryInstruction('budget') });
   });
 
-  it('keeps going while total usage stays under the default budget of 1_000_000 tokens', async () => {
+  it('keeps going while what is left of the default budget of 1_000_000 tokens holds the next request whole', async () => {
+    const first = await firstRequestOf();
     const env = await makeEnv();
-    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 999_899)), textStep('Done.'));
+    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 1_000_000 - 100 - 2 * first.inputUpper - 4096)), textStep('Done.'));
     const run = env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.streams[1]?.body.tool_choice).toBe('auto');
+    expect(env.gateway.streams[1]?.body.max_output_tokens).toBe(4096);
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([]);
   });
 
-  it('stops at the default budget once total usage reaches 1_000_000 tokens', async () => {
+  it('stops at the default budget once total usage reaches 1_000_000 tokens, without a model call the budget does not hold', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 999_900)), textStep('Budget summary.'));
+    env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Echo', args: { value: 'x' } }], usageOf(100, 999_900)), textStep('never sent'));
     const run = env.enqueue('Work');
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
-    expect(env.gateway.streams[1]?.body.tool_choice).toBe('none');
+    expect(env.ofType(run.id, 'budget.exhausted')).toEqual([expect.objectContaining({ dimension: 'tokens', cause: 'limit', spent: 1_000_000, limit: 1_000_000 })]);
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.gateway.script).toHaveLength(1);
   });
 
   it('stops at timeout without an extra model call once the deadline passes', async () => {

@@ -14,6 +14,8 @@ import type {
   MomongaModelRoles,
   StreamEvent,
 } from '@momonga/protocol';
+import { quoteChain } from '@momonga/observability';
+import type { PriceTable } from '@momonga/observability';
 import { gatewayModelIn } from '@momonga/runtime';
 import type { GatewayCallOptions, GatewayListing, GatewayModel, GatewayPort, ListedGatewayModel } from '@momonga/runtime';
 import { fixtureCompactionContent, usageOf } from '@momonga/testkit';
@@ -148,6 +150,9 @@ export type FakeGateway = GatewayPort & {
   alsoListed: () => readonly string[];
   memberFacts: Record<string, { adapter: string; upstream: string; answers: 'model' | 'script'; billing?: string; provider?: string }>;
   billed: { inputPerMTok: number; outputPerMTok: number } | 'unpriced' | undefined;
+  prices: PriceTable;
+  quotes: string[];
+  quoteAt: number;
   unlisted: Set<string>;
   start: string | null;
   roles: MomongaModelRoles;
@@ -212,7 +217,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     if (gateway.billed === undefined || usage === null) return {};
     if (gateway.billed === 'unpriced') return { unpriced: { code: 'no_price_entry', reason: 'no price entry' } };
     const micro = usage.input_tokens * gateway.billed.inputPerMTok + usage.output_tokens * gateway.billed.outputPerMTok;
-    return { cost: { amount: micro / 1_000_000, currency: 'USD', priceVersion: '2026-01-01' } };
+    return { cost: { amount: micro / 1_000_000, units: String(Math.round(micro * 1_000_000_000)), currency: 'USD', priceVersion: '2026-01-01' } };
   };
 
   const targetsOf = (model: string): string[] => {
@@ -341,6 +346,9 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
     alsoListed: () => [],
     memberFacts: {},
     billed: undefined,
+    prices: [],
+    quotes: [],
+    quoteAt: Date.parse('2026-06-01T00:00:00Z'),
     unlisted: new Set(),
     start: null,
     roles: {},
@@ -441,6 +449,15 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
       gateway.cancels.push({ idempotencyKey, signal: options?.signal });
       await gateway.cancelHook?.(idempotencyKey, options?.signal);
       return gateway.cancelResult;
+    },
+
+    quote: async (model) => {
+      gateway.quotes.push(model);
+      const members = targetsOf(model).map((target) => {
+        const facts = gateway.memberFacts[target];
+        return { billing: facts?.billing, provider: facts?.provider, model: facts?.upstream ?? target };
+      });
+      return quoteChain(model, members, gateway.prices, gateway.quoteAt);
     },
 
     releaseAll: () => {

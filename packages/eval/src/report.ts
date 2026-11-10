@@ -1,4 +1,6 @@
-import { escapeTerminalLine } from '@momonga/protocol';
+import { escapeTerminalLine, usdOfNano } from '@momonga/protocol';
+import { budgetMetricsOf, mandateMetricsOf } from './budget-metrics.ts';
+import type { BudgetMetrics, MandateMetrics, RunFiguresOfEval } from './budget-metrics.ts';
 import type { GoldenCase, GoldenDataset, PermissionDecision } from './dataset.ts';
 import type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
 import { completionAgreement } from './oracle.ts';
@@ -10,7 +12,7 @@ export type RunVerdict = { runIndex: number; runId: string; passed: boolean; fai
 
 export type CompletionObservation = { gate: GateVerdict; oracle: boolean };
 
-export type CaseResult = { golden: GoldenCase; runs: { runIndex: number; runId: string; graded: Graded; completion?: CompletionObservation }[] };
+export type CaseResult = { golden: GoldenCase; runs: { runIndex: number; runId: string; graded: Graded; completion?: CompletionObservation; figures: RunFiguresOfEval }[] };
 
 export type CaseReport = {
   id: string;
@@ -32,6 +34,8 @@ export type EvalReport = {
   overall: Proportion;
   decisions: DecisionReport;
   completion?: Agreement;
+  budget?: BudgetMetrics;
+  mandate?: MandateMetrics;
   passed: boolean;
 };
 
@@ -87,6 +91,9 @@ export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult
   const completionRows = results.flatMap((result) => result.runs.flatMap((run) => (run.completion === undefined ? [] : [run.completion])));
   const cases = results.map(caseReportOf);
   const totalRuns = results.reduce((sum, result) => sum + result.runs.length, 0);
+  const figures = results.flatMap((result) => result.runs.map((run) => run.figures));
+  const budget = budgetMetricsOf(figures.map((entry) => entry.budget));
+  const mandate = mandateMetricsOf(figures.flatMap((entry) => (entry.mandate === undefined ? [] : [entry.mandate])));
   const passedRuns = results.reduce((sum, result) => sum + result.runs.filter((run) => run.graded.passed).length, 0);
   return {
     dataset: dataset.name,
@@ -94,6 +101,8 @@ export const buildReport = (dataset: GoldenDataset, results: readonly CaseResult
     overall: proportionOf(passedRuns, totalRuns),
     decisions: decisionReportOf(results.flatMap((result) => result.runs.map((run) => run.graded.decisions))),
     ...(completionRows.length === 0 ? {} : { completion: completionAgreement(completionRows) }),
+    ...(budget === undefined ? {} : { budget }),
+    ...(mandate === undefined ? {} : { mandate }),
     passed: cases.every((entry) => entry.meetsMinimum),
   };
 };
@@ -102,6 +111,29 @@ export const percent = (value: number): string => `${(value * 100).toFixed(1)}%`
 
 export const describeProportion = (proportion: Proportion): string =>
   `${proportion.successes}/${proportion.trials} = ${percent(proportion.rate)} (95% Wilson ${percent(proportion.low)}..${percent(proportion.high)})`;
+
+const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+const describeRate = (rate: Proportion | undefined, none: string): string => (rate === undefined ? `n/a (${none})` : describeProportion(rate));
+
+const budgetLines = (budget: BudgetMetrics): string[] => [
+  `budget overrun rate ${describeRate(budget.overrun, 'no run has a token or money limit')}`,
+  `runs with a limit ${budget.limitedRuns}, without ${budget.unlimitedRuns}; runs with a model call that has no price ${budget.runsWithUnpricedCalls}`,
+  `budget stops: ${budget.stops.length === 0 ? 'none' : budget.stops.map((stop) => `${stop.dimension} ${stop.cause} ${stop.count}`).join(', ')}`,
+  `cost per run whose completion gate passed: ${budget.costPerSuccess.meanNano === null ? 'n/a (no run passed its completion gate)' : `${usdOfNano(Math.ceil(budget.costPerSuccess.meanNano))} USD over ${plural(budget.costPerSuccess.runs, 'run', 'runs')}`}`,
+  `unspent share of the limit at a budget stop: ${budget.unspentShareAtStop.mean === null ? 'n/a (no budget stop)' : `${percent(budget.unspentShareAtStop.mean)} over ${plural(budget.unspentShareAtStop.stops, 'stop', 'stops')}`}`,
+];
+
+const mandateLines = (mandate: MandateMetrics): string[] => [
+  `mandate runs ${mandate.runs}`,
+  `human intervention rate ${describeRate(mandate.intervention, 'no mandate run ended')}`,
+  `unattended completion ${describeRate(mandate.unattended, 'no mandate run ended')}`,
+  `mandate runs that waited for a person ${describeRate(mandate.waitedForPerson, 'no mandate run ended')}`,
+  `approval timeout rate ${describeRate(mandate.approvalTimeout, 'no mandate run ended')}`,
+  `calls held ${mandate.held}, denied as outside the mandate ${mandate.deniedOutsideMandate} (${mandate.deniedOutsideMandatePerRun} per run), blocked by a held call ${mandate.blockedByHeldCall}`,
+  `work done while a call was held: ${plural(mandate.workDuringHolds.modelSteps, 'model step', 'model steps')}, ${plural(mandate.workDuringHolds.toolCalls, 'tool call', 'tool calls')}`,
+  `time from a hold to its resolution by a person: ${mandate.holdLatency.meanMs === null ? 'n/a (no hold was resolved by a person)' : `${Math.round(mandate.holdLatency.meanMs)} ms mean over ${plural(mandate.holdLatency.holds, 'hold', 'holds')}`}`,
+];
 
 export const formatReport = (report: EvalReport): string => {
   const lines = [`dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`];
@@ -122,5 +154,7 @@ export const formatReport = (report: EvalReport): string => {
       `completion gate against the oracle: passed with the oracle met ${agreement.gatePassOraclePass}, passed with the oracle unmet ${agreement.gatePassOracleFail} (false pass), failed with the oracle met ${agreement.gateFailOraclePass}, failed with the oracle unmet ${agreement.gateFailOracleFail}, no gate verdict ${agreement.gateNotRun}`,
     );
   }
+  if (report.budget !== undefined) lines.push(...budgetLines(report.budget));
+  if (report.mandate !== undefined) lines.push(...mandateLines(report.mandate));
   return lines.map(escapeTerminalLine).join('\n');
 };

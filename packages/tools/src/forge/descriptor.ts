@@ -25,7 +25,7 @@ export type ForgeOperationDescriptor = {
 
 export type ForgeDescriptor = {
   readonly id: string;
-  readonly auth: { readonly header: string; readonly prefix: string };
+  readonly auth: { readonly header: string; readonly prefix: string; readonly gitUsername: string };
   readonly operations: Readonly<Record<ForgeOperationName, ForgeOperationDescriptor>>;
 };
 
@@ -57,8 +57,8 @@ const DESCRIPTOR_SCHEMA = {
     id: { type: 'string', minLength: 1 },
     auth: {
       type: 'object',
-      properties: { header: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9-]*$' }, prefix: { type: 'string' } },
-      required: ['header', 'prefix'],
+      properties: { header: { type: 'string', pattern: '^[A-Za-z][A-Za-z0-9-]*$' }, prefix: { type: 'string' }, gitUsername: { type: 'string', pattern: '^[^\\s:@/]+$' } },
+      required: ['header', 'prefix', 'gitUsername'],
       additionalProperties: false,
     },
     operations: {

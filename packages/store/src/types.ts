@@ -5,6 +5,7 @@ import type { CANCEL_ORIGINS } from './transitions.ts';
 import type { PermissionReviewsStore } from './permission-reviews.ts';
 import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type {
+  CallFootprint,
   BilledDetail,
   Capabilities,
   CallTiming,
@@ -667,6 +668,7 @@ export type RuntimeStore = {
       callId: string;
       options: PermissionOption[];
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
+      held?: { footprint: CallFootprint; placeholder?(approvalId: string): string };
     },
   ): Promise<RequestApprovalResult>;
   requestUnknownAck(claim: Claim, input: { callIds: string[] }): Promise<RequestApprovalResult>;

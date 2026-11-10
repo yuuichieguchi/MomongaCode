@@ -29,8 +29,11 @@ export type ForgeRequest = {
   boundMs: number;
 };
 
+export type ForgeGitCredential = { username: string; password: string };
+
 export type ForgeAccess = {
   request(request: ForgeRequest): Promise<ForgeAnswer>;
+  gitCredential(remoteUrl: string, signal: AbortSignal): Promise<ForgeGitCredential | undefined>;
 };
 
 export type ForgeAccessOptions = {
@@ -41,13 +44,24 @@ export type ForgeAccessOptions = {
 };
 
 export const createForgeAccess = (options: ForgeAccessOptions): ForgeAccess => {
+  const descriptorOf = (instance: ForgeInstance): ForgeDescriptor => {
+    const descriptor = options.descriptors.find((candidate) => candidate.id === instance.descriptor);
+    if (descriptor === undefined) throw new ToolExecutionError(`the forge ${instance.id} names the descriptor ${instance.descriptor}, which is not installed`);
+    return descriptor;
+  };
   return {
+    gitCredential: async (remoteUrl, signal) => {
+      const { host } = parseRemoteUrl(remoteUrl);
+      const instance = options.instances.find((candidate) => candidate.host === host);
+      if (instance === undefined) return undefined;
+      const descriptor = descriptorOf(instance);
+      return { username: descriptor.auth.gitUsername, password: await options.readCredential(instance.credential, signal) };
+    },
     request: async ({ remoteUrl, operation, args, signal, boundMs }) => {
       const location = parseRemoteUrl(remoteUrl);
       const instance = options.instances.find((candidate) => candidate.host === location.host);
       if (instance === undefined) throw new ToolExecutionError(`no forge configured for host ${location.host}`);
-      const descriptor = options.descriptors.find((candidate) => candidate.id === instance.descriptor);
-      if (descriptor === undefined) throw new ToolExecutionError(`the forge ${instance.id} names the descriptor ${instance.descriptor}, which is not installed`);
+      const descriptor = descriptorOf(instance);
       const credential = await options.readCredential(instance.credential, signal);
       const { owner, name } = splitRepository(location.repo);
       const redact = (text: string): string => text.split(credential).join('[redacted]');

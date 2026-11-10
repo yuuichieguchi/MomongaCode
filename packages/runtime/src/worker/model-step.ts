@@ -1,11 +1,12 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { BuiltContext, TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, usdOfNano, wireUsageOf } from '@momonga/protocol';
+import { BUDGET_EXCEEDED_CODE, LOWEST_REASONING_EFFORT, describeFallbackCause, marginFloorFor, tokenPriceOfQuote, usdOfNano, wireUsageOf } from '@momonga/protocol';
 import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
-import type { BudgetExhausted, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
+import type { BudgetExhausted, ModelQuote, Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
+import { GatewayRequestError } from '../gateway-client.ts';
 import { responseFailureDisposition, terminalOf } from './gateway-policy.ts';
 import { outputBoundOf } from './output-bound.ts';
 import { isRecord } from './json.ts';
@@ -16,7 +17,7 @@ import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
-import { admitStep, exhaustedText } from './budget.ts';
+import { admitStep, exhaustedText, requestBudgetOf, stepsExhausted } from './budget.ts';
 import type { StepAdmission } from './budget.ts';
 import { stopGate } from './verification-step.ts';
 import { recordCalls, settleCalls, settleHeld } from './tool-step.ts';
@@ -32,26 +33,35 @@ const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
 
 const isRequestBody = (value: unknown): value is CreateResponseBody => isRecord(value) && typeof value['model'] === 'string';
 
-const admissionFor = (ctx: ClaimContext, built: BuiltContext): StepAdmission => {
+const admissionFor = (ctx: ClaimContext, built: BuiltContext, quote: ModelQuote | undefined): StepAdmission => {
   const spend = ctx.options.store.treeSpend(ctx.run.id);
   return admitStep({
     size: { inputTokens: built.inputTokens, marginTokens: built.budget.margin, maxOutputTokens: built.maxOutputTokens },
-    limits: ctx.limits.maxCostNano === undefined ? {} : { maxCostNano: ctx.limits.maxCostNano },
-    price: ctx.limits.maxCostNano === undefined ? undefined : ctx.chainPrice(),
+    limits: { maxTotalTokens: ctx.limits.maxTotalTokens, ...(ctx.limits.maxCostNano === undefined ? {} : { maxCostNano: ctx.limits.maxCostNano }) },
+    price: quote === undefined ? undefined : tokenPriceOfQuote(quote),
     unpricedCalls: spend.unpricedCalls,
     spentNano: spend.costNano,
     ledger: { admitModelRequest: (ask) => ctx.options.store.admitModelRequest(ctx.claim, ask) },
   });
 };
 
-const budgetFigure = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : `${value} ${dimension}`);
+const budgetFigure = (dimension: BudgetExhausted['dimension'], value: number): string => (dimension === 'cost' ? `${usdOfNano(value)} USD` : dimension === 'time' ? `${value} ms` : `${value} ${dimension}`);
 
-const stopExhausted = (ctx: ClaimContext, exhausted: BudgetExhausted, stopReason: 'max_steps' | 'budget'): Promise<Flow> => {
+const stopReasonOf = (exhausted: BudgetExhausted): 'max_steps' | 'budget' => (exhausted.dimension === 'steps' ? 'max_steps' : 'budget');
+
+const stopExhausted = (ctx: ClaimContext, exhausted: BudgetExhausted): Promise<Flow> => {
   ctx.journal.append([
     { type: 'budget.exhausted', ...exhausted },
     { type: 'notice', level: 'error', message: exhaustedText(exhausted, budgetFigure), code: 'budget_exhausted' },
   ]);
-  return ctx.terminals.finish('STOPPED', { stopReason });
+  return ctx.terminals.finish('STOPPED', { stopReason: stopReasonOf(exhausted) });
+};
+
+const stopOverCeiling = (ctx: ClaimContext): Promise<Flow> => {
+  const limit = ctx.limits.maxCostNano;
+  if (limit === undefined) throw new Error(`the gateway refused a model request of run ${ctx.run.id} over a cost ceiling the run does not have`);
+  const spend = ctx.options.store.treeSpend(ctx.run.id);
+  return stopExhausted(ctx, { dimension: 'cost', cause: 'cap_too_small', spent: spend.costNano + spend.reservedNano, limit });
 };
 
 const quiesce = (ctx: ClaimContext): Promise<Flow> => {
@@ -185,6 +195,7 @@ const handleResult = async (
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
+    if (result.code === BUDGET_EXCEEDED_CODE) return stopOverCeiling(ctx);
     if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
     const terminal = terminalOf(responseFailureDisposition(result));
     return terminals.finish(terminal.to, terminal.patch);
@@ -339,6 +350,10 @@ const streamRecovering = async (
   try {
     return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
   } catch (error) {
+    if (error instanceof GatewayRequestError && error.code === BUDGET_EXCEEDED_CODE) {
+      delete ctx.control.inFlight.modelKey;
+      return { kind: 'flow', flow: await stopOverCeiling(ctx) };
+    }
     const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
@@ -402,22 +417,22 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
-  const outOfSteps = journal.state.step >= ctx.limits.maxSteps;
-  let limit: 'max_steps' | 'budget' | undefined = outOfSteps ? 'max_steps' : options.store.treeTokens(ctx.run.id) >= ctx.limits.maxTotalTokens ? 'budget' : undefined;
-  let outcome = await buildNext(ctx, { ...(limit === undefined ? {} : { wrapUp: limit }), trailing: loopGuidanceTrailing(ctx) });
+  const quote = ctx.limits.maxCostNano === undefined ? undefined : await ctx.quote();
+  const trailing = loopGuidanceTrailing(ctx);
+  let exhausted = stepsExhausted(journal.state.step, ctx.limits.maxSteps);
+  let outcome = await buildNext(ctx, { ...(exhausted === undefined ? {} : { wrapUp: stopReasonOf(exhausted) }), trailing });
   if (outcome.kind === 'done') return 'done';
-  let admission = admissionFor(ctx, outcome.built);
-  if (admission.kind === 'exhausted' && limit === undefined && outcome.wrapUp === undefined && admission.exhausted.cause !== 'unpriced') {
-    limit = 'budget';
-    outcome = await buildNext(ctx, { wrapUp: limit, trailing: loopGuidanceTrailing(ctx) });
+  let admission = admissionFor(ctx, outcome.built, quote);
+  if (admission.kind === 'exhausted' && exhausted === undefined && outcome.wrapUp === undefined && admission.exhausted.cause !== 'unpriced') {
+    exhausted = admission.exhausted;
+    outcome = await buildNext(ctx, { wrapUp: stopReasonOf(exhausted), trailing });
     if (outcome.kind === 'done') return 'done';
-    const wrapping = admissionFor(ctx, outcome.built);
-    admission = wrapping.kind === 'exhausted' ? admission : wrapping;
+    admission = admissionFor(ctx, outcome.built, quote);
   }
   if (admission.kind === 'lease_lost') return terminals.yieldLease();
-  if (admission.kind === 'exhausted') return stopExhausted(ctx, admission.exhausted, outOfSteps ? 'max_steps' : 'budget');
+  if (admission.kind === 'exhausted') return stopExhausted(ctx, exhausted ?? admission.exhausted);
   const { built, wrapUp } = outcome;
-  const summarising = limit !== undefined || wrapUp !== undefined;
+  const summarising = exhausted !== undefined || wrapUp !== undefined;
   const step = journal.state.step + 1;
   const plainBody: CreateResponseBody = {
     model: ctx.model,
@@ -435,12 +450,14 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const cacheControls = cacheControlsOf(ctx, built, prefixRecord?.prefix);
-  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL } };
+  const costCeiling = admission.costLimited ? { max_cost_nano: admission.reservedNano, max_input_tokens: admission.inputUpper } : {};
+  const body: CreateResponseBody = { ...plainBody, ...cacheControls, momonga: { ...cacheControls.momonga, ...EXACT_MODEL, ...costCeiling } };
   const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([
     ...(requestOffered === undefined ? [] : [requestOffered]),
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     ...(prefixRecord === undefined ? [] : prefixRecord.notices),
+    ...(exhausted === undefined ? [] : [{ type: 'budget.exhausted' as const, ...exhausted }]),
     {
       type: 'model.requested',
       step: position.step,
@@ -450,6 +467,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
       body,
       anatomy: built.anatomy,
       ...(prefixRecord === undefined ? {} : { prefix: prefixRecord.prefix }),
+      budget: requestBudgetOf(admission, quote),
     },
   ]);
   const streamed = await streamRecovering(ctx, body, position);

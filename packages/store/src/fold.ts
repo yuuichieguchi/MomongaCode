@@ -8,7 +8,7 @@ import {
   emptyWorkingFacts,
   findDanglingOutput,
   initialVerificationState,
-  nanoOfAmount,
+  nanoOfCost,
   reconciliationMutates,
   recordedDataMessage,
   userMessageContent,
@@ -81,8 +81,8 @@ export const spendOf = (event: RunEventPayload): RunState['usage'] | undefined =
   return undefined;
 };
 
-const moneyOf = (billed: { cost?: { amount: number }; unpriced?: unknown } | undefined): { costNano?: number; unpricedCalls?: number } => {
-  if (billed?.cost !== undefined) return { costNano: nanoOfAmount(billed.cost.amount) };
+const moneyOf = (billed: { cost?: { amount: number; units?: string }; unpriced?: unknown } | undefined): { costNano?: number; unpricedCalls?: number } => {
+  if (billed?.cost !== undefined) return { costNano: nanoOfCost(billed.cost) };
   return billed?.unpriced === undefined ? {} : { unpricedCalls: 1 };
 };
 

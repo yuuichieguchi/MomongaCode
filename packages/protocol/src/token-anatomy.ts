@@ -32,7 +32,7 @@ export const anatomyLayerEntries = (layers: TokenAnatomyLayers): [string, number
   ...(layers.framing === undefined ? [] : [['framing', layers.framing] as [string, number]]),
 ];
 
-export type ModelCost = { amount: number; currency: 'USD'; priceVersion: string };
+export type ModelCost = { amount: number; units?: string; currency: 'USD'; priceVersion: string };
 
 export const UNPRICED_CODES = ['plan', 'unknown_billing', 'usage_not_reported', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'] as const;
 

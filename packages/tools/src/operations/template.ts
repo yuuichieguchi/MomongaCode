@@ -17,7 +17,19 @@ export const lookup = (scope: Scope, reference: string): string | undefined => {
   }
   if (typeof current === 'string') return current;
   if (typeof current === 'number' || typeof current === 'boolean') return String(current);
+  if (isStringList(current)) return current.join(' ');
   return undefined;
+};
+
+const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string');
+
+export const lookupList = (scope: Scope, reference: string): string[] | undefined => {
+  let current: unknown = scope;
+  for (const segment of reference.split('.')) {
+    if (typeof current !== 'object' || current === null || Array.isArray(current) || !Object.hasOwn(current, segment)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return isStringList(current) ? current : undefined;
 };
 
 export const renderTemplate = (template: string, scope: Scope): string =>

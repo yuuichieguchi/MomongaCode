@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect } from 'vitest';
-import { createOperationTools, hostGitReader } from '@momonga/tools';
+import { createOperationTools, hostGitReader, openGitCredentialChannel } from '@momonga/tools';
 import type { AnyTool, ArgvRunner, ForgeAccess, ForgeFetch, OperationSettings, ReconcileContext, ReconcileResult, ToolContext, ToolIdempotencyRecord, ToolResult } from '@momonga/tools';
 
 const cleanups: Array<() => void | Promise<void>> = [];
@@ -84,20 +84,38 @@ export const remoteSha = (world: GitWorld, ref: string): string => {
   return out === '' ? ZERO : (out.split(/\s+/)[0] as string);
 };
 
-export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]> };
+export type CountingRunner = { run: ArgvRunner; calls: Array<readonly string[]>; environments: Array<Readonly<Record<string, string>>> };
+
+const execArgv = (argv: readonly string[], cwd: string, env: Readonly<Record<string, string>>, signal: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string }> =>
+  new Promise((resolve) => {
+    const [file, ...args] = argv;
+    execFile(file as string, args, { cwd, env: { ...env }, signal, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+      const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
+      resolve({ exitCode: code, stdout, stderr });
+    });
+  });
 
 export const countingRunner = (): CountingRunner => {
   const calls: Array<readonly string[]> = [];
-  const run: ArgvRunner = (argv, options) =>
-    new Promise((resolve) => {
-      calls.push([...argv]);
-      const [file, ...args] = argv;
-      execFile(file as string, args, { cwd: options.cwd, env: { ...options.env }, signal: options.signal, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
-        const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
-        resolve({ exitCode: code, stdout, stderr });
-      });
-    });
-  return { run, calls };
+  const environments: Array<Readonly<Record<string, string>>> = [];
+  const run: ArgvRunner = async (argv, options) => {
+    calls.push([...argv]);
+    const credentials = options.credentials ?? [];
+    if (credentials.length === 0) {
+      environments.push(options.env);
+      return execArgv(argv, options.cwd, options.env, options.signal);
+    }
+    const channel = await openGitCredentialChannel(credentials, { root: os.tmpdir() });
+    try {
+      const env = channel.environment(options.env);
+      environments.push(env);
+      const result = await execArgv(argv, options.cwd, env, options.signal);
+      return { exitCode: result.exitCode, stdout: channel.redact(result.stdout), stderr: channel.redact(result.stderr) };
+    } finally {
+      await channel.close();
+    }
+  };
+  return { run, calls, environments };
 };
 
 export const TEST_FETCH: ForgeFetch = (url, { boundMs: _boundMs, ...init }) => fetch(url, init);
@@ -106,7 +124,8 @@ export const NO_FORGE: ForgeAccess = {
   request: async () => {
     throw new Error('this test configures no forge');
   },
-} as unknown as ForgeAccess;
+  gitCredential: async () => undefined,
+};
 
 export const operationTool = (name: string, deps: { runArgv: ArgvRunner; forge?: ForgeAccess; settings?: OperationSettings }): AnyTool => {
   const tools = createOperationTools({ runArgv: deps.runArgv, readGit: hostGitReader, forge: deps.forge ?? NO_FORGE, settings: deps.settings ?? {} });

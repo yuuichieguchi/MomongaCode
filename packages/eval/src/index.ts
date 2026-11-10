@@ -1,5 +1,5 @@
 export { ASK_RESPONSES, DATASET_FORMAT, DATASET_SCHEMA, DatasetError, PERMISSION_DECISIONS, parseDataset } from './dataset.ts';
-export type { AskResponse, CountRange, GoldenCase, GoldenDataset, GraderSpec, PermissionDecision } from './dataset.ts';
+export type { AskResponse, CaseLimits, CaseMandate, CountRange, GoldenCase, GoldenDataset, GraderSpec, PermissionDecision } from './dataset.ts';
 export { grade } from './graders.ts';
 export type { DecisionObservation, GradeOutcome, Graded } from './graders.ts';
 export { callsOf, finalTextOf } from './observe.ts';
@@ -8,6 +8,8 @@ export { AUTO_MODE_DATASET_TEXT } from '@momonga/config';
 export { autoGateRecordOf } from './auto-gate-record.ts';
 export type { AutoGateMeta } from './auto-gate-record.ts';
 export { buildReport, formatReport } from './report.ts';
+export { budgetMetricsOf, mandateMetricsOf, runFiguresOf } from './budget-metrics.ts';
+export type { BudgetMetrics, BudgetStop, MandateMetrics, RunBudgetFacts, RunFiguresOfEval, RunMandateFacts } from './budget-metrics.ts';
 export type { CaseReport, CaseResult, DecisionReport, EvalReport, RunVerdict } from './report.ts';
 export { EvalError, driveRun, replayDataset, runDataset } from './runner.ts';
 export type { Driven, EvalOracle, EvalPorts, EvalRunApi, EvalRunScope, EvalSessionInput, EvalWorkspace } from './runner.ts';

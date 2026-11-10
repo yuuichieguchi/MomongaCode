@@ -18,13 +18,13 @@ const pricingOf = (billing: 'metered' | 'local' | 'plan' | 'unknown', usageSourc
 
 describe('modelCostOf never prices an estimated usage (I-P6)', () => {
   it('gives usage_not_reported to a metered call whose usage is the estimate, and prices the same call when reported', () => {
-    expect(pricingOf('metered', 'reported')).toEqual({ kind: 'priced', cost: { amount: 0.000076, currency: 'USD', priceVersion: '1970-01-01' } });
+    expect(pricingOf('metered', 'reported')).toEqual({ kind: 'priced', cost: { amount: 0.000076, units: '76000000000', currency: 'USD', priceVersion: '1970-01-01' } });
     expect(pricingOf('metered', 'estimated')).toMatchObject({ kind: 'unpriced', code: 'usage_not_reported' });
   });
 
   it('keeps local priced 0 and plan and unknown billing their codes when the usage is estimated', () => {
     expect(pricingOf('metered', 'estimated')).toMatchObject({ kind: 'unpriced', code: 'usage_not_reported' });
-    expect(pricingOf('local', 'estimated')).toEqual({ kind: 'priced', cost: { amount: 0, currency: 'USD', priceVersion: 'local' } });
+    expect(pricingOf('local', 'estimated')).toEqual({ kind: 'priced', cost: { amount: 0, units: '0', currency: 'USD', priceVersion: 'local' } });
     expect(pricingOf('plan', 'estimated')).toMatchObject({ kind: 'unpriced', code: 'plan' });
     expect(pricingOf('unknown', 'estimated')).toMatchObject({ kind: 'unpriced', code: 'unknown_billing' });
   });

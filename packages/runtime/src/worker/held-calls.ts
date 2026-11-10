@@ -1,19 +1,41 @@
 import { parseRule } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { pinnedDelegationOf } from '@momonga/protocol';
-import type { HeldCall, HeldCallView, HeldOutcome, RunState } from '@momonga/protocol';
+import type { HeldCall, HeldCallView, HeldOutcome, PinnedDelegation, RunState } from '@momonga/protocol';
+import type { ClaimContext, Flow } from './claim-context.ts';
 
 const MANDATE_SOURCE = 'the mandate of this run';
 
-export type Delegation = { rules: readonly PermissionRule[]; onQuiescent?: 'report' | 'wait' };
+export type Delegation = { rules: readonly PermissionRule[]; notice: string; onQuiescent?: 'report' | 'wait' };
 
-export const delegationOf = (pins: Record<string, unknown>, place: { home: string; cwd: string }): { delegation?: Delegation } => {
+export type MandateCatalogue = { alwaysOperations: readonly string[]; supersededForms: ReadonlyArray<{ operation: string; argv: readonly string[] }> };
+
+const ruleLines = (rules: readonly string[]): string[] => (rules.length === 0 ? ['  (none)'] : rules.map((rule) => `  ${rule}`));
+
+export const mandateNotice = (pinned: PinnedDelegation, catalogue: MandateCatalogue): string =>
+  [
+    'This run works under a mandate that was declared before it started. No person is watching it.',
+    'Calls these rules allow are run without asking:',
+    ...ruleLines(pinned.scope.allow),
+    'Calls these rules name wait for a person. Such a call is held: the run goes on, and its result is shown to you when it has run:',
+    ...ruleLines(pinned.scope.ask),
+    ...(catalogue.alwaysOperations.length === 0 ? [] : [`These operations are always held for a person: ${catalogue.alwaysOperations.join(', ')}.`]),
+    'Calls these rules name are never run:',
+    ...ruleLines(pinned.scope.deny),
+    'Any other call that would need approval is outside the mandate and is not run.',
+    ...(catalogue.supersededForms.length === 0
+      ? []
+      : ['Use the operation instead of the shell command it replaces:', ...catalogue.supersededForms.map((form) => `  ${form.argv.join(' ')}: ${form.operation}`)]),
+    'When a call is held or blocked, do not repeat or rephrase it. Continue with work that does not depend on it. When nothing else can be done, say what waits and stop.',
+  ].join('\n');
+
+export const delegationOf = (pins: Record<string, unknown>, place: { home: string; cwd: string }, catalogue: MandateCatalogue): { delegation?: Delegation } => {
   const pinned = pinnedDelegationOf(pins);
   if (pinned === undefined) return {};
   const rules = (['deny', 'ask', 'allow'] as const).flatMap((effect) =>
     pinned.scope[effect].map((text) => parseRule(text, { effect, origin: 'cli', source: MANDATE_SOURCE, settingsRoot: place.cwd, home: place.home, cwd: place.cwd })),
   );
-  return { delegation: { rules, ...(pinned.hold?.onQuiescent === undefined ? {} : { onQuiescent: pinned.hold.onQuiescent }) } };
+  return { delegation: { rules, notice: mandateNotice(pinned, catalogue), ...(pinned.hold?.onQuiescent === undefined ? {} : { onQuiescent: pinned.hold.onQuiescent }) } };
 };
 
 export const heldOutput = (approvalId: string): string =>
@@ -45,3 +67,15 @@ export const quiescentText = (held: readonly HeldCallView[]): string =>
     `The run waits for a person: ${held.length} call${held.length === 1 ? '' : 's'} held for approval, and nothing else can proceed.`,
     ...held.map((entry) => `  ${entry.approvalId}  ${entry.tool}: ${entry.reason}`),
   ].join('\n');
+
+export const quiesce = (ctx: ClaimContext): Promise<Flow> => {
+  const { journal } = ctx;
+  if (journal.state.quiescent !== true) {
+    const held = heldViewsOf(journal.state);
+    journal.append([
+      { type: 'run.quiescent', held },
+      { type: 'notice', level: 'warning', message: quiescentText(held), code: 'run_quiescent' },
+    ]);
+  }
+  return ctx.terminals.yieldTo('WAITING_HUMAN');
+};

@@ -5,7 +5,7 @@ export type ForgeShape = 'hub' | 'lab';
 
 export type FakePullRequest = { number: number; head: string; base: string; headSha: string; title: string; state: 'open' | 'closed'; merged: boolean };
 
-export type Fault = 'apply_then_drop' | 'drop_before_apply' | 'echo_authorization_500';
+export type Fault = 'apply_then_drop' | 'drop_before_apply' | 'apply_then_hold' | 'hold_before_apply' | 'echo_authorization_500';
 
 export type FakeForgeRequest = { method: string; path: string; query: Record<string, string>; body: unknown; headers: http.IncomingHttpHeaders };
 
@@ -100,12 +100,14 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
       req.socket.destroy();
       return;
     }
+    if (fault === 'hold_before_apply') return;
     const fields = (body ?? {}) as Record<string, unknown>;
     const reply = (status: number, payload: unknown): void => {
       if (fault === 'apply_then_drop') {
         req.socket.destroy();
         return;
       }
+      if (fault === 'apply_then_hold') return;
       sendJson(res, status, payload);
     };
     switch (route.kind) {
@@ -182,7 +184,7 @@ export const startFakeForge = async (shape: ForgeShape, credential: string): Pro
 
 export const LAB_DESCRIPTOR = {
   id: 'labforge-test',
-  auth: { header: 'PRIVATE-TOKEN', prefix: '' },
+  auth: { header: 'PRIVATE-TOKEN', prefix: '', gitUsername: 'oauth2' },
   operations: {
     listPullRequests: {
       method: 'GET',

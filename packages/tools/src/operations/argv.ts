@@ -10,6 +10,8 @@ import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { runSandboxedCommand } from '../sandboxed-command.ts';
 import { ToolExecutionError } from '../types.ts';
 import type { ReconcileContext, ToolContext } from '../types.ts';
+import { openGitCredentialChannel } from './git-credential.ts';
+import type { GitCredentialChannel, GitHostCredential } from './git-credential.ts';
 
 export type ArgvResult = { exitCode: number; stdout: string; stderr: string };
 
@@ -22,6 +24,7 @@ export type ArgvOptions = {
   network: RenderedNetwork;
   context: ReconcileContext | ToolContext;
   effect: boolean;
+  credentials?: readonly GitHostCredential[];
 };
 
 export type ArgvRunner = (argv: readonly string[], options: ArgvOptions) => Promise<ArgvResult>;
@@ -33,6 +36,7 @@ export type SandboxedRunnerPorts = {
   shellHost: ShellHost;
   outboundNetwork: OutboundNetwork;
   markerDir: string;
+  credentialRoot: string;
   owners?: MarkerOwners;
   inspector?: ProcessInspector;
 };
@@ -54,6 +58,20 @@ export const networkScopeOfDestinations = (destinations: readonly string[], prog
   return hosts.length === 0 ? { kind: 'none' } : { kind: 'hosts', hosts: [...new Set(hosts)] };
 };
 
+type Supplied = { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxPolicy; redact(text: string): string; close(): Promise<void> };
+
+const supplyCredentials = async (ports: SandboxedRunnerPorts, options: ArgvOptions, granted: { env: Readonly<Record<string, string>>; sandboxPolicy: SandboxPolicy }): Promise<Supplied> => {
+  const credentials = options.credentials ?? [];
+  if (credentials.length === 0) return { ...granted, redact: (text) => text, close: async () => undefined };
+  const channel: GitCredentialChannel = await openGitCredentialChannel(credentials, { root: ports.credentialRoot });
+  return {
+    env: channel.environment(granted.env),
+    sandboxPolicy: { ...granted.sandboxPolicy, unixSocketAllow: [...(granted.sandboxPolicy.unixSocketAllow ?? []), channel.directory] },
+    redact: channel.redact,
+    close: channel.close,
+  };
+};
+
 const isToolContext = (context: ReconcileContext | ToolContext): context is ToolContext => 'sandboxPolicy' in context;
 
 const programOf = (argv: readonly string[]): string => argv.slice(0, 2).join(' ');
@@ -69,12 +87,15 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
     held.release();
     throw error;
   }
+  let supplied: Supplied | undefined;
   try {
+    supplied = await supplyCredentials(ports, options, network);
+    const { redact } = supplied;
     const result = await runSandboxedCommand({
       argv,
       sandbox: held.sandbox,
-      sandboxPolicy: network.sandboxPolicy,
-      env: network.env,
+      sandboxPolicy: supplied.sandboxPolicy,
+      env: supplied.env,
       shellHost: ports.shellHost,
       cwd: options.cwd,
       markerFile: path.join(ports.markerDir, `operation-${sha256Hex(canonicalJson([context.idemKey, sequence]))}`),
@@ -85,23 +106,27 @@ const runProbe = async (ports: SandboxedRunnerPorts, argv: readonly string[], op
       ...(ports.inspector === undefined ? {} : { inspector: ports.inspector }),
       ...(ports.owners === undefined ? {} : { owners: ports.owners }),
     });
-    if (result.kind === 'exited') return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-    if (result.kind === 'signaled') return { exitCode: 1, stdout: result.stdout, stderr: `${result.stderr}\n[terminated by ${result.signal}]` };
+    if (result.kind === 'exited') return { exitCode: result.exitCode, stdout: redact(result.stdout), stderr: redact(result.stderr) };
+    if (result.kind === 'signaled') return { exitCode: 1, stdout: redact(result.stdout), stderr: `${redact(result.stderr)}\n[terminated by ${result.signal}]` };
     if (result.kind === 'spawn_error') throw new ToolExecutionError(`${programOf(argv)} could not be started: ${result.message}`);
     throw new ToolExecutionError(`${programOf(argv)} was cancelled or ran out of time`);
   } finally {
+    await supplied?.close();
     await network.settle();
     held.release();
   }
 };
 
-const runEffect = async (argv: readonly string[], options: ArgvOptions, context: ToolContext): Promise<ArgvResult> => {
+const runEffect = async (ports: SandboxedRunnerPorts, argv: readonly string[], options: ArgvOptions, context: ToolContext): Promise<ArgvResult> => {
   const { file, fd, settle } = await requireSpawnMarker(context, programOf(argv));
   const network = await openGrantedNetwork({ network: networkScopeOfDestinations(options.network === 'none' ? [] : options.network.destinations, programOf(argv)), outboundNetwork: context.outboundNetwork, sandboxPolicy: context.sandboxPolicy, env: options.env });
+  let supplied: Supplied | undefined;
   try {
+    supplied = await supplyCredentials(ports, options, network);
+    const { redact } = supplied;
     const child = context.sandbox.spawn(
-      { argv: [...argv], cwd: options.cwd, env: { ...network.env }, markerFile: file, ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }) },
-      network.sandboxPolicy,
+      { argv: [...argv], cwd: options.cwd, env: { ...supplied.env }, markerFile: file, ...(context.tmpDir === undefined ? {} : { tmpDir: context.tmpDir }) },
+      supplied.sandboxPolicy,
       options.signal,
       { markerFd: fd },
     );
@@ -114,11 +139,12 @@ const runEffect = async (argv: readonly string[], options: ArgvOptions, context:
       await pump.settle();
       const failure = pump.failure();
       if (failure !== undefined) throw failure.error;
-      return { exitCode: exit.code ?? 1, stdout: captures[0].text(), stderr: captures[1].text() };
+      return { exitCode: exit.code ?? 1, stdout: redact(captures[0].text()), stderr: redact(captures[1].text()) };
     } finally {
       await pump.close();
     }
   } finally {
+    await supplied?.close();
     await network.settle();
   }
 };
@@ -126,7 +152,7 @@ const runEffect = async (argv: readonly string[], options: ArgvOptions, context:
 export const createSandboxedArgvRunner = (ports: SandboxedRunnerPorts): ArgvRunner => {
   let sequence = 0;
   return (argv, options) => {
-    if (options.effect && isToolContext(options.context) && options.context.spawnMarker !== undefined) return runEffect(argv, options, options.context);
+    if (options.effect && isToolContext(options.context) && options.context.spawnMarker !== undefined) return runEffect(ports, argv, options, options.context);
     sequence += 1;
     return runProbe(ports, argv, options, sequence);
   };

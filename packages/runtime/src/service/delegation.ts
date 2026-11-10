@@ -1,5 +1,5 @@
 import { RuleParseError, checkRuleText } from '@momonga/config';
-import type { CeilingsSettings, LimitsSettings, MandateProfileSettings } from '@momonga/config';
+import type { CeilingsSettings, LimitsSettings, MandateProfileSettings, ProjectMandate } from '@momonga/config';
 import { composeBudget } from '@momonga/protocol';
 import type { CompletionDeclaration, Mandate, MandateBudget, MandateScope } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
@@ -10,6 +10,7 @@ export type ChainBilling = { metered: boolean; priced: boolean };
 
 export type DelegationPort = {
   settings(): DelegationSettings;
+  projectMandate(cwd: string, signal: AbortSignal): Promise<ProjectMandate | undefined>;
   chainBilling(model: string, signal: AbortSignal): Promise<ChainBilling>;
 };
 
@@ -93,11 +94,31 @@ export type RunTermsInput = {
   request: RunTermsRequest;
   defaults: { runTimeoutMs: number; limits: Record<string, number> };
   settings: DelegationSettings;
+  project?(): Promise<ProjectMandate | undefined>;
   billing(): Promise<ChainBilling>;
 };
 
-export const runTermsOf = async ({ request, defaults, settings, billing }: RunTermsInput): Promise<RunTerms> => {
-  const mandate = declaredMandateOf(request.mandate, settings);
+const BUDGET_DIMENSIONS = ['steps', 'tokens', 'costUsd', 'timeMs', 'retries'] as const;
+
+export const narrowedByProject = (mandate: Mandate, project: ProjectMandate): Mandate => {
+  const completion = mergedCompletion(mandate.completion, completionOfProfile(project));
+  const budget: MandateBudget = {};
+  for (const dimension of BUDGET_DIMENSIONS) {
+    const value = smaller(mandate.budget?.[dimension], project[dimension]);
+    if (value !== undefined) budget[dimension] = value;
+  }
+  return {
+    ...mandate,
+    ...(completion === undefined ? {} : { completion }),
+    scope: { allow: mandate.scope?.allow ?? [], ask: union(mandate.scope?.ask, project.ask), deny: union(mandate.scope?.deny, project.deny) },
+    budget,
+  };
+};
+
+export const runTermsOf = async ({ request, defaults, settings, project, billing }: RunTermsInput): Promise<RunTerms> => {
+  const declaredByUser = declaredMandateOf(request.mandate, settings);
+  const declaredByProject = declaredByUser?.scope === undefined || project === undefined ? undefined : await project();
+  const mandate = declaredByUser === undefined || declaredByProject === undefined ? declaredByUser : narrowedByProject(declaredByUser, declaredByProject);
   if (mandate?.scope !== undefined) checkRules(mandate.scope);
   const delegated = mandate?.scope !== undefined;
   const declared = mandate?.budget ?? {};

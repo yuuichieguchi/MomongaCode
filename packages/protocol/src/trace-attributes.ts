@@ -28,4 +28,6 @@ export const MOMONGA_REQUEST_FIELDS = {
   target: 'momonga.target',
   exactModel: 'momonga.exact_model',
   maxSummaryTokens: 'momonga.max_summary_tokens',
+  maxCostNano: 'momonga.max_cost_nano',
+  maxInputTokens: 'momonga.max_input_tokens',
 } as const;

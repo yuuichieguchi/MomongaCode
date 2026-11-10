@@ -18,7 +18,7 @@ import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.t
 import { BUDGET_CAUSES, BUDGET_DIMENSIONS, HELD_OUTCOMES, MAX_COST_USD } from './budget.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
+import { APPROVAL_STATUSES, OPERATION_EFFECT_OUTCOMES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES, USER_SHELL_COMMAND_CHARS, PROMPT_TEXT_MAX_CHARS } from './run-types.ts';
 import type { ImageMediaType, InboxDelivery, InboxRowView, MessageAttachment, UserShellRecord, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
@@ -48,6 +48,7 @@ const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
 const storedEnumOf = (values: readonly string[]): JsonSchema => enumOf([...values, UNKNOWN_VALUE]);
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
+const operationEffect: JsonSchema = closed({ operation: string, target: string, outcome: enumOf(OPERATION_EFFECT_OUTCOMES) }, ['operation', 'target', 'outcome']);
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
@@ -171,9 +172,9 @@ export const COMPLETION_DECLARATION_SCHEMA: JsonSchema = closed(
 
 const ruleTexts = { type: 'array', items: { type: 'string', minLength: 1 } } as const;
 
-const MANDATE_SCOPE_SCHEMA: JsonSchema = closed({ allow: ruleTexts, ask: ruleTexts, deny: ruleTexts }, []);
+export const MANDATE_SCOPE_SCHEMA: JsonSchema = closed({ allow: ruleTexts, ask: ruleTexts, deny: ruleTexts }, []);
 
-const MANDATE_BUDGET_SCHEMA: JsonSchema = closed(
+export const MANDATE_BUDGET_SCHEMA: JsonSchema = closed(
   {
     steps: boundedInteger(1, 1000),
     tokens: boundedInteger(1, 100_000_000),
@@ -235,6 +236,29 @@ const runReport = closed(
     notRun: { type: 'array', items: closed({ what: string, reason: enumOf(NOT_RUN_REASONS) }, ['what', 'reason']) },
     residualRisk: { type: 'array', items: closed({ code: enumOf(RESIDUAL_RISK_CODES), count: nonNegativeInteger }, ['code', 'count']) },
     modelChecks: { type: 'array', items: closed({ command: string, exitCode: integer, seq: nonNegativeInteger }, ['command', 'exitCode', 'seq']) },
+    budget: closed(
+      {
+        limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger, maxCostNano: nonNegativeInteger, deadlineAt: nonNegativeInteger }, ['deadlineAt']),
+        spent: closed({ steps: nonNegativeInteger, totalTokens: nonNegativeInteger, costNano: nonNegativeInteger, unpricedCalls: nonNegativeInteger }, ['steps', 'totalTokens', 'costNano', 'unpricedCalls']),
+        reserved: closed({ tokens: nonNegativeInteger, costNano: nonNegativeInteger }, ['tokens', 'costNano']),
+      },
+      ['limits', 'spent', 'reserved'],
+    ),
+    stoppedBy: closed({ dimension: enumOf(BUDGET_DIMENSIONS), cause: enumOf(BUDGET_CAUSES), spent: nonNegativeInteger, limit: nonNegativeInteger }, ['dimension', 'cause', 'spent', 'limit']),
+    delegation: closed(
+      {
+        held: {
+          type: 'array',
+          items: closed(
+            { callId: string, tool: string, reason: string, heldSeq: nonNegativeInteger, outcome: enumOf(HELD_OUTCOMES), status: enumOf(['completed', 'failed']), resolvedSeq: nonNegativeInteger },
+            ['callId', 'tool', 'reason', 'heldSeq'],
+          ),
+        },
+        denied: { type: 'array', items: closed({ callId: string, tool: string, source: enumOf(['mandate', 'held']), reason: string }, ['callId', 'tool', 'source', 'reason']) },
+        quiescent: { type: 'boolean' },
+      },
+      ['held', 'denied', 'quiescent'],
+    ),
   },
   ['runId', 'status', 'durationMs', 'declaration', 'changes', 'conditions', 'notRun', 'residualRisk', 'modelChecks'],
 );
@@ -327,7 +351,7 @@ const tokenAnatomy = closed(
   ['estimated', 'total', 'layers', 'tools'],
 );
 
-const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
+const modelCost = closed({ amount: { type: 'number', minimum: 0 }, units: { type: 'string', pattern: '^[0-9]+$' }, currency: constant('USD'), priceVersion: string }, ['amount', 'currency', 'priceVersion']);
 
 const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
 
@@ -582,6 +606,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
       added: integer,
       removed: integer,
       diffOmitted: string,
+      effect: operationEffect,
     },
     required: ['callId', 'status', 'output'],
   },
@@ -644,7 +669,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']), files: toolFiles, command: string, effect: operationEffect },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {

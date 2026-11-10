@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { createExecWithStdin, createGivenSecretStore, createOutboundDispatcher, findOutboundError, givenSecretStoreChildEnv, minimalChildEnv, outboundFetch, protectedSetFor } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork, ProcessInspector, SecretStore } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
@@ -62,7 +63,7 @@ export const createOperationToolSource = (options: OperationToolsOptions): ((sna
     return value;
   };
 
-  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, outboundNetwork: options.network, markerDir: options.paths.markers.tools, owners: options.owners, inspector: options.inspector });
+  const runArgv = createSandboxedArgvRunner({ reconcileSandbox, shellHost: options.shellHost, outboundNetwork: options.network, markerDir: options.paths.markers.tools, credentialRoot: os.tmpdir(), owners: options.owners, inspector: options.inspector });
   const fetch = options.forgeFetch ?? outboundForgeFetch(options.network);
   const descriptors = loadForgeDescriptors();
 

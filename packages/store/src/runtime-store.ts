@@ -1700,6 +1700,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             reason: input.event.reason,
             ...(input.event.suggestedRule === undefined ? {} : { suggestedRule: input.event.suggestedRule }),
           });
+          if (input.held !== undefined) {
+            const { footprint, placeholder } = input.held;
+            events.push({ type: 'tool.held', callId: input.callId, approvalId: requested.approval.id, reason: input.event.reason, footprint: { reads: [...footprint.reads], writes: [...footprint.writes] } });
+            if (placeholder !== undefined) {
+              events.push({ type: 'tool.completed', callId: input.callId, status: 'failed', output: placeholder(requested.approval.id), denial: { source: 'held', reason: input.event.reason } });
+            }
+          }
         }
         if (events.length > 0) writeRun(appendPayloads(run, events));
         return { kind: 'ok', approval: requested.approval };

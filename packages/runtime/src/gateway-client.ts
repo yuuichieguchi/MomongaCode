@@ -4,6 +4,7 @@ import {
   COMPACTION_RESULT_EVENT,
   DEFERRED_HEADER,
   ERROR_TYPES,
+  QUOTE_ROUTE,
   ROLE_HEADER,
   RUN_ID_HEADER,
   STREAM_IDLE_HEADER,
@@ -27,6 +28,7 @@ import type {
   GatewayCostReportView,
   GatewayHealth,
   HeaderRole,
+  ModelQuote,
   ModelView,
   ModelViews,
   MomongaModelRoles,
@@ -168,6 +170,18 @@ const transportError = (code: string, message: string, provenNotSent?: boolean):
 const invalidResponse = (detail: string): GatewayRequestError => transportError('invalid_response', `the gateway sent a malformed reply: ${detail}`);
 
 export const gatewayProtocolError = invalidResponse;
+
+const isUnitsText = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value);
+
+const quoteOfReply = (parsed: unknown): ModelQuote => {
+  if (!isRecord(parsed) || typeof parsed['model'] !== 'string' || typeof parsed['priced'] !== 'boolean') throw invalidResponse('the quote reply has no model and no boolean "priced"');
+  if (!parsed['priced']) return { model: parsed['model'], priced: false };
+  const { inUnits, outUnits, priceVersions } = parsed;
+  if (!isUnitsText(inUnits) || !isUnitsText(outUnits) || !Array.isArray(priceVersions) || !priceVersions.every((version): version is string => typeof version === 'string')) {
+    throw invalidResponse('the quote reply of a priced model has no whole-number inUnits and outUnits and no priceVersions list');
+  }
+  return { model: parsed['model'], priced: true, inUnits, outUnits, priceVersions };
+};
 
 const sfString = (value: string): string => {
   if (!/^[\x20-\x7e]*$/.test(value)) throw new TypeError('the idempotency key must be printable ASCII to be an sf-string');
@@ -629,6 +643,11 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       );
       if (!isRecord(parsed) || typeof parsed['cancelled'] !== 'boolean') throw invalidResponse('the cancel reply has no boolean "cancelled"');
       return parsed['cancelled'];
+    },
+
+    quote: async (model: string, callOptions: { signal: AbortSignal }): Promise<ModelQuote> => {
+      const parsed = await unary({ method: 'POST', path: QUOTE_ROUTE, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }) }, callOptions.signal, unaryBound());
+      return quoteOfReply(parsed);
     },
 
     models: async () => (await listModels(noSignal)).models,

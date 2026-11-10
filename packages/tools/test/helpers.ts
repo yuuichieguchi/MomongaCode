@@ -55,6 +55,7 @@ type FakeRecord = {
   meta: Record<string, unknown>;
   pgid?: number;
   startedAt?: number;
+  authorisedAt?: number;
   createdAt: number;
   expiresAt: number;
 };
@@ -138,9 +139,11 @@ export const makeIdempotency = (clock: { now(): number }) => {
       const ok = { kind: 'ok' } as const;
       return {
         begin: (key, options) => (lease.held ? port.begin(key, options) : { s: 'LEASE_LOST' }),
-        authorise: (key) => {
+        authorise: (key, purpose) => {
           if (!lease.held) return lost;
           authorised.push(key);
+          const existing = records.get(key);
+          if (existing?.kind === 'open' && purpose !== 'reconcile') existing.rec = { ...existing.rec, authorisedAt: clock.now() };
           return ok;
         },
         attachProcess: (key, processInfo) => {

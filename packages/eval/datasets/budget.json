@@ -1,0 +1,118 @@
+{
+  "format": "momonga-eval/1",
+  "name": "budget",
+  "cases": [
+    {
+      "id": "answer-within-the-money-limit",
+      "description": "A one-step answer under a money limit that pays for it; the run must complete and its cost must stay under the limit",
+      "input": "Reply with exactly the word ready and nothing else.",
+      "permissionMode": "manual",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "limits": {
+        "maxCostUsd": 0.5
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "finalTextIncludes",
+          "text": "ready"
+        }
+      ]
+    },
+    {
+      "id": "stop-at-a-money-limit-that-pays-for-nothing",
+      "description": "A money limit of one nano-dollar pays for no request of a metered model; the run must stop with the reason budget before it sends one, and a local model, priced at zero, completes instead",
+      "input": "Reply with exactly the word ready and nothing else.",
+      "permissionMode": "manual",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 0,
+      "limits": {
+        "maxCostUsd": 1e-09
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "STOPPED"
+        },
+        {
+          "kind": "stopReason",
+          "equals": "budget"
+        }
+      ]
+    },
+    {
+      "id": "stop-at-the-token-limit",
+      "description": "A task of many tool steps under a token limit that holds only a few; the run must stop with the reason budget and its tokens must stay at or under the limit",
+      "input": "Read every file in this workspace one at a time, then write a one-line summary of each into summary.txt.",
+      "files": {
+        "a.txt": "alpha\n",
+        "b.txt": "beta\n",
+        "c.txt": "gamma\n",
+        "d.txt": "delta\n",
+        "e.txt": "epsilon\n",
+        "f.txt": "zeta\n"
+      },
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "limits": {
+        "maxTotalTokens": 20000
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "STOPPED"
+        },
+        {
+          "kind": "stopReason",
+          "equals": "budget"
+        },
+        {
+          "kind": "tokensAtMost",
+          "max": 20000
+        }
+      ]
+    },
+    {
+      "id": "finish-the-check-within-the-budget",
+      "description": "A declared check under a token and a money limit that both leave room; the cost of the run counts toward cost per successful task",
+      "input": "The check in check.sh fails. Change the workspace so that it passes, and do not edit check.sh.",
+      "files": {
+        "check.sh": "test -f done.txt\n"
+      },
+      "permissionMode": "acceptEdits",
+      "onAsk": "reject_once",
+      "runs": 3,
+      "minPassRate": 1,
+      "limits": {
+        "maxTotalTokens": 400000,
+        "maxCostUsd": 2
+      },
+      "completion": {
+        "conditions": [
+          {
+            "command": "sh check.sh",
+            "timeoutMs": 60000
+          }
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "verification",
+          "equals": "passed"
+        }
+      ]
+    }
+  ]
+}

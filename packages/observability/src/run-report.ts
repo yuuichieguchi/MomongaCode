@@ -1,7 +1,7 @@
 import { NOT_RUN_REASONS, RESIDUAL_RISK_CODES, completionMutates, conditionOwed, pinnedCompletionOf, reconciliationMutates } from '@momonga/protocol';
-import type { ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, RunEvent, RunEventPayload, RunReport } from '@momonga/protocol';
+import type { BudgetExhausted, ConditionResult, ConditionState, MutationFacts, NotRunReason, PinnedCompletion, ResidualRiskCode, RunBudgetReport, RunDeniedCallReport, RunEvent, RunEventPayload, RunHeldCallReport, RunReport } from '@momonga/protocol';
 
-type CallRecord = MutationFacts & { command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
+type CallRecord = MutationFacts & { name: string; command: string | undefined; waitsOnRun: boolean; completedStatus: 'completed' | 'failed' | undefined };
 
 type CheckRecord = { rounds: Set<number>; last: Extract<RunEvent, { type: 'verification.completed' }> | undefined };
 
@@ -33,9 +33,13 @@ export const RUN_REPORT_EVENT_TYPES = [
   'tool.completed',
   'tool.reconciled',
   'verification.completed',
+  'budget.exhausted',
+  'tool.held',
+  'tool.held.resolved',
+  'run.quiescent',
 ] as const satisfies readonly RunEventPayload['type'][];
 
-export type RunReportSpan = { runId: string; firstCreatedAt: number; lastCreatedAt: number };
+export type RunReportSpan = { runId: string; firstCreatedAt: number; lastCreatedAt: number; budget?: RunBudgetReport };
 
 export type RunReportFold = {
   add(event: RunEvent): void;
@@ -57,6 +61,10 @@ export const createRunReportFold = (): RunReportFold => {
   const written = new Map<string, { sha256?: string; lastSeq: number }>();
   const checks = new Map<string, CheckRecord>();
   const completedCommands: { command: string; exitCode: number; seq: number }[] = [];
+  const held = new Map<string, RunHeldCallReport>();
+  const denied: RunDeniedCallReport[] = [];
+  let stoppedBy: BudgetExhausted | undefined;
+  let quiescent = false;
 
   const recordMutation = (hasKnownPaths: boolean, seq: number): void => {
     lastMutationSeq = seq;
@@ -82,6 +90,7 @@ export const createRunReportFold = (): RunReportFold => {
         calls.set(event.callId, {
           ...(event.sideEffect === undefined ? {} : { sideEffect: event.sideEffect }),
           rejected: false,
+          name: event.name,
           command: commandOf(event),
           waitsOnRun: false,
           completedStatus: undefined,
@@ -107,6 +116,7 @@ export const createRunReportFold = (): RunReportFold => {
         const call = requireCall(event.callId, event.type);
         call.completedStatus = event.status;
         if (event.denial !== undefined) denials += 1;
+        if (event.denial?.source === 'mandate' || event.denial?.source === 'held') denied.push({ callId: event.callId, tool: call.name, source: event.denial.source, reason: event.denial.reason });
         if (event.truncated === true) truncatedOutputs += 1;
         if (completionMutates(call, event)) {
           const changed = event.files?.filter((file) => file.access !== 'read') ?? [];
@@ -132,6 +142,21 @@ export const createRunReportFold = (): RunReportFold => {
         if (event.truncated === true) truncatedOutputs += 1;
         break;
       }
+      case 'budget.exhausted':
+        stoppedBy = { dimension: event.dimension, cause: event.cause, spent: event.spent, limit: event.limit };
+        break;
+      case 'tool.held':
+        held.set(event.callId, { callId: event.callId, tool: requireCall(event.callId, event.type).name, reason: event.reason, heldSeq: event.seq });
+        break;
+      case 'tool.held.resolved': {
+        const open = held.get(event.callId);
+        if (open === undefined) throw new Error(`${event.type} refers to tool call ${event.callId}, which was not held`);
+        held.set(event.callId, { ...open, outcome: event.outcome, status: event.status, resolvedSeq: event.seq });
+        break;
+      }
+      case 'run.quiescent':
+        quiescent = true;
+        break;
       default:
         break;
     }
@@ -193,6 +218,9 @@ export const createRunReportFold = (): RunReportFold => {
       notRun,
       residualRisk: RESIDUAL_RISK_CODES.filter((code) => counts[code] > 0).map((code) => ({ code, count: counts[code] })),
       modelChecks: completedCommands.filter((entry) => declaredCommands.has(entry.command)),
+      ...(span.budget === undefined ? {} : { budget: span.budget }),
+      ...(stoppedBy === undefined ? {} : { stoppedBy }),
+      ...(held.size === 0 && denied.length === 0 && !quiescent ? {} : { delegation: { held: [...held.values()], denied, quiescent } }),
     };
   };
 
