@@ -94,7 +94,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
   const versionOf = async (installation: Installation): Promise<string> => (await run(installation.bin, ['--version'], installation.home)).stdout;
 
   beforeAll(async () => {
-    root = createTempRoot();
+    root = createTempRoot({ asHome: true });
     releaseKey = generateKey(root, 'release_key');
     attackerKey = generateKey(root, 'attacker_key');
     v1 = path.join(root, 'v1');
@@ -273,7 +273,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
   let root = '';
 
   beforeAll(() => {
-    root = createTempRoot();
+    root = createTempRoot({ asHome: true });
   });
 
   afterEach(() => {

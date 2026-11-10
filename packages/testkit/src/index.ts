@@ -130,6 +130,7 @@ export {
   isUnderTestTempBase,
   registerCleanup,
   spawnTracked,
+  tempDirBase,
   tempDirPrefixFor,
   testRunToken,
   withTempDir,

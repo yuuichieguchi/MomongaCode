@@ -58,7 +58,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
     });
 
   beforeAll(async () => {
-    root = fs.realpathSync(createTempRoot());
+    root = fs.realpathSync(createTempRoot({ asHome: true }));
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
     paths = momongaLayout(root);

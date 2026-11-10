@@ -53,7 +53,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
   };
 
   beforeAll(async () => {
-    root = fs.realpathSync(createTempRoot());
+    root = fs.realpathSync(createTempRoot({ asHome: true }));
     binary = path.join(root, 'bin', 'momonga');
     project = path.join(root, 'p');
     paths = momongaLayout(root);

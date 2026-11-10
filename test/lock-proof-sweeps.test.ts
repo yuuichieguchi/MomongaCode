@@ -1,11 +1,12 @@
 import { spawn } from '@momonga/testkit/child-process';
 import type { ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createJsonLogger, ensureMomongaDirs, momongaLayout, reapMarkerDirectory } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { withTempDir } from '@momonga/testkit';
+import type { CleanupContext } from '@momonga/testkit';
 import { reapOrphans } from '@momonga/supervisor';
 import { createMarkerOwners } from '@momonga/tools';
 import { reapToolMarkers } from '../packages/runtime/src/process/tool-markers.ts';
@@ -13,17 +14,14 @@ import { reapToolMarkers } from '../packages/runtime/src/process/tool-markers.ts
 const O_EXLOCK = 0x20;
 const CREATE_LOCKED = fs.constants.O_RDONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_EXLOCK | fs.constants.O_NONBLOCK;
 
-const homes: string[] = [];
 const children: ChildProcess[] = [];
 
 afterEach(() => {
   for (const child of children.splice(0)) child.kill('SIGKILL');
-  for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
 });
 
-const layout = async (): Promise<MomongaPaths & { lockProof?: string }> => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-proof-')));
-  homes.push(home);
+const layout = async (context: CleanupContext): Promise<MomongaPaths & { lockProof?: string }> => {
+  const home = withTempDir(context, { asHome: true });
   const paths = momongaLayout(home, process.platform, {}) as MomongaPaths & { lockProof?: string };
   await ensureMomongaDirs(paths);
   return paths;
@@ -85,8 +83,8 @@ const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signa
 };
 
 describe('T3 (d) the lock proof lives where no sweep reads', () => {
-  it('the proof directory is <run>/lock-proof, is created with the others, and lies outside every marker directory', async () => {
-    const paths = await layout();
+  it('the proof directory is <run>/lock-proof, is created with the others, and lies outside every marker directory', async (context) => {
+    const paths = await layout(context);
     const proofDir = proofDirOf(paths);
     expect(fs.statSync(proofDir).isDirectory()).toBe(true);
     for (const markers of Object.values(paths.markers)) {
@@ -94,8 +92,8 @@ describe('T3 (d) the lock proof lives where no sweep reads', () => {
     }
   });
 
-  it('every sweep leaves a proof held in this process alone: the file stays and this process is never signalled', async () => {
-    const paths = await layout();
+  it('every sweep leaves a proof held in this process alone: the file stays and this process is never signalled', async (context) => {
+    const paths = await layout(context);
     const proof = path.join(proofDirOf(paths), 'proof-in-this-process');
     const descriptor = fs.openSync(proof, CREATE_LOCKED, 0o600);
     const { kill, sent } = recordingKill();
@@ -109,8 +107,8 @@ describe('T3 (d) the lock proof lives where no sweep reads', () => {
     }
   });
 
-  it('every sweep leaves a proof held by a second process alone: the file stays and the prover lives', async () => {
-    const paths = await layout();
+  it('every sweep leaves a proof held by a second process alone: the file stays and the prover lives', async (context) => {
+    const paths = await layout(context);
     const proof = path.join(proofDirOf(paths), 'proof-in-another-process');
     const prover = await startProver(proof);
     const { kill, sent } = recordingKill();

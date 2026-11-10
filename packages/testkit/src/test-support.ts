@@ -71,7 +71,7 @@ const removeTempDir = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
-const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+export const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
 
 export const isUnderTestTempBase = (dir: string): boolean =>
   [tempDirBase(true), tempDirBase(false)].some((base) => dir.startsWith(`${fs.realpathSync(base)}${path.sep}`));
