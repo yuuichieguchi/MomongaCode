@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { vi } from 'vitest';
@@ -9,10 +8,10 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
+import { afterMicrotasks, createTempDir, driveFakeTime, fakeUsageOfRequest, removeTempDir, startFakeChatCompletions, firstGeneration } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
-import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
+import { closedAtCleanup, makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
 import type { LogEntry, RecordingLogger } from './helpers.ts';
 import { openEventStream, sendJson } from '../service/helpers.ts';
 import type { EventStream, JsonResponse, RequestInit } from '../service/helpers.ts';
@@ -94,29 +93,13 @@ export const runtimeAlreadyRunningError = (): abstract new (...args: never[]) =>
 export type RunHome = { root: string; home: string; paths: MomongaPaths; project: string };
 
 export const makeRunHome = (): RunHome => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mh-')));
-  onCleanup(() => {
-    restoreModes(root);
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const home = path.join(root, 'h');
-  fs.mkdirSync(home, { mode: 0o700 });
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const project = path.join(root, 'p');
   fs.mkdirSync(project);
   return { root, home, paths: momongaPaths(home, process.platform, {}), project };
-};
-
-const restoreModes = (directory: string): void => {
-  let entries: fs.Dirent[];
-  try {
-    fs.chmodSync(directory, 0o700);
-    entries = fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory() && !entry.isSymbolicLink()) restoreModes(path.join(directory, entry.name));
-  }
 };
 
 export const sessionEnvFor = (tempHome: string): Readonly<Record<string, string>> => {
@@ -171,13 +154,13 @@ export type StartGatewayOptions = { env?: Readonly<Record<string, string>>; logg
 export const startGateway = async (temp: RunHome, options: StartGatewayOptions = {}): Promise<void> => {
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await startGatewayProcess({
+    const gateway = await closedAtCleanup(startGatewayProcess({
       generation: FIRST_GENERATION,
       home: temp.home,
       env: { ...sessionEnvFor(temp.home), ...options.env },
       version: GATEWAY_VERSION,
       ...(options.logger === undefined ? {} : { logger: options.logger }),
-    });
+    }));
     onCleanup(async () => {
       await gateway.close();
     });

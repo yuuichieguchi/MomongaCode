@@ -6,7 +6,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { globalErrorHandler } from '@opentelemetry/core';
 import { runRuntimeEntry } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeEntryIo, parseJsonLines, registerCleanup, startFakeChatCompletions, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
@@ -155,13 +155,13 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
     writeUserSettings(home, { sandbox: 'none', ...modelSettings(fake.socketPath) });
-    const gateway = await startGatewayProcess({
+    const gateway = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux },
       version: VERSION,
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await gateway.close();
     });

@@ -4,7 +4,7 @@ import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, anthropicErrorReply, anthropicTextReply, createFakeSecurityPort, openResponsesTextReply, registerCleanup, startFakeAnthropic, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, anthropicErrorReply, anthropicTextReply, createFakeSecurityPort, openResponsesTextReply, registerCleanup, startFakeAnthropic, startFakeOpenResponses, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeSecurityPort, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, fakeSecretHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
 import type { SecretHost } from './gateway-process-helpers.ts';
@@ -83,7 +83,7 @@ const startStack = async (
   const host = fakeHostPath(context, store);
   const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets), store, host);
   const lines: string[] = [];
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, { ...host.env, ...options.env }),
@@ -91,7 +91,7 @@ const startStack = async (
     execWithStdin: security,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close();
   });
@@ -222,7 +222,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
       },
     });
     let portCalls = 0;
-    const handle = await startGatewayProcess({
+    const handle = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home, fakeHostPath(context, store).env),
@@ -232,7 +232,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
         throw new Error('spawn security ENOENT');
       },
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await handle.close();
     });
@@ -257,7 +257,7 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
       models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
     });
     const security = createFakeSecurityPort(() => ({}));
-    const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
+    const handle = await ownedStart(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } }));
     registerCleanup(context, async () => {
       await handle.close();
     });

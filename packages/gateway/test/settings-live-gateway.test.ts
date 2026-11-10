@@ -13,6 +13,7 @@ import {
   REAL_PROCESS_TEST_TIMEOUT_MS,
   decodeOtlpSpans,
   openResponsesTextReply,
+  ownedStart,
   registerCleanup,
   startFakeChatCompletions,
   startFakeOpenResponses,
@@ -55,14 +56,14 @@ const startStack = async (context: CleanupContext, settings: unknown, env: Recor
   const home = withTempDir(context, { asHome: true });
   replaceSettings(home, settings);
   const chunks: string[] = [];
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
     stdout: { write: () => true },
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -408,7 +409,7 @@ const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletion
   const home = withTempDir(context, { asHome: true });
   await beforeStart(home);
   replaceSettings(home, keyedTarget(fake));
-  const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } });
+  const handle = await ownedStart(context, startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home, env), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(context, async () => {
     await handle.close(NO_GRACE);
   });
@@ -476,14 +477,14 @@ describe('S8 gateway: every supervisor reply that is not a value is unset, and i
     await replyingSupervisor(context, home, status, body);
     replaceSettings(home, keyedTarget(a));
     const chunks: string[] = [];
-    const handle = await startGatewayProcess({
+    const handle = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }),
       version: PROCESS_VERSION,
       logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
       stdout: { write: () => true },
-    });
+    }));
     registerCleanup(context, async () => {
       await handle.close(NO_GRACE);
     });

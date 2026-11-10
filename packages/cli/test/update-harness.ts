@@ -67,7 +67,7 @@ export type HarnessOptions = {
 const ok = (stdout = ''): CommandResult => ({ exitCode: 0, stdout, stderr: '' });
 
 export const setupUpdate = async (context: TestContext, options: HarnessOptions = {}): Promise<UpdateHarness> => {
-  const root = withTempDir(context);
+  const root = withTempDir(context, { asHome: true });
   const dir = path.join(root, 'bin');
   fs.mkdirSync(dir);
   const target = path.join(dir, 'momonga');

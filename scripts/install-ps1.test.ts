@@ -190,7 +190,7 @@ describe.runIf(pwshAvailable)('install.ps1 PATH behaviour under PowerShell', () 
 
   afterAll(async () => {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   type Run = { readonly code: number; readonly stdout: string; readonly stderr: string };

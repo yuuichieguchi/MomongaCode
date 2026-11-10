@@ -43,8 +43,8 @@ describe('release-key.ts', () => {
     attacker = generateKey(root, 'attacker_key');
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('refuses a repository whose installers pin no release key, and says what to put where', () => {

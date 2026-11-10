@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { vi } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor, shortTempBase } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, fixedSocket, generationLayout, secretStoreEnvFor } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { killPidsForCleanup } from '@momonga/testkit';
+import { createTempDir, killPidsForCleanup, removeTempDir } from '@momonga/testkit';
 import type { FakeSecurityPort } from '@momonga/testkit';
-import { registerCleanup } from './gateway-helpers.ts';
+import { closedAtCleanup, registerCleanup } from './gateway-helpers.ts';
 
 export const PROCESS_VERSION = '1.10.0-test';
 export const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
@@ -17,9 +17,8 @@ export type GatewayProcessOptions = Parameters<typeof startGatewayProcess>[0];
 export type GatewayProcessHandle = Awaited<ReturnType<typeof startGatewayProcess>>;
 
 export const makeHome = (): string => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'gh-')));
-  fs.chmodSync(home, 0o700);
-  registerCleanup(() => fs.rmSync(home, { recursive: true, force: true }));
+  const home = createTempDir({ asHome: true });
+  registerCleanup(() => removeTempDir(home));
   return home;
 };
 
@@ -84,7 +83,7 @@ export const captureStdout = (): StdoutCapture => {
 };
 
 export const launchGateway = async (options: GatewayProcessOptions): Promise<GatewayProcessHandle> => {
-  const handle = await startGatewayProcess(options);
+  const handle = await closedAtCleanup(startGatewayProcess(options));
   registerCleanup(async () => {
     await handle.close();
   });

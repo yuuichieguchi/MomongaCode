@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, startFakeOpenResponses } from '@momonga/testkit';
-import { postJson, registerCleanup, userInput } from './gateway-helpers.ts';
+import { closedAtCleanup, postJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -23,7 +23,7 @@ describe('a plan target the gateway cannot serve yet (design-settings-live 15.3)
         },
       },
     });
-    const handle = await startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } });
+    const handle = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }));
     registerCleanup(async () => {
       await handle.close({ closeGraceMs: 0, managedServerStopGraceMs: 0 });
     });

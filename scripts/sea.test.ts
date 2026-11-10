@@ -39,14 +39,14 @@ describe('SHASUMS256 verification', () => {
     expect(() => assertPinnedChecksum(`${OTHER_SHA}  other.tar.gz\n`, ARCHIVE, SEA_NODE_ARCHIVE_SHA256)).toThrow('is not listed');
   });
 
-  it('rejects a file whose bytes do not match the checksum', () => {
+  it('rejects a file whose bytes do not match the checksum', async () => {
     const root = createTempRoot();
     try {
       const file = path.join(root, 'blob');
       fs.writeFileSync(file, 'tampered');
       expect(() => assertFileChecksum(file, SEA_NODE_ARCHIVE_SHA256)).toThrow('sha256 mismatch');
     } finally {
-      removeTempRoot(root);
+      await removeTempRoot(root);
     }
   });
 });
@@ -64,8 +64,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the f
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/entry.ts`, output: binary, workDir: path.join(root, 'work') });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('runs on a PATH that contains no node', () => {

@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -18,7 +17,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
+import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
@@ -71,9 +70,10 @@ export const onCleanup = (cleanup: Cleanup): void => void cleanups.push(cleanup)
 export type Layout = { root: string; home: string; momonga: string; runDir: string; project: string; projectReal: string; socketPath: string; dbPath: string };
 
 export const makeLayout = (): Layout => {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ms-')));
-  onCleanup(() => fs.rmSync(root, { recursive: true, force: true }));
-  const home = path.join(root, 'h');
+  const root = createTempDir();
+  onCleanup(() => removeTempDir(root));
+  const home = createTempDir({ asHome: true });
+  onCleanup(() => removeTempDir(home));
   const momonga = path.join(home, '.momonga');
   const runDir = path.join(momonga, 'run');
   fs.mkdirSync(runDir, { recursive: true, mode: 0o700 });

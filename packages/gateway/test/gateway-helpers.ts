@@ -9,7 +9,7 @@ import { createGateway } from '@momonga/gateway';
 import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
 import type { StreamEvent } from '@momonga/protocol';
-import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
+import { CLEANUP_KILL_DEADLINE_MS, closeOnceStarted, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -37,6 +37,11 @@ afterEach(async () => {
 
 export const registerCleanup = (cleanup: () => void | Promise<void>): void => {
   cleanups.push(cleanup);
+};
+
+export const closedAtCleanup = <Handle extends { close: () => Promise<unknown> }>(started: Promise<Handle>): Promise<Handle> => {
+  registerCleanup(closeOnceStarted(started));
+  return started;
 };
 
 export const makeDir = (): string => {

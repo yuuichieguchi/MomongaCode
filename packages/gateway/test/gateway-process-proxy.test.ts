@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -78,7 +78,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, settings);
   const log = captureLog();
-  const handle = await startGatewayProcess({
+  const handle = await ownedStart(context, startGatewayProcess({
     generation: FIRST_GENERATION,
     home,
     env: baseEnv(home, env),
@@ -86,7 +86,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
     ...(time === undefined ? {} : { clock: time.clock, timers: time.timers, random: () => 0.5 }),
-  });
+  }));
   registerCleanup(context, async () => {
     await handle.close();
   });

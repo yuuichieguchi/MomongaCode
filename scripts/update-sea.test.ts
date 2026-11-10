@@ -44,6 +44,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
   let releaseKey: Key = { privateKey: '', publicKey: '' };
   let attackerKey: Key = { privateKey: '', publicKey: '' };
   const installationRoots: string[] = [];
+  const installationHomes: string[] = [];
 
   const bytes = (file: string): Buffer => fs.readFileSync(file);
 
@@ -52,14 +53,13 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     const base = path.join(root, `i${instances}`);
     installationRoots.push(base);
     const dir = path.join(base, 'bin');
-    const home = path.join(root, 'h');
+    const home = createTempRoot({ asHome: true });
+    installationHomes.push(home);
     fs.mkdirSync(dir, { recursive: true });
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.mkdirSync(home);
     const bin = path.join(dir, 'momonga');
     fs.copyFileSync(v1, bin);
     fs.chmodSync(bin, 0o755);
-    return { bin: fs.realpathSync(bin), dir: fs.realpathSync(dir), home: fs.realpathSync(home) };
+    return { bin: fs.realpathSync(bin), dir: fs.realpathSync(dir), home };
   };
 
   const run = (file: string, args: readonly string[], home: string, env: Record<string, string> = {}): Promise<Outcome> =>
@@ -94,7 +94,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
   const versionOf = async (installation: Installation): Promise<string> => (await run(installation.bin, ['--version'], installation.home)).stdout;
 
   beforeAll(async () => {
-    root = createTempRoot({ asHome: true });
+    root = createTempRoot();
     releaseKey = generateKey(root, 'release_key');
     attackerKey = generateKey(root, 'attacker_key');
     v1 = path.join(root, 'v1');
@@ -107,13 +107,14 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('self-update on built single execut
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/update-v2.ts`, output: v2, workDir: path.join(root, 'work2') });
   }, UNBOUNDED_BUILD_WAIT_MS);
 
-  afterEach(() => {
+  afterEach(async () => {
+    for (const home of installationHomes.splice(0)) await removeTempRoot(home);
     for (const base of installationRoots.splice(0)) fs.rmSync(base, { recursive: true, force: true });
   });
 
   afterAll(async () => {
     await server.stop();
-    removeTempRoot(root);
+    await removeTempRoot(root);
   });
 
   it('replaces the running executable with the verified release and the new binary runs', async () => {
@@ -280,8 +281,8 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('build-time update source', { timeo
     for (const binary of ['no-source', 'no-team', 'no-key']) fs.rmSync(path.join(root, binary), { force: true });
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('is absent from a bundle built without inputs and embedded in one built with them', async () => {

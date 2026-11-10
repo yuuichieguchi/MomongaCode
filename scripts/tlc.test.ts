@@ -21,8 +21,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh', () => {
     });
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('prints a fetch command for the exact release that carries the pinned jar, never the latest release', () => {
@@ -53,8 +53,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh with a config of another module', () =
     });
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('checks the module named by the part of the config name before the first dot', () => {
@@ -83,8 +83,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh --fetch-jar', () => {
     fs.copyFileSync(`${repoRoot}scripts/tlc.sh`, path.join(root, 'scripts/tlc.sh'));
   });
 
-  afterAll(() => {
-    removeTempRoot(root);
+  afterAll(async () => {
+    await removeTempRoot(root);
   });
 
   it('refuses a download whose sha256 is not the pinned one and leaves no jar behind', () => {
