@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { HOLD_UNTIL_SIGNALLED, HOLD_UNTIL_SIGNALLED_ARGV, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import { REAP_POLL_INTERVAL_MS, findHolders, holderGroups, markerReapClockBoundMs, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, ReapTiming } from '@momonga/foundation';
 
@@ -99,7 +99,7 @@ const startGroup = async (
 const startEscapedHolder = (marker: string): number => {
   const fd = fs.openSync(marker, 'r');
   try {
-    const child = spawn('/bin/sleep', ['60'], { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] });
+    const child = spawn(HOLD_UNTIL_SIGNALLED_ARGV[0], HOLD_UNTIL_SIGNALLED_ARGV.slice(1), { detached: true, stdio: ['ignore', 'ignore', 'ignore', fd] });
     child.unref();
     if (child.pid === undefined) throw new Error('spawn failed');
     spawnedPids.push(child.pid);
@@ -110,17 +110,17 @@ const startEscapedHolder = (marker: string): number => {
 };
 
 const deadGroup = async (dir: string): Promise<number> => {
-  const group = await startGroup(dir, `touch "$DIR/ready"; exec sleep 60`);
+  const group = await startGroup(dir, `touch "$DIR/ready"; exec ${HOLD_UNTIL_SIGNALLED}`);
   process.kill(-group.pgid, 'SIGKILL');
   await group.leaderReaped;
   expect(await waitUntil(() => !alive(-group.pgid), 5000)).toBe(true);
   return group.pgid;
 };
 
-const TERM_MARKER_SCRIPT = `trap 'echo term > "$DIR/term"; kill $! 2>/dev/null; exit 0' TERM; sleep 60 & touch "$DIR/ready"; wait`;
+const TERM_MARKER_SCRIPT = `trap 'echo term > "$DIR/term"; kill $! 2>/dev/null; exit 0' TERM; ${HOLD_UNTIL_SIGNALLED} & touch "$DIR/ready"; wait`;
 const IGNORING_MEMBER_SCRIPT = `trap 'echo term > "$DIR/term"; exit 0' TERM; /bin/sh -c 'trap "" TERM; touch "$DIR/member"; while :; do sleep 1; done' & touch "$DIR/ready"; wait`;
-const ORPHAN_SCRIPT = `sleep 60 & touch "$DIR/ready"; exit 0`;
-const CLOSED_FD_SCRIPT = `exec 3<&-; trap 'echo term > "$DIR/term"; exit 0' TERM; sleep 60 & touch "$DIR/ready"; wait`;
+const ORPHAN_SCRIPT = `${HOLD_UNTIL_SIGNALLED} & touch "$DIR/ready"; exit 0`;
+const CLOSED_FD_SCRIPT = `exec 3<&-; trap 'echo term > "$DIR/term"; exit 0' TERM; ${HOLD_UNTIL_SIGNALLED} & touch "$DIR/ready"; wait`;
 
 const expectStopped = (output: string): void => {
   expect(output).toMatch(/stopped/i);

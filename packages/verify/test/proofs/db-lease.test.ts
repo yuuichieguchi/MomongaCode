@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, runtimeMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, runtimeMaxCloseMs } from '@momonga/foundation';
 import { DEFAULT_BUSY_TIMEOUT_MS } from '@momonga/foundation/sqlite';
 import { LOCK_WAIT_DEADLINE_MS } from '@momonga/supervisor';
 import { proofArith } from '../../src/proofs/arith.ts';
@@ -22,7 +22,7 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
   it('reads today the constants the proofs start from', () => {
     expect(DEFAULT_BUSY_TIMEOUT_MS).toBe(5000);
     expect(LOCK_WAIT_DEADLINE_MS).toBe(14_000);
-    expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(15_000);
+    expect(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS).toBe(18_020);
     expect(DEFAULT_LEASE_MS / Number(HEARTBEAT_DIVISOR)).toBe(10_000);
   });
 
@@ -68,8 +68,8 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
       const drain = arith.int('d');
       arith.given(drain.ge(0));
       const close = drain.add(RUNTIME_ABORT_BUDGET_MS).add(RUNTIME_TEARDOWN_BUDGET_MS);
-      expect(runtimeMaxCloseMs(0)).toBe(15_000);
-      expect(runtimeMaxCloseMs(7)).toBe(15_007);
+      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_095);
+      expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 7, mcpCloseGraceMs: 0 })).toBe(28_102);
       expect(await satisfiable(arith)).toBe(true);
       expect(await prove(arith, close.ge(15_000))).toEqual({ status: 'proved' });
     },

@@ -280,10 +280,21 @@ export {
   LOCK_FD,
   DEFAULT_STOP_VALUES,
   MARKER_REAP_GRACE_WINDOWS,
-  ORPHAN_REAP_GRACE_MS,
+  MAXIMUM_STOP_VALUES,
+  ABORT_SETTLE_LIMIT_MS,
+  SANDBOX_KILL_GRACE_MS,
+  GROUP_POLL_INTERVAL_MS,
+  mcpPoolCloseBoundMs,
+  mcpPoolsStepBoundMs,
+  runtimeTeardownBudgetMs,
+  runtimeAbortStopBudgetMs,
+  orphanReapGraceMs,
+  requirementOfStop,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
+  MCP_CONNECT_TIMEOUT_LIMITS,
+  mcpConnectTimeoutProblem,
   STOP_MESSAGE_MAX_BYTES,
   STOP_MESSAGE_OVERLONG_REASON,
   STOP_VALUE_NAMES,
@@ -330,7 +341,6 @@ export {
   declaredChildEnv,
   parseReadyLine,
   managedServerStopBoundMs,
-  MANAGED_SERVER_TERMINATE_GRACE_WAITS,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
@@ -423,6 +433,7 @@ export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
+export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
 export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';

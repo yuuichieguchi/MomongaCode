@@ -1,4 +1,5 @@
 import { DEFAULT_STOP_VALUES, ENTRY_HARD_EXIT_MARGIN_MS, gatewayMaxCloseMs, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import type { StopValues } from '@momonga/foundation';
 import {
   LOCK_WATCH_INTERVAL_MS,
   SETTINGS_DEBOUNCE_MS,
@@ -24,8 +25,9 @@ export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_
 export const E2E_MARGIN_MS = 4000;
 export const E2E_LEASE_MS = 3000;
 export const E2E_DRAIN_TIMEOUT_MS = 1000;
+export const E2E_STOP_VALUES: StopValues = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS };
 export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
-export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS } });
+export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ predecessorStopValues: E2E_STOP_VALUES });
 export const E2E_HOOK_TIMEOUT_MS = 30_000;
 export const DEFAULT_TEST_TIMEOUT_MS = 60_000;
 export const E2E_DISPOSE_BOUND_MS = 25_000;
@@ -36,16 +38,16 @@ export const E2E_RECOVERY_BOUND_MS = E2E_RESTART_BOUND_MS + E2E_LEASE_MS + E2E_M
 export const E2E_SETTINGS_SEEN_BOUND_MS = SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + E2E_MARGIN_MS;
 export const E2E_SETTINGS_RESTART_BOUND_MS = SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + 2 * E2E_RESTART_BOUND_MS;
 export const E2E_HELD_RETRY_MS = 3000;
-export const E2E_ORPHAN_CLOSE_BOUND_MS = Math.max(runtimeMaxCloseMs(E2E_DRAIN_TIMEOUT_MS), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)) + E2E_MARGIN_MS;
-export const E2E_SUPERVISOR_CLOSE_BOUND_MS = supervisorMaxCloseMs(E2E_DRAIN_TIMEOUT_MS, DEFAULT_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS;
+export const E2E_ORPHAN_CLOSE_BOUND_MS = Math.max(runtimeMaxCloseMs(E2E_STOP_VALUES), gatewayMaxCloseMs(E2E_STOP_VALUES)) + E2E_MARGIN_MS;
+export const E2E_SUPERVISOR_CLOSE_BOUND_MS = supervisorMaxCloseMs(E2E_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS;
 export const E2E_REAP_CLOSE_BOUND_MS = SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_TERM_BOUND_MS = E2E_MARGIN_MS;
 export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
 export const E2E_ORPHAN_GRACE_MS = 3000;
-export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS }, orphanGraceMs: E2E_ORPHAN_GRACE_MS });
-export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs(resolveStartTiming({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS }, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS;
+export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({ predecessorStopValues: E2E_STOP_VALUES, orphanGraceMs: E2E_ORPHAN_GRACE_MS });
+export const E2E_PHASE2_REACHED_BOUND_MS = orphanPhaseOneBoundMs(resolveStartTiming({ predecessorStopValues: E2E_STOP_VALUES, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {

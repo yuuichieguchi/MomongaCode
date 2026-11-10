@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, prepareGenerationForTest, spawnTracked, waitFor, firstGeneration } from '@momonga/testkit';
-import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { ORPHAN_POLL_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
 import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   HARNESS_GENERATION,
@@ -249,19 +249,28 @@ describe('startSupervisor', () => {
 });
 
 describe('resolveStartTiming', () => {
-  it('resolves the start-up timing a supervisor runs with when nothing is injected', () => {
-    expect(resolveStartTiming({})).toEqual({
-      drainTimeoutMs: RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  const PREDECESSOR = { closeGraceMs: 1, managedServerStopGraceMs: 2, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
+
+  it('waits for an unknown predecessor by the bounds of the allowed maxima', () => {
+    expect(resolveStartTiming({ predecessorStopValues: undefined })).toEqual({
       startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: runtimeMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
-      orphanReapGraceMs: ORPHAN_REAP_GRACE_MS,
+      orphanGraceMs: 508_095,
+      orphanReapGraceMs: 208_095,
       orphanPollMs: ORPHAN_POLL_MS,
     });
   });
 
-  it('takes every injected value in place of its default', () => {
-    expect(resolveStartTiming({ runtime: { drainTimeoutMs: 1000 }, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
-      drainTimeoutMs: 1000,
+  it('waits for a predecessor whose stop record it read by the runtime close and the orphan grace of those values', () => {
+    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR })).toEqual({
+      startupTimeoutMs: STARTUP_TIMEOUT_MS,
+      orphanGraceMs: 7000 + 8020 + 10_000 + 6 * 40 + 10_075,
+      orphanReapGraceMs: 8020 + 10_000 + 6 * 40 + 10_075,
+      orphanPollMs: ORPHAN_POLL_MS,
+    });
+  });
+
+  it('takes every injected value in place of its derivation', () => {
+    expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
       startupTimeoutMs: 7000,
       orphanGraceMs: 3000,
       orphanReapGraceMs: 400,
@@ -270,7 +279,7 @@ describe('resolveStartTiming', () => {
   });
 
   it('bounds the start by the startup timeout of the children alone: no start waits for a previous daemon', () => {
-    const timing = resolveStartTiming({ orphanGraceMs: 3000 });
+    const timing = resolveStartTiming({ predecessorStopValues: PREDECESSOR, orphanGraceMs: 3000 });
     expect(supervisorStartBoundMs(timing)).toBe(timing.startupTimeoutMs);
   });
 });

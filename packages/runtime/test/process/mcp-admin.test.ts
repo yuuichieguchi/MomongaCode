@@ -57,6 +57,9 @@ const makeAuthPool = (options: McpPoolOptions, plan: ProbePlan): FakeAuthPool =>
   return pool;
 };
 
+const CLOSE_GRACE_MS = 40;
+const CONNECT_TIMEOUT_MS = 45_000;
+
 const setup = async () => {
   const temp = await makeTempHome();
   writeUserSettings(temp.home, { mcpServers: { local: { command: 'node', args: ['server.js'] }, remote: { type: 'http', url: REMOTE_URL } } });
@@ -75,6 +78,8 @@ const setup = async () => {
     timers,
     logger: makeLogger(),
     report: reporter.report,
+    readCloseGraceMs: () => CLOSE_GRACE_MS,
+    readConnectTimeoutMs: () => CONNECT_TIMEOUT_MS,
     settings: {
       envFor: () => ({}),
       admitUserSnapshot: () => {
@@ -177,11 +182,18 @@ describe('createMcpAdmin servers', () => {
     expect(pools[0]?.closes).toBe(0);
   });
 
+  it('opens its pools with the connect limit the user set (mcp.connectTimeoutMs)', async () => {
+    const { admin, session, pools } = await setup();
+    await admin.servers(session.id, controllerSignal());
+    expect(pools[0]?.options.connectTimeoutMs).toBe(CONNECT_TIMEOUT_MS);
+    await admin.close(CLOSE_GRACE_MS);
+  });
+
   it('closes its pools on close', async () => {
     const { admin, session, pools } = await setup();
     await admin.servers(session.id, controllerSignal());
 
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(pools[0]?.closes).toBe(1);
   });
@@ -197,7 +209,7 @@ describe('createMcpAdmin authorization', () => {
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'awaiting_user' });
     const authorizing = pools.find((pool) => pool.options.servers.length === 1);
     authorizing?.finishAuthorization();
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'completed', url: AUTHORIZE_URL });
     expect(authorizing?.closes).toBe(1);
   });
@@ -210,7 +222,7 @@ describe('createMcpAdmin authorization', () => {
 
     expect(second).toEqual(first);
     expect(pools).toHaveLength(1);
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
   });
 
   it('records the typed failure of an attempt that the user denied', async () => {
@@ -218,7 +230,7 @@ describe('createMcpAdmin authorization', () => {
     await admin.startAuthorization(session.id, 'remote');
 
     pools[0]?.failAuthorization(new McpAuthorizationError('denied', 'the user denied access'));
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'denied', message: 'the user denied access' } });
   });
@@ -228,7 +240,7 @@ describe('createMcpAdmin authorization', () => {
     await admin.startAuthorization(session.id, 'remote');
 
     pools[0]?.failAuthorization(new Error('the token endpoint is down'));
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'the authorization of MCP server "remote" failed: the token endpoint is down' } });
   });
@@ -238,7 +250,7 @@ describe('createMcpAdmin authorization', () => {
     await admin.startAuthorization(session.id, 'remote');
 
     pools[0]?.failAuthorization(new StoreCallEndedError({ action: 'read', name: undefined, backend: KEYCHAIN_BACKEND }, new OperationLimitError(30_000, 'the MCP connect limit')));
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({
       status: 'failed',
@@ -256,7 +268,7 @@ describe('createMcpAdmin authorization', () => {
     await admin.startAuthorization(session.id, 'remote');
 
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'the authorization of MCP server "remote" failed: authorization was cancelled by the client' } });
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(false);
@@ -275,7 +287,7 @@ describe('createMcpAdmin authorization', () => {
     const { admin, session } = await setup();
     await admin.startAuthorization(session.id, 'remote');
 
-    await admin.close();
+    await admin.close(CLOSE_GRACE_MS);
 
     expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { message: 'the authorization of MCP server "remote" failed: the runtime is shutting down' } });
   });

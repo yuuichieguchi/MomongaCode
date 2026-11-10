@@ -698,7 +698,7 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 134849,
-      "measuredSeconds": 7.0,
+      "measuredSeconds": 7,
       "measuredCpuSeconds": 12.54,
       "budgetCpuSeconds": 29
     },
@@ -2823,7 +2823,7 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 8640,
-      "measuredSeconds": 5.0,
+      "measuredSeconds": 5,
       "measuredCpuSeconds": 17.39,
       "budgetCpuSeconds": 38
     },
@@ -2966,7 +2966,7 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 33088,
-      "measuredSeconds": 2.0,
+      "measuredSeconds": 2,
       "measuredCpuSeconds": 5.5,
       "budgetCpuSeconds": 14
     },
@@ -3854,11 +3854,24 @@
       "role": "check",
       "expect": "holds",
       "args": [],
+      "tier": "deep",
+      "distinctStates": 265206,
+      "measuredSeconds": 49.47,
+      "measuredCpuSeconds": 115.39,
+      "budgetCpuSeconds": 234,
+      "note": "深い層に移した（完全な定数と EventuallyGone）。この改訂では完了していない：2026-11-09 の実行は 1 380 202 固有状態を超えて終わらず、停止した。distinctStates と秒数と CPU 秒は改訂前の値で、古い。CPU to be measured in the quiet window。"
+    },
+    {
+      "config": "StopProtocol.every",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
       "tier": "every-run",
-      "distinctStates": 263160,
-      "measuredSeconds": 31.31,
-      "measuredCpuSeconds": 103.45,
-      "budgetCpuSeconds": 210
+      "distinctStates": 16810,
+      "measuredSeconds": 3.58,
+      "measuredCpuSeconds": 7.11,
+      "budgetCpuSeconds": 18,
+      "note": "Gens = {1} の every-run の安全性の設定。開始時の一分平均 31.47。15 以上で測ったため、再測定します（measured above the load gate, to be re-measured）。"
     },
     {
       "config": "StopProtocol.malformed",
@@ -3866,10 +3879,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 670964,
-      "measuredSeconds": 71.84,
-      "measuredCpuSeconds": 249.96,
-      "budgetCpuSeconds": 503
+      "distinctStates": 5448214,
+      "measuredSeconds": 783.13,
+      "measuredCpuSeconds": 2746.5,
+      "budgetCpuSeconds": 5496,
+      "note": "2026-11-11 に測定（-fp 0 -workers 5、一度に一つ、/usr/bin/time -l の user + sys、開始時の一分平均 5.09）。"
     },
     {
       "config": "StopProtocol.noReap",
@@ -3880,10 +3894,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 851,
-      "measuredSeconds": 1.25,
-      "measuredCpuSeconds": 1.91,
-      "budgetCpuSeconds": 7
+      "distinctStates": 1558,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.97,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 30.95）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.mixed",
@@ -3894,10 +3909,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 142,
-      "measuredSeconds": 1.16,
-      "measuredCpuSeconds": 1.53,
-      "budgetCpuSeconds": 7
+      "distinctStates": 98,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.12）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.noMessage",
@@ -3908,10 +3924,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 157,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.54,
-      "budgetCpuSeconds": 7
+      "distinctStates": 143,
+      "measuredSeconds": 1.23,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.12）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.lateWaiter",
@@ -3922,10 +3939,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 149,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.52,
-      "budgetCpuSeconds": 7
+      "distinctStates": 166,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.12）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.lateWaiter.outlast",
@@ -3936,10 +3954,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4492979,
-      "measuredSeconds": 22.66,
-      "measuredCpuSeconds": 117.17,
-      "budgetCpuSeconds": 238
+      "distinctStates": 113927830,
+      "measuredSeconds": 702.21,
+      "measuredCpuSeconds": 3718.32,
+      "budgetCpuSeconds": 7440,
+      "note": "2026-11-11 に測定（-fp 0 -workers 5、一度に一つ、/usr/bin/time -l の user + sys、開始時の一分平均 2.37）。exit 12、NoOutlast に違反（状態数は違反で止まるまでの数で、ワーカー数に依ります）。"
     },
     {
       "config": "StopProtocol.noDeadline",
@@ -3950,10 +3969,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 14417,
-      "measuredSeconds": 1.41,
-      "measuredCpuSeconds": 3.02,
-      "budgetCpuSeconds": 10
+      "distinctStates": 11754,
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 3.18,
+      "budgetCpuSeconds": 10,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.19）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.waitsForever",
@@ -3964,10 +3984,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1228484,
-      "measuredSeconds": 66.6,
-      "measuredCpuSeconds": 221.47,
-      "budgetCpuSeconds": 446
+      "distinctStates": 3285632,
+      "measuredSeconds": 114.77,
+      "measuredCpuSeconds": 392.94,
+      "budgetCpuSeconds": 789,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 22.99）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.malformedNoKill",
@@ -3978,10 +3999,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 5034,
-      "measuredSeconds": 1.31,
-      "measuredCpuSeconds": 2.5,
-      "budgetCpuSeconds": 8
+      "distinctStates": 30072,
+      "measuredSeconds": 1.4,
+      "measuredCpuSeconds": 2.71,
+      "budgetCpuSeconds": 9,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 30.95）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
     },
     {
       "config": "StopProtocol.sigtermAfterFail",
@@ -3992,10 +4014,71 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 169,
-      "measuredSeconds": 1.16,
-      "measuredCpuSeconds": 1.51,
-      "budgetCpuSeconds": 7
+      "distinctStates": 132,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.19）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
+    },
+    {
+      "config": "StopProtocol.runtimeLate",
+      "role": "evidence",
+      "expect": {
+        "violates": "SameValues",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 196,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.62,
+      "budgetCpuSeconds": 7,
+      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 33.19）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
+    },
+    {
+      "config": "StopProtocol.graceConfirm",
+      "role": "evidence",
+      "expect": {
+        "violates": "KillWindowIsShare",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 219,
+      "measuredSeconds": 1.66,
+      "measuredCpuSeconds": 1.91,
+      "budgetCpuSeconds": 7,
+      "note": "開始時の一分平均 31.89。15 以上で測ったため、再測定します（measured above the load gate, to be re-measured）。"
+    },
+    {
+      "config": "StopProtocol.failOnUnconfirmed",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoStopFailure",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 4913,
+      "measuredSeconds": 1.98,
+      "measuredCpuSeconds": 3.19,
+      "budgetCpuSeconds": 10,
+      "note": "開始時の一分平均 31.89。15 以上で測ったため、再測定します（measured above the load gate, to be re-measured）。"
+    },
+    {
+      "config": "StopProtocol.unboundedConfirm",
+      "role": "evidence",
+      "expect": {
+        "violates": "WithinBound",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 5388,
+      "measuredSeconds": 1.92,
+      "measuredCpuSeconds": 2.89,
+      "budgetCpuSeconds": 9,
+      "note": "開始時の一分平均 34.94。15 以上で測ったため、再測定します（measured above the load gate, to be re-measured）。"
     },
     {
       "config": "ProcessMarker.unscopedReap",

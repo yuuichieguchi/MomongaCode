@@ -38,6 +38,6 @@ describe('the MCP admin probe pool launches its servers with the MCP process mar
     expect(created).toHaveLength(1);
     expect(created[0]?.markers?.dir).toBe(f.temp.paths.markers.mcp);
     expect(typeof created[0]?.markers?.onWarning).toBe('function');
-    await toolRuntime.mcpAdmin.close();
+    await toolRuntime.mcpAdmin.close(0);
   });
 });

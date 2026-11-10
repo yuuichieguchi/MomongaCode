@@ -81,6 +81,12 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   });
   const markers = recordingMarkerPorts(options.markerPorts ?? {});
   const realWork = createRealWorkScope();
+  const deliveredIo: FakeEntryIo = {
+    ...io,
+    signal: (name) => realWork.run(() => io.signal(name)),
+    endLifeline: () => realWork.run(() => io.endLifeline()),
+    uncaught: (error) => realWork.run(() => io.uncaught(error)),
+  };
   const fake = createFakeSpawn({ realWork, ...(options.behaviours === undefined ? {} : { behaviours: options.behaviours }) });
   const code = realWork.run(() => runSupervisorEntry(io, {
     version: TEST_VERSION,
@@ -105,12 +111,12 @@ const startEntry = (context: CleanupContext, options: EntryOptions = {}): EntryR
   );
   registerCleanup(context, async () => {
     fake.dieOnAnySignal();
-    io.signal('SIGINT');
+    deliveredIo.signal('SIGINT');
     await pumpUntil(timers, () => done, { realWork, maxMs: 2_000_000, description: 'the supervisor entry to finish' });
   });
   return {
     realWork,
-    io,
+    io: deliveredIo,
     home,
     paths,
     fake,

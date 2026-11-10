@@ -16,22 +16,23 @@ export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
 export const CREDENTIAL_CAPABILITY_ENV = 'MOMONGA_CREDENTIAL_CAPABILITY';
 export const CREDENTIAL_CAPABILITY_HEADER = 'momonga-credential-capability';
 
-export const RUNTIME_ABORT_BUDGET_MS = 5000;
+export const KILL_CONFIRM_MS = 5000;
+export const ABORT_SETTLE_LIMIT_MS = 2000;
+export const SANDBOX_KILL_GRACE_MS = 1000;
+export const GROUP_POLL_INTERVAL_MS = 10;
+export const RUNTIME_ABORT_BUDGET_MS = ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * GROUP_POLL_INTERVAL_MS;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
-export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
 export const STARTUP_TIMEOUT_MS = 60_000;
 
 export const startDeadlineSignal = (given: AbortSignal | undefined): AbortSignal => given ?? AbortSignal.timeout(STARTUP_TIMEOUT_MS);
-export const ORPHAN_REAP_GRACE_MS = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
-export const MANAGED_SERVER_TERMINATE_GRACE_WAITS = 2;
-export const MARKER_REAP_GRACE_WINDOWS = 4;
-export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
-export const managedServerStopBoundMs = (stopGraceMs: number): number => (MANAGED_SERVER_TERMINATE_GRACE_WAITS + MARKER_REAP_GRACE_WINDOWS) * stopGraceMs;
+export const groupTerminationBoundMs = (graceMs: number): number => graceMs + KILL_CONFIRM_MS;
+export const MARKER_REAP_GRACE_WINDOWS = 3;
+export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS) + KILL_CONFIRM_MS;
+export const managedServerStopBoundMs = (stopGraceMs: number): number => stopGraceMs + KILL_CONFIRM_MS + markerReapClockBoundMs(stopGraceMs);
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
 export const STDIO_EXIT_FLUSH_MS = 1000;
 export const CHILD_STDIO_FLUSH_MS = 1000;
-export const KILL_CONFIRM_MS = 5000;
 export const LOCAL_REQUEST_HEADERS_TIMEOUT_MS = 2000;
 export const CONTROL_REQUEST_TIMEOUT_MS = 5000;
 export const SUPERVISOR_RESPONSE_BOUND_MS = CONTROL_REQUEST_TIMEOUT_MS + LOCAL_REQUEST_HEADERS_TIMEOUT_MS;
@@ -43,35 +44,49 @@ export const LIFELINE_FD = 3;
 export const DAEMON_MARKER_FD = 4;
 export const LOCK_FD = 5;
 
-export const runtimeMaxCloseMs = (drainTimeoutMs: number): number => drainTimeoutMs + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
-
-export const runtimeStopBudgetMs = (drainTimeoutMs: number): number => runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS;
-
-export type StopValues = { readonly closeGraceMs: number; readonly managedServerStopGraceMs: number };
+export type StopValues = {
+  readonly closeGraceMs: number;
+  readonly managedServerStopGraceMs: number;
+  readonly drainTimeoutMs: number;
+  readonly mcpCloseGraceMs: number;
+};
 
 export type StopValueName = keyof StopValues;
 
 export const SHUTDOWN_SETTING_LIMITS = {
   closeGraceMs: { min: 0, max: 300_000, default: 10_000 },
   managedServerStopGraceMs: { min: 0, max: 60_000, default: 3000 },
+  drainTimeoutMs: { min: 0, max: 300_000, default: 30_000 },
+  mcpCloseGraceMs: { min: 0, max: 30_000, default: 1000 },
 } as const satisfies Record<StopValueName, { min: number; max: number; default: number }>;
 
-export const STOP_VALUE_NAMES = ['closeGraceMs', 'managedServerStopGraceMs'] as const satisfies readonly StopValueName[];
+export const STOP_VALUE_NAMES = ['closeGraceMs', 'managedServerStopGraceMs', 'drainTimeoutMs', 'mcpCloseGraceMs'] as const satisfies readonly StopValueName[];
 
-export const DEFAULT_STOP_VALUES: StopValues = {
-  closeGraceMs: SHUTDOWN_SETTING_LIMITS.closeGraceMs.default,
-  managedServerStopGraceMs: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.default,
+const stopValuesOf = (pick: (name: StopValueName) => number): StopValues => ({
+  closeGraceMs: pick('closeGraceMs'),
+  managedServerStopGraceMs: pick('managedServerStopGraceMs'),
+  drainTimeoutMs: pick('drainTimeoutMs'),
+  mcpCloseGraceMs: pick('mcpCloseGraceMs'),
+});
+
+export const DEFAULT_STOP_VALUES: StopValues = stopValuesOf((name) => SHUTDOWN_SETTING_LIMITS[name].default);
+
+export const MAXIMUM_STOP_VALUES: StopValues = stopValuesOf((name) => SHUTDOWN_SETTING_LIMITS[name].max);
+
+export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = DEFAULT_STOP_VALUES.drainTimeoutMs;
+
+export const MCP_CONNECT_TIMEOUT_LIMITS = { min: 1, max: 3_600_000, default: 30_000 } as const;
+
+export const mcpConnectTimeoutProblem = (value: unknown): string | undefined => {
+  const { min, max } = MCP_CONNECT_TIMEOUT_LIMITS;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
+  return `mcp.connectTimeoutMs must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
 };
 
-const MAXIMUM_STOP_VALUES: StopValues = {
-  closeGraceMs: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max,
-  managedServerStopGraceMs: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max,
-};
-
-export const stopValueProblem = (name: StopValueName, value: unknown): string | undefined => {
+export const stopValueProblem = (name: StopValueName, value: unknown, label: string = name): string | undefined => {
   const { min, max } = SHUTDOWN_SETTING_LIMITS[name];
   if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
-  return `${name} must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
+  return `${label} must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
 };
 
 export type StopValuesParse = { kind: 'values'; values: StopValues } | { kind: 'invalid'; reason: string };
@@ -79,12 +94,32 @@ export type StopValuesParse = { kind: 'values'; values: StopValues } | { kind: '
 export const parseStopValues = (input: unknown): StopValuesParse => {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { kind: 'invalid', reason: 'the stop values are not an object' };
   const record = input as Readonly<Record<string, unknown>>;
+  const checked: Partial<Record<StopValueName, number>> = {};
   for (const name of STOP_VALUE_NAMES) {
-    const problem = stopValueProblem(name, record[name]);
+    const value = record[name];
+    const problem = stopValueProblem(name, value);
     if (problem !== undefined) return { kind: 'invalid', reason: problem };
+    checked[name] = value as number;
   }
-  return { kind: 'values', values: { closeGraceMs: record['closeGraceMs'] as number, managedServerStopGraceMs: record['managedServerStopGraceMs'] as number } };
+  return { kind: 'values', values: stopValuesOf((name) => checked[name] as number) };
 };
+
+export const mcpPoolCloseBoundMs = (mcpCloseGraceMs: number): number =>
+  mcpCloseGraceMs + groupTerminationBoundMs(mcpCloseGraceMs) + mcpCloseGraceMs + markerReapClockBoundMs(mcpCloseGraceMs);
+
+export const mcpPoolsStepBoundMs = (mcpCloseGraceMs: number): number => mcpPoolCloseBoundMs(mcpCloseGraceMs);
+
+export const runtimeTeardownBudgetMs = (mcpCloseGraceMs: number): number => RUNTIME_TEARDOWN_BUDGET_MS + mcpPoolsStepBoundMs(mcpCloseGraceMs);
+
+export const runtimeMaxCloseMs = (values: StopValues): number => values.drainTimeoutMs + RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs);
+
+export const runtimeStopBudgetMs = (values: StopValues): number => runtimeMaxCloseMs(values) + SHUTDOWN_MARGIN_MS;
+
+export const runtimeAbortStopBudgetMs = (values: StopValues): number => RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs) + SHUTDOWN_MARGIN_MS;
+
+export const orphanReapGraceMs = (values: StopValues): number => RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs);
+
+export const requirementOfStop = (values: StopValues): number => runtimeMaxCloseMs(values) + orphanReapGraceMs(values);
 
 export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + managedServerStopBoundMs(values.managedServerStopGraceMs);
 
@@ -98,9 +133,9 @@ export const managedServerReapBoundMs = (values: StopValues): number => markerRe
 
 export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS;
 
-export const supervisorMaxCloseMs = (drainTimeoutMs: number, values: StopValues): number =>
+export const supervisorMaxCloseMs = (values: StopValues): number =>
   SHUTDOWN_DRAIN_BOUND_MS +
-  runtimeStopBudgetMs(drainTimeoutMs) +
+  runtimeStopBudgetMs(values) +
   killedChildSettleMs() +
   gatewayStopBudgetMs(values) +
   killedChildSettleMs() +
@@ -108,7 +143,7 @@ export const supervisorMaxCloseMs = (drainTimeoutMs: number, values: StopValues)
   SHUTDOWN_REAP_BOUND_MS +
   SHUTDOWN_RELEASE_BOUND_MS;
 
-export const daemonStopBoundMs = (values: StopValues): number => supervisorMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, values) + ENTRY_HARD_EXIT_MARGIN_MS;
+export const daemonStopBoundMs = (values: StopValues): number => supervisorMaxCloseMs(values) + ENTRY_HARD_EXIT_MARGIN_MS;
 
 export const STOP_WAIT_WHEN_UNKNOWN_MS = daemonStopBoundMs(MAXIMUM_STOP_VALUES);
 
@@ -124,7 +159,7 @@ const STOP_MESSAGE_EVENT = 'stop';
 const STOP_MESSAGE_FIELDS: ReadonlySet<string> = new Set(['event', ...STOP_VALUE_NAMES]);
 
 export const formatStopMessage = (values: StopValues): string =>
-  `${JSON.stringify({ event: STOP_MESSAGE_EVENT, closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs })}\n`;
+  `${JSON.stringify({ event: STOP_MESSAGE_EVENT, closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs, drainTimeoutMs: values.drainTimeoutMs, mcpCloseGraceMs: values.mcpCloseGraceMs })}\n`;
 
 export type StopMessage = { kind: 'stop'; values: StopValues } | { kind: 'malformed'; reason: string };
 

@@ -1,5 +1,7 @@
 import { parseOutsideJson } from '@momonga/foundation';
-import { RELIABILITY_FORMAT, RETIRED_RELIABILITY_FORMATS } from '@momonga/protocol';
+import { COST_CURRENCY, RELIABILITY_FORMAT, RETIRED_RELIABILITY_FORMATS } from '@momonga/protocol';
+import type { Period } from './aggregate.ts';
+import type { CostGroups, CostIndicators, CostSide } from './cost.ts';
 import { GROUP_KEYS } from './types.ts';
 import type { Indicators } from './types.ts';
 import { REPORT_KINDS } from './report.ts';
@@ -147,6 +149,46 @@ const decodePopulation = (value: unknown): { notRun: NotRun[] } => {
   };
 };
 
+const decodePeriod = (value: unknown): Period => {
+  const fields = fieldsAt(value, 'report.period');
+  return { days: countAt(fields, 'days', 'report.period'), fromMs: countAt(fields, 'fromMs', 'report.period'), toMs: countAt(fields, 'toMs', 'report.period') };
+};
+
+const UNITS = /^[0-9]+$/;
+
+const decodeCostSide = (value: unknown, path: string): CostSide => {
+  const fields = fieldsAt(value, path);
+  return {
+    tasks: countAt(fields, 'tasks', path),
+    fullyPriced: countAt(fields, 'fullyPriced', path),
+    calls: countAt(fields, 'calls', path),
+    notPriced: countAt(fields, 'notPriced', path),
+    tokens: countAt(fields, 'tokens', path),
+    priced: listAt(fields['priced'], `${path}.priced`).map((entry, index) => {
+      const at = `${path}.priced[${index}]`;
+      const amount = fieldsAt(entry, at);
+      if (amount['currency'] !== COST_CURRENCY) fail(`${at}.currency`, COST_CURRENCY);
+      const units = textAt(amount, 'units', at);
+      if (!UNITS.test(units)) fail(`${at}.units`, 'a non-negative integer in decimal digits');
+      return { currency: COST_CURRENCY, priceVersion: textAt(amount, 'priceVersion', at), units };
+    }),
+  };
+};
+
+const decodeCostIndicators = (value: unknown, path: string): CostIndicators => {
+  const fields = fieldsAt(value, path);
+  return { successful: decodeCostSide(fields['successful'], `${path}.successful`), unsuccessful: decodeCostSide(fields['unsuccessful'], `${path}.unsuccessful`) };
+};
+
+const decodeCost = (value: unknown): CostGroups => {
+  const fields = fieldsAt(value, 'report.cost');
+  const groups = fieldsAt(fields['groups'], 'report.cost.groups');
+  return {
+    total: decodeCostIndicators(fields['total'], 'report.cost.total'),
+    groups: Object.fromEntries(Object.entries(groups).map(([name, indicators]) => [name, decodeCostIndicators(indicators, `report.cost.groups.${name}`)])),
+  };
+};
+
 export const encodeReliabilityReport = (report: ReliabilityReport): string => JSON.stringify(report);
 
 export const decodeReliabilityReport = (text: string): ReliabilityReport => {
@@ -174,6 +216,8 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   rowsOnlyFor('scenarios', 'injection');
   rowsOnlyFor('witnessed', 'injection');
   rowsOnlyFor('population', 'injection');
+  rowsOnlyFor('period', 'real');
+  rowsOnlyFor('cost', 'real');
   return {
     format: RELIABILITY_FORMAT,
     kind,
@@ -186,5 +230,7 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
     ...(fields['scenarios'] === undefined ? {} : { scenarios: decodeScenarios(fields['scenarios']) }),
     ...(fields['witnessed'] === undefined ? {} : { witnessed: decodeWitnessed(fields['witnessed']) }),
     ...(fields['population'] === undefined ? {} : { population: decodePopulation(fields['population']) }),
+    ...(fields['period'] === undefined ? {} : { period: decodePeriod(fields['period']) }),
+    ...(fields['cost'] === undefined ? {} : { cost: decodeCost(fields['cost']) }),
   };
 };

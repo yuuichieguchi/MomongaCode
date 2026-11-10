@@ -3,6 +3,8 @@ import path from 'node:path';
 import type { HooksSettings, PermissionMode } from '@momonga/protocol';
 import { DEFAULT_STOP_VALUES, canonicalDirectory, comparableContains } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
+
+export type GatewayStopValues = Pick<StopValues, 'closeGraceMs' | 'managedServerStopGraceMs'>;
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import {
   defaultContextSettings,
@@ -20,7 +22,7 @@ import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting, defaultTuiSettings } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpCallSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpSettings, RuntimeSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, ResolvedTuiSettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -43,11 +45,12 @@ export type ResolvedSettings = {
   disabledMcpjsonServers: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers: Record<string, McpServerConfig>;
-  mcp: McpCallSettings;
+  mcp: McpSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
   tui: ResolvedTuiSettings;
-  gateway: StopValues;
+  gateway: GatewayStopValues;
+  runtime: RuntimeSettings;
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -147,7 +150,8 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     models,
     autoUpdates: true,
     tui: defaultTuiSettings(),
-    gateway: DEFAULT_STOP_VALUES,
+    gateway: { closeGraceMs: DEFAULT_STOP_VALUES.closeGraceMs, managedServerStopGraceMs: DEFAULT_STOP_VALUES.managedServerStopGraceMs },
+    runtime: {},
     sandbox: defaultSandboxSetting(),
     memory: defaultMemorySettings(),
     verification: defaultVerificationSettings(),
@@ -169,6 +173,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       autoUpdates,
       tui,
       gateway,
+      runtime,
       sandbox,
       telemetry,
       network,
@@ -214,6 +219,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
     if (tui !== undefined) merged.tui = { ...merged.tui, ...tui };
     if (gateway !== undefined) merged.gateway = { ...merged.gateway, ...gateway };
+    if (runtime !== undefined) merged.runtime = { ...merged.runtime, ...runtime };
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;
     if (network !== undefined) merged.network = network;

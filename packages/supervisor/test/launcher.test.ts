@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
-import { DAEMON_MARKER_FD, LIFELINE_FD, isProcessAlive, FIRST_GENERATION } from '@momonga/foundation';
+import { DAEMON_MARKER_FD, DEFAULT_STOP_VALUES, LIFELINE_FD, isProcessAlive, FIRST_GENERATION, runtimeStopBudgetMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import { childStdio, contractArgs, resolveLaunch } from '../src/launcher.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -36,13 +36,20 @@ describe('contract flags', () => {
       generation: FIRST_GENERATION,
       role: 'runtime',
       home: '/h/home',
-      runtime: { leaseMs: 100, drainTimeoutMs: 200, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
+      runtime: { leaseMs: 100, workerCount: 2, sandboxExecPath: '/usr/bin/sandbox-exec' },
       gateway: { args: ['--fm-binary=/opt/fm'] },
     });
     expect(tuned.slice(0, 4)).toEqual(['--home=/h/home', '--generation=1', '--lifeline-fd=3', '--log-target=file']);
-    expect([...tuned.slice(4)].sort()).toEqual(['--drain-timeout-ms=200', '--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
+    expect([...tuned.slice(4)].sort()).toEqual(['--lease-ms=100', '--sandbox-exec-path=/usr/bin/sandbox-exec', '--worker-count=2']);
     const gateway = contractArgs({ generation: FIRST_GENERATION, role: 'gateway', home: '/h/home', runtime: { leaseMs: 100 }, gateway: { args: ['--fm-binary=/opt/fm'] } });
     expect(gateway).toEqual(['--home=/h/home', '--generation=1', '--lifeline-fd=3', '--log-target=file', '--fm-binary=/opt/fm']);
+  });
+
+  it('never passes the runtime drain at spawn: it travels in the stop message of each stop', () => {
+    const runtime = { leaseMs: 100, drainTimeoutMs: 200 } as unknown as NonNullable<Parameters<typeof contractArgs>[0]['runtime']>;
+    const args = contractArgs({ generation: FIRST_GENERATION, role: 'runtime', home: '/h/home', runtime });
+    expect(args.filter((arg) => arg.startsWith('--drain-timeout-ms'))).toEqual([]);
+    expect(args).toContain('--lease-ms=100');
   });
 
   it('resolveLaunch puts the launcher args before the contract flags', () => {
@@ -224,7 +231,7 @@ describe('signals with real processes', () => {
     const childPid = port.spawned[0]?.pid as number;
     expect(processGroupOf(grandchild)).toBe(childPid);
     const stopped = harness.manager.stop('shutdown', 'term');
-    harness.timers.advance(50_000);
+    harness.timers.advance(runtimeStopBudgetMs(DEFAULT_STOP_VALUES));
     await pollUntil(() => !isProcessAlive(childPid) && !isProcessAlive(grandchild), 5000, 'child and grandchild are gone');
     await expect(stopped).resolves.toMatchObject({ killed: true, leaked: false });
   });

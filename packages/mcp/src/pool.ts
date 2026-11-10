@@ -2,7 +2,7 @@ import type { CredentialRules, McpServerEntry } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type { ToolSource } from '@momonga/tools';
 import type { McpRemotePorts } from './remote-ports.ts';
-import type { McpMarkerOptions } from './stdio-transport.ts';
+import type { CloseGrace, McpMarkerOptions } from './stdio-transport.ts';
 import type { McpTimers } from './timers.ts';
 import { createManagedConnection } from './connection.ts';
 import type { McpAuthProbe, McpServerDiagnostics } from './connection.ts';
@@ -24,12 +24,12 @@ export type McpPoolOptions = {
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
-  closeGraceMs?: number;
+  closeGraceMs?: CloseGrace;
 };
 
 export type McpPool = {
   sources: ToolSource[];
-  close(): Promise<void>;
+  close(graceMs?: number): Promise<void>;
   diagnostics(): McpServerDiagnostics[];
 };
 
@@ -76,8 +76,8 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
         ...(options.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: options.toolTotalTimeoutMs }),
       }),
     ),
-    close: async () => {
-      await Promise.all(connections.map((connection) => connection.close()));
+    close: async (graceMs) => {
+      await Promise.all(connections.map((connection) => connection.close(graceMs)));
     },
     diagnostics: () => connections.map((connection) => connection.diagnostics()),
     authorize: (server, signal) => connectionNamed(server).then((connection) => connection.authorize(signal)),

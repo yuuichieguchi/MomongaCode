@@ -63,7 +63,7 @@ export const createSupervisorClient = (options: SupervisorClientOptions): Superv
       path: '/v1/shutdown',
       ...(values === undefined
         ? {}
-        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify({ closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs }) }),
+        : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(values) }),
       ...(signal === undefined ? {} : { signal }),
     });
     const text = await response.text();

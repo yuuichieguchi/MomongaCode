@@ -1,7 +1,9 @@
 import { GENERATION_RETIRED_CODE, createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
+import { checkTraceContent } from './contract.ts';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_REVOCATIONS, PLAN_ROUTES, TARGET_ANSWERS, TARGET_BILLINGS, TARGET_HEALTH_REASONS, displayMapOf, isNotListedCapabilities, isToolCallingState, notListedMessage, planAccountRefOf } from '@momonga/protocol';
 import type {
+  TraceContentPage,
   Capabilities,
   GatewayHealth,
   MomongaModelEntry,
@@ -76,6 +78,7 @@ export type GatewayClient = {
   capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   contextWindowOf(model: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
+  contentOf(runId: string, request: { after: number; limit: number }): Promise<TraceContentPage>;
   health(): Promise<GatewayHealth>;
   readonly plan: PlanGatewayClient;
   close(): Promise<void>;
@@ -333,5 +336,10 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return body;
   };
 
-  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, health, plan, close: () => http.close() };
+  const contentOf = async (runId: string, request: { after: number; limit: number }): Promise<TraceContentPage> => {
+    const path = `/v1/momonga/content?${new URLSearchParams({ run_id: runId, after: String(request.after), limit: String(request.limit) }).toString()}`;
+    return checkTraceContent(await getJson(path), `GET ${path}`);
+  };
+
+  return { modelList, models, modelOf, capabilitiesOf, contextWindowOf, usageOf, contentOf, health, plan, close: () => http.close() };
 };

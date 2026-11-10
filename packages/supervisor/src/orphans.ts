@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
-import type { JsonLogger, ReapTiming, RetryKind, UninspectableRegistry } from '@momonga/foundation';
+import { MAXIMUM_STOP_VALUES, findHolders, isTransientFailure, markerReapClockBoundMs, readAttemptRecord, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import type { JsonLogger, ReapTiming, RetryKind, StopValues, UninspectableRegistry } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
 import type { ChildRole } from './launcher.ts';
@@ -42,7 +42,7 @@ export type OrphanReapOptions = {
   orphanGraceMs: number;
   orphanReapGraceMs: number;
   orphanPollMs: number;
-  drainTimeoutMs?: number;
+  predecessorStopValues?: StopValues | undefined;
   timers: SupervisorTimers;
   signal: AbortSignal;
   logger: JsonLogger;
@@ -104,12 +104,12 @@ const listMarkerNames = (markersDir: string): Promise<string[]> => fs.promises.r
 
 type Observation = { kind: 'listed'; holders: number } | { kind: 'unlisted'; error: Error } | { kind: 'deadline' } | { kind: 'aborted' };
 
-type OrphanReapTiming = Pick<OrphanReapOptions, 'orphanGraceMs' | 'orphanReapGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>;
+type OrphanReapTiming = Pick<OrphanReapOptions, 'orphanGraceMs' | 'orphanReapGraceMs' | 'orphanPollMs' | 'predecessorStopValues'>;
 
-const phaseOneGraceMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'drainTimeoutMs'>): number =>
-  Math.min(timing.orphanGraceMs, runtimeMaxCloseMs(timing.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
+const phaseOneGraceMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'predecessorStopValues'>): number =>
+  Math.min(timing.orphanGraceMs, runtimeMaxCloseMs(timing.predecessorStopValues ?? MAXIMUM_STOP_VALUES));
 
-export const orphanPhaseOneBoundMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>): number => phaseOneGraceMs(timing) + timing.orphanPollMs;
+export const orphanPhaseOneBoundMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'orphanPollMs' | 'predecessorStopValues'>): number => phaseOneGraceMs(timing) + timing.orphanPollMs;
 
 export const orphanReapBoundMs = (timing: OrphanReapTiming): number => orphanPhaseOneBoundMs(timing) + markerReapClockBoundMs(timing.orphanReapGraceMs);
 

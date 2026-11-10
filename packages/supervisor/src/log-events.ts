@@ -69,6 +69,7 @@ export const generationMany = defineEvent<{ live: number }>('generation.many', '
 export const shutdownBegin = defineEvent<{ mode: 'close' | 'abort' }>('shutdown.begin', 'info');
 export const shutdownStep = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'info');
 export const shutdownStepBound = defineEvent<{ shutdownStep: number; detail: string }>('shutdown.step', 'warn');
+export const shutdownRecordFailed = defineEvent<{ detail: string }>('shutdown.record_failed', 'warn');
 export const shutdownEnd = defineEvent<{ clean: boolean; killed: string; leaked: string }>('shutdown.end', 'info');
 
 export const SUPERVISOR_EVENTS = {

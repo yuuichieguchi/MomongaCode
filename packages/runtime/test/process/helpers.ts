@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { FIRST_GENERATION, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, mcpPoolCloseBoundMs, claimPathOf, ensureMomongaDirs, fixedRolePort, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, ReapTiming, RolePort, SessionScratch } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, modelSettings, closeOnceStarted, createTempDir, removeTempDir } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -287,7 +287,13 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     ...(options.ensureSessionTmpDir === undefined ? {} : { ensureSessionTmpDir: options.ensureSessionTmpDir }),
   });
   onCleanup(async () => {
-    await toolRuntime.mcpPools.closeAll();
+    const graceMs = DEFAULT_STOP_VALUES.mcpCloseGraceMs;
+    let closed = false;
+    const closing = toolRuntime.mcpPools.closeAll(graceMs).finally(() => {
+      closed = true;
+    });
+    await driveFakeTime(fixture.timers, { done: () => closed, horizonAt: fixture.timers.now() + mcpPoolCloseBoundMs(graceMs), description: 'the MCP pools to close at cleanup' });
+    await closing;
   });
   return { ...fixture, temp, cache, composition, toolRuntime, logger, reporter, pools, reapTiming };
 };

@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
-import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, generationLayout, systemClock } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, FIRST_GENERATION, createJsonLogger, createUdsClient, fixedSocket, generationLayout, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -29,7 +29,7 @@ import { REDACTED } from './credential-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const NO_GRACE = { closeGraceMs: 0, managedServerStopGraceMs: 0 };
+const NO_GRACE = { ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 };
 
 let settingsWrites = 0;
 

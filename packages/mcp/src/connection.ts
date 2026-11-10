@@ -2,7 +2,7 @@ import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TR
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import { stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, CredentialStoreError, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
+import { CircuitBreaker, CredentialStoreError, MCP_CONNECT_TIMEOUT_LIMITS, JsonDepthError, MIN_CREDENTIAL_CHARS, OperationLimitError, checkJsonDepth, computeBackoff, limitEndOf, limitEndText, operationLimit, settledOrAborted } from '@momonga/foundation';
 import type { Clock, OperationLimit } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { credentialNoticesOf } from './credential-strength.ts';
@@ -25,7 +25,8 @@ import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
 import { createStoreScope, runInStoreScope, storeCallSignal, storeCallsSettled, storeUnderCallSignals } from './store-scope.ts';
 import type { StoreScope } from './store-scope.ts';
-import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
+import { closeGraceOf } from './stdio-transport.ts';
+import type { CloseGrace } from './stdio-transport.ts';
 import type { McpMarkerOptions } from './stdio-transport.ts';
 import { McpInputSuspension } from './suspension.ts';
 import type { McpCheckpoint, McpResume } from './suspension.ts';
@@ -38,7 +39,7 @@ import type { McpTimers } from './timers.ts';
 
 const CLIENT_NAME = 'momonga';
 const CLIENT_VERSION = '0.0.0';
-const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = MCP_CONNECT_TIMEOUT_LIMITS.default;
 const DEFAULT_RESET_AFTER_MS = 60_000;
 const FAILURE_THRESHOLD = 3;
 const BACKOFF_BASE_MS = 200;
@@ -91,7 +92,7 @@ export interface McpServerConnection {
   cancelOutcome(taskId: string): Promise<boolean> | undefined;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
-  close(): Promise<void>;
+  close(graceMs?: number): Promise<void>;
 }
 
 export type McpConnectionOptions = {
@@ -108,7 +109,7 @@ export type McpConnectionOptions = {
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
-  closeGraceMs?: number;
+  closeGraceMs?: CloseGrace;
   mrtrMaxRounds?: number;
   onNotice?: (message: string) => void;
   credentials?: CredentialRules;
@@ -399,8 +400,8 @@ class ManagedConnection implements McpServerConnection {
     return this.cancels.get(taskId);
   }
 
-  close(): Promise<void> {
-    this.closing ??= this.shutdown();
+  close(graceMs: number = closeGraceOf(this.options.closeGraceMs)): Promise<void> {
+    this.closing ??= this.shutdown(graceMs);
     return this.closing;
   }
 
@@ -591,25 +592,25 @@ class ManagedConnection implements McpServerConnection {
     await session.guarded?.close();
   }
 
-  private async shutdown(): Promise<void> {
+  private async shutdown(graceMs: number): Promise<void> {
     this.lifetime.abort();
     this.inputs.closeAll();
-    await this.pendingTransport?.close();
+    await this.pendingTransport?.close(graceMs);
     await this.connecting?.catch(() => undefined);
     this.state = 'closed';
     const session = this.session;
     this.session = undefined;
     if (session === undefined) return;
     try {
-      if (session.transport.sessionId !== undefined) await this.endSession(session.transport);
+      if (session.transport.sessionId !== undefined) await this.endSession(session.transport, graceMs);
     } finally {
+      await session.transport.close(graceMs);
       await session.client.close();
       await session.guarded?.close();
     }
   }
 
-  private async endSession(transport: ConnectionTransport): Promise<void> {
-    const graceMs = this.options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
+  private async endSession(transport: ConnectionTransport, graceMs: number): Promise<void> {
     const close = new AbortController();
     const limit = operationLimit(close.signal, closeLimitMsOf(graceMs), CLOSE_LIMIT_LABEL, this.timers);
     const scope = this.storeScopeUnder(limit.signal);
@@ -682,6 +683,7 @@ class ManagedConnection implements McpServerConnection {
         baseEnv,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
+        timing: { now: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
       });
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }

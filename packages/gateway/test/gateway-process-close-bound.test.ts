@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, KILL_CONFIRM_MS, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses, FIRST_GENERATION } from '@momonga/foundation';
 import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { ManagedChild } from '@momonga/gateway';
@@ -76,7 +76,7 @@ const hostExec = async (file: string, args: readonly string[]) => {
 
 const POLLS = new Set([REAP_POLL_INTERVAL_MS]);
 
-const waitsOfTheClose = (values: StopValues): Set<number> => new Set([values.closeGraceMs, values.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS]);
+const waitsOfTheClose = (values: StopValues): Set<number> => new Set([values.closeGraceMs, values.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS, KILL_CONFIRM_MS]);
 
 type CloseOutcome = { tookMs: number; probeTerminatedAfterMs: number[] };
 
@@ -138,7 +138,7 @@ describe('the gateway process close bound with an fm probe in flight', () => {
   it.each<[ProbePhase, StopValues]>([
     ['running', DEFAULT_STOP_VALUES],
     ['waiting on health', DEFAULT_STOP_VALUES],
-    ['running', { closeGraceMs: 2000, managedServerStopGraceMs: 500 }],
+    ['running', { closeGraceMs: 2000, managedServerStopGraceMs: 500, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 }],
   ])(
     'ends within the close bound of the values of that close and stops the probe server when the close begins, while the probe server is %s and the managed server streams to a client that does not read (values %o)',
     async (phase, values) => {

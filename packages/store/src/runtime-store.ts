@@ -29,6 +29,7 @@ import type { Row, Stored } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
+import { createPermissionReviewsStore } from './permission-reviews.ts';
 import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
@@ -450,6 +451,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const contextCharges = createContextChargeStore(db, clock, decodeContext);
   const reflection = createReflectionStore(db, clock, { memories, contextCharges }, decodeContext);
   const governing = createGoverningFactStore(db, clock, decodeContext);
+  const runFacts = createRunFactsStore(db, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home, decodeContext);
   const ruleVerdicts = createRuleVerdictStore(db, clock);
@@ -1845,7 +1847,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db, decodeContext, derivedReads),
-    runFacts: createRunFactsStore(db, decodeContext),
+    runFacts,
+    permissionReviews: createPermissionReviewsStore(db, decodeContext, runFacts.calls),
 
     journalFacts: {
       inheritPlan: async (request, signal) => journalPreparer(preparer, 'inheritance plan').inheritPlan(request, signal),

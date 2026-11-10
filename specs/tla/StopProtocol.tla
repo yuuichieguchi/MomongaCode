@@ -4,20 +4,23 @@ EXTENDS Naturals
 CONSTANTS Gens, Vals, MaxT, Variant
 
 ASSUME Variant \in {"decided", "mixed", "noMessage", "lateWaiter", "noDeadline", "waitsForever",
-                    "sigtermAfterFail", "malformed", "malformedNoKill", "noReap"}
+                    "sigtermAfterFail", "malformed", "malformedNoKill", "noReap", "runtimeLate",
+                    "graceConfirm", "failOnUnconfirmed", "unboundedConfirm"}
 ASSUME MaxT \in Nat
 ASSUME Gens # {}
 ASSUME Vals \subseteq Nat \ {0}
 
 FmBound == 2
+KILLCONF == 2
 REAP == FmBound
 
 CG(v) == v
 GW(v) == CG(v) + FmBound
-CHILD(v) == GW(v) + 1
-SUP(v) == CHILD(v) + REAP + 1
-DAEMON(v) == SUP(v) + 1
-ABUD(v) == FmBound + 1
+CHILD(v) == GW(v) + KILLCONF + 1
+RT(r) == r + 1
+SUP(v, r) == RT(r) + CHILD(v) + KILLCONF + REAP
+DAEMON(v, r) == SUP(v, r) + 1
+ABUD(v) == FmBound + KILLCONF + 1
 
 MaxVal == CHOOSE v \in Vals : \A w \in Vals : w <= v
 
@@ -28,11 +31,12 @@ FailKills == Variant \notin {"waitsForever", "sigtermAfterFail"}
 VARIABLES file, clock, reqVal,
           sst, sv, sBegin, sent, bvSup, wr, mode, cdl,
           gst, gv, gBegin, gcalls, gphase, ms, rdl,
-          cw, cwDL, cwVal
+          cw, cwDL, cwVal, rtv,
+          kdl, kat, alive, sfail
 
-vars == << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+vars == << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail >>
 
-ProtoVars == << sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+ProtoVars == << sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal, rtv, kdl, kat, alive, sfail >>
 
 Init ==
     /\ file \in Vals
@@ -56,18 +60,24 @@ Init ==
     /\ cw = [g \in Gens |-> "none"]
     /\ cwDL = [g \in Gens |-> 0]
     /\ cwVal = [g \in Gens |-> 0]
+    /\ rtv = [g \in Gens |-> [carry |-> 0, bound |-> 0, applied |-> 0]]
+    /\ kdl = [g \in Gens |-> 0]
+    /\ kat = [g \in Gens |-> 0]
+    /\ alive = [g \in Gens |-> FALSE]
+    /\ sfail = [g \in Gens |-> FALSE]
 
-SupOverdue(g) == Variant # "waitsForever" /\ sst[g] = "stopping" /\ clock >= sBegin[g] + SUP(bvSup[g])
-DeadlineOverdue(g) == DeadlineKills /\ sst[g] = "stopping" /\ gst[g] # "gone" /\ clock >= cdl[g]
-FailOverdue(g) == FailKills /\ sst[g] = "stopping" /\ wr[g] = "failed" /\ gst[g] # "gone"
+SupOverdue(g) == Variant # "waitsForever" /\ sst[g] = "stopping" /\ clock >= sBegin[g] + SUP(bvSup[g], rtv[g].bound)
+DeadlineOverdue(g) == DeadlineKills /\ sst[g] = "stopping" /\ gst[g] \in {"none", "closing"} /\ clock >= cdl[g]
+FailOverdue(g) == FailKills /\ sst[g] = "stopping" /\ wr[g] = "failed" /\ gst[g] \in {"none", "closing"}
 GraceOverdue(g) == gst[g] = "closing" /\ gphase[g] = "none" /\ clock >= gBegin[g] + CG(gv[g])
 GwOverdue(g) == Variant \notin {"noDeadline", "waitsForever"} /\ gst[g] = "closing" /\ clock >= gBegin[g] + GW(gv[g])
 WaiterOverdue(g) == cw[g] = "armed" /\ clock >= cwDL[g]
 ReapOverdue(g) == Variant # "noReap" /\ gst[g] = "gone" /\ ms[g] # "gone" /\ clock >= rdl[g]
+KillOverdue(g) == Variant # "unboundedConfirm" /\ gst[g] = "killing" /\ clock >= kdl[g]
 
 Overdue ==
     \E g \in Gens :
-        SupOverdue(g) \/ DeadlineOverdue(g) \/ FailOverdue(g) \/ GraceOverdue(g) \/ GwOverdue(g) \/ WaiterOverdue(g) \/ ReapOverdue(g)
+        SupOverdue(g) \/ DeadlineOverdue(g) \/ FailOverdue(g) \/ GraceOverdue(g) \/ GwOverdue(g) \/ WaiterOverdue(g) \/ ReapOverdue(g) \/ KillOverdue(g)
 
 Tick ==
     /\ clock < MaxT
@@ -81,7 +91,7 @@ ChangeFile ==
 
 CliStop ==
     /\ reqVal = 0
-    /\ clock + DAEMON(MaxVal) <= MaxT
+    /\ clock + DAEMON(MaxVal, MaxVal) <= MaxT
     /\ \A g \in Gens : sst[g] = "up"
     /\ reqVal' = file
     /\ sst' = [g \in Gens |-> "stopping"]
@@ -93,20 +103,22 @@ CliStop ==
     /\ cdl' = [g \in Gens |-> clock + CHILD(file)]
     /\ cw' = [g \in Gens |-> IF Variant = "lateWaiter" THEN "pending" ELSE "armed"]
     /\ cwVal' = [g \in Gens |-> IF Variant = "lateWaiter" THEN 0 ELSE file]
-    /\ cwDL' = [g \in Gens |-> IF Variant = "lateWaiter" THEN 0 ELSE clock + DAEMON(file)]
-    /\ UNCHANGED << file, clock, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
+    /\ rtv' = [g \in Gens |-> [rtv[g] EXCEPT !.carry = file, !.bound = file]]
+    /\ cwDL' = [g \in Gens |-> IF Variant = "lateWaiter" THEN 0 ELSE clock + DAEMON(file, file)]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
 
 SelfBegin(g) ==
     /\ sst[g] = "up"
-    /\ clock + DAEMON(MaxVal) <= MaxT
+    /\ clock + DAEMON(MaxVal, MaxVal) <= MaxT
     /\ sst' = [sst EXCEPT ![g] = "stopping"]
     /\ sv' = [sv EXCEPT ![g] = file]
     /\ sBegin' = [sBegin EXCEPT ![g] = clock]
     /\ bvSup' = [bvSup EXCEPT ![g] = file]
+    /\ rtv' = [rtv EXCEPT ![g].carry = file, ![g].bound = file]
     /\ wr' = [wr EXCEPT ![g] = "writing"]
     /\ mode' = [mode EXCEPT ![g] = "term"]
     /\ cdl' = [cdl EXCEPT ![g] = clock + CHILD(file)]
-    /\ UNCHANGED << file, clock, reqVal, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sent, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
 
 Escalate(g) ==
     /\ sst[g] = "stopping"
@@ -116,7 +128,7 @@ Escalate(g) ==
     /\ cdl' = [cdl EXCEPT ![g] = IF clock + ABUD(bvSup[g]) < cdl[g] THEN clock + ABUD(bvSup[g]) ELSE cdl[g]]
     /\ gphase' = [gphase EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "fm" ELSE gphase[g]]
     /\ ms' = [ms EXCEPT ![g] = IF gst[g] = "closing" /\ gphase[g] = "none" THEN "stopping" ELSE ms[g]]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, gst, gv, gBegin, gcalls, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, gst, gv, gBegin, gcalls, rdl, cw, cwDL, cwVal >>
 
 ArmWaiter(g) ==
     /\ Variant = "lateWaiter"
@@ -124,8 +136,8 @@ ArmWaiter(g) ==
     /\ clock >= sBegin[g]
     /\ cw' = [cw EXCEPT ![g] = "armed"]
     /\ cwVal' = [cwVal EXCEPT ![g] = file]
-    /\ cwDL' = [cwDL EXCEPT ![g] = clock + DAEMON(file)]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
+    /\ cwDL' = [cwDL EXCEPT ![g] = clock + DAEMON(file, file)]
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl >>
 
 SendStop(g) ==
     /\ sst[g] = "stopping"
@@ -141,7 +153,8 @@ SendStop(g) ==
     /\ ms' = [ms EXCEPT ![g] = IF mode[g] = "int" THEN "stopping" ELSE ms[g]]
     /\ gv' = [gv EXCEPT ![g] = IF NoValidMessage THEN file ELSE sv[g]]
     /\ bvSup' = [bvSup EXCEPT ![g] = IF Variant = "mixed" THEN file ELSE bvSup[g]]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, mode, cdl, rdl, cw, cwDL, cwVal >>
+    /\ rtv' = [rtv EXCEPT ![g].applied = IF NoValidMessage \/ Variant = "runtimeLate" THEN file ELSE rtv[g].carry, ![g].bound = IF Variant = "mixed" THEN file ELSE rtv[g].bound]
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, mode, cdl, rdl, cw, cwDL, cwVal >>
 
 WriteFailed(g) ==
     /\ sst[g] = "stopping"
@@ -153,35 +166,37 @@ WriteFailed(g) ==
     /\ gBegin' = [gBegin EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN clock ELSE gBegin[g]]
     /\ gcalls' = [gcalls EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN TRUE ELSE gcalls[g]]
     /\ gv' = [gv EXCEPT ![g] = IF Variant = "sigtermAfterFail" THEN file ELSE gv[g]]
+    /\ rtv' = [rtv EXCEPT ![g].applied = IF Variant = "sigtermAfterFail" THEN file ELSE rtv[g].applied]
     /\ gphase' = [gphase EXCEPT ![g] = IF Variant = "sigtermAfterFail" /\ mode[g] = "int" THEN "fm" ELSE gphase[g]]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, bvSup, mode, cdl, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, file, clock, reqVal, sst, sv, sBegin, bvSup, mode, cdl, ms, rdl, cw, cwDL, cwVal >>
 
-GoneNow(g) ==
-    /\ gst' = [gst EXCEPT ![g] = "gone"]
-    /\ rdl' = [rdl EXCEPT ![g] = clock + REAP]
+KillNow(g) ==
+    /\ gst' = [gst EXCEPT ![g] = "killing"]
+    /\ alive' = [alive EXCEPT ![g] = TRUE]
+    /\ kat' = [kat EXCEPT ![g] = clock]
+    /\ kdl' = [kdl EXCEPT ![g] = clock + IF Variant = "graceConfirm" THEN CG(gv[g]) ELSE KILLCONF]
     /\ cdl' = [cdl EXCEPT ![g] = 0]
     /\ wr' = [wr EXCEPT ![g] = "none"]
     /\ mode' = [mode EXCEPT ![g] = "term"]
     /\ gBegin' = [gBegin EXCEPT ![g] = 0]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "none"]
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, rdl, cw, cwDL, cwVal, sfail >>
 
 DeadlineKill(g) ==
     /\ DeadlineOverdue(g)
-    /\ GoneNow(g)
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, cw, cwDL, cwVal >>
+    /\ KillNow(g)
 
 FailKill(g) ==
     /\ FailOverdue(g)
-    /\ GoneNow(g)
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, cw, cwDL, cwVal >>
+    /\ KillNow(g)
 
 CallEnds(g) ==
     /\ gst[g] = "closing"
     /\ gphase[g] = "none"
     /\ gcalls[g]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gphase, ms, rdl, cw, cwDL, cwVal >>
 
 GraceEnd(g) ==
     /\ gst[g] = "closing"
@@ -190,7 +205,7 @@ GraceEnd(g) ==
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "fm"]
     /\ ms' = [ms EXCEPT ![g] = "stopping"]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, rdl, cw, cwDL, cwVal >>
 
 FmDone(g) ==
     /\ Variant # "waitsForever"
@@ -205,12 +220,29 @@ FmDone(g) ==
     /\ gBegin' = [gBegin EXCEPT ![g] = 0]
     /\ gcalls' = [gcalls EXCEPT ![g] = FALSE]
     /\ gphase' = [gphase EXCEPT ![g] = "none"]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, cw, cwDL, cwVal >>
 
 GwForcedGone(g) ==
     /\ GwOverdue(g)
-    /\ GoneNow(g)
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, gv, ms, cw, cwDL, cwVal >>
+    /\ KillNow(g)
+
+KernelGone(g) ==
+    /\ alive[g]
+    /\ alive' = [alive EXCEPT ![g] = FALSE]
+    /\ kat' = [kat EXCEPT ![g] = 0]
+    /\ gst' = [gst EXCEPT ![g] = IF gst[g] = "killing" THEN "gone" ELSE gst[g]]
+    /\ rdl' = [rdl EXCEPT ![g] = IF gst[g] = "killing" THEN clock + REAP ELSE rdl[g]]
+    /\ kdl' = [kdl EXCEPT ![g] = IF gst[g] = "killing" THEN 0 ELSE kdl[g]]
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, sfail >>
+
+Unconfirmed(g) ==
+    /\ Variant # "unboundedConfirm"
+    /\ KillOverdue(g)
+    /\ gst' = [gst EXCEPT ![g] = "gone"]
+    /\ rdl' = [rdl EXCEPT ![g] = clock + REAP]
+    /\ kdl' = [kdl EXCEPT ![g] = 0]
+    /\ sfail' = [sfail EXCEPT ![g] = sfail[g] \/ Variant = "failOnUnconfirmed"]
+    /\ UNCHANGED << rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gv, gBegin, gcalls, gphase, ms, cw, cwDL, cwVal, alive, kat >>
 
 Reap(g) ==
     /\ Variant # "noReap"
@@ -218,30 +250,30 @@ Reap(g) ==
     /\ ms[g] # "gone"
     /\ ms' = [ms EXCEPT ![g] = "gone"]
     /\ rdl' = [rdl EXCEPT ![g] = 0]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, cw, cwDL, cwVal >>
 
 SupGone(g) ==
     /\ sst[g] = "stopping"
     /\ \/ /\ gst[g] = "gone"
           /\ (Variant = "noReap" \/ ms[g] = "gone")
-       \/ (Variant # "waitsForever" /\ clock >= sBegin[g] + SUP(bvSup[g]))
+       \/ (Variant # "waitsForever" /\ clock >= sBegin[g] + SUP(bvSup[g], rtv[g].bound))
     /\ sst' = [sst EXCEPT ![g] = "gone"]
     /\ cdl' = [cdl EXCEPT ![g] = 0]
     /\ wr' = [wr EXCEPT ![g] = "none"]
     /\ mode' = [mode EXCEPT ![g] = "term"]
-    /\ UNCHANGED << file, clock, reqVal, sv, sBegin, sent, bvSup, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sv, sBegin, sent, bvSup, gst, gv, gBegin, gcalls, gphase, ms, rdl, cw, cwDL, cwVal >>
 
 Give(g) ==
     /\ cw[g] = "armed"
     /\ clock >= cwDL[g]
     /\ cw' = [cw EXCEPT ![g] = "gaveUp"]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal >>
 
 Done(g) ==
     /\ cw[g] = "armed"
     /\ sst[g] = "gone"
     /\ cw' = [cw EXCEPT ![g] = "done"]
-    /\ UNCHANGED << file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal >>
+    /\ UNCHANGED << kdl, kat, alive, sfail, rtv, file, clock, reqVal, sst, sv, sBegin, sent, bvSup, wr, mode, cdl, gst, gv, gBegin, gcalls, gphase, ms, rdl, cwDL, cwVal >>
 
 GenStep(g) ==
     \/ SelfBegin(g)
@@ -255,6 +287,8 @@ GenStep(g) ==
     \/ GraceEnd(g)
     \/ FmDone(g)
     \/ GwForcedGone(g)
+    \/ KernelGone(g)
+    \/ Unconfirmed(g)
     \/ Reap(g)
     \/ SupGone(g)
     \/ Give(g)
@@ -278,17 +312,24 @@ TypeOK ==
     /\ wr \in [Gens -> {"none", "writing", "written", "failed"}]
     /\ mode \in [Gens -> {"term", "int"}]
     /\ cdl \in [Gens -> 0..(MaxT + CHILD(MaxVal))]
-    /\ gst \in [Gens -> {"none", "closing", "gone"}]
     /\ gphase \in [Gens -> {"none", "fm"}]
     /\ ms \in [Gens -> {"alive", "stopping", "gone"}]
     /\ rdl \in [Gens -> 0..(MaxT + REAP)]
     /\ cw \in [Gens -> {"none", "pending", "armed", "gaveUp", "done"}]
+    /\ rtv \in [Gens -> [carry : Vals \cup {0}, bound : Vals \cup {0}, applied : Vals \cup {0}]]
+    /\ gst \in [Gens -> {"none", "closing", "killing", "gone"}]
+    /\ kdl \in [Gens -> 0..(MaxT + MaxVal)]
+    /\ kat \in [Gens -> 0..MaxT]
+    /\ alive \in [Gens -> BOOLEAN]
+    /\ sfail \in [Gens -> BOOLEAN]
 
 SameValues ==
     \A g \in Gens :
         /\ sst[g] # "up" => bvSup[g] = sv[g]
         /\ sent[g] => gv[g] = sv[g]
         /\ cw[g] \in {"armed", "gaveUp", "done"} => cwVal[g] = sv[g]
+        /\ sst[g] # "up" => rtv[g].bound = sv[g]
+        /\ sent[g] => rtv[g].applied = sv[g]
 
 NoOutlast == \A g \in Gens : cw[g] = "gaveUp" => sst[g] = "gone"
 
@@ -296,12 +337,21 @@ StopEnds == \A g \in Gens : (sst[g] = "stopping") ~> (sst[g] = "gone")
 
 WithinBound ==
     /\ \A g \in Gens : gst[g] = "closing" => clock <= gBegin[g] + GW(gv[g])
-    /\ \A g \in Gens : (sst[g] = "stopping" /\ gst[g] # "gone") => clock <= cdl[g]
+    /\ \A g \in Gens : (sst[g] = "stopping" /\ gst[g] \in {"none", "closing"}) => clock <= cdl[g]
+    /\ \A g \in Gens : gst[g] = "killing" => clock <= kdl[g]
     /\ \A g \in Gens : (gst[g] = "gone" /\ ms[g] # "gone") => clock <= rdl[g]
-    /\ \A g \in Gens : sst[g] = "stopping" => clock <= sBegin[g] + SUP(bvSup[g])
+    /\ \A g \in Gens : sst[g] = "stopping" => clock <= sBegin[g] + SUP(bvSup[g], rtv[g].bound)
 
 GatewayEndsWithStop == \A g \in Gens : sst[g] = "gone" => gst[g] = "gone"
 
 NoManagedOutlives == \A g \in Gens : sst[g] = "gone" => ms[g] = "gone"
+
+KillWindowIsShare == \A g \in Gens : gst[g] = "killing" => kdl[g] = kat[g] + KILLCONF
+
+NoEarlyUnconfirmed == \A g \in Gens : (gst[g] = "gone" /\ alive[g]) => clock >= kat[g] + KILLCONF
+
+NoStopFailure == \A g \in Gens : ~sfail[g]
+
+EventuallyGone == \A g \in Gens : alive[g] ~> ~alive[g]
 
 =============================================================================

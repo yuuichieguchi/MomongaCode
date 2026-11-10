@@ -7,8 +7,8 @@ import type { GenerationRole } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, pacedReapTiming } from '@momonga/testkit';
+import type { FakeClock, PacedReapTiming } from '@momonga/testkit';
 import { RetiringYield, ToolExecutionError } from '@momonga/tools';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
@@ -75,7 +75,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-type World = { root: string; clock: FakeClock; store: RuntimeStore; runId: string; sessionId: string; liveOwners: Set<number> };
+type World = { root: string; clock: FakeClock; reapTiming: PacedReapTiming; store: RuntimeStore; runId: string; sessionId: string; liveOwners: Set<number> };
 
 const world = (): World => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-gen-')));
@@ -85,7 +85,7 @@ const world = (): World => {
   const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
-  return { root, clock, store, runId: created.run.id, sessionId: session.id, liveOwners: new Set() };
+  return { root, clock, reapTiming: pacedReapTiming(clock), store, runId: created.run.id, sessionId: session.id, liveOwners: new Set() };
 };
 
 const jobsDirOf = (root: string, generation: number): string => path.join(root, 'run', `g${generation}`, 'jobs');
@@ -114,13 +114,7 @@ const generationOf = (w: World, generation: number, role: GenerationRole = 'serv
     },
     markerFiles: createNodeJobMarkerFiles(),
     killGraceMs: KILL_GRACE_MS,
-    reapTiming: {
-      now: () => w.clock.now(),
-      sleep: async (ms) => {
-        w.clock.advance(ms);
-        await new Promise<void>((resolve) => setImmediate(resolve));
-      },
-    },
+    reapTiming: w.reapTiming,
     onWarning: () => undefined,
     report: (error) => {
       throw error;
@@ -292,6 +286,7 @@ describe('KillBash from another generation (17.3 "Kill", 17.9, 20.39)', () => {
     w.store.jobs.requestKill = (id) => {
       const set = originalRequest(id);
       owner.jobs.stopKillRequested();
+      void w.reapTiming.pairedWith(owner.jobs.finalized(id));
       return set;
     };
 

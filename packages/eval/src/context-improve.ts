@@ -221,7 +221,7 @@ const itemAt = <T>(items: readonly T[], index: number): T => {
   return item;
 };
 
-const diffLines = (before: string, after: string): string[] => {
+export const diffLines = (before: string, after: string): string[] => {
   const a = linesOf(before);
   const b = linesOf(after);
   const width = b.length + 1;

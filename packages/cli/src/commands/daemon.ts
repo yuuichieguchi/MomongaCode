@@ -1,4 +1,7 @@
-import type { MomongaPaths } from '@momonga/foundation';
+import path from 'node:path';
+import { readUserStopValues } from '@momonga/config';
+import { STOP_VALUE_NAMES, generationLayout, readStopRecord } from '@momonga/foundation';
+import type { MomongaPaths, StopValueName, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { ensureCurrentDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts, InterruptedWork } from '../daemon/ensure-daemon.ts';
@@ -24,10 +27,36 @@ const retiringWorkText = ({ steps, jobs, calls }: SupervisorHealth): string =>
 export const otherGenerationText = ({ role, health }: LiveGeneration): string =>
   escapedLines([`v${health.version} ${role} (pid ${health.pid})${role === 'retiring' ? retiringWorkText(health) : ''}`]);
 
-export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock'>, paths: MomongaPaths): Promise<number> => {
+const STOP_VALUE_SETTING_KEYS = {
+  closeGraceMs: 'gateway.closeGraceMs',
+  managedServerStopGraceMs: 'gateway.managedServerStopGraceMs',
+  drainTimeoutMs: 'runtime.drainTimeoutMs',
+  mcpCloseGraceMs: 'mcp.closeGraceMs',
+} as const satisfies Record<StopValueName, string>;
+
+export const stopValuesText = (values: StopValues): string => STOP_VALUE_NAMES.map((name) => `${STOP_VALUE_SETTING_KEYS[name]} ${values[name]}`).join(', ');
+
+export const lastStopLines = (lastStop: StopValues, settingsNow: StopValues): string[] => {
+  const last = stopValuesText(lastStop);
+  const now = stopValuesText(settingsNow);
+  return [`  last stop: ${last}`, ...(now === last ? [] : [`  settings now: ${now}`])];
+};
+
+export const daemonStatus = async (ports: Pick<CliPorts, 'stdout' | 'clock' | 'home'>, paths: MomongaPaths): Promise<number> => {
   const live = await listLiveGenerations(ports, paths);
   const serving = live.find((entry) => entry.role === 'serving');
-  const lines = [serving === undefined ? NOT_RUNNING_TEXT : daemonStatusText(serving.health), ...live.filter((entry) => entry !== serving).map(otherGenerationText)];
+  const others = live.filter((entry) => entry !== serving);
+  const home = path.dirname(paths.root);
+  const lastStops = new Map(await Promise.all(live.map(async (entry) => [entry, await readStopRecord(generationLayout(home, entry.generation).stopRecord)] as const)));
+  const settingsNow = [...lastStops.values()].some((values) => values !== undefined) ? readUserStopValues(ports.home) : undefined;
+  const lastStopOf = (entry: LiveGeneration): string[] => {
+    const lastStop = lastStops.get(entry);
+    return lastStop === undefined || settingsNow === undefined ? [] : lastStopLines(lastStop, settingsNow);
+  };
+  const lines = [
+    ...(serving === undefined ? [NOT_RUNNING_TEXT] : [daemonStatusText(serving.health), ...lastStopOf(serving)]),
+    ...others.flatMap((entry) => [otherGenerationText(entry), ...lastStopOf(entry)]),
+  ];
   ports.stdout.write(`${lines.join('\n')}\n`);
   return serving === undefined ? 1 : 0;
 };

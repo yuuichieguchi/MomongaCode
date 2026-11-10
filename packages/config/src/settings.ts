@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import { defineProductSchema, mcpConnectTimeoutProblem, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import type { ProductValidator, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, ManagedEndpointForm, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
@@ -349,11 +349,12 @@ export type Settings = {
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
-  mcp?: McpCallSettings;
+  mcp?: McpSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
   tui?: TuiSettings;
   gateway?: GatewaySettings;
+  runtime?: RuntimeSettings;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -377,6 +378,17 @@ export type ResolvedTuiSettings = Required<TuiSettings>;
 export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, screen: 'fullscreen', mouse: true, copyOnSelect: true, attachFileMentions: true });
 
 export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
+
+export type RuntimeSettings = { drainTimeoutMs?: number };
+
+export type McpSettings = McpCallSettings & { closeGraceMs?: number; connectTimeoutMs?: number };
+
+export const STOP_SETTING_KEYS = {
+  closeGraceMs: { object: 'gateway', key: 'closeGraceMs' },
+  managedServerStopGraceMs: { object: 'gateway', key: 'managedServerStopGraceMs' },
+  drainTimeoutMs: { object: 'runtime', key: 'drainTimeoutMs' },
+  mcpCloseGraceMs: { object: 'mcp', key: 'closeGraceMs' },
+} as const satisfies Record<StopValueName, { object: 'gateway' | 'runtime' | 'mcp'; key: string }>;
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
@@ -439,13 +451,20 @@ const assertTuiValues = (value: unknown, source: string): void => {
   }
 };
 
-const assertGatewayStopValues = (value: unknown, source: string): void => {
-  const gateway = isRecord(value) ? value['gateway'] : undefined;
-  if (!isRecord(gateway)) return;
-  for (const name of STOP_VALUE_NAMES) {
-    if (!Object.hasOwn(gateway, name)) continue;
-    const problem = stopValueProblem(name, gateway[name]);
-    if (problem !== undefined) throw new Error(`${source}: gateway.${problem}`);
+const assertMcpConnectTimeout = (value: unknown, source: string): void => {
+  const mcp = isRecord(value) ? value['mcp'] : undefined;
+  if (!isRecord(mcp) || !Object.hasOwn(mcp, 'connectTimeoutMs')) return;
+  const problem = mcpConnectTimeoutProblem(mcp['connectTimeoutMs']);
+  if (problem !== undefined) throw new Error(`${source}: ${problem}`);
+};
+
+const assertStopValues = (value: unknown, source: string): void => {
+  if (!isRecord(value)) return;
+  for (const [name, { object, key }] of Object.entries(STOP_SETTING_KEYS) as Array<[StopValueName, (typeof STOP_SETTING_KEYS)[StopValueName]]>) {
+    const holder = value[object];
+    if (!isRecord(holder) || !Object.hasOwn(holder, key)) continue;
+    const problem = stopValueProblem(name, holder[key], `${object}.${key}`);
+    if (problem !== undefined) throw new Error(`${source}: ${problem}`);
   }
 };
 
@@ -455,7 +474,8 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   }
   assertNoOldModelKeys(value, source);
   assertPlanAdapters(value, source);
-  assertGatewayStopValues(value, source);
+  assertStopValues(value, source);
+  assertMcpConnectTimeout(value, source);
   assertTuiValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);

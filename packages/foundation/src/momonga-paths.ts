@@ -87,6 +87,7 @@ export type GenerationLayout = {
   startRecord: string;
   startingLock: string;
   markers: string;
+  stopRecord: string;
 };
 
 export const START_RECORD_FILE = 'start.json';
@@ -109,6 +110,8 @@ export const generationOfDirectoryName = (name: string): number | undefined => {
 
 export const SETTINGS_APPLIED_FILE = 'settings-applied.json';
 
+export const STOP_RECORD_FILE = 'stop-values.json';
+
 export const SETTINGS_APPLIED_ENV = 'MOMONGA_SETTINGS_APPLIED';
 
 const byRole = (value: (role: GenerationProcessRole) => string): Record<GenerationProcessRole, string> => ({
@@ -130,6 +133,7 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     startRecord: join(dir, START_RECORD_FILE),
     startingLock: join(dir, STARTING_LOCK_FILE),
     markers: join(home, '.momonga', 'run', 'markers', `g${generation}`),
+    stopRecord: join(dir, STOP_RECORD_FILE),
   };
 };
 
@@ -440,6 +444,7 @@ export const GENERATION_MEMBERS: readonly GenerationMember[] = [
   fileMember(START_RECORD_FILE, true),
   fileMember(STARTING_LOCK_FILE),
   fileMember(SETTINGS_APPLIED_FILE, true),
+  fileMember(STOP_RECORD_FILE, true),
   { name: GENERATION_TARGETS_DIRECTORY, kind: 'directory', removal: 'always', hasAtomicTemporaries: false },
   { name: GENERATION_JOBS_DIRECTORY, kind: 'directory', removal: 'when-empty', hasAtomicTemporaries: false },
 ];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Deadline, forceKillGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
+import { Deadline, KILL_CONFIRM_MS, forceKillGroup, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import type { DeadlineTiming, GroupTiming, ProcessGroupPort } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 
@@ -100,11 +100,11 @@ describe('process group termination on an injected timing', () => {
     expect(fake.now()).toBeGreaterThanOrEqual(100);
   });
 
-  it('terminateGroup reports unconfirmed when SIGKILL does not take within one grace', async () => {
+  it('terminateGroup reports unconfirmed when SIGKILL does not take within the window K after it', async () => {
     const fake = fakeGroupTiming();
     const { port } = groupPort(() => true);
     expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('unconfirmed');
-    expect(fake.now()).toBeGreaterThanOrEqual(200);
-    expect(fake.now()).toBeLessThanOrEqual(220);
+    expect(fake.now()).toBeGreaterThanOrEqual(100 + KILL_CONFIRM_MS);
+    expect(fake.now()).toBeLessThanOrEqual(100 + KILL_CONFIRM_MS + 20);
   });
 });

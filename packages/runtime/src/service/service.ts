@@ -24,6 +24,7 @@ import { releaseStoppedRunsAtStartup, startApprovalSweeper } from './sweeper.ts'
 import { startTerminalSweeper } from './terminal-sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
+import type { ReportRouteDeps } from './report-routes.ts';
 
 export { SWEEP_INTERVAL_MS };
 
@@ -64,6 +65,8 @@ export type RunServiceOptions = {
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
+  reportCost: ReportRouteDeps['reportCost'];
+  runTraceContent: ReportRouteDeps['runTraceContent'];
   mcp: McpAdminPort;
   role: RolePort;
   work: { steps(): number; jobs(): number };
@@ -161,6 +164,8 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     runTrace: options.runTrace,
     runCost: options.runCost,
     runCostBreakdown: options.runCostBreakdown,
+    reportCost: options.reportCost,
+    runTraceContent: options.runTraceContent,
     mcp: options.mcp,
     markerOwners: options.markerOwners ?? createMarkerOwners(),
     ignorableMarkerDirectories: options.ignorableMarkerDirectories,

@@ -1,4 +1,4 @@
-import { SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
+import { MCP_CONNECT_TIMEOUT_LIMITS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
 import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
@@ -431,7 +431,12 @@ export const SETTINGS_SCHEMA = {
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
     mcp: {
       type: 'object',
-      properties: { toolIdleTimeoutMs: NON_NEGATIVE_INTEGER, toolTotalTimeoutMs: POSITIVE_INTEGER },
+      properties: {
+        toolIdleTimeoutMs: NON_NEGATIVE_INTEGER,
+        toolTotalTimeoutMs: POSITIVE_INTEGER,
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max },
+        connectTimeoutMs: { type: 'integer', minimum: MCP_CONNECT_TIMEOUT_LIMITS.min, maximum: MCP_CONNECT_TIMEOUT_LIMITS.max },
+      },
       additionalProperties: false,
     },
     models: {
@@ -520,6 +525,13 @@ export const SETTINGS_SCHEMA = {
       properties: {
         closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max },
         managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max },
+      },
+      additionalProperties: false,
+    },
+    runtime: {
+      type: 'object',
+      properties: {
+        drainTimeoutMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max },
       },
       additionalProperties: false,
     },

@@ -392,9 +392,11 @@ const CACHE_READ_CAUSES = {
   noInput: 'no input was sent',
 } as const;
 
-const tokenTotalsOf = (cases: readonly ContextCaseReport[]): CaseTokenTotals[] => cases.flatMap((entry) => (entry.tokens === undefined ? [] : [entry.tokens]));
+type TokenCounted = { tokens?: CaseTokenTotals | undefined };
 
-const cacheReadCountsOf = (cases: readonly ContextCaseReport[]): CacheReadCounts => {
+const tokenTotalsOf = (cases: readonly TokenCounted[]): CaseTokenTotals[] => cases.flatMap((entry) => (entry.tokens === undefined ? [] : [entry.tokens]));
+
+const cacheReadCountsOf = (cases: readonly TokenCounted[]): CacheReadCounts => {
   const totals = tokenTotalsOf(cases);
   return {
     calls: totals.reduce((sum, entry) => sum + entry.calls, 0),
@@ -403,7 +405,7 @@ const cacheReadCountsOf = (cases: readonly ContextCaseReport[]): CacheReadCounts
   };
 };
 
-export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly ContextCaseReport[]): string => {
+export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly TokenCounted[]): string => {
   const totals = tokenTotalsOf(cases);
   const counts = cacheReadCountsOf(cases);
   if (counts.calls === 0) return CACHE_READ_CAUSES.noInput;
@@ -415,7 +417,7 @@ export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly Conte
 
 const pricedCallCount = (calls: number, cases: number, text: string): string => `${text} in ${calls} call(s) of ${cases} case(s)`;
 
-export const unmeasuredCostCauseOf = (cases: readonly ContextCaseReport[]): string => {
+export const unmeasuredCostCauseOf = (cases: readonly TokenCounted[]): string => {
   const totals = tokenTotalsOf(cases);
   const causes = [
     ...UNPRICED_CODES.map((code) => ({ text: UNPRICED_CODE_TEXT[code], countOf: (entry: CaseTokenTotals) => entry.unpriced?.[code] ?? 0 })),

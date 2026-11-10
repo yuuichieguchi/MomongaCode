@@ -18,6 +18,7 @@ import {
   resolveNetwork,
   resolveTelemetrySettings,
   settingsInputsDigest,
+  stopValuesOfSettings,
   upstreamEndpointOf,
 } from '@momonga/config';
 import type { ResolvedModel, ResolvedModels, ResolvedSettings } from '@momonga/config';
@@ -92,6 +93,7 @@ import {
   exportersFor,
   openTraceStore,
   pageBilledCalls,
+  pageRunBodies,
   startBodyPurge,
 } from '@momonga/observability';
 import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
@@ -960,7 +962,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const started = cache.snapshot();
     if ('error' in started) throw started.error;
     const { settings } = started;
-    stopValues.remember(settings.gateway);
+    stopValues.remember(stopValuesOfSettings(settings));
     const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
       const config = resolveNetwork(section, options.env);
       const outbound: OutboundNetwork = { config, trust: await installTrust(config, files, installSignal === undefined ? {} : { signal: installSignal }) };
@@ -1479,6 +1481,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           await flushTelemetry(requestSignal);
           return pageBilledCalls(traceStore, runIds, table, cursor, limit, includeRunless);
         }),
+      traceContent: async (runId, after, limit, requestSignal) => {
+        await flushTelemetry(requestSignal);
+        return pageRunBodies(traceStore, runId, after, limit);
+      },
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,

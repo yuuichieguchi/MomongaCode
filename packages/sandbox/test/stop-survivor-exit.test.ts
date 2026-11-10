@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
+import { groupTerminationBoundMs } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import { launch } from '../src/process.ts';
 import type { LaunchOptions } from '../src/process.ts';
@@ -35,7 +36,7 @@ describe('a group member that survives the stop after the leader exits is report
     } as LaunchOptions);
     launched.exited.catch(() => undefined);
     child.emit('exit', 0, null);
-    await timing.advanceTo(10 * KILL_GRACE_MS);
+    await timing.advanceTo(2 * groupTerminationBoundMs(KILL_GRACE_MS));
     const settled = await pendingOrSettled(launched.exited);
     expect(settled).toEqual({ state: 'resolved', value: { code: 0, signal: null, groupNotStopped: true } });
     expect(signals[0]).toBe('SIGTERM');

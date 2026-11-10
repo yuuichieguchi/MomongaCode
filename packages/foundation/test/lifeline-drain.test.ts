@@ -43,7 +43,7 @@ const start = async (context: CleanupContext) => {
   return { write, reportAfterSigterm, blocking };
 };
 
-const MESSAGE = formatStopMessage({ closeGraceMs: 4321, managedServerStopGraceMs: 12 });
+const MESSAGE = formatStopMessage({ closeGraceMs: 4321, managedServerStopGraceMs: 12, drainTimeoutMs: 34, mcpCloseGraceMs: 56 });
 
 describe('the lifeline watcher over a real pipe (the delivered-but-unread order at the signal is covered by the fake-watcher test in daemon-entry-stop-values.test.ts)', () => {
   it('after a drain begun on SIGTERM, every line written before the signal has been delivered, including lines written while the reader was blocked', async (context) => {

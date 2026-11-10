@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { credentialEnvNames } from '@momonga/config';
+import { credentialEnvNames, stopValuesOfSettings } from '@momonga/config';
 import {
   canonicalJson,
   createEncryptedCredentialStore,
@@ -35,7 +35,7 @@ import type { ServiceTimers } from '../service/timers.ts';
 import { createBackgroundJobs } from './background-jobs.ts';
 import { createNodeJobMarkerFiles } from './job-marker-files.ts';
 import type { BackgroundJobRegistry } from './background-jobs.ts';
-import { MCP_CLOSE_GRACE_MS, SANDBOX_KILL_GRACE_MS } from './constants.ts';
+import { SANDBOX_KILL_GRACE_MS } from './constants.ts';
 import { createMcpAdmin, loadSessionMcpServers } from './mcp-admin.ts';
 import type { McpAdmin } from './mcp-admin.ts';
 import { createMcpPoolCache } from './mcp-pool-cache.ts';
@@ -149,6 +149,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     onWarning: (message) => logger.warn(message),
     reap: { timing: reapTiming, inspector },
   });
+  const readCloseGraceMs = (): number => stopValuesOfSettings(settings.takeUserSnapshot().settings).mcpCloseGraceMs;
   const mcpAdmin = createMcpAdmin({
     home,
     store,
@@ -159,9 +160,11 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     settings,
     remote: mcpRemote,
     createPool: options.createAdminPool ?? createMcpPool,
+    readCloseGraceMs,
+    readConnectTimeoutMs: () => settings.takeUserSnapshot().settings.mcp.connectTimeoutMs,
     markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
   });
-  const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
+  const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report, readCloseGraceMs });
   const sessionStates = createSessionStates({ clock, store, logger, releaseScratch: (sessionId) => releaseSessionScratch(path.join(paths.tmp.sessions, sessionId)) });
   const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
   const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
@@ -187,7 +190,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const callBounds = loaded.settings.mcp;
+        const { toolIdleTimeoutMs, toolTotalTimeoutMs, connectTimeoutMs } = loaded.settings.mcp;
+        const callBounds = {
+          ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }),
+          ...(toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs }),
+          ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
+        };
         const { credentials } = loaded.settings;
         const credentialNames = credentialEnvNames(loaded.settings.models);
         const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
@@ -204,9 +212,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               timers,
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
-              closeGraceMs: MCP_CLOSE_GRACE_MS,
-              ...(callBounds.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: callBounds.toolIdleTimeoutMs }),
-              ...(callBounds.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: callBounds.toolTotalTimeoutMs }),
+              closeGraceMs: readCloseGraceMs,
+              ...callBounds,
             }),
         });
         acquiredHere = acquired.changed;

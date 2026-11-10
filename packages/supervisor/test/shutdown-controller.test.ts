@@ -59,7 +59,7 @@ const setup = (options: {
   const controllerOptions: ShutdownControllerOptions = {
     runtime: options.runtime,
     gateway: options.gateway,
-    drainTimeoutMs: 0,
+    recordStop: async () => undefined,
     timers,
     logger: log.logger,
     markerPorts: {
@@ -92,7 +92,7 @@ describe('shutdown step 4 per-marker joins', () => {
     const runtime = fakeManager('runtime', ['/markers/runtime-a', '/markers/runtime-b'], new Map([['/markers/runtime-a', hung]]));
     const gateway = fakeManager('gateway', [], new Map());
     const h = setup({ runtime, gateway });
-    const result = settledResult(h.controller.close());
+    const result = settledResult(h.controller.close(DEFAULT_STOP_VALUES));
     await waitFor(() => h.reapCalls.includes('/markers/runtime-b'), { description: 'marker B is retried while marker A is still in flight' });
     expect(h.clock.now()).toBe(0);
     expect(h.reapCalls).toEqual(['/markers/runtime-b']);
@@ -109,7 +109,7 @@ describe('shutdown step 5 late close rejection', () => {
     const runtime = fakeManager('runtime', [], new Map());
     const gateway = fakeManager('gateway', [], new Map());
     const h = setup({ runtime, gateway, closeControl: () => control.promise });
-    const result = settledResult(h.controller.close());
+    const result = settledResult(h.controller.close(DEFAULT_STOP_VALUES));
     await waitFor(() => h.log.events('shutdown.step').some((line) => line['shutdownStep'] === 5), { description: 'step 5 reached' });
     h.timers.advance(SHUTDOWN_RELEASE_BOUND_MS);
     await waitFor(() => result() !== undefined, { description: 'close settles at the step 5 bound' });
@@ -127,7 +127,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
     const runtime = fakeManager('runtime', [], new Map());
     const gateway = fakeManager('gateway', [], new Map());
     const h = setup({ runtime, gateway, awaitBackground: () => new Promise(() => undefined) });
-    const result = settledResult(h.controller.close());
+    const result = settledResult(h.controller.close(DEFAULT_STOP_VALUES));
     await waitFor(() => h.log.events('shutdown.step').some((line) => line['shutdownStep'] === 1), { description: 'step 1 reached' });
     h.timers.advance(SHUTDOWN_DRAIN_BOUND_MS - 1);
     await Promise.resolve();
@@ -145,13 +145,13 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       ...fakeManager(role, [`/markers/${role}-x`], new Map([[`/markers/${role}-x`, new Promise(() => undefined)]])),
       stop: () =>
         new Promise((resolve) => {
-          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', 0, DEFAULT_STOP_VALUES) + killedChildSettleMs() + (role === 'gateway' ? managedServerReapBoundMs(DEFAULT_STOP_VALUES) : 0));
+          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', DEFAULT_STOP_VALUES) + killedChildSettleMs() + (role === 'gateway' ? managedServerReapBoundMs(DEFAULT_STOP_VALUES) : 0));
         }),
     });
     const controller = createShutdownController({
       runtime: slowManager('runtime'),
       gateway: slowManager('gateway'),
-      drainTimeoutMs: 0,
+      recordStop: async () => undefined,
       timers,
       logger: log.logger,
       markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined) },
@@ -161,8 +161,8 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       releaseLock: () => undefined,
       onFatal: () => undefined,
     });
-    const result = settledResult(controller.close());
-    const limit = supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES);
+    const result = settledResult(controller.close(DEFAULT_STOP_VALUES));
+    const limit = supervisorMaxCloseMs(DEFAULT_STOP_VALUES);
     await driveFakeTime(timers, { done: () => result() !== undefined, horizonAt: limit, description: 'close to settle' });
     expect(result()).toBeDefined();
     expect(clock.now()).toBe(limit);

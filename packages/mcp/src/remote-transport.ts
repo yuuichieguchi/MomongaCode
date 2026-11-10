@@ -14,6 +14,7 @@ export const STREAM_RESUME_ATTEMPTS = 2;
 
 export interface ConnectionTransport extends Transport {
   readonly pgid: number | undefined;
+  close(graceMs?: number): Promise<void>;
   diagnostics(): { stderrTail: string; exit: StdioTransportExit | null };
   terminateSession(): Promise<void>;
   toolCallsDelivered(): number;
@@ -33,6 +34,7 @@ class RemoteTransport implements ConnectionTransport {
   private handler: Transport['onmessage'];
   private readonly taskHandles = createTaskHandleRewriter();
   private delivered = 0;
+  private closing: Promise<void> | undefined;
   private readonly inner: StreamableHTTPClientTransport;
 
   constructor(inner: StreamableHTTPClientTransport) {
@@ -80,9 +82,14 @@ class RemoteTransport implements ConnectionTransport {
     if ('method' in message && message.method === 'tools/call') this.delivered += 1;
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    this.closing ??= this.closeInner();
+    return this.closing;
+  }
+
+  private async closeInner(): Promise<void> {
     this.taskHandles.reset();
-    return this.inner.close();
+    await this.inner.close();
   }
 
   terminateSession(): Promise<void> {

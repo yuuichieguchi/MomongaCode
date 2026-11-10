@@ -1,10 +1,10 @@
 import type { JsonLogger, StopValues } from '@momonga/foundation';
-import { DEFAULT_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
+import { SHUTDOWN_DRAIN_BOUND_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/foundation';
 import type { SupervisorTimers } from './constants.ts';
 import { stopBudgetMs } from './child-manager.ts';
 import type { ChildManager, ChildStopResult } from './child-manager.ts';
 import type { ChildRole } from './launcher.ts';
-import { orphansWarning, shutdownBegin, shutdownEnd, shutdownStep, shutdownStepBound, writeEvent } from './log-events.ts';
+import { orphansWarning, shutdownBegin, shutdownEnd, shutdownRecordFailed, shutdownStep, shutdownStepBound, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { reapDaemonMarker } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
@@ -16,8 +16,8 @@ export type ShutdownMode = 'idle' | 'closing' | 'aborting';
 export type ShutdownControllerOptions = {
   runtime: ChildManager;
   gateway: ChildManager;
-  drainTimeoutMs: number;
   timers: SupervisorTimers;
+  recordStop(values: StopValues): Promise<void>;
   logger: JsonLogger;
   markerPorts?: MarkerPorts;
   beginDraining(): void;
@@ -29,12 +29,12 @@ export type ShutdownControllerOptions = {
 
 export type ShutdownController = {
   mode(): ShutdownMode;
-  close(values?: StopValues): Promise<SupervisorCloseResult>;
-  abort(values?: StopValues): Promise<SupervisorCloseResult>;
+  close(values: StopValues | undefined): Promise<SupervisorCloseResult>;
+  abort(values: StopValues | undefined): Promise<SupervisorCloseResult>;
   readonly closed: Promise<SupervisorCloseResult>;
 };
 
-export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number, values: StopValues): number => stopBudgetMs(role, mode, drainTimeoutMs, values);
+export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, values: StopValues): number => stopBudgetMs(role, mode, values);
 
 const MAX_REAP_ATTEMPTS = 2;
 
@@ -44,7 +44,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const { runtime, gateway, timers, logger } = options;
   const managers = [runtime, gateway] as const;
   let mode: ShutdownMode = 'idle';
-  let stopValues: StopValues = DEFAULT_STOP_VALUES;
+  let begun: { values: StopValues; recorded: Promise<void> } | undefined;
   let resolveClosed: (result: SupervisorCloseResult) => void = () => undefined;
   const closed = new Promise<SupervisorCloseResult>((resolve) => {
     resolveClosed = resolve;
@@ -53,7 +53,12 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
 
   const stopMode = (): StopMode => (mode === 'aborting' ? 'int' : 'term');
 
-  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop('shutdown', stopMode(), stopValues);
+  const valuesOfStop = (): StopValues => {
+    if (begun === undefined) throw new Error('no stop has begun, so no stop values are held');
+    return begun.values;
+  };
+
+  const stopManager = (manager: ChildManager): Promise<ChildStopResult> => manager.stop('shutdown', stopMode(), valuesOfStop());
 
   const reapStep = async (triedBefore: ReadonlyMap<ChildRole, ReadonlySet<string>>): Promise<void> => {
     let expired = false;
@@ -115,7 +120,8 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     }
   };
 
-  const run = async (): Promise<SupervisorCloseResult> => {
+  const run = async (recorded: Promise<void>): Promise<SupervisorCloseResult> => {
+    await recorded;
     log(shutdownBegin({ mode: mode === 'aborting' ? 'abort' : 'close' }));
     options.beginDraining();
     for (const manager of managers) manager.enterDraining();
@@ -180,9 +186,11 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   };
 
   const begin = (next: 'closing' | 'aborting', values: StopValues | undefined): void => {
+    if (values === undefined) throw new Error('a stop began with no stop values');
     mode = next;
-    if (values !== undefined) stopValues = values;
-    run().then(resolveClosed, (error: unknown) => {
+    const recorded = options.recordStop(values).catch((error: unknown) => log(shutdownRecordFailed({ detail: failureOf(error).message })));
+    begun = { values, recorded };
+    run(recorded).then(resolveClosed, (error: unknown) => {
       const failure = failureOf(error);
       options.onFatal(failure);
       resolveClosed({ clean: false, killed: [], leaked: [], fatal: failure });
@@ -190,7 +198,10 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   };
 
   const escalate = (): void => {
-    for (const manager of managers) void manager.stop('shutdown', 'int', stopValues);
+    const values = valuesOfStop();
+    void begun?.recorded.then(() => {
+      for (const manager of managers) void manager.stop('shutdown', 'int', values);
+    });
   };
 
   return {

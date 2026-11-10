@@ -9,7 +9,7 @@ export type LaunchSpec = { command: string; args: readonly string[]; env?: Reado
 
 export type Launcher = (role: ChildRole) => LaunchSpec;
 
-export type RuntimeTuning = { leaseMs?: number; drainTimeoutMs?: number; workerCount?: number; sandboxExecPath?: string };
+export type RuntimeTuning = { leaseMs?: number; workerCount?: number; sandboxExecPath?: string };
 
 export type GatewayTuning = { args?: readonly string[] };
 
@@ -23,7 +23,6 @@ const tuningFlags = (role: ChildRole, runtime: RuntimeTuning | undefined, gatewa
   }
   return [
     ...(runtime?.leaseMs === undefined ? [] : [`--lease-ms=${runtime.leaseMs}`]),
-    ...(runtime?.drainTimeoutMs === undefined ? [] : [`--drain-timeout-ms=${runtime.drainTimeoutMs}`]),
     ...(runtime?.workerCount === undefined ? [] : [`--worker-count=${runtime.workerCount}`]),
     ...(runtime?.sandboxExecPath === undefined ? [] : [`--sandbox-exec-path=${runtime.sandboxExecPath}`]),
   ];

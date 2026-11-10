@@ -47,7 +47,7 @@ Every token-saving mechanism is on by default; each has a setting only so you ca
 - **Loop guidance.** On by default; turn off with `context.loopGuidance: false`. It warns the model, with the repeated call and the commands that failed, before a run that repeats the same call is stopped.
 - **Observed capacity.** On by default; turn off with `context.observedCapacity: false`.
 - **Cost visibility.** `momonga cost --breakdown` shows what the requests were made of, the billed tokens by kind, the cache hit ratio, the timing, and the cost.
-- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges the defaults against a base report built with `--settings packages/eval/policies/core-off.json` (every core feature off).
+- **Measurement.** `momonga eval context <dataset>` runs a golden dataset and reports metrics; `momonga eval compare <baseline> <candidate> --gate token` judges the defaults against a base report built with `--settings packages/eval/policies/core-off.json` (every core feature off). `momonga eval yield <dataset> --model <model> --report <file>` runs paired sessions and judges whether reflection pays: what a later session saves if the candidates are accepted, with the charge of the reflection shown beside it.
 
 All of these settings are on by default; each is turned off key by key (see Configuration).
 
@@ -137,7 +137,7 @@ Commands:
 | `elicit [input-id]` | Answer pending MCP input requests (`--accept`, `--decline`, `--cancel`, `--set name=value`, `--responses <json>`) |
 | `secret set <name>` | Store a secret in the platform secret store; the value is read from the terminal |
 | `context improve`, `context guideline` | Improve and manage the compaction guideline |
-| `eval <dataset>`, `eval context <dataset>`, `eval compare <baseline> <candidate>` | Run and compare golden datasets and context reports (`--gate context\|token`) |
+| `eval <dataset>`, `eval context <dataset>`, `eval compare <baseline> <candidate>`, `eval yield <dataset>` | Run and compare golden datasets and context reports (`--gate context\|token`), and judge the yield of reflection |
 | `daemon start\|status\|stop` | Start the daemon (or a new one beside it when this program is newer), list the running generations, stop all of them |
 | `acp` | Agent Client Protocol on standard input and output |
 | `update [--check]` | Update the executable |

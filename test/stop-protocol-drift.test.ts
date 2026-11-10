@@ -12,6 +12,7 @@ import {
   gatewayStopBudgetMs,
   managedServerReapBoundMs,
   markerReapClockBoundMs,
+  runtimeStopBudgetMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
@@ -26,21 +27,21 @@ const definitionOf = (name: string): string => {
 };
 
 const SAMPLED_VALUES: readonly StopValues[] = [
-  { closeGraceMs: 0, managedServerStopGraceMs: 0 },
-  { closeGraceMs: 10_000, managedServerStopGraceMs: 3000 },
-  { closeGraceMs: 1, managedServerStopGraceMs: 60_000 },
-  { closeGraceMs: 300_000, managedServerStopGraceMs: 7 },
+  { closeGraceMs: 0, managedServerStopGraceMs: 0, drainTimeoutMs: 0, mcpCloseGraceMs: 0 },
+  { closeGraceMs: 10_000, managedServerStopGraceMs: 3000, drainTimeoutMs: 30_000, mcpCloseGraceMs: 1000 },
+  { closeGraceMs: 1, managedServerStopGraceMs: 60_000, drainTimeoutMs: 1, mcpCloseGraceMs: 30_000 },
+  { closeGraceMs: 300_000, managedServerStopGraceMs: 7, drainTimeoutMs: 300_000, mcpCloseGraceMs: 1 },
 ];
-const SAMPLED_DRAINS = [0, 1, 30_000] as const;
 
 describe('StopProtocol.tla composes the stop bounds the way process-contract.ts does', () => {
   it('the model composes the gateway close, the child stop, the supervisor close, the daemon stop and the abort budget from these terms', () => {
     expect(definitionOf('CG')).toBe('v');
     expect(definitionOf('GW')).toBe('CG(v) + FmBound');
-    expect(definitionOf('CHILD')).toBe('GW(v) + 1');
-    expect(definitionOf('SUP')).toBe('CHILD(v) + REAP + 1');
-    expect(definitionOf('DAEMON')).toBe('SUP(v) + 1');
-    expect(definitionOf('ABUD')).toBe('FmBound + 1');
+    expect(definitionOf('CHILD')).toBe('GW(v) + KILLCONF + 1');
+    expect(definitionOf('RT')).toBe('r + 1');
+    expect(definitionOf('SUP')).toBe('RT(r) + CHILD(v) + KILLCONF + REAP');
+    expect(definitionOf('DAEMON')).toBe('SUP(v, r) + 1');
+    expect(definitionOf('ABUD')).toBe('FmBound + KILLCONF + 1');
     expect(definitionOf('REAP')).toBe('FmBound');
   });
 
@@ -56,16 +57,20 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
     for (const values of SAMPLED_VALUES) expect(managedServerReapBoundMs(values), JSON.stringify(values)).toBe(markerReapClockBoundMs(values.managedServerStopGraceMs));
   });
 
-  it('SUP: the supervisor close is the child stop budget plus the reap plus a part that depends on neither value', () => {
-    for (const drain of SAMPLED_DRAINS) {
-      const fixed = SAMPLED_VALUES.map((values) => supervisorMaxCloseMs(drain, values) - gatewayStopBudgetMs(values) - managedServerReapBoundMs(values));
-      expect(new Set(fixed).size, String(drain)).toBe(1);
-      expect(fixed[0], String(drain)).toBeGreaterThan(0);
-    }
+  it('RT: the runtime recipient carries its own value, read at the same begin as the gateway value, and its bound enters SUP', () => {
+    const spec = fs.readFileSync(specPath, 'utf8');
+    expect(spec).toMatch(/rtv\[g\]\.bound = sv\[g\]/);
+    expect(spec).toMatch(/sent\[g\] => rtv\[g\]\.applied = sv\[g\]/);
   });
 
-  it('DAEMON: the daemon stop bound is the supervisor close at the default drain plus one fixed margin', () => {
-    for (const values of SAMPLED_VALUES) expect(daemonStopBoundMs(values) - supervisorMaxCloseMs(30_000, values), JSON.stringify(values)).toBe(ENTRY_HARD_EXIT_MARGIN_MS);
+  it('SUP: the supervisor close is the runtime stop budget, the gateway stop budget and the reap, plus a part that depends on no value', () => {
+    const fixed = SAMPLED_VALUES.map((values) => supervisorMaxCloseMs(values) - runtimeStopBudgetMs(values) - gatewayStopBudgetMs(values) - managedServerReapBoundMs(values));
+    expect(new Set(fixed).size).toBe(1);
+    expect(fixed[0]).toBeGreaterThan(0);
+  });
+
+  it('DAEMON: the daemon stop bound is the supervisor close of the same values plus one fixed margin', () => {
+    for (const values of SAMPLED_VALUES) expect(daemonStopBoundMs(values) - supervisorMaxCloseMs(values), JSON.stringify(values)).toBe(ENTRY_HARD_EXIT_MARGIN_MS);
   });
 
   it('ABUD: the abort budget is the managed-server stop bound plus the same margin, never more than the child stop budget', () => {

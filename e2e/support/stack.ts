@@ -34,7 +34,7 @@ export const UPSTREAM_PROVIDER = 'fake';
 export const UPSTREAM_CONTEXT_WINDOW = 8192;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
-  runtime: { leaseMs: E2E_LEASE_MS, drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS, workerCount: 1 },
+  runtime: { leaseMs: E2E_LEASE_MS, workerCount: 1 },
 };
 
 export type StackSandbox = SandboxSetting;
@@ -126,6 +126,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
   }),
   sandbox,
   tools: { ripgrep: pinnedRipgrepPath() },
+  runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS },
 });
 
 const modelsOf = (settings: Readonly<Record<string, unknown>>): StackModels => settings['models'] as StackModels;

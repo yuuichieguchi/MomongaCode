@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, createUninspectableRegistry, findHolders, probeFailed, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reportUninspectableOnce } from '@momonga/foundation';
+import { ProbeFailedError, markerReapClockBoundMs, createUninspectableRegistry, findHolders, probeFailed, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reportUninspectableOnce } from '@momonga/foundation';
 import type { ProbeResult, ProcessInspector, UninspectableProcess } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, drivenReapTiming, fakeReapTiming, waitFor, withTempDir } from '@momonga/testkit';
 
@@ -262,7 +262,7 @@ describe('reaping on time that only the test drives', () => {
     await waitFor(() => timers.pending().length === 2, { description: 'both markers waiting out the grace at once' });
     expect(settled).toBe(false);
     expect(clock.now()).toBe(0);
-    for (let step = 0; step < 20 && !settled; step += 1) {
+    for (let step = 0; step < markerReapClockBoundMs(100) / 25 && !settled; step += 1) {
       timers.advance(25);
       await waitFor(() => settled || timers.pending().length === 2, { description: 'the markers to poll again' });
     }

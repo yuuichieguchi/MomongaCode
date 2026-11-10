@@ -17,7 +17,7 @@ const basisKey = (basis: keyof typeof BASIS_KEYS): (typeof BASIS_KEYS)[keyof typ
 
 const isTerminal = (status: string): boolean => TERMINAL_STATUSES.some((terminal) => terminal === status);
 
-const declaredCompletion = (event: Extract<RunEvent, { type: 'run.started' }>): boolean => (pinnedCompletionOf(event.pins)?.conditions.length ?? 0) > 0;
+const declaredCompletion = (event: Extract<FactsEvent, { type: 'run.started' }>): boolean => (pinnedCompletionOf(event.pins)?.conditions.length ?? 0) > 0;
 
 export const FACTS_EVENT_TYPES = [
   'run.started',
@@ -35,7 +35,11 @@ export const FACTS_EVENT_TYPES = [
   'mcp.authorization.required',
 ] as const satisfies readonly RunEvent['type'][];
 
-export type FactsFold = { add(event: RunEvent): void; finish(info: RunInfo): RunFactsView };
+type Unleased<E> = E extends unknown ? Omit<E, 'leaseToken'> : never;
+
+export type FactsEvent = Unleased<RunEvent>;
+
+export type FactsFold = { add(event: FactsEvent): void; finish(info: RunInfo): RunFactsView };
 
 export const createFactsFold = (): FactsFold => {
   const basis = { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 };
@@ -70,7 +74,7 @@ export const createFactsFold = (): FactsFold => {
     pending = undefined;
   };
 
-  const open = (event: RunEvent, cause: RecoveryCause, failedAt: number): void => {
+  const open = (event: FactsEvent, cause: RecoveryCause, failedAt: number): void => {
     if (pending !== undefined) {
       for (const callId of openCalls) pending.awaiting.add(callId);
       return;
@@ -79,13 +83,13 @@ export const createFactsFold = (): FactsFold => {
     pending = { ordinal, cause, failedAt, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
   };
 
-  const closeAt = (event: RunEvent): void => {
+  const closeAt = (event: FactsEvent): void => {
     if (pending === undefined) return;
     const settled = pending.awaiting.size === 0 && !pending.unknownReconciled;
     resolve(pending, settled ? 'recovered' : 'unknown_effect', { at: event.createdAt, seq: event.seq });
   };
 
-  const progress = (event: RunEvent): void => {
+  const progress = (event: FactsEvent): void => {
     if (pending === undefined || pending.awaiting.size > 0) return;
     closeAt(event);
   };
@@ -95,7 +99,7 @@ export const createFactsFold = (): FactsFold => {
     pending?.awaiting.delete(callId);
   };
 
-  const add = (event: RunEvent): void => {
+  const add = (event: FactsEvent): void => {
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
@@ -209,7 +213,7 @@ export const createFactsFold = (): FactsFold => {
   return { add, finish };
 };
 
-export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsView => {
+export const foldFacts = (events: readonly FactsEvent[], info: RunInfo): RunFactsView => {
   const fold = createFactsFold();
   for (const event of events) fold.add(event);
   return fold.finish(info);

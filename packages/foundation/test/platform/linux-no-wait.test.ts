@@ -6,7 +6,7 @@ import { createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { auxvLayoutOf } from '../../src/platform/linux-parsers.ts';
 import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
-import { reapMarkedProcessesWithReport } from '../../src/process-markers.ts';
+import { markerReapClockBoundMs, reapMarkedProcessesWithReport } from '../../src/process-markers.ts';
 import { createUninspectableRegistry } from '../../src/uninspectable-registry.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 
@@ -116,7 +116,7 @@ describe('T11 Linux: the inspector waits for nothing', () => {
     expect(fs.existsSync(marker)).toBe(false);
   });
 
-  it('a reap of a process that never becomes readable ends within its own killGraceMs and reports it uninspectable, signalling nothing', async () => {
+  it('a reap of a process that never becomes readable ends within its marker reap clock and reports it uninspectable, signalling nothing', async () => {
     const { marker, identity } = markerFile();
     const state: Process12 = { readableAfterLists: Infinity, holdsMarker: true, alive: true };
     const timing = countingTiming();
@@ -127,6 +127,6 @@ describe('T11 Linux: the inspector waits for nothing', () => {
     expect(sent).toEqual([]);
     expect(report.removed).toBe(false);
     expect(fs.existsSync(marker)).toBe(true);
-    expect(timing.elapsed()).toBeLessThanOrEqual(2 * 300 + 2 * 25);
+    expect(timing.elapsed()).toBeLessThanOrEqual(markerReapClockBoundMs(300));
   });
 });

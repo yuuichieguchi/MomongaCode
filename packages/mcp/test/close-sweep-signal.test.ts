@@ -46,7 +46,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
 
     expect(terminateSignals).toHaveLength(1);
     expect(terminateSignals[0]?.aborted).toBe(true);
-    expect(terminateOptionKeys.sort()).toEqual(['graceMs', 'signal']);
+    expect(terminateOptionKeys.sort()).toEqual(['graceMs', 'signal', 'timing']);
     expect(fs.readdirSync(dir)).toEqual([]);
     expect(warnings).toEqual([]);
   });

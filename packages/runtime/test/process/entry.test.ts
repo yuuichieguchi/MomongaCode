@@ -155,11 +155,11 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     expect(launched.io.stderrLines()).toEqual([]);
   });
 
-  it('runtime: a second SIGTERM aborts the drain (drain timeout far beyond the test timeout)', async (context) => {
+  it('runtime: a second SIGTERM aborts the drain (the user drain setting at its maximum, far beyond the test timeout)', async (context) => {
     const { home, paths, aux } = await validHome(context);
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: path.join(aux, 'fake.sock') });
     registerCleanup(context, () => fake.close());
-    writeUserSettings(home, { sandbox: 'none', ...modelSettings(fake.socketPath) });
+    writeUserSettings(home, { sandbox: 'none', runtime: { drainTimeoutMs: 300_000 }, ...modelSettings(fake.socketPath) });
     const gateway = await ownedStart(context, startGatewayProcess({
       generation: FIRST_GENERATION,
       home,
@@ -170,7 +170,7 @@ describe('runRuntimeEntry exit codes (§5.3, fake EntryIo, real runtime)', () =>
     registerCleanup(context, async () => {
       await gateway.close();
     });
-    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr', '--drain-timeout-ms=600000']);
+    const launched = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
     await waitForReadyOrExit(launched);
     const project = withTempDir(context);
     const runHome: RunHome = { root: aux, home, paths, project };

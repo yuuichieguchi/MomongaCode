@@ -61,7 +61,7 @@ export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayLi
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
 export { asError } from './process/as-error.ts';
-export { MCP_CLOSE_GRACE_MS, POOL_IDLE_CLOSE_MS, POOL_REFERENCE_AUDIT_MS, SESSION_STATE_IDLE_MS } from './process/constants.ts';
+export { POOL_IDLE_CLOSE_MS, POOL_REFERENCE_AUDIT_MS, SESSION_STATE_IDLE_MS } from './process/constants.ts';
 export { RUNTIME_DEFAULTS } from './process/defaults.ts';
 export { protectedRootAreasOf } from './process/protected-areas.ts';
 export { reapTimingOf } from './process/reap-timing.ts';

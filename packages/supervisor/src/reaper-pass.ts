@@ -1,5 +1,6 @@
+import path from 'node:path';
 import type { StopValuesReader } from '@momonga/config';
-import { GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, hostKernelLock, momongaPaths, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
+import { GENERATION_MARKER_LABELS, GENERATION_REAPER_OCCASION, generationLayout, hostKernelLock, momongaPaths, readStopRecord, reapDeadGenerations, reapMarkerDirectory } from '@momonga/foundation';
 import type { Clock, GenerationMarkerReap, JsonLogger, KernelLockMechanism, MarkerKind, MomongaPaths, ReapTiming } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -23,7 +24,6 @@ export type ReaperPassOptions = {
   orphanGraceMs: number;
   orphanReapGraceMs: number;
   orphanPollMs: number;
-  drainTimeoutMs?: number;
   managedServerStopGraceMs(): number;
   markerPorts?: MarkerPorts;
   reapDeadGenerations?: typeof reapDeadGenerations;
@@ -45,7 +45,8 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
     writeEvent(options.logger, orphansWarning({ detail }));
   };
 
-  const reapDaemons = async ({ directory, signal }: GenerationMarkerReap): Promise<void> => {
+  const reapDaemons = async ({ generation, directory, signal }: GenerationMarkerReap): Promise<void> => {
+    const predecessorStopValues = await readStopRecord(generationLayout(path.dirname(options.paths.root), generation).stopRecord);
     await reapOrphans({
       markersDir: directory,
       orphanGraceMs: options.orphanGraceMs,
@@ -56,7 +57,8 @@ export const createReaperPass = (options: ReaperPassOptions): ReaperPass => {
       logger: options.logger,
       reapTiming: options.reapTiming,
       occasion: GENERATION_REAPER_OCCASION,
-      ...omitUndefined({ drainTimeoutMs: options.drainTimeoutMs, markerPorts: options.markerPorts }),
+      predecessorStopValues,
+      ...omitUndefined({ markerPorts: options.markerPorts }),
     });
   };
 
@@ -91,7 +93,7 @@ export type EntryReaperValues = {
   stopValues: StopValuesReader;
 };
 
-type EntryReaperDeps = Pick<SupervisorOptions, 'runtime' | 'startupTimeoutMs' | 'orphanGraceMs' | 'intervals' | 'reapTiming' | 'lockMechanism' | 'markerPorts'>;
+type EntryReaperDeps = Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'intervals' | 'reapTiming' | 'lockMechanism' | 'markerPorts'>;
 
 export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues): ReaperPass => {
   const timing = resolveStartTiming(deps);
@@ -104,7 +106,6 @@ export const entryReaperPass = (deps: EntryReaperDeps, values: EntryReaperValues
     orphanGraceMs: timing.orphanGraceMs,
     orphanReapGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
     orphanPollMs: timing.orphanPollMs,
-    drainTimeoutMs: timing.drainTimeoutMs,
     managedServerStopGraceMs: () => values.stopValues.read().managedServerStopGraceMs,
     ...omitUndefined({ markerPorts: deps.markerPorts }),
   });

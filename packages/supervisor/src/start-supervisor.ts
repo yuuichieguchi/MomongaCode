@@ -1,10 +1,10 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createStopValuesReader, createUserSettingsCache, noKeptRecords, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
+import { createStopValuesReader, createUserSettingsCache, noKeptRecords, stopValuesOfSettings, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import {
   GenerationDirectoryMissingError,
-  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  MAXIMUM_STOP_VALUES,
   acquireProcessLock,
   announceReady,
   canonicalPath,
@@ -15,6 +15,7 @@ import {
   hostKernelLock,
   listGenerations,
   momongaPaths,
+  orphanReapGraceMs,
   publishCurrentGeneration,
   readCurrentGeneration,
   reapMarkerDirectory,
@@ -23,6 +24,7 @@ import {
   runtimeMaxCloseMs,
   scopeToGeneration,
   systemClock,
+  writeStopRecord,
 } from '@momonga/foundation';
 import type { AbandonReason, AtomicWriteFileSystem, Clock, GenerationRole, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
@@ -31,7 +33,7 @@ import { readChildCounts } from './child-counts.ts';
 import type { ChildCountsReader, GenerationCounts } from './child-counts.ts';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { DAEMON_MARKER_KILL_GRACE_MS, HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, MANY_GENERATIONS_THRESHOLD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { DAEMON_MARKER_KILL_GRACE_MS, HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, MANY_GENERATIONS_THRESHOLD, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import { handedCredentialNames } from './child-env.ts';
@@ -102,17 +104,19 @@ export type SupervisorOptions = {
   signal?: AbortSignal;
   stopValues?: StopValuesReader;
   onShutdownRequested?: (values?: StopValues) => void;
+  predecessorStopValues?: StopValues | undefined;
 };
 
-export type SupervisorStartTiming = { drainTimeoutMs: number; startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
+export type SupervisorStartTiming = { startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
 
-export const resolveStartTiming = (options: Pick<SupervisorOptions, 'runtime' | 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals'>): SupervisorStartTiming => {
-  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
+export const resolveStartTiming = (
+  options: Pick<SupervisorOptions, 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals' | 'predecessorStopValues'>,
+): SupervisorStartTiming => {
+  const predecessor = options.predecessorStopValues ?? MAXIMUM_STOP_VALUES;
   return {
-    drainTimeoutMs,
     startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
-    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs),
-    orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
+    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(predecessor),
+    orphanReapGraceMs: options.orphanReapGraceMs ?? orphanReapGraceMs(predecessor),
     orphanPollMs: resolveIntervals(options.intervals).orphanPollMs,
   };
 };
@@ -175,9 +179,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const logger = options.logger ?? createJsonLogger({ service: SUPERVISOR_SERVICE, clock });
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
-  const startTiming = resolveStartTiming(options);
-  const { drainTimeoutMs, startupTimeoutMs } = startTiming;
   const canonicalHome = canonicalPath(options.home);
+  const startTiming = resolveStartTiming(options);
+  const { startupTimeoutMs } = startTiming;
   const homePaths = momongaPaths(canonicalHome, process.platform, {});
   const paths = scopeToGeneration(homePaths, options.generation);
   const env = { ...(options.env ?? process.env) };
@@ -283,7 +287,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         load: () => {
           const snapshot = settings.snapshot();
           if ('error' in snapshot) throw snapshot.error;
-          return snapshot.settings.gateway;
+          return stopValuesOfSettings(snapshot.settings);
         },
         onNotice: (detail) => log(settingsWarning({ detail })),
       });
@@ -555,9 +559,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const shutdown = createShutdownController({
       runtime,
       gateway,
-      drainTimeoutMs,
       timers,
       logger,
+      recordStop: (values) => writeStopRecord(own.stopRecord, own.generation, values),
       ...omitUndefined({ markerPorts: options.markerPorts }),
       beginDraining: () => {
         if (role === 'starting' && !ended) log(startUnpromoted({ generation: own.generation, reason: 'stopped' }));

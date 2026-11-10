@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, FIRST_GENERATION, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import type { ManagedInstance } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
@@ -56,7 +56,7 @@ const setup = async (): Promise<Setup> => {
 const launch = async (home: string) => {
   const handle = await closedAtCleanup(startGatewayProcess({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, stdout: { write: () => true } }));
   registerCleanup(async () => {
-    await handle.close({ closeGraceMs: 0, managedServerStopGraceMs: 0 });
+    await handle.close({ ...DEFAULT_STOP_VALUES, closeGraceMs: 0, managedServerStopGraceMs: 0 });
   });
   return handle;
 };

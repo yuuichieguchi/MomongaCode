@@ -110,7 +110,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.toolRuntime.mcpPools.size()).toBe(1);
     expect(a.tools.map((tool) => tool.name)).toContain('mcp__fx__echo');
     expect(b.digest).toBe(a.digest);
-    expect(f.counting.created[0]?.closeGraceMs).toBe(1000);
+    expect((f.counting.created[0]?.closeGraceMs as () => number)()).toBe(1000);
     expect(f.counting.created[0]?.markers?.dir).toBe(f.temp.paths.markers.mcp);
     expect(f.counting.created[0]?.projectDir).toBe(f.temp.project);
   });

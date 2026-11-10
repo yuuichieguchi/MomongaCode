@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
+import { SANDBOX_KILL_GRACE_MS, closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
 import type { ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
-export const SANDBOX_KILL_GRACE_MS = 1000;
+export { SANDBOX_KILL_GRACE_MS };
 
 export const SANDBOX_STOP_BOUND_MS = groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS);
 

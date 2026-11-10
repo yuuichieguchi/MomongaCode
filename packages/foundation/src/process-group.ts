@@ -1,8 +1,9 @@
 import { hostProcessGroupPort } from './platform/group-port.ts';
 import type { ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
+import { GROUP_POLL_INTERVAL_MS, KILL_CONFIRM_MS } from './process-contract.ts';
 
-const POLL_INTERVAL_MS = 10;
+export { groupTerminationBoundMs } from './process-contract.ts';
 
 export interface GroupTiming {
   now(): number;
@@ -15,8 +16,6 @@ export const realGroupTiming: GroupTiming = {
 };
 
 export type TerminateOutcome = 'terminated' | 'killed' | 'gone' | 'unconfirmed';
-
-export const groupTerminationBoundMs = (graceMs: number): number => 2 * (graceMs + POLL_INTERVAL_MS);
 
 export class GroupNotStoppedError extends Error {
   readonly pgid: number;
@@ -95,7 +94,7 @@ export async function waitForGroupGone(
     const probe = await probeGroup(pgid, port, stop);
     if (probe !== 'alive') return probe === 'gone';
     if (timing.now() >= deadline) return false;
-    await timing.sleep(POLL_INTERVAL_MS);
+    await timing.sleep(GROUP_POLL_INTERVAL_MS);
   }
 }
 
@@ -112,7 +111,7 @@ export async function forceKillGroup(pgid: number, { deadline, port = hostProces
     if (probe !== 'alive') return probe === 'gone';
     await signalGroup(pgid, 'SIGKILL', port, signal);
     if (timing.now() >= deadline) return (await probeGroup(pgid, port, signal)) === 'gone';
-    await timing.sleep(POLL_INTERVAL_MS);
+    await timing.sleep(GROUP_POLL_INTERVAL_MS);
   }
 }
 
@@ -129,5 +128,5 @@ export async function terminateGroup(pgid: number, options: TerminateGroupOption
   }
   if (await waitForGroupGone(pgid, termDeadline, port, timing, signal)) return 'terminated';
   if (signal?.aborted === true) return 'unconfirmed';
-  return (await forceKillGroup(pgid, { deadline: timing.now() + options.graceMs, port, timing, signal })) ? 'killed' : 'unconfirmed';
+  return (await forceKillGroup(pgid, { deadline: timing.now() + KILL_CONFIRM_MS, port, timing, signal })) ? 'killed' : 'unconfirmed';
 }

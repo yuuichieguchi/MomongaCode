@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { runtimeMaxCloseMs, runtimeTeardownBudgetMs } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { GatewayClient, GatewayClientOptions, Worker, WorkerOptions } from '@momonga/runtime';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
@@ -8,14 +9,14 @@ import { START_MS, trackGroup } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
   CANCEL_SETTLE_MS,
-  TEARDOWN_BUDGET_MS,
+  DEFAULT_MCP_CLOSE_GRACE_MS,
   approveOnce,
   fireDuringTeardownStep,
   finishApprovingPrompts,
   fireTimer,
   entriesNamed,
   eventTypes,
-  exportedValue,
+  stopValuesOf,
   launchRuntime,
   recordPgid,
   scriptedToolCall,
@@ -234,13 +235,13 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(control.pools).toHaveLength(1);
     const startedAt = launched.clock.now();
     const closing = launched.handle.close();
-    await fireDuringTeardownStep(launched.logger, launched.timers, 'mcp-pools', TEARDOWN_BUDGET_MS);
+    await fireDuringTeardownStep(launched.logger, launched.timers, 'mcp-pools', runtimeTeardownBudgetMs(DEFAULT_MCP_CLOSE_GRACE_MS));
     const result = await closing;
     expect(result).toEqual({ clean: false, abandoned: ['mcp-pools'], stragglers: [] });
     expect(control.pools[0]?.closes).toBe(1);
     expect(entriesNamed(launched.logger, 'teardown.abandoned')).toEqual([expect.objectContaining({ level: 'warn', fields: expect.objectContaining({ step: 'mcp-pools' }) })]);
     expect(stepsLogged(launched.logger, 'teardown.step').slice(-6)).toEqual(['gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock']);
-    const maxCloseMs = exportedValue<(drainTimeoutMs: number) => number>('runtimeMaxCloseMs')(DRAIN_MS);
+    const maxCloseMs = runtimeMaxCloseMs(stopValuesOf(DRAIN_MS));
     expect(launched.clock.now() - startedAt).toBeLessThanOrEqual(maxCloseMs);
     expect(launched.timers.pending()).toEqual([]);
   });

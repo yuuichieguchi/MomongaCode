@@ -13,7 +13,7 @@ import type { ProbeResult, ProcessInspector, StartTime, UninspectableProcess } f
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
-import { markerReapClockBoundMs } from './process-contract.ts';
+import { KILL_CONFIRM_MS, markerReapClockBoundMs } from './process-contract.ts';
 import { RETRY_KINDS, claimRetry, parseRecordedGroup, readAttemptRecord } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
@@ -403,7 +403,7 @@ const reconcilePasses = async (
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
 
   const leftAloneGroup = !killPass.sent.includes(-pgid) && (await groupRunning()) ? pgid : undefined;
-  const lastHolders = await reads.holdersAfterWindow(killGraceMs);
+  const lastHolders = await reads.holdersAfterWindow(KILL_CONFIRM_MS);
   const outsideAfter = await holdersOutsideGroup(lastHolders, pgid, reads);
   const findings: StructuredFindings = {
     stoppedHolders: [...new Set([...termPass.stoppedHolders, ...killPass.stoppedHolders])],
@@ -558,7 +558,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
       onWarning(`${label} marker ${marker}: could not signal process ${joinPids([...unsignalled])}`);
     }
     if (stop.aborted) return ended(stopped, [...unsettled.values()]);
-    remaining = await holdersAfterWindow(marker, { inspector, timing, signal: stop }, killGraceMs, unsettled);
+    remaining = await holdersAfterWindow(marker, { inspector, timing, signal: stop }, KILL_CONFIRM_MS, unsettled);
   }
   if (remaining.length > 0) {
     onWarning(`${label} marker ${marker} kept: process ${joinPids(remaining)} still hold it after cleanup; the next start will retry`);

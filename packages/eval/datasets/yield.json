@@ -1,0 +1,183 @@
+{
+  "format": "momonga-eval-context-yield/1",
+  "name": "context-yield",
+  "families": [
+    {
+      "id": "dev-port",
+      "description": "The port of the dev server is computed by a script, so no file states it: the learn session finds it by running the script, and the reuse session needs the number.",
+      "learn": {
+        "input": "Find out which port the dev server of this project listens on by running node tools/port.mjs. Then run node tools/check.mjs to confirm the workspace is sound.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "files": {
+          "tools/port.mjs": "const BASE = 4000;\nconst OFFSET = 300 + 17;\nconsole.log(`dev server port ${BASE + OFFSET}`);\n",
+          "README.md": "# Shop\n\nThe dev server port is derived in tools/port.mjs.\n",
+          "tools/check.mjs": "import fs from 'node:fs';\nfor (const name of [\"README.md\", \"tools/port.mjs\"]) {\n  if (!fs.existsSync(name)) {\n    console.error(`missing ${name}`);\n    process.exit(1);\n  }\n}\nconsole.log('workspace ok');\n"
+        },
+        "verification": "node tools/check.mjs"
+      },
+      "reuse": {
+        "input": "Which port does the dev server of this project listen on? Answer with the number.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "graders": [
+          {
+            "kind": "status",
+            "equals": "COMPLETED"
+          },
+          {
+            "kind": "finalTextIncludes",
+            "text": "4317"
+          }
+        ]
+      },
+      "accept": {
+        "anchors": [
+          "4317"
+        ]
+      }
+    },
+    {
+      "id": "release-codename",
+      "description": "The codename of the release is joined from parts at run time: the learn session prints it, and the reuse session has to name it.",
+      "learn": {
+        "input": "Find the codename of the next release by running node tools/codename.mjs. Then run node tools/check.mjs to confirm the workspace is sound.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "files": {
+          "tools/codename.mjs": "const parts = ['amber', 'falcon'];\nconsole.log(`codename ${parts.join('-')}`);\n",
+          "README.md": "# Release\n\nThe codename of the next release is printed by tools/codename.mjs.\n",
+          "tools/check.mjs": "import fs from 'node:fs';\nfor (const name of [\"README.md\", \"tools/codename.mjs\"]) {\n  if (!fs.existsSync(name)) {\n    console.error(`missing ${name}`);\n    process.exit(1);\n  }\n}\nconsole.log('workspace ok');\n"
+        },
+        "verification": "node tools/check.mjs"
+      },
+      "reuse": {
+        "input": "What is the codename of the next release of this project? Answer with the codename.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "graders": [
+          {
+            "kind": "status",
+            "equals": "COMPLETED"
+          },
+          {
+            "kind": "finalTextIncludes",
+            "text": "amber-falcon"
+          }
+        ]
+      },
+      "accept": {
+        "anchors": [
+          "amber-falcon"
+        ]
+      }
+    },
+    {
+      "id": "release-tag",
+      "description": "The version tag is computed from three numbers kept in separate files: the learn session computes it, and the reuse session has to state it.",
+      "learn": {
+        "input": "Find the version tag of the next release by running node tools/tag.mjs. Then run node tools/check.mjs to confirm the workspace is sound.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "files": {
+          "version/major.txt": "3\n",
+          "version/minor.txt": "4\n",
+          "version/patch.txt": "7\n",
+          "tools/tag.mjs": "import fs from 'node:fs';\nconst read = (name) => Number(fs.readFileSync(`version/${name}.txt`, 'utf8'));\nconsole.log(`tag v${read('major')}.${read('minor') * 7}.${read('patch') + 12}`);\n",
+          "tools/check.mjs": "import fs from 'node:fs';\nfor (const name of [\"tools/tag.mjs\", \"version/major.txt\", \"version/minor.txt\", \"version/patch.txt\"]) {\n  if (!fs.existsSync(name)) {\n    console.error(`missing ${name}`);\n    process.exit(1);\n  }\n}\nconsole.log('workspace ok');\n"
+        },
+        "verification": "node tools/check.mjs"
+      },
+      "reuse": {
+        "input": "Which version tag does the next release of this project get? Answer with the tag.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "graders": [
+          {
+            "kind": "status",
+            "equals": "COMPLETED"
+          },
+          {
+            "kind": "finalTextIncludes",
+            "text": "3.28.19"
+          }
+        ]
+      },
+      "accept": {
+        "anchors": [
+          "3.28.19"
+        ]
+      }
+    },
+    {
+      "id": "secret-variable",
+      "description": "The name of the environment variable that holds the signing key is assembled at run time: the learn session prints it, and the reuse session has to name it.",
+      "learn": {
+        "input": "Find the name of the environment variable that holds the signing key by running node tools/variable.mjs. Then run node tools/check.mjs to confirm the workspace is sound.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "files": {
+          "tools/variable.mjs": "const words = ['ORCHARD', 'LANTERN', 'KEY'];\nconsole.log(`signing key variable ${words.join('_')}`);\n",
+          "README.md": "# Signing\n\nThe signing key is read from an environment variable whose name tools/variable.mjs prints.\n",
+          "tools/check.mjs": "import fs from 'node:fs';\nfor (const name of [\"README.md\", \"tools/variable.mjs\"]) {\n  if (!fs.existsSync(name)) {\n    console.error(`missing ${name}`);\n    process.exit(1);\n  }\n}\nconsole.log('workspace ok');\n"
+        },
+        "verification": "node tools/check.mjs"
+      },
+      "reuse": {
+        "input": "Which environment variable holds the signing key of this project? Answer with its name.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "graders": [
+          {
+            "kind": "status",
+            "equals": "COMPLETED"
+          },
+          {
+            "kind": "finalTextIncludes",
+            "text": "ORCHARD_LANTERN_KEY"
+          }
+        ]
+      },
+      "accept": {
+        "anchors": [
+          "ORCHARD_LANTERN_KEY"
+        ]
+      }
+    },
+    {
+      "id": "shard-count",
+      "description": "The number of test shards is derived from a table: the learn session computes it, and the reuse session needs the number.",
+      "learn": {
+        "input": "Find out how many test shards the continuous integration of this project runs by running node tools/shards.mjs. Then run node tools/check.mjs to confirm the workspace is sound.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "files": {
+          "ci/suites.json": "{\n  \"suites\": [\n    {\n      \"name\": \"unit\",\n      \"files\": 180\n    },\n    {\n      \"name\": \"wire\",\n      \"files\": 95\n    },\n    {\n      \"name\": \"screen\",\n      \"files\": 46\n    }\n  ]\n}\n",
+          "tools/shards.mjs": "import fs from 'node:fs';\nconst { suites } = JSON.parse(fs.readFileSync('ci/suites.json', 'utf8'));\nconst files = suites.reduce((sum, suite) => sum + suite.files, 0);\nconsole.log(`test shards ${files * 4 + 1}`);\n",
+          "tools/check.mjs": "import fs from 'node:fs';\nfor (const name of [\"ci/suites.json\", \"tools/shards.mjs\"]) {\n  if (!fs.existsSync(name)) {\n    console.error(`missing ${name}`);\n    process.exit(1);\n  }\n}\nconsole.log('workspace ok');\n"
+        },
+        "verification": "node tools/check.mjs"
+      },
+      "reuse": {
+        "input": "How many test shards does the continuous integration of this project run? Answer with the number.",
+        "permissionMode": "acceptEdits",
+        "onAsk": "allow_once",
+        "graders": [
+          {
+            "kind": "status",
+            "equals": "COMPLETED"
+          },
+          {
+            "kind": "finalTextIncludes",
+            "text": "1285"
+          }
+        ]
+      },
+      "accept": {
+        "anchors": [
+          "1285"
+        ]
+      }
+    }
+  ]
+}

@@ -10,7 +10,7 @@ import type { ToolEnv } from '../ports.ts';
 import { invalidRequest, notFound } from '../service/errors.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { asError } from './as-error.ts';
-import { MCP_CLOSE_GRACE_MS, POOL_IDLE_CLOSE_MS } from './constants.ts';
+import { POOL_IDLE_CLOSE_MS } from './constants.ts';
 import type { SettingsComposition } from './settings-port.ts';
 
 export type McpAdmin = {
@@ -18,7 +18,7 @@ export type McpAdmin = {
   startAuthorization(sessionId: string, name: string): Promise<McpAuthorizationView>;
   authorization(sessionId: string, name: string): McpAuthorizationView | undefined;
   cancelAuthorization(sessionId: string, name: string): boolean;
-  close(): Promise<void>;
+  close(graceMs: number): Promise<void>;
 };
 
 export type McpAdminOptions = {
@@ -31,6 +31,8 @@ export type McpAdminOptions = {
   settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
+  readCloseGraceMs(): number;
+  readConnectTimeoutMs(): number | undefined;
   markers?: McpMarkerOptions;
 };
 
@@ -66,6 +68,8 @@ const failureOf = (server: string, error: unknown): { code: string; message: str
   return { code: 'error', message: `the authorization of MCP server "${server}" failed: ${asError(error).message}` };
 };
 
+const connectTimeoutOf = (connectTimeoutMs: number | undefined): { connectTimeoutMs?: number } => (connectTimeoutMs === undefined ? {} : { connectTimeoutMs });
+
 export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   const { clock, report } = options;
   const attempts = new Map<string, Attempt>();
@@ -93,16 +97,17 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       clock,
       timers: options.timers,
       remote,
-      closeGraceMs: MCP_CLOSE_GRACE_MS,
+      closeGraceMs: options.readCloseGraceMs,
+      ...connectTimeoutOf(options.readConnectTimeoutMs()),
       ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
 
   const keyOf = (sessionId: string, name: string): string => `${sessionId}/${name}`;
 
-  const closeProbePool = (key: string, entry: ProbePool): void => {
+  const closeProbePool = (key: string, entry: ProbePool, graceMs: number): void => {
     if (probePools.get(key) !== entry) return;
     probePools.delete(key);
-    const settled = entry.pool.close().catch(report);
+    const settled = entry.pool.close(graceMs).catch(report);
     const tracked = settled.finally(() => {
       closing.delete(tracked);
     });
@@ -123,7 +128,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   const releaseProbePool = (key: string, entry: ProbePool): void => {
     entry.users -= 1;
-    if (entry.users === 0) entry.idle = options.timers.setTimeout(() => closeProbePool(key, entry), POOL_IDLE_CLOSE_MS);
+    if (entry.users === 0) entry.idle = options.timers.setTimeout(() => closeProbePool(key, entry, options.readCloseGraceMs()), POOL_IDLE_CLOSE_MS);
   };
 
   const servers: McpAdmin['servers'] = async (sessionId, signal) => {
@@ -210,11 +215,11 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       attempt.controller.abort(new Error('authorization was cancelled by the client'));
       return true;
     },
-    close: async () => {
+    close: async (graceMs) => {
       for (const attempt of attempts.values()) attempt.controller.abort(new Error('the runtime is shutting down'));
       for (const [key, entry] of [...probePools]) {
         if (entry.idle !== undefined) options.timers.clearTimeout(entry.idle);
-        closeProbePool(key, entry);
+        closeProbePool(key, entry, graceMs);
       }
       await Promise.all([...attempts.values()].map((attempt) => attempt.settled));
       await Promise.all(closing);
