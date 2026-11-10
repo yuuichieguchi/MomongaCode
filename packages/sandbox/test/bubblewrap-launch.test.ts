@@ -1,5 +1,5 @@
-import { execFileSync, spawn } from 'node:child_process';
-import type { SpawnOptions } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
+import type { SpawnOptions } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

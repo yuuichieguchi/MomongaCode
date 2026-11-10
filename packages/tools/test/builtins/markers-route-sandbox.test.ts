@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile } from '@momonga/testkit/child-process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
 import net from 'node:net';

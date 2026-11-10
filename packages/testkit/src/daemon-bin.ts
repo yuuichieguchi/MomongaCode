@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import type { Readable } from 'node:stream';
-import { spawnProduct } from './product-spawn.ts';
+import { spawnTracked } from './test-support.ts';
 import type { CleanupContext, TrackedChild } from './test-support.ts';
 
 export const DAEMON_BIN_READY_DEADLINE_MS = 30_000;
@@ -17,7 +17,7 @@ export type DaemonBin = {
 const linesOf = (text: string): string[] => text.split('\n').filter((line) => line !== '');
 
 export const startDaemonBin = (context: CleanupContext | undefined, bin: string, args: readonly string[], env: Readonly<Record<string, string>>): DaemonBin => {
-  const child = spawnProduct(context, process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...env } });
+  const child = spawnTracked(context, process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: { ...env } });
   let stdout = '';
   let stderr = '';
   const readyWaiters: Array<(line: string) => void> = [];

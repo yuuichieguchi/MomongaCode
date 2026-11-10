@@ -11,18 +11,24 @@ export const fakeSecretProgramsBin = (env: ProcessEnv = process.env): string => 
   return bin;
 };
 
-const isInside = (directory: string, file: string): boolean => {
-  const relative = path.relative(directory, file);
+export const isInsideFakeSecretPrograms = (file: string): boolean => {
+  const relative = path.relative(fakeSecretProgramsBin(), file);
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
 };
 
-export const assertFakeSecretStoreEnv = (env: ProcessEnv, command: string): void => {
-  const bin = fakeSecretProgramsBin();
+export const givenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefined => {
   const given = env[SECRET_PROGRAM_ENV];
+  return given !== undefined && !isInsideFakeSecretPrograms(given) ? given : undefined;
+};
+
+export const chosenSecretProgramOutsideFakes = (env: ProcessEnv): string | undefined => {
   const chosen = secretStoreEnvFor(env)[SECRET_PROGRAM_ENV];
-  for (const program of [given, chosen]) {
-    if (program !== undefined && !isInside(bin, program)) {
-      throw new Error(`the environment given to ${command} resolves the secret store to ${program}, outside the fake directory ${bin}; build it with productTestEnv`);
-    }
+  return chosen !== undefined && !isInsideFakeSecretPrograms(chosen) ? chosen : undefined;
+};
+
+export const assertFakeSecretStoreEnv = (env: ProcessEnv, command: string): void => {
+  const program = givenSecretProgramOutsideFakes(env) ?? chosenSecretProgramOutsideFakes(env);
+  if (program !== undefined) {
+    throw new Error(`the environment given to ${command} resolves the secret store to ${program}, outside the fake directory ${fakeSecretProgramsBin()}; build it with productTestEnv`);
   }
 };

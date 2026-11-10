@@ -148,7 +148,7 @@ describe('fs reader rejects non-regular files', () => {
   it('treats a FIFO named AGENTS.md as absent without blocking', async () => {
     const dir = makeDir();
     const fifo = path.join(dir, 'AGENTS.md');
-    const { execFileSync } = await import('node:child_process');
+    const { execFileSync } = await import('@momonga/testkit/child-process');
     execFileSync('mkfifo', [fifo]);
     const reader = createFsInstructionReader();
     const started = performance.now();

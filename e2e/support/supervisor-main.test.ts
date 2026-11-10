@@ -6,7 +6,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BASE_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
-import { productTestEnv, registerCleanup, spawnProduct, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
+import { productTestEnv, registerCleanup, spawnTracked, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { STDERR_FLOOD_BYTES } from './fixtures/stderr-flood-supervisor.ts';
 import type { StackParentReport, StackParentRequest } from './fixtures/stack-parent.ts';
@@ -47,7 +47,7 @@ const runToken = (): string => {
 };
 
 const runMain = (context: CleanupContext, home: string, env: Record<string, string>, homeFlag: string = home): Promise<ScriptResult> => {
-  const child = spawnProduct(context, process.execPath, [SUPERVISOR_MAIN_PATH, `--home=${homeFlag}`, '--log-target=file'], {
+  const child = spawnTracked(context, process.execPath, [SUPERVISOR_MAIN_PATH, `--home=${homeFlag}`, '--log-target=file'], {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -207,7 +207,7 @@ describe('supervisor-main lifeline and pipes', () => {
     writeSettingsFile(home, baseSettings(home, resolution.kind === 'skip' ? 'none' : resolution.kind));
     const depsFile = writeDepsFile(home, DEFAULT_E2E_DEPS, 1);
     const request: StackParentRequest = { args: [SUPERVISOR_MAIN_PATH, ...supervisorArgv(home)], env: supervisorEnv(home, depsFile) };
-    const parent = spawnProduct(context, process.execPath, [STACK_PARENT_PATH, JSON.stringify(request)], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const parent = spawnTracked(context, process.execPath, [STACK_PARENT_PATH, JSON.stringify(request)], { stdio: ['ignore', 'pipe', 'ignore'] });
     const report = JSON.parse(await firstLine(parent.stdout as NodeJS.ReadableStream)) as StackParentReport;
     await home.ledger.add(report.supervisorPid, 'supervisor');
     const client = createSupervisorClient(home);

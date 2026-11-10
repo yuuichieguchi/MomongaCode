@@ -1,9 +1,10 @@
+import { execFile } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { startFakeChatCompletions, productTestEnv, execProductFile } from '@momonga/testkit';
+import { startFakeChatCompletions, productTestEnv } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
 import { defaultEntry } from './bundle.ts';
@@ -29,7 +30,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
 
   const run = (...args: string[]): Promise<Invocation> =>
     new Promise((resolve, reject) => {
-      execProductFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
+      execFile(binary, args, { cwd: project, env: productTestEnv({ PATH: '/usr/bin:/bin', HOME: root }), encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== 'number') reject(error);
         else resolve({ status: error === null ? 0 : (error.code as number), stdout, stderr });
       });

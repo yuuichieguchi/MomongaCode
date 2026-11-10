@@ -250,4 +250,4 @@ export { firstGeneration } from './first-generation.ts';
 export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
 export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
 export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
-export { execProductFile, productTestEnv, spawnProduct, spawnProductSync } from './product-spawn.ts';
+export { productTestEnv } from './product-spawn.ts';

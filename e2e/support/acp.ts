@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import { Writable } from 'node:stream';
 import { client, ndJsonStream } from '@agentclientprotocol/sdk';
 import type {
@@ -11,7 +11,6 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from '@agentclientprotocol/sdk';
-import { assertFakeSecretStoreEnv } from '@momonga/testkit';
 import { CLI_BUNDLE, cliEnv } from './cli.ts';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
@@ -41,7 +40,6 @@ const PROTOCOL_VERSION = 1;
 
 export const startAcpClient = (home: E2eHome, options: AcpClientOptions = {}): AcpClient => {
   const env = cliEnv(home);
-  assertFakeSecretStoreEnv(env, CLI_BUNDLE);
   const child = spawn(process.execPath, [CLI_BUNDLE, 'acp'], { cwd: home.project, env, stdio: ['pipe', 'pipe', 'pipe'] });
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');

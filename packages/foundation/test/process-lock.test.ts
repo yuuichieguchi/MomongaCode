@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { MINIMAL_CHILD_PATH, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, createExecWithStdin, givenCredentialSecretStore, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
-import { assertFakeSecretStoreEnv, productTestEnv, spawnProduct, spawnProductSync } from '@momonga/testkit';
+import { SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, createExecWithStdin, givenCredentialSecretStore, secretStoreEnvFor } from '@momonga/foundation';
+import { assertFakeSecretStoreEnv, productTestEnv } from '@momonga/testkit';
 import type { E2eHome } from '../e2e/support/home.ts';
 import { cliEnv } from '../e2e/support/cli.ts';
 import { supervisorEnv } from '../e2e/support/stack.ts';
@@ -20,11 +20,6 @@ const expectFakeSecretProgram = (env: Readonly<Record<string, string | undefined
 
 const homeAt = (root: string): E2eHome => ({ run: '0000', tmpRoot: root, root, home: path.join(root, 'home'), project: path.join(root, 'project'), sessionTmp: path.join(root, 'tmp') }) as unknown as E2eHome;
 
-const LEAKING_ENVS: ReadonlyArray<readonly [string, Record<string, string>]> = [
-  ['PATH: SESSION_PATH', { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }],
-  ['PATH: MINIMAL_CHILD_PATH', { PATH: MINIMAL_CHILD_PATH }],
-  ['env: minimalChildEnv(process.env)', { ...minimalChildEnv(process.env) }],
-];
 
 describe('no process of a test run can reach the OS secret store', () => {
   it('the test process environment names a fake secret store program, so every process inheriting it does', () => {
@@ -49,12 +44,6 @@ describe('no process of a test run can reach the OS secret store', () => {
 
 
 
-  it.each(LEAKING_ENVS)('a guarded spawn with a leaking env (%s) throws before anything runs', (_spelling, env) => {
-    const marker = path.join(fs.mkdtempSync(path.join(TEST_TEMP_ROOT, 'leak-')), 'ran');
-    expect(() => spawnProduct(undefined, process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`], { env })).toThrow(/resolves the secret store to .*outside the fake directory/);
-    expect(() => spawnProductSync(process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`], { env, encoding: 'utf8' })).toThrow(/outside the fake directory/);
-    expect(fs.existsSync(marker)).toBe(false);
-  });
 
   it('a given MOMONGA_SECRET_PROGRAM outside the fake directory is refused too', () => {
     expect(() => assertFakeSecretStoreEnv(productTestEnv({ [SECRET_PROGRAM_ENV]: '/usr/bin/security' }), 'runtime')).toThrow(/\/usr\/bin\/security, outside the fake directory/);

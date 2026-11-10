@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from './child-process.ts';
 import fs from 'node:fs';
 import { type CallToolResult, Server, type Tool } from '@modelcontextprotocol/server';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';

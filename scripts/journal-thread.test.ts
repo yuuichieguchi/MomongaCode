@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from '@momonga/testkit/child-process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,7 +13,7 @@ import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
-import { productTestEnv, spawnProductSync } from '@momonga/testkit';
+import { productTestEnv } from '@momonga/testkit';
 
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
 const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => (productTestEnv({ PATH: '/usr/bin:/bin', HOME: home }));
@@ -178,7 +178,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the journal thread in the single e
   it('starts the embedded thread, completes the handshake and answers a ping with Node absent from PATH, running the bundled thread code', async () => {
     const home = path.join(root, 'home');
     fs.mkdirSync(home, { mode: 0o700 });
-    const result = spawnProductSync(binary, [home], { encoding: 'utf8', env: NO_NODE_ENV(home) });
+    const result = spawnSync(binary, [home], { encoding: 'utf8', env: NO_NODE_ENV(home) });
     expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
     expect(JSON.parse(result.stdout)).toEqual({ pinged: true, codeSha256: sha256(await bundleJournalThread()) });
     expect(sourceModuleState()).toBe(sourceBefore);

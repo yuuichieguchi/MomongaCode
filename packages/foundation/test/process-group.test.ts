@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +38,7 @@ interface SpawnedGroup {
 }
 
 const GROUP_SCRIPT = `
-const { spawn } = require('node:child_process');
+const { spawn } = require('@momonga/testkit/child-process');
 const ignoreTerm = process.argv[1] === 'ignore-term';
 if (ignoreTerm) process.on('SIGTERM', () => undefined);
 const grandchild = ignoreTerm

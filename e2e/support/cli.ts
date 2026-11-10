@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
-import { assertFakeSecretStoreEnv, productTestEnv } from '@momonga/testkit';
+import { productTestEnv } from '@momonga/testkit';
 import { SESSION_PATH } from './runtime-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
@@ -31,7 +31,6 @@ export type RunningCli = { readonly result: Promise<CliResult>; readonly pid: nu
 export const startCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): RunningCli => {
   const env = cliEnv(home, options.env);
   const bundle = options.bundle ?? CLI_BUNDLE;
-  assertFakeSecretStoreEnv(env, bundle);
   const child = spawn(process.execPath, [bundle, ...args], {
     cwd: options.cwd ?? home.project,
     env,

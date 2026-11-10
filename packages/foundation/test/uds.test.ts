@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from '@momonga/testkit/child-process';
 import net from 'node:net';
 import fs from 'node:fs';
 import http from 'node:http';

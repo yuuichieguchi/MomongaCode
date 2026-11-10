@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -9,7 +9,7 @@ import { nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
-import { testHostPath, execProductFile } from '@momonga/testkit';
+import { testHostPath } from '@momonga/testkit';
 
 const INSTALL_SCRIPT = `${repoRoot}scripts/install.sh`;
 const ASSET = 'momonga-darwin-arm64';
@@ -119,7 +119,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(fs.statSync(target()).mode & 0o777).toBe(0o755);
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual(['momonga']);
     const executed = await new Promise<string>((resolve, reject) => {
-      execProductFile(target(), [], { encoding: 'utf8' }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
+      execFile(target(), [], { encoding: 'utf8' }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
     });
     expect(executed).toBe('momonga-installed\n');
   });

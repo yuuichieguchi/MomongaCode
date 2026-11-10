@@ -1,10 +1,10 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SECRET_STORE_SEARCHED_PROGRAMS, createExecWithStdin, createSecretServiceStore, findProgramOnPath } from '@momonga/foundation';
-import { installFakeSecretPrograms } from '@momonga/testkit';
+import { fakeSecretProgramsBin, installFakeSecretPrograms } from '@momonga/testkit';
 
 const roots: string[] = [];
 const freshRoot = (): string => {
@@ -32,15 +32,15 @@ describe('installFakeSecretPrograms', () => {
     expect(fs.readFileSync(found as string, 'utf8')).toContain(JSON.stringify(process.execPath).slice(1, -1));
   });
 
-  it('the fake secret-tool keeps what it stores and looks it up like the Secret Service', async () => {
-    const bin = installFakeSecretPrograms(freshRoot());
+  it('the fake secret-tool of the run keeps what it stores and looks it up like the Secret Service', async () => {
+    const bin = fakeSecretProgramsBin();
     const store = createSecretServiceStore(createExecWithStdin({ PATH: '/usr/bin:/bin' }), path.join(bin, 'secret-tool'));
-    await store.write('anthropic', 'stored value', new AbortController().signal);
-    await expect(store.read('anthropic', new AbortController().signal)).resolves.toBe('stored value');
+    await store.write(`isolation-${process.pid}`, 'stored value', new AbortController().signal);
+    await expect(store.read(`isolation-${process.pid}`, new AbortController().signal)).resolves.toBe('stored value');
   });
 
-  it('the fake cmdkey, which has no protocol fake, refuses every call loudly', () => {
-    const bin = installFakeSecretPrograms(freshRoot());
+  it('the fake cmdkey of the run, which has no protocol fake, refuses every call loudly', () => {
+    const bin = fakeSecretProgramsBin();
     let failure: { status: number | null; stderr: string } | undefined;
     try {
       execFileSync(path.join(bin, 'cmdkey'), ['/list'], { encoding: 'utf8', stdio: 'pipe' });
