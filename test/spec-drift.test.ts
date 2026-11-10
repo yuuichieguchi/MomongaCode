@@ -293,3 +293,23 @@ describe('the generation actors of RunRecovery.tla', () => {
   });
 });
 
+
+describe('the failed listing of ProcessStop.tla', () => {
+  const processStopChecks = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'ProcessStop' && entry.role === 'check' && constantsOf(entry.config)['Escape'] === 'TRUE').map((entry) => entry.config);
+
+  it('checks that a failed listing says unlisted and no stop word in every check configuration where a listing can fail', () => {
+    expect(processStopChecks.length).toBeGreaterThan(0);
+    for (const name of processStopChecks) {
+      expect(lists(name, 'ListFailureSaysUnlisted'), name).toBe(true);
+      expect(lists(name, 'NoWordFromFailedListing'), name).toBe(true);
+    }
+  });
+
+  it.each([
+    ['ProcessStop.listFailAsUnconfirmed', 'ListFailureSaysUnlisted'],
+    ['ProcessStop.listFailAsEmpty', 'NoWordFromFailedListing'],
+  ])('keeps %s as the every-run evidence that violates %s', (config, property) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 13 } });
+    expect(lists(config, property)).toBe(true);
+  });
+});

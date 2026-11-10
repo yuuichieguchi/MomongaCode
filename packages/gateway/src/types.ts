@@ -1,5 +1,8 @@
 import type { Clock, StopValues } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
+import type { GatewayEpochs } from './core/services.ts';
+import type { ReasoningOriginCodec } from './core/reasoning-origin.ts';
+import type { Redactor } from './core/redaction.ts';
 import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
@@ -35,10 +38,18 @@ export type GatewayTimers = {
 
 export type DebugTcpOptions = { host: string; port: number; token: string };
 
-export type GatewayOptions = {
+export type GatewayEpochsShared = { redactor: Redactor; reasoningOrigin: ReasoningOriginCodec };
+
+export type GatewayLimits = Omit<GatewayConfig, 'models'>;
+
+export type FixedModelsOptions = { config: GatewayConfig; adapters: Record<string, ProviderAdapter>; priceTable?: PriceTable; telemetry?: Telemetry };
+
+export type DerivedModelsOptions = { limits: GatewayLimits; epochs: GatewayEpochs } & GatewayEpochsShared;
+
+export type GatewayOptions = GatewayCommonOptions & (FixedModelsOptions | DerivedModelsOptions);
+
+export type GatewayCommonOptions = {
   startSignal?: AbortSignal;
-  config: GatewayConfig;
-  adapters: Record<string, ProviderAdapter>;
   credentials: readonly string[];
   credentialFeed?: (add: (credential: string) => void) => void;
   clock: Clock;
@@ -46,10 +57,8 @@ export type GatewayOptions = {
   dbPath: string;
   hmacKey: Uint8Array;
   socketPath: string;
-  telemetry?: Telemetry;
-  priceTable?: PriceTable;
-  costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
-  billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>;
+  costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
+  billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>;
   debugTcp?: DebugTcpOptions;
   random: () => number;
   version: string;

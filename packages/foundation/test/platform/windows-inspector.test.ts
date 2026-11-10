@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { reconcileProcessGroup } from '../../src/process-markers.ts';
+import type { ProcessGroupPort } from '../../src/platform/group-port.ts';
 import type { WindowsProcessRow } from '../../src/platform/windows-parsers.ts';
 import type { CommandResult, CommandRunner } from '../../src/platform/command-runner.ts';
 import { createAsyncSignalSender, createProcessGroupPort } from '../../src/platform/group-port.ts';
 import { createWindowsGroupControl, createWindowsInspector } from '../../src/platform/windows-inspector.ts';
-import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from '../../src/platform/windows-parsers.ts';
+import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTime } from '../../src/platform/windows-parsers.ts';
 import { holdersScript, powershellLiteral, startTimeScript } from '../../src/platform/windows-scripts.ts';
 
 const LIVE = { signal: new AbortController().signal };
@@ -39,9 +41,9 @@ describe('windows parsers (shape of ConvertTo-Json -Compress output)', () => {
     expect(parsePidList('12')).toEqual([12]);
     expect(parsePidList('')).toEqual([]);
     expect(() => parsePidList('[0]')).toThrow('positive integer');
-    expect(parseStartTimeMs('1700000123456\r\n')).toBe(1700000123456);
-    expect(parseStartTimeMs('')).toBeUndefined();
-    expect(() => parseStartTimeMs('Monday')).toThrow('integer');
+    expect(parseStartTime('133400000000000001\r\n')).not.toEqual(parseStartTime('133400000000000002\r\n'));
+    expect(parseStartTime('')).toBeUndefined();
+    expect(() => parseStartTime('Monday')).toThrow('integer');
   });
 });
 
@@ -120,7 +122,8 @@ describe('windows scripts', () => {
 
   it('rejects a non-positive pid for the creation-time query', () => {
     expect(() => startTimeScript(0)).toThrow(RangeError);
-    expect(startTimeScript(42)).toContain("ProcessId=42");
+    expect(startTimeScript(42)).toContain('42');
+    expect(startTimeScript(42)).toContain('GetProcessTimes');
   });
 });
 
@@ -131,13 +134,16 @@ describe('windows inspector through an injected command runner', () => {
     return { exitCode: 0, stdout: '', stderr: '', ...result };
   };
 
-  it('asks Win32_Process for the creation time of one pid', async () => {
+  it('asks GetProcessTimes for the creation FILETIME of one pid', async () => {
     calls.length = 0;
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '1700000123456\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321, LIVE)).toEqual({ kind: 'value', value: 1700000123456 });
+    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000001\r\n' }), env: ENV });
+    const read = await inspector.startTimeOf(321, LIVE);
+    expect(read.kind).toBe('value');
+    expect(await createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000002\r\n' }), env: ENV }).startTimeOf(321, LIVE)).not.toEqual(read);
     expect(calls[0]?.file).toBe(POWERSHELL);
     expect(calls[0]?.args.slice(0, 3)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive']);
-    expect(decodeScript(calls[0]?.args ?? [])).toContain("Win32_Process -Filter 'ProcessId=321'");
+    expect(decodeScript(calls[0]?.args ?? [])).toContain('GetProcessTimes');
+    expect(decodeScript(calls[0]?.args ?? [])).toContain('321');
     expect(calls[0]?.env).toEqual(ENV);
   });
 
@@ -257,5 +263,45 @@ describe('windows group control keeps what it observed between probes', () => {
   it('does not report the orphans of an earlier process that had the same pid', async () => {
     const control = createWindowsGroupControl({ run: rowsOf([{ pid: 50, ppid: 7, startMs: 1000 }]), env: ENV });
     expect(await control.members(7, LIVE)).toEqual([]);
+  });
+});
+
+describe('a Windows start time read that OpenProcess refuses (design 19.6 point 15)', () => {
+  const failingWith = (stderr: string): CommandRunner => async () => ({ exitCode: 1, stdout: '', stderr });
+
+  it('asks the process table for the pid when OpenProcess answers error 87, instead of taking 87 alone as gone', () => {
+    const script = startTimeScript(4242);
+    expect(script).toContain('Win32_Process');
+    expect(script).toContain('4242');
+  });
+
+  it('reports gone when the script finds no row for the pid', async () => {
+    expect(await createWindowsInspector({ run: async () => ({ exitCode: 0, stdout: '\r\n', stderr: '' }), env: ENV }).startTimeOf(4242, LIVE)).toEqual({ kind: 'gone' });
+  });
+
+  it.each([
+    ['error 87 with a row in the process table', 'Exception calling "Creation" with "1" argument(s): "The parameter is incorrect" (87)'],
+    ['error 5', 'Exception calling "Creation" with "1" argument(s): "Access is denied" (5)'],
+  ])('reports %s as a failed read', async (_case, stderr) => {
+    expect(await createWindowsInspector({ run: failingWith(stderr), env: ENV }).startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed' });
+  });
+
+  it('gives a holder whose start time read fails with error 5 no signal, and reports it left alone', async () => {
+    const runner: CommandRunner = async (_file, args) => {
+      const script = decodeScript(args);
+      if (script.includes('GetProcessTimes')) return { exitCode: 1, stdout: '', stderr: 'Exception calling "Creation" with "1" argument(s): "Access is denied" (5)' };
+      if (script.includes('rstrtmgr.dll')) return { exitCode: 0, stdout: '[4242]', stderr: '' };
+      return { exitCode: 0, stdout: JSON.stringify([{ pid: 4242, ppid: 1, startMs: 5000 }]), stderr: '' };
+    };
+    const inspector = createWindowsInspector({ run: runner, env: ENV });
+    const sent: Array<[number, NodeJS.Signals | 0]> = [];
+    const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => void sent.push([-pgid, signal]), alive: async () => false };
+    let now = 0;
+    const result = await reconcileProcessGroup(
+      { pgid: 4000, marker: 'C:\\Users\\a\\marker' },
+      { killGraceMs: 100, kill: (pid, signal) => void sent.push([pid, signal]), groupPort, timing: { now: () => now, sleep: async (ms) => void (now += ms) }, inspector, signal: new AbortController().signal },
+    );
+    expect(sent.filter(([, signal]) => signal !== 0)).toEqual([]);
+    expect(result.leftAlonePids).toEqual([4242]);
   });
 });

@@ -18,6 +18,9 @@ import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../gateway/test/ollama-support.ts';
+import { testHostPath } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 vi.mock('@momonga/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@momonga/config')>();
@@ -50,7 +53,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
     ...nodePorts('9.9.9'),
     home,
     cwd: home,
-    env: { PATH: '/usr/bin:/bin', HOME: home },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },
     terminal: undefined,
     stdout: { write: (text) => void stdout.push(text) },
     stderr: { write: (text) => void stderr.push(text) },
@@ -87,7 +90,7 @@ const writeOllamaSettings = (home: string, baseUrl: string): void => {
   );
 };
 
-describe('the probe command writes the record under the key probeRecordKeyOf gives (W-5)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the probe command writes the record under the key probeRecordKeyOf gives (W-5)', () => {
   it('writes an ollama target given with a trailing slash under the key the gateway and the eval host read', async () => {
     const fake = await startFakeOllama({ cacheProbe: 'none' });
     const home = freshDir('mm-home-');

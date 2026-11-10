@@ -1,11 +1,13 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { MINIMAL_PATH, PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const servePidsIn = (dumpFile: string): number[] =>
   fs.existsSync(dumpFile)
@@ -18,7 +20,7 @@ const servePidsIn = (dumpFile: string): number[] =>
         .map((record) => record.pid)
     : [];
 
-describe('an fm target renders no sampling field', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('an fm target renders no sampling field', () => {
   it('refuses temperature with a 400 naming the field and the target, instead of dropping it', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');

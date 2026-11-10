@@ -1,28 +1,28 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, momongaPaths, fixedSocket } from '@momonga/foundation';
-import { BUILT_BINARY_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, productTestEnv, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../../package.json' with { type: 'json' };
 import { writeUserSettings } from './helpers.ts';
 import { MINIMAL_PATH, modelSettings } from './run-helpers.ts';
 
-const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/bin.ts');
-const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/bin.ts');
 const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
   writeUserSettings(home, { sandbox: 'none', ...modelSettings(path.join(aux, 'up.sock')) });
-  return { home, paths: momongaPaths(home, process.platform, {}), env: { PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux } };
+  return { home, paths: momongaPaths(home, process.platform, {}), env: productTestEnv({ PATH: MINIMAL_PATH, HOME: home, TMPDIR: aux }) };
 };
 
 const msgs = (lines: ReadonlyArray<Record<string, unknown>>): unknown[] => lines.map((line) => line['msg']);
 
 describe('runtime bin (real process, §5.3)', () => {
-  it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, runtime.log 0600 ending with entry.exit', PROCESS_TIMEOUT, async (context) => {
+  it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, runtime.log 0600 ending with entry.exit', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`], env);
 
@@ -38,7 +38,7 @@ describe('runtime bin (real process, §5.3)', () => {
     expect(log.at(-1)).toMatchObject({ msg: 'entry.exit', service: 'runtime', pid: daemon.child.pid, code: 0, path: 'close', clean: true, trigger: 'sigterm' });
   });
 
-  it('entry writes its role log by default and echoes the same lines to stderr', PROCESS_TIMEOUT, async (context) => {
+  it('entry writes its role log by default and echoes the same lines to stderr', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`], env);
     await daemon.waitForReady();
@@ -52,7 +52,7 @@ describe('runtime bin (real process, §5.3)', () => {
     expect(msgs(echoed)).toEqual(msgs(log));
   });
 
-  it('--log-target=file writes nothing to stderr and the role log holds every line', PROCESS_TIMEOUT, async (context) => {
+  it('--log-target=file writes nothing to stderr and the role log holds every line', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();
@@ -65,7 +65,7 @@ describe('runtime bin (real process, §5.3)', () => {
     expect(log.at(-1)).toMatchObject({ msg: 'entry.exit', code: 0, path: 'close', clean: true, trigger: 'sigterm' });
   });
 
-  it('bin without supervisor does not exit on its own: it serves /v1/health and is still running', PROCESS_TIMEOUT, async (context) => {
+  it('bin without supervisor does not exit on its own: it serves /v1/health and is still running', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();

@@ -20,7 +20,7 @@ describe('gateway close budget', () => {
 
 const FM_PID = 4242;
 const HOLDER_PID = 4343;
-const HOLDER_STARTED_AT = 1_700_000_000_000;
+const HOLDER_STARTED_AT = 1_700_000_000_000n;
 
 const survivorInspector: ProcessInspector = {
   startTimeOf: async () => ({ kind: 'value', value: HOLDER_STARTED_AT }),

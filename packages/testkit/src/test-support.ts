@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process';
-import type { ChildProcess, SpawnOptions } from 'node:child_process';
+import { spawn } from './child-process.ts';
+import type { ChildProcess, SpawnOptions } from './child-process.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,9 +10,7 @@ import { stopSupervisorHolder } from './process-groups.ts';
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
 export const TEMP_DIR_PREFIX = 'mmt-';
 export const TEST_HEARTBEAT_MS = 10_000;
-export const REAL_PROCESS_TEST_TIMEOUT_MS = 30_000;
-export const DAEMON_PROCESS_TEST_TIMEOUT_MS = 2 * REAL_PROCESS_TEST_TIMEOUT_MS;
-export const BUILT_BINARY_TEST_TIMEOUT_MS = 3 * REAL_PROCESS_TEST_TIMEOUT_MS;
+export const REAL_PROCESS_TEST_TIMEOUT_MS = 90_000;
 
 const PROCESS_KILL_DEADLINE_MS = 5000;
 

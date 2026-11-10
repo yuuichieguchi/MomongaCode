@@ -100,7 +100,7 @@ const finalError = (classified: ClassifiedError, totalWaitMs: number): GatewayEr
   });
 };
 
-const plainError = (classified: ClassifiedError): GatewayError =>
+export const plainError = (classified: ClassifiedError): GatewayError =>
   gatewayErrorFromBody(classified.error, classified.retryAfterMs === undefined ? {} : { 'retry-after': retryAfterSeconds(classified.retryAfterMs) });
 
 const openBreakerCause = (target: TargetRuntime): FallbackCause => ({

@@ -1,14 +1,14 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from '@momonga/testkit/child-process';
 import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
-import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { FM_CURRENCY, fmRecordKey, saveFakeFmRecord } from './fm-record-support.ts';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import {
@@ -23,6 +23,8 @@ import {
   until,
   writeSettings,
 } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MINIMAL_NAMES = new Set(['PATH', 'HOME', 'LANG', 'TMPDIR']);
 const PRODUCTION_SPAWNED = new Set(['serve', 'count-tokens']);
@@ -68,7 +70,7 @@ const reapServeGroups = (dumpFile: string): void => {
   registerCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
 };
 
-describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('managed fm under startGatewayProcess', () => {
   it('gives every fm invocation exactly the minimal env', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
@@ -102,7 +104,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     }
   });
 
-  it('runs fm serve as the leader of its own process group and marks it under the gateway generation markers, markers/g1/targets/fm (18.2.1)', async () => {
+  it('runs fm serve as the leader of its own process group and marks it under the gateway generation markers, markers/g1/targets/fm-1 (18.2.1)', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home, fm.binaryPath);
@@ -120,7 +122,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     expect(fs.readdirSync(markers)).toEqual([]);
   });
 
-  it('reaps a stale fm group left behind by a killed gateway before claiming run/g1/targets/fm.sock (18.2.1, 18.2.3)', async () => {
+  it('reaps a stale fm group left behind by a killed gateway before claiming run/g1/targets/fm-1.sock (18.2.1, 18.2.3)', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home, fm.binaryPath);
@@ -189,7 +191,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const target = (await loadUserSettings({ home })).settings.models.targets['fm'];
     if (target === undefined) throw new Error('the default settings resolved no fm target');
     expect(entry.targetCounters).toEqual({
-      fm: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical }),
+      fm: targetCounterOf({ target, server: FM_SERVER, codeDigest: await codeDigestOfRunningProcess(), probeKey: fmRecordKey(binarySha256, FAKE_OS_BUILD).canonical }),
     });
   });
 

@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, protectedSetFor } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { buildSeatbeltProfile, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, heldMountPoints, planBubblewrap } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, fakePolicyFilesystem, killGroupsForCleanup } from '@momonga/testkit';
 import { makeTempDir, run } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
@@ -27,7 +29,7 @@ const startRefusal = (policy: SandboxPolicy, cwd: string): unknown => {
   }
 };
 
-describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('protected set in the kernel (real sandbox-exec on Darwin, real bwrap on Linux, 5.13)', () => {
   let created: string[] = [];
   let unlock: string[] = [];
   let spawned: SandboxedProcess[] = [];

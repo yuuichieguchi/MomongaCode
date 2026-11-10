@@ -13,6 +13,7 @@ import type { ChildRole, Launcher } from '../../src/launcher.ts';
 import { DEFAULT_RESTART_POLICY } from '../../src/restart-policy.ts';
 import { createFakeSpawnPort } from './p2-fake-spawn-port.ts';
 import type { FakeSpawnPort } from './p2-fake-spawn-port.ts';
+import { testHostPath } from '@momonga/testkit';
 
 export const T0 = Date.parse('2026-01-01T00:00:00.000Z');
 
@@ -173,7 +174,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     generation: FIRST_GENERATION,
     endpoint: roleEndpoint(layout, role),
     launcher,
-    env: options.env ?? { PATH: '/usr/bin:/bin', HOME: home, FOO: 'foo' },
+    env: options.env ?? { PATH: testHostPath('/usr/bin:/bin'), HOME: home, FOO: 'foo' },
     spawn: options.port ?? port,
     settings,
     logger,

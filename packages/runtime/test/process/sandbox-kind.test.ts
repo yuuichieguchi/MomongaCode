@@ -1,13 +1,13 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson, groupAlive, sha256Hex } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { createRun, createSession, makeRuntimeFixture, makeTempHome, runBashThroughPort, signalNever, trackGroup, writeUserSettings } from './helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
@@ -26,7 +26,7 @@ const spawnStubbornHolder = (marker: string): number => {
 };
 
 describe('sandbox kind (system timers, none used)', () => {
-  it('with sandbox none, Bash asks even in bypassPermissions', PROCESS_TIMEOUT, async () => {
+  it('with sandbox none, Bash asks even in bypassPermissions', async () => {
     const f = await makeRuntimeFixture({ sandbox: createUnsandboxed({ killGraceMs: 300 }) });
     writeUserSettings(f.temp.home, {});
     const session = createSession(f.store, f.temp.project, { env: { PATH: '/usr/bin:/bin' } });
@@ -40,15 +40,20 @@ describe('sandbox kind (system timers, none used)', () => {
     expect(outcome.suggestedRule).toBeUndefined();
   });
 
-  it('ToolRuntimePort.sandbox is the instance given', async () => {
+  it('a lease of ToolRuntimePort.sandboxes holds the instance given', async () => {
     const sandbox = createUnsandboxed();
     const f = await makeRuntimeFixture({ sandbox });
 
-    expect(f.toolRuntime.port.sandbox).toBe(sandbox);
-    expect(f.toolRuntime.port.sandbox.kind).toBe('none');
+    const lease = await f.toolRuntime.port.sandboxes.acquire(signalNever());
+    try {
+      expect(lease.value.sandbox).toBe(sandbox);
+      expect(lease.value.sandbox.kind).toBe('none');
+    } finally {
+      lease.release();
+    }
   });
 
-  it('the executor reaps with the composition ReapTiming', PROCESS_TIMEOUT, async () => {
+  it('the executor reaps with the composition ReapTiming', async () => {
     const temp = await makeTempHome();
     const f = await makeRuntimeFixture({ temp });
     const idemKey = sha256Hex(canonicalJson(['run-reap', 1, 'call-a']));

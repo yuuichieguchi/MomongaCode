@@ -48,6 +48,10 @@ export type ManagedServerDescription = {
 
 export const SOCKET_PLACEHOLDER = '{socket}';
 
+export const MANAGED_READY_LIMIT_MS = 10_000;
+
+export const MANAGED_RESTART_POLICY = { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 } as const;
+
 export const FM_SERVER = {
   id: 'fm',
   provider: 'apple',
@@ -55,7 +59,7 @@ export const FM_SERVER = {
   binary: { defaultPath: '/usr/bin/fm' },
   launch: { argv: ['serve', '--socket', SOCKET_PLACEHOLDER] },
   endpoint: { kind: 'unix' },
-  ready: { method: 'GET', path: '/health', status: 200, limitMs: 10_000 },
+  ready: { method: 'GET', path: '/health', status: 200, limitMs: MANAGED_READY_LIMIT_MS },
   preconditions: [
     {
       argv: ['license', '--status'],
@@ -74,7 +78,7 @@ export const FM_SERVER = {
     },
   ],
   identity: ['binarySha256', 'hostOsBuild'],
-  restart: { backoffMs: 1000, maxRestarts: 5, windowMs: 60_000 },
+  restart: MANAGED_RESTART_POLICY,
   models: { listPath: '/v1/models', idPath: ['data', '0', 'id'] },
   toolForms: ['envelope'],
   tokenCount: { argv: ['count-tokens', '-q'], input: 'stdin', output: 'integer' },

@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from '@momonga/testkit/child-process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -9,6 +9,7 @@ import { nodeCommandRunner, verifyReleaseSignature } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { HAS_POSIX_SHELL } from './support/host.ts';
+import { testHostPath } from '@momonga/testkit';
 
 const INSTALL_SCRIPT = `${repoRoot}scripts/install.sh`;
 const ASSET = 'momonga-darwin-arm64';
@@ -74,7 +75,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     return stubs;
   };
   const baseEnv = (): NodeJS.ProcessEnv => ({
-    PATH: `${unameStub('Darwin', 'arm64')}:${path.join(prefix, 'bin')}:/usr/bin:/bin`,
+    PATH: `${unameStub('Darwin', 'arm64')}:${path.join(prefix, 'bin')}:${testHostPath('/usr/bin:/bin')}`,
     HOME: root,
     MOMONGA_INSTALL_PREFIX: prefix,
     MOMONGA_RELEASE_BASE_URL: baseUrl,
@@ -118,7 +119,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(fs.statSync(target()).mode & 0o777).toBe(0o755);
     expect(fs.readdirSync(path.join(prefix, 'bin'))).toEqual(['momonga']);
     const executed = await new Promise<string>((resolve, reject) => {
-      execFile(target(), (error, stdout) => (error ? reject(error) : resolve(stdout)));
+      execFile(target(), [], { encoding: 'utf8' }, (error, stdout) => (error ? reject(error) : resolve(stdout)));
     });
     expect(executed).toBe('momonga-installed\n');
   });
@@ -173,7 +174,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     fs.mkdirSync(stubs, { recursive: true });
     fs.writeFileSync(path.join(stubs, 'uname'), '#!/bin/sh\necho FreeBSD\n', { mode: 0o755 });
     serveRelease(GOOD_BINARY, GOOD_BINARY);
-    const outcome = await runInstall({ ...baseEnv(), PATH: `${stubs}:/usr/bin:/bin` });
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${stubs}:${testHostPath('/usr/bin:/bin')}` });
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toBe('install.sh: unsupported OS FreeBSD: only macOS and Linux are supported; use install.ps1 on Windows\n');
     expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
@@ -184,13 +185,13 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     ['aarch64', 'momonga-linux-arm64'],
   ])('installs the %s Linux artifact as %s', async (machine, asset) => {
     served = { [`/${asset}`]: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)}  ${asset}\n`) };
-    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:${path.join(prefix, 'bin')}:/usr/bin:/bin` });
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:${path.join(prefix, 'bin')}:${testHostPath('/usr/bin:/bin')}` });
     expect(outcome.code).toBe(0);
     expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
   });
 
   it('refuses an unsupported Linux architecture', async () => {
-    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', 'riscv64')}:/usr/bin:/bin` });
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', 'riscv64')}:${testHostPath('/usr/bin:/bin')}` });
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toBe('install.sh: unsupported architecture riscv64: only x86_64 and aarch64 are supported on Linux\n');
   });
@@ -211,7 +212,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     const stubs = unameStub('Darwin', 'arm64');
     const log = path.join(stubs, 'curl.log');
     fs.writeFileSync(path.join(stubs, 'curl'), `#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' "$last" >> "${log}"\nexit 22\n`, { mode: 0o755 });
-    const env: NodeJS.ProcessEnv = { ...baseEnv(), PATH: `${stubs}:/usr/bin:/bin`, ...extra };
+    const env: NodeJS.ProcessEnv = { ...baseEnv(), PATH: `${stubs}:${testHostPath('/usr/bin:/bin')}`, ...extra };
     delete env['MOMONGA_RELEASE_BASE_URL'];
     const outcome = await new Promise<Outcome>((resolve, reject) => {
       execFile('/bin/bash', [script], { env }, (error, stdout, stderr) => {
@@ -302,7 +303,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     for (const { label, binary, sums, signature, accepted } of cases) {
       const verdict = await verifyReleaseSignature({
         run: nodeCommandRunner,
-        env: { PATH: '/usr/bin:/bin' },
+        env: { PATH: testHostPath('/usr/bin:/bin') },
         place: async (content) => {
           const file = path.join(root, `placed-${(placed += 1)}`);
           fs.writeFileSync(file, content);
@@ -369,7 +370,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
 
     const offPathEnv = (home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
       ...baseEnv(),
-      PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:/bin`,
+      PATH: `${unameStub('Darwin', 'arm64')}:${testHostPath('/usr/bin:/bin')}`,
       HOME: home,
       SHELL: '/bin/zsh',
       ...extra,
@@ -435,7 +436,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
       serveRelease(GOOD_BINARY, GOOD_BINARY);
       const onPathHome = freshHome(true);
       const onPathBefore = snapshot(onPathHome);
-      const onPath = await runInstall({ ...offPathEnv(onPathHome), PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:${binDir()}:/bin` });
+      const onPath = await runInstall({ ...offPathEnv(onPathHome), PATH: `${unameStub('Darwin', 'arm64')}:${testHostPath('/usr/bin')}:${binDir()}:${testHostPath('/bin')}` });
       expect(onPath).toEqual({ code: 0, stdout: `installed momonga to ${target()}\n`, stderr: '' });
       expect(snapshot(onPathHome)).toEqual(onPathBefore);
       const offPathHome = freshHome(true);

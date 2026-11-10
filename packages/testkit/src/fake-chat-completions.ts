@@ -33,6 +33,7 @@ export interface FakeChatCompletionsOptions {
   rateLimitSizedImages?: { count: number; retryAfter: string };
   guardrailTrigger?: string;
   latencyMs?: number;
+  holdFirstUntilFile?: string;
   reasoning?: { tokens: number; effort: 'honoured' | 'ignored' | 'rejected'; reportsUsage?: boolean; field?: 'reasoning_content' | 'reasoning' };
   parallelToolCalls?: boolean;
   models?: Array<Record<string, unknown>> | (() => Array<Record<string, unknown>>);
@@ -44,6 +45,7 @@ export interface FakeChatCompletionsOptions {
   healthy?: boolean;
   script?: FakeScriptedReply[];
   routes?: FakeRoute[];
+  staticGets?: Readonly<Record<string, unknown>>;
 }
 
 export interface FakeRoute {
@@ -297,6 +299,22 @@ const createSocketPath = (): { socketPath: string; ownedDir?: string } => {
   fs.chmodSync(dir, 0o700);
   return { socketPath: path.join(dir, 'fake.sock'), ownedDir: dir };
 };
+
+const untilFileExists = (file: string, signal: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const watcher = fs.watch(path.dirname(file));
+    const finish = (settle: () => void): void => {
+      watcher.close();
+      signal.removeEventListener('abort', onAbort);
+      settle();
+    };
+    const onAbort = (): void => finish(() => reject(signal.reason));
+    watcher.on('change', () => {
+      if (fs.existsSync(file)) finish(resolve);
+    });
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (fs.existsSync(file)) finish(resolve);
+  });
 
 export const startFakeChatCompletions = async (
   options: FakeChatCompletionsOptions,
@@ -664,6 +682,7 @@ export const startFakeChatCompletions = async (
   const handleCompletion = async (body: Json, response: http.ServerResponse, signal: AbortSignal): Promise<void> => {
     validateCompletionRequest(body);
     if (latencyMs > 0) await delay(latencyMs, undefined, { signal });
+    if (options.holdFirstUntilFile !== undefined && completionCount === 0) await untilFileExists(options.holdFirstUntilFile, signal);
     completionCount += 1;
     const out = complete(body);
     if (out.delayMs !== undefined) await delay(out.delayMs, undefined, { signal });
@@ -699,6 +718,11 @@ export const startFakeChatCompletions = async (
       }
       const requestPath = request.url ?? '/';
       requests.push({ method: request.method ?? 'GET', path: requestPath, headers: request.headers, body });
+      const staticGet = options.staticGets;
+      if (request.method === 'GET' && staticGet !== undefined && Object.hasOwn(staticGet, requestPath)) {
+        writeJson(response, 200, staticGet[requestPath]);
+        return;
+      }
       if (request.method === 'GET' && requestPath === '/health') {
         if (options.healthy === false) {
           writeJson(response, 503, { status: 'unavailable' });
@@ -804,6 +828,7 @@ export const startFakeChatCompletions = async (
 
   const { socketPath, ownedDir } =
     options.socketPath === undefined ? createSocketPath() : { socketPath: options.socketPath, ownedDir: undefined };
+  if (options.socketPath !== undefined) fs.rmSync(options.socketPath, { force: true });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(socketPath, () => {

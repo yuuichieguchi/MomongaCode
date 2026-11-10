@@ -1,13 +1,15 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, generationLayout, groupAlive, isProcessAlive, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, testHostPath, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { trackSupervisorChildren } from './support/track-supervisor-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
 import { readOnlyScratchFd } from './support/p2-real-children.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const CHILD_FIXTURE = fileURLToPath(new URL('./fixtures/p2-child.ts', import.meta.url));
 const SUPERVISOR_FIXTURE = fileURLToPath(new URL('./fixtures/p2-supervisor-fixture.ts', import.meta.url));
@@ -36,7 +38,7 @@ const firstGrandchild = (output: () => string): number | undefined => {
   return match === null ? undefined : Number(match[1]);
 };
 
-describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('trackedSpawnPort', () => {
   it('cleanup kills an unfinished child, its group and a registered grandchild', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const tracked: number[] = [];
@@ -45,13 +47,13 @@ describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const port = trackedSpawnPort(captured.context);
     const inGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=group'], {
       cwd: process.cwd(),
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: testHostPath('/usr/bin:/bin') },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });
     const ownGroup = port(process.execPath, [CHILD_FIXTURE, '--p2-grandchild=default'], {
       cwd: process.cwd(),
-      env: { PATH: '/usr/bin:/bin' },
+      env: { PATH: testHostPath('/usr/bin:/bin') },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe', 'pipe', markerFd],
     });
@@ -90,7 +92,7 @@ describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   });
 });
 
-describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('trackSupervisorChildren', () => {
   it('cleanup kills the children of a fixture supervisor that is left running', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const socketPath = generationLayout(home, FIRST_GENERATION).sockets.supervisor;

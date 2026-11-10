@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { UNMEASURED_CAPABILITY, canonicalDirectory, createMarker, defaultProcessInspector, nodeFileSystem, groupRecordOutcome, protectedSetFor, recordMarkerGroup, uuidv7 } from '@momonga/foundation';
-import type { MarkerHandle, MomongaPaths, RuleEnforcement } from '@momonga/foundation';
+import type { MarkerHandle, MomongaPaths } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import type { PolicyPorts } from '@momonga/policy';
-import type { Sandbox, SandboxedProcess } from '@momonga/sandbox';
+import type { SandboxedProcess } from '@momonga/sandbox';
 import { buildSandboxPolicy, createMarkerSettle, readOnlyEnvironment, readOnlySandboxPolicy, settleFinishedCommand } from '@momonga/tools';
 import type { MarkerOwners, MarkerSettle, MarkerSettleOptions } from '@momonga/tools';
+import type { SandboxBindings } from '../ports.ts';
+import { holdSandbox } from '../worker/held-sandbox.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 
 export type EvidenceReap = Pick<MarkerSettleOptions, 'inspector' | 'killGraceMs' | 'kill' | 'groupPort' | 'timing'>;
@@ -14,9 +16,8 @@ export type EvidenceRunnerOptions = {
   paths: MomongaPaths;
   home: string;
   fs: PolicyPorts;
-  sandbox: Sandbox;
+  sandboxes: SandboxBindings;
   env: Readonly<Record<string, string>>;
-  enforcement: RuleEnforcement;
   reap?: EvidenceReap;
   owners?: MarkerOwners;
   onWarning?(message: string): void;
@@ -33,7 +34,7 @@ const textOf = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
 };
 
 export const createEvidenceRunner =
-  ({ paths, home, fs, sandbox, env, enforcement, reap = {}, owners, onWarning = raiseWarning }: EvidenceRunnerOptions) =>
+  ({ paths, home, fs, sandboxes, env, reap = {}, owners, onWarning = raiseWarning }: EvidenceRunnerOptions) =>
   (project: string): EvidenceRun =>
   async (command, signal) => {
     const root = canonicalDirectory(project);
@@ -47,6 +48,7 @@ export const createEvidenceRunner =
     let handle: MarkerHandle | undefined;
     let settle: MarkerSettle | undefined;
     let spawned = false;
+    const held = await holdSandbox(sandboxes, signal);
     try {
       let child: SandboxedProcess;
       try {
@@ -59,12 +61,12 @@ export const createEvidenceRunner =
             roots: [],
             home,
             sessionsTmpRoot: paths.tmp.sessions,
-            fileRules: computeFileRules([], roots, null, enforcement),
+            fileRules: computeFileRules([], roots, null, held.ruleEnforcement),
             protectedSet: protectedSetFor(roots, fs),
             network: command.network,
           }),
         );
-        child = sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }), markerFile: marker }, policy, signal, { markerFd: handle.fd });
+        child = held.sandbox.spawn({ argv: command.argv, cwd: command.cwd, env: readOnlyEnvironment({ ...env, ...command.env }), markerFile: marker }, policy, signal, { markerFd: handle.fd });
       } catch (error) {
         return { exitCode: null, notStarted: error instanceof Error ? error.message : String(error) };
       }
@@ -74,6 +76,7 @@ export const createEvidenceRunner =
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal });
       return { exitCode: exit.code, stdout };
     } finally {
+      held.done();
       if (!spawned) handle?.close();
       if (handle !== undefined && !spawned) await settle?.discard();
       else await settle?.remove();

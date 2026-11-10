@@ -11,6 +11,7 @@ import type { FakeChild, FakeSpawnPort } from './p2-fake-spawn-port.ts';
 import { createLogBuffer } from './p2-log-buffer.ts';
 import type { LogBuffer } from './p2-log-buffer.ts';
 import { writeSettings } from './p2-manager-harness.ts';
+import { testHostPath } from '@momonga/testkit';
 
 export type SupervisorHarness = {
   home: string;
@@ -37,7 +38,7 @@ export const startSupervisorHarness = async (
     home,
     version: '1.2.3',
     launcher: (role) => ({ command: process.execPath, args: [`/opt/momonga/${role}-bin.ts`] }),
-    env: { PATH: '/usr/bin:/bin', HOME: home },
+    env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home },
     spawn: port,
     logger: log.logger,
     stdout: { write: () => true },

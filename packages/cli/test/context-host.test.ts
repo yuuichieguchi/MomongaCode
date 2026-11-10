@@ -6,6 +6,7 @@ import type { Transcript } from '@momonga/eval';
 import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
+import { FM_SERVER } from '@momonga/protocol';
 import type { OutputFormatterName, PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
@@ -54,7 +55,7 @@ const declaredTarget = { adapter: 'chat-completions', model: 'm', provider: 'p',
 
 const userModels = (): UserModels => ({
   declared: { aliases: { default: ['t'], other: ['u'] }, targets: { t: declaredTarget, u: { ...declaredTarget, model: 'other' } } },
-  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {}, billingChanges: [], headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 },
+  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {}, billingChanges: [], headersTimeoutMs: 300_000, idleTimeoutMs: 300_000, servers: { [FM_SERVER.id]: FM_SERVER } },
 });
 
 const caseOf = (id: string, compaction: 'on' | 'off') => ({

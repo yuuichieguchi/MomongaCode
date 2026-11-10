@@ -15,6 +15,7 @@ import type { RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
 export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
@@ -296,7 +297,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
     timers: fixture.timers,
     logger,
     report: reporter.report,
-    sandbox: options.sandbox ?? inertSandbox,
+    sandboxes: fixedSandboxBindings(options.sandbox ?? inertSandbox),
     shellHost: nodeShellHost(),
     settings: composition,
     reapTiming: options.reapTiming ?? reapTiming,
@@ -353,7 +354,8 @@ export const runBashThroughPort = async (
   const port = f.toolRuntime.port;
   const signal = signalNever();
   const env = port.envFor(session);
-  const policy = await port.policyFor(session, { env, rules: [] });
+  const binding = (await port.sandboxes.acquire(signal)).value;
+  const policy = await port.policyFor(session, { env, rules: [], ruleEnforcement: binding.ruleEnforcement });
   const toolSet = await port.toolSet(runId, { signal, env });
   const outcomes = await port.executor.runBatch({
     calls: [{ callId: options.callId ?? `call-${Math.random().toString(16).slice(2)}`, name: 'Bash', arguments: JSON.stringify({ command }) }],
@@ -368,7 +370,7 @@ export const runBashThroughPort = async (
     tmpDir: policy.tmpDir,
     env: policy.env,
     session: port.sessionState(session),
-    sandbox: port.sandbox,
+    sandbox: binding.sandbox,
     sandboxPolicy: policy.sandboxPolicy,
     ripgrep: port.ripgrepLocator(policy.env),
     deadlineAt: f.clock.now() + 120_000,

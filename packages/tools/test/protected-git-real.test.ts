@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { isProtectedWrite, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
@@ -10,6 +10,8 @@ import type { SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { HOST_SANDBOX_KIND, createHostSandbox } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const SYSTEM_GIT = '/usr/bin/git';
 const SEARCH_PATH = '/usr/bin:/bin';
@@ -60,7 +62,7 @@ const finish = async (proc: SandboxedProcess) => {
   return { stdout, stderr, code: exit.code };
 };
 
-describe('real git: a linked worktree, a submodule and the missing-target sequence (5.13)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('real git: a linked worktree, a submodule and the missing-target sequence (5.13)', () => {
   let main = '';
   let worktree = '';
   let submodule = '';

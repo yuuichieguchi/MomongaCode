@@ -24,7 +24,7 @@ const variants = (): string[] => {
   return (match[1] ?? '').split(',').map((item) => item.trim().replace(/^"|"$/g, ''));
 };
 
-type Entry = { pgid: number; holdsMarker: boolean; startMs: number; startUnreadable?: boolean };
+type Entry = { pgid: number; holdsMarker: boolean; startedAt: bigint; startUnreadable?: boolean };
 
 type World = { signals: Array<{ target: number; signal: NodeJS.Signals }>; kill: (target: number, signal: NodeJS.Signals | 0) => void; inspector: ProcessInspector; groupPort: ProcessGroupPort };
 
@@ -42,7 +42,7 @@ const world = (initial: Record<number, Entry>, reuseAtGroupRead: Record<number, 
       const entry = table.get(pid);
       if (entry === undefined) return { kind: 'gone' };
       if (entry.startUnreadable === true) return { kind: 'failed', cause: 'deterministic', evidence: { kind: 'exit', exitCode: 1, detail: 'ps exited with 1' } };
-      return { kind: 'value', value: entry.startMs };
+      return { kind: 'value', value: entry.startedAt };
     },
     holdersOf: async () => ({ kind: 'value', value: [...table].filter(([, entry]) => entry.holdsMarker).map(([pid]) => pid) }),
     groupsOf: async (pids: readonly number[]) => {
@@ -86,7 +86,7 @@ const markerFile = (): string => {
 
 const reconcile = async (scene: World) => reconcileProcessGroup({ pgid: 100, marker: markerFile() }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: scene.inspector });
 
-const stranger = (pgid: number): Entry => ({ pgid, holdsMarker: false, startMs: 999_999 });
+const stranger = (pgid: number): Entry => ({ pgid, holdsMarker: false, startedAt: 999_999n });
 
 describe('the reap signals only a target proved ours by the same start time at the listing and just before the signal, as specs/tla/ProcessStop.tla states', () => {
   it('the model proves a holder target only while its pid is not reused, and proves the group only by a listed holder in it that is not gone', () => {
@@ -103,7 +103,7 @@ describe('the reap signals only a target proved ours by the same start time at t
   it('the same-second reuse of a pid by another generation is modelled, so the darwin one-second start time is the limit the proof must not rely on alone', () => {
     const darwin = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'foundation', 'src', 'platform', 'darwin-inspector.ts'), 'utf8');
     expect(darwin).toContain("'lstart='");
-    expect(definitionOf('ReuseSameSecond')).toContain('CrossGen');
+    expect(definitionOf('ReuseSameSecond')).toContain('SameSecondReuse');
     expect(definitionOf('HolderTargetProved')).toContain('crossGen');
   });
 
@@ -112,9 +112,47 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(definitionOf('SigT')).toContain('TermAllowed(m)');
   });
 
-  it.each(['retireSignalsOther', 'proofWithoutGen'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
+  it.each(['retireSignalsOther', 'crossGenWithoutHold'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
     expect(variants()).toContain(variant);
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
+  });
+
+  it('the proof of a target requires the marker hold at the reprove, and a stop of a holder that stopped holding is not proved', () => {
+    expect(definitionOf('HolderTargetProved')).toContain('held[m]');
+    expect(definitionOf('Unhold')).toContain('held[m]');
+    expect(definitionOf('ReusePid')).toContain("held' = [held EXCEPT ![m] = FALSE]");
+  });
+
+  it('a same-second reuse without the hold is an every-run evidence configuration that violates NoSignalToNonHolder', () => {
+    expect(variants()).toContain('sameSecondWithoutHold');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.sameSecondWithoutHold')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToNonHolder', exitCode: 13 } });
+  });
+
+  it('a group is proved only by a listed holder that is now a member of the group and still holds the marker', () => {
+    expect(definitionOf('ListedHolderInGroup')).toContain('inGroup[m]');
+    expect(definitionOf('ListedHolderInGroup')).toContain('held[m]');
+    expect(definitionOf('LeaveGroup')).toContain("inGroup' = [inGroup EXCEPT ![m] = FALSE]");
+    expect(variants()).toContain('groupProofIgnoresGroup');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.groupProofIgnoresGroup')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToUnprovedGroup', exitCode: 12 } });
+  });
+
+  it('every listing is the processes that hold the marker now, and the words gone, terminated and killed need a fresh listing', () => {
+    expect(definitionOf('FreshListing')).toContain('held[m]');
+    for (const step of ['Begin', 'TermWaitEnds', 'KillWaitEnds', 'Sweep']) expect(definitionOf(step)).toContain('ListFresh');
+    expect(definitionOf('Fork')).toContain('IF Escape THEN FALSE');
+    expect(variants()).toContain('noRelist');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.noRelist')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'FinishSeesEveryHolder', exitCode: 13 } });
+  });
+
+  it.each(['ProcessStop.escape', 'ProcessStop.escapeGenerations'])('the configuration %s, with groups left and listings renewed, holds', (config) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'check', expect: 'holds' });
+  });
+
+  it('the sandbox group teardown signals a follower only after it is proved again, and the evidence without that proof violates', () => {
+    const spec = fs.readFileSync(path.join(specDir, 'GroupFollowers.tla'), 'utf8');
+    expect(spec).toContain('Reproved(m)');
+    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers')).toMatchObject({ role: 'check', expect: 'holds' });
+    expect(manifest.entries.find((entry) => entry.config === 'GroupFollowers.noReproof')).toMatchObject({ role: 'evidence', expect: { violates: 'NoStrangerSignalled', exitCode: 12 } });
   });
 
   it.each(['ProcessStop.generations', 'ProcessStop.userStop'])('the generation configuration %s holds', (config) => {
@@ -122,33 +160,59 @@ describe('the reap signals only a target proved ours by the same start time at t
   });
 
   it('signalUnprovedHolder: a holder whose pid is reused before the SIGTERM is not signalled', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1 }, 200: { pgid: 200, holdsMarker: true, startMs: 2 } }, { 1: { 200: stranger(300) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n } }, { 1: { 200: stranger(300) } });
     await reconcile(scene);
     expect(scene.signals.filter(({ target }) => target === 200)).toEqual([]);
   });
 
   it('killWithoutReproof: a holder whose pid is reused after the SIGTERM pass is not sent SIGKILL', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1 }, 200: { pgid: 200, holdsMarker: true, startMs: 2 } }, { 2: { 200: stranger(300) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n } }, { 3: { 200: stranger(300) } });
     await reconcile(scene);
     expect(scene.signals.filter(({ target }) => target === 200)).toEqual([{ target: 200, signal: 'SIGTERM' }]);
   });
 
   it('groupProofWithoutStartTime: a group whose only listed holder is replaced by a process of a reused group is not signalled', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1 } }, { 1: { 100: stranger(100) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n } }, { 1: { 100: stranger(100) } });
     await reconcile(scene);
     expect(scene.signals).toEqual([]);
   });
 
   it('a target whose start time cannot be read is never proved, on either reap path, and is reported left alone', async () => {
-    const recorded = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1, startUnreadable: true }, 200: { pgid: 200, holdsMarker: true, startMs: 2, startUnreadable: true } }, {});
+    const recorded = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n, startUnreadable: true }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n, startUnreadable: true } }, {});
     const result = await reconcile(recorded);
     expect(recorded.signals).toEqual([]);
     expect([...result.leftAlonePids].sort()).toEqual([100, 200]);
-    const unrecorded = world({ 200: { pgid: 200, holdsMarker: true, startMs: 2, startUnreadable: true } }, {});
+    const unrecorded = world({ 200: { pgid: 200, holdsMarker: true, startedAt: 2n, startUnreadable: true } }, {});
     const warnings: string[] = [];
     await reapMarkedProcesses({ marker: markerFile(), killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill: unrecorded.kill, groupPort: unrecorded.groupPort, timing: instantTiming(), inspector: unrecorded.inspector });
     expect(unrecorded.signals).toEqual([]);
     expect(warnings.some((warning) => warning.includes('process 200 is still alive but could not be verified as belonging to this call'))).toBe(true);
+  });
+});
+
+describe('a stop whose listing fails ends with the outcome unlisted, as specs/tla/ProcessStop.tla states', () => {
+  it('the model has the outcome unlisted, reached only by ListFails, and states it in two properties', () => {
+    expect(definitionOf('ListFails')).toContain('Finish("unlisted", KeepOnUnconfirmed)');
+    expect(definitionOf('ListFailureSaysUnlisted')).toContain('ListFails => outcome\' = "unlisted"');
+    expect(definitionOf('NoWordFromFailedListing')).toContain('ListFails => outcome\' \\notin {"gone", "terminated", "killed"}');
+    expect(variants()).toEqual(expect.arrayContaining(['listFailAsUnconfirmed', 'listFailAsEmpty']));
+  });
+
+  it('the code, like the model, ends a stop whose first listing fails with the whole could-not-check text, says no stop word as an outcome, signals nothing and keeps the marker', async () => {
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n } }, {});
+    const failing = { ...scene.inspector, holdersOf: async () => ({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the listing was slow' } }) } as unknown as ProcessInspector;
+    const marker = markerFile();
+    const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: failing });
+    expect(result.output).toBe(
+      `MomongaCode could not check whether a process started by the interrupted command is still running (listing the holders of ${marker} failed (transient): the listing was slow). Nothing was stopped. The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
+    );
+    expect(result.outcome).toBe('unknown');
+    expect(['gone', 'terminated', 'killed', 'stopped']).not.toContain(result.outcome);
+    expect(result.stopped).toBe(false);
+    expect(result.stoppedHolders).toEqual([]);
+    expect(result.output).not.toMatch(/no longer running|The interrupted command was stopped|Still running but/);
+    expect(scene.signals).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
   });
 });
 

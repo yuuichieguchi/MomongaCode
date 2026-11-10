@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hostKernelLock } from '@momonga/foundation';
 import type { ReapTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, withTempDir } from '@momonga/testkit';
@@ -9,6 +9,8 @@ import { createCallLocks } from '../src/call-lock.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { deferred, keyFor } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const KEY = keyFor('run-1', 1, 'c1');
 const HOLDER_PID = 4242;
@@ -88,7 +90,7 @@ const reconcilingTool = (name: string, sideEffect: 'write' | 'exec', trace: Trac
     },
   });
 
-describe('the per-call lock of the executor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the per-call lock of the executor', () => {
   it('does not reconcile while another attempt holds the call lock, and reconciles once it is released', async () => {
     const waiting = gatedFirstPoll();
     const harness = makeHarness({ executor: { reap: { timing: waiting.timing } } });

@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { writeInvalidUserSettings } from './helpers.ts';
 import { launchRuntime, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 describe('fail-closed user settings under a running runtime (system timers, in-process gateway)', () => {
-  it('after the user settings file becomes invalid, session create answers 422 config_error', PROCESS_TIMEOUT, async () => {
+  it('after the user settings file becomes invalid, session create answers 422 config_error', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     writeInvalidUserSettings(stack.temp.home);
@@ -15,7 +15,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect(response.json.error).toMatchObject({ code: 'config_error' });
   });
 
-  it('after the user settings file becomes invalid, a new run is refused with config_error', PROCESS_TIMEOUT, async () => {
+  it('after the user settings file becomes invalid, a new run is refused with config_error', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession();
@@ -25,7 +25,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect(response.json.error).toMatchObject({ code: 'config_error' });
   });
 
-  it('after the user settings file becomes invalid, cancellation still reaches CANCELLED', PROCESS_TIMEOUT, async () => {
+  it('after the user settings file becomes invalid, cancellation still reaches CANCELLED', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const hold = stack.hold();
@@ -38,7 +38,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect(await waitForStatus(stack.temp, run.id, ['COMPLETED', 'FAILED', 'CANCELLED'])).toBe('CANCELLED');
   });
 
-  it('no credential names are guessed: a session create with env fails with 422', PROCESS_TIMEOUT, async () => {
+  it('no credential names are guessed: a session create with env fails with 422', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     writeInvalidUserSettings(stack.temp.home);
@@ -50,7 +50,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect((await launched.http('GET', '/v1/sessions')).json.sessions).toEqual([]);
   });
 
-  it('fixing the file restores service without a restart', PROCESS_TIMEOUT, async () => {
+  it('fixing the file restores service without a restart', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     writeInvalidUserSettings(stack.temp.home);
@@ -62,7 +62,7 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect(launched.stdout.lines()).toHaveLength(1);
   });
 
-  it('health keeps reporting the startup sandbox kind', PROCESS_TIMEOUT, async () => {
+  it('health keeps reporting the startup sandbox kind', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     writeInvalidUserSettings(stack.temp.home);

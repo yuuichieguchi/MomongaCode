@@ -10,6 +10,7 @@ import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
+import { testHostPath } from '@momonga/testkit';
 
 const seen = vi.hoisted(() => ({ stateModeAtHandOff: [] as Array<number | undefined> }));
 
@@ -32,7 +33,7 @@ describe('interactive session on a HOME that has never run momonga', () => {
   it('receives its paths only once the private ~/.momonga tree exists, since its history lives in the state directory', async () => {
     const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
     cleanups.push(() => fs.rmSync(home, { recursive: true, force: true }));
-    const ports: CliPorts = { ...nodePorts('9.9.9'), home, cwd: home, env: { PATH: '/usr/bin:/bin', HOME: home }, terminal: {} as CliPorts['terminal'] };
+    const ports: CliPorts = { ...nodePorts('9.9.9'), home, cwd: home, env: { PATH: testHostPath('/usr/bin:/bin'), HOME: home }, terminal: {} as CliPorts['terminal'] };
     const entry = async (): Promise<number> => 0;
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const program = buildProgram({

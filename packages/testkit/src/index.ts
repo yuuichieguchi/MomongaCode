@@ -122,8 +122,6 @@ export type { CreateFakeFmOptions, FakeExecResult, FakeFm, FakeFmConfig } from '
 export { FAKE_SERVER, FAKE_SERVER_ID, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_MODEL, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeManagedServer } from './fake-managed-server.ts';
 export type { FakeManagedServer, FakeManagedServerConfig } from './fake-managed-server.ts';
 export {
-  BUILT_BINARY_TEST_TIMEOUT_MS,
-  DAEMON_PROCESS_TEST_TIMEOUT_MS,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   TEMP_DIR_PREFIX,
   TEST_HEARTBEAT_MS,
@@ -249,3 +247,7 @@ export {
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
 export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';
 export { firstGeneration } from './first-generation.ts';
+export { PROPERTY_TIMEOUT_MS } from './property-timeout.ts';
+export { TEST_SECRET_PROGRAMS_ENV, createFakeSecretPrograms, fakeSecretProgramsBin, installFakeSecretPrograms, removeFakeSecretPrograms, testHostPath } from './fake-secret-programs.ts';
+export { assertFakeSecretStoreEnv } from './secret-store-env-check.ts';
+export { productTestEnv } from './product-spawn.ts';

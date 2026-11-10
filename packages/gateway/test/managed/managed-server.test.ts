@@ -7,6 +7,8 @@ import { HEALTH_POLL_INTERVAL_MS } from '../../src/managed/server.ts';
 import { FakeChild, SERVER_KINDS, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ExecPort, FakeChildOptions, ManagedServerHandle, ServerKind } from './managed-support.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const READY_MS = 400;
 const GRACE_MS = 30;
 const BACKOFF_MS = 50;
@@ -250,7 +252,7 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
   });
 });
 
-describe('the second kind runs as a real process through the same mechanism (design section 13.2, item 1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the second kind runs as a real process through the same mechanism (design section 13.2, item 1)', () => {
   it('launches the fake server binary, waits for GET /ready, and the endpoint lists the fake model at GET /models', async () => {
     const dir = makeShortDir(dirs);
     const fake = await createFakeManagedServer({ dir });

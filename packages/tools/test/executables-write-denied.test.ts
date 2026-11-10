@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, momongaLayout } from '@momonga/foundation';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { trackGroup } from './builtins/fixtures.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, makeLayout } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -39,7 +41,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
     return { layout, paths, area, extracted, rg, policy, sandbox, tmpDir };
   };
 
-  it('refuses a write into the area even when a session root contains the whole cache base', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('refuses a write into the area even when a session root contains the whole cache base', async () => {
     const { layout, rg, extracted, policy, sandbox, tmpDir } = setup();
     const before = fs.readFileSync(rg, 'utf8');
     const overwrite = await runScript(sandbox, policy, layout.project, tmpDir, `printf evil > '${rg}'`);
@@ -54,7 +56,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
     expect(fs.existsSync(path.join(extracted, 'rg.partial-x'))).toBe(false);
   });
 
-  it('keeps the area readable and executable inside the sandbox, because Grep runs rg there', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('keeps the area readable and executable inside the sandbox, because Grep runs rg there', async () => {
     const { layout, rg, policy, sandbox, tmpDir } = setup();
     const read = await runScript(sandbox, policy, layout.project, tmpDir, `cat '${rg}'`);
     const exec = await runScript(sandbox, policy, layout.project, tmpDir, `'${rg}'`);
@@ -63,7 +65,7 @@ describe.runIf(HAS_REAL_SANDBOX)('the executables area under the cache base, on 
     expect(exec).toMatchObject({ code: 0, stdout: 'rg ran' });
   });
 
-  it('keeps the tmp area under the cache base writable', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('keeps the tmp area under the cache base writable', async () => {
     const { layout, policy, sandbox, tmpDir } = setup();
     const own = await runScript(sandbox, policy, layout.project, tmpDir, `printf ok > '${path.join(tmpDir, 'note')}' && cat '${path.join(tmpDir, 'note')}'`);
     expect(own).toMatchObject({ code: 0, stdout: 'ok' });

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createToolExecutor } from '@momonga/tools';
+import type { ReconcileContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
 import { keyFor, minimalPolicyFor } from './helpers.ts';
@@ -94,22 +95,15 @@ describe('executor closes the tool context of an abandoned reconcile', () => {
   it('drops update and attachProcess calls made after the executor gave up', async () => {
     const harness = makeHarness();
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Mark' });
-    let lateDone!: () => void;
-    const late = new Promise<void>((resolve) => {
-      lateDone = resolve;
-    });
+    let lateContext: ReconcileContext | undefined;
     const updates: string[] = [];
     const tool = makeTool('Mark', {
       kind: 'edit',
       sideEffect: 'write', subjectKind: 'none',
-      reconcile: (_input, _record, ctx) =>
-        new Promise(() => {
-          setTimeout(() => {
-            ctx.update([{ type: 'content', content: { type: 'text', text: 'late' } }] as never);
-            ctx.attachProcess?.({ pgid: 4242, startedAt: harness.clock.now() });
-            lateDone();
-          }, 100);
-        }),
+      reconcile: (_input, _record, ctx) => {
+        lateContext = ctx;
+        return new Promise(() => undefined);
+      },
     });
 
     const [outcome] = await boundedExecutor(harness, 20, 20).runBatch(
@@ -120,7 +114,9 @@ describe('executor closes the tool context of an abandoned reconcile', () => {
         },
       }),
     );
-    await late;
+    if (lateContext === undefined) throw new Error('the executor never called reconcile');
+    lateContext.update([{ type: 'content', content: { type: 'text', text: 'late' } }] as never);
+    lateContext.attachProcess?.({ pgid: 4242, startedAt: harness.clock.now() });
 
     expect(outcome).toMatchObject({ callId: 'c1', reconciled: 'unknown' });
     expect(updates).toEqual([]);

@@ -3,7 +3,7 @@ import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
 import { AUTHORIZATION_WAIT_MS, CredentialStoreError, canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { McpAuthorizationError } from '@momonga/mcp';
-import type { McpAuthorizingPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
+import type { McpAuthorizingPool, McpMarkerOptions, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { ToolEnv } from '../ports.ts';
@@ -31,6 +31,7 @@ export type McpAdminOptions = {
   settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
+  markers?: McpMarkerOptions;
 };
 
 type ProbePool = { pool: McpAuthorizingPool; users: number; idle?: unknown };
@@ -93,6 +94,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
       timers: options.timers,
       remote,
       closeGraceMs: MCP_CLOSE_GRACE_MS,
+      ...(options.markers === undefined ? {} : { markers: options.markers }),
     });
 
   const keyOf = (sessionId: string, name: string): string => `${sessionId}/${name}`;

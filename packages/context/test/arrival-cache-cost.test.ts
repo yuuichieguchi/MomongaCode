@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import type { InputItem, MemoryView } from '@momonga/protocol';
 import { buildContext, createTokenMeter } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem } from '@momonga/context';
 import { HOME, MODEL, PROJECT, READ_TOOL, call, capabilitiesFor, fakeBlobs, fakeCounter, fakeReader, output, seeded, sourcesWith, tokensOfItem, tokensOfTool, touchedFile } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const WORDS = ['river', 'garden', 'lantern', 'harbor', 'orchard', 'violin', 'bridge', 'meadow', 'compass', 'library', 'village', 'window', 'quiet', 'old', 'bright', 'narrow'];
 

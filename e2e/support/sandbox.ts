@@ -1,9 +1,8 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import path from 'node:path';
 import { defaultSandboxSetting } from '@momonga/config';
 import type { SandboxSetting } from '@momonga/config';
-import { DEFAULT_BWRAP_PATH, SANDBOX_STOP_BOUND_MS, probeBubblewrap } from '@momonga/sandbox';
-import type { ProbeRunner } from '@momonga/sandbox';
+import { DEFAULT_BWRAP_PATH, SANDBOX_STOP_BOUND_MS, bwrapProbeArguments } from '@momonga/sandbox';
 import { resolveBashPath } from '@momonga/tools';
 import type { E2eCase } from './cases.ts';
 
@@ -29,7 +28,7 @@ export const SANDBOX_ENDS_WITH_RUNTIME: Readonly<Record<ProductSandbox, boolean>
 
 export type SandboxProbe = { usable: true; kind: ProductSandbox } | { usable: false; kind: SandboxSetting; stderr: string };
 
-export type SandboxProbeRunner = ProbeRunner;
+export type SandboxProbeRunner = (file: string, args: readonly string[], timeoutMs: number) => { status: number | null; stderr: string; timedOut: boolean };
 
 export type SandboxResolution = { kind: ProductSandbox } | { kind: 'none'; sandboxFallback: string } | { kind: 'skip'; reason: string };
 
@@ -49,19 +48,18 @@ export const spawnSandboxProbe: SandboxProbeRunner = (file, args, timeoutMs) => 
   return { status: done.status, stderr: done.stderr ?? '', timedOut: done.error !== undefined };
 };
 
-const probeSeatbelt = (run: SandboxProbeRunner): SandboxProbe => {
-  const { status, stderr, timedOut } = run(SANDBOX_EXEC_PATH, SANDBOX_PROBE_ARGS, SANDBOX_PROBE_TIMEOUT_MS);
-  if (timedOut) return { usable: false, kind: 'seatbelt', stderr: `sandbox-exec did not finish within ${SANDBOX_PROBE_TIMEOUT_MS} ms` };
-  if (status === 0) return { usable: true, kind: 'seatbelt' };
+const LAUNCHER_NAME: Readonly<Record<ProductSandbox, string>> = { seatbelt: 'sandbox-exec', bubblewrap: 'bwrap' };
+
+const probeLauncher = (kind: ProductSandbox, args: readonly string[], run: SandboxProbeRunner): SandboxProbe => {
+  const { status, stderr, timedOut } = run(LAUNCHER_PATH[kind], args, SANDBOX_PROBE_TIMEOUT_MS);
+  if (timedOut) return { usable: false, kind, stderr: `${LAUNCHER_NAME[kind]} did not finish within ${SANDBOX_PROBE_TIMEOUT_MS} ms` };
+  if (status === 0) return { usable: true, kind };
   const reported = stderr.trim();
-  return { usable: false, kind: 'seatbelt', stderr: reported === '' ? `sandbox-exec exited with status ${String(status)}` : reported };
+  return { usable: false, kind, stderr: reported === '' ? `${LAUNCHER_NAME[kind]} exited with status ${String(status)}` : reported };
 };
 
-const probeProductSandbox = (kind: ProductSandbox, platform: NodeJS.Platform, run: SandboxProbeRunner): SandboxProbe => {
-  if (kind === 'seatbelt') return probeSeatbelt(run);
-  const probe = probeBubblewrap(DEFAULT_BWRAP_PATH, resolveBashPath(platform), { run });
-  return probe.ok ? { usable: true, kind } : { usable: false, kind, stderr: probe.stderr };
-};
+const probeProductSandbox = (kind: ProductSandbox, platform: NodeJS.Platform, run: SandboxProbeRunner): SandboxProbe =>
+  probeLauncher(kind, kind === 'seatbelt' ? SANDBOX_PROBE_ARGS : bwrapProbeArguments(resolveBashPath(platform)), run);
 
 export const runSandboxProbe = (platform: NodeJS.Platform = process.platform, run: SandboxProbeRunner = spawnSandboxProbe): SandboxProbe => {
   const kind = platformSandbox(platform);

@@ -1,14 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MIN_ROOM_TOKENS, budgetFor, inputCeilingFor } from '@momonga/context';
 import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, countFakeRequestTokens } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, countFakeRequestTokens } from '@momonga/testkit';
 import type { FakeFixedUsage } from '@momonga/testkit';
 import { finishApprovingPrompts, launchRuntime, prepareStack, readDb, scriptedToolCall, startGateway } from './run-helpers.ts';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const WINDOW = 4096;
 const OUTPUT = 1024;
 
@@ -26,7 +27,7 @@ const payloadsOf = (rows: readonly EventRow[], type: string): Record<string, any
   rows.filter((row) => row.type === type).map((row) => JSON.parse(row.payload_json) as Record<string, any>);
 
 describe('the pinned part admitted at run start, after the server reports it within the estimator bound (LM Studio lms-3/4/5)', () => {
-  it('a run whose first request is reported at the estimator bound, with room left in the input budget, keeps its offer and completes', PROCESS_TIMEOUT, async () => {
+  it('a run whose first request is reported at the estimator bound, with room left in the input budget, keeps its offer and completes', async () => {
     const stack = await prepareStack((temp) => ({
       contextWindow: WINDOW,
       script: [

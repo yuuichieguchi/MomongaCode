@@ -1,4 +1,4 @@
-import { selfInvocation } from '../daemon/launcher.ts';
+import { INTERNAL_COMMANDS, selfInvocation } from '../daemon/launcher.ts';
 import { UpdateError } from './errors.ts';
 import { DAEMON_RESTART_REMEDIATION, installLocked, resolveUpdateTarget } from './install.ts';
 import type { UpdatePorts } from './ports.ts';
@@ -8,7 +8,7 @@ import { escapedLines } from '../terminal-writer.ts';
 import { parseUpdateState } from './state.ts';
 import type { BackgroundOutcome, UpdateState } from './state.ts';
 
-export const UPDATE_CHECK_COMMAND = '__update-check';
+export const UPDATE_CHECK_COMMAND = INTERNAL_COMMANDS.updateCheck;
 
 export type UpdateWiring = {
   ports: UpdatePorts;

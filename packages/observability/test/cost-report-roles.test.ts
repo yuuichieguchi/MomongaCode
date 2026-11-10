@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { buildCostReport, definePriceTable, formatCostReport, recordChatResponse, startAgentSpan, startChatSpan } from '@momonga/observability';
 import { harness } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const TABLE = definePriceTable([
   { provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 2, cachedInputPerMTok: 0.5, outputPerMTok: 8, currency: 'USD' },

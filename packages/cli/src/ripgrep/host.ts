@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
 import { ProbeFailedError, defaultProcessInspector, nodeFileSystem } from '@momonga/foundation';
-import type { ProbeOptions, ProcessInspector } from '@momonga/foundation';
+import type { ProbeOptions, ProcessInspector, StartTime } from '@momonga/foundation';
 
 type RuntimeEntry = typeof import('@momonga/runtime/entry');
 type BundledRipgrepSource = NonNullable<Parameters<RuntimeEntry['runRuntimeEntry']>[1]['bundledRipgrep']>;
 
 const OWNER_SEPARATOR = '.';
 
-export const ownerIdOf = (pid: number, startTime: number): string => `${pid}${OWNER_SEPARATOR}${startTime}`;
+export const ownerIdOf = (pid: number, startTime: StartTime): string => `${pid}${OWNER_SEPARATOR}${startTime}`;
 
 export const ownOwnerIdWith = (inspector: ProcessInspector, pid: number): ((options: ProbeOptions) => Promise<string>) => {
   let known: string | undefined;

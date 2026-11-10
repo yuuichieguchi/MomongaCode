@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContextOverflowError, buildContext } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
 import type { InputItem } from '@momonga/protocol';
@@ -20,6 +20,9 @@ import {
   truncatedMarker,
   user,
 } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 describe('acceptance (a) precursor', () => {
   it('keeps a 20k-character current-step tool output within I at W=1024 by storing it behind a handle', async () => {

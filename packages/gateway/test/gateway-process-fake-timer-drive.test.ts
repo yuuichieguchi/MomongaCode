@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const RETRY_BUDGET_MS = GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs;
 
@@ -43,7 +45,7 @@ const settledFlag = (promise: Promise<unknown>): (() => boolean) => {
   return () => settled;
 };
 
-describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', () => {
   it('settles a request to a closed upstream within the retry budget horizon and leaves the purge timer unfired', async () => {
     const { clock, timers, startedAt, handle } = await launchAgainstClosedUpstream();
 

@@ -1,12 +1,14 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
 import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 
-const FORK_STORM_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
+
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -37,7 +39,7 @@ interface SpawnedGroup {
 }
 
 const GROUP_SCRIPT = `
-const { spawn } = require('node:child_process');
+const { spawn } = require('@momonga/testkit/child-process');
 const ignoreTerm = process.argv[1] === 'ignore-term';
 if (ignoreTerm) process.on('SIGTERM', () => undefined);
 const grandchild = ignoreTerm
@@ -174,13 +176,24 @@ describe('signalGroup', () => {
   });
 });
 
-const psGroupMembers = (pgid: number): number[] =>
-  spawnSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+const psRows = (): Array<{ pid: number; groupId: number; startTicks: bigint }> =>
+  spawnSync('ps', ['-A', '-o', 'pid=,pgid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
     .stdout.split('\n')
     .flatMap((line) => {
-      const [pid, group] = line.trim().split(/\s+/).map(Number);
-      return pid !== undefined && group === pgid ? [pid] : [];
+      const row = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+      const startMs = row === null ? Number.NaN : Date.parse(row[3] as string);
+      return row === null || Number.isNaN(startMs) ? [] : [{ pid: Number(row[1]), groupId: Number(row[2]), startTicks: BigInt(startMs) }];
     });
+
+const psGroupMembers: GroupMembersReader = {
+  members: (pgid) => psRows().flatMap(({ pid, groupId, startTicks }) => (groupId === pgid ? [{ pid, startTicks }] : [])),
+  statOf: (pid) => psRows().find((row) => row.pid === pid),
+};
+
+const listedReader = (pgid: number, pids: readonly number[]): GroupMembersReader => ({
+  members: (asked) => (asked === pgid ? pids.map((pid) => ({ pid, startTicks: BigInt(pid) })) : []),
+  statOf: (pid) => (pids.includes(pid) ? { groupId: pgid, startTicks: BigInt(pid) } : undefined),
+});
 
 describe('signalGroupExceptLeader', () => {
   it('delivers the signal to every member of the group but its leader', async () => {
@@ -201,37 +214,37 @@ describe('signalGroupExceptLeader', () => {
       const refusal = refusals[sent.length - 1];
       if (refusal !== undefined) throw refusal;
     };
-    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000, 4001, 4002, 4003], send)).toBe(3);
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4000, 4001, 4002, 4003]), send)).toBe(3);
     expect(sent).toEqual([4001, 4002, 4003]);
   });
 
   it('signals nobody and answers 0 when the leader is the only member', () => {
     const sent: number[] = [];
-    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000], (pid) => void sent.push(pid))).toBe(0);
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4000]), (pid) => void sent.push(pid))).toBe(0);
     expect(sent).toEqual([]);
   });
 
   it('propagates any other failure to signal a member', () => {
     const failure = Object.assign(new Error('EINVAL'), { code: 'EINVAL' });
     expect(() =>
-      signalGroupExceptLeader(4000, 'SIGTERM', () => [4001], () => {
+      signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4001]), () => {
         throw failure;
       }),
     ).toThrow(failure);
   });
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', (pgid) => {
-    expect(() => signalGroupExceptLeader(pgid, 'SIGTERM', () => [])).toThrow(/refusing to signal process group/);
+    expect(() => signalGroupExceptLeader(pgid, 'SIGTERM', listedReader(pgid, []))).toThrow(/refusing to signal process group/);
   });
 });
 
 describe.skipIf(process.platform !== 'linux')('procGroupMembers (Linux /proc)', () => {
   it('lists the leader and the grandchild of a live group and nothing outside it', async () => {
     const group = await spawnGroup('normal');
-    const members = procGroupMembers(group.pgid);
+    const members = procGroupMembers.members(group.pgid).map(({ pid }) => pid);
     expect(members).toEqual(expect.arrayContaining([group.pgid, group.grandchildPid]));
     expect(members).not.toContain(process.pid);
-    expect([...members].sort((left, right) => left - right)).toEqual([...psGroupMembers(group.pgid)].sort((left, right) => left - right));
+    expect([...members].sort((left, right) => left - right)).toEqual(psGroupMembers.members(group.pgid).map(({ pid }) => pid).sort((left, right) => left - right));
   });
 });
 
@@ -299,7 +312,7 @@ describe('terminateGroup', () => {
     expect(await groupAlive(pgid)).toBe(false);
   });
 
-  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', async () => {
     const iterations = FORK_LOOP_ITERATIONS;
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
@@ -314,7 +327,7 @@ describe('terminateGroup', () => {
 });
 
 describe('forceKillGroup', () => {
-  it('returns true once every member of a group that keeps forking is gone', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('returns true once every member of a group that keeps forking is gone', async () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < FORK_LOOP_ITERATIONS; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
@@ -325,7 +338,7 @@ describe('forceKillGroup', () => {
     expect(outcomes).toEqual(Array.from({ length: FORK_LOOP_ITERATIONS }, () => 'gone=true alive=false'));
   });
 
-  it('signals a live group at least once even when the deadline has already passed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('signals a live group at least once even when the deadline has already passed', async () => {
     const group = await spawnGroup('normal');
     await forceKillGroup(group.pgid, { deadline: Date.now() - 1 });
     expect(await settlesWithin(group.exited, LEADER_REAP_WAIT_MS)).toBe(true);
@@ -339,5 +352,54 @@ describe('forceKillGroup', () => {
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
     await expect(forceKillGroup(pgid, { deadline: Date.now() + 100 })).rejects.toThrow(/refusing to signal process group/);
+  });
+});
+
+describe('terminateGroup answers only whether the group ended, by the group probe, and makes no holder listing', () => {
+  const instantTiming = () => {
+    let now = 0;
+    return { now: () => now, sleep: async (ms: number) => void (now += ms) };
+  };
+
+  const groupDyingOn = (fatal: NodeJS.Signals | undefined, events: string[]): ProcessGroupPort => {
+    let alive = fatal !== undefined;
+    return {
+      signal: async (_pgid, signal) => {
+        events.push(`signal ${signal}`);
+        if (signal === fatal) alive = false;
+      },
+      alive: async () => alive,
+    };
+  };
+
+  it.each<[NodeJS.Signals | undefined, string, string[]]>([
+    [undefined, 'gone', []],
+    ['SIGTERM', 'terminated', ['signal SIGTERM']],
+    ['SIGKILL', 'killed', ['signal SIGTERM', 'signal SIGKILL']],
+  ])('with the group ending on %s it says %s from the group probe alone', async (fatal, word, signals) => {
+    const events: string[] = [];
+    expect(await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming() })).toBe(word);
+    expect(events).toEqual(signals);
+  });
+
+  it.each<NodeJS.Signals | undefined>([undefined, 'SIGTERM', 'SIGKILL'])('with the group ending on %s it never calls a holder listing handed to it', async (fatal) => {
+    const events: string[] = [];
+    const listings: string[] = [];
+    const options = {
+      graceMs: 50,
+      port: groupDyingOn(fatal, events),
+      timing: instantTiming(),
+      outsideHolders: async (): Promise<number[]> => {
+        listings.push('list');
+        return [6100];
+      },
+    };
+    expect(await terminateGroup(6000, options)).not.toBe('unconfirmed');
+    expect(listings).toEqual([]);
+  });
+
+  it('exports no listing of marker holders outside a group', async () => {
+    const foundation: Record<string, unknown> = await import('@momonga/foundation');
+    expect(Object.keys(foundation).filter((name) => /OutsideGroup|outsideHolders/i.test(name))).toEqual([]);
   });
 });

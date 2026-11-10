@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GatewayRequestError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import type { InputItem, RunEvent } from '@momonga/protocol';
@@ -9,6 +9,9 @@ import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { WITHIN_TURN_PROMPT, bigTool } from './within-turn-support.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const SEEDS = Array.from({ length: 16 }, (_, index) => 7919 * (index + 1));
 

@@ -1,14 +1,16 @@
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { LOG_KEEP, LOG_MAX_BYTES, createJsonLogger, createRotatingLogFile, momongaPaths, systemClock } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { JsonLine } from '@momonga/testkit';
 import { startSupervisor } from '../src/start-supervisor.ts';
 import { OVERLONG_STDERR_BYTES, OWN_LOG_MSG, RAW_STDERR_LINES, STRAY_STDOUT_LINE } from './fixtures/p3b-engine-child.ts';
 import { validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import { pollUntil } from './support/p2-poll.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ENGINE_CHILD = fileURLToPath(new URL('./fixtures/p3b-engine-child.ts', import.meta.url));
 const RAW_TRUNCATE_BYTES = 8 * 1024;
@@ -24,7 +26,7 @@ const readLines = (file: string): JsonLine[] =>
         .map((line) => JSON.parse(line) as JsonLine)
     : [];
 
-describe('supervisor.log and role logs with real children', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('supervisor.log and role logs with real children', () => {
   it('real child end-to-end', async (context) => {
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, {});

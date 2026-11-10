@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
-import { installTrust } from '@momonga/foundation';
+import { ConfigError, createPinnedDerivation, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import type { ResolvedSettings } from '@momonga/config';
+import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -19,6 +20,8 @@ import {
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
+  startDeadlineSignal,
+  SETTINGS_APPLIED_ENV,
   systemClock,
   nodeFileSystem,
   nodeFileSystemSync,
@@ -85,6 +88,7 @@ import type { Periodic } from './periodic.ts';
 import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
+import type { SandboxBinding, TracerLeases, TracerPort } from '../ports.ts';
 import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
 import { createEvidenceRunner } from './evidence-run.ts';
@@ -181,6 +185,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const onWarning = (message: string): void => logger.warn(message);
 
   const cleanups: TeardownStep[] = [];
+  const lifetime = new AbortController();
   const markerOwners = createMarkerOwners();
   const workers: StartedWorker[] = [];
   const periodics: Periodic[] = [];
@@ -256,8 +261,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     }
   };
 
-  const teardown = (failureEvent?: string): Promise<string[]> =>
-    runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  const teardown = (failureEvent?: string): Promise<string[]> => {
+    lifetime.abort(new Error('the runtime is closing'));
+    return runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  };
 
   const shutdown = async (abortFirst: boolean): Promise<RuntimeCloseResult> => {
     let stragglers: string[] = [];
@@ -324,23 +331,25 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings, network } = await step('settings', async () => {
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
+    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal): Promise<OutboundNetwork> => {
+      const networkConfig = resolveNetwork(section, process.env);
+      const trust = await installTrust(networkConfig, nodeFileSystem, { signal: installSignal });
+      for (const failure of trust.failures) logger.warn(trustFailureText(failure));
+      return { config: networkConfig, trust };
+    };
+    const { cache, settings } = await step('settings', async () => {
+      const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
+      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
-      const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem);
-      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
-      const outbound: OutboundNetwork = { config: networkConfig, trust };
-      return { cache: created, settings: snapshot.settings, network: outbound };
+      return { cache: created, settings: snapshot.settings };
     });
 
-    const kind: SandboxKind = settings.sandbox;
-    const sandbox: Sandbox = await step('sandbox', () => {
-      const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
-      if (platform === 'linux') {
-        for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
-      }
+    const journalDirectory = path.join(paths.state, PLACEHOLDER_JOURNAL_DIRECTORY);
+    if (platform === 'linux') {
+      for (const leftover of recoverPlaceholders(createPlaceholderJournal(journalDirectory)).removed) logger.warn(`removed the empty placeholder ${leftover} that a killed runtime left in a workspace`);
+    }
+    const sandboxOf = async (kind: SandboxKind, deriveSignal: AbortSignal): Promise<Sandbox> => {
       if (kind === 'none') {
         const unsandboxed = createUnsandboxed({ killGraceMs: SANDBOX_KILL_GRACE_MS });
         logger.warn('sandbox is none: Bash asks before every command');
@@ -353,7 +362,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const launcherPath = sandboxExecPath ?? (kind === 'seatbelt' ? DEFAULT_SANDBOX_EXEC_PATH : DEFAULT_BWRAP_PATH);
       const launcherName = kind === 'seatbelt' ? 'sandbox-exec' : 'bwrap';
       try {
-        fs.accessSync(launcherPath, fs.constants.X_OK);
+        await fs.promises.access(launcherPath, fs.constants.X_OK);
       } catch (error) {
         throw new ConfigError(
           `${launcherName} is not available at ${launcherPath}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -368,7 +377,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           if (!(error instanceof ShellNotFoundError)) throw error;
           throw new ConfigError(error.message, { cause: error });
         }
-        const probe = probeBubblewrap(launcherPath, shell);
+        const probe = await probeBubblewrap(launcherPath, shell, { signal: deriveSignal });
         if (!probe.ok) {
           throw new ConfigError(
             `bwrap at ${launcherPath} cannot create a sandbox on this host: ${probe.stderr}; set "sandbox": "none" in ${paths.settingsFile} to run without a sandbox (Bash will then ask before every command)`,
@@ -377,6 +386,20 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         return createBubblewrapSandbox({ bwrapPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS, journal: createPlaceholderJournal(journalDirectory), holders: () => heldMountPoints() });
       }
       return createSeatbeltSandbox({ sandboxExecPath: launcherPath, tmpRoot: paths.tmp.spawn, killGraceMs: SANDBOX_KILL_GRACE_MS });
+    };
+    const sandboxes = createPinnedDerivation<SandboxBinding>({
+      cache,
+      signal: lifetime.signal,
+      inputsOf: derivedInputsOf('D3'),
+      derive: async (current, _previous, deriveSignal) => {
+        const sandbox = await sandboxOf(current.sandbox, deriveSignal);
+        return { sandbox, ruleEnforcement: ruleEnforcementOf(sandbox.kind) };
+      },
+      retire: (binding) => binding.sandbox.sweep?.(),
+      onWarning,
+    });
+    await step('sandbox', async () => {
+      (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });
 
     await step('mcp-markers', async () => {
@@ -436,33 +459,48 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
-    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
-    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
     const bodyPurge = startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
     cleanups.push({ name: 'body-purge', run: () => bodyPurge.stop() });
 
-    const telemetry: Telemetry = await step('telemetry', () =>
-      createTelemetry({
-        serviceName: 'momonga-runtime',
-        serviceVersion: version,
-        clock,
-        store: traceStore,
-        exporters: exportersFor(settings.telemetry, network),
-        captureMessageContent: telemetrySettings.captureMessageContent,
-        contentRetentionMs,
-      }),
-    );
-    cleanups.push({
-      name: 'telemetry',
-      run: async () => {
+    type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
+    const telemetries = createPinnedDerivation<TracedTelemetry>({
+      cache,
+      signal: lifetime.signal,
+      inputsOf: derivedInputsOf('D2'),
+      derive: async (current, _previous, deriveSignal) => {
+        const resolved = resolveTelemetrySettings(current.telemetry);
+        const outbound = await outboundNetworkOf(current.network, deriveSignal);
+        const telemetry = createTelemetry({
+          serviceName: 'momonga-runtime',
+          serviceVersion: version,
+          clock,
+          store: traceStore,
+          exporters: exportersFor(current.telemetry, outbound),
+          captureMessageContent: resolved.captureMessageContent,
+          contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+        });
+        return { telemetry, tracer: createTracerPort(telemetry) };
+      },
+      retire: async ({ telemetry }) => {
         try {
           await telemetry.forceFlush();
         } finally {
           await telemetry.shutdown();
         }
       },
+      onWarning,
     });
-    const tracer = createTracerPort(telemetry);
+    await step('telemetry', async () => {
+      (await telemetries.admit(startDeadlineSignal(undefined))).release();
+    });
+    cleanups.push({ name: 'telemetry', run: () => telemetries.retireAll() });
+    const tracers: TracerLeases = {
+      acquire: async (tracerSignal) => {
+        const lease = await telemetries.acquire(tracerSignal);
+        return { value: lease.value.tracer, release: lease.release };
+      },
+    };
 
     const gatewayClient: GatewayClient = await step('gateway-client', () =>
       createGatewayClient({
@@ -491,7 +529,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         timers,
         logger,
         report,
-        sandbox,
+        sandboxes,
         shellHost,
         settings: composition,
         reapTiming,
@@ -508,15 +546,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         paths,
         home: canonicalHome,
         fs: createPolicyFilesystem(),
-        sandbox,
+        sandboxes,
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
-        enforcement: ruleEnforcementOf(sandbox.kind),
         reap: { timing: reapTiming, inspector: runtime.inspector },
         owners: runtime.owners,
         onWarning,
       });
       const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
-      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
+      const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: () => sandboxes.current().ruleEnforcement });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({
         home: canonicalHome,
@@ -571,12 +608,21 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
-        sandboxKind: kind,
+        sandboxKind: async (healthSignal) => {
+          const lease = await sandboxes.acquire(healthSignal);
+          const { kind } = lease.value.sandbox;
+          lease.release();
+          return kind;
+        },
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
-        sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        sessionCreateSettings: async (cwd, requestSignal) => {
+          const admittedSettings = await settingsComposition.sessionCreateSettings(cwd);
+          await settingsComposition.admitted(async () => (await sandboxes.admit(requestSignal)).release());
+          return admittedSettings;
+        },
         sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
@@ -586,7 +632,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId) => {
-          await telemetry.forceFlush();
+          await telemetries.current().telemetry.forceFlush();
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
@@ -623,7 +669,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           governance: governancePort,
           agents: agentsPort,
           tools: toolRuntime.port,
-          tracer,
+          tracers,
           clock,
           workerId: id,
           leaseMs,
@@ -724,7 +770,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           run: async () => {
             const failures: unknown[] = [];
             try {
-              sandbox.sweep?.();
+              sandboxes.current().sandbox.sweep?.();
             } catch (error) {
               failures.push(error);
             }
@@ -775,7 +821,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return fields;
     });
 
-    return { ready, sandbox: kind, close, abort, fatal };
+    return { ready, sandbox: settings.sandbox, close, abort, fatal };
   } catch (error) {
     phase = 'tearingDown';
     await teardown('startup.cleanup_failed');

@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 
 export type StackParentRequest = { readonly args: readonly string[]; readonly env: Readonly<Record<string, string>> };
 

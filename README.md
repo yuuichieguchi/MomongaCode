@@ -280,7 +280,7 @@ The installers change your PATH only when the install directory is missing from 
 Momonga Code is an npm workspace of packages under `packages/`. The `momonga` command is a client; the work is done by background processes.
 
 - **Client.** `packages/cli` (command line, terminal UI, ACP server). It starts and talks to the daemon.
-- **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime, and restarts them when relevant settings change.
+- **Supervisor.** `packages/supervisor` runs the daemon: it starts, restarts, and stops two child processes, the gateway and the runtime. A settings change applies in place: each child reads the settings per operation, and no child is restarted for it.
 - **Runtime.** `packages/runtime` runs sessions, runs, and the model and tool loop. It builds each request with `packages/context`, applies `packages/policy` to tool calls, executes tools from `packages/tools` inside `packages/sandbox`, and records everything in `packages/store`.
 - **Gateway.** `packages/gateway` is the one place that talks to models. It has adapters for `fm`, chat-completions, Open Responses, Anthropic, and Ollama, plus routing, retry, admission, and probing.
 - **Store.** `packages/store` holds runs, events, approvals, memories, rules, and jobs in databases under `~/.momonga/state`.

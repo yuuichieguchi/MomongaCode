@@ -1,20 +1,22 @@
-import { spawn } from 'node:child_process';
+import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { appendPermissionRule, systemFileLockPorts } from '@momonga/config';
 import { settingsLockPath } from '../src/file-lock.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { localSettingsDir, localSettingsPath, makeDir, makeTree, registerCleanup, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const CONFIG_ENTRY = pathToFileURL(path.resolve(import.meta.dirname, '../src/index.ts')).href;
 
 const readLocal = (tree: Tree): Record<string, unknown> =>
   JSON.parse(fs.readFileSync(localSettingsPath(tree), 'utf8')) as Record<string, unknown>;
 
-describe('appendPermissionRule', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('appendPermissionRule', () => {
   it('creates settings.local.json with 0600 in a 0700 directory', async () => {
     const tree = makeTree();
     await appendPermissionRule({ ports: systemFileLockPorts, home: tree.home, projectDir: tree.project, rule: 'Bash(npm run test:*)', effect: 'allow' });

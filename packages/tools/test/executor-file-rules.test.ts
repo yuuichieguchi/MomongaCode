@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
@@ -15,6 +15,8 @@ import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './builtins/fixtures.ts'
 import type { Builtins } from './builtins/fixtures.ts';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { minimalPolicyFor } from './helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Recordings = {
   files_with_matches: string;
@@ -123,7 +125,7 @@ describe('executor guards read the user file rules', () => {
     expect(output).not.toContain('.env');
   });
 
-  it.runIf(HAS_RG)('omits a denied file from a ripgrep Grep over a directory under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('omits a denied file from a ripgrep Grep over a directory under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     const visible = tools.write('notes.txt', 'secret');
@@ -133,7 +135,7 @@ describe('executor guards read the user file rules', () => {
     expect(lines.filter((line) => line.includes('.env'))).toEqual([]);
   });
 
-  it.runIf(HAS_RG)('answers a Grep over a directory with Read(.env) with exactly the visible matches and no unreadable note, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('answers a Grep over a directory with Read(.env) with exactly the visible matches and no unreadable note, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     tools.write(path.join('sub', '.env'), 'secret');
@@ -145,7 +147,7 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(content).output).toBe(`${inProject(tools, visible)}:1:secret`);
   });
 
-  it.runIf(HAS_RG)('keeps a file that a ! exception carves out of a deny rule in a directory Grep, and agrees with Read on both, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('keeps a file that a ! exception carves out of a deny rule in a directory Grep, and agrees with Read on both, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const carved = tools.write(path.join('config', 'sample.env'), 'secret');
     const denied = tools.write(path.join('config', 'prod.env'), 'secret');
@@ -157,7 +159,7 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(listed).output).toBe(inProject(tools, carved));
   });
 
-  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('answers a directory Grep exactly when a deny rule matches more files than the argument limit can name, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const argumentLimit = Number(execFileSync('/usr/bin/getconf', ['ARG_MAX'], { encoding: 'utf8' }).trim());
     const stem = 'd'.repeat(230);
@@ -171,7 +173,7 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
-  it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('keeps the exclusion of denied files whose names hold a line break or end in whitespace, and keeps a visible file beside them, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('line\nbreak.env', 'secret');
     tools.write('trailing.env ', 'secret');
@@ -182,7 +184,7 @@ describe('executor guards read the user file rules', () => {
     expect(resultOf(listed).output).toBe(inProject(tools, visible));
   });
 
-  it.runIf(HAS_RG)('lets no glob the model passes bring back a denied file, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('lets no glob the model passes bring back a denied file, under the real sandbox', async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     tools.write('.env', 'secret');
     const visible = tools.write('sample.envrc', 'secret');
@@ -454,14 +456,14 @@ describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', 
     return { tools, secret, visible, options: withRules(tools, [ruleOf(tools, 'deny', ruleText)], { env: { PATH: RG_PATH, LANG: 'C' } }) };
   };
 
-  it.runIf(HAS_RG)('a Glob deny hides the file from Glob and leaves Read and Grep alone', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('a Glob deny hides the file from Glob and leaves Read and Grep alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Glob(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
     expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
     expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
   });
 
-  it.runIf(HAS_RG)('a Grep deny hides the file from Grep and leaves Read and Glob alone', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it.runIf(HAS_RG)('a Grep deny hides the file from Grep and leaves Read and Glob alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Grep(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
     expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));

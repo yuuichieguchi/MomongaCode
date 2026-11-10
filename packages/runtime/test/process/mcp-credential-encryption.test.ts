@@ -53,7 +53,7 @@ const authorizingThroughStore = async (secretStore: { kind: 'available'; store: 
     timers: f.timers,
     logger: f.logger,
     report: f.reporter.report,
-    sandbox: inertSandbox,
+    sandboxes: runtime.fixedSandboxBindings(inertSandbox),
     shellHost: nodeShellHost(),
     settings: f.composition,
     reapTiming: f.reapTiming,

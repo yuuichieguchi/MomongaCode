@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const fixture = async (options: { realSandbox?: boolean } = {}) => {
   const tools = await makeBuiltins(options);
@@ -84,21 +84,21 @@ describe('readAllowed inside a readDenied root (builtins)', () => {
 });
 
 describe.runIf(HAS_RG)('readAllowed inside a readDenied root (Grep with ripgrep under the real sandbox)', () => {
-  it('searches the allowed dir', PROCESS_TIMEOUT, async () => {
+  it('searches the allowed dir', async () => {
     const fx = await fixture({ realSandbox: true });
     const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, RG_PATH));
     expect(result.status).toBe('completed');
     expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 
-  it('from the project finds the allowed file and skips denied siblings', PROCESS_TIMEOUT, async () => {
+  it('from the project finds the allowed file and skips denied siblings', async () => {
     const fx = await fixture({ realSandbox: true });
     const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, RG_PATH));
     expect(result.status).toBe('completed');
     expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.visibleFile, fx.allowedFile));
   });
 
-  it('never returns content reached through a symlink in the allowed dir into home/.momonga', PROCESS_TIMEOUT, async () => {
+  it('never returns content reached through a symlink in the allowed dir into home/.momonga', async () => {
     const fx = await fixture({ realSandbox: true });
     fs.symlinkSync(fx.token, path.join(fx.ok, 'link.txt'));
     const result = resultOf(await grep(fx.tools, { path: fx.ok, output_mode: 'content' }, fx.sandboxPolicy, RG_PATH));

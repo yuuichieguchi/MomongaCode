@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { MemoryKind, MemoryRecord } from '@momonga/protocol';
 import { parseSkillFile } from '@momonga/skills';
 import type { RuntimeStore } from '@momonga/store';
 import { recalled } from '../../../store/test/helpers.ts';
 import { expectSchema, startService } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Lifecycle = {
   saveCandidate(input: Record<string, unknown>): { memory: MemoryRecord };

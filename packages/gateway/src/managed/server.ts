@@ -40,6 +40,7 @@ export type ManagedServerOptions = {
   timers?: ManagedServerTimers;
   readStopGraceMs: () => number;
   onWarning: (message: string) => void;
+  onChildStart?: (signal: AbortSignal) => Promise<void>;
   onChildExit?: () => void;
 };
 
@@ -374,9 +375,13 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
   const launchReady = async (startClient: UdsClient, signal: AbortSignal, isCurrent: () => boolean): Promise<RunningChild | undefined> => {
     const lock = await claimInstance(signal);
     let launched: RunningChild | undefined;
+    let childStartBegun = false;
     try {
       if (!isCurrent()) return undefined;
       signal.throwIfAborted();
+      childStartBegun = true;
+      await options.onChildStart?.(signal);
+      if (!isCurrent()) return undefined;
       launched = launch();
       await waitUntilReady(launched, startClient, signal);
       return launched;
@@ -384,6 +389,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
       if (launched !== undefined) await terminate(launched);
       throw error;
     } finally {
+      if (childStartBegun && launched === undefined) options.onChildExit?.();
       lock.release();
     }
   };

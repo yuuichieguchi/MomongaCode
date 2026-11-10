@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,8 @@ import type { Builtins } from './builtins/fixtures.ts';
 import { HOST_SANDBOX_KIND, makeLayout, policyFor, ruleFor } from './helpers.ts';
 import { HAS_REAL_SANDBOX, REFUSED_WRITE_MESSAGE, realSandbox, recordingSandbox, scratchRootOf, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const forced = vi.hoisted(() => ({ decision: { kind: 'allow', source: 'mode', reason: 'forced by the test', basis: 'read_only' } }));
 
@@ -57,7 +59,7 @@ const HIDING_OPTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ['blame', '--reverse', 'tracked'],
 ];
 
-describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(HAS_REAL_SANDBOX)('rule 2 under the real kernel, with decide forced to approve', () => {
   let stage: Stage;
 
   beforeEach(async () => {

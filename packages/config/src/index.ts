@@ -35,7 +35,9 @@ export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { ResolvedModels } from './models.ts';
-export { ConfigError, createStopValuesReader, createUserSettingsCache, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
+export { registeredIds, registeredServer } from './server-registry.ts';
+export type { ServerRegistry } from './server-registry.ts';
+export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
@@ -82,6 +84,7 @@ export type {
   ModelRoles,
   ModelTarget,
   ModelsSettings,
+  DeclaredServer,
   OllamaTarget,
   OpenResponsesTarget,
   PlanOpenResponsesTarget,
@@ -110,3 +113,5 @@ export type {
   GatewaySettings,
   NetworkSettings,
 } from './settings.ts';
+export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';
+export type { DerivedObjectDeclaration, DerivedObjectId, Lease, PinnedDerivation, PinnedDerivationOptions, SettingsSection } from './derived.ts';

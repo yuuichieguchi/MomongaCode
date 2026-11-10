@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS, killPidsForCleanup } from '@momonga/testkit';
 import { createTransport, eventually, makeDir, onCleanup, pidAlive, rawConfig, trackPid } from './raw-transport.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const control = vi.hoisted(() => ({
   failPidWriteUnder: undefined as string | undefined,
   reapFailure: undefined as Error | undefined,
@@ -33,8 +35,6 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const markerSetup = () => {
   const dir = path.join(makeDir(), 'markers');
   fs.mkdirSync(dir, { mode: 0o700 });
@@ -42,7 +42,7 @@ const markerSetup = () => {
 };
 
 describe('MCP marker failure handling', () => {
-  it('keeps the marker when the pid write fails after spawn, and close still sweeps a setsid grandchild', PROCESS_TIMEOUT, async () => {
+  it('keeps the marker when the pid write fails after spawn, and close still sweeps a setsid grandchild', async () => {
     const { dir, markers } = markerSetup();
     const readyFile = path.join(makeDir(), 'setsid.pid');
     onCleanup(() => {
@@ -109,7 +109,7 @@ describe('MCP marker failure handling', () => {
     return { outcome, terminateFailure, sweepFailure, terminateCalls: () => terminateCalls };
   };
 
-  it('when terminate fails and the marker sweep fails too, close rejects with an AggregateError holding both, terminate first', PROCESS_TIMEOUT, async () => {
+  it('when terminate fails and the marker sweep fails too, close rejects with an AggregateError holding both, terminate first', async () => {
     const { outcome, terminateFailure, sweepFailure, terminateCalls } = await failingClose({ terminateFails: true, sweepFails: true });
 
     expect(outcome).toBeInstanceOf(AggregateError);
@@ -120,14 +120,14 @@ describe('MCP marker failure handling', () => {
     expect(control.reapCalls).toBe(1);
   });
 
-  it('when only terminate fails, close rethrows the terminate error as is after the sweep ran', PROCESS_TIMEOUT, async () => {
+  it('when only terminate fails, close rethrows the terminate error as is after the sweep ran', async () => {
     const { outcome, terminateFailure } = await failingClose({ terminateFails: true, sweepFails: false });
 
     expect(outcome).toBe(terminateFailure);
     expect(control.reapCalls).toBe(1);
   });
 
-  it('when only the marker sweep fails, close rethrows the sweep error as is', PROCESS_TIMEOUT, async () => {
+  it('when only the marker sweep fails, close rethrows the sweep error as is', async () => {
     const { outcome, sweepFailure } = await failingClose({ terminateFails: false, sweepFails: true });
 
     expect(outcome).toBe(sweepFailure);

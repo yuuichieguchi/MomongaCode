@@ -74,14 +74,14 @@ export type RunAppDeps = {
   version: string;
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
-  sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
-  health: { pid: number; startedAt: string; sandbox: SandboxKind };
+  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
@@ -170,7 +170,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
   };
 
-  const health: Handler = () =>
+  const health: Handler = async (context) =>
   json({
     status: 'ok',
     version: deps.version,
@@ -178,7 +178,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     pid: deps.health.pid,
     startedAt: deps.health.startedAt,
     state: deps.isDraining() ? 'draining' : 'running',
-    sandbox: deps.health.sandbox,
+    sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');
@@ -192,18 +192,18 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const settingsThrough = async (load: (cwd: string) => Promise<SessionCreateSettings>, cwd: string): Promise<SessionCreateSettings> => {
+  const settingsThrough = async (load: () => Promise<SessionCreateSettings>): Promise<SessionCreateSettings> => {
     try {
-      return await load(cwd);
+      return await load();
     } catch (error) {
       if (error instanceof ConfigError) throw configError(error.message);
       throw error;
     }
   };
 
-  const sessionSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionCreateSettings, cwd);
+  const sessionSettingsOf = (cwd: string, signal: AbortSignal): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionCreateSettings(cwd, signal));
 
-  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionReadSettings, cwd);
+  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(() => deps.sessionReadSettings(cwd));
 
   const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
     const view = toSessionView(store, session);
@@ -226,7 +226,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const aliases = await gatewayAliases();
     if (aliases.length === 0) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
     if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
-    const settings = await sessionSettingsOf(cwd);
+    const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([comparablePath(cwd)]);
     for (const entry of settings.additionalDirectories) {
@@ -345,7 +345,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (drained !== undefined) return drained;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
-    await sessionSettingsOf(session.cwd);
+    await sessionSettingsOf(session.cwd, context.req.raw.signal);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     if (body.images !== undefined && body.images.length > 0) {
       let capabilities: Capabilities;

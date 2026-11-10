@@ -260,10 +260,13 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 
 export type BillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
 
+export type DeclaredServer = { command: string; args: string[]; readyPath: string };
+
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
   billingChanges?: BillingChange[];
   targets?: Record<string, ModelTarget>;
+  servers?: Record<string, DeclaredServer>;
   dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
   headersTimeoutMs?: number;

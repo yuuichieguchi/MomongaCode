@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
@@ -9,6 +9,8 @@ import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constant
 import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const HOLDER_PID = 999_999;
 
@@ -92,7 +94,7 @@ describe('reapOrphans', () => {
     fs.writeFileSync(path.join(dir, 'runtime-04'), '', { mode: 0o600 });
     const ports: MarkerPorts = {
       findHolders: async (_marker, { onUninspectable }) => {
-        onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startedAt: 616161 });
+        onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startedAt: 616161n });
         return [];
       },
       reapMarkerDirectory: async () => ({ reaped: 2, kept: 0 }),
@@ -370,7 +372,7 @@ describe('reapOrphans', () => {
   });
 });
 
-describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('orphan reap at supervisor start', () => {
   it('reap shutdown bound relation', () => {
     expect(ORPHAN_REAP_GRACE_MS + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES));
     expect(ORPHAN_REAP_GRACE_MS).toBe(15_000);
