@@ -73,7 +73,7 @@ describe('reflection jobs', () => {
     const { store, jobs, first } = setup();
     const parentClaim = mustClaim(store, 'w1');
     expect(store.append(parentClaim, [callEvent('c1')]).kind).toBe('ok');
-    const spawned = store.createChildRun({ parentRunId: first.id, parentCallId: 'c1', input: 'child task', pins: {}, modelAlias: 'fm' });
+    const spawned = store.createChildRun({ parentRunId: first.id, parentCallId: 'c1', input: 'child task', pins: {}, model: 'fm' });
     if (spawned.kind !== 'created') throw new Error(`expected a child run, got ${spawned.kind}`);
     const childClaim = mustClaim(store, 'w2');
     expect(childClaim.runId).toBe(spawned.run.id);

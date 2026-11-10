@@ -60,7 +60,7 @@ describe('the run inbox migration', () => {
          VALUES ('old', '/work/old', '{}', 'manual', 'fm', ?, 0, '[]', '{}')`,
       ).run(START_MS);
       const before = db.prepare('SELECT * FROM sessions').all();
-      migrate(db, MIGRATIONS);
+      migrate(db, MIGRATIONS.filter((migration) => migration.version <= inboxMigration().version));
       expect(db.prepare('SELECT * FROM sessions').all()).toEqual(before);
       const columns = db.prepare("SELECT name FROM pragma_table_info('run_inbox') ORDER BY cid").all().map((row) => String(row['name']));
       expect(columns).toEqual(['id', 'session_id', 'delivery', 'text', 'attachments', 'seq', 'state', 'created_at', 'settled_at']);

@@ -48,8 +48,8 @@ const editText = async (h: Watched, text: string): Promise<void> => {
 const changedCount = (h: Harness): number => h.log.withMsg('settings.changed').length;
 
 const appliedModel = (h: Harness): unknown => {
-  const record = JSON.parse(fs.readFileSync(firstGeneration(h.paths).settingsApplied, 'utf8')) as { settings?: { models?: { targets?: Record<string, { model?: unknown }> } } };
-  return Object.values(record.settings?.models?.targets ?? {})[0]?.model;
+  const record = JSON.parse(fs.readFileSync(firstGeneration(h.paths).settingsApplied, 'utf8')) as { settings?: { models?: { connections?: { models?: { id?: unknown }[] }[] } } };
+  return record.settings?.models?.connections?.[0]?.models?.[0]?.id;
 };
 
 describe('supervisor-level settings evaluation', () => {

@@ -16,7 +16,7 @@ export type AdoptedGuideline = { version: number; text: string };
 export type ImproveInput = {
   seed: number;
   bootstrapSeed: number;
-  alias: string;
+  analysisModel: string;
   tokenCap: number;
   current: AdoptedGuideline | undefined;
   recordChars?: number;
@@ -52,7 +52,7 @@ export type CandidateDerivation = { baselineTokens: number; analysisTokens: numb
 export type ImproveOutcome = {
   status: ImproveStatus;
   model: ContextModel;
-  alias: string;
+  analysisModel: string;
   seed: number;
   candidateCount: number;
   tokenCap: number;
@@ -97,7 +97,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   const outcome = (status: ImproveStatus, extra: Pick<ImproveOutcome, 'winner' | 'reason'> = {}): ImproveOutcome => ({
     status,
     model,
-    alias: input.alias,
+    analysisModel: input.analysisModel,
     seed: input.seed,
     candidateCount: new Set(candidates.flatMap((candidate) => (candidate.text === undefined ? [] : [candidate.text]))).size,
     tokenCap: input.tokenCap,
@@ -296,7 +296,7 @@ const verdictLines = (outcome: ImproveOutcome): string[] => {
 export const formatImproveOutcome = (outcome: ImproveOutcome): string => {
   const { baseline } = outcome;
   const lines = [
-    `model: ${outcome.model} (derived from the pinned provenance of the targets that answered the benchmark; the analysis and candidate calls used the alias ${outcome.alias})`,
+    `model: ${outcome.model} (derived from the pinned provenance of the models that answered the benchmark; the analysis and candidate calls used the model ${outcome.analysisModel})`,
     ...(outcome.model === 'fake' ? ['a fake model proves only that the machinery works, so no candidate can pass the gate'] : []),
     `seed ${outcome.seed}, token cap ${outcome.tokenCap}, K=${outcome.candidateCount} distinct candidates${outcome.derivation === undefined ? '' : ` (the cap affords ${outcome.derivation.affordable}: (${outcome.tokenCap} - ${outcome.derivation.baselineTokens} baseline - ${outcome.derivation.analysisTokens} analyses) / ${outcome.derivation.candidateRunTokens} per candidate run)`}`,
     `baseline: ${outcome.current === undefined ? 'no guideline in force' : `guideline version ${outcome.current.version}`}, contrastiveFailures ${baseline.contrastiveFailures} of ${baseline.compactedScenarios} scenarios, ${baseline.tokens} benchmark tokens`,

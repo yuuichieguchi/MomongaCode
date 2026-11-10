@@ -11,6 +11,7 @@ import { TOOL_OFFERED, bodyWatchedStore } from './body-watched-store.ts';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
+import { fakeViewsOf } from './fake-gateway.ts';
 
 const LOADER = 'LoadTools';
 const WORK_TOOLS = ['Echo', 'Counter', 'Write'];
@@ -120,7 +121,7 @@ describe('the tool usage window reads one offered-names record per run (person i
         home: env.home,
         fileSystem: createNodeSkillFileSystem(),
         settings: { trusted: () => env.settings.trustedValue },
-        runs: createChildRuns({ store: env.store, modelAliases: async () => ['fm'] }),
+        runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
       });
     const rootWorker = env.worker('root', { agents: agents(), toolList: toolsOf(env, ['Echo']) });
     const childWorker = env.worker('child', { agents: agents(), toolList: toolsOf(env, ['Echo', 'Counter']) });

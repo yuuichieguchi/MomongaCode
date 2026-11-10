@@ -207,7 +207,12 @@ const AVAILABLE: Capabilities = {
   source: 'declared',
 };
 
-type Entry = { id: string; capabilities: Record<string, unknown>; targetCapabilities: Record<string, Record<string, unknown>> };
+type Entry = { id: string; capabilities: Record<string, unknown>; chain: Array<{ model: string; capabilities: Record<string, unknown> }> };
+
+const MEASURED = 'p/model-m';
+const MIXED = 'p/model-b';
+
+const memberOf = (entry: Entry, model: string): Record<string, unknown> | undefined => entry.chain.find((member) => member.model === model)?.capabilities;
 
 const UNAVAILABLE = { toolCalling: { state: 'unavailable', status: 503, type: 'server_error', code: 'target_probe_failed', message: FAILED_MESSAGE }, source: 'unprobed' };
 const LISTED_PROBING = { toolCalling: PROBING, source: 'unprobed' };
@@ -227,8 +232,8 @@ describe('the models listing of a model whose measurement failed (design-screens
     };
     const { client } = await startGateway({
       credentials: [KEY_VALUE],
-      adapters: { M: measured, B: createScriptedAdapter({ calls: [], capabilities: AVAILABLE }) },
-      config: { aliases: { m: ['M'], mixed: ['B', 'M'] }, targets: { M: { model: 'model-M' }, B: { model: 'model-B' } } },
+      adapters: { [MEASURED]: measured, [MIXED]: createScriptedAdapter({ calls: [], capabilities: AVAILABLE }) },
+      config: { targets: { [MEASURED]: {}, [MIXED]: {} }, chains: { [MIXED]: [MIXED, MEASURED] } },
       clock,
     });
     const listed = async (id: string): Promise<Entry> => {
@@ -239,30 +244,30 @@ describe('the models listing of a model whose measurement failed (design-screens
       return found;
     };
 
-    expect((await listed('m')).capabilities).toEqual(LISTED_PROBING);
+    expect((await listed(MEASURED)).capabilities).toEqual(LISTED_PROBING);
 
     state.pending[0]?.reject(new Error(CAUSE));
     await until(() => events.includes('failed'), 'the failure is reported');
-    const failed = await listed('m');
+    const failed = await listed(MEASURED);
     expect(failed.capabilities).toEqual(UNAVAILABLE);
-    expect(failed.targetCapabilities['M']).toEqual(UNAVAILABLE);
-    const mixed = await listed('mixed');
-    expect(mixed.capabilities).toEqual(UNAVAILABLE);
-    expect(mixed.targetCapabilities['B']?.['contextWindow']).toBe(8192);
+    expect(memberOf(failed, MEASURED)).toEqual(UNAVAILABLE);
+    const mixed = await listed(MIXED);
+    expect(memberOf(mixed, MEASURED)).toEqual(UNAVAILABLE);
+    expect(memberOf(mixed, MIXED)?.['contextWindow']).toBe(8192);
 
     clock.advance(45_000);
-    expect((await listed('m')).capabilities).toEqual(UNAVAILABLE);
+    expect((await listed(MEASURED)).capabilities).toEqual(UNAVAILABLE);
     expect(state.measures).toBe(1);
 
     clock.advance(75_000);
-    expect((await listed('m')).capabilities).toEqual(LISTED_PROBING);
+    expect((await listed(MEASURED)).capabilities).toEqual(LISTED_PROBING);
     const retried = state.pending.length;
     expect(state.measures).toBe(retried);
     expect(retried).toBeGreaterThan(1);
 
     state.pending[retried - 1]?.resolve({ brightness: 3 });
     await until(() => state.saved.length === 1, 'the retry is saved');
-    const ready = await listed('m');
+    const ready = await listed(MEASURED);
     expect(ready.capabilities['contextWindow']).toBe(8192);
     expect(ready.capabilities['toolCalling']).toBe('native');
   });

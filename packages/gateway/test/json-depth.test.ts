@@ -22,11 +22,11 @@ const thrownBy = (run: () => unknown): Error => {
 };
 
 describe('gateway request bodies and the one JSON depth bound', () => {
-  const bodyText = (depth: number, model = '"fast"'): string => `{"model":${model},"extra":${nestedArraysText(depth - 1)}}`;
+  const bodyText = (depth: number, model = '"scripted/scripted-primary"'): string => `{"model":${model},"extra":${nestedArraysText(depth - 1)}}`;
 
   it(`answers 400 naming the depth for a body nested ${MAX_JSON_DEPTH + 1} deep`, async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', bodyText(MAX_JSON_DEPTH + 1)));
     expect(response.status).toBe(400);
     expect(response.body.error.type).toBe('invalid_request');
@@ -37,7 +37,7 @@ describe('gateway request bodies and the one JSON depth bound', () => {
 
   it(`passes a body nested exactly ${MAX_JSON_DEPTH} deep on to schema validation`, async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', bodyText(MAX_JSON_DEPTH, '1')));
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('invalid_body');

@@ -5,7 +5,7 @@ import { WILSON_Z_95, proportionOf } from '@momonga/eval';
 import type { EvalReport } from '@momonga/eval';
 
 type AutoGateKey = { classifier: string; codeDigest: string; datasetDigest: string };
-type RecordMeta = { key: AutoGateKey; agentAlias: string; recordedAt: string; version: string };
+type RecordMeta = { key: AutoGateKey; agentModel: string; recordedAt: string; version: string };
 
 const recordOf = (report: EvalReport, meta: RecordMeta): Record<string, unknown> | undefined => {
   const write = (evaluation as unknown as { autoGateRecordOf?: (report: EvalReport, meta: RecordMeta) => Record<string, unknown> | undefined }).autoGateRecordOf;
@@ -15,7 +15,7 @@ const recordOf = (report: EvalReport, meta: RecordMeta): Record<string, unknown>
 
 const META: RecordMeta = {
   key: { classifier: 'classifier-identity', codeDigest: 'classifier-code-digest', datasetDigest: 'auto-mode-dataset-digest' },
-  agentAlias: 'fm',
+  agentModel: 'apple/fm',
   recordedAt: '2026-11-06T00:00:00.000Z',
   version: '0.0.0-test',
 };
@@ -50,7 +50,7 @@ describe('the auto-fit record written by auto-mode check', () => {
       falseBlock: { successes: 0, trials: 36 },
       runs: 148,
       unobserved: 37,
-      agentAlias: 'fm',
+      agentModel: 'apple/fm',
       recordedAt: '2026-11-06T00:00:00.000Z',
       version: '0.0.0-test',
     });
@@ -65,7 +65,7 @@ describe('the auto-fit record written by auto-mode check', () => {
     ['a case below its minimum', { meets: false }, { cases: [{ id: 'write-credential-outside-workspace', meetsMinimum: false }, { id: 'run-tests', meetsMinimum: true }] }],
   ])('writes a record that the pass criterion rejects for a report with %s', (_label, overrides, expected) => {
     const record = recordOf(report(overrides), META);
-    expect(record).toMatchObject({ key: META.key, runs: 148, agentAlias: 'fm', ...expected });
+    expect(record).toMatchObject({ key: META.key, runs: 148, agentModel: 'apple/fm', ...expected });
     const gate = config as unknown as { autoGatePasses?: (record: unknown) => boolean };
     expect(gate.autoGatePasses?.(record)).toBe(false);
   });

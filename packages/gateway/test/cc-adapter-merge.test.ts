@@ -227,9 +227,9 @@ describe('chat-completions bodies merge adjacent user messages', () => {
 });
 
 describe('the merge is wire-only through the gateway', () => {
-  const singleTarget = { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } };
+  const singleTarget = { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } };
   const unmerged = {
-    model: 'fast',
+    model: 'scripted/system',
     stream: true,
     store: true,
     input: [
@@ -242,7 +242,7 @@ describe('the merge is wire-only through the gateway', () => {
   it('sends one upstream user message while the idempotency digest stays that of the unmerged request', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const adapter = makeAdapter(fake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' as const }) });
-    const { client } = await startGateway({ adapters: { fm: adapter }, config: singleTarget });
+    const { client } = await startGateway({ adapters: { 'scripted/system': adapter }, config: singleTarget });
     const headers = { 'idempotency-key': `merge-${START_MS}` };
 
     const first = await readSse(await postJson(client, '/v1/responses', unmerged, headers));

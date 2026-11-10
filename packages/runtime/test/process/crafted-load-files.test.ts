@@ -39,7 +39,7 @@ const sessionAt = (cwd: string): Session => ({
   cwd,
   env: {},
   permissionMode: 'manual',
-  modelAlias: 'model',
+  model: 'model',
   bypassAllowed: false,
   additionalDirectories: [],
   mcpServers: {},
@@ -80,7 +80,7 @@ const goodSkill = (name: string): string => `---\nname: ${name}\ndescription: A 
 const goodAgent = (name: string): string => `---\nname: ${name}\ndescription: A good agent\n---\nWork.\n`;
 
 describe('the runtime skill load path with crafted files', () => {
-  it('skips a SKILL.md whose YAML is an alias bomb, warns about it and still loads its sibling', async () => {
+  it('skips a SKILL.md whose YAML is a model bomb, warns about it and still loads its sibling', async () => {
     const { home, project } = workspace();
     write(path.join(project, '.momonga', 'skills', 'bomb', 'SKILL.md'), `---\nname: bomb\ndescription: Bomb\n${ALIAS_BOMB}\n---\nBody\n`);
     write(path.join(project, '.momonga', 'skills', 'good', 'SKILL.md'), goodSkill('good'));
@@ -138,7 +138,7 @@ describe('skill activation with crafted resources', () => {
 });
 
 describe('the runtime agent load path with crafted files', () => {
-  it('skips an agent file whose YAML is an alias bomb and still loads its sibling', async () => {
+  it('skips an agent file whose YAML is a model bomb and still loads its sibling', async () => {
     const { home, project } = workspace();
     const agents = path.join(project, '.momonga', 'agents');
     write(path.join(agents, 'bomb.md'), `---\nname: bomb\ndescription: Bomb\n${ALIAS_BOMB}\n---\nWork.\n`);

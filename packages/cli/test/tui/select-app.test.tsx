@@ -6,6 +6,7 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import type { Instance } from '../ink-helpers.ts';
 import { choose, quiet, startPlan, submitLine } from '../fake-plan-gateway.tsx';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
+import { SESSION } from '../fake-backend.ts';
 
 const plain = { ctrl: false, alt: false, shift: false };
 const press = (row: number, col = 6): TerminalEvent => ({ type: 'mouse', kind: 'press', button: 'left', col, row, ...plain });
@@ -259,21 +260,21 @@ describe('the decision of an MCP input is the selection component', () => {
 
 describe('a picker is the selection component', () => {
   it('decides at once by a digit and escape goes back', async () => {
-    const { app, backend } = await startPlan({ aliases: ['default', 'qwen-local'] });
+    const { app, backend } = await startPlan({ models: [SESSION.model, 'ollama/qwen3.8:27b'] });
     await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const picker = await untilFrame(app, 'qwen-local · primary');
-    expect(picker).toContain('› 1. default (current) · primary');
+    const picker = await untilFrame(app, 'qwen3.8:27b  ·  metered');
+    expect(picker).toContain('› 1. scripted-model  ·  metered  ·  current');
     expect(picker).toContain('a change applies from the next task');
-    expect(picker).toContain('1-9 or enter to choose · up/down to move · esc: go back');
+    expect(picker).toContain('1-9 or enter to choose · up/down to move · tab: also use at every start · esc: go back');
     app.stdin.write(KEYS.escape);
-    await untilFrame(app, /^(?![\s\S]*qwen-local · primary)[\s\S]*mode: manual/);
+    await untilFrame(app, /^(?![\s\S]*qwen3\.8:27b {2}· {2}metered)[\s\S]*mode: manual/);
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    await untilFrame(app, 'qwen-local · primary');
+    await untilFrame(app, 'qwen3.8:27b  ·  metered');
     app.stdin.write('2');
-    await untilOutput(app, 'qwen-local');
+    await untilOutput(app, 'model: qwen3.8:27b');
     await untilFrame(app, /^(?![\s\S]*esc: go back)[\s\S]*mode: manual/);
     expect(backend.calls.filter((call) => call.startsWith('cancel:'))).toEqual([]);
     app.unmount();
@@ -304,7 +305,7 @@ describe('the sandbox-off dialog is decided only by enter and starts on the safe
 
 describe('the invitation banner is the selection component', () => {
   it('escape hides it this time and remembers nothing', async () => {
-    const { app, backend } = await startPlan({ aliases: ['default'], accounts: [] });
+    const { app, backend } = await startPlan({ accounts: [] });
     const banner = await untilFrame(app, 'Not now');
     expect(banner).toContain('› 1. Continue with ChatGPT');
     expect(banner).toContain('1-9 or enter to choose · up/down to move · esc: go back');
@@ -322,7 +323,7 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/mo', '> /mo');
     const shown = await untilFrame(app, '› /mode');
-    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[alias\] {2}/);
+    expect(shown).toMatch(/› \/mode .*\n {2}\/model \[model\] \[--start\] {2}/);
     app.unmount();
   });
 
@@ -365,7 +366,7 @@ describe('the slash menu is the same rows, inline above the input', () => {
     await untilFrame(app, 'mode: manual');
     await type(app, '/mo', '> /mo');
     await untilFrame(app, '› /mode');
-    expect(terminal.emit(press(screenRowOf(app, '/model [alias]')))).toBe(true);
+    expect(terminal.emit(press(screenRowOf(app, '/model [model]')))).toBe(true);
     await untilFrame(app, /│ > \/model {2}/);
     app.unmount();
   });

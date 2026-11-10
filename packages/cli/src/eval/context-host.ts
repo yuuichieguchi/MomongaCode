@@ -1,12 +1,23 @@
 import path from 'node:path';
-import { TARGET_PROBING_MESSAGE, escapeTerminalLine, isProbingCapabilities, isUnavailableCapabilities, notListedMessage } from '@momonga/protocol';
+import {
+  MANAGED_SERVERS,
+  SERVER_KINDS,
+  TARGET_PROBING_MESSAGE,
+  displayMapOf,
+  escapeTerminalLine,
+  isProbingCapabilities,
+  isUnavailableCapabilities,
+  modelRefErrorOf,
+  notListedMessage,
+  resolveTypedModelRef,
+  typedModelText,
+} from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
-import { probeRecordKeyOf } from '@momonga/config';
-import type { EndpointProbeKey } from '@momonga/config';
-import type { ModelsSettings, OpenResponsesTarget, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
+import { PLAN_PROFILES, planModelsEdit, probeRecordKeyOf, registeredServer } from '@momonga/config';
+import type { ConnectionDraft, EndpointProbeKey, ModelEntry, ModelsOperation, ModelsOperations, ModelsSettings, OpenResponsesTarget, ResolvedModel, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError, claimPathOf, fixedSocket, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, isRecord, momongaLayout, socketPathLimit, SecretEmptyError, SecretUnavailableError, SocketPathUnsupportedError } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
@@ -73,10 +84,21 @@ export const assertSocketsFit = async (paths: MomongaPaths, refuseUnfitSockets: 
   }
 };
 
-const membersOf = (models: ResolvedModels, alias: string): string[] => {
-  const value = models.aliases[alias];
-  if (value === undefined) throw new ContextHostError(`the alias ${alias} is not defined in models.aliases; --alias names one of ${Object.keys(models.aliases).join(', ')}`);
-  return [value].flat();
+export const pinnedModelOf = (user: UserModels, text: string): string => {
+  const { views } = user.resolved;
+  const resolution = resolveTypedModelRef(typedModelText(text), views);
+  if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, views);
+  return resolution.model.canon;
+};
+
+const chainMembersOf = (models: ResolvedModels, model: string): ResolvedModel[] => {
+  const chain = models.chains.get(model);
+  if (chain === undefined) throw new ContextHostError(modelRefErrorOf(model, { kind: 'not_found' }, models.views).message);
+  return chain.map((canon) => {
+    const member = models.models.get(canon);
+    if (member === undefined) throw new TypeError(`the chain of ${model} names ${canon}, which the resolved settings do not hold`);
+    return member;
+  });
 };
 
 export type SecretCredential = { envName: string; secretName: string };
@@ -85,6 +107,7 @@ export type EndpointProbe = EndpointProbeKey;
 
 export type LiveSettings = {
   endpointProbes: EndpointProbe[];
+  operations: ModelsOperations;
   models: ModelsSettings;
   sandbox?: SandboxSetting;
   credentials: SecretCredential[];
@@ -93,7 +116,7 @@ export type LiveSettings = {
 
 const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
-export type ManagedRecordSource = { target: string; server: string; binary: string; model: string | undefined };
+export type ManagedRecordSource = { model: string; server: string; binary: string; upstream: string };
 
 export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | UnavailableCapabilities;
 
@@ -103,7 +126,7 @@ export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal
   const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
   try {
     const entries = await gateway.models(signal);
-    return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => Object.entries(entry.targetCapabilities))) };
+    return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => entry.chain.map((member) => [member.model, member.capabilities]))) };
   } catch (error) {
     signal?.throwIfAborted();
     throw error;
@@ -112,17 +135,15 @@ export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal
   }
 };
 
-export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): boolean =>
-  aliases.some((alias) => membersOf(user.resolved, alias).some((name) => {
-    const target = user.resolved.targets[name];
-    return target !== undefined && 'plan' in target;
-  }));
+export const needsPlanRelay = (user: UserModels, models: readonly string[]): boolean => models.some((model) => chainMembersOf(user.resolved, model).some((member) => 'plan' in member));
 
 type ImagePairField = 'imageInput' | 'imageTokens';
 
 type ListedField = Exclude<keyof ResolvedPlanTarget['capabilities'] & keyof Capabilities, 'contextWindow' | 'maxOutputTokens' | 'maxConcurrency' | ImagePairField>;
 
-type ImagePair = Pick<OpenResponsesTarget['capabilities'], ImagePairField>;
+type RelayedCapabilities = OpenResponsesTarget['capabilities'];
+
+type ImagePair = Pick<RelayedCapabilities, ImagePairField>;
 
 const LISTED_FIELDS: Record<ListedField | 'imagePair', true> = {
   promptCache: true,
@@ -157,88 +178,120 @@ const putField = <Holder, Field extends keyof Holder>(holder: Holder, field: Fie
   holder[field] = value;
 };
 
-const describedEntryOf = (name: string, relay: PlanRelay): Capabilities => {
-  const entry = Object.hasOwn(relay.listed, name) ? relay.listed[name] : undefined;
-  if (entry === undefined) throw new ContextHostError(`the target ${name} is not in the model list of the running gateway`);
+const describedEntryOf = (display: string, canon: string, relay: PlanRelay): Capabilities => {
+  const entry = Object.hasOwn(relay.listed, canon) ? relay.listed[canon] : undefined;
+  if (entry === undefined) throw new ContextHostError(`the model ${display} is not in the model list of the running gateway`);
   if (isUnavailableCapabilities(entry)) throw new ContextHostError(notListedMessage(entry));
   if (isProbingCapabilities(entry)) throw new ContextHostError(TARGET_PROBING_MESSAGE);
   return entry;
 };
 
-const relayTargetOf = (name: string, resolved: ResolvedPlanTarget, relay: PlanRelay): OpenResponsesTarget => {
-  const entry = describedEntryOf(name, relay);
+const relayedCapabilitiesOf = (display: string, resolved: ResolvedModel & ResolvedPlanTarget, relay: PlanRelay): RelayedCapabilities => {
+  const entry = describedEntryOf(display, resolved.canon, relay);
   const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
-  const capabilities: OpenResponsesTarget['capabilities'] = {
+  const capabilities: RelayedCapabilities = {
     ...core,
     contextWindow: entry.contextWindow,
     maxOutputTokens: entry.maxOutputTokens,
     ...imagePairOf(entry.imageInput === undefined ? { imageInput, imageTokens } : { imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
   };
-  const listed: Partial<Pick<OpenResponsesTarget['capabilities'], ListedField>> = entry;
+  const listed: Partial<Pick<RelayedCapabilities, ListedField>> = entry;
   for (const field of Object.keys(LISTED_FIELDS).filter(isListedField)) {
     if (capabilities[field] !== undefined && listed[field] !== undefined) putField(capabilities, field, listed[field]);
   }
-  return {
-    adapter: 'open-responses',
-    model: resolved.model,
-    provider: resolved.provider,
-    toolCalling: resolved.toolCalling,
-    socketPath: relay.planRelaySocket,
-    billing: resolved.billing,
-    capabilities,
-    maxConcurrency: resolved.maxConcurrency,
-    admissionTimeoutMs: resolved.admissionTimeoutMs,
-  };
+  return capabilities;
 };
 
-export const liveSettingsFor = (user: UserModels, aliases: readonly string[], relay?: PlanRelay): LiveSettings => {
-  const targets: NonNullable<ModelsSettings['targets']> = {};
-  const servers: NonNullable<ModelsSettings['servers']> = {};
-  const aliasMembers: Record<string, string[]> = {};
+type Json = Record<string, unknown>;
+
+const declaredCapabilitiesOf = (member: ResolvedModel): Json | undefined => {
+  if (member.capabilities === undefined) return undefined;
+  if (!('maxConcurrency' in member.capabilities)) return { ...member.capabilities };
+  const { maxConcurrency: _maxConcurrency, ...declared } = member.capabilities;
+  return declared;
+};
+
+const entryOf = (member: ResolvedModel, capabilities: Json | undefined): Json => ({
+  id: member.ownName,
+  ...(capabilities === undefined ? {} : { capabilities }),
+  ...(member.adapter === 'anthropic' || member.adapter === 'ollama' ? {} : { toolCalling: member.toolCalling }),
+  ...(member.adapter === 'managed' && member.outputBoundField !== undefined ? { outputBoundField: member.outputBoundField } : {}),
+  maxConcurrency: member.maxConcurrency,
+  admissionTimeoutMs: member.admissionTimeoutMs,
+});
+
+const sharedOf = (member: ResolvedModel): Json => ({ provider: member.provider, billing: member.billing, ...(member.answers === undefined ? {} : { answers: member.answers }) });
+
+const declaredProgramOf = (models: ResolvedModels, id: string): ModelsOperation | undefined => {
+  if (MANAGED_SERVERS.some((server) => server.id === id)) return undefined;
+  const description = registeredServer(models.servers, id);
+  if (description === undefined) throw new ContextHostError(`the managed server ${id} is not registered in the user settings, so it cannot be copied into a case`);
+  return { kind: 'declareServer', id, command: description.binary.defaultPath, args: description.launch.argv, readyPath: description.ready.path };
+};
+
+const addOperation = (connection: Json, model: Json): ModelsOperation => ({ kind: 'addModel', choice: { connection: connection as ConnectionDraft, model: model as ModelEntry } });
+
+const BUILT_IN_SERVERS = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
+
+export const liveSettingsFor = (user: UserModels, models: readonly string[], relay?: PlanRelay): LiveSettings => {
+  const { resolved } = user;
+  const displays = displayMapOf(resolved.views);
+  const displayOf = (canon: string): string => displays.get(canon) ?? canon;
+  const operations: ModelsOperation[] = [];
   const credentials: SecretCredential[] = [];
+  const credentialEnv = new Map<string, string>();
   const managedTargets: ManagedRecordSource[] = [];
   const endpointProbes: EndpointProbe[] = [];
+  const declared = new Set<string>();
   const copied = new Set<string>();
-  const copyTarget = (alias: string, name: string): void => {
-    if (copied.has(name)) return;
-    copied.add(name);
-    const resolved = user.resolved.targets[name];
-    if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
-    const declared = user.declared.targets?.[name];
-    if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
-    if ('plan' in resolved) {
-      if (relay === undefined) throw new ContextHostError(`the target ${name} uses a ${resolved.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
-      targets[name] = relayTargetOf(name, resolved, relay);
-      return;
-    }
-    const recordKey = probeRecordKeyOf(name, resolved);
-    if (resolved.adapter === 'managed') {
-      managedTargets.push({ target: name, server: resolved.server, binary: resolved.binary, model: resolved.model });
-      const declaredServer = user.declared.servers?.[resolved.server];
-      if (declaredServer !== undefined) servers[resolved.server] = declaredServer;
-      targets[name] = declared;
-      return;
-    }
-    if (recordKey?.kind === 'endpoint') {
-      endpointProbes.push(recordKey.key);
-    }
-    if ('apiKeySecret' in resolved && resolved.apiKeySecret !== undefined && 'apiKeySecret' in declared) {
-      const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
-      const { apiKeySecret: _secret, ...rest } = declared;
-      credentials.push({ envName, secretName: resolved.apiKeySecret });
-      targets[name] = { ...rest, apiKeyEnv: envName };
-      return;
-    }
-    targets[name] = declared;
+  const keyOf = (member: ResolvedModel): Json => {
+    if (!('apiKeySecret' in member) || member.apiKeySecret === undefined) return 'apiKeyEnv' in member && member.apiKeyEnv !== undefined ? { apiKeyEnv: member.apiKeyEnv } : {};
+    const known = credentialEnv.get(member.provider);
+    if (known !== undefined) return { apiKeyEnv: known };
+    const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
+    credentials.push({ envName, secretName: member.apiKeySecret });
+    credentialEnv.set(member.provider, envName);
+    return { apiKeyEnv: envName };
   };
-  for (const alias of aliases) {
-    if (Object.hasOwn(aliasMembers, alias)) continue;
-    const members = membersOf(user.resolved, alias);
-    aliasMembers[alias] = members;
-    for (const name of members) copyTarget(alias, name);
+  const copyMember = (member: ResolvedModel): void => {
+    if (copied.has(member.canon)) return;
+    copied.add(member.canon);
+    if ('plan' in member) {
+      if (relay === undefined) throw new ContextHostError(`the model ${displayOf(member.canon)} uses a ${member.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
+      operations.push(addOperation({ adapter: 'open-responses', socketPath: relay.planRelaySocket, ...sharedOf(member) }, entryOf(member, relayedCapabilitiesOf(displayOf(member.canon), member, relay))));
+      return;
+    }
+    if (member.adapter === 'managed') {
+      managedTargets.push({ model: member.canon, server: member.server, binary: member.binary, upstream: member.model });
+      const program = declared.has(member.server) ? undefined : declaredProgramOf(resolved, member.server);
+      declared.add(member.server);
+      if (program !== undefined) operations.push(program);
+      operations.push(addOperation({ adapter: 'managed', server: member.server, binary: member.binary, readyTimeoutMs: member.readyTimeoutMs, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
+      return;
+    }
+    const recordKey = probeRecordKeyOf(member.canon, member);
+    if (recordKey?.kind === 'endpoint') endpointProbes.push(recordKey.key);
+    const address = member.socketPath === undefined ? { baseUrl: member.baseUrl } : { socketPath: member.socketPath };
+    const apiVersion = member.adapter === 'anthropic' ? { apiVersion: member.apiVersion } : {};
+    operations.push(addOperation({ adapter: member.adapter, ...address, ...keyOf(member), ...apiVersion, ...sharedOf(member) }, entryOf(member, declaredCapabilitiesOf(member))));
+  };
+  for (const model of models) for (const member of chainMembersOf(resolved, model)) copyMember(member);
+  const [start] = models;
+  if (start !== undefined) operations.push({ kind: 'setStart', model: start });
+  const fallback = resolved.fallback.filter((canon) => copied.has(canon));
+  if (fallback.length > 0) operations.push({ kind: 'setFallback', models: fallback });
+  for (const change of resolved.billingChanges) {
+    if (change.model === undefined || copied.has(change.model)) operations.push({ kind: 'allowBillingChange', ...change });
   }
+  const [first, ...rest] = operations;
+  if (first === undefined) throw new ContextHostError('a case home needs at least one model');
+  const plan = planModelsEdit({}, [first, ...rest], { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS });
+  if ('refused' in plan) throw new ContextHostError(`the settings of a case home could not be built: ${plan.refused.message}`);
+  const written = plan.document['models'];
+  if (!isRecord(written)) throw new TypeError('the planned settings of a case home hold no models');
   return {
-    models: { aliases: aliasMembers, targets, ...(Object.keys(servers).length === 0 ? {} : { servers }) },
+    operations: [first, ...rest],
+    models: written,
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
     managedTargets,
@@ -253,7 +306,7 @@ const storeItWith = (secretName: string, failure: unknown): string =>
 
 const unreadCredential = (secretName: string, failure: unknown): ContextHostError =>
   new ContextHostError(
-    `the key of a target is the secret ${secretName} in the platform secret store, and it could not be read: ${failure instanceof Error ? failure.message : String(failure)}${storeItWith(secretName, failure)}`,
+    `the key of a model server is the secret ${secretName} in the platform secret store, and it could not be read: ${failure instanceof Error ? failure.message : String(failure)}${storeItWith(secretName, failure)}`,
     { cause: failure },
   );
 
@@ -517,7 +570,7 @@ export class ContextInterrupted extends Error {
 export type ContextLiveInput = {
   dataset: ContextDataset;
   seed: number;
-  alias: string;
+  model: string;
   models: UserModels;
   limits: { maxTotalTokens: number; defaultTimeoutMs: number };
   reflection: ReflectionBounds;
@@ -534,8 +587,8 @@ export type ContextLiveInput = {
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt.throwIfAborted();
-  const relay = needsPlanRelay(input.models, [input.alias]) && input.planRelaySocket !== undefined ? await readPlanRelay(await input.planRelaySocket(), interrupt) : undefined;
-  const settings = liveSettingsFor(input.models, [input.alias], relay);
+  const relay = needsPlanRelay(input.models, [input.model]) && input.planRelaySocket !== undefined ? await readPlanRelay(await input.planRelaySocket(), interrupt) : undefined;
+  const settings = liveSettingsFor(input.models, [input.model], relay);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);
@@ -556,7 +609,7 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
     policy: input.policy ?? {},
     codeDigest: input.codeDigest,
     openCase: hosts.openCase,
-    modelAlias: input.alias,
+    model: input.model,
     bounds,
     deadline: (caseId, signal) => {
       const milliseconds = bounds.caseDeadlineMs[caseId];

@@ -25,24 +25,24 @@ const KILN = { command: '/opt/kiln/bin/kiln-server', args: ['{socket}'], readyPa
 const USER_SETTINGS = {
   models: {
     servers: { loom: LOOM, kiln: KILN },
-    targets: {
-      workbench: { adapter: 'managed', server: 'loom', model: 'fake-1' },
-      oven: { adapter: 'managed', server: 'kiln', model: 'fake-2' },
-    },
-    aliases: { default: ['workbench'], baking: ['oven'] },
+    connections: [
+      { adapter: 'managed', server: 'loom', models: [{ id: 'fake-1' }] },
+      { adapter: 'managed', server: 'kiln', models: [{ id: 'fake-2' }] },
+    ],
   },
 };
 
-describe('the eval scratch home carries the declaration of each server a copied target names (design-managed-servers 19.12; R-S19-25)', () => {
-  it('copies the loom declaration for the default alias, and not the kiln one no copied target names', () => {
-    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['default']);
-    expect((live.models as Record<string, unknown>)['servers']).toEqual({ loom: LOOM });
-    expect(live.models.targets).toEqual({ workbench: { adapter: 'managed', server: 'loom', model: 'fake-1' } });
+describe('the eval scratch home carries the declaration of each server a copied model is served by (design-managed-servers 19.12; R-S19-25)', () => {
+  it('copies the loom declaration for the model of loom, and not the kiln one no copied model is served by', () => {
+    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['loom/fake-1']);
+    expect(live.models.servers).toEqual({ loom: LOOM });
+    expect(live.operations.map((operation) => operation.kind)).toEqual(['declareServer', 'addModel', 'setStart']);
+    expect(live.models.connections).toEqual([expect.objectContaining({ adapter: 'managed', server: 'loom', models: [expect.objectContaining({ id: 'fake-1' })] })]);
   });
 
-  it('loads the copied declared target in a scratch home written from the copy', () => {
-    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['default']);
+  it('loads the copied model of a declared server in a scratch home written from the copy', () => {
+    const live = liveSettingsFor(loadUserModels({ home: scratchHome(USER_SETTINGS) }), ['loom/fake-1']);
     const scratch = loadUserModels({ home: scratchHome({ models: live.models }) });
-    expect(scratch.resolved.targets['workbench']).toMatchObject({ adapter: 'managed', server: 'loom', binary: LOOM.command, model: 'fake-1' });
+    expect(scratch.resolved.models.get('loom/fake-1')).toMatchObject({ adapter: 'managed', server: 'loom', binary: LOOM.command, model: 'fake-1' });
   });
 });

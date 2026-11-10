@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createFakeTimers, waitFor } from '@momonga/testkit';
 import { dispositionOf } from '../../src/worker/gateway-policy.ts';
 import {
+  LISTED_PROVIDER,
   START_MS,
   TRACEPARENT,
   USER_AGENT,
@@ -13,6 +14,10 @@ import {
   deltaEvent,
   expectGatewayError,
   fakeClock,
+  listedEntry,
+  listedMember,
+  listedView,
+  listingBody,
   makeClient,
   openSse,
   registerCleanup,
@@ -22,6 +27,9 @@ import {
   startRawHttpFake,
   streamBody,
 } from './fixtures.ts';
+
+const MAIN = 'fake/main';
+const SMALL = 'fake/small';
 
 const COUNT_REQUEST = { model: 'default', input: [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text: 'hi' }] }] };
 const COMPACT_REQUEST = { model: 'default', input: COUNT_REQUEST.input };
@@ -96,12 +104,7 @@ describe('gateway client request headers', () => {
     fake.respond((request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       if (request.url === '/v1/momonga/models') {
-        response.end(
-          JSON.stringify({
-            object: 'list',
-            data: [{ id: 'default', object: 'model', targets: ['primary'], capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } }, targetCounters: { primary: 'c'.repeat(64) } }],
-          }),
-        );
+        response.end(JSON.stringify(listingBody([listedEntry(MAIN, { contextWindow: 8192 }, [listedMember(MAIN, { contextWindow: 8192 }, 'c'.repeat(64))])])));
       } else {
         response.end(JSON.stringify({ version: '1.0.0', apiVersion: 1, pid: 1, startedAt: 'x', state: 'running' }));
       }
@@ -110,7 +113,11 @@ describe('gateway client request headers', () => {
     const client = makeClient(fake.socketPath, clock);
 
     expect(await client.models()).toEqual([
-      { id: 'default', targets: ['primary'], capabilities: { contextWindow: 8192 }, targetCapabilities: { primary: { contextWindow: 8192 } }, targetCounters: { primary: 'c'.repeat(64) } },
+      {
+        ...listedView(MAIN),
+        capabilities: { contextWindow: 8192 },
+        chain: [{ model: MAIN, counter: 'c'.repeat(64), adapter: 'chat-completions', answers: 'model', upstream: MAIN, capabilities: { contextWindow: 8192 } }],
+      },
     ]);
     expect(await client.health()).toMatchObject({ version: '1.0.0', state: 'running' });
 
@@ -124,65 +131,77 @@ describe('gateway client request headers', () => {
     }
   });
 
-  it('answers the capabilities of a named target of the alias, and refuses a target the gateway does not list for it', async () => {
+  it('answers the capabilities of a named member of the chain of the model, and refuses a member the gateway does not list for it', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(
-        JSON.stringify({
-          object: 'list',
-          data: [
-            {
-              id: 'default',
-              object: 'model',
-              targets: ['primary', 'small'],
-              capabilities: { contextWindow: 8192 },
-              targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
-              targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
-            },
-          ],
-        }),
+        JSON.stringify(listingBody([listedEntry(MAIN, { contextWindow: 8192 }, [listedMember(MAIN, { contextWindow: 8192 }, '1'.repeat(64)), listedMember(SMALL, { contextWindow: 2000 }, '2'.repeat(64))])])),
       );
     });
     const client = makeClient(fake.socketPath, fakeClock());
     const signal = new AbortController().signal;
 
-    expect(await client.capabilities('default', { signal })).toEqual({ contextWindow: 8192 });
-    expect(await client.capabilities('default', { signal, target: 'small' })).toEqual({ contextWindow: 2000 });
-    await expect(client.capabilities('default', { signal, target: 'elsewhere' })).rejects.toThrow(/elsewhere/);
+    expect(await client.capabilities(MAIN, { signal })).toEqual({ contextWindow: 8192 });
+    expect(await client.capabilities(MAIN, { signal, target: SMALL })).toEqual({ contextWindow: 2000 });
+    await expect(client.capabilities(MAIN, { signal, target: 'elsewhere' })).rejects.toThrow(/elsewhere/);
   });
 
-  it('keeps the ordered targets and the counter of each target of an alias', async () => {
+  it('keeps the ordered chain of a model with the counter of each member, the pins of each member, and the roles and the start of the listing', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
       response.writeHead(200, { 'content-type': 'application/json' });
       response.end(
-        JSON.stringify({
-          object: 'list',
-          data: [
-            {
-              id: 'default',
-              object: 'model',
-              targets: ['small', 'primary'],
-              capabilities: { contextWindow: 2000 },
-              targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
-              targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
-            },
-          ],
-        }),
+        JSON.stringify(
+          listingBody(
+            [
+              listedEntry(SMALL, { contextWindow: 2000 }, [listedMember(SMALL, { contextWindow: 2000 }, '2'.repeat(64)), listedMember(MAIN, { contextWindow: 8192 }, '1'.repeat(64))]),
+              listedEntry(MAIN, { contextWindow: 8192 }),
+            ],
+            { start: SMALL, roles: { compaction: MAIN } },
+          ),
+        ),
       );
     });
     const client = makeClient(fake.socketPath, fakeClock());
     const signal = new AbortController().signal;
 
-    expect(await client.model('default', { signal })).toEqual({
-      id: 'default',
-      targets: ['small', 'primary'],
+    expect(await client.model(SMALL, { signal })).toEqual({
+      id: SMALL,
       capabilities: { contextWindow: 2000 },
-      targetCapabilities: { primary: { contextWindow: 8192 }, small: { contextWindow: 2000 } },
-      targetCounters: { primary: '1'.repeat(64), small: '2'.repeat(64) },
+      chain: [
+        { model: SMALL, counter: '2'.repeat(64), capabilities: { contextWindow: 2000 } },
+        { model: MAIN, counter: '1'.repeat(64), capabilities: { contextWindow: 8192 } },
+      ],
+      targets: {
+        [SMALL]: { adapter: 'chat-completions', model: SMALL, answers: 'model' },
+        [MAIN]: { adapter: 'chat-completions', model: MAIN, answers: 'model' },
+      },
+      roles: { compaction: MAIN },
+      views: [
+        { canon: SMALL, provider: LISTED_PROVIDER, ownName: SMALL },
+        { canon: MAIN, provider: LISTED_PROVIDER, ownName: MAIN },
+      ],
     });
+    const listing = await client.listing({ signal });
+    expect(listing.start).toBe(SMALL);
+    expect(listing.roles).toEqual({ compaction: MAIN });
     await expect(client.model('elsewhere', { signal })).rejects.toThrow(/elsewhere/);
+  });
+
+  it('leaves a fallback member that is being measured or is unavailable out of the chain of a model, and keeps its pins', async () => {
+    const probing = { toolCalling: { state: 'probing', message: 'measuring this model (once per model and OS build)', retryAfterSeconds: 120 }, source: 'unprobed' };
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(listingBody([listedEntry(MAIN, { contextWindow: 8192 }, [listedMember(MAIN, { contextWindow: 8192 }), listedMember(SMALL, probing, '2'.repeat(64))])])));
+    });
+    const client = makeClient(fake.socketPath, fakeClock());
+
+    const model = await client.model(MAIN, { signal: new AbortController().signal });
+
+    expect(model.chain.map((member) => member.model)).toEqual([MAIN]);
+    expect(Object.keys(model.targets)).toEqual([MAIN, SMALL]);
   });
 
   it('sends cancel as a body-less POST with the key and returns whether the gateway cancelled', async () => {

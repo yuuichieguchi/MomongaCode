@@ -158,7 +158,7 @@ describe('the report records the resolved policy (design core-on 3.2, test 8)', 
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/6 .*retired.*momonga-eval-context-report\/7/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(
-      /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
+      /momonga eval context <dataset> --model <model> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --model <model> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
     );
   });
 });
@@ -174,7 +174,7 @@ describe('the transcript format (design core-on 3.2)', () => {
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/momonga-transcript\/7.*momonga-transcript\/8/);
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => decodeTranscript(old, 't.jsonl')).toThrow(
-      /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>/,
+      /momonga eval context <dataset> --model <model> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --model <model> --report <candidate report>/,
     );
   });
 });
@@ -204,7 +204,7 @@ const liveHarness = () => {
     policy,
     codeDigest: RECORDED_CODE_DIGEST,
     openCase,
-    modelAlias: 'gamma',
+    model: 'gamma',
     deadline: (_caseId: string, signal: AbortSignal) =>
       new Promise<void>((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
     bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} },

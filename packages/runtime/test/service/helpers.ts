@@ -10,7 +10,7 @@ import type { RolePort, UdsClient } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import { computeFileRules } from '@momonga/policy';
 import * as protocol from '@momonga/protocol';
-import type { PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { ModelViews, PermissionMode, PermissionOption, RunEvent, RunEventPayload } from '@momonga/protocol';
 import * as runtime from '@momonga/runtime';
 import type { EvidenceRun, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -36,8 +36,9 @@ import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
 export const SERVICE_VERSION = '0.0.0-test';
-export const MODEL_ALIAS = 'fm';
-export const OTHER_ALIAS = 'fm-large';
+export const MODEL_ID = 'fm';
+export const OTHER_MODEL_ID = 'fm-large';
+export const FAKE_PROVIDER = 'fake';
 export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
 export const HOUR_MS = 3_600_000;
 export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
@@ -107,8 +108,11 @@ export type FakePorts = {
   settingsByCwd: Map<string, SettingsDefault>;
   settingsCalls: string[];
   settingsFailure: { error?: unknown };
-  aliasesFailure: { error?: unknown };
-  modelAliases: () => Promise<readonly string[]>;
+  listingFailure: { error?: unknown };
+  listed: string[];
+  shown: { views?: ModelViews };
+  start: { model: string | null | undefined };
+  modelListing: () => Promise<{ views: ModelViews; start: string | null }>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
 };
@@ -117,7 +121,10 @@ export const createFakePorts = (): FakePorts => {
   const settingsByCwd = new Map<string, SettingsDefault>();
   const settingsCalls: string[] = [];
   const settingsFailure: { error?: unknown } = {};
-  const aliasesFailure: { error?: unknown } = {};
+  const listingFailure: { error?: unknown } = {};
+  const listed: string[] = [MODEL_ID, OTHER_MODEL_ID];
+  const start: { model: string | null | undefined } = { model: undefined };
+  const shown: { views?: ModelViews } = {};
   const settingsOf = (cwd: string): SessionCreateSettingsResult => {
     const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
     const entry = settingsByCwd.get(real) ?? {};
@@ -135,10 +142,14 @@ export const createFakePorts = (): FakePorts => {
     settingsByCwd,
     settingsCalls,
     settingsFailure,
-    aliasesFailure,
-    modelAliases: async () => {
-      if (aliasesFailure.error !== undefined) throw aliasesFailure.error;
-      return [MODEL_ALIAS, OTHER_ALIAS];
+    listingFailure,
+    listed,
+    shown,
+    start,
+    modelListing: async () => {
+      if (listingFailure.error !== undefined) throw listingFailure.error;
+      const views = shown.views ?? listed.map((model) => ({ canon: model, provider: FAKE_PROVIDER, ownName: model }));
+      return { views, start: start.model === undefined ? (views[0]?.canon ?? null) : start.model };
     },
     sessionCreateSettings: async (cwd) => {
       settingsCalls.push(cwd);
@@ -442,7 +453,7 @@ export type ServiceOverrides = {
   runTrace?: (runId: string) => Promise<unknown>;
   imageInput?: boolean;
   beforeCapabilities?: () => Promise<void>;
-  capabilitiesOf?: (alias: string) => Promise<unknown>;
+  capabilitiesOf?: (model: string) => Promise<unknown>;
   runCost?: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<unknown>;
   onFatal?: boolean;
   sandboxKind?: 'seatbelt' | 'none';
@@ -520,10 +531,10 @@ export const serviceOptions = (
   startedAt: STARTED_AT,
   sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
-  modelAliases: base.ports.modelAliases,
-  modelCapabilities: async (alias: string) => {
+  modelListing: base.ports.modelListing,
+  modelCapabilities: async (model: string) => {
     await overrides.beforeCapabilities?.();
-    if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(alias);
+    if (overrides.capabilitiesOf !== undefined) return overrides.capabilitiesOf(model);
     return defaultModelCapabilities(overrides.imageInput === true);
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
@@ -533,7 +544,7 @@ export const serviceOptions = (
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,
   mcp: overrides.mcp ?? unusedMcpAdmin,
   userInput: overrides.userInput ?? unusedUserInput,
-  defaults: { modelAlias: MODEL_ALIAS, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
+  defaults: { model: MODEL_ID, runTimeoutMs: DEFAULT_TIMEOUT_MS, limits: { ...DEFAULT_LIMITS } },
   notifier: base.notifier,
   keepAliveMs: overrides.keepAliveMs ?? 600_000,
   sweepIntervalMs: overrides.sweepIntervalMs ?? 600_000,

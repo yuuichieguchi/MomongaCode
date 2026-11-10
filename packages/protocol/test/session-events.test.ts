@@ -4,13 +4,13 @@ import type { InboxRowView, PermissionMode, RunEventPayload, SessionEvent, Sessi
 describe('session-scoped events', () => {
   it('defines SessionEventPayload as mode.changed, model.changed, inbox.changed and user_shell', () => {
     expectTypeOf<SessionEventPayload>().toEqualTypeOf<
-      { type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; modelAlias: string; previousModelAlias: string } | { type: 'inbox.changed'; pending: InboxRowView[] } | ({ type: 'user_shell' } & UserShellRecord)
+      { type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; model: string; previousModel: string } | { type: 'inbox.changed'; pending: InboxRowView[] } | ({ type: 'user_shell' } & UserShellRecord)
     >();
   });
 
   it('defines SessionEvent as the payload plus id, sessionId and createdAt', () => {
     expectTypeOf<SessionEvent>().toEqualTypeOf<
-      ({ type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; modelAlias: string; previousModelAlias: string } | { type: 'inbox.changed'; pending: InboxRowView[] } | ({ type: 'user_shell' } & UserShellRecord)) & { id: number; sessionId: string; createdAt: number }
+      ({ type: 'mode.changed'; mode: PermissionMode | 'unknown' } | { type: 'model.changed'; model: string; previousModel: string } | { type: 'inbox.changed'; pending: InboxRowView[] } | ({ type: 'user_shell' } & UserShellRecord)) & { id: number; sessionId: string; createdAt: number }
     >();
     expectTypeOf<SessionEvent>().not.toHaveProperty('runId');
     expectTypeOf<SessionEvent>().not.toHaveProperty('seq');

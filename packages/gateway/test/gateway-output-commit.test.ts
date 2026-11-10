@@ -66,9 +66,9 @@ const commitEventsWhileParked = async (
   const clock = createFakeClock(START_MS);
   const live = createLiveSpanTelemetry(clock);
   const primary = createScriptedAdapter({ calls: [{ events, gate: { name: 'g', afterEvents } }] });
-  const { client } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+  const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
   registerCleanup(() => primary.release('g'));
-  const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+  const pending = postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
   await waitFor(() => primary.calls[0]?.emitted === afterEvents && primary.calls[0]?.outcome === 'pending', {
     description: `the adapter parked at its gate after ${afterEvents} events`,
   });
@@ -121,9 +121,9 @@ describe('what counts as output for the commit point (W3)', () => {
     const primary = createScriptedAdapter({ calls: [{ events: reasoningStream(), gate: { name: 'g', afterEvents: 4 } }] });
     const clock = createFakeClock(START_MS);
     const live = createLiveSpanTelemetry(clock);
-    const { client } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
-    const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+    const pending = postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     await waitFor(() => live.commitEvents() === 1, { description: 'the commit event at the reasoning summary delta while the upstream is held' });
     const response = await pending;
     expect(primary.calls[0]?.emitted).toBe(4);
@@ -160,8 +160,8 @@ describe('what counts as output for the commit point (W3)', () => {
     const clock = createFakeClock(START_MS);
     const live = createLiveSpanTelemetry(clock);
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'down before output' } }, { events: text }] });
-    const harness = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
-    const pending = postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
+    const pending = postJson(harness.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     await driveTimers(harness, [pending]);
     const body = await (await pending).text();
     expect(body).toContain('event: response.completed');
@@ -176,16 +176,16 @@ describe('what counts as output for the commit point (W3)', () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 86_400_000 } }] });
     const secondary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-secondary', chunks: ['from secondary'] }) }] });
     const { client } = await startGateway({
-      adapters: { primary, secondary },
+      adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary },
       clock,
       telemetry: live.telemetry,
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+        chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+        targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
         retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 },
       },
     });
-    const body = await (await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true })).text();
+    const body = await (await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true })).text();
     expect(body).toContain('from secondary');
     expect(primary.calls).toHaveLength(1);
     expect(secondary.calls).toHaveLength(1);

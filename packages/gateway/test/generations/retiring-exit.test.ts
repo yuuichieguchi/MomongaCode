@@ -6,12 +6,12 @@ import { EXIT_RETIRED, FIRST_GENERATION, SWEEP_INTERVAL_MS, inspectProcessLock }
 import type { RuntimeStanding } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeExec } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, switchableRole, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
+import { CC_MODEL, PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const ASK = { model: 'fast', input: userInput('hi') };
+const ASK = { model: `local/${CC_MODEL}`, input: userInput('hi') };
 
 const holdingUpstream = async () => {
   const socketPath = path.join(makeDir(), 'up.sock');
@@ -35,7 +35,7 @@ const holdingUpstream = async () => {
 
 const launch = async (target: Record<string, unknown>, extra: Partial<GatewayProcessOptions> = {}, wired: { requestShutdown: boolean } = { requestShutdown: true }) => {
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: target } } });
+  writeSettings(home, { models: modelsOf({ local: target }) });
   const clock = createFakeClock(Date.now());
   const timers = createFakeTimers(clock);
   const role = switchableRole('serving');

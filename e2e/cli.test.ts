@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createFakeFm, startFakeChatCompletions } from '@momonga/testkit';
+import { createFakeFm, modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
@@ -434,20 +434,18 @@ describe('cli: gateway probe of a chat-completions target', () => {
       reasoning: { tokens: 90, effort: 'ignored' },
     });
     try {
-      writeSettingsFile(home, {
-        models: {
-          aliases: { default: ['local'] },
-          targets: {
-            local: { adapter: 'chat-completions', provider: 'fake', model: 'upstream-model', socketPath: home.upstreamSocket, toolCalling: 'auto', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
-          },
-        },
-      });
+      writeSettingsFile(
+        home,
+        modelSettings({
+          models: [{ adapter: 'chat-completions', provider: 'fake', id: 'upstream-model', socketPath: home.upstreamSocket, toolCalling: 'auto', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }],
+        }),
+      );
 
-      const probed = await runCli(home, ['gateway', 'probe', 'local', '--samples', '2']);
+      const probed = await runCli(home, ['gateway', 'probe', 'fake/upstream-model', '--samples', '2']);
 
       expect(probed.stderr).toBe('');
       expect(probed.code).toBe(0);
-      expect(probed.stdout).toMatch(/^probed local: model upstream-model at unix:/m);
+      expect(probed.stdout).toMatch(/^probed upstream-model: model upstream-model at unix:/m);
       expect(probed.stdout).toContain('tool calling: native');
       expect(probed.stdout).toContain('parallel tool calls: true');
       expect(probed.stdout).toContain('reasoning: cannot be controlled, leaves room for 90 tokens');
@@ -462,24 +460,24 @@ describe('cli: gateway probe', () => {
   it.runIf(process.platform === 'darwin')(titleOf('cli-probe'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const fakeFm = await createFakeFm({ dir: home.root });
-    writeSettingsFile(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm' } } } });
-    const probed = await runCli(home, ['gateway', 'probe', 'fm', '--fm-binary', fakeFm.binaryPath, '--samples', '2']);
+    writeSettingsFile(home, modelSettings({ models: [{ adapter: 'managed', provider: 'fm', server: 'fm', id: 'system' }] }));
+    const probed = await runCli(home, ['gateway', 'probe', 'fm/system', '--fm-binary', fakeFm.binaryPath, '--samples', '2']);
 
     expect(probed.stderr).toBe('');
     expect(probed.code).toBe(0);
-    expect(probed.stdout).toMatch(/^probed fm: model .+, context window \d+/m);
+    expect(probed.stdout).toMatch(/^probed system: model .+, context window \d+/m);
     expect(probed.stdout).toMatch(/tool calling: (native|constrained|none)/);
     expect(fs.existsSync(path.join(home.paths.probe, 'fm.json'))).toBe(true);
 
     const unlicensed = path.join(home.root, 'unlicensed-fm');
     fs.writeFileSync(unlicensed, '#!/bin/sh\nexit 69\n', { mode: 0o755 });
-    const refused = await runCli(home, ['gateway', 'probe', 'fm', '--fm-binary', unlicensed]);
+    const refused = await runCli(home, ['gateway', 'probe', 'fm/system', '--fm-binary', unlicensed]);
     expect(refused.code).toBe(1);
     expect(refused.stderr).toContain('remedy: sudo fm license');
 
     const unknown = await runCli(home, ['gateway', 'probe', 'nope', '--fm-binary', fakeFm.binaryPath]);
     expect(unknown.code).toBe(1);
-    expect(unknown.stderr).toContain('model target nope is not an fm or chat-completions target');
+    expect(unknown.stderr).toContain('The model "nope" is not configured. Configured models: system.');
   });
 });
 

@@ -150,15 +150,17 @@ describe('momonga eval context', () => {
     expect(completed).toEqual([1]);
   });
 
-  it('--model is no longer an option of eval context', async () => {
+  it('--alias is no longer an option of eval context, and --model belongs to a live run', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real')).rejects.toThrow(/unknown option '--model'/);
-    await expect(run(harness().program, 'eval', 'context', 'context.json', '--alias', 'default', '--model', 'fake')).rejects.toThrow(/unknown option '--model'/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'devstral-small-2')).rejects.toThrow(/unknown option '--alias'/);
+    await expect(run(harness().program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'devstral-small-2')).rejects.toThrow(
+      '--model and --seed belong to a live run; a replay takes the models and the seed from the transcripts',
+    );
   });
 
-  it('requires the alias of a live run', async () => {
+  it('requires the model of a live run', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json')).rejects.toThrow(/--alias <alias> is required/);
+    await expect(run(program, 'eval', 'context', 'context.json')).rejects.toThrow('--model <model> is required for a live run: it names the model every session of the run uses');
   });
 
   it('refuses --record together with --replay', async () => {
@@ -168,7 +170,7 @@ describe('momonga eval context', () => {
 
   it('refuses a seed that is not an integer', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--seed', 'x')).rejects.toThrow(/--seed/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'devstral-small-2', '--seed', 'x')).rejects.toThrow(/--seed/);
   });
 
   it('takes the seed of a replay from the transcripts', async () => {
@@ -288,7 +290,7 @@ describe('momonga eval context --settings', () => {
   it('refuses an overlay with a non-core key (design-core-on 3.2, 3.5 item 2) before any case runs, and names the file', async () => {
     const { program, stored, completed } = harness();
     stored.set('/w/bad.json', JSON.stringify({ tools: { ripgrep: 'system' } }));
-    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'devstral-small-2', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
     expect(completed).toEqual([]);
   });
 });

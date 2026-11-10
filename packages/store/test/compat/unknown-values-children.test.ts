@@ -6,7 +6,7 @@ describe('cancelling a parent whose child holds a status this build does not kno
   it('cancels the parent and leaves the child untouched', async () => {
     const { store, dbPath } = harness();
     const parent = enqueue(store, newSession(store).id);
-    const created = store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
+    const created = store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child, got ${created.kind}`);
     const db = rawDb(dbPath);
     recordNewerMigration(db);

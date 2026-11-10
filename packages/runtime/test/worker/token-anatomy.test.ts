@@ -25,7 +25,7 @@ const isTerminal = (event: StreamEvent): boolean => event.type === 'response.com
 const withExtension = (step: ScriptStep, extension: Record<string, unknown>): ScriptStep => ({
   ...step,
   events: step.events.map((event) =>
-    isTerminal(event) && 'response' in event ? ({ ...event, response: { ...event.response, momonga: { alias: 'fm', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported', ...extension } } } as StreamEvent) : event,
+    isTerminal(event) && 'response' in event ? ({ ...event, response: { ...event.response, momonga: { model: 'fm', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported', ...extension } } } as StreamEvent) : event,
   ),
 });
 

@@ -21,12 +21,12 @@ const SPARE = 'spare';
 const work: PlanAccountRef = { profile: PROFILE_ID, account: 'work' };
 const home: PlanAccountRef = { profile: PROFILE_ID, account: 'home' };
 
-const TARGET_A: AdapterTarget = { name: 'a', model: 'plan-model' };
-const TARGET_B: AdapterTarget = { name: 'b', model: 'plan-model' };
+const TARGET_A: AdapterTarget = { name: 'a', display: 'a', model: 'plan-model' };
+const TARGET_B: AdapterTarget = { name: 'b', display: 'b', model: 'plan-model' };
 
 const PLAIN_REQUEST: AdapterRequest = { model: 'plan-model', input: [{ type: 'message', role: 'user', content: 'hello' }] };
 
-const ask = async (gateway: PlanGateway) => readJson(await postJson(clientFor(gateway.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
+const ask = async (gateway: PlanGateway) => readJson(await postJson(clientFor(gateway.socketPath), '/v1/responses', { model: 'gpt/plan-model', input: userInput('hi') }));
 
 const planAdapter = async (authSource: (target: AdapterTarget) => FakeAuth, script: FakeUpstreamReply[] = []) => {
   const fake = await startFakePlanResponses({ verifyBearer: () => 'valid', script });
@@ -68,7 +68,7 @@ describe('an error names the account of the part that served the request (P-PLAN
 
   it('an adapter names its served account before any create', async () => {
     const adapter = await planAdapter(() => fakeAuth());
-    expect(adapter.servedAccount?.({ name: 'plan', model: 'plan-model' })).toEqual(RESOLVED_ACCOUNT);
+    expect(adapter.servedAccount?.({ name: 'plan', display: 'plan', model: 'plan-model' })).toEqual(RESOLVED_ACCOUNT);
   });
 
   it('one adapter serving two targets names each target\'s own account whichever create ran last', async () => {

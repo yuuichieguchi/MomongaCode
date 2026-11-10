@@ -4,7 +4,7 @@ import { responseResource, textResponseEvents, usageOf } from '@momonga/testkit'
 import { deferred } from './deferred.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 
-export const MODEL_ALIAS = 'fm';
+export const MODEL_ID = 'fm';
 
 export type ScriptedCall = { callId: string; name: string; args: Record<string, unknown> };
 
@@ -19,7 +19,7 @@ export const functionCallItem = (call: ScriptedCall): FunctionCallItem => ({
 
 export const requestedOffering = (step: number, toolNames: readonly string[]): RunEventPayload => {
   const body = {
-    model: MODEL_ALIAS,
+    model: MODEL_ID,
     input: [],
     tools: toolNames.map((name) => ({ type: 'function', name, description: name, parameters: { type: 'object', properties: {} } })),
     store: false,
@@ -55,7 +55,7 @@ const terminal = (
   incompleteReason?: string,
 ): StreamEvent => {
   const resource: ResponseResource = {
-    ...responseResource({ id: nextResponseId(), model: MODEL_ALIAS, status: type === 'response.completed' ? 'completed' : 'incomplete', output, usage }),
+    ...responseResource({ id: nextResponseId(), model: MODEL_ID, status: type === 'response.completed' ? 'completed' : 'incomplete', output, usage }),
     incomplete_details: incompleteReason === undefined ? null : { reason: incompleteReason },
   };
   return { type, sequence_number: sequence, response: resource };
@@ -70,7 +70,7 @@ const itemEvents = (output: ItemField[]): StreamEvent[] =>
 const created = (): StreamEvent => ({
   type: 'response.created',
   sequence_number: 0,
-  response: responseResource({ id: nextResponseId(), model: MODEL_ALIAS, status: 'in_progress' }),
+  response: responseResource({ id: nextResponseId(), model: MODEL_ID, status: 'in_progress' }),
 });
 
 const numbered = (events: StreamEvent[]): StreamEvent[] => events.map((event, index) => ({ ...event, sequence_number: index }));
@@ -87,7 +87,7 @@ export const textStep = (text: string, options: { usage?: ScriptedUsage; chunks?
   const usage = options.usage ?? 'auto';
   return {
     events: textResponseEvents({
-      model: MODEL_ALIAS,
+      model: MODEL_ID,
       chunks: options.chunks ?? [text],
       usage: scriptedUsage(usage),
       itemId: options.itemId ?? `msg_${nextResponseId()}`,
@@ -121,7 +121,7 @@ export const incompleteStep = (output: ItemField[], reason = 'max_output_tokens'
 });
 
 export const failedStep = (code: string, type: 'server_error' | 'model_error' | 'too_many_requests' = 'server_error', plan?: PlanAccountRef): ScriptStep => {
-  const base = responseResource({ id: nextResponseId(), model: MODEL_ALIAS, status: 'failed' });
+  const base = responseResource({ id: nextResponseId(), model: MODEL_ID, status: 'failed' });
   const error = { code, message: `upstream failed with ${code}`, type, ...(plan === undefined ? {} : { plan }) };
   return {
     events: numbered([created(), { type: 'response.failed', sequence_number: 0, response: { ...base, error } }]),

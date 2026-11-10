@@ -6,7 +6,7 @@ import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, countFakeRequestTokens } from '@momonga/testkit';
 import type { FakeFixedUsage } from '@momonga/testkit';
-import { finishApprovingPrompts, launchRuntime, prepareStack, readDb, scriptedToolCall, startGateway } from './run-helpers.ts';
+import { finishApprovingPrompts, launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, startGateway } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -36,14 +36,7 @@ describe('the pinned part admitted at run start, after the server reports it wit
         finalText('done'),
       ],
     }));
-    stack.settings({
-      models: {
-        aliases: { default: ['primary'] },
-        targets: {
-          primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: stack.fake.socketPath, capabilities: { contextWindow: WINDOW, maxOutputTokens: OUTPUT } },
-        },
-      },
-    });
+    stack.settings(modelSettings(stack.fake.socketPath, WINDOW, { capabilities: { contextWindow: WINDOW, maxOutputTokens: OUTPUT } }));
     await startGateway(stack.temp);
     fs.writeFileSync(path.join(stack.temp.project, 'notes.txt'), 'remember this\n');
     const launched = await launchRuntime(stack.temp);

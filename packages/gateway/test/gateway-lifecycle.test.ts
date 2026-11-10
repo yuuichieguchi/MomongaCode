@@ -7,7 +7,7 @@ import { inspectProcessLock } from '@momonga/foundation';
 
 describe('gateway persistence and lifecycle', () => {
   it('creates the database directory 0700 and the database file 0600', async () => {
-    const { dbPath } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const { dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     expect(fs.statSync(path.dirname(dbPath)).mode & 0o777).toBe(0o700);
     expect(fs.statSync(dbPath).mode & 0o777).toBe(0o600);
   });
@@ -16,8 +16,8 @@ describe('gateway persistence and lifecycle', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['never'] }), gate: { name: 'held', afterEvents: 0 } }],
     });
-    const { gateway, client, socketPath, timers } = await startGateway({ adapters: { primary } });
-    const inFlight = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }).then(
+    const { gateway, client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const inFlight = postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }).then(
       async (response) => ({ status: response.status, text: await response.text() }),
       (error: unknown) => ({ error }),
     );
@@ -37,34 +37,34 @@ describe('gateway persistence and lifecycle', () => {
 
   it('releases the database and socket so a new gateway on the same paths serves stored responses', async () => {
     const first = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['remembered'] }) }] });
-    const before = await startGateway({ adapters: { primary: first } });
-    const stored = await readJson(await postJson(before.client, '/v1/responses', { model: 'fast', input: userInput('q1'), store: true }));
+    const before = await startGateway({ adapters: { 'scripted/scripted-primary': first } });
+    const stored = await readJson(await postJson(before.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q1'), store: true }));
     expect(stored.status).toBe(200);
     await before.client.close();
     await before.gateway.close();
 
     const second = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['continued'] }) }] });
-    const after = await startGateway({ adapters: { primary: second }, dir: before.dir, clock: before.clock });
+    const after = await startGateway({ adapters: { 'scripted/scripted-primary': second }, dir: before.dir, clock: before.clock });
     const followUp = await readJson(
-      await postJson(after.client, '/v1/responses', { model: 'fast', input: userInput('q2'), previous_response_id: stored.body.id }),
+      await postJson(after.client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
     );
     expect(followUp.status).toBe(200);
     expect(outputText(followUp.body)).toBe('continued');
     expect(second.calls[0]?.request.input).toEqual([...userInput('q1'), ...stored.body.output, ...userInput('q2')]);
   });
 
-  it('rejects construction when a target has no adapter keyed by its name', async () => {
+  it('rejects construction when a model has no adapter', async () => {
     await expect(
       startGateway({
-        adapters: { 'missing-adapter': createScriptedAdapter({ calls: [] }) },
-        config: { aliases: { fast: ['primary'] }, targets: { primary: { model: 'm' } } },
+        adapters: { 'scripted/missing-adapter': createScriptedAdapter({ calls: [] }) },
+        config: { targets: { 'scripted/m': {} } },
       }),
-    ).rejects.toThrow(/"primary"/);
+    ).rejects.toThrow('createGateway: model "scripted/m" has no adapter');
   });
 
-  it('rejects construction when an alias references an unknown target', async () => {
+  it('rejects construction when the fallback order names a model that is not configured', async () => {
     await expect(
-      startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, config: { aliases: { fast: ['ghost'] } } }),
-    ).rejects.toThrow(/ghost/);
+      startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, config: { chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/ghost'] } } }),
+    ).rejects.toThrow('createGateway: the fallback order names "scripted/ghost", which is not a configured model');
   });
 });

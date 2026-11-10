@@ -5,12 +5,12 @@ import { capabilityFailingAdapter } from './capability-failing-adapter.ts';
 import { START_MS, TEST_VERSION, expectErrorBody, getJson, postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 describe('GET /v1/momonga/health', () => {
-  it('reports ok, targets, version, apiVersion, pid, startedAt, state running and no active request', async () => {
+  it('reports ok, models, version, apiVersion, pid, startedAt, state running and no active request', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await getJson(client, '/v1/momonga/health');
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(['activeRequests', 'apiVersion', 'ok', 'pid', 'startedAt', 'state', 'targets', 'version']);
+    expect(Object.keys(response.body).sort()).toEqual(['activeRequests', 'apiVersion', 'models', 'ok', 'pid', 'startedAt', 'state', 'version']);
     expect(response.body.activeRequests).toBe(0);
     expect(response.body.ok).toBe(true);
     expect(response.body.version).toBe(TEST_VERSION);
@@ -18,7 +18,7 @@ describe('GET /v1/momonga/health', () => {
     expect(response.body.pid).toBe(process.pid);
     expect(new Date(response.body.startedAt).getTime()).toBe(START_MS);
     expect(response.body.state).toBe('running');
-    expect(response.body.targets.primary).toMatchObject({ ok: true, breaker: 'closed' });
+    expect(response.body.models['scripted/scripted-primary']).toMatchObject({ ok: true, breaker: 'closed' });
   });
 
   it('answers 200 with ok false when a target is unhealthy', async () => {
@@ -26,11 +26,11 @@ describe('GET /v1/momonga/health', () => {
       ...createScriptedAdapter({ calls: [] }),
       health: async () => ({ ok: false, reason: 'precondition_failed', detail: 'not ready' }),
     };
-    const { client } = await startGateway({ adapters: { primary: sick } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': sick } });
     const response = await getJson(client, '/v1/momonga/health');
     expect(response.status).toBe(200);
     expect(response.body.ok).toBe(false);
-    expect(response.body.targets.primary).toMatchObject({ ok: false, reason: 'precondition_failed', detail: 'not ready' });
+    expect(response.body.models['scripted/scripted-primary']).toMatchObject({ ok: false, reason: 'precondition_failed', detail: 'not ready' });
     expect(response.body.state).toBe('running');
     expect(response.body.version).toBe(TEST_VERSION);
   });
@@ -41,13 +41,13 @@ describe('GatewayOptions.onError', () => {
     const failure = new TypeError('capabilities exploded');
     const broken = capabilityFailingAdapter({ inner: createScriptedAdapter({ calls: [] }), fails: () => failure });
     const onError = vi.fn();
-    const { client } = await startGateway({ adapters: { primary: broken }, onError });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': broken }, onError });
     const response = await getJson(client, '/v1/momonga/models');
     expect(response.status).toBe(200);
     const listed = { toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: 'adapter_error', message: 'capabilities exploded' }, source: 'unprobed' };
-    const entry = (response.body.data as Array<{ targets: string[]; capabilities: unknown; targetCapabilities: Record<string, unknown> }>).find((candidate) => candidate.targets.includes('primary'));
+    const entry = (response.body.data as Array<{ id: string; capabilities: unknown; chain: Array<{ model: string; capabilities: unknown }> }>).find((candidate) => candidate.id === 'scripted/scripted-primary');
     expect(entry?.capabilities).toEqual(listed);
-    expect(entry?.targetCapabilities['primary']).toEqual(listed);
+    expect(entry?.chain.map((member) => [member.model, member.capabilities])).toEqual([['scripted/scripted-primary', listed]]);
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -55,7 +55,7 @@ describe('GatewayOptions.onError', () => {
     const failure = new TypeError('capabilities exploded');
     const onError = vi.fn();
     const { client } = await startGateway({
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       onError,
       costReport: async () => {
         throw failure;
@@ -70,7 +70,7 @@ describe('GatewayOptions.onError', () => {
 
   it('is not called for a GatewayError answered with its own status', async () => {
     const onError = vi.fn();
-    const { client } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, onError });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) }, onError });
     const response = await getJson(client, '/v1/momonga/no-such-route');
     expect(response.status).toBe(404);
     expect(onError).not.toHaveBeenCalled();

@@ -10,7 +10,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeEntryIo, parseJsonLines, regist
 import type { CleanupContext } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeEntryIo, JsonLine } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
-import { MINIMAL_PATH, ccTarget, until, writeSettings } from './gateway-process-helpers.ts';
+import { MINIMAL_PATH, ccTarget, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -25,7 +25,7 @@ const validHome = async (context: CleanupContext, target: Record<string, unknown
   registerCleanup(context, () => fake.close());
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
-  writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, target) } } });
+  writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath, target) }) });
   return { home, paths: momongaPaths(home, process.platform, {}), fake };
 };
 
@@ -58,7 +58,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
   it('gateway: invalid settings give 78 and an entry.exit start-failed line', async (context) => {
     const home = withTempDir(context, { asHome: true });
     prepareHome(home);
-    writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'managed', server: 'fm' } } } });
+    writeSettings(home, { models: modelsOf({ '9-bad-name': { adapter: 'managed', server: 'fm', model: 'system' } }) });
     const { io, exit } = launch(context, home, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=stderr']);
 
     expect(await exit).toBe(78);
@@ -136,7 +136,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     registerCleanup(context, () => hold.release());
     const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
     registerCleanup(context, () => client.close());
-    const request = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hold me') }, { 'idempotency-key': 'entry-held' }).catch(() => undefined);
+    const request = postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hold me') }, { 'idempotency-key': 'entry-held' }).catch(() => undefined);
     await hold.waitForRequest();
 
     launched.io.signal('SIGTERM');
@@ -181,7 +181,7 @@ describe('runGatewayEntry exit codes (§5.2, §5.3, fake EntryIo, real gateway)'
     const client = createUdsClient(fixedSocket(firstGeneration(paths).sockets.gateway));
     registerCleanup(context, () => client.close());
 
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'primary/system', input: userInput('hi') }));
 
     expect(response.status).toBe(200);
     const completions = fake.requests.filter((request) => request.path === '/v1/chat/completions');

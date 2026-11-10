@@ -1,11 +1,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { editUserSettings } from '@momonga/config';
+import { editModelsSettings, loadUserModels } from '@momonga/config';
+import type { ModelsOperation } from '@momonga/config';
 import { CONTEXT_REPORT_FORMAT } from '@momonga/eval';
-import { HOST_READ_BOUND_MS, NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout, operationLimit } from '@momonga/foundation';
+import { NoCurrentGenerationError, createUdsClient, currentSocketResolver, fixedSocket, isRecord, momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths, UdsClient } from '@momonga/foundation';
-import { WORKSPACE_USAGE_LIMIT_CODE } from '@momonga/protocol';
+import { WORKSPACE_USAGE_LIMIT_CODE, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
 
 const REPORT_FORMAT = 'momonga-plan-real-check/1';
 
@@ -15,7 +16,7 @@ const EXIT_USAGE = 2;
 const EXIT_LEAK = 3;
 
 const USAGE =
-  'usage: plan-real-check collect --home <dir> --report <file> [--status-file <file>] [--eval-reports <a>,<b>] [--screens-seen] [--allow-long <step>.<field>] | carriage --home <dir> --alias <alias> --report <file> | request-size --home <dir> --alias <alias> --report <file>';
+  'usage: plan-real-check collect --home <dir> --report <file> [--status-file <file>] [--eval-reports <a>,<b>] [--screens-seen] [--allow-long <step>.<field>] | carriage --home <dir> --model <model> --report <file> | request-size --home <dir> --model <model> --report <file>';
 
 const OWN_HOME_REFUSAL = 'plan-real-check: --home is your own home directory. Use the temporary HOME in which you signed in; this script never touches ~/.momonga.';
 
@@ -41,7 +42,7 @@ type Arguments = {
   command: Command;
   home: string;
   report: string;
-  alias?: string;
+  model?: string;
   statusFile?: string;
   evalReports?: readonly [string, string];
   screensSeen: boolean;
@@ -52,14 +53,14 @@ class UsageError extends Error {}
 
 const VALUE_FLAGS: Readonly<Record<Command, readonly string[]>> = {
   collect: ['--home', '--report', '--status-file', '--eval-reports', '--allow-long'],
-  carriage: ['--home', '--alias', '--report', '--allow-long'],
-  'request-size': ['--home', '--alias', '--report', '--allow-long'],
+  carriage: ['--home', '--model', '--report', '--allow-long'],
+  'request-size': ['--home', '--model', '--report', '--allow-long'],
 };
 
 const REQUIRED_FLAGS: Readonly<Record<Command, readonly string[]>> = {
   collect: ['--home', '--report'],
-  carriage: ['--home', '--alias', '--report'],
-  'request-size': ['--home', '--alias', '--report'],
+  carriage: ['--home', '--model', '--report'],
+  'request-size': ['--home', '--model', '--report'],
 };
 
 const isCommand = (value: string | undefined): value is Command => value === 'collect' || value === 'carriage' || value === 'request-size';
@@ -96,7 +97,7 @@ const parseArguments = (argv: readonly string[]): Arguments => {
   const listed = values.get('--eval-reports')?.split(',');
   if (listed !== undefined && (listed.length !== 2 || listed.includes(''))) throw new UsageError();
   const [first, second] = listed ?? [];
-  const alias = values.get('--alias');
+  const model = values.get('--model');
   const statusFile = values.get('--status-file');
   return {
     command,
@@ -104,7 +105,7 @@ const parseArguments = (argv: readonly string[]): Arguments => {
     report,
     screensSeen,
     allowLong,
-    ...(alias === undefined ? {} : { alias }),
+    ...(model === undefined ? {} : { model }),
     ...(statusFile === undefined ? {} : { statusFile }),
     ...(first === undefined || second === undefined ? {} : { evalReports: [first, second] as const }),
   };
@@ -368,24 +369,20 @@ const FUNCTION_TOOL = {
   parameters: { type: 'object', properties: { observation: { type: 'string' } }, required: ['observation'], additionalProperties: false },
 };
 
-const R4_ALIASES: ReadonlyArray<{ alias: string; capabilities: Record<string, unknown>; requests: number }> = [
-  { alias: 'plan-r4-cache', capabilities: { promptCache: { kind: 'key' } }, requests: 2 },
-  { alias: 'plan-r4-reasoning', capabilities: { reasoning: { control: 'reasoning_effort', lowest: 'low' } }, requests: 1 },
-  { alias: 'plan-r4-both', capabilities: { promptCache: { kind: 'key' }, reasoning: { control: 'reasoning_effort', lowest: 'low' } }, requests: 1 },
+type Variant = { name: string; promptCache?: unknown; reasoning?: unknown; requests: number };
+
+const PROMPT_CACHE = { kind: 'key' };
+const REASONING = { control: 'reasoning_effort', lowest: 'low' };
+
+const R4_VARIANTS: readonly Variant[] = [
+  { name: 'cache', promptCache: PROMPT_CACHE, requests: 2 },
+  { name: 'reasoning', reasoning: REASONING, requests: 1 },
+  { name: 'both', promptCache: PROMPT_CACHE, reasoning: REASONING, requests: 1 },
 ];
 
-const membersOf = (alias: unknown): readonly unknown[] => (Array.isArray(alias) ? alias : [alias]);
+type DeclaredCapabilities = Readonly<Record<string, unknown>> | undefined;
 
-const planTargetOf = (document: Record<string, unknown>, alias: string): Record<string, unknown> | undefined => {
-  const models = isRecord(document['models']) ? document['models'] : {};
-  const aliases = isRecord(models['aliases']) ? models['aliases'] : {};
-  const targets = isRecord(models['targets']) ? models['targets'] : {};
-  if (!Object.hasOwn(aliases, alias)) return undefined;
-  const [name, ...others] = membersOf(aliases[alias]);
-  if (typeof name !== 'string' || others.length > 0 || !Object.hasOwn(targets, name)) return undefined;
-  const target = targets[name];
-  return isRecord(target) && isRecord(target['plan']) ? target : undefined;
-};
+type PlanModel = { canon: string; declared: DeclaredCapabilities };
 
 const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
   if (!fs.existsSync(paths.settingsFile)) return {};
@@ -394,51 +391,73 @@ const readSettings = (paths: MomongaPaths): Record<string, unknown> => {
   return parsed;
 };
 
-const withCarriageAliases =
-  (alias: string) =>
-  (document: Record<string, unknown>): boolean => {
-    const target = planTargetOf(document, alias);
-    const models = document['models'];
-    if (target === undefined || !isRecord(models) || !isRecord(models['targets']) || !isRecord(models['aliases'])) throw new Error(`the alias ${alias} is not a single plan target of this home`);
-    const declared = isRecord(target['capabilities']) ? target['capabilities'] : {};
-    for (const entry of R4_ALIASES) {
-      models['targets'][entry.alias] = { ...target, capabilities: { ...declared, ...entry.capabilities } };
-      models['aliases'][entry.alias] = [entry.alias];
-    }
-    return true;
-  };
+const writtenEntries = (paths: MomongaPaths, connection: number): readonly unknown[] => {
+  const models = readSettings(paths)['models'];
+  const connections = isRecord(models) && Array.isArray(models['connections']) ? (models['connections'] as readonly unknown[]) : [];
+  const written = connections[connection];
+  return isRecord(written) && Array.isArray(written['models']) ? (written['models'] as readonly unknown[]) : [];
+};
 
-const scriptLifetime = new AbortController();
+const planModelOf = (paths: MomongaPaths, typed: string): PlanModel | undefined => {
+  const { resolved } = loadUserModels({ home: paths.home });
+  const resolution = resolveTypedModelRef(typedModelText(typed), resolved.views);
+  if (resolution.kind !== 'found') return undefined;
+  const { canon, provider } = resolution.model;
+  const target = resolved.models.get(canon);
+  if (target === undefined || !('plan' in target) || target.plan === undefined) return undefined;
+  const connection = resolved.connections.findIndex((candidate) => candidate.provider === provider);
+  const position = [...resolved.models.values()].filter((model) => model.provider === provider).findIndex((model) => model.canon === canon);
+  const entry = writtenEntries(paths, connection)[position];
+  if (!isRecord(entry)) throw new Error(`${paths.settingsFile}: the model entry of ${canon} was not found`);
+  const capabilities = entry['capabilities'];
+  return { canon, declared: isRecord(capabilities) ? structuredClone(capabilities) : undefined };
+};
 
-const writeCarriageAliases = async (paths: MomongaPaths, alias: string): Promise<void> => {
-  const limit = operationLimit(scriptLifetime.signal, HOST_READ_BOUND_MS, 'the command limit');
+const notOnePlanModel = (typed: string): string => `${typed} is not one plan model of this home`;
+
+const capabilityOf = (model: PlanModel, field: 'promptCache' | 'reasoning', value: unknown): ModelsOperation => ({
+  kind: 'setModelField',
+  model: model.canon,
+  path: ['capabilities', field],
+  value: value ?? model.declared?.[field],
+});
+
+const declareVariant = async (paths: MomongaPaths, model: PlanModel, variant: Variant, signal: AbortSignal): Promise<void> => {
+  await editModelsSettings(paths.home, paths.settingsFile, [capabilityOf(model, 'promptCache', variant.promptCache), capabilityOf(model, 'reasoning', variant.reasoning)], { signal });
+};
+
+const restoreDeclared = async (paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<void> => {
+  await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'setModelField', model: model.canon, path: ['capabilities'], value: model.declared }], { signal });
+};
+
+const variantRequests = async (client: UdsClient, paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<Step> => {
+  const requests: Facts[] = [];
   try {
-    await editUserSettings(paths.home, paths.settingsFile, withCarriageAliases(alias), { signal: limit.signal });
+    for (const variant of R4_VARIANTS) {
+      await declareVariant(paths, model, variant, signal);
+      for (let request = 1; request <= variant.requests; request += 1) {
+        const answer = await send(client, { model: model.canon, input: userInput('Answer with the single word ready.'), stream: false });
+        if (answer === undefined) return { step: 'R4', verdict: 'failed', facts: { requests, reason: NOT_SENT } };
+        requests.push({ variant: variant.name, request, status: answer.status, ...errorFacts(answer), cachedTokens: cachedTokensOf(answer) });
+      }
+    }
+    return { step: 'R4', verdict: 'recorded', facts: { requests } };
   } finally {
-    limit.dispose();
+    await restoreDeclared(paths, model, signal);
   }
 };
 
-const carriage = async (client: UdsClient, paths: MomongaPaths, alias: string): Promise<Step[]> => {
-  await writeCarriageAliases(paths, alias);
-  const tooled = await send(client, { model: alias, input: userInput('Record the observation "the carriage works" with the function.'), tools: [FUNCTION_TOOL], stream: false });
+const carriage = async (client: UdsClient, paths: MomongaPaths, model: PlanModel, signal: AbortSignal): Promise<Step[]> => {
+  const tooled = await send(client, { model: model.canon, input: userInput('Record the observation "the carriage works" with the function.'), tools: [FUNCTION_TOOL], stream: false });
   const r2: Step =
     tooled === undefined
       ? { step: 'R2', verdict: 'failed', facts: { reason: NOT_SENT } }
       : { step: 'R2', verdict: 'recorded', facts: { status: tooled.status, ...errorFacts(tooled), functionCalled: functionCalled(tooled) } };
-  const requests: Facts[] = [];
-  for (const entry of R4_ALIASES) {
-    for (let request = 1; request <= entry.requests; request += 1) {
-      const answer = await send(client, { model: entry.alias, input: userInput('Answer with the single word ready.'), stream: false });
-      if (answer === undefined) return [r2, { step: 'R4', verdict: 'failed', facts: { requests, reason: NOT_SENT } }];
-      requests.push({ alias: entry.alias, request, status: answer.status, ...errorFacts(answer), cachedTokens: cachedTokensOf(answer) });
-    }
-  }
-  return [r2, { step: 'R4', verdict: 'recorded', facts: { requests } }];
+  return [r2, await variantRequests(client, paths, model, signal)];
 };
 
-const requestSize = async (client: UdsClient, alias: string): Promise<Step[]> => {
-  const answer = await send(client, { model: alias, input: userInput('a'.repeat(REQUEST_SIZE_BYTES)), stream: false });
+const requestSize = async (client: UdsClient, model: PlanModel): Promise<Step[]> => {
+  const answer = await send(client, { model: model.canon, input: userInput('a'.repeat(REQUEST_SIZE_BYTES)), stream: false });
   if (answer === undefined) return [{ step: 'R6', verdict: 'failed', facts: { bytes: REQUEST_SIZE_BYTES, reason: NOT_SENT } }];
   return [{ step: 'R6', verdict: 'recorded', facts: { bytes: REQUEST_SIZE_BYTES, accepted: answer.status < 400, status: answer.status, ...errorFacts(answer) } }];
 };
@@ -454,14 +473,16 @@ const gatewaySocket = async (paths: MomongaPaths): Promise<string | undefined> =
   }
 };
 
-const throughGateway = async (command: Exclude<Command, 'collect'>, paths: MomongaPaths, alias: string): Promise<Step[]> => {
+const throughGateway = async (command: Exclude<Command, 'collect'>, paths: MomongaPaths, typed: string): Promise<Step[]> => {
   const steps = STEPS_OF[command];
   const socketPath = await gatewaySocket(paths);
   if (socketPath === undefined) return steps.map((step) => notRun(step, 'no running gateway for this home'));
-  if (planTargetOf(readSettings(paths), alias) === undefined) return steps.map((step) => notRun(step, `the alias ${alias} is not a single plan target of this home`));
+  const model = planModelOf(paths, typed);
+  if (model === undefined) return steps.map((step) => notRun(step, notOnePlanModel(typed)));
+  const interrupt = new AbortController();
   const client = createUdsClient(fixedSocket(socketPath));
   try {
-    return command === 'carriage' ? await carriage(client, paths, alias) : await requestSize(client, alias);
+    return command === 'carriage' ? await carriage(client, paths, model, interrupt.signal) : await requestSize(client, model);
   } finally {
     await client.destroy();
   }
@@ -531,7 +552,7 @@ const run = async (argv: readonly string[]): Promise<number> => {
     return EXIT_USAGE;
   }
   const paths = momongaLayout(path.resolve(args.home));
-  const steps = args.command === 'collect' ? collect(readEvents(paths), args) : await throughGateway(args.command, paths, args.alias ?? '');
+  const steps = args.command === 'collect' ? collect(readEvents(paths), args) : await throughGateway(args.command, paths, args.model ?? '');
   const report: Report = { format: REPORT_FORMAT, generatedAt: new Date().toISOString(), account: accountOf(readEvents(paths)), steps };
   const leak = leakOf(report, args.allowLong);
   if (leak !== undefined) {

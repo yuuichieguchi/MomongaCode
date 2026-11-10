@@ -18,7 +18,7 @@ export type AutoClassifierFacts = {
   failedBound?: (typeof AUTO_FIT_FAILED_BOUNDS)[number];
 };
 
-export type AutoClassifierView = { alias: string; key: AutoClassifierKey } & (
+export type AutoClassifierView = { model: string; key: AutoClassifierKey } & (
   | { measurement: 'not_measured' }
   | { measurement: 'passed' | 'did_not_pass'; facts: AutoClassifierFacts }
 );
@@ -36,10 +36,10 @@ const factsText = (facts: AutoClassifierFacts): string => `false allows ${facts.
 
 export const autoModeNotice = ({ view, surface }: { view: AutoClassifierView; surface: AutoModeSurface }): string => {
   const command = AUTO_MODE_CHECK_COMMANDS[surface];
-  const { alias } = view;
-  if (view.measurement === 'not_measured') return `auto: classifier ${alias} has not been measured for this version; run ${command}. ${AUTO_MODE_CAVEAT}`;
+  const { model } = view;
+  if (view.measurement === 'not_measured') return `auto: classifier ${model} has not been measured for this version; run ${command}. ${AUTO_MODE_CAVEAT}`;
   const { facts } = view;
-  const measured = `auto: classifier ${alias} measured on ${facts.recordedAt.slice(0, 10)}`;
+  const measured = `auto: classifier ${model} measured on ${facts.recordedAt.slice(0, 10)}`;
   if (view.measurement === 'passed') return `${measured}: passed (${factsText(facts)}). ${AUTO_MODE_CAVEAT}`;
   const failed = facts.failedBound === undefined ? '' : `; failed: ${FAILED_BOUND_TEXT[facts.failedBound]}`;
   return `${measured}: did not pass (${factsText(facts)}${failed}); run ${command} for the report. ${AUTO_MODE_CAVEAT}`;

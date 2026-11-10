@@ -23,7 +23,7 @@ import {
   withTempDir,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply, OtlpCollector } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, prepareHome } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
 
@@ -84,12 +84,11 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
   return { status: response.status, text: await response.text() };
 };
 
-const ask = (model = 'fast', extra: Record<string, unknown> = {}) => ({ model, input: userInput('hi'), ...extra });
+const CHANGED_CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 2048 };
 
-const twoTargets = (a: FakeChatCompletionsServer, b: FakeChatCompletionsServer, alias: 'a' | 'b', extra: Record<string, unknown> = {}) => ({
-  models: { aliases: { fast: [alias] }, targets: { a: ccTarget(a.socketPath), b: ccTarget(b.socketPath) } },
-  ...extra,
-});
+const ask = (model = 'a/system', extra: Record<string, unknown> = {}) => ({ model, input: userInput('hi'), ...extra });
+
+const servedBy = (server: FakeChatCompletionsServer) => ({ models: modelsOf({ a: ccTarget(server.socketPath) }) });
 
 const heldRequest = async (client: UdsClient, fake: FakeChatCompletionsServer, payload: unknown = ask()) => {
   const hold = fake.hold();
@@ -99,12 +98,12 @@ const heldRequest = async (client: UdsClient, fake: FakeChatCompletionsServer, p
 };
 
 describe('S1 gateway: each request pins the router it started with (design-settings-live 3.1)', () => {
-  it('a request in flight keeps its adapter after the alias is repointed; a request that starts after the change uses the new target', async (context) => {
+  it('a request in flight keeps its adapter after the address of its model is changed; a request that starts after the change uses the new address', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
-    const stack = await startStack(context, twoTargets(a, b, 'a'));
+    const stack = await startStack(context, servedBy(a));
     const first = await heldRequest(stack.client, a);
-    replaceSettings(stack.home, twoTargets(a, b, 'b'));
+    replaceSettings(stack.home, servedBy(b));
     const second = await post(stack.client, ask());
     expect(second.status).toBe(200);
     expect(b.requests).toHaveLength(1);
@@ -116,8 +115,8 @@ describe('S1 gateway: each request pins the router it started with (design-setti
   it('a gateway started alone: a change read by a request, then a broken file, keeps serving the read content and refuses nothing', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
-    const stack = await startStack(context, twoTargets(a, b, 'a'));
-    replaceSettings(stack.home, twoTargets(a, b, 'b'));
+    const stack = await startStack(context, servedBy(a));
+    replaceSettings(stack.home, servedBy(b));
     expect((await post(stack.client, ask())).status).toBe(200);
     replaceSettingsText(stack.home, '{ "models": ');
     const answered = await post(stack.client, ask());
@@ -129,8 +128,8 @@ describe('S1 gateway: each request pins the router it started with (design-setti
   it('a gateway started alone: a change broken before any request read it serves the last content this process read', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
-    const stack = await startStack(context, twoTargets(a, b, 'a'));
-    replaceSettings(stack.home, twoTargets(a, b, 'b'));
+    const stack = await startStack(context, servedBy(a));
+    replaceSettings(stack.home, servedBy(b));
     replaceSettingsText(stack.home, '{ "models": ');
     const answered = await post(stack.client, ask());
     expect(answered.status).toBe(200);
@@ -141,7 +140,7 @@ describe('S1 gateway: each request pins the router it started with (design-setti
   it('an open WebSocket connection is not closed by a change, and its next frame sees the change', async (context) => {
     const a = await fakeUpstream(context);
     const b = await fakeUpstream(context);
-    const stack = await startStack(context, twoTargets(a, b, 'a'));
+    const stack = await startStack(context, servedBy(a));
     const socket = new WebSocket(`ws+unix://${stack.handle.socketPath}:/v1/responses`);
     registerCleanup(context, () => socket.terminate());
     const messages: Array<Record<string, unknown>> = [];
@@ -157,7 +156,7 @@ describe('S1 gateway: each request pins the router it started with (design-setti
     const terminals = (): number => messages.filter((message) => ['response.completed', 'response.failed', 'error'].includes(String(message['type']))).length;
     socket.send(JSON.stringify({ type: 'response.create', store: false, ...ask() }));
     await waitFor(() => terminals() === 1, { description: 'the first frame to complete' });
-    replaceSettings(stack.home, twoTargets(a, b, 'b'));
+    replaceSettings(stack.home, servedBy(b));
     socket.send(JSON.stringify({ type: 'response.create', store: false, ...ask() }));
     await waitFor(() => terminals() === 2, { description: 'the second frame to complete' });
     expect(closed).toBe(false);
@@ -171,11 +170,11 @@ describe('S1 gateway: breaker and gate are carried over by the identity of the t
 
   it('a change that leaves the target unchanged keeps one gate: a request of the new epoch waits for the in-flight one of the old epoch', async (context) => {
     const a = await fakeUpstream(context);
-    const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: gated(a) } } });
+    const stack = await startStack(context, { models: modelsOf({ a: gated(a) }) });
     const first = await heldRequest(stack.client, a);
-    replaceSettings(stack.home, { models: { aliases: { fast: ['a'], other: ['a'] }, targets: { a: gated(a) } }, network: { noProxy: 'example.invalid' } });
+    replaceSettings(stack.home, { models: modelsOf({ a: gated(a) }), network: { noProxy: 'example.invalid' } });
     let secondSettled = false;
-    const second = post(stack.client, ask('other')).finally(() => {
+    const second = post(stack.client, ask()).finally(() => {
       secondSettled = true;
     });
     for (let turn = 0; turn < 200; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
@@ -188,12 +187,11 @@ describe('S1 gateway: breaker and gate are carried over by the identity of the t
 
   it('a changed definition of the target starts with a new gate: a request of the new epoch does not wait for the old one', async (context) => {
     const a = await fakeUpstream(context);
-    const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: gated(a) } } });
+    const stack = await startStack(context, { models: modelsOf({ a: gated(a) }) });
     const first = await heldRequest(stack.client, a);
-    replaceSettings(stack.home, { models: { aliases: { fast: ['a'] }, targets: { a: gated(a, { model: 'system-changed' }) } } });
+    replaceSettings(stack.home, { models: modelsOf({ a: gated(a, { capabilities: CHANGED_CAPABILITIES }) }) });
     const second = post(stack.client, ask()).catch((error: unknown) => ({ status: -1, text: String(error) }));
     await waitFor(() => a.requests.length === 2, { maxTurns: 20_000, description: 'the request of the changed definition to reach the upstream while the old one is in flight' });
-    expect((a.requests[1]?.body as { model?: string } | undefined)?.model).toBe('system-changed');
     expect((await second).status).toBe(200);
     first.hold.release();
     await first.settled;
@@ -206,9 +204,9 @@ describe('S1 gateway: the redactor learns the credentials of a target added by a
     const KEY = 'added-target-credential-0123456789';
     const a = await fakeUpstream(context);
     const echo = await fakeUpstream(context, [{ kind: 'error', status: 400, body: { error: { message: `bad request, key ${KEY} was echoed`, type: 'invalid_request_error', param: null, code: null } } }]);
-    const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } }, { [KEY_ENV]: KEY });
-    replaceSettings(stack.home, { models: { aliases: { fast: ['a'], added: ['echo'] }, targets: { a: ccTarget(a.socketPath), echo: ccTarget(echo.socketPath, { apiKeyEnv: KEY_ENV }) } } });
-    const answered = await post(stack.client, ask('added'));
+    const stack = await startStack(context, { models: modelsOf({ a: ccTarget(a.socketPath) }) }, { [KEY_ENV]: KEY });
+    replaceSettings(stack.home, { models: modelsOf({ a: ccTarget(a.socketPath), echo: ccTarget(echo.socketPath, { apiKeyEnv: KEY_ENV }) }) });
+    const answered = await post(stack.client, ask('echo/system'));
     expect(echo.requests).toHaveLength(1);
     expect(answered.text).toContain(REDACTED);
     expect(answered.text).not.toContain(KEY);
@@ -221,12 +219,12 @@ describe('S1 gateway: pricing applies from the next request (design-settings-liv
     const upstream = await startFakeOpenResponses({ script: [openResponsesTextReply(['priced'], usageOf(11, 3))] });
     registerCleanup(context, () => upstream.close());
     const target = { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } };
-    const stack = await startStack(context, { models: { aliases: { fast: ['local'] }, targets: { local: target } } });
+    const stack = await startStack(context, { models: modelsOf({ local: target }) });
     replaceSettings(stack.home, {
-      models: { aliases: { fast: ['local'] }, targets: { local: target } },
+      models: modelsOf({ local: target }),
       pricing: [{ provider: 'acme', model: 'local-fake', effectiveFrom: '2026-01-01', inputPerMTok: 1_000_000, outputPerMTok: 2_000_000, currency: 'USD' }],
     });
-    expect((await post(stack.client, ask('fast', { metadata: { run_id: 'run-1' } }))).status).toBe(200);
+    expect((await post(stack.client, ask('acme/local-fake', { metadata: { run_id: 'run-1' } }))).status).toBe(200);
     const cost = await stack.client.request({
       method: 'POST',
       path: '/v1/momonga/cost',
@@ -284,16 +282,16 @@ describe('S1 gateway: a changed network applies from the next connection (design
   it('a request that starts after the change goes through the new proxy, and the running request keeps its connection open', async (context) => {
     const before = await startProxy(context, 'silent');
     const after = await startProxy(context, 'refuse');
-    const models = { aliases: { fast: ['remote'] }, targets: { remote: remoteTarget } };
+    const models = modelsOf({ remote: remoteTarget });
     const stack = await startStack(context, { models, network: { httpsProxy: `http://127.0.0.1:${before.port}` } }, { [REMOTE_KEY_ENV]: 'remote-key-0123456789' });
     registerCleanup(context, () => {
       before.dropConnections();
       after.dropConnections();
     });
-    void post(stack.client, ask('fast', { stream: false })).catch(() => undefined);
+    void post(stack.client, ask('remote/model-a', { stream: false })).catch(() => undefined);
     await waitFor(() => before.connects().length === 1, { description: 'the first request to reach the first proxy' });
     replaceSettings(stack.home, { models, network: { httpsProxy: `http://127.0.0.1:${after.port}` } });
-    void post(stack.client, ask('fast', { stream: false })).catch(() => undefined);
+    void post(stack.client, ask('remote/model-a', { stream: false })).catch(() => undefined);
     await waitFor(() => after.connects().length > 0 || before.connects().length > 1, { maxTurns: 20_000, description: 'the second request to reach a proxy' });
     expect(after.connects()).toEqual(['CONNECT model.example.test:443 HTTP/1.1']);
     expect(before.connects()).toHaveLength(1);
@@ -308,14 +306,14 @@ describe('S1 gateway: the redactor learns the proxy password of a changed networ
     const PROXY_PASSWORD = 'changed-proxy-password-0123456789';
     const initial = await startProxy(context, 'refuse');
     const refusing = await startProxy(context, 'refuse');
-    const models = { aliases: { fast: ['remote'] }, targets: { remote: remoteTarget } };
+    const models = modelsOf({ remote: remoteTarget });
     const stack = await startStack(context, { models, network: { httpsProxy: `http://127.0.0.1:${initial.port}` } }, { [REMOTE_KEY_ENV]: 'remote-key-0123456789' });
     registerCleanup(context, () => {
       initial.dropConnections();
       refusing.dropConnections();
     });
     replaceSettings(stack.home, { models, network: { httpsProxy: `http://user:${PROXY_PASSWORD}@127.0.0.1:${refusing.port}` } });
-    const answered = await post(stack.client, ask('fast', { stream: false }));
+    const answered = await post(stack.client, ask('remote/model-a', { stream: false }));
     expect(refusing.connects()).toEqual(['CONNECT model.example.test:443 HTTP/1.1']);
     expect(answered.text).not.toContain(PROXY_PASSWORD);
     expect(stack.logText()).not.toContain(PROXY_PASSWORD);
@@ -329,7 +327,7 @@ describe('S2 gateway telemetry: a span ends on the provider it started on (desig
     const second = await startOtlpCollector();
     registerCleanup(context, () => second.close());
     const a = await fakeUpstream(context);
-    const models = { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } };
+    const models = modelsOf({ a: ccTarget(a.socketPath) });
     const stack = await startStack(context, { models, telemetry: { otlp: { endpoint: first.endpoint } } });
     const held = await heldRequest(stack.client, a);
     replaceSettings(stack.home, { models, telemetry: { otlp: { endpoint: second.endpoint } } });
@@ -346,8 +344,8 @@ describe('S2 gateway telemetry: a span ends on the provider it started on (desig
 describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)', () => {
   it('an edit a to b to a with a call in flight on the first epoch shares one gate for the counter of a', async (context) => {
     const a = await fakeUpstream(context);
-    const definitionA = { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath, { maxConcurrency: 1 }) } } };
-    const definitionB = { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath, { maxConcurrency: 1, model: 'system-b' }) } } };
+    const definitionA = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1 }) }) };
+    const definitionB = { models: modelsOf({ a: ccTarget(a.socketPath, { maxConcurrency: 1, capabilities: CHANGED_CAPABILITIES }) }) };
     const stack = await startStack(context, definitionA);
     const first = await heldRequest(stack.client, a);
     replaceSettings(stack.home, definitionB);
@@ -367,13 +365,13 @@ describe('S1 gateway: carry-over from any live epoch (design-settings-live 15.4)
 });
 
 describe('S1 gateway: a plan target added by a change is applied and served through the plan sessions (design-settings-live 15.3, design-chatgpt-plan P6.8)', () => {
-  it('a change that adds a plan target is applied: with no account signed in its alias answers sign_in_required, other targets serve', async (context) => {
+  it('a change that adds a plan target is applied: with no account signed in its model answers sign_in_required, other targets serve', async (context) => {
     const a = await fakeUpstream(context);
-    const stack = await startStack(context, { models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(a.socketPath) } } });
+    const stack = await startStack(context, { models: modelsOf({ a: ccTarget(a.socketPath) }) });
     replaceSettings(stack.home, {
-      models: { aliases: { fast: ['a'], plan: ['gpt'] }, targets: { a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt' } } } },
+      models: modelsOf({ a: ccTarget(a.socketPath), gpt: { adapter: 'open-responses', model: 'gpt-fake', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: 'chatgpt' } } }),
     });
-    const refused = await post(stack.client, ask('plan'));
+    const refused = await post(stack.client, ask('gpt/gpt-fake'));
     expect(refused.text).toContain('sign_in_required');
     expect((await post(stack.client, ask())).status).toBe(200);
   });
@@ -404,7 +402,7 @@ const fakeSupervisor = async (context: CleanupContext, home: string): Promise<{ 
   return { asked };
 };
 
-const keyedTarget = (fake: FakeChatCompletionsServer) => ({ models: { aliases: { fast: ['a'] }, targets: { a: ccTarget(fake.socketPath, { apiKeyEnv: CREDENTIAL_ENV }) } } });
+const keyedTarget = (fake: FakeChatCompletionsServer) => ({ models: modelsOf({ a: ccTarget(fake.socketPath, { apiKeyEnv: CREDENTIAL_ENV }) }) });
 
 const startKeyedStack = async (context: CleanupContext, fake: FakeChatCompletionsServer, env: Record<string, string>, beforeStart: (home: string) => Promise<unknown>) => {
   const home = withTempDir(context, { asHome: true });

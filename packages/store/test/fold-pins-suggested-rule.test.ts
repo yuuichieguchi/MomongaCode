@@ -8,7 +8,7 @@ const start = () => initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_
 const foldAll = (events: readonly RunEvent[], from: RunState = start()) => events.reduce(foldRunState, from);
 
 const FIRST_PINS = {
-  modelAlias: 'fm',
+  model: 'fm',
   systemPromptDigest: fixtureSubjectDigest('system prompt'),
   toolSetDigest: fixtureSubjectDigest('tool set'),
   capabilities: { contextWindow: 4096, parallelToolCalls: false },

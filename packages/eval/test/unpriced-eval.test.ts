@@ -55,7 +55,7 @@ const reportOf = (outcomes: (caseId: string) => Outcome): ContextReport =>
 const costLine = (report: ContextReport): string | undefined => formatContextReport(report).split('\n').find((line) => line.includes('costPerSuccess'));
 
 describe('eval records why a cost is unmeasured (R-D)', () => {
-  it('names plan usage in the costPerSuccess line of a plan alias', () => {
+  it('names plan usage in the costPerSuccess line of a plan model', () => {
     const report = reportOf(() => ({ unpriced: 'plan' }));
 
     expect(report.metrics.costPerSuccess).toBeUndefined();

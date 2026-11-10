@@ -24,7 +24,7 @@ export const NO_TOOL_CHOICE_WIRE: ToolChoiceWire = { forms: [], expressesRequire
 const FORM_PREFERENCE: readonly AllowedToolsForm[] = ['native', 'envelope', 'single_tool', 'filter'];
 
 const refusal = (target: string, reason: string, choice = 'of type allowed_tools'): UnsupportedInputError =>
-  new UnsupportedInputError('unsupported_tool_choice', `tool_choice ${choice} cannot be sent to target "${target}": ${reason}`, 'tool_choice');
+  new UnsupportedInputError('unsupported_tool_choice', `tool_choice ${choice} cannot be sent to model "${target}": ${reason}`, 'tool_choice');
 
 const rewritten = (request: AdapterRequest, toolChoice: ToolChoice, tools?: readonly FunctionTool[]): AdapterRequest => ({
   ...request,

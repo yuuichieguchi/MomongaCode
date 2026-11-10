@@ -26,8 +26,13 @@ export type TextRequest = {
   readonly title: string;
   readonly lines?: readonly string[];
   readonly initial?: string;
+  readonly hidden?: boolean;
   validate(text: string): string | undefined;
 };
+
+const HIDDEN_MARK = '•';
+
+export const shownEntry = (request: Pick<TextRequest, 'hidden'>, text: string): string => (request.hidden === true ? HIDDEN_MARK.repeat([...text].length) : text);
 
 export type WaitingView = { readonly title: string; readonly lines: readonly string[]; readonly url: URL; readonly state: string };
 
@@ -114,7 +119,7 @@ export function OverlayView({ overlay, editor, keys }: { overlay: PanelOverlay; 
           {(overlay.request.lines ?? []).map((line, index) => (
             <Text key={index}>{escapeTerminalLine(line)}</Text>
           ))}
-          {editor.text.split('\n').map((line, index) => (
+          {shownEntry(overlay.request, editor.text).split('\n').map((line, index) => (
             <Text key={index}>{`${index === 0 ? '> ' : '  '}${escapeTerminalLine(line)}`}</Text>
           ))}
           {overlay.error === undefined ? null : <Text color="red">{escapeTerminalLine(overlay.error)}</Text>}

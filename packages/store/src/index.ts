@@ -132,7 +132,7 @@ export type {
   StartedCall,
   Session,
   SessionMcpServers,
-  SetModelAliasResult,
+  SetModelResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   SnapshotResult,

@@ -99,21 +99,21 @@ describe('the Anthropic adapter applies the marks of a gateway request per its t
 
   it('places the breakpoints at the marks when the target declares breakpoints', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: CACHING });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input, momonga: { cache: MARKS } }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input, momonga: { cache: MARKS } }));
     expect(response.status).toBe(200);
     expect(cachedTextsOf(gateway.fake.requests[0]?.body as never).sort()).toEqual(['five', 'rules', 'three']);
   });
 
   it('sends no breakpoint for marks when the target has no promptCache capability', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: REMOTE_CAPABILITIES });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input, momonga: { cache: MARKS } }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input, momonga: { cache: MARKS } }));
     expect(response.status).toBe(200);
     expect(cachedTextsOf(gateway.fake.requests[0]?.body as never)).toEqual([]);
   });
 
   it('never forwards momonga or a prompt_cache_key to the Anthropic wire', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: CACHING });
-    await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input, prompt_cache_key: 'k', momonga: { cache: MARKS } }));
+    await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input, prompt_cache_key: 'k', momonga: { cache: MARKS } }));
     const sent = gateway.fake.requests[0]?.body as Record<string, unknown>;
     expect(sent).not.toHaveProperty('momonga');
     expect(sent).not.toHaveProperty('prompt_cache_key');

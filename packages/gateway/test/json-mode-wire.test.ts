@@ -95,7 +95,7 @@ const openResponses: NativeSurface = {
       clock: createFakeClock(START_MS),
     });
     registerCleanup(() => adapter.close());
-    const { events, error } = await drain(adapter, { name: 'remote', model: 'gpt-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', display: 'remote', model: 'gpt-fake' }, request);
     return { wire: fake.requests.at(-1)?.body as any, events, error };
   },
   formatOf: (wire) => wire?.text?.format,
@@ -116,7 +116,7 @@ const anthropic: Surface = {
       apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
-    const { events, error } = await drain(adapter, { name: 'remote', model: 'claude-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', display: 'remote', model: 'claude-fake' }, request);
     return { wire: fake.requests.at(-1)?.body as any, events, error };
   },
   formatOf: (wire) => wire?.output_config?.format,

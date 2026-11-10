@@ -5,7 +5,7 @@ import { bigTextEvents, createLiveSpanTelemetry, openRawPost } from './gateway-s
 import { makeAdapter, startFake } from './cc-support.ts';
 
 const events = (text: string) => textResponseEvents({ model: 'scripted-primary', chunks: [text] });
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'scripted/scripted-primary', input: userInput('hi') };
 const streamBody = { ...body, stream: true };
 const key = (value: string) => ({ 'idempotency-key': value });
 
@@ -33,7 +33,7 @@ describe('detached keyed runs', () => {
   it('runs a keyed stream to completion exactly once after its only client disconnects, then replays it', async () => {
     const plan = events('detached');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }, { events: events('second') }] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-1') });
     await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'first two frames' });
@@ -56,7 +56,7 @@ describe('detached keyed runs', () => {
   it('runs a keyed non-stream request to completion after disconnect and replays it non-streamed', async () => {
     const plan = events('unary detached');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 1 } }] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', body, { headers: key('d-2') });
     await waitFor(() => primary.calls[0]?.emitted === 1);
@@ -77,7 +77,7 @@ describe('detached keyed runs', () => {
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 3 } }] });
     const clock = createFakeClock(START_MS);
     const live = createLiveSpanTelemetry(clock);
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-3') });
     await waitFor(() => primary.calls[0]?.emitted === 3 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the lifecycle events' });
@@ -106,7 +106,7 @@ describe('detached keyed runs', () => {
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
     const clock = createFakeClock(START_MS);
     const live = createLiveSpanTelemetry(clock);
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const leading = postJson(client, '/v1/responses', streamBody, key('d-4'));
     await waitFor(() => primary.calls[0]?.emitted === 2 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the opening events' });
@@ -132,7 +132,7 @@ describe('detached keyed runs', () => {
   it('ends only the joiner when the joiner deadline passes, and the run still commits', async () => {
     const plan = events('deadline joiner');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-5') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
@@ -160,7 +160,7 @@ describe('detached keyed runs', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: events('too slow'), gate: { name: 'never', afterEvents: 1 } }, { events: events('fresh') }],
     });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, config: { detachedMaxMs: 60_000 } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { detachedMaxMs: 60_000 } });
     registerCleanup(() => primary.release('never'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-6') });
     await waitFor(() => primary.calls[0]?.emitted === 1);
@@ -180,7 +180,7 @@ describe('detached keyed runs', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: bigTextEvents(10, 1000), gate: { name: 'g', afterEvents: 12 } }, { events: events('rerun') }],
     });
-    const { client, socketPath } = await startGateway({ adapters: { primary }, config: { limits: { maxIdempotencyFrameBytes: 4000 } } });
+    const { client, socketPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { limits: { maxIdempotencyFrameBytes: 4000 } } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-7') });
     await waitFor(() => primary.calls[0]?.emitted === 12, { description: 'frames past the cap' });
@@ -199,7 +199,7 @@ describe('detached keyed runs', () => {
 describe('unkeyed runs', () => {
   it('still abort upstream when the client disconnects', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('abandoned'), gate: { name: 'g', afterEvents: 2 } }] });
-    const { socketPath } = await startGateway({ adapters: { primary } });
+    const { socketPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody);
     await waitFor(() => primary.calls[0]?.emitted === 2);
@@ -211,16 +211,18 @@ describe('unkeyed runs', () => {
 });
 
 describe('POST /v1/momonga/responses/cancel', () => {
+  const ccBody = { ...body, model: 'scripted/system' };
+  const ccStreamBody = { ...ccBody, stream: true };
   const hanging = () => ({ kind: 'hang' as const, chunks: [{ delta: { role: 'assistant', content: 'partial' } }] });
-  const ccTargets = { aliases: { fast: ['fm'] }, targets: { fm: { kind: 'chat-completions', model: 'system' } } };
+  const ccTargets = { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': { kind: 'chat-completions' } } };
 
   const cancel = (client: Awaited<ReturnType<typeof startGateway>>['client'], value?: string) =>
     client.request({ method: 'POST', path: '/v1/momonga/responses/cancel', headers: value === undefined ? {} : key(value) });
 
   it('aborts the in-flight run for the key, stores nothing, and a later request with the key runs again', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [hanging()] });
-    const { client, socketPath } = await startGateway({ adapters: { fm: makeAdapter(fake) }, config: ccTargets });
-    await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('c-1') });
+    const { client, socketPath } = await startGateway({ adapters: { 'scripted/system': makeAdapter(fake) }, config: ccTargets });
+    await openRawPost(socketPath, '/v1/responses', ccStreamBody, { headers: key('c-1') });
     await waitFor(() => fake.openConnections() === 1 && fake.requests.length === 1, { description: 'upstream call open' });
     expect(fake.disconnects()).toBe(0);
 
@@ -229,7 +231,7 @@ describe('POST /v1/momonga/responses/cancel', () => {
     expect(cancelled.body).toEqual({ cancelled: true });
     await waitFor(() => fake.disconnects() === 1, { description: 'upstream disconnected' });
 
-    const again = await readJson(await postJson(client, '/v1/responses', body, key('c-1')));
+    const again = await readJson(await postJson(client, '/v1/responses', ccBody, key('c-1')));
     expect(again.status).toBe(200);
     expect(outputText(again.body)).toBe(FAKE_DETERMINISTIC_REPLY);
     expect(fake.requests.filter((request) => request.path === '/v1/chat/completions')).toHaveLength(2);
@@ -237,8 +239,8 @@ describe('POST /v1/momonga/responses/cancel', () => {
 
   it('aborts a run that is detached from every client', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [hanging()] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { fm: makeAdapter(fake) }, config: ccTargets });
-    const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('c-2') });
+    const { client, socketPath, timers } = await startGateway({ adapters: { 'scripted/system': makeAdapter(fake) }, config: ccTargets });
+    const raw = await openRawPost(socketPath, '/v1/responses', ccStreamBody, { headers: key('c-2') });
     await waitFor(() => fake.openConnections() === 1 && fake.requests.length === 1);
     raw.socket.destroy();
     await detached(timers);
@@ -249,7 +251,7 @@ describe('POST /v1/momonga/responses/cancel', () => {
 
   it('answers cancelled false for a key with no in-flight run, including a completed one', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('done') }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await readJson(await cancel(client, 'c-unknown'))).body).toEqual({ cancelled: false });
     await readJson(await postJson(client, '/v1/responses', body, key('c-3')));
     const response = await readJson(await cancel(client, 'c-3'));
@@ -265,7 +267,7 @@ describe('close() drain', () => {
   it('lets a detached keyed run finish within closeGraceMs and commit it', async () => {
     const plan = events('drained');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
-    const first = await startGateway({ adapters: { primary }, config: { closeGraceMs: 750 } });
+    const first = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: 750 } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(first.socketPath, '/v1/responses', streamBody, { headers: key('x-1') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
@@ -282,7 +284,7 @@ describe('close() drain', () => {
     expect(first.gateway.abandonedRuns).toBe(0);
 
     const successor = createScriptedAdapter({ calls: [{ events: events('should not run') }] });
-    const second = await startGateway({ adapters: { primary: successor }, dir: first.dir, clock: first.clock });
+    const second = await startGateway({ adapters: { 'scripted/scripted-primary': successor }, dir: first.dir, clock: first.clock });
     const replayed = await readJson(await postJson(second.client, '/v1/responses', body, key('x-1')));
     expect(outputText(replayed.body)).toBe('drained');
     expect(successor.calls).toHaveLength(0);
@@ -290,7 +292,7 @@ describe('close() drain', () => {
 
   it('aborts a keyed run still in flight after closeGraceMs and leaves its key unstored', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('cut off'), gate: { name: 'never', afterEvents: 2 } }] });
-    const first = await startGateway({ adapters: { primary }, config: { closeGraceMs: 750 } });
+    const first = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: 750 } });
     registerCleanup(() => primary.release('never'));
     const raw = await openRawPost(first.socketPath, '/v1/responses', streamBody, { headers: key('x-2') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
@@ -307,7 +309,7 @@ describe('close() drain', () => {
     expect(first.gateway.abandonedRuns).toBe(1);
 
     const successor = createScriptedAdapter({ calls: [{ events: events('re-sent') }] });
-    const second = await startGateway({ adapters: { primary: successor }, dir: first.dir, clock: first.clock });
+    const second = await startGateway({ adapters: { 'scripted/scripted-primary': successor }, dir: first.dir, clock: first.clock });
     const again = await readJson(await postJson(second.client, '/v1/responses', body, key('x-2')));
     expect(outputText(again.body)).toBe('re-sent');
     expect(successor.calls).toHaveLength(1);
@@ -315,7 +317,7 @@ describe('close() drain', () => {
 
   it('refuses new requests once draining starts', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('slow'), gate: { name: 'g', afterEvents: 1 } }] });
-    const { gateway, socketPath, timers } = await startGateway({ adapters: { primary }, config: { closeGraceMs: 750 } });
+    const { gateway, socketPath, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: 750 } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('x-3') });
     await waitFor(() => primary.calls[0]?.emitted === 1);

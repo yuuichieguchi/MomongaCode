@@ -71,7 +71,7 @@ import type {
   RuntimeStoreOptions,
   ServiceMutationResult,
   Session,
-  SetModelAliasResult,
+  SetModelResult,
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   StatusPatch,
@@ -208,12 +208,12 @@ const ROOT_SESSION = 'NOT EXISTS (SELECT 1 FROM runs child WHERE child.session_i
 
 const prepareStatements = (db: DatabaseSync) => ({
   insertSession: db.prepare(
-    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
-     VALUES (:id, :cwd, :env, :permissionMode, :modelAlias, :bypassAllowed, :additionalDirectories, :mcpServers, :createdAt)`,
+    `INSERT INTO sessions (id, cwd, env_json, permission_mode, model, bypass_allowed, additional_directories_json, mcp_servers_json, created_at)
+     VALUES (:id, :cwd, :env, :permissionMode, :model, :bypassAllowed, :additionalDirectories, :mcpServers, :createdAt)`,
   ),
   updateSessionMcpServers: db.prepare('UPDATE sessions SET mcp_servers_json = :mcpServers WHERE id = :id'),
   updateSessionMode: db.prepare('UPDATE sessions SET permission_mode = :permissionMode WHERE id = :id'),
-  updateSessionModelAlias: db.prepare('UPDATE sessions SET model_alias = :modelAlias WHERE id = :id'),
+  updateSessionModel: db.prepare('UPDATE sessions SET model = :model WHERE id = :id'),
   sessionMaxEventId: db.prepare('SELECT COALESCE(MAX(id), 0) AS max_id FROM events WHERE session_id = :sessionId'),
   selectSession: db.prepare('SELECT * FROM sessions WHERE id = :id'),
   listSessions: db.prepare(`SELECT * FROM sessions s WHERE ${ROOT_SESSION} ORDER BY created_at, rowid`),
@@ -1223,7 +1223,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           cwd: input.cwd,
           env: canonicalJson(input.env),
           permissionMode: input.permissionMode,
-          modelAlias: input.modelAlias,
+          model: input.model,
           bypassAllowed: input.bypassAllowed === true ? 1 : 0,
           additionalDirectories: canonicalJson(input.additionalDirectories ?? []),
           mcpServers: canonicalJson(input.mcpServers ?? {}),
@@ -1254,13 +1254,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', session: { ...session, permissionMode: mode }, changed: true };
       }),
 
-    setModelAlias: (sessionId, modelAlias: string) =>
-      transaction<SetModelAliasResult>(() => {
+    setModel: (sessionId, model: string) =>
+      transaction<SetModelResult>(() => {
         const row = sql.selectSession.get({ id: sessionId });
         if (row === undefined) return { kind: 'not_found' };
         const session = decodeSession(row, decodeContext);
-        if (session.modelAlias === modelAlias) return { kind: 'ok', session, changed: false };
-        sql.updateSessionModelAlias.run({ id: sessionId, modelAlias });
+        if (session.model === model) return { kind: 'ok', session, changed: false };
+        sql.updateSessionModel.run({ id: sessionId, model });
         insertEvent({
           runId: null,
           sessionId,
@@ -1268,9 +1268,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           step: null,
           leaseToken: null,
           createdAt: clock.now(),
-          payload: { type: 'model.changed', modelAlias, previousModelAlias: session.modelAlias },
+          payload: { type: 'model.changed', model, previousModel: session.model },
         });
-        return { kind: 'ok', session: { ...session, modelAlias }, changed: true };
+        return { kind: 'ok', session: { ...session, model }, changed: true };
       }),
 
     setSessionMcpServers: (sessionId, servers) =>
@@ -1315,7 +1315,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           cwd: parentSession.cwd,
           env: canonicalJson(parentSession.env),
           permissionMode: parentSession.permissionMode,
-          modelAlias: input.modelAlias,
+          model: input.model,
           bypassAllowed: parentSession.bypassAllowed ? 1 : 0,
           additionalDirectories: canonicalJson(parentSession.additionalDirectories),
           mcpServers: canonicalJson(parentSession.mcpServers),

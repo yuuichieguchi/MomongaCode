@@ -71,7 +71,7 @@ const harness = (script: Script = {}) => {
       },
       reflectionOf: async () => ({ state: 'none' }),
       answeredBy: async () => [REAL_TARGET],
-      getRun: async (runId) => ({ id: runId, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: script.tokens ?? 10 }, modelAlias: 'gamma' }),
+      getRun: async (runId) => ({ id: runId, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: script.tokens ?? 10 }, model: 'gamma' }),
       resolveApproval: async () => undefined,
       cancelRun: async (runId) => {
         cancelled.push(runId);
@@ -97,7 +97,7 @@ const harness = (script: Script = {}) => {
       close: async () => void log.push(`close ${entry.id}`),
     };
   };
-  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { ...RECORDED_IDENTITY, openCase, modelAlias: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
+  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { ...RECORDED_IDENTITY, openCase, model: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
 };
 
 const rule = (id: string, text: string, overrides: Record<string, unknown> = {}) => ({ id, kind: 'constraint', target: 'test-runner', text, inScope: true, live: true, supersedes: [], ...overrides });
@@ -182,10 +182,10 @@ describe('runContextDataset', () => {
     expect(failure).toBe(caseError);
   });
 
-  it('pins the alias on every session', async () => {
+  it('pins the model on every session', async () => {
     const context = harness();
     await runContextDataset(expandContextDataset(datasetOf(pair('a')), 1), context.ports);
-    expect(context.sessions.map((session) => session['modelAlias'])).toEqual(['gamma', 'gamma']);
+    expect(context.sessions.map((session) => session['model'])).toEqual(['gamma', 'gamma']);
     expect(context.sessions.map((session) => session['cwd'])).toEqual(['/w/a-on', '/w/a-off']);
   });
 
@@ -319,7 +319,7 @@ describe('the bounds of a live run', () => {
 });
 
 describe('caseSettingsFor', () => {
-  const base = { models: { aliases: { gamma: ['t'] } }, sandbox: 'none', context: { adaptiveBudget: true } };
+  const base = { models: { start: 'scripted/gamma' }, sandbox: 'none', context: { adaptiveBudget: true } };
 
   it.each([
     ['on', true],
@@ -372,14 +372,14 @@ describe('applyWorkspaceStep', () => {
 });
 
 describe('transcripts of a live run', () => {
-  const live = (): Transcript => ({ ...recorded('a-on', 0, [governing('fact-1')], { modelAlias: 'gamma' }), ruleIds: { 'fact-1': 'only' }, datasetSeed: 7, stopped: 'past the deadline' });
+  const live = (): Transcript => ({ ...recorded('a-on', 0, [governing('fact-1')], { model: 'gamma' }), ruleIds: { 'fact-1': 'only' }, datasetSeed: 7, stopped: 'past the deadline' });
 
   it('keeps the rule map, the seed and the stop reason through the file format', () => {
     const decoded = decodeTranscript(encodeTranscript(live()), 'x');
     expect(decoded.ruleIds).toEqual({ 'fact-1': 'only' });
     expect(decoded.datasetSeed).toBe(7);
     expect(decoded.stopped).toBe('past the deadline');
-    expect(decoded.run.modelAlias).toBe('gamma');
+    expect(decoded.run.model).toBe('gamma');
   });
 
   it('reads a governing load through the rule map', () => {

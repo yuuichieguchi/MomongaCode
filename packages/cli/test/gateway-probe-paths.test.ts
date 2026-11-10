@@ -67,18 +67,18 @@ describe('gateway probe on a HOME that has never run momonga', () => {
     const fm = await createFakeFm({ dir: freshShortDir() });
     fm.configure({ serve: { scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' } });
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
-    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
+    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { connections: [{ adapter: 'managed', server: 'fm', binary: fm.binaryPath, models: [{ id: 'system' }] }] } }), { mode: 0o600 });
 
-    const result = await runCli(home, ['gateway', 'probe', 'fm', '--samples', '1']);
+    const result = await runCli(home, ['gateway', 'probe', 'system', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
-    expect(result.stdout).toContain('probed fm: model system, context window 8192 (reported)');
+    expect(result.stdout).toContain('probed system: model system, context window 8192 (reported)');
     expect(modeOf(path.join(home, '.momonga'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'run'))).toBe(0o700);
     expect(modeOf(path.join(home, '.momonga', 'state'))).toBe(0o700);
   });
 
-  it('brings an existing ~/.momonga that holds only the settings to the private tree before probing a chat-completions target', async () => {
+  it('brings an existing ~/.momonga that holds only the settings to the private tree before probing a model of an OpenAI-compatible server', async () => {
     const home = freshShortDir();
     const upstream: FakeChatCompletionsServer = await startFakeChatCompletions({ scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' });
     cleanups.push(() => upstream.close());
@@ -89,28 +89,26 @@ describe('gateway probe on a HOME that has never run momonga', () => {
       path.join(root, 'settings.json'),
       JSON.stringify({
         models: {
-          targets: {
-            remote: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: upstream.socketPath, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
-          },
+          connections: [{ adapter: 'chat-completions', provider: 'fake', socketPath: upstream.socketPath, models: [{ id: 'system', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
         },
       }),
       { mode: 0o600 },
     );
 
-    const result = await runCli(home, ['gateway', 'probe', 'remote', '--samples', '1']);
+    const result = await runCli(home, ['gateway', 'probe', 'fake/system', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
-    expect(result.stdout).toContain('probed remote: model system');
+    expect(result.stdout).toContain('probed system: model system');
     expect(modeOf(root)).toBe(0o700);
     expect(modeOf(path.join(root, 'run'))).toBe(0o700);
     expect(modeOf(path.join(root, 'state'))).toBe(0o700);
   });
 });
 
-describe('gateway probe of a target whose key is a secret the store cannot give', () => {
+describe('gateway probe of a model whose server key is a secret the store cannot give', () => {
   const COMMAND_LIMIT_MS = 300_000;
 
-  const homeWithSecretTarget = (): string => {
+  const homeWithSecretServer = (): string => {
     const home = freshShortDir();
     const root = path.join(home, '.momonga');
     fs.mkdirSync(root, { mode: 0o700 });
@@ -118,9 +116,9 @@ describe('gateway probe of a target whose key is a secret the store cannot give'
       path.join(root, 'settings.json'),
       JSON.stringify({
         models: {
-          targets: {
-            remote: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: path.join(home, 'never-reached.sock'), apiKeySecret: 'k', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } },
-          },
+          connections: [
+            { adapter: 'chat-completions', provider: 'remote', socketPath: path.join(home, 'never-reached.sock'), apiKeySecret: 'k', models: [{ id: 'system', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] },
+          ],
         },
       }),
       { mode: 0o600 },
@@ -144,13 +142,13 @@ describe('gateway probe of a target whose key is a secret the store cannot give'
   ];
 
   it.for(rows)('a hung key read ends at the command limit; an absent store prints the read text ($title)', async ({ control, waitsForLimit, message }) => {
-    const home = homeWithSecretTarget();
+    const home = homeWithSecretServer();
     const keychain = keychainFixture({ control });
     const interrupt = new AbortController();
     cleanups.push(() => interrupt.abort(new Error('the test ended')));
     if (waitsForLimit) useLimitTimers();
 
-    const attempt = outcomeOf(runCli(home, ['gateway', 'probe', 'remote', '--samples', '1'], { secretStore: () => keychain.store }, interrupt.signal));
+    const attempt = outcomeOf(runCli(home, ['gateway', 'probe', 'remote/system', '--samples', '1'], { secretStore: () => keychain.store }, interrupt.signal));
     if (waitsForLimit) {
       await keychain.arrived('find-generic-password');
       await vi.advanceTimersByTimeAsync(COMMAND_LIMIT_MS - 1);

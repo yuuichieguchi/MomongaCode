@@ -35,18 +35,18 @@ const withoutAllowedTools = (capabilities: Capabilities): Capabilities => {
   return rest;
 };
 
-const requestBody = (tools: unknown, toolChoice: unknown) => ({ model: 'fast', input: userInput('hello'), tools, tool_choice: toolChoice });
+const requestBody = (tools: unknown, toolChoice: unknown, model: string) => ({ model, input: userInput('hello'), tools, tool_choice: toolChoice });
 
 const listedNames = (body: any): string[] => (body?.tools ?? []).map((tool: any) => tool.function?.name ?? tool.name);
 
 const systemText = (body: any): string =>
   (body?.messages ?? []).filter((message: any) => message.role === 'system').map((message: any) => message.content).join('\n');
 
-const remoteConfig = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote', capabilities: FILTER_OVERRIDE } } };
+const remoteConfig = { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote', capabilities: FILTER_OVERRIDE } } };
 
-const expectCountedAsSubset = async (client: Parameters<typeof postJson>[0]) => {
-  const filtered = await readJson(await postJson(client, '/v1/momonga/count_tokens', requestBody(TOOLS, TWO_AUTO)));
-  const subset = await readJson(await postJson(client, '/v1/momonga/count_tokens', requestBody(SUBSET_TOOLS, 'auto')));
+const expectCountedAsSubset = async ({ client, model }: { client: Parameters<typeof postJson>[0]; model: string }) => {
+  const filtered = await readJson(await postJson(client, '/v1/momonga/count_tokens', requestBody(TOOLS, TWO_AUTO, model)));
+  const subset = await readJson(await postJson(client, '/v1/momonga/count_tokens', requestBody(SUBSET_TOOLS, 'auto', model)));
   expect(filtered.status).toBe(200);
   expect(subset.status).toBe(200);
   expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
@@ -57,8 +57,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     const own = withoutAllowedTools(REMOTE_CAPABILITIES);
     const creating = await startAnthropicGateway({ capabilities: own, config: remoteConfig, script: [anthropicTextReply(['ok'])] });
     const counting = await startAnthropicGateway({ capabilities: own, config: remoteConfig, script: [anthropicCountTokensReply(42)] });
-    const created = await readJson(await postJson(creating.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
-    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', requestBody(TOOLS, TWO_AUTO)));
+    const created = await readJson(await postJson(creating.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, creating.model)));
+    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', requestBody(TOOLS, TWO_AUTO, counting.model)));
     expect(counted.status).toBe(200);
     const count = counting.fake.requests[0]?.body as any;
     expect(listedNames(count)).toEqual(['alpha', 'beta']);
@@ -73,8 +73,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
 
   it('open-responses: create sends the filtered tools and count_tokens counts the same tools', async () => {
     const gateway = await startOpenResponsesGateway({ capabilities: withoutAllowedTools(REMOTE_CAPABILITIES), config: remoteConfig, script: [openResponsesTextReply(['ok'])] });
-    await expectCountedAsSubset(gateway.client);
-    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
+    await expectCountedAsSubset(gateway);
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
     expect(created.body.error).toBeNull();
     expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
@@ -85,11 +85,11 @@ describe('a probe-derived override reaches the send path as it reaches the count
     const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
     const adapter = makeOllamaAdapter(fake, { capabilities: async () => withoutAllowedTools(OLLAMA_CAPABILITIES) });
     const gateway = await startGateway({
-      adapters: { local: adapter },
-      config: { aliases: { fast: ['local'] }, targets: { local: { model: 'devstral-small-2', kind: 'local', capabilities: FILTER_OVERRIDE } } },
+      adapters: { 'scripted/devstral-small-2': adapter },
+      config: { chains: { 'scripted/devstral-small-2': ['scripted/devstral-small-2'] }, targets: { 'scripted/devstral-small-2': { kind: 'local', capabilities: FILTER_OVERRIDE } } },
     });
-    await expectCountedAsSubset(gateway.client);
-    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
+    await expectCountedAsSubset(gateway);
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
     expect(created.body.error).toBeNull();
     expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
@@ -103,16 +103,16 @@ describe('a probe-derived override reaches the send path as it reaches the count
     });
     const adapter = makeAdapter(fake, { capabilities: async () => withoutAllowedTools({ ...CC_CAPABILITIES, toolCalling }) });
     const gateway = await startGateway({
-      adapters: { fm: adapter },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system', capabilities: FILTER_OVERRIDE } } },
+      adapters: { 'fm/system': adapter },
+      config: { chains: { 'fm/system': ['fm/system'] }, targets: { 'fm/system': { capabilities: FILTER_OVERRIDE } } },
     });
     return { fake, gateway };
   };
 
   it('chat-completions native: create sends the filtered tools and count_tokens counts the same tools', async () => {
     const { fake, gateway } = await startCcGateway('native', 'tools-ok', 'ok');
-    await expectCountedAsSubset(gateway.client);
-    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
+    await expectCountedAsSubset(gateway);
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
     expect(created.body.error).toBeNull();
     expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
@@ -121,8 +121,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
 
   it('chat-completions constrained: create offers only the filtered tools and count_tokens counts the same tools', async () => {
     const { fake, gateway } = await startCcGateway('constrained', 'json-schema-only', '{"kind":"final","text":"ok"}');
-    await expectCountedAsSubset(gateway.client);
-    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
+    await expectCountedAsSubset(gateway);
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO, gateway.model)));
     expect(created.body.error).toBeNull();
     expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
@@ -157,10 +157,10 @@ describe('compaction follows the capabilities the router resolves', () => {
     const target = { model: 'upstream-model', kind: 'remote', ...(override === undefined ? {} : { capabilities: override }) };
     const gateway = await startAnthropicGateway({
       capabilities: own,
-      config: { aliases: { fast: ['remote'] }, targets: { remote: target } },
+      config: { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': target } },
       script: [anthropicCountTokensReply(10), anthropicTextReply(['summary'])],
     });
-    const compacted = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const compacted = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
     expect(compacted.status).toBe(200);
     return gateway.fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body as any;
   };

@@ -10,15 +10,16 @@ import { LEASE_MS, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { fixedSandboxBindings } from '@momonga/runtime';
+import { fakeViewsOf } from './fake-gateway.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const agentsPortOf = (env: Env, aliases: readonly string[] = ['fm']): AgentsPort =>
+const agentsPortOf = (env: Env, models: readonly string[] = ['fm']): AgentsPort =>
   createAgentsPort({
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
     settings: { trusted: () => env.settings.trustedValue },
-    runs: createChildRuns({ store: env.store, modelAliases: async () => aliases }),
+    runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(models) }),
   });
 
 const writeAgent = (env: Env, name: string, frontmatter = '', body = 'You review code.'): void => {
@@ -76,7 +77,7 @@ describe('worker subagents', () => {
     expect(env.gateway.streams).toHaveLength(3);
   });
 
-  it('starts the child on the alias the parent pinned when the session alias is switched while the parent runs', async () => {
+  it('starts the child on the model the parent pinned when the session model is switched while the parent runs', async () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer');
     const parent = env.enqueue('Write then review');
@@ -87,14 +88,14 @@ describe('worker subagents', () => {
     await env.runOnce(env.worker('w1', { agents: agentsPortOf(env, ['fm', 'other-model']) }));
     expect(env.run(parent.id).status).toBe('WAITING_HUMAN');
 
-    env.store.setModelAlias(env.session.id, 'other-model');
+    env.store.setModel(env.session.id, 'other-model');
     await env.resolveApproval(parent.id, 'allow_once');
     await env.runOnce(env.worker('w2', { agents: agentsPortOf(env, ['fm', 'other-model']) }));
 
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('the parent did not create a child run');
-    expect(env.store.getSession(env.session.id)?.modelAlias).toBe('other-model');
-    expect(env.store.getSession(child.sessionId)?.modelAlias).toBe('fm');
+    expect(env.store.getSession(env.session.id)?.model).toBe('other-model');
+    expect(env.store.getSession(child.sessionId)?.model).toBe('fm');
   });
 
   it('runs the child of a plan-mode parent in plan mode, so a Write it attempts fails as not offered and nothing is written', async () => {
@@ -195,7 +196,7 @@ describe('worker subagents', () => {
     expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'failed', output: expect.stringContaining('agent_without_tools') }]);
   });
 
-  it('refuses a subagent model alias that is not configured', async () => {
+  it('refuses a subagent model that is not configured', async () => {
     const env = await makeEnv();
     writeAgent(env, 'reviewer', 'model: ghost\n');
     const worker = env.worker('w1', { agents: agentsPortOf(env, ['fm']) });
@@ -203,7 +204,7 @@ describe('worker subagents', () => {
     env.gateway.script.push(delegate('call-a'), textStep('ok'));
     await env.runOnce(worker);
     expect(env.store.listChildRuns(parent.id)).toEqual([]);
-    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'failed', output: expect.stringContaining('model alias "ghost"') }]);
+    expect(env.ofType(parent.id, 'tool.completed')).toMatchObject([{ status: 'failed', output: 'Subagent reviewer asks for the model "ghost", which is not configured. Configured models: fm' }]);
   });
 
   it('counts the tokens of the children against the budget of the parent', async () => {

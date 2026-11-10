@@ -97,8 +97,8 @@ describe('hooks, auto mode and denials', () => {
   it('prints the classifier verdict under the title of the call, or the reason it could not decide', () => {
     const { sink, err } = sinkFor('text');
     sink.handle(call('c1', 'Write /a'));
-    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: 'writes outside the workspace' }));
-    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', failure: 'the classifier reply is not JSON' }));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', model: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: 'writes outside the workspace' }));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', model: 'guard', outcome: 'ask', failure: 'the classifier reply is not JSON' }));
     expect(err).toEqual([
       'momonga: auto mode asks you about Write /a; classifier guard judged Write /a unsafe with high confidence: writes outside the workspace\n',
       'momonga: auto mode could not classify Write /a, so it asks you: the classifier reply is not JSON\n',
@@ -320,14 +320,14 @@ describe('a value interpolated into a print-mode note stays on its own line', ()
   it('prints a classifier rationale with a newline on the classification line', () => {
     const { sink, err } = printSink();
     sink.handle(call(`Write ${FORGED}`));
-    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: FORGED }));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', model: 'guard', outcome: 'ask', verdict: 'unsafe', confidence: 'high', rationale: FORGED }));
     expect(err).toEqual([`momonga: auto mode asks you about Write ${SHOWN}; classifier guard judged Write ${SHOWN} unsafe with high confidence: ${SHOWN}\n`]);
   });
 
   it('prints a classifier failure with a newline on the classification line', () => {
     const { sink, err } = printSink();
     sink.handle(call('Write /a'));
-    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', alias: 'guard', outcome: 'ask', failure: FORGED }));
+    sink.handle(frame({ type: 'tool.permission.classified', callId: 'c1', model: 'guard', outcome: 'ask', failure: FORGED }));
     expect(err).toEqual([`momonga: auto mode could not classify Write /a, so it asks you: ${SHOWN}\n`]);
   });
 

@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, momongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_SERVER, FAKE_SERVER_KEY_MISSING_EXIT, FAKE_SERVER_REFUSAL, FAKE_SERVER_REMEDY, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { runPreconditions } from '../../src/managed/preconditions.ts';
 
@@ -49,18 +49,15 @@ describe('each managed target has its own serving instance, named by the target 
     reapLaunched(dumpFile, 'serve');
     const home = makeHome();
     writeSettings(home, {
-      models: {
-        targets: {
-          apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-          banana: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-        },
-        aliases: { default: ['apple'], second: ['banana'] },
-      },
+      models: modelsOf({
+          apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+          banana: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+        }),
     });
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('second')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('apple/system')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('banana/system')))).status).toBe(200);
     const serves = launched(dumpFile, 'serve');
     const places = generationTargets(home);
     expect(serves.map(socketOf).sort()).toEqual([path.join(places.sockets, 'apple-1.sock'), path.join(places.sockets, 'banana-1.sock')]);
@@ -80,15 +77,11 @@ describe('a second kind of server, declared in the user settings, runs through t
     reapLaunched(dumpFile, 'run');
     const home = makeHome();
     writeSettings(home, {
-      models: {
-        servers: { fake: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { workbench: { adapter: 'managed', server: 'fake', model: 'fake-1', ...DECLARED } },
-        aliases: { default: ['workbench'] },
-      },
+      models: modelsOf({ workbench: { adapter: 'managed', server: 'fake', model: 'fake-1', ...DECLARED } }, { servers: { fake: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     });
     const handle = await launch(home, { exec: fakeExec });
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask('workbench/fake-1')))).status).toBe(200);
     const runs = launched(dumpFile, 'run');
     expect(runs).toHaveLength(1);
     expect(socketOf(runs[0] as DumpRecord)).toBe(path.join(generationTargets(home).sockets, 'workbench-1.sock'));

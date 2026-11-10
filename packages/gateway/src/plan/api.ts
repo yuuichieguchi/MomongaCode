@@ -1,4 +1,4 @@
-import { addModelConnection } from '@momonga/config';
+import { editModelsSettings } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
@@ -172,6 +172,13 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     return { profile: chosen, account };
   };
 
+  const addedModelOf = async (profile: string, slug: string, signal: AbortSignal): Promise<string> => {
+    const connection = { adapter: 'open-responses' as const, plan: { profile } };
+    const { model } = await editModelsSettings(options.home, options.settingsFile, [{ kind: 'addModel', choice: { connection, model: { id: slug } } }], { signal });
+    if (model === undefined) throw new TypeError(`the settings writer added the plan model ${slug} without naming it`);
+    return model;
+  };
+
   const models = (account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse> =>
     translated(async () => {
       const ref = await signedInRef(query.profile, account, signal);
@@ -183,9 +190,9 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       const ref = await signedInRef(stringField(body, 'profile'), account, signal);
       const slug = stringField(body, 'slug');
       const entry = (await options.catalog.record(ref.profile.id, account, signal))?.models[slug];
-      if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models --catalog lists them`, 'slug');
+      if (entry === undefined) throw notFound('plan_model_unknown', `the ${ref.profile.messages.identityLabel} model list of ${account} has no model ${JSON.stringify(slug)}; momonga models catalog lists them`, 'slug');
       if ('unreported' in entry) throw invalidRequest('plan_model_unusable', `the model ${slug} cannot be added: ${NO_REPORTED_WINDOW}`, 'slug');
-      return addModelConnection(options.home, options.settingsFile, { kind: 'plan', profile: ref.profile.id, model: slug }, signal);
+      return { model: await addedModelOf(ref.profile.id, slug, signal) };
     });
 
   return {

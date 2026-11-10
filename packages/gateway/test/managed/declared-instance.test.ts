@@ -70,7 +70,7 @@ describe.each(RESTART_KINDS)('$label goes to failed after maxRestarts consecutiv
       expect(await server.health(new AbortController().signal)).toEqual({
         ok: false,
         reason: 'unhealthy',
-        detail: `the target "${kind.target}": the server exceeded 5 restarts; the next request starts it again`,
+        detail: `the model "${kind.target}": the server exceeded 5 restarts; the next request starts it again`,
       }),
     );
     expect(spawn).toHaveBeenCalledTimes(6);
@@ -125,8 +125,8 @@ describe('a declared server whose binary exists but cannot be read for its hash 
       currency: managedCurrencyOf(description, { userDialects: {} }),
       toolCallingSetting: 'auto',
     });
-    const target = { name: 'workbench', model: 'fake-1' };
-    const notice = `the target "workbench": its probe key needs the binary sha256, which cannot be read: the executable ${binary} cannot be read: ${refused.message}; it is measured each time its server starts and no probe record is kept`;
+    const target = { name: 'workbench', display: 'workbench', model: 'fake-1' };
+    const notice = `the model "workbench": its probe key needs the binary sha256, which cannot be read: the executable ${binary} cannot be read: ${refused.message}; it is measured each time its server starts and no probe record is kept`;
 
     await expect(managed.capabilities(target)).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
     await vi.waitFor(async () => expect((await managed.capabilities(target)).toolCalling).toBe('native'));

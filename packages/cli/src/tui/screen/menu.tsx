@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 import type { PlanProfileView } from '@momonga/protocol';
 import { ChoiceRow, MoreRow, spanAt, topFor } from '../select.tsx';
 import type { SelectSpec } from '../select.tsx';
+import { namesOf } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 import { menuRowsCap } from './layout.ts';
 
@@ -30,7 +31,6 @@ const MENU_FLOOR_ROWS = 3;
 
 const windowRows = (rows: number): number => Math.max(MENU_FLOOR_ROWS, rows);
 
-const namesOf = (command: SlashCommand): readonly string[] => [command.name, ...(command.aliases ?? [])];
 
 export const slashMatches = (text: string, commands: readonly SlashCommand[]): SlashCommand[] | undefined => {
   if (!COMPLETABLE.test(text)) return undefined;

@@ -4,7 +4,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { mustClaim } from '../../../store/test/helpers.ts';
 
 const RUN_PINS = {
-  modelAlias: 'fm',
+  model: 'fm',
   systemPromptDigest: 'system-prompt-digest',
   toolSetDigest: 'tool-set-digest',
   capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },

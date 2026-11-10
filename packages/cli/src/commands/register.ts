@@ -5,10 +5,9 @@ import { GROUP_KEYS } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
-import { withIdentityReadFetch } from '../network.ts';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
-import { runAuthLogin, runAuthLogout, runAuthResetHost, runAuthResume, runAuthStatus, runModelsAdd, runModelsCatalog } from './auth-wiring.ts';
+import { runAuthLogin, runAuthLogout, runAuthResetHost, runAuthResume, runAuthStatus, runModelsCatalog } from './auth-wiring.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
@@ -18,7 +17,8 @@ import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
-import { detectModels, listModels } from './models.ts';
+import { checkModels, detectModels, listModels, modelsShellOf, runModelsForm } from './models.ts';
+import type { FormOption, ModelsForm, ModelsShell } from './models.ts';
 import { policyVerify } from './policy.ts';
 import { showReliability } from './reliability.ts';
 import { showStatus } from './runs.ts';
@@ -104,11 +104,11 @@ const registerAuth: CommandGroup = (program, deps) => {
       deps.complete(await runAuthLogout(deps.ports, await pathsOf(deps.ports), account, deps.interrupt));
     });
   auth
-    .command('status')
-    .description('show the saved accounts, their state and where to manage usage')
-    .option('--json', 'print the accounts as JSON')
-    .action(async (options: { json?: true }) => {
-      deps.complete(await runAuthStatus(deps.ports, await pathsOf(deps.ports), options.json === true));
+    .command('status [model]')
+    .description('show the saved accounts, their state, where to manage usage, and the model new sessions start with or the model named')
+    .option('--json', 'print the accounts and the model as JSON')
+    .action(async (model: string | undefined, options: { json?: true }) => {
+      deps.complete(await runAuthStatus(deps.ports, await pathsOf(deps.ports), { json: options.json === true, ...(model === undefined ? {} : { model }) }));
     });
   auth
     .command('resume <account>')
@@ -335,17 +335,17 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     )
     .option('--replay <directory>', 'the recorded transcripts to measure instead of running the dataset')
     .option('--record <directory>', 'save the transcript of every measured run of a live run in this directory')
-    .option('--alias <alias>', 'the model alias every session of a live run is pinned to')
+    .option('--model <model>', 'the model every session of a live run uses')
     .option('--seed <n>', 'the seed of the noise turns of a live run; 0 when omitted', seedArgument)
     .option('--report <file>', 'store the report as JSON for eval compare')
     .option('--settings <file>', 'a token policy overlay over the defaults, every core key on unless the file turns it off (context.adaptiveBudget, context.autoCompact, context.cachePrefix, context.outputFormatters, context.loopGuidance, context.observedCapacity, context.unboundedOutputReserve, tools.deferral, tools.conciseDescriptions, memory.repositoryFacts, memory.reflection.enabled), merged into the settings of every case of a live run; the report records the resolved policy')
-    .action(async (dataset: string, options: { replay?: string; record?: string; alias?: string; seed?: number; report?: string; settings?: string }) => {
+    .action(async (dataset: string, options: { replay?: string; record?: string; model?: string; seed?: number; report?: string; settings?: string }) => {
       deps.complete(
         await evaluateContext(deps.ports, dataset, {
           interrupt: deps.interrupt,
           ...(options.replay === undefined ? {} : { replay: options.replay }),
           ...(options.record === undefined ? {} : { record: options.record }),
-          ...(options.alias === undefined ? {} : { alias: options.alias }),
+          ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.seed === undefined ? {} : { seed: options.seed }),
           ...(options.report === undefined ? {} : { report: options.report }),
           ...(options.settings === undefined ? {} : { settings: options.settings }),
@@ -364,23 +364,22 @@ const registerEvaluate: CommandGroup = (program, deps) => {
 const registerAutoMode: CommandGroup = (program, deps) => {
   const group = program.command('auto-mode').description('measure how well a model judges approvals for auto mode, or show the stored measurement');
   group
-    .command('check [alias]')
-    .description('run the auto-mode dataset against a classifier alias in temporary homes and store the measurement; auto mode stays selectable whatever it shows')
-    .option('--agent <alias>', 'the model alias that drives the runs and proposes the calls the classifier judges')
-    .action(async (alias: string | undefined, options: { agent?: string }) => {
-      const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
+    .command('check [model]')
+    .description('run the auto-mode dataset against a classifier model in temporary homes and store the measurement; auto mode stays selectable whatever it shows')
+    .option('--agent <model>', 'the model that drives the runs and proposes the calls the classifier judges')
+    .action(async (model: string | undefined, options: { agent?: string }) => {
       const outcome = await autoModeCheck(await autoModeCheckPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), {
-        agent: options.agent ?? RUNTIME_DEFAULTS.modelAlias,
         signal: deps.interrupt,
-        ...(alias === undefined ? {} : { classifier: alias }),
+        ...(options.agent === undefined ? {} : { agent: options.agent }),
+        ...(model === undefined ? {} : { classifier: model }),
       });
       deps.complete(outcome.measurement === 'unmeasurable' ? 1 : 0);
     });
   group
-    .command('status [alias]')
-    .description('show the stored measurement of a classifier alias for this version')
-    .action(async (alias: string | undefined) => {
-      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', ...(alias === undefined ? {} : { classifier: alias }) });
+    .command('status [model]')
+    .description('show the stored measurement of a classifier model for this version')
+    .action(async (model: string | undefined) => {
+      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', ...(model === undefined ? {} : { classifier: model }) });
       deps.complete(0);
     });
 };
@@ -405,15 +404,15 @@ const registerContext: CommandGroup = (program, deps) => {
       'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force, print the winner and its full text, and write the outcome to a file; nothing is stored',
     )
     .requiredOption('--dataset <file>', 'the context dataset to benchmark')
-    .requiredOption('--alias <alias>', 'the model alias of the benchmark sessions and of the analysis and candidate calls')
+    .requiredOption('--model <model>', 'the model of the benchmark sessions and of the analysis and candidate calls')
     .requiredOption('--token-cap <n>', 'the most tokens the command may spend on benchmark runs and model calls together; the number of candidates is what this cap affords after the baseline and the analyses', tokenCapArgument)
     .option('--seed <n>', 'the seed of the noise turns and of the candidate draws; 0 when omitted', seedArgument)
     .requiredOption('--outcome <file>', 'the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole')
-    .action(async (options: { dataset: string; alias: string; tokenCap: number; seed?: number; outcome: string }) => {
+    .action(async (options: { dataset: string; model: string; tokenCap: number; seed?: number; outcome: string }) => {
       deps.complete(
         await contextImprove(deps.ports, await pathsOf(deps.ports), {
           dataset: options.dataset,
-          alias: options.alias,
+          model: options.model,
           tokenCap: options.tokenCap,
           seed: options.seed ?? DEFAULT_DATASET_SEED,
           outcome: options.outcome,
@@ -445,7 +444,7 @@ const registerContext: CommandGroup = (program, deps) => {
 };
 
 const registerSecret: CommandGroup = (program, deps) => {
-  const secret = program.command('secret').description('store the secrets that model targets refer to');
+  const secret = program.command('secret').description('store the secrets that model servers refer to');
   secret
     .command('set <name>')
     .description('store a secret in the platform secret store; the value is read from the terminal')
@@ -454,34 +453,125 @@ const registerSecret: CommandGroup = (program, deps) => {
     });
 };
 
-const EXIT_USAGE_MODELS = 2;
+const YES_FLAG = '--yes';
+const YES_HELP = 'write the change; without it the change is only shown';
+
+const shellOf = async (deps: ProgramDeps): Promise<ModelsShell> => modelsShellOf(deps.ports, await pathsOf(deps.ports), deps.interrupt);
+
+const formOf = (command: Command, deps: ProgramDeps, form: ModelsForm): Command =>
+  command.action(async (...received: unknown[]) => {
+    const args = received.slice(0, -2).filter((value): value is string => typeof value === 'string');
+    deps.complete(await runModelsForm(await shellOf(deps), form, { args, options: command.opts<Record<string, FormOption>>() }));
+  });
 
 const registerModels: CommandGroup = (program, deps) => {
   const models = program
     .command('models')
-    .description('list the model aliases with the capabilities their targets declare')
-    .argument('[account]', 'the account whose model list --catalog and --add use; the active one when only one could answer')
+    .enablePositionalOptions()
+    .description('list the configured models with the capabilities they declare')
     .option('--json', 'print the models as JSON')
-    .option('--catalog', 'list the models of a signed-in subscription account, read again from the provider')
-    .option('--add <slug>', 'add a model of a signed-in subscription account as a target and an alias')
-    .action(async (account: string | undefined, options: { json?: true; catalog?: true; add?: string }) => {
-      const paths = await pathsOf(deps.ports);
-      const named = account === undefined ? {} : { account };
-      if (options.add !== undefined) deps.complete(await runModelsAdd(deps.ports, paths, { slug: options.add, ...named }));
-      else if (options.catalog === true) deps.complete(await runModelsCatalog(deps.ports, paths, { json: options.json === true, ...named }));
-      else if (account !== undefined) {
-        deps.ports.stderr.write('the account argument of momonga models is used with --catalog or --add\n');
-        deps.complete(EXIT_USAGE_MODELS);
-      } else deps.complete(await listModels(deps.ports, paths, options.json === true));
+    .action(async (options: { json?: true }) => {
+      deps.complete(await listModels(await shellOf(deps), { json: options.json === true }));
     });
   models
     .command('detect [url...]')
     .description('ask the usual local addresses, and any address you name, what model server answers there; nothing is written')
     .option('--json', 'print the servers as JSON')
     .action(async (typed: string[], options: { json?: true }) => {
-      const paths = await pathsOf(deps.ports);
-      deps.complete(await withIdentityReadFetch(deps.ports, deps.interrupt, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
+      deps.complete(await detectModels(await shellOf(deps), { typed, json: options.json === true }));
     });
+  models
+    .command('check')
+    .description('ask each configured server once whether it still lists its configured models, and list the models with the result')
+    .option('--json', 'print the models as JSON')
+    .action(async (options: { json?: true }) => {
+      deps.complete(await checkModels(await shellOf(deps), { json: options.json === true }));
+    });
+  models
+    .command('catalog [account]')
+    .description('list the models of a signed-in subscription account, read again from the provider; the active account when only one could answer')
+    .option('--json', 'print the catalog as JSON')
+    .action(async (account: string | undefined, options: { json?: true }) => {
+      deps.complete(await runModelsCatalog(deps.ports, await pathsOf(deps.ports), { json: options.json === true, ...(account === undefined ? {} : { account }) }));
+    });
+  formOf(
+    models
+      .command('add')
+      .description('add a model of a model server found on this computer, of a server at an address, or of a signed-in subscription account')
+      .option('--address <url>', 'the address of the model server; without it this computer is searched')
+      .option('--model <own name>', 'the model, as the server calls it')
+      .option('--window <tokens>', 'the context window of the model, when the server reports none')
+      .option('--api <api>', 'the API of a server that is not recognised: ollama, openai, anthropic or responses')
+      .option('--api-key-env <NAME>', 'the environment variable that holds the key of the server')
+      .option('--api-key-secret <name>', 'the secret of momonga secret set that holds the key of the server')
+      .option('--service <name>', 'the name of the service, used for prices (for example openai)')
+      .option('--plan <profile>', 'add a model of a signed-in subscription account of this provider')
+      .option('--account <label>', 'the account of --plan')
+      .option(YES_FLAG, YES_HELP),
+    deps,
+    'add',
+  );
+  formOf(models.command('remove [model]').description('remove a model from the settings, with every setting that names it').option(YES_FLAG, YES_HELP), deps, 'remove');
+  formOf(
+    models
+      .command('remove-server [server]')
+      .description('remove a server and its models from the settings, with every setting that names them')
+      .option('--forget-program', 'also forget the program the server runs')
+      .option(YES_FLAG, YES_HELP),
+    deps,
+    'remove-server',
+  );
+  formOf(
+    models.command('start [model]').description('choose the model new sessions start with').option('--clear', 'start with the first model in the settings').option(YES_FLAG, YES_HELP),
+    deps,
+    'start',
+  );
+  const fallback = models.command('fallback').description('the models tried in order when the model cannot answer');
+  formOf(fallback.command('list').description('list the fallback models in order'), deps, 'fallback list');
+  formOf(fallback.command('add [model]').description('add a fallback model').option('--position <n>', 'the position in the order; the end when omitted').option(YES_FLAG, YES_HELP), deps, 'fallback add');
+  formOf(fallback.command('remove [model]').description('remove a fallback model').option(YES_FLAG, YES_HELP), deps, 'fallback remove');
+  formOf(fallback.command('move [model]').description('move a fallback model to another position').option('--to <n>', 'the new position').option(YES_FLAG, YES_HELP), deps, 'fallback move');
+  const billing = models.command('billing').description('the billing changes a request may make when it falls back');
+  formOf(billing.command('list').description('list the allowed billing changes'), deps, 'billing list');
+  formOf(billing.command('allow [from] [to]').description('allow requests to fall from one billing kind to another').option('--model <model>', 'only for this model').option(YES_FLAG, YES_HELP), deps, 'billing allow');
+  formOf(billing.command('forbid [from] [to]').description('no longer allow requests to fall from one billing kind to another').option('--model <model>', 'only the rule for this model').option(YES_FLAG, YES_HELP), deps, 'billing forbid');
+  const role = models.command('role').description('the model for summaries, reflection, analysis and the auto-mode classifier');
+  formOf(role.command('list').description('list the model of each job'), deps, 'role list');
+  formOf(role.command('set [job] [model]').description('choose the model of a job: compaction, reflection, analysis or classifier').option(YES_FLAG, YES_HELP), deps, 'role set');
+  formOf(role.command('clear [job]').description('let a job use the model of the session').option(YES_FLAG, YES_HELP), deps, 'role clear');
+  formOf(models.command('set [model] [field] [value]').description('set a field of a model, for example capabilities.contextWindow').option(YES_FLAG, YES_HELP), deps, 'set');
+  formOf(models.command('unset [model] [field]').description('clear a field of a model').option(YES_FLAG, YES_HELP), deps, 'unset');
+  formOf(models.command('set-server [server] [field] [value]').description('set a field of a server, for example billing').option(YES_FLAG, YES_HELP), deps, 'set-server');
+  formOf(models.command('unset-server [server] [field]').description('clear a field of a server').option(YES_FLAG, YES_HELP), deps, 'unset-server');
+  formOf(models.command('name [server] [name]').description('name a server').option('--clear', 'remove the name, so the server is named by what it is').option(YES_FLAG, YES_HELP), deps, 'name');
+  formOf(
+    models
+      .command('add-program')
+      .description('declare a program that MomongaCode starts as a model server, and add the model it serves')
+      .option('--command <path>', 'the full path of the program')
+      .option('--arg <text>', 'an argument of the program; repeat for several, and write {socket} where the program takes the path of its socket', collect, [])
+      .option('--ready-path <path>', 'the path that answers when the program is ready, for example /health')
+      .option('--name <name>', 'the name of the server; taken from the program when omitted')
+      .option('--model <own name>', 'the model, as the server calls it; read from the server when omitted')
+      .option(YES_FLAG, YES_HELP),
+    deps,
+    'add-program',
+  );
+  formOf(models.command('set-program [id] [field] [value]').description('change the command, args or readyPath of a declared program').option(YES_FLAG, YES_HELP), deps, 'set-program');
+  formOf(models.command('forget-program [id]').description('forget a declared program that no server uses').option(YES_FLAG, YES_HELP), deps, 'forget-program');
+  formOf(
+    models
+      .command('timeouts')
+      .description('how long a request waits for the first reply and without any data; 0 never cuts')
+      .option('--headers <minutes>', 'wait for the first reply')
+      .option('--idle <minutes>', 'wait without any data')
+      .option(YES_FLAG, YES_HELP),
+    deps,
+    'timeouts',
+  );
+  const dialects = models.command('dialects').description('the declared schema dialects');
+  formOf(dialects.command('show').description('print the declared schema dialects as JSON'), deps, 'dialects show');
+  formOf(dialects.command('set').description('replace the declared schema dialects with the object of a JSON file').option('--file <path>', 'the JSON file').option(YES_FLAG, YES_HELP), deps, 'dialects set');
 };
 
 const registerPolicy: CommandGroup = (program, deps) => {

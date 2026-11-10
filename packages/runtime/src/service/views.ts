@@ -53,7 +53,7 @@ export const toSessionView = (store: RuntimeStore, session: Session) => {
     id: session.id,
     cwd: session.cwd,
     permissionMode: session.permissionMode,
-    modelAlias: session.modelAlias,
+    model: session.model,
     bypassAllowed: session.bypassAllowed,
     createdAt: session.createdAt,
     envKeys: Object.keys(session.env),

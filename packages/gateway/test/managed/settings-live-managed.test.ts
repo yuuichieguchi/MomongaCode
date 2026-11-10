@@ -5,9 +5,9 @@ import { DEFAULT_STOP_VALUES, FIRST_GENERATION, managedInstancePaths, momongaPat
 import type { ManagedInstance } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeFm } from '@momonga/testkit';
-import { closedAtCleanup, getJson, makeDir, postJson, registerCleanup, userInput } from '../gateway-helpers.ts';
+import { getJson, makeDir, postJson, registerCleanup, userInput, listedCountersOf, closedAtCleanup } from '../gateway-helpers.ts';
 import { startGatewayProcess } from '@momonga/gateway';
-import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, homePaths, isAlive, makeHome, modelsOf } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -64,7 +64,7 @@ const launch = async (home: string) => {
 describe('S1 managed incarnations: the stem of a serving instance names its incarnation (design-settings-live 3.1)', () => {
   it('managedInstancePaths gives <target>-<k> for the k-th incarnation of a serving instance', () => {
     const paths = momongaPaths('/home/u', 'darwin', {});
-    const instance = (incarnation: number): ManagedInstance => ({ owner: 'gateway', generation: 1, purpose: 'serve', target: 'apple', incarnation }) as unknown as ManagedInstance;
+    const instance = (incarnation: number): ManagedInstance => ({ owner: 'gateway', generation: 1, purpose: 'serve', provider: 'apple', incarnation });
     expect(path.basename(managedInstancePaths(paths, instance(1)).socketPath)).toBe('apple-1.sock');
     expect(path.basename(managedInstancePaths(paths, instance(2)).lockPath)).toBe('apple-2.lock');
     expect(path.basename(managedInstancePaths(paths, instance(2)).markerDirectory)).toBe('apple-2');
@@ -72,7 +72,7 @@ describe('S1 managed incarnations: the stem of a serving instance names its inca
 
   it('the probe stem does not change', () => {
     const paths = momongaPaths('/home/u', 'darwin', {});
-    const probe = { owner: 'gateway', generation: 1, purpose: 'probe', target: 'apple' } as ManagedInstance;
+    const probe: ManagedInstance = { owner: 'gateway', generation: 1, purpose: 'probe', provider: 'apple' };
     expect(path.basename(managedInstancePaths(paths, probe).socketPath)).toBe('_probe-apple.sock');
   });
 });
@@ -80,12 +80,12 @@ describe('S1 managed incarnations: the stem of a serving instance names its inca
 describe('S1 managed targets under a settings change (design-settings-live 3.1)', () => {
   it('a changed managed definition starts a second incarnation while the first call is in flight, and the new request does not wait on the old lock', async () => {
     const { fm, dumpFile, home } = await setup();
-    replaceSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(512) } }, aliases: { default: ['apple'] } } });
+    replaceSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(512) } }) });
     const handle = await launch(home);
-    const inFlight = postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then((response) => response.status, () => -1);
+    const inFlight = postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')).then((response) => response.status, () => -1);
     await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
-    replaceSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(256) } }, aliases: { default: ['apple'] } } });
-    const answered = postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then((response) => response.status, () => -1);
+    replaceSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(256) } }) });
+    const answered = postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')).then((response) => response.status, () => -1);
     await waitFor(() => serves(dumpFile).length === 2, { maxTurns: 50_000, description: 'a second incarnation to start for the changed definition' });
     expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
     expect(await answered).toBe(200);
@@ -94,14 +94,14 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
 
   it('a removed target serves its in-flight call to the end, and its server stops after that last lease ends', async () => {
     const { fm, dumpFile, home } = await setup();
-    const banana = { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(256) };
-    replaceSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(512) }, banana }, aliases: { default: ['apple'], second: ['banana'] } } });
+    const banana = { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(256) };
+    replaceSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(512) }, banana }) });
     const handle = await launch(home);
-    const inFlight = postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then(async (response) => ({ status: response.status, text: await response.text() }));
+    const inFlight = postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')).then(async (response) => ({ status: response.status, text: await response.text() }));
     await waitFor(() => serves(dumpFile).length === 1, { description: 'the apple server to start' });
     const apple = serves(dumpFile)[0] as DumpRecord;
-    replaceSettings(home, { models: { targets: { banana }, aliases: { second: ['banana'] } } });
-    const next = await postJson(clientFor(handle.socketPath), '/v1/responses', ask('second'));
+    replaceSettings(home, { models: modelsOf({ banana }) });
+    const next = await postJson(clientFor(handle.socketPath), '/v1/responses', ask('banana/system'));
     expect(next.status).toBe(200);
     await next.text();
     expect((await inFlight).status).toBe(200);
@@ -113,26 +113,26 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     const releaseFile = path.join(makeDir(), 'release-first-reply');
     const release = (): void => fs.writeFileSync(releaseFile, '');
     fm.configure({ envDumpFile: dumpFile, serve: { holdFirstUntilFile: releaseFile } });
-    const settingsWith = (maxOutputTokens: number) => ({ models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, admissionTimeoutMs: 1, ...declared(maxOutputTokens) } }, aliases: { default: ['apple'] } } });
+    const settingsWith = (maxOutputTokens: number) => ({ models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, admissionTimeoutMs: 1, ...declared(maxOutputTokens) } }) });
     try {
       replaceSettings(home, settingsWith(512));
       const handle = await launch(home);
       const statusOf = (pending: Promise<{ status: number }>) => pending.then((response) => response.status, () => -1);
       let firstSettled = false;
-      const first = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default'))).finally(() => {
+      const first = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))).finally(() => {
         firstSettled = true;
       });
       await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
       fm.configure({ envDumpFile: dumpFile, serve: {} });
       replaceSettings(home, settingsWith(256));
       let secondStatus = 0;
-      void statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default'))).then((status) => {
+      void statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system'))).then((status) => {
         secondStatus = status;
       });
       await waitFor(() => secondStatus !== 0, { description: 'the request of the epoch of b to end while the call pinned to apple-1 is still running' });
       expect(secondStatus).toBe(200);
       replaceSettings(home, settingsWith(512));
-      const third = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')));
+      const third = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('apple/system')));
       expect(await third, 'the return to a shares the gate of a, which its first call holds').toBe(429);
       expect(firstSettled, 'the first call still holds the gate of a when the third request is refused').toBe(false);
       expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
@@ -147,21 +147,20 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     fm.configure({ envDumpFile: dumpFile, serve: {} });
     const settingsWith = (unboundedOutputReserve: boolean) => ({
       context: { unboundedOutputReserve },
-      models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(512) } }, aliases: { default: ['apple'] } },
+      models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...declared(512) } }),
     });
     const counterOf = async (client: ReturnType<typeof clientFor>): Promise<string> => {
       const listed = await getJson(client, '/v1/momonga/models');
       expect(listed.status).toBe(200);
-      const entry = (listed.body.data as Array<{ id: string; targetCounters: Record<string, string> }>).find((model) => model.id === 'default');
-      return String(entry?.targetCounters['apple']);
+      return String(listedCountersOf(listed.body, 'apple/system')['apple/system']);
     };
     replaceSettings(home, settingsWith(false));
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
-    expect((await postJson(client, '/v1/responses', ask('default'))).status).toBe(200);
+    expect((await postJson(client, '/v1/responses', ask('apple/system'))).status).toBe(200);
     const before = await counterOf(client);
     replaceSettings(home, settingsWith(true));
-    expect((await postJson(client, '/v1/responses', ask('default'))).status).toBe(200);
+    expect((await postJson(client, '/v1/responses', ask('apple/system'))).status).toBe(200);
     const after = await counterOf(client);
     expect(after).not.toBe(before);
     expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock')]);

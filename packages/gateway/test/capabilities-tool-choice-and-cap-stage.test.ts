@@ -24,6 +24,8 @@ const NO_LITERALS = { enum: false, anyOf: true, const: false, pattern: true, min
 
 const imageInput = [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'see' }, { type: 'input_image', image_url: PNG }] }];
 
+const canonOf = (server: string): string => `${server}/system`;
+
 const tracedGatewayOf = async (adapters: Record<string, ProviderAdapter>) => {
   const clock = createFakeClock(START_MS);
   const memory = new InMemorySpanExporter();
@@ -38,10 +40,10 @@ const tracedGatewayOf = async (adapters: Record<string, ProviderAdapter>) => {
   const harness = await startGateway({
     clock,
     telemetry,
-    adapters,
+    adapters: Object.fromEntries(Object.entries(adapters).map(([name, adapter]) => [canonOf(name), adapter])),
     config: {
-      aliases: { fast: Object.keys(adapters) },
-      targets: Object.fromEntries(Object.keys(adapters).map((name) => [name, { model: 'system' }])),
+      chains: { [canonOf(Object.keys(adapters)[0] as string)]: Object.keys(adapters).map(canonOf) },
+      targets: Object.fromEntries(Object.keys(adapters).map((name) => [canonOf(name), {}])),
       retry: { maxAttempts: 1, totalWaitMs: 1 },
       breaker: { failureThreshold: 1, openMs: OPEN_MS },
     },
@@ -50,7 +52,7 @@ const tracedGatewayOf = async (adapters: Record<string, ProviderAdapter>) => {
     await telemetry.forceFlush();
     return memory
       .getFinishedSpans()
-      .filter((span) => span.attributes['gen_ai.operation.name'] === 'chat' && span.attributes['momonga.target'] === name && span.status.code === ERROR_STATUS);
+      .filter((span) => span.attributes['gen_ai.operation.name'] === 'chat' && span.attributes['momonga.target'] === canonOf(name) && span.status.code === ERROR_STATUS);
   };
   return { harness, failedSpansOf };
 };
@@ -64,7 +66,7 @@ const send = async (harness: Harness, path: string, body: Record<string, unknown
   return readJson(response);
 };
 
-const breakerOf = async (harness: Harness, name: string) => (await getJson(harness.client, '/v1/momonga/health')).body.targets[name].breaker;
+const breakerOf = async (harness: Harness, name: string) => (await getJson(harness.client, '/v1/momonga/health')).body.models[canonOf(name)].breaker;
 
 const openResponsesTarget = async () => {
   const fake = await startFakeOpenResponses({ script: [openResponsesTextReply(['from remote']), openResponsesTextReply(['from remote'])] });
@@ -107,7 +109,7 @@ const OPERATIONS = [
 const CASES = CHOICES.flatMap((choice) => OPERATIONS.map((operation) => ({ ...choice, operation, title: `${operation.name} with tool_choice ${choice.label}` })));
 
 const bodyOf = (testCase: (typeof CASES)[number]) => ({
-  model: 'fast',
+  model: canonOf('incapable'),
   input: userInput('hi'),
   tools: TOOLS,
   tool_choice: testCase.tool_choice,
@@ -123,7 +125,7 @@ describe('the toolChoice stage judges every tool_choice that constrains the call
     expect(response.body.error ?? null).toBeNull();
     expect(response.status).toBe(200);
     if (testCase.operation.path === '/v1/responses') {
-      expect(response.body.momonga.target).toBe('remote');
+      expect(response.body.momonga.target).toBe(canonOf('remote'));
       expect(response.body.momonga.fallbackFrom ?? []).not.toContain('incapable');
     }
     expect(incapable.sent()).toHaveLength(0);
@@ -152,11 +154,11 @@ describe('a summary cap forces judging at narrowing', () => {
 
   it('no target supports compaction and the cap is too large: the answer is the same with or without an image', async () => {
     const reference = await tracedGatewayOf({ only: await withoutCompaction(SEEING_SMALL_CAP) });
-    const expected = await readJson(await postJson(reference.harness.client, '/v1/responses/compact', { model: 'fast', input: imageInput, momonga: { max_summary_tokens: CAP } }));
+    const expected = await readJson(await postJson(reference.harness.client, '/v1/responses/compact', { model: canonOf('only'), input: imageInput, momonga: { max_summary_tokens: CAP } }));
     expect(expected.status).toBe(400);
 
     const { harness } = await tracedGatewayOf({ only: await withoutCompaction(SEEING_SMALL_CAP) });
-    const response = await readJson(await postJson(harness.client, '/v1/responses/compact', { model: 'fast', input: userInput('summarise this'), momonga: { max_summary_tokens: CAP } }));
+    const response = await readJson(await postJson(harness.client, '/v1/responses/compact', { model: canonOf('only'), input: userInput('summarise this'), momonga: { max_summary_tokens: CAP } }));
     expect({ status: response.status, code: response.body.error?.code, param: response.body.error?.param }).toEqual({
       status: expected.status,
       code: expected.body.error?.code,
@@ -177,8 +179,8 @@ describe('a summary cap forces judging at narrowing', () => {
     const wideFake = await startFake({ scenario: 'tools-ok', imageInput: true, script: [textReply('from wide'), textReply('from wide'), textReply('from wide')] });
     const wide = makeAdapter(wideFake, { capabilities: async () => SEEING });
     const traced = await tracedGatewayOf({ small, wide });
-    const opening = await send(traced.harness, '/v1/responses', { model: 'fast', input: userInput('hi') });
-    expect(opening.body.momonga.target).toBe('wide');
+    const opening = await send(traced.harness, '/v1/responses', { model: canonOf('small'), input: userInput('hi') });
+    expect(opening.body.momonga.target).toBe(canonOf('wide'));
     expect(await breakerOf(traced.harness, 'small')).toBe('open');
     traced.harness.clock.advance(OPEN_MS);
     return { ...traced, smallFake };
@@ -187,16 +189,16 @@ describe('a summary cap forces judging at narrowing', () => {
   const afterCompact = async (input: unknown) => {
     const { harness, smallFake } = await halfOpenGateway();
     const sentBefore = smallFake.requests.length;
-    const compacted = await readJson(await postJson(harness.client, '/v1/responses/compact', { model: 'fast', input, momonga: { max_summary_tokens: CAP } }));
+    const compacted = await readJson(await postJson(harness.client, '/v1/responses/compact', { model: canonOf('small'), input, momonga: { max_summary_tokens: CAP } }));
     const breaker = await breakerOf(harness, 'small');
     const sentByCompact = smallFake.requests.length - sentBefore;
-    const followUp = await send(harness, '/v1/responses', { model: 'fast', input: userInput('hi again') });
+    const followUp = await send(harness, '/v1/responses', { model: canonOf('small'), input: userInput('hi again') });
     return { status: compacted.status, breaker, sentByCompact, followUpTarget: followUp.body.momonga?.target };
   };
 
   it('a half-open target whose cap is too small keeps its trial, as when the cap is judged up front', async () => {
     const expected = await afterCompact(imageInput);
-    expect(expected).toMatchObject({ status: 200, sentByCompact: 0, followUpTarget: 'small' });
+    expect(expected).toMatchObject({ status: 200, sentByCompact: 0, followUpTarget: canonOf('small') });
     expect(await afterCompact(userInput('summarise this'))).toEqual(expected);
   });
 });

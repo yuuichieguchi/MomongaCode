@@ -1,7 +1,17 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
-import type { DetectedLocalServer, DetectedManagedServer, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
-import type { ModelConnection } from '@momonga/config';
+import { NO_MODEL_CONNECTED_TEXT, SIGN_IN_REQUIRED_CODE } from '@momonga/protocol';
+import type { DetectedManagedServer, GatewayHealth, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import { displayMapOf } from '@momonga/protocol';
+import { listingViewsOf } from '../client/gateway-client.ts';
+import { isLocalServer, offeredServers } from '../commands/models.ts';
+import { NO_SERVER_ANSWERED_TEXT } from '../models-texts.ts';
+import { addBuiltIn, addFoundModel, addFromFound, builtInRowOf, foundNotConfigured, searchServers } from './models/add.ts';
+import type { Added } from './models/add.ts';
+import { openEdit } from './models/context.ts';
+import type { FoundServers, ModelsFlowContext } from './models/context.ts';
+import { modelListRows } from './models/model-list.ts';
+import { writeStart } from './models/order.ts';
+import { ADD_WITH_MODELS_ADD, ALSO_AT_START_LABEL, MODEL_CHANGE_NOTE, START_ONE_TEXT, configuredSwitchText, startingModelSetText } from './models/texts.ts';
 import { couldNotOpenBrowser } from '../browser-text.ts';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { SignInAttemptNotFoundError, SignInExpiredError, SignInGatewayStoppedError, SignInListenerError, SignInListenerFailedError, signIn, waitForPaste } from '../plan/sign-in.ts';
@@ -13,15 +23,19 @@ import type { OverlayPorts, PickRow } from './picker.tsx';
 export type PlanFlowPorts = OverlayPorts & {
   readonly backend: TuiBackend;
   info(text: string): void;
-  connected(alias: string): Promise<void>;
+  toast(text: string): void;
+  connected(model: string): Promise<void>;
   refreshConnection(): Promise<void>;
   signedIn(): Promise<void>;
+  readonly found: FoundServers;
+  readonly model: () => string | undefined;
+  wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
 };
 
 export type PlanFlows = {
   login(args: string): Promise<void>;
   logout(): Promise<void>;
-  modelPicker(currentAlias: string | undefined): Promise<void>;
+  modelPicker(current: string | undefined): Promise<void>;
   providerFlow(profile: PlanProfileView): Promise<void>;
   catalogPicker(profile: PlanProfileView, account: string): Promise<void>;
   welcome(profiles: readonly PlanProfileView[]): Promise<void>;
@@ -36,9 +50,9 @@ const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 
 const API_KEY_HELP = [
   'MomongaCode takes an API key in one of two ways:',
-  '  store it with momonga secret set <name> and name that secret in the target as apiKeySecret, or',
-  '  keep it in an environment variable and name the variable in the target as apiKeyEnv.',
-  'Declare the target in your user settings under models.targets and models.aliases.',
+  '  it is saved in the system secret store, or',
+  '  it stays in an environment variable whose name you give.',
+  ADD_WITH_MODELS_ADD,
 ].join('\n');
 
 const USE_API_KEY = 'Use an API key';
@@ -47,30 +61,29 @@ const SANDBOX_OFF_ROWS = [{ label: 'Continue' }, { label: 'Cancel' }] as const;
 const SANDBOX_OFF_CONTINUE = 0;
 const SANDBOX_OFF_CANCEL = 1;
 
-const MODEL_CHANGE_NOTE = 'a change applies from the next task';
-
-const UNREPORTED_TRAINED_CONTEXT = 'the server reports no trained context length for this model';
-
 const healthText = (health: TargetHealth | undefined): string => {
   if (health === undefined) return 'health unknown';
   if (health.ok) return 'ready';
   return health.reason ?? 'not ready';
 };
 
-const unusableReason = (server: DetectedLocalServer, model: DetectedLocalServer['models'][number]): string | undefined =>
-  server.shape === 'ollama' && model.contextWindow === undefined && model.trainedContext === undefined ? UNREPORTED_TRAINED_CONTEXT : undefined;
-
-const windowError = (text: string, ceiling: number | undefined): string | undefined => {
-  const value = Number(text.trim());
-  if (text.trim() === '' || !Number.isInteger(value) || value <= 0) return 'enter the context window as a whole number of tokens';
-  if (ceiling !== undefined && value > ceiling) return `the trained maximum of this model is ${ceiling} tokens; enter a window up to it`;
-  return undefined;
-};
-
 const isSignInRequired = (health: TargetHealth | undefined): boolean => health?.reason === SIGN_IN_REQUIRED_CODE;
 
 export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const { backend } = ports;
+
+  const flowContext = (): ModelsFlowContext => ({
+    backend,
+    overlays: { choose: ports.choose, promptText: ports.promptText },
+    found: ports.found,
+    model: ports.model(),
+    info: ports.info,
+    wait: ports.wait,
+  });
+
+  const connectAdded = async (added: Added | undefined): Promise<void> => {
+    if (added?.model !== undefined) await ports.connected(added.model);
+  };
 
   const chooseFrom = async (request: { title?: string; lines?: readonly string[] }, choices: readonly Choice[]): Promise<boolean> => {
     const index = await ports.pick({ ...request, rows: choices.map((choice) => choice.row) });
@@ -98,7 +111,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
               row: { label: `${entry.slug} · ${entry.displayName} · ${profile.messages.pickerLabel}` },
               act: async () => {
                 const created = await backend.plan.addTarget(account, { profile: profile.id, slug: entry.slug });
-                await ports.connected(created.alias);
+                await ports.connected(created.model);
               },
             }
           : { row: { label: `${entry.slug} · ${entry.reason}`, disabled: true }, act: async () => undefined },
@@ -254,59 +267,32 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
 
   const providerFlow = async (profile: PlanProfileView): Promise<void> => providerFlowOf(profile, await backend.plan.accounts());
 
-  const addLocalServer = async (): Promise<void> => {
-    const servers = await backend.detectLocalServers([]);
-    if (servers.length === 0) {
-      ports.info('no local model server answered; start one, or declare its target in your user settings under models.targets and models.aliases');
-      return;
-    }
-    await chooseFrom(
-      { title: 'Local model servers' },
-      servers.flatMap(detectedChoices),
-    );
-  };
-
   const managedChoice = (server: DetectedManagedServer): Choice => {
     if (server.refused !== undefined) {
       const remedy = server.refused.remedy === undefined ? '' : ` (${server.refused.remedy})`;
-      return { row: { label: `${server.id} · ${server.binary} · ${server.refused.message}${remedy}`, disabled: true }, act: async () => undefined };
+      return { row: { label: `${builtInRowOf(server.id)} · ${server.refused.message}${remedy}`, disabled: true }, act: async () => undefined };
     }
-    return { row: { label: `${server.id} · ${server.binary} · managed` }, act: () => connectManagedServer(server) };
+    return { row: { label: builtInRowOf(server.id) }, act: async () => connectAdded(await addBuiltIn(flowContext(), server.id)) };
   };
 
-  const detectedChoices = (server: LocalServerDetection): Choice[] => {
-    if (server.shape === 'managed') return [managedChoice(server)];
-    return server.models.map((model): Choice => {
-      const reason = unusableReason(server, model);
-      if (reason !== undefined) return { row: { label: `${model.id} · ${server.baseUrl} · ${reason}`, disabled: true }, act: async () => undefined };
-      return { row: { label: `${model.id} · ${server.baseUrl} · ${server.shape}` }, act: () => connectLocalModel(server, model) };
-    });
-  };
-
-  const connectManagedServer = async (server: DetectedManagedServer): Promise<void> => {
-    const written = await backend.addModelConnection({ kind: 'managed', server: server.id });
-    await ports.connected(written.alias);
-  };
-
-  const connectLocalModel = async (server: DetectedLocalServer, model: DetectedLocalServer['models'][number]): Promise<void> => {
-    let contextWindow = model.contextWindow;
-    if (contextWindow === undefined) {
-      const ceiling = model.trainedContext;
-      const entered = await ports.promptText({
-        title: `Context window for ${model.id}`,
-        lines: [
-          ceiling === undefined
-            ? 'The server does not report a context window for this model; enter the window it runs the model with.'
-            : `The trained maximum of this model is ${ceiling} tokens; enter the window to run it with, up to that.`,
-        ],
-        validate: (text) => windowError(text, ceiling),
-      });
-      if (entered === undefined) return;
-      contextWindow = Number(entered.trim());
+  const addLocalServer = async (): Promise<void> => {
+    const context = flowContext();
+    const found = await searchServers(context, []);
+    if (found === undefined) return;
+    const servers = offeredServers(found);
+    const managed = found.filter((server): server is DetectedManagedServer => !isLocalServer(server));
+    if (servers.length === 0 && managed.length === 0) {
+      ports.info(`${NO_SERVER_ANSWERED_TEXT} ${START_ONE_TEXT}`);
+      return;
     }
-    const connection: ModelConnection = { kind: 'server', baseUrl: server.baseUrl, shape: server.shape, model: model.id, contextWindow };
-    const written = await backend.addModelConnection(connection);
-    await ports.connected(written.alias);
+    if (managed.length === 0) {
+      await connectAdded(await addFromFound(context, servers));
+      return;
+    }
+    await chooseFrom({ title: 'Local model servers' }, [
+      ...(servers.length === 0 ? [] : [{ row: { label: 'A model server that answered' }, act: async () => connectAdded(await addFromFound(context, servers)) }]),
+      ...managed.map(managedChoice),
+    ]);
   };
 
   const login = async (args: string): Promise<void> => {
@@ -317,14 +303,15 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       return;
     }
     const [entries, health] = await Promise.all([backend.models(), backend.health()]);
-    const localTargets = [...new Set(entries.flatMap((entry) => entry.targets.filter((target) => entry.targetBilling?.[target] === 'local')))];
+    const displays = displayMapOf(listingViewsOf(entries));
+    const local = entries.filter((entry) => entry.billing === 'local');
     await chooseFrom({ title: 'Connect a model' }, [
       ...listed.profiles.map((profile) => ({ row: { label: `${profile.messages.pickerLabel} [subscription] · ${profileStateText(profile, listed.accounts)}` }, act: () => providerFlowOf(profile, listed) })),
       { row: { label: 'Add an API key' }, act: apiKeyHelp },
-      ...localTargets.map((target) => ({
-        row: { label: `${target} [local server] · ${healthText(health.targets[target])}` },
-        act: async () => ports.info(`${target} is configured; /model switches to an alias that uses it`),
-      })),
+      ...local.map((entry) => {
+        const display = displays.get(entry.id) ?? entry.id;
+        return { row: { label: `${display} [local server] · ${healthText(health.models[entry.id])}` }, act: async () => ports.info(configuredSwitchText(display)) };
+      }),
       { row: { label: 'Add a local server' }, act: addLocalServer },
     ]);
   };
@@ -356,46 +343,59 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     await savedAccount(profile, record);
   };
 
-  const aliasChoice = (entry: MomongaModelEntry, current: string | undefined, targetHealth: Readonly<Record<string, TargetHealth>>, listed: PlanAccountsResponse): Choice => {
-    const blocked = entry.targets.find((target) => entry.targetPlan?.[target] !== undefined && isSignInRequired(targetHealth[target]));
-    const targets = entry.targets.map((target) => (targetHealth[target]?.ok === false ? `${target}: ${healthText(targetHealth[target])}` : target)).join(', ');
-    return {
-      row: { label: `${entry.id}${entry.id === current ? ' (current)' : ''} · ${targets}` },
-      act: async () => {
-        const plan = blocked === undefined ? undefined : entry.targetPlan?.[blocked];
-        if (plan !== undefined) await targetSignIn(listed, plan);
-        await ports.connected(entry.id);
-      },
-    };
+  const blockedPlanOf = (entry: MomongaModelEntry, health: GatewayHealth): { profile: string; account?: string } | undefined =>
+    entry.chain.find((member) => member.plan !== undefined && isSignInRequired(health.models[member.model]))?.plan;
+
+  const useConfigured = async (entry: MomongaModelEntry, health: GatewayHealth, listed: PlanAccountsResponse, atStart: boolean, display: string): Promise<void> => {
+    const plan = blockedPlanOf(entry, health);
+    if (plan !== undefined) await targetSignIn(listed, plan);
+    await ports.connected(entry.id);
+    if (!atStart) return;
+    await writeStart(flowContext(), entry.id);
+    ports.toast(startingModelSetText(display));
   };
 
   const modelPicker = async (current: string | undefined): Promise<void> => {
     ports.loading('Models');
-    const [entries, health, listed] = await Promise.all([backend.models(), backend.health(), backend.plan.accounts()]);
-    const targeted = new Set(entries.flatMap((entry) => entry.targets));
+    const context = flowContext();
+    const [listing, health, listed] = await Promise.all([backend.modelList(), backend.health(), backend.plan.accounts()]);
+    const entries = listing.data;
+    const served = new Set(entries.flatMap((entry) => entry.chain.map((member) => member.upstream)));
     const signedIn = listed.accounts.filter((account) => account.state === 'active');
     const catalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(listed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
     const catalogChoices = catalogs.flatMap(({ account, profile, catalog }) =>
       catalog.models
-        .filter((entry) => !targeted.has(entry.slug))
+        .filter((entry) => !served.has(entry.slug))
         .map((entry): Choice =>
           entry.usable
             ? {
                 row: { label: `${entry.slug} · ${entry.displayName} · ${profile.messages.pickerLabel}` },
                 act: async () => {
                   const created = await backend.plan.addTarget(account.label, { profile: profile.id, slug: entry.slug });
-                  await ports.connected(created.alias);
+                  await ports.connected(created.model);
                 },
               }
             : { row: { label: `${entry.slug} · ${entry.reason} · ${profile.messages.pickerLabel}`, disabled: true }, act: async () => undefined },
         ),
     );
-    const choices = [...entries.map((entry) => aliasChoice(entry, current, health.targets, listed)), ...catalogChoices];
-    if (choices.length === 0) {
-      ports.info('no model is available; use /login to connect one');
+    const remembered = ports.found.servers();
+    const opened = remembered.length === 0 ? undefined : await openEdit(context);
+    const found = opened === undefined ? [] : foundNotConfigured(opened.edit, remembered);
+    const { rows, listed: listedRows } = modelListRows({ listing, current, health, found });
+    if (rows.length + catalogChoices.length === 0) {
+      ports.info(NO_MODEL_CONNECTED_TEXT);
       return;
     }
-    await chooseFrom({ title: 'Models', lines: [MODEL_CHANGE_NOTE] }, choices);
+    const displays = displayMapOf(listingViewsOf(entries));
+    const choice = await ports.choose({ title: 'Models', lines: [MODEL_CHANGE_NOTE], rows: [...rows, ...catalogChoices.map((entry) => entry.row)], alt: { label: ALSO_AT_START_LABEL } });
+    if (choice === undefined) return;
+    const row = listedRows[choice.index];
+    if (row === undefined) {
+      await catalogChoices[choice.index - listedRows.length]?.act();
+      return;
+    }
+    if (row.kind === 'configured') await useConfigured(row.entry, health, listed, choice.alt, displays.get(row.entry.id) ?? row.entry.id);
+    if (row.kind === 'found' && opened !== undefined) await connectAdded(await addFoundModel(context, opened, row.found.server, row.found.model, row.found.display));
   };
 
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {

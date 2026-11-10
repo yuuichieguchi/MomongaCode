@@ -624,9 +624,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         settings: composition.settings,
         runs: createChildRuns({
           store,
-          modelAliases: async () => {
+          modelViews: async () => {
             try {
-              return (await gatewayClient.models()).map((model) => model.id);
+              return (await gatewayClient.listing({ signal: lifetime.signal })).views;
             } catch (error) {
               if ((await retireDecisionOf(error, rolePort)) === 'retire-yield') throw new RetiringYield();
               throw error;
@@ -689,8 +689,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         },
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
-        modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
-        modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
+        modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
+        modelCapabilities: (model, requestSignal) => gatewayClient.capabilities(model, { signal: requestSignal }),
         sessionCreateSettings: async (cwd, requestSignal) => {
           const admittedSettings = await settingsComposition.sessionCreateSettings(cwd);
           await settingsComposition.admitted(async () => (await sandboxes.admit(requestSignal)).release());

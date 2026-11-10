@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { loadUserModels } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
 import {
   adoptionOf,
@@ -19,17 +18,18 @@ import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, 
 import { codeDigestOfRunningProcess, currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
+import type { ChainCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
+import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
+import { shellModelsOf } from '../plain-http.ts';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -40,7 +40,7 @@ export class ContextImproveError extends Error {
 
 export type ContextImproveOptions = {
   dataset: string;
-  alias: string;
+  model: string;
   tokenCap: number;
   seed: number;
   outcome: string;
@@ -49,7 +49,7 @@ export type ContextImproveOptions = {
 
 const RECORD_WINDOW_SHARE = 4;
 
-const recordCharsFor = (capabilities: AliasCapabilities): number =>
+const recordCharsFor = (capabilities: ChainCapabilities): number =>
   ESTIMATED_CHARACTERS_PER_TOKEN * Math.max(0, Math.floor((capabilities.contextWindow - capabilities.maxOutputTokens) / RECORD_WINDOW_SHARE));
 
 export const terminalResponseOf = (events: readonly StreamEvent[]): ResponseResource => {
@@ -66,12 +66,12 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
-const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
+const completerFor = async (ports: CliPorts, paths: MomongaPaths, model: string, capabilities: ChainCapabilities, signal: AbortSignal): Promise<{ complete: Completer; close(): Promise<void> }> => {
   const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient, isGenerationRetiredRefusal } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway'), clock: ports.clock, version: ports.version });
   const complete: Completer = async (request) => {
     const body: CreateResponseBody = {
-      model: alias,
+      model,
       instructions: request.instructions,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: request.input }] }],
       text: { format: request.format },
@@ -111,18 +111,18 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
 
 export type AnalysisModelInput = {
   roles: ModelRoles;
-  alias: string;
-  capabilitiesOf: (alias: string) => Promise<AliasCapabilities>;
+  model: string;
+  capabilitiesOf: (model: string) => Promise<ChainCapabilities>;
 };
 
-export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: AliasCapabilities }> => {
-  const alias = input.roles.analysis ?? input.alias;
-  return { alias, capabilities: await input.capabilitiesOf(alias) };
+export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ model: string; capabilities: ChainCapabilities }> => {
+  const model = input.roles.analysis ?? input.model;
+  return { model, capabilities: await input.capabilitiesOf(model) };
 };
 
 export type ImproveInputSource = {
   seed: number;
-  analysis: { alias: string; capabilities: AliasCapabilities };
+  analysis: { model: string; capabilities: ChainCapabilities };
   tokenCap: number;
   current: ImproveInput['current'];
 };
@@ -130,7 +130,7 @@ export type ImproveInputSource = {
 export const improveInputFor = ({ seed, analysis, tokenCap, current }: ImproveInputSource): ImproveInput => ({
   seed,
   bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
-  alias: analysis.alias,
+  analysisModel: analysis.model,
   tokenCap,
   current,
   recordChars: recordCharsFor(analysis.capabilities),
@@ -151,16 +151,17 @@ export const contextImprove = async (
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
-    const models = loadUserModels({ home: ports.home });
-    const analysis = await analysisModelFor({ roles: models.resolved.roles, alias: options.alias, capabilitiesOf: async (alias) => {
-        const capabilities = await gatewayInfo.capabilitiesOf(alias);
+    const models = shellModelsOf(ports);
+    const pinned = pinnedModelOf(models, options.model);
+    const analysis = await analysisModelFor({ roles: models.resolved.roles, model: pinned, capabilitiesOf: async (model) => {
+        const capabilities = await gatewayInfo.capabilitiesOf(model);
         if (isNotListedCapabilities(capabilities)) throw new Error(notListedMessage(capabilities));
         return capabilities;
       },
     });
     const adopted = (await client.guidelines()).current;
     const current = adopted === null ? undefined : { version: adopted.version, text: adopted.text };
-    const completer = await completerFor(ports, paths, analysis.alias, analysis.capabilities, options.interrupt);
+    const completer = await completerFor(ports, paths, analysis.model, analysis.capabilities, options.interrupt);
     try {
       const outcome = await improveGuideline(
         improveInputFor({ seed: options.seed, analysis, tokenCap: options.tokenCap, current }),
@@ -169,7 +170,7 @@ export const contextImprove = async (
             const transcripts = await runContextLive(hostEffects(ports), {
               dataset,
               seed: options.seed,
-              alias: options.alias,
+              model: pinned,
               models,
               limits,
               reflection,
@@ -185,7 +186,7 @@ export const contextImprove = async (
           },
           complete: completer.complete,
           charge: async (usage, detail) => {
-            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: analysis.alias, ...usage, ...(detail === undefined ? {} : { detail }) });
+            await client.recordContextCharge({ purpose: 'guideline', project: ports.cwd, model: analysis.model, ...usage, ...(detail === undefined ? {} : { detail }) });
           },
         },
       );

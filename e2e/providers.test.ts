@@ -8,6 +8,7 @@ import {
   openResponsesTextReply,
   openResponsesToolCallReply,
   FAKE_ANTHROPIC_COUNT_TOKENS_PATH,
+  modelSettings,
   startFakeAnthropic,
   startFakeOpenResponses,
 } from '@momonga/testkit';
@@ -48,17 +49,17 @@ const writeSecrets = (home: E2eHome, secrets: Record<string, string>): void => {
 };
 
 const startProviderStack = async (home: E2eHome, adapter: Adapter, upstream: FakeUpstreamServer) => {
-  const target = {
+  const model = {
     adapter,
-    model: 'upstream-model',
+    provider: adapter === 'open-responses' ? 'fake' : 'remote',
+    id: 'upstream-model',
     socketPath: upstream.socketPath,
     apiKeySecret: SECRET_NAME,
     capabilities: CAPABILITIES,
-    ...(adapter === 'open-responses' ? { provider: 'fake' } : {}),
   };
   return startStack({
     home,
-    settings: { models: { aliases: { default: ['remote'] }, targets: { remote: target } } },
+    settings: modelSettings({ models: [model] }),
     deps: { ...DEFAULT_E2E_DEPS, launcherOverrides: { gateway: { script: GATEWAY_SECRETS_MAIN } } },
   });
 };

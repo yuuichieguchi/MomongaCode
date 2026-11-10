@@ -21,14 +21,14 @@ export type ProbeLockKey = Readonly<Record<string, string | null>>;
 
 export class ProbeInProgressError extends Error {
   constructor(target: string) {
-    super(`the target "${target}" is already being measured (once per probe key); run the command again when it finishes`);
+    super(`the model "${target}" is already being measured (once per probe key); run the command again when it finishes`);
     this.name = 'ProbeInProgressError';
   }
 }
 
 export class ProbeKeyChangedError extends Error {
   constructor(target: string, before: ProbeLockKey, after: ProbeLockKey) {
-    super(`the identity of the target "${target}" changed while it was measured (from ${canonicalJson(before)} to ${canonicalJson(after)}), so the measurement was not recorded`);
+    super(`the identity of the model "${target}" changed while it was measured (from ${canonicalJson(before)} to ${canonicalJson(after)}), so the measurement was not recorded`);
     this.name = 'ProbeKeyChangedError';
   }
 }
@@ -138,7 +138,7 @@ export const targetNotReadyError = (target: string, refusal: Extract<Preconditio
     status: 412,
     type: 'invalid_request',
     code: TARGET_NOT_READY,
-    message: [`the target "${target}" is not ready: ${refusal.message} (${refusal.detail})`, ...(refusal.remedy === undefined ? [] : [`remedy: ${refusal.remedy}`])].join('; '),
+    message: [`the model "${target}" is not ready: ${refusal.message} (${refusal.detail})`, ...(refusal.remedy === undefined ? [] : [`remedy: ${refusal.remedy}`])].join('; '),
   });
 
 export type ProbeEvent = { kind: 'failed' | 'stopped'; target: string; error: Error };

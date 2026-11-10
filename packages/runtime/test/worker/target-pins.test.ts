@@ -29,7 +29,7 @@ const conversation = (): RunEventPayload[] => [
 
 const prepared = async (roles: Record<string, string> = {}) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
-  env.settings.rolesValue = { ...roles };
+  env.gateway.roles = { ...roles };
   const run = env.enqueue('question one');
   await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
@@ -55,32 +55,33 @@ const changingOutage = (env: Env, change: () => void): void => {
 };
 
 
-const SCRIPT_TARGET = { fm: { adapter: 'chat-completions', model: 'fake-model', answers: 'script' as const } };
+const SCRIPT_MEMBER = { fm: { adapter: 'chat-completions', upstream: 'fake-model', answers: 'script' as const } };
 
-const withTargets = async (targets: Record<string, { adapter: string; model: string; answers?: 'model' | 'script' }>) => {
+const withMembers = async (members: Record<string, { adapter: string; upstream: string; answers: 'model' | 'script' }>) => {
   const { env, run } = await prepared();
-  env.settings.targetsValue = targets;
+  env.gateway.chainsByModel['fm'] = Object.keys(members);
+  env.gateway.memberFacts = members;
   return { env, run };
 };
 
 describe('the pinned provenance of the targets', () => {
-  it('run.started records the adapter, the upstream model and what answers of every configured target', async () => {
-    const { env, run } = await withTargets({ ...SCRIPT_TARGET, undeclared: { adapter: 'ollama', model: 'llama3' } });
+  it('run.started records the adapter, the upstream model and what answers of every member of the chain the gateway lists', async () => {
+    const { env, run } = await withMembers({ ...SCRIPT_MEMBER, second: { adapter: 'ollama', upstream: 'llama3', answers: 'model' } });
     await drive(env, run.id);
     const starts = env.ofType(run.id, 'run.started');
     expect(starts.length).toBeGreaterThanOrEqual(1);
     for (const start of starts) {
       expect(start.pins['targets']).toEqual({
         fm: { adapter: 'chat-completions', model: 'fake-model', answers: 'script' },
-        undeclared: { adapter: 'ollama', model: 'llama3' },
+        second: { adapter: 'ollama', model: 'llama3', answers: 'model' },
       });
     }
   });
 
-  it('a recovered run keeps the pinned value: a settings change between claims does not reach run.started', async () => {
-    const { env, run } = await withTargets(SCRIPT_TARGET);
+  it('a recovered run keeps the pinned value: a listing change between claims does not reach run.started', async () => {
+    const { env, run } = await withMembers(SCRIPT_MEMBER);
     changingOutage(env, () => {
-      env.settings.targetsValue = { fm: { adapter: 'chat-completions', model: 'fake-model', answers: 'model' } };
+      env.gateway.memberFacts = { fm: { adapter: 'chat-completions', upstream: 'fake-model', answers: 'model' } };
     });
     await drive(env, run.id);
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -90,9 +91,9 @@ describe('the pinned provenance of the targets', () => {
   });
 
   it('a run that starts after the change takes the new value', async () => {
-    const { env, run } = await withTargets(SCRIPT_TARGET);
+    const { env, run } = await withMembers(SCRIPT_MEMBER);
     await drive(env, run.id);
-    env.settings.targetsValue = { fm: { adapter: 'chat-completions', model: 'fake-model', answers: 'model' } };
+    env.gateway.memberFacts = { fm: { adapter: 'chat-completions', upstream: 'fake-model', answers: 'model' } };
     env.gateway.script.push(textStep('Second.'));
     const second = env.enqueue('Second task');
     await drive(env, second.id);

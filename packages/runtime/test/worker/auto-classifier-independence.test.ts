@@ -14,8 +14,8 @@ const runWithRecords = async (records: readonly AutoFitRecord[]) => {
   const directory = path.join(momongaLayout(env.home).state, 'auto-fit');
   fs.mkdirSync(directory, { recursive: true });
   records.forEach((record, index) => fs.writeFileSync(path.join(directory, `record-${index}.json`), JSON.stringify(record)));
-  env.settings.classifierAlias = 'guard';
-  env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
+  env.settings.classifierModel = 'guard';
+  env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
   const target = path.join(env.project, 'out.txt');
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep(SAFE), textStep('Written.'));
   const run = env.enqueue('Write out.txt');
@@ -34,6 +34,6 @@ describe("the classifier's verdict does not depend on any measurement record (I6
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
     const [classified] = env.ofType(run.id, 'tool.permission.classified');
-    expect(classified).toMatchObject({ outcome: 'allow', alias: 'guard', verdict: 'safe' });
+    expect(classified).toMatchObject({ outcome: 'allow', model: 'guard', verdict: 'safe' });
   });
 });

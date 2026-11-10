@@ -6,11 +6,11 @@ import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momon
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { FM_CURRENCY, fmRecordKey, fmTargetBase, IDLE_AUTO_PROBE, NO_AUTO_PROBE, primed, recordKeyOptions } from './fm-record-support.ts';
-import { TARGET_PROBING } from '@momonga/protocol';
+import { MODEL_ID_CHANGED_CODE, TARGET_PROBING } from '@momonga/protocol';
 
 const RECORD_KEY: KnownProbeKey = fmRecordKey('ab'.repeat(32), '25A100');
 const LISTED = 'listed-by-fm';
-const TARGET = { name: 'fm', model: 'label-in-the-gateway' };
+const TARGET = { name: 'fm', display: 'fm', model: 'label-in-the-gateway' };
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -54,11 +54,11 @@ const targetOf = async (fmServe: ManagedServer, extra: { declaredModel?: string;
 const listings = (fake: FakeChatCompletionsServer): number => fake.requests.filter((request) => request.path === '/v1/models').length;
 
 describe('the model id the managed fm target sends to fm serve', () => {
-  it('is the declared model, without asking fm serve', async () => {
+  it('is the entry id when the probe recorded that id, without asking fm serve', async () => {
     const { fake, fmServe, starts } = await startListing();
-    const target = await targetOf(fmServe, { declaredModel: 'declared' });
+    const target = await targetOf(fmServe, { declaredModel: 'recorded', report: { ...makeReport(1, 1), modelId: 'recorded' } });
 
-    expect(await target.upstreamModel(TARGET, new AbortController().signal)).toBe('declared');
+    expect(await target.upstreamModel(TARGET, new AbortController().signal)).toBe('recorded');
     expect(starts()).toBe(0);
     expect(listings(fake)).toBe(0);
   });
@@ -71,11 +71,14 @@ describe('the model id the managed fm target sends to fm serve', () => {
     expect(listings(fake)).toBe(0);
   });
 
-  it('is the declared model over the recorded one', async () => {
+  it('is never another model: an entry id that differs from the recorded one is refused with 412 model_id_changed (rule M)', async () => {
     const { fmServe } = await startListing();
-    const target = await targetOf(fmServe, { declaredModel: 'declared', report: { ...makeReport(1, 1), modelId: 'recorded' } });
+    const refused = targetOf(fmServe, { declaredModel: 'declared', report: { ...makeReport(1, 1), modelId: 'recorded' } });
 
-    expect(await target.upstreamModel(TARGET, new AbortController().signal)).toBe('declared');
+    await expect(refused).rejects.toMatchObject({
+      status: 412,
+      body: { type: 'invalid_request', code: MODEL_ID_CHANGED_CODE, param: 'model', message: 'The server of fm lists "recorded", not "declared". Run /models add to add the model it serves now.' },
+    });
   });
 
   it('asks fm serve for no model listing: a target with no record answers target_probing before any model id is needed', async () => {

@@ -5,7 +5,7 @@ import type { TestContext } from 'vitest';
 import { loadUserModels } from '@momonga/config';
 import type { UserModels } from '@momonga/config';
 import { fixedSocket, momongaLayout } from '@momonga/foundation';
-import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE, parseCanon } from '@momonga/protocol';
 import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
@@ -43,28 +43,41 @@ export const UNAVAILABLE_PLAN: UnavailableCapabilities = {
 
 export const PROBING_PLAN: ProbingCapabilities = { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 5 }, source: 'unprobed' };
 
-export const PLAN_TARGET = 'p';
 export const PLAN_MODEL = 'plan-model';
+export const PLAN_PROVIDER = 'chatgpt';
+export const PLAN_TARGET = `${PLAN_PROVIDER}/${PLAN_MODEL}`;
 
-export const PRODUCT_WRITTEN_PLAN_TARGET = { adapter: 'open-responses', model: PLAN_MODEL, plan: { profile: 'chatgpt' } } as const;
+export const PRODUCT_WRITTEN_PLAN_CONNECTION = { adapter: 'open-responses', plan: { profile: PLAN_PROVIDER }, models: [{ id: PLAN_MODEL }] } as const;
 
-export const productWrittenPlanModels = (context: TestContext, alias = 'default'): UserModels => {
+export const productWrittenPlanModels = (context: TestContext): UserModels => {
   const home = withTempDir(context, { asHome: true });
   const file = momongaLayout(home).settingsFile;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, JSON.stringify({ models: { aliases: { [alias]: [PLAN_TARGET] }, targets: { [PLAN_TARGET]: PRODUCT_WRITTEN_PLAN_TARGET } } }), { mode: 0o600 });
+  fs.writeFileSync(file, JSON.stringify({ models: { connections: [PRODUCT_WRITTEN_PLAN_CONNECTION] } }), { mode: 0o600 });
   return loadUserModels({ home });
 };
 
-export const listingEntry = (id: string, targetCapabilities: Record<string, unknown>) => ({
-  id,
-  object: 'model',
-  targets: Object.keys(targetCapabilities),
-  targetCounters: Object.fromEntries(Object.keys(targetCapabilities).map((target, index) => [target, String(index + 1).repeat(64)])),
-  capabilities: Object.values(targetCapabilities)[0],
-  targetCapabilities,
-  targetBilling: Object.fromEntries(Object.keys(targetCapabilities).map((target) => [target, 'plan'])),
-});
+export const listingEntry = (id: string, memberCapabilities: Record<string, unknown>) => {
+  const named = parseCanon(id);
+  if (named === undefined) throw new Error(`${id} is not the full reference of a model`);
+  return {
+    id,
+    object: 'model',
+    provider: named.provider,
+    ownName: named.ownName,
+    billing: 'plan',
+    capabilities: Object.values(memberCapabilities)[0],
+    chain: Object.entries(memberCapabilities).map(([model, capabilities], index) => ({
+      model,
+      counter: String(index + 1).repeat(64),
+      billing: 'plan',
+      adapter: 'open-responses',
+      answers: 'model',
+      upstream: parseCanon(model)?.ownName ?? model,
+      capabilities,
+    })),
+  };
+};
 
 export type FakeModelsGateway = { socketPath: string; requests: { method: string; url: string }[]; firstRequest: Promise<'requested'> };
 
@@ -79,7 +92,7 @@ export const serveModelsListing = async (context: TestContext, answer: readonly 
     requests.push({ method: request.method ?? '', url: request.url ?? '' });
     arrived('requested');
     if (answer === 'never') return;
-    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: answer }));
+    response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ object: 'list', data: answer, start: null, roles: {} }));
   });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);

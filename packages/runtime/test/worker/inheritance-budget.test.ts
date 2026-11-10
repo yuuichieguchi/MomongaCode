@@ -6,13 +6,13 @@ import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionContent } from '@momonga/testkit';
 import { capabilitiesFor, compactKey, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
-import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
+import { MODEL_ID, assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
 import { MARKER_TEXT, firstConversation, firstRequestInput, resolvedInheritedOf as inheritedEventOf, settle } from './inheritance-support.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 const NO_TOOLS = { toolList: () => [] };
 
-const requestedPayload = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: MODEL_ALIAS, input: 'seed' } });
+const requestedPayload = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { model: MODEL_ID, input: 'seed' } });
 
 const respondedPayload = (step: number, output: unknown[]): RunEventPayload => ({
   type: 'model.responded',
@@ -92,7 +92,7 @@ describe('compaction of inherited history', () => {
     expect(env.gateway.compacts).toHaveLength(1);
     const [compact] = env.gateway.compacts;
     expect(compact?.idempotencyKey).toBe(compactKey(second.id, compact?.request));
-    expect(compact?.request.momonga).toEqual({ max_summary_tokens: 480, retains_user_request: true });
+    expect(compact?.request.momonga).toEqual({ max_summary_tokens: 480, retains_user_request: true, exact_model: true });
     expect(compact?.request.instructions).toBeUndefined();
     const compactInput = compact?.request.input as InputItem[];
     expect(compactInput.map((item) => (item.type === 'message' ? [item.role, textOf(item).slice(0, 12)] : [item.type]))).toEqual([

@@ -142,11 +142,11 @@ describe('Open Responses types conform to the vendored component schemas', () =>
 
   it('accepts a typed ResponseResource carrying the momonga extension', () => {
     const extension: MomongaResponseExtension = {
-      alias: 'fast',
-      target: 'secondary',
+      model: 'chatgpt/gpt-5.5',
+      target: 'openai/gpt-5.5',
       counter: 'c'.repeat(64),
       attempts: 3,
-      fallbackFrom: ['primary'],
+      fallbackFrom: ['chatgpt/gpt-5.5'],
       usageSource: 'reported',
     };
     const resource: ResponseResource = {
@@ -157,8 +157,9 @@ describe('Open Responses types conform to the vendored component schemas', () =>
     expectTypeOf<ResponseResource['momonga']>().toEqualTypeOf<MomongaResponseExtension | undefined>();
     expectTypeOf<MomongaResponseExtension['usageSource']>().toEqualTypeOf<'reported' | 'estimated'>();
     expectTypeOf<MomongaResponseExtension['counter']>().toEqualTypeOf<string>();
-    expectTypeOf<MomongaModelEntry['targets']>().toEqualTypeOf<string[]>();
-    expectTypeOf<MomongaModelEntry['targetCounters']>().toEqualTypeOf<Record<string, string>>();
+    expectTypeOf<MomongaResponseExtension['model']>().toEqualTypeOf<string>();
+    expectTypeOf<MomongaModelEntry['chain'][number]['model']>().toEqualTypeOf<string>();
+    expectTypeOf<MomongaModelEntry['chain'][number]['counter']>().toEqualTypeOf<string>();
   });
 
   it('rejects a ResponseResource missing required fields so the check is not vacuous', () => {
@@ -235,8 +236,8 @@ describe('momonga extension shapes', () => {
   });
 
   it('defines health and usage report shapes', () => {
-    expectTypeOf<GatewayHealth['targets'][string]['breaker']>().toEqualTypeOf<'closed' | 'open' | 'half-open'>();
-    expectTypeOf<GatewayHealth['targets'][string]['ok']>().toEqualTypeOf<boolean>();
+    expectTypeOf<GatewayHealth['models'][string]['breaker']>().toEqualTypeOf<'closed' | 'open' | 'half-open'>();
+    expectTypeOf<GatewayHealth['models'][string]['ok']>().toEqualTypeOf<boolean>();
     expectTypeOf<UsageReport['run_id']>().toEqualTypeOf<string>();
     expectTypeOf<UsageReport['steps'][number]>().toEqualTypeOf<{
       step: number;

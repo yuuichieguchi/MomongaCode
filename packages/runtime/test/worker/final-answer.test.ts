@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import { usageOf } from '@momonga/testkit';
 import { DEADLINE_MS, START_MS, bodyDigest, makeEnv, modelKey, testSystemPrompt, textOf, typesOf } from './harness.ts';
-import { MODEL_ALIAS, textStep } from './scripts.ts';
+import { MODEL_ID, textStep } from './scripts.ts';
+import { FAKE_ADAPTER } from './fake-gateway.ts';
 
 describe('worker final answer', () => {
   it('returns idle when nothing is queued', async () => {
@@ -73,7 +74,7 @@ describe('worker final answer', () => {
     const body = stream.body;
     expect(Object.keys(body).sort()).toEqual(['input', 'max_output_tokens', 'metadata', 'model', 'momonga', 'parallel_tool_calls', 'prompt_cache_key', 'store', 'stream', 'tool_choice', 'tools']);
     expect(body.metadata).toEqual({ run_id: run.id, step: '1' });
-    expect(body.model).toBe(MODEL_ALIAS);
+    expect(body.model).toBe(MODEL_ID);
     expect(body.tool_choice).toBe('auto');
     expect(body.parallel_tool_calls).toBe(false);
     expect(body.store).toBe(false);
@@ -87,17 +88,17 @@ describe('worker final answer', () => {
     expect(input.some((item) => item.type === 'message' && item.role === 'user' && textOf(item) === 'Say hello')).toBe(true);
   });
 
-  it('passes the capability parallelToolCalls flag and the alias to the gateway', async () => {
+  it('passes the capability parallelToolCalls flag and the model to the gateway', async () => {
     const env = await makeEnv();
     env.gateway.capabilitiesValue = { ...env.gateway.capabilitiesValue, parallelToolCalls: true };
     env.gateway.script.push(textStep('done'));
     env.enqueue();
     await env.runOnce(env.worker());
     expect(env.gateway.streams[0]?.body.parallel_tool_calls).toBe(true);
-    expect(env.gateway.capabilityRequests).toContain(MODEL_ALIAS);
+    expect(env.gateway.capabilityRequests).toContain(MODEL_ID);
   });
 
-  it('pins the model alias, prompt digest, tool set digest and capabilities on the first attempt', async () => {
+  it('pins the model, prompt digest, tool set digest and capabilities on the first attempt', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('done'));
     const run = env.enqueue();
@@ -105,12 +106,15 @@ describe('worker final answer', () => {
     const toolSet = await env.snapshotTools(env.toolbox.tools());
     const [started] = env.ofType(run.id, 'run.started');
     expect(started?.pins).toEqual({
-      modelAlias: MODEL_ALIAS,
+      model: MODEL_ID,
       systemPromptDigest: sha256Hex(testSystemPrompt({ cwd: env.project, platform: process.platform })),
       toolSetDigest: toolSet.digest,
       capabilities: env.gateway.capabilitiesValue,
       roles: {},
-      targets: {},
+      targets: {
+        primary: { adapter: FAKE_ADAPTER, model: 'primary', answers: 'model' },
+        secondary: { adapter: FAKE_ADAPTER, model: 'secondary', answers: 'model' },
+      },
       token: {},
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);

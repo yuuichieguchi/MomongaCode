@@ -15,7 +15,7 @@ import {
 import type { FakeUpstreamReply } from '@momonga/testkit';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake } from './cc-support.ts';
 import { OLLAMA_MODEL, chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
-import { START_MS, expectErrorBody, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { chainOfServers, START_MS, expectErrorBody, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
@@ -90,16 +90,16 @@ const TWO_OPEN_REPLIES = [openResponsesTextReply(['from open']), openResponsesTe
 const startAlias = async (order: readonly string[], options: { openScript?: FakeUpstreamReply[]; maxAttempts?: number } = {}) => {
   const upstreams: Record<string, Upstream> = {};
   for (const name of order) upstreams[name] = await upstreamFor(name, options.openScript ?? TWO_OPEN_REPLIES);
+  const chain = chainOfServers(Object.fromEntries(order.map((name) => [name, { model: (upstreams[name] as Upstream).model, kind: 'remote' }])));
   const harness = await startGateway({
-    adapters: Object.fromEntries(Object.entries(upstreams).map(([name, upstream]) => [name, upstream.adapter])),
+    adapters: chain.keyed(Object.fromEntries(Object.entries(upstreams).map(([name, upstream]) => [name, upstream.adapter]))),
     config: {
-      aliases: { fast: [...order] },
-      targets: Object.fromEntries(order.map((name) => [name, { model: (upstreams[name] as Upstream).model, kind: 'remote' }])),
+      ...chain.config,
       ...(options.maxAttempts === undefined ? {} : { retry: { maxAttempts: options.maxAttempts, totalWaitMs: 1 } }),
     },
   });
   const post = async (path: string, body: Record<string, unknown>) =>
-    readJson(await postJson(harness.client, path, { model: 'fast', input: userInput('hi'), ...body }));
+    readJson(await postJson(harness.client, path, { input: userInput('hi'), ...body, model: harness.model }));
   return { post, sentTo: (name: string) => (upstreams[name] as Upstream).sent() };
 };
 
@@ -110,7 +110,7 @@ const expectUnknownParameter = (response: { status: number; body: any }, param: 
   expect(response.status).toBe(400);
   expectErrorBody(response.body, { type: 'invalid_request', code: 'unknown_parameter', param });
   for (const field of named) expect(String(response.body.error.message)).toContain(field);
-  expect(String(response.body.error.message)).toContain('"fast"');
+  expect(String(response.body.error.message)).toContain('for model "');
 };
 
 describe('an open-responses target carries unknown create fields to its upstream unchanged', () => {
@@ -283,7 +283,7 @@ describe('count_tokens stays strict whatever the target', () => {
 
 describe('no known create field is taken for an unknown one', () => {
   const NON_NULL_VALUES: Record<string, unknown> = {
-    model: 'fast',
+    model: 'scripted/scripted-primary',
     input: userInput('hi'),
     include: [],
     stream: false,

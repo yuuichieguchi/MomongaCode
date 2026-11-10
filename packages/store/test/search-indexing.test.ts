@@ -47,7 +47,7 @@ describe('search indexing', () => {
 
   it('indexes a run that was queued and cancelled before any worker claimed it', async () => {
     const { store, dbPath } = harness();
-    const session = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', modelAlias: 'fm' });
+    const session = store.createSession({ cwd: '/work/a', env: {}, permissionMode: 'manual', model: 'fm' });
     const created = store.createRunAndEnqueue(session.id, { input: 'never started', timeoutMs: 1000, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(created.kind);
     await store.requestCancel(created.run.id);

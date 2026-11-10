@@ -5,10 +5,11 @@ import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { callsStep, textStep } from '../worker/scripts.ts';
-import { OTHER_ALIAS, attachWorkerKit, startService } from './helpers.ts';
+import { OTHER_MODEL_ID, attachWorkerKit, startService } from './helpers.ts';
+import { fakeViewsOf } from '../worker/fake-gateway.ts';
 
 describe('a model switch through PATCH while a run waits for approval', () => {
-  it('lets the run resume on the alias it pinned', async () => {
+  it('lets the run resume on the model it pinned', async () => {
     const env = await startService();
     const kit = attachWorkerKit(env);
     const session = await env.createSession();
@@ -18,19 +19,19 @@ describe('a model switch through PATCH while a run waits for approval', () => {
     expect(await kit.runOnce(kit.worker('worker-1'))).toBe('yielded');
     const [approval] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
 
-    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID } });
     expect(patched.status).toBe(200);
     const option = approval.options.find((candidate: { kind: string }) => candidate.kind === 'allow_once');
     expect((await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: option.optionId } })).status).toBe(200);
     await kit.runOnce(kit.worker('worker-2'));
 
     expect(env.store.getRun(run.id)?.status).toBe('COMPLETED');
-    expect(kit.gateway.streams.map((stream) => stream.body.model)).toEqual([session.modelAlias, session.modelAlias]);
+    expect(kit.gateway.streams.map((stream) => stream.body.model)).toEqual([session.model, session.model]);
     const starts = env.ofType(run.id, 'run.started');
     expect(starts[1]?.pins).toEqual(starts[0]?.pins);
   });
 
-  it('starts the subagent the task spawns after the switch on the alias the task pinned', async () => {
+  it('starts the subagent the task spawns after the switch on the model the task pinned', async () => {
     const env = await startService();
     const kit = attachWorkerKit(env);
     const directory = path.join(env.layout.projectReal, '.momonga', 'agents');
@@ -41,7 +42,7 @@ describe('a model switch through PATCH while a run waits for approval', () => {
         home: env.layout.home,
         fileSystem: createNodeSkillFileSystem(),
         settings: { trusted: () => true },
-        runs: createChildRuns({ store: env.store, modelAliases: async () => [session.modelAlias, OTHER_ALIAS] }),
+        runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf([session.model, OTHER_MODEL_ID]) }),
       });
     const session = await env.createSession();
     const target = path.join(env.layout.projectReal, 'out.txt');
@@ -53,14 +54,14 @@ describe('a model switch through PATCH while a run waits for approval', () => {
     expect(await kit.runOnce(kit.worker('worker-1', { agents: agents() }))).toBe('yielded');
     const [approval] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
 
-    expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } })).status).toBe(200);
+    expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID } })).status).toBe(200);
     const option = approval.options.find((candidate: { kind: string }) => candidate.kind === 'allow_once');
     expect((await env.http('POST', `/v1/approvals/${approval.id}`, { body: { optionId: option.optionId } })).status).toBe(200);
     await kit.runOnce(kit.worker('worker-2', { agents: agents() }));
 
     const [child] = env.store.listChildRuns(run.id);
     if (child === undefined) throw new Error('the task did not spawn a subagent');
-    expect(env.store.getSession(session.id)?.modelAlias).toBe(OTHER_ALIAS);
-    expect(env.store.getSession(child.sessionId)?.modelAlias).toBe(session.modelAlias);
+    expect(env.store.getSession(session.id)?.model).toBe(OTHER_MODEL_ID);
+    expect(env.store.getSession(child.sessionId)?.model).toBe(session.model);
   });
 });

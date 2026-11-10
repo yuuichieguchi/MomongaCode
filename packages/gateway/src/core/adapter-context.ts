@@ -1,5 +1,6 @@
 import type { AdapterContext, Capabilities, ReasoningOrigin } from '@momonga/protocol';
 import type { Services } from './services.ts';
+import { adapterTargetOf } from './router.ts';
 import type { TargetRuntime } from './router.ts';
 
 export const originOf = (services: Services, target: TargetRuntime): ReasoningOrigin => services.reasoningOrigin.originFor(target.adapter.kind, target.model);
@@ -12,7 +13,7 @@ export const adapterContextOf = (
   attempt: number,
 ): AdapterContext => ({
   signal,
-  target: { name: target.name, model: target.model },
+  target: adapterTargetOf(target),
   attempt,
   reasoningOrigin: originOf(services, target),
   capabilities,

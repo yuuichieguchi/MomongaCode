@@ -4,7 +4,7 @@ import { expectSchema } from './helpers.ts';
 
 type FakeEvent = { type: string; [key: string]: unknown };
 
-const started = (targets: unknown): FakeEvent => ({ type: 'run.started', attempt: 1, now: 0, pins: { modelAlias: 'default', targets } });
+const started = (targets: unknown): FakeEvent => ({ type: 'run.started', attempt: 1, now: 0, pins: { model: 'default', targets } });
 
 const observed = (target: string): FakeEvent => ({ type: 'meter.observed', target, counter: 'c', fallback: false });
 
@@ -74,10 +74,13 @@ describe('what answered a run, from the per-run answerers record and its pins', 
   });
 
   it('refuses a run that pinned no targets instead of guessing what answered it', async () => {
-    await expect(answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { modelAlias: 'default' } }], ['opus'])).rejects.toThrow(/pinned no targets/);
+    await expect(answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { model: 'default' } }], ['opus'])).rejects.toThrow(/pinned no targets/);
   });
 
-  it('refuses a recorded answerer that the pins do not list', async () => {
-    await expect(answeredBy([started({ opus: TARGETS.opus })], ['ghost'])).rejects.toThrow(/ghost/);
+  it('answers a recorded answerer that the pins do not list with its text and no adapter, as an old run recorded a name that is no key of its pins', async () => {
+    expect((await answeredBy([started({ opus: TARGETS.opus })], ['ghost', 'opus'])).view).toEqual([
+      { target: 'ghost', answers: 'unknown' },
+      { target: 'opus', adapter: TARGETS.opus.adapter, upstreamModel: TARGETS.opus.model, answers: TARGETS.opus.answers ?? 'unknown' },
+    ]);
   });
 });

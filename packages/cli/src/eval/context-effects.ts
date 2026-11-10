@@ -30,9 +30,9 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 export const copyProbeRecord = async (files: Pick<CliPorts['files'], 'readTextIfPresent' | 'writeText'>, from: string, to: string, source: ManagedRecordSource, servers: ServerRegistry, platform: NodeJS.Platform, signal: AbortSignal): Promise<boolean> => {
   const { managedKeyReader, managedRecordPath } = await import('@momonga/gateway');
   const description = registeredServer(servers, source.server);
-  if (description === undefined) throw new Error(`the target ${source.target} names the server ${source.server}, which the loaded settings do not declare`);
+  if (description === undefined) throw new Error(`the model ${source.model} names the server ${source.server}, which the loaded settings do not declare`);
   const exec = createHostExec();
-  const key = await managedKeyReader({ description, binary: source.binary, model: source.model, exec, platform, hashes: createBinaryHashCache() })(signal);
+  const key = await managedKeyReader({ description, binary: source.binary, model: source.upstream, exec, platform, hashes: createBinaryHashCache() })(signal);
   if (key.kind === 'unknown') return false;
   const text = await files.readTextIfPresent(managedRecordPath(from, key));
   if (text === undefined) return false;

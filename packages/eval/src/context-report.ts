@@ -29,7 +29,7 @@ const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
   'momonga-eval-context-report/4': 'which calls the upstream reported cache reads for (an unreported cache read was recorded as 0)',
   'momonga-eval-context-report/5': 'the price outcome of the calls (why a cost is unmeasured)',
-  'momonga-eval-context-report/6': `the resolved policy (${RETIRED_POLICY_REASON})`,
+  'momonga-eval-context-report/6': 'the models the runs used (they were recorded as alias names)',
 };
 
 export const CONTEXT_MODELS = MODEL_KINDS;
@@ -109,7 +109,7 @@ export type ContextReport = {
   model: ContextModel;
   answeredBy: Answerer[];
   unrecordedAnswers: number;
-  modelAliases: string[];
+  models: string[];
   policy: PolicyOverlay | null;
   codeDigest: string | null;
   metrics: ContextMetrics;
@@ -131,7 +131,7 @@ type RunMeasure = {
   governance: GovernanceCounts | undefined;
   recalled: Recalled;
   retrieval: Retrieval | undefined;
-  modelAlias: string | undefined;
+  model: string | undefined;
   quality: Record<QualityMetricName, Cluster>;
   token: TokenFacts;
 };
@@ -167,7 +167,7 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     governance,
     recalled,
     retrieval,
-    modelAlias: transcript.run.modelAlias,
+    model: transcript.run.model,
     quality: {
       continuationRate: { numerator: facts.compactions > 0 && passed ? 1 : 0, denominator: facts.compactions > 0 ? 1 : 0 },
       governanceFidelity: governance === undefined ? none : { numerator: governance.bindingLoaded, denominator: governance.binding },
@@ -345,7 +345,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     model,
     answeredBy,
     unrecordedAnswers,
-    modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
+    models: [...new Set(measures.flatMap((measure) => (measure.model === undefined ? [] : [measure.model])))].sort(),
     policy: identity.policy,
     codeDigest: identity.codeDigest,
     metrics: metricsOf(cases, measured, input.seed),
@@ -472,10 +472,10 @@ const answeredLine = (report: Pick<ContextReport, 'answeredBy' | 'unrecordedAnsw
 
 export const formatContextReport = (report: ContextReport): string => {
   const { metrics } = report;
-  const aliases = report.modelAliases.length === 0 ? 'none recorded' : report.modelAliases.join(', ');
+  const used = report.models.length === 0 ? 'none recorded' : report.models.join(', ');
   const lines = [
     `dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`,
-    `model: ${report.model} (derived from the pinned provenance of the targets that answered: ${answeredLine(report)}; the aliases the runs pinned: ${aliases})`,
+    `model: ${report.model} (derived from the pinned provenance of the models that answered: ${answeredLine(report)}; the models the runs used: ${used})`,
   ];
   if (report.model === 'fake') {
     lines.push('a fake model proves only that the machinery works; none of these numbers says anything about the quality of the context');
@@ -566,7 +566,7 @@ const CONTEXT_REPORT_SCHEMA = {
         ),
       },
       unrecordedAnswers: count,
-      modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
+      models: { type: 'array', items: { type: 'string', minLength: 1 } },
       policy: { anyOf: [RESOLVED_POLICY_SCHEMA, { type: 'null' }] },
       codeDigest: { anyOf: [{ type: 'string', pattern: '^[0-9a-f]{64}$' }, { type: 'null' }] },
       metrics: closed(
@@ -639,7 +639,7 @@ const CONTEXT_REPORT_SCHEMA = {
       'model',
       'answeredBy',
       'unrecordedAnswers',
-      'modelAliases',
+      'models',
       'policy',
       'codeDigest',
       'metrics',

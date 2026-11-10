@@ -265,14 +265,14 @@ const changedObjects = (before: Record<string, unknown>, after: Record<string, u
 };
 
 const BASE_SETTINGS: Record<string, unknown> = {
-  models: { aliases: { default: ['remote'] }, targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'gpt-x', baseUrl: 'https://api.example.com/v1' } } },
+  models: { connections: [{ adapter: 'chat-completions', provider: 'remote', baseUrl: 'https://api.example.com/v1', models: [{ id: 'gpt-x' }] }], fallback: [] },
   sandbox: 'seatbelt',
   gateway: { closeGraceMs: 10_000, managedServerStopGraceMs: 3000 },
 };
 
 describe('S0: the digest cases moved from the deleted supervisor plan tests (design-settings-live section 9)', () => {
   it('a models change rebuilds only the gateway object D1', () => {
-    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, models: { ...(BASE_SETTINGS['models'] as object), aliases: { default: ['remote'], other: ['remote'] } } })).toEqual(['D1']);
+    expect(changedObjects(BASE_SETTINGS, { ...BASE_SETTINGS, models: { ...(BASE_SETTINGS['models'] as object), start: 'remote/gpt-x' } })).toEqual(['D1']);
   });
 
   it('a sandbox change rebuilds only the sandbox object D3', () => {
@@ -293,7 +293,7 @@ describe('S0: the digest cases moved from the deleted supervisor plan tests (des
   });
 
   it('reformatting, the same sections with keys in another order, rebuilds nothing', () => {
-    const reordered = { gateway: BASE_SETTINGS['gateway'], sandbox: 'seatbelt', models: { targets: (BASE_SETTINGS['models'] as { targets: unknown }).targets, aliases: { default: ['remote'] } } };
+    const reordered = { gateway: BASE_SETTINGS['gateway'], sandbox: 'seatbelt', models: { fallback: [], connections: (BASE_SETTINGS['models'] as { connections: unknown }).connections } };
     expect(changedObjects(BASE_SETTINGS, reordered)).toEqual([]);
   });
 });

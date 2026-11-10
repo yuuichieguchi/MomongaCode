@@ -46,7 +46,7 @@ export const goldenRunApi = (
       }
     }
   }
-  const pinnedAliases = new Map<string, string>();
+  const pinnedModels = new Map<string, string>();
   const envOf = (given: Readonly<Record<string, string>> | undefined): Readonly<Record<string, string>> => {
     const env = given ?? sessionEnv;
     if (env === undefined) throw new Error('a session needs an environment: the caller gave none and the run API was created without one');
@@ -58,9 +58,9 @@ export const goldenRunApi = (
         cwd: input.cwd,
         env: envOf(input.env),
         permissionMode: input.permissionMode,
-        ...(input.modelAlias === undefined ? {} : { modelAlias: input.modelAlias }),
+        ...(input.model === undefined ? {} : { model: input.model }),
       });
-      pinnedAliases.set(session.id, session.modelAlias);
+      pinnedModels.set(session.id, session.model);
       return { id: session.id };
     },
     createRun: async (sessionId, input) => ({
@@ -70,7 +70,7 @@ export const goldenRunApi = (
     answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,
     getRun: async (runId) => {
       const run = await client.getRun(runId);
-      const modelAlias = pinnedAliases.get(run.sessionId);
+      const model = pinnedModels.get(run.sessionId);
       return {
         id: run.id,
         status: run.status,
@@ -78,7 +78,7 @@ export const goldenRunApi = (
         step: run.step,
         usage: run.usage,
         origin: run.origin,
-        ...(modelAlias === undefined ? {} : { modelAlias }),
+        ...(model === undefined ? {} : { model }),
       };
     },
     reflectionOf: async (runId) => {

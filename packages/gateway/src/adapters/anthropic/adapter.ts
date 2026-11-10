@@ -103,7 +103,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const ledger = new RenderLedger();
     const dialect = resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS);
     const jsonReply = jsonReplyPlanOf(request, capabilities);
-    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
+    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.display, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     let watch: ContentWatch | undefined;
@@ -196,7 +196,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
             ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
           },
           allowedTools,
-          ctx.target.name,
+          ctx.target.display,
           ANTHROPIC_TOOL_CHOICE,
         ),
         ctx.reasoningOrigin,

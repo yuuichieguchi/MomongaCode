@@ -6,6 +6,9 @@ import {
   createdEvent,
   expectGatewayError,
   fakeClock,
+  listedEntry,
+  listedMember,
+  listingBody,
   makeClient,
   openSse,
   settle,
@@ -116,17 +119,21 @@ describe('gateway client malformed replies', () => {
   });
 
   it('rejects a models entry without a string id', async () => {
-    const { client } = await clientReplying(jsonReply(200, JSON.stringify({ object: 'list', data: [{ id: 7, capabilities: {} }] })));
+    const { client } = await clientReplying(jsonReply(200, JSON.stringify(listingBody([{ ...listedEntry('fake/main', {}), id: 7 }]))));
     expectGatewayError(await settle(client.models()), INVALID);
   });
 
   it.each([
-    ['without targets', { id: 'default', capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
-    ['without targetCounters', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} } }],
-    ['with a target that has no counter', { id: 'default', targets: ['primary', 'small'], capabilities: {}, targetCapabilities: { primary: {}, small: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
-    ['with a counter that is not a string', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 7 } }],
+    ['without a chain', { ...listedEntry('fake/main', {}), chain: undefined }],
+    ['with an empty chain', listedEntry('fake/main', {}, [])],
+    ['with a chain member that has no counter', listedEntry('fake/main', {}, [listedMember('fake/main', {}), { ...listedMember('fake/small', {}), counter: undefined }])],
+    ['with a counter that is not a string', listedEntry('fake/main', {}, [listedMember('fake/main', {}, 7)])],
+    ['with a chain member that does not say what answers', listedEntry('fake/main', {}, [{ ...listedMember('fake/main', {}), answers: 'someone' }])],
+    ['without the server name', { ...listedEntry('fake/main', {}), provider: undefined }],
+    ['without its own name', { ...listedEntry('fake/main', {}), ownName: undefined }],
+    ['in the shape of an earlier build', { id: 'default', targets: ['primary'], capabilities: {}, targetCapabilities: { primary: {} }, targetCounters: { primary: 'c'.repeat(64) } }],
   ])('rejects a models entry %s', async (_label, entry) => {
-    const { client } = await clientReplying(jsonReply(200, JSON.stringify({ object: 'list', data: [{ object: 'model', ...entry }] })));
+    const { client } = await clientReplying(jsonReply(200, JSON.stringify(listingBody([entry]))));
     expectGatewayError(await settle(client.models()), INVALID);
   });
 

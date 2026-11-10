@@ -12,8 +12,8 @@ import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecretStore, openResponsesTextReply, registerCleanup, startFakeSiwcAuth, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
-import { getJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, prepareHome, writeSettings } from './gateway-process-helpers.ts';
+import { getJson, userInput, listedEntryOf, listedMembersOf, listedCountersOf } from './gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { makeReport } from './report-fixture.ts';
@@ -109,15 +109,16 @@ const profileWith = (oauth: Partial<PlanProfileOAuth>): PlanProfile => {
   return { ...shipped, oauth: { ...shipped.oauth, ...oauth }, targetDefaults: { ...shipped.targetDefaults, baseUrl: REMOTE_RESOURCE } };
 };
 
-const pinnedTargets = (accounts: readonly string[]) => ({
-  aliases: Object.fromEntries(accounts.map((account) => [account, [`gpt-${account}`]])),
-  targets: Object.fromEntries(
-    accounts.map((account) => [
-      `gpt-${account}`,
-      { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account } },
-    ]),
-  ),
-});
+const pinnedTargets = (accounts: readonly string[]) =>
+  modelsOf(
+    Object.fromEntries(
+      accounts.map((account) => [
+        `gpt-${account}`,
+        { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account } },
+      ]),
+    ),
+  );
+
 
 const activeRecord = (account: string, expiresAt: number, hostId: string) => ({
   version: 1,
@@ -221,7 +222,7 @@ describe('O-R5-6 (K) 1: the plan operations take the network of the settings in 
       records: (account, hostId) => [activeRecord(account, PAST_EXPIRY_MS, hostId)],
       host: AUTH_HOST,
       start: async (stack, account) => {
-        send(stack.client, 'POST', '/v1/responses', { model: account, input: userInput('hi'), stream: false });
+        send(stack.client, 'POST', '/v1/responses', { model: `gpt-${account}/plan-model`, input: userInput('hi'), stream: false });
       },
     });
   });
@@ -285,12 +286,12 @@ const entryOf = async (gateway: PlanGateway, account: string): Promise<{ state: 
   return (listed.body.accounts as { label: string; state: string; pinnedBy: string[] }[]).find((entry) => entry.label === account);
 };
 
-const askAlias = async (gateway: PlanGateway, alias: string): Promise<number> => {
+const askModelOf = async (gateway: PlanGateway, account: string): Promise<number> => {
   const response = await clientFor(gateway.socketPath).request({
     method: 'POST',
     path: '/v1/responses',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: alias, input: userInput('hi'), stream: false }),
+    body: JSON.stringify({ model: `gpt-${account}/plan-model`, input: userInput('hi'), stream: false }),
   });
   await response.text();
   return response.status;
@@ -315,9 +316,9 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     const gateway = await withSpareSigningOut();
     expect(gateway.auth.calls.revoke).toBe(0);
     replaceSettings(gateway.home, planSettings([ACCOUNT, SPARE]));
-    await askAlias(gateway, SPARE);
+    await askModelOf(gateway, SPARE);
     await vi.waitFor(() => expect(gateway.auth.calls.revoke).toBe(1), CONDITION_WAIT);
-    await vi.waitFor(async () => expect(await entryOf(gateway, SPARE)).toMatchObject({ state: 'registered', pinnedBy: [`gpt-${SPARE}`] }), CONDITION_WAIT);
+    await vi.waitFor(async () => expect(await entryOf(gateway, SPARE)).toMatchObject({ state: 'registered', pinnedBy: [`gpt-${SPARE}/plan-model`] }), CONDITION_WAIT);
     await gateway.close();
   });
 
@@ -333,7 +334,7 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     try {
       expect(first.connects()).toEqual([]);
       replaceSettings(stack.home, { credentials: { plaintextTokenFiles: true }, models: pinnedTargets([ACCOUNT, SPARE]), network: proxied(second) });
-      const answered = await postJsonOf(stack.client, '/v1/responses', { model: SPARE, input: userInput('hi'), stream: false });
+      const answered = await postJsonOf(stack.client, '/v1/responses', { model: `gpt-${SPARE}/plan-model`, input: userInput('hi'), stream: false });
       expect(answered.status).toBe(401);
       expect(answered.body.error.code).toBe('sign_in_required');
       await waitFor(() => second.connects().length === 1, CHANGE_WAIT);
@@ -351,7 +352,7 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
     await signInAs(gateway, ACCOUNT);
     await signInAs(gateway, SPARE);
     replaceSettings(gateway.home, planSettings([SPARE]));
-    await askAlias(gateway, SPARE);
+    await askModelOf(gateway, SPARE);
     expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active', pinnedBy: [] });
     expect(fs.existsSync(recordFile(gateway, ACCOUNT))).toBe(true);
     expect(gateway.auth.calls.revoke).toBe(0);
@@ -360,16 +361,16 @@ describe('O-R5-6 (K) 2: an account pinned for the first time by a later change g
 });
 
 const UNKNOWN_CAPABILITIES_TEXT =
-  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
+  'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models catalog reads the list';
 
 const catalogEntry = (contextWindow: number) => ({ slug: 'plan-model', display_name: 'Plan Model', visibility: 'list', context_window: contextWindow });
 
 const listedTarget = async (gateway: PlanGateway): Promise<{ counter: string; contextWindow: unknown }> => {
   const listed = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
   expect(listed.status).toBe(200);
-  const entry = (listed.body.data as Array<{ id: string; targetCounters: Record<string, string>; targetCapabilities: Record<string, { contextWindow?: unknown }> }>).find((model) => model.id === 'default');
-  if (entry === undefined) throw new Error('the models listing has no alias default');
-  return { counter: String(entry.targetCounters['gpt']), contextWindow: entry.targetCapabilities['gpt']?.contextWindow };
+  const member = listedMembersOf(listed.body, 'gpt/plan-model')['gpt/plan-model'];
+  if (member === undefined) throw new Error('the models listing has no member gpt/plan-model');
+  return { counter: member.counter, contextWindow: member.capabilities['contextWindow'] };
 };
 
 describe('O-R5-6 (K) 4: the account a plan target serves is part of its part key and its target counter', () => {
@@ -382,7 +383,7 @@ describe('O-R5-6 (K) 4: the account a plan target serves is part of its part key
     await signInAs(gateway, SPARE);
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, SPARE)}?profile=${PROFILE_ID}`)).status).toBe(200);
     expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: ACCOUNT })).status).toBe(200);
-    replaceSettings(gateway.home, { models: { aliases: { default: ['gpt'] }, targets: { gpt: { adapter: 'open-responses', model: 'plan-model', plan: { profile: PROFILE_ID } } } } });
+    replaceSettings(gateway.home, { models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', plan: { profile: PROFILE_ID } } }) });
     const onFirst = await listedTarget(gateway);
     expect(onFirst.contextWindow).toBe(200000);
     expect((await gateway.post(PLAN_ROUTES.accountsActive, { profile: PROFILE_ID, account: SPARE })).status).toBe(200);
@@ -398,7 +399,7 @@ describe('O-R5-6 (K) 5: the plan paths that read settings follow the one rule of
     const gateway = await startPlanGateway({ plaintextTokenFiles: true });
     await signInAs(gateway, ACCOUNT);
     replaceSettingsText(gateway.home, '{ "models": ');
-    expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active', pinnedBy: ['gpt'] });
+    expect(await entryOf(gateway, ACCOUNT)).toMatchObject({ state: 'active', pinnedBy: ['gpt/plan-model'] });
     expect((await getJson(clientFor(gateway.socketPath), '/v1/momonga/models')).status).toBe(200);
     await signInAs(gateway, SPARE);
     expect(JSON.parse(fs.readFileSync(recordFile(gateway, SPARE), 'utf8'))).toMatchObject({ state: 'active', account: SPARE });
@@ -411,10 +412,7 @@ const NO_STOP_GRACE = { closeGraceMs: 0, managedServerStopGraceMs: 0 };
 const unpinnedSettings = (capabilities: boolean) => ({
   credentials: { plaintextTokenFiles: true },
   gateway: NO_STOP_GRACE,
-  models: {
-    aliases: { default: ['gpt'] },
-    targets: { gpt: { adapter: 'open-responses', model: 'plan-model', ...(capabilities ? { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } } : {}), plan: { profile: PROFILE_ID } } },
-  },
+  models: modelsOf({ gpt: { adapter: 'open-responses', model: 'plan-model', ...(capabilities ? { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } } : {}), plan: { profile: PROFILE_ID } } }),
 });
 
 const accessTokenOf = (gateway: PlanGateway, account: string): string => String((JSON.parse(fs.readFileSync(recordFile(gateway, account), 'utf8')) as Record<string, unknown>)['access_token']);
@@ -428,7 +426,7 @@ const askDefault = async (gateway: PlanGateway): Promise<{ status: number; body:
     method: 'POST',
     path: '/v1/responses',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }),
+    body: JSON.stringify({ model: 'gpt/plan-model', input: userInput('hi'), stream: false }),
   });
   const text = await response.text();
   return { status: response.status, body: text === '' ? undefined : JSON.parse(text) };
@@ -452,7 +450,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
       replaceSettings(gateway.home, unpinnedSettings(true));
       const onFirst = await listedTarget(gateway);
       void heldClient
-        .request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'default', input: userInput('hi'), stream: false }) })
+        .request({ method: 'POST', path: '/v1/responses', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model: 'gpt/plan-model', input: userInput('hi'), stream: false }) })
         .then((response) => response.text())
         .catch(() => undefined);
       await vi.waitFor(() => expect(responsePosts(gateway)).toHaveLength(1), CONDITION_WAIT);
@@ -477,21 +475,21 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const before = await getJson(client, '/v1/momonga/models');
     expect(before.status).toBe(200);
     const unavailable = { toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNKNOWN_CAPABILITIES_TEXT, param: 'model' }, source: 'unprobed' };
-    const unlisted = (before.body.data as Array<{ targets: string[]; capabilities: { toolCalling: { message?: unknown } }; targetCapabilities: Record<string, unknown> }>).find((entry) => entry.targets.includes('gpt'));
-    expect(unlisted?.capabilities).toEqual(unavailable);
-    expect(unlisted?.targetCapabilities['gpt']).toEqual(unavailable);
-    expect(unlisted?.capabilities.toolCalling.message).toBe(UNKNOWN_CAPABILITIES_TEXT);
+    const unlisted = listedEntryOf(before.body, 'gpt/plan-model');
+    expect(unlisted.capabilities).toEqual(unavailable);
+    expect(listedMembersOf(before.body, 'gpt/plan-model')['gpt/plan-model']?.capabilities).toEqual(unavailable);
+    expect((unlisted.capabilities['toolCalling'] as { message?: unknown }).message).toBe(UNKNOWN_CAPABILITIES_TEXT);
     const refused = await askDefault(gateway);
     expect(refused.status).toBe(412);
     expect(refused.body.error).toEqual({ message: UNKNOWN_CAPABILITIES_TEXT, type: 'invalid_request', param: 'model', code: 'capabilities_unknown', plan: { profile: PROFILE_ID, account: ACCOUNT } });
     const healthBefore = await getJson(client, '/v1/momonga/health');
-    expect(healthBefore.body.targets.gpt).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
+    expect(healthBefore.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'capabilities_unknown', detail: UNKNOWN_CAPABILITIES_TEXT });
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
     const first = await listedTarget(gateway);
     expect(first.contextWindow).toBe(200000);
     const healthAfter = await getJson(client, '/v1/momonga/health');
-    expect(healthAfter.body.targets.gpt.ok).toBe(true);
-    expect(healthAfter.body.targets.gpt.reason).toBeUndefined();
+    expect(healthAfter.body.models['gpt/plan-model'].ok).toBe(true);
+    expect(healthAfter.body.models['gpt/plan-model'].reason).toBeUndefined();
     listed.splice(0, listed.length, catalogEntry(100000));
     expect((await gateway.get(`${accountRoute(PLAN_ROUTES.accountModels, ACCOUNT)}?profile=${PROFILE_ID}&refresh=1`)).status).toBe(200);
     const second = await listedTarget(gateway);
@@ -517,18 +515,14 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
   it('toggling context.unboundedOutputReserve gives a new counter for a probed target and a kept part for a keyed target', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
-    const models = {
-      aliases: { probed: ['probed'], keyed: ['keyed'] },
-      targets: { probed: ccTarget(fake.socketPath, { toolCalling: 'auto' }), keyed: ccTarget(fake.socketPath, { toolCalling: 'native' }) },
-    };
+    const models = modelsOf({ probed: ccTarget(fake.socketPath, { toolCalling: 'auto' }), keyed: ccTarget(fake.socketPath, { toolCalling: 'native' }) });
     writeSettings(home, { models, context: { unboundedOutputReserve: false } });
     await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], makeReport(1, 1) as never, CURRENT_DIALECTS);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const countersOf = async (): Promise<Record<string, string>> => {
       const listed = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
       expect(listed.status).toBe(200);
-      const entries = listed.body.data as Array<{ id: string; targetCounters: Record<string, string> }>;
-      return Object.fromEntries(['probed', 'keyed'].map((alias) => [alias, String(entries.find((entry) => entry.id === alias)?.targetCounters[alias])]));
+      return Object.fromEntries(['probed', 'keyed'].map((server) => [server, String(listedCountersOf(listed.body, `${server}/system`)[`${server}/system`])]));
     };
     const off = await countersOf();
     replaceSettings(home, { models, context: { unboundedOutputReserve: true } });
@@ -569,7 +563,7 @@ describe('O-R5-6 L3: the served account, the reported numbers and the output pol
     const cause = `the active plan account file ${pointer} is not a JSON object`;
     await askDefault(gateway);
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets.gpt).toMatchObject({ ok: false, reason: 'store_unreadable', detail: cause });
+    expect(health.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'store_unreadable', detail: cause });
     await gateway.close();
   });
 

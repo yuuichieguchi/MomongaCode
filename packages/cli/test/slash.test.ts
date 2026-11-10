@@ -5,10 +5,11 @@ import { skillCommands } from '../src/tui/commands/skills.ts';
 import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
 import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, helpText, newlineHelpLines, parseSlash } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
-import { fakeBackend } from './fake-backend.ts';
+import { SESSION, fakeBackend } from './fake-backend.ts';
 import type { FakeBackendOptions } from './fake-backend.ts';
 import { fixedKeyBindings } from '../src/tui/keys/store.ts';
 import { NO_A11Y } from '../src/tui/screen/a11y.ts';
+import { createFoundServers } from '../src/tui/models/context.ts';
 
 describe('parseSlash', () => {
   it.each([
@@ -54,7 +55,7 @@ const unusedAutoMode: SlashContext['autoMode'] = {
 describe('registry', () => {
   const registry = createSlashRegistry(BUILTIN_SLASH_COMMANDS);
 
-  it('finds commands by name and by alias', () => {
+  it('finds commands by name and by their other names', () => {
     expect(registry.find('exit')?.name).toBe('exit');
     expect(registry.find('quit')?.name).toBe('exit');
     expect(registry.find('nope')).toBeUndefined();
@@ -67,6 +68,9 @@ describe('registry', () => {
   });
 });
 
+const GEMMA = 'ollama/gemma-3-4b:latest';
+const QWEN = 'ollama/qwen3.8:27b';
+
 describe('built-in commands', () => {
   const contextOf = (overrides: Partial<SlashContext> = {}, backendOptions: FakeBackendOptions = {}): { context: SlashContext; infos: string[]; modes: string[]; models: string[] } => {
     const infos: string[] = [];
@@ -74,7 +78,11 @@ describe('built-in commands', () => {
     const models: string[] = [];
     const context: SlashContext = {
       mode: 'manual',
-      modelAlias: 'default',
+      model: SESSION.model,
+      found: createFoundServers(),
+      wait: <T>(_phase: string, work: (signal: AbortSignal) => Promise<T>) => work(new AbortController().signal),
+      toast: () => undefined,
+      refreshConnection: async () => undefined,
       bypassAllowed: false,
       autoAvailable: false,
       commands: BUILTIN_SLASH_COMMANDS,
@@ -85,7 +93,7 @@ describe('built-in commands', () => {
       sessions: { startNew: async () => void infos.push('new session'), resume: async (id) => void infos.push(`resumed ${id}`), now: () => 0, columns: () => 80 },
       exit: () => void infos.push('exited'),
       setMode: async (mode) => void modes.push(mode),
-      setModel: async (alias) => void models.push(alias),
+      setModel: async (model) => void models.push(model),
       background: (_label, work) => work(new AbortController().signal),
       autoMode: unusedAutoMode,
       shell: unusedShell,
@@ -133,26 +141,26 @@ describe('built-in commands', () => {
     expect(infos).toEqual(['unknown permission mode default; available: manual, acceptEdits, plan']);
   });
 
-  it('/model without an argument lists the aliases with the current one marked and says when a switch applies', async () => {
-    const { context, infos } = contextOf({ modelAlias: 'qwen-local' }, { aliases: ['default', 'qwen-local'], windows: { default: 8192, 'qwen-local': 32768 } });
+  it('/model without an argument lists the configured models by display name with the current one marked and says when a switch applies', async () => {
+    const { context, infos } = contextOf({ model: QWEN }, { models: [GEMMA, QWEN], windows: { [GEMMA]: 8192, [QWEN]: 32768 } });
     await run('model', '', context);
     expect(infos).toEqual([
-      ['models (the current one is marked *):', '    default  8192-token window', '  * qwen-local  32768-token window', 'switch with /model <alias>; a change applies from the next task'].join('\n'),
+      ['models (the current one is marked *):', '    gemma-3-4b  8192-token window', '  * qwen3.8:27b  32768-token window', 'switch with /model <model>; a change applies from the next task'].join('\n'),
     ]);
   });
 
-  it('/model switches to a listed alias and refuses one that is not listed', async () => {
-    const { context, infos, models } = contextOf({}, { aliases: ['default', 'qwen-local'] });
-    await run('model', 'qwen-local', context);
+  it('/model switches to a listed model by its typed name and refuses one that is not configured with the sentence of the resolver', async () => {
+    const { context, infos, models } = contextOf({}, { models: [GEMMA, QWEN] });
+    await run('model', 'qwen3.8:27b', context);
     await run('model', 'turbo', context);
-    expect(models).toEqual(['qwen-local']);
-    expect(infos).toEqual(['unknown model turbo; available: default, qwen-local']);
+    expect(models).toEqual([QWEN]);
+    expect(infos).toEqual(['The model "turbo" is not configured. Configured models: gemma-3-4b, qwen3.8:27b.']);
   });
 
   it('/model is described in the help with its usage', async () => {
     const { context, infos } = contextOf();
     await run('help', '', context);
-    expect(infos[0]).toContain('/model [alias]  list the model aliases with the current one marked, or switch the model from the next task');
+    expect(infos[0]).toContain('/model [model] [--start]  list the configured models with the current one marked, or switch the model from the next task');
   });
 
   it('/clear, /resume <id> and /exit call their hooks', async () => {
@@ -194,7 +202,11 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
   const backend = fakeBackend(backendOptions);
   const context: SlashContext = {
     mode: 'manual',
-    modelAlias: 'default',
+    model: SESSION.model,
+    found: createFoundServers(),
+    wait: <T>(_phase: string, work: (signal: AbortSignal) => Promise<T>) => work(new AbortController().signal),
+    toast: () => undefined,
+    refreshConnection: async () => undefined,
     bypassAllowed: false,
     autoAvailable: false,
     commands: DEFAULT_SLASH_COMMANDS,

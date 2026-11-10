@@ -163,7 +163,7 @@ describe('the starter dataset', () => {
           ...(entry.compaction === 'on' ? [summarized(4, fidelity([], 2, 2))] : []),
           answer(answerFor(entry, runIndex)),
         ];
-        return recorded(entry.id, runIndex, payloads, { totalTokens: 50, modelAlias: 'alias-1' });
+        return recorded(entry.id, runIndex, payloads, { totalTokens: 50, model: 'ollama/model-1' });
       }),
     );
     return buildReportAs({ dataset, transcripts, model: 'fake', seed: 1 });
@@ -173,7 +173,7 @@ describe('the starter dataset', () => {
     const report = await replayOf((entry, runIndex) => answers[entry.scenario]!(runIndex));
     expect(report.passed).toBe(true);
     expect(report.model).toBe('fake');
-    expect(report.modelAliases).toEqual(['alias-1']);
+    expect(report.models).toEqual(['ollama/model-1']);
     expect(report.metrics.continuationRate).toMatchObject({ successes: 8, trials: 8 });
     expect(report.metrics.contrastiveFailures).toEqual({ count: 0, n: 6 });
     expect(report.metrics.governanceFidelity).toMatchObject({ successes: 8, trials: 8 });

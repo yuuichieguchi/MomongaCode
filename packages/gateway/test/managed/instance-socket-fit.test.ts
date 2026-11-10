@@ -5,7 +5,7 @@ import { FIRST_GENERATION, momongaPaths, socketPathLimit } from '@momonga/founda
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeDir, postJson, readJson, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -26,7 +26,7 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\
 
 const unfitText = (target: string, byteLength: number, directory: string): RegExp =>
   new RegExp(
-    `^${escaped(`the target "${target}": its server socket path is ${byteLength} bytes, and the system refused to bind a socket path of that length in ${directory} (`)}(ENAMETOOLONG|EINVAL)${escaped('); choose a shorter target name')}$`,
+    `^${escaped(`the model "${target}": its server socket path is ${byteLength} bytes, and the system refused to bind a socket path of that length in ${directory} (`)}(ENAMETOOLONG|EINVAL)${escaped('); choose a shorter server name')}$`,
   );
 
 describe.skipIf(process.platform === 'win32')('an instance socket path that does not fit the platform refuses that target only, with the not-ready error of the bind measurement (design-update 20.58)', () => {
@@ -38,26 +38,23 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const longSocket = path.join(instanceSockets(home), `${longTarget}${FIRST_INCARNATION_SUFFIX}.sock`);
     expect(Buffer.byteLength(longSocket)).toBe(limit + 1);
     writeSettings(home, {
-      models: {
-        targets: {
-          [longTarget]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-          [FITTING_TARGET]: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED },
-        },
-        aliases: { default: [FITTING_TARGET], long: [longTarget] },
-      },
+      models: modelsOf({
+          [longTarget]: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+          [FITTING_TARGET]: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED },
+        }),
     });
 
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const client = clientFor(handle.socketPath);
 
-    const refused = await readJson(await postJson(client, '/v1/responses', { model: 'long', input: userInput('hello') }));
+    const refused = await readJson(await postJson(client, '/v1/responses', { model: `${longTarget}/system`, input: userInput('hello') }));
     expect(refused.status).toBe(412);
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
-    expect(refused.body.error.message).toMatch(unfitText(longTarget, limit + 1, instanceSockets(home)));
+    expect(refused.body.error.message).toMatch(unfitText(`${longTarget}/system`, limit + 1, instanceSockets(home)));
     expect(fs.existsSync(longSocket)).toBe(false);
     expect(fs.existsSync(instanceMarkers(home, `${longTarget}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
 
-    const served = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));
+    const served = await readJson(await postJson(client, '/v1/responses', { model: `${FITTING_TARGET}/system`, input: userInput('hello') }));
     expect(served.status).toBe(200);
   });
 });

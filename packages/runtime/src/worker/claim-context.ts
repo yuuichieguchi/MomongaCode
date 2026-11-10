@@ -27,7 +27,8 @@ export type ClaimContext = {
   options: WorkerOptions;
   claim: Claim;
   run: Run;
-  alias: string;
+  model: string;
+  display: (model: string) => string;
   capabilities: Capabilities;
   toolLess: boolean;
   roles: ModelRoles;

@@ -8,8 +8,8 @@ const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 describe('streaming backpressure', () => {
   it('does not pull the adapter far ahead of a slow reader on a non-idempotent stream', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: bigTextEvents(200, 100_000) }] });
-    const { client } = await startGateway({ adapters: { primary } });
-    const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     const frames = sseIterator(response);
     await frames.next();
     await pause(300);
@@ -21,7 +21,7 @@ describe('streaming backpressure', () => {
 });
 
 describe('idempotent frame cap', () => {
-  const body = { model: 'fast', input: userInput('hi'), stream: true };
+  const body = { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true };
   const key = { 'idempotency-key': 'cap-1' };
 
   it('finishes the leader, does not persist the result, and rejects late joiners with 409 idempotency_key_in_progress', async () => {
@@ -29,7 +29,7 @@ describe('idempotent frame cap', () => {
     const primary = createScriptedAdapter({
       calls: [{ events, gate: { name: 'g', afterEvents: 12 } }, { events: bigTextEvents(10, 1000) }],
     });
-    const { client } = await startGateway({ adapters: { primary }, config: { limits: { maxIdempotencyFrameBytes: 4000 } } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { limits: { maxIdempotencyFrameBytes: 4000 } } });
     const leaderResponse = await postJson(client, '/v1/responses', body, key);
     const leader = sseIterator(leaderResponse);
     for (let index = 0; index < 8; index += 1) await leader.next();

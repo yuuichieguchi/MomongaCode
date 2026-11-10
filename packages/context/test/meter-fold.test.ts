@@ -194,7 +194,7 @@ describe('the keys of the fold: the counter, the window and the calibration of t
   });
 
   it.each([
-    ['an alias meter folding a report of a fallback route', SECONDARY],
+    ['a model meter folding a report of a fallback route', SECONDARY],
     ['a meter folding a report that names another target', { target: 'tertiary', fallback: false }],
   ])('carries a report of the same counter whatever its route: %s', async (_label, route) => {
     const journal = await journalOf({ tokenCounting: 'estimated' }, route);

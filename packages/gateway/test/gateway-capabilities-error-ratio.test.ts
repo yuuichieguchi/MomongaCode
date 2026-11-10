@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Capabilities } from '@momonga/protocol';
 import { createScriptedAdapter } from '@momonga/testkit';
-import { getJson, startGateway } from './gateway-helpers.ts';
+import { chainOfServers, getJson, startGateway } from './gateway-helpers.ts';
 
 const base: Capabilities = {
   contextWindow: 8192,
@@ -25,42 +25,32 @@ const otherExact: Capabilities = { ...base, source: 'config' };
 const calibrated: Capabilities = { ...base, tokenCounting: 'calibrated', tokenErrorRatio: 0.1, source: 'probed' };
 const estimated: Capabilities = { ...base, tokenCounting: 'estimated', source: 'unprobed' };
 
-const target = (name: string) => ({ model: `model-${name}`, maxConcurrency: 4 });
+const SERVERS = { exact, 'other-exact': otherExact, calibrated, estimated };
 
-const capabilitiesOf = async (alias: string): Promise<Capabilities> => {
-  const { client } = await startGateway({
-    adapters: {
-      exact: createScriptedAdapter({ calls: [], capabilities: exact }),
-      otherExact: createScriptedAdapter({ calls: [], capabilities: otherExact }),
-      calibrated: createScriptedAdapter({ calls: [], capabilities: calibrated }),
-      estimated: createScriptedAdapter({ calls: [], capabilities: estimated }),
-    },
-    config: {
-      aliases: {
-        exactThenCalibrated: ['exact', 'calibrated'],
-        calibratedThenEstimated: ['calibrated', 'estimated'],
-        estimatedThenCalibrated: ['estimated', 'calibrated'],
-        exactOnly: ['exact', 'otherExact'],
-      },
-      targets: { exact: target('exact'), otherExact: target('otherExact'), calibrated: target('calibrated'), estimated: target('estimated') },
-    },
+type Server = keyof typeof SERVERS;
+
+const capabilitiesOf = async (members: readonly Server[]): Promise<Capabilities> => {
+  const chain = chainOfServers(Object.fromEntries(members.map((name) => [name, { model: `model-${name}`, maxConcurrency: 4 }])));
+  const { client, model } = await startGateway({
+    adapters: chain.keyed(Object.fromEntries(members.map((name) => [name, createScriptedAdapter({ calls: [], capabilities: SERVERS[name] })]))),
+    config: chain.config,
   });
   const response = await getJson(client, '/v1/momonga/models');
   expect(response.status).toBe(200);
-  return response.body.data.find((entry: { id: string }) => entry.id === alias).capabilities;
+  return response.body.data.find((entry: { id: string }) => entry.id === model).capabilities;
 };
 
 describe('alias tokenErrorRatio on /v1/momonga/models', () => {
   it('takes the largest sizing ratio over every target, not the first one', async () => {
-    expect((await capabilitiesOf('exactThenCalibrated')).tokenErrorRatio).toBe(0.1);
+    expect((await capabilitiesOf(['exact', 'calibrated'])).tokenErrorRatio).toBe(0.1);
   });
 
   it('sizes with the default ratio of 0.3 when another target of the alias is only estimated', async () => {
-    expect((await capabilitiesOf('calibratedThenEstimated')).tokenErrorRatio).toBe(0.3);
-    expect((await capabilitiesOf('estimatedThenCalibrated')).tokenErrorRatio).toBe(0.3);
+    expect((await capabilitiesOf(['calibrated', 'estimated'])).tokenErrorRatio).toBe(0.3);
+    expect((await capabilitiesOf(['estimated', 'calibrated'])).tokenErrorRatio).toBe(0.3);
   });
 
   it('leaves the field absent when no target of the alias declares one', async () => {
-    expect(await capabilitiesOf('exactOnly')).not.toHaveProperty('tokenErrorRatio');
+    expect(await capabilitiesOf(['exact', 'other-exact'])).not.toHaveProperty('tokenErrorRatio');
   });
 });

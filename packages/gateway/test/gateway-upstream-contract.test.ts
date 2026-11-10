@@ -21,7 +21,7 @@ import {
   validator,
 } from './gateway-helpers.ts';
 
-const request = { model: 'fast', input: userInput('hi') };
+const request = { model: 'scripted/scripted-primary', input: userInput('hi') };
 const streamRequest = { ...request, stream: true };
 
 const malformedFailed = (): StreamEvent[] => {
@@ -39,19 +39,19 @@ const malformedFailed = (): StreamEvent[] => {
 describe('malformed upstream events', () => {
   it('turns response.failed without an error into response.failed upstream_protocol_error and counts against the breaker', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: malformedFailed() }] });
-    const { client } = await startGateway({ adapters: { primary }, config: { breaker: { failureThreshold: 1 } } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { breaker: { failureThreshold: 1 } } });
     const frames = await readSse(await postJson(client, '/v1/responses', streamRequest));
     const last = frames.at(-1)?.data;
     expect(last.type).toBe('response.failed');
     expect(last.response.error.code).toBe('upstream_protocol_error');
     expect(validator.validate('ResponseFailedStreamingEvent', last).errors).toEqual([]);
     expect(frames.filter((frame) => frame.data.type === 'response.failed')).toHaveLength(1);
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker).toBe('open');
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker).toBe('open');
   });
 
   it('maps the same failure for a non-stream request to a model_error 502 with the code', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: malformedFailed() }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'model_error', code: 'upstream_protocol_error' });
@@ -63,7 +63,7 @@ describe('terminal event handling', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['done'] }), gate: { name: 'tail', afterEvents: 99 } }],
     });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('done');
@@ -74,7 +74,7 @@ describe('terminal event handling', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['done'] }), failure: { status: 503, message: 'late reset' } }],
     });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const frames = await readSse(await postJson(client, '/v1/responses', streamRequest));
     expect(frames.at(-1)?.data.type).toBe('response.completed');
   });
@@ -83,7 +83,7 @@ describe('terminal event handling', () => {
     const inner = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['rec'] }) }] });
     const file = path.join(makeDir(), 'recording.jsonl');
     const primary = createReplayAdapter({ path: file, mode: 'record', inner });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     expect((await readJson(await postJson(client, '/v1/responses', request))).status).toBe(200);
     expect(fs.readFileSync(file, 'utf8').split('\n').filter((line) => line !== '')).toHaveLength(1);
   });
@@ -111,7 +111,7 @@ describe('terminal event handling', () => {
         }
       },
     };
-    const { client } = await startGateway({ adapters: { primary }, clock, telemetry });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, clock, telemetry });
     expect((await readJson(await postJson(client, '/v1/responses', request))).status).toBe(200);
     await telemetry.forceFlush();
     const span = memory.getFinishedSpans().find((candidate) => candidate.attributes['gen_ai.operation.name'] === 'chat');
@@ -126,7 +126,7 @@ describe('failed responses keep the original error type', () => {
     });
 
   it('maps a rate-limited interruption to 429 too_many_requests', async () => {
-    const { client } = await startGateway({ adapters: { primary: interrupted(429) } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': interrupted(429) } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(429);
     expectErrorBody(response.body, { type: 'too_many_requests', code: 'stream_interrupted' });
@@ -141,7 +141,7 @@ describe('failed responses keep the original error type', () => {
         throw new Error('parser blew up');
       },
     };
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'model_error', code: 'adapter_error' });
@@ -149,7 +149,7 @@ describe('failed responses keep the original error type', () => {
   });
 
   it('keeps server_error for a 5xx interruption', async () => {
-    const { client } = await startGateway({ adapters: { primary: interrupted(503) } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': interrupted(503) } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'server_error', code: 'stream_interrupted' });

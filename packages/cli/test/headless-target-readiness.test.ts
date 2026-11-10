@@ -1,7 +1,7 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
-import type { AliasCapabilities, NeedsProbe, ToolCallingState } from '@momonga/protocol';
+import type { ChainCapabilities, NeedsProbe, ToolCallingState } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -69,34 +69,35 @@ const headlessReading = async (context: Parameters<typeof withTempDir>[0], capab
       },
     },
   } as unknown as CliPorts;
-  const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities> => {
-    log.push(`capabilitiesOf:${alias}`);
-    return capabilities as AliasCapabilities;
+  const capabilitiesOfModel = async (model: string): Promise<ChainCapabilities> => {
+    log.push(`capabilitiesOf:${model}`);
+    return capabilities as ChainCapabilities;
   };
-  const options = { prompt: 'explain the module', format, verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfAlias } as HeadlessOptions;
+  const options = { prompt: 'explain the module', format, verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfModel } as HeadlessOptions;
   const code = await runHeadless(ports, paths, options);
   return { code, stderr: stderr.join(''), stdout: stdout.join('') };
 };
 
-describe('headless asks capabilitiesOf(alias) at session open and shows the verdict before any request (design R1, second moment)', () => {
+describe('headless asks capabilitiesOf(model) at session open and shows the verdict before any request (design R1, second moment)', () => {
   it('shows the no-tools notice once on stderr before the run is created, and the run proceeds', async (context) => {
     const result = await headless(context, 'none');
 
     expect(result.stderr.split(NO_TOOLS_NOTICE).length - 1).toBe(1);
     const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes(NO_TOOLS_NOTICE));
-    expect(log).toContain(`capabilitiesOf:${SESSION.modelAlias}`);
+    expect(log).toContain(`capabilitiesOf:${SESSION.model}`);
     expect(noticeAt).toBeGreaterThan(-1);
     expect(noticeAt).toBeLessThan(log.indexOf('createRun'));
-    expect(result.stderr).toContain('/model');
+    expect(result.stderr).toContain('momonga --model <model>');
+    expect(result.stderr).not.toContain('/model');
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('A plain answer.');
   });
 
-  it('ends an unprobed target with the refusal and its remedy and creates no run', async (context) => {
+  it('ends an unprobed model with the refusal and its remedy and creates no run', async (context) => {
     const result = await headless(context, NEEDS_PROBE);
 
     expect(result.code).not.toBe(0);
-    expect(log).toContain(`capabilitiesOf:${SESSION.modelAlias}`);
+    expect(log).toContain(`capabilitiesOf:${SESSION.model}`);
     expect(log).not.toContain('createRun');
     expect(result.stderr).toContain(NEEDS_PROBE.remedy);
     expect(result.stderr).toContain('target_not_ready');
@@ -115,14 +116,14 @@ describe('headless asks capabilitiesOf(alias) at session open and shows the verd
 
 const UNAVAILABLE_MESSAGE =
   'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
-const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
+const UNAVAILABLE_REMEDY = 'Choose a model with momonga --model <model>, or set one up with momonga models add.';
 const UNAVAILABLE = {
   toolCalling: { state: 'unavailable', status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: UNAVAILABLE_MESSAGE, param: 'model' },
   source: 'unprobed',
 };
 
-describe('headless refuses an alias the gateway lists as unavailable before the run is created (G1)', () => {
-  it('an unavailable alias is refused before the run is created', async (context) => {
+describe('headless refuses a model the gateway lists as unavailable before the run is created (G1)', () => {
+  it('an unavailable model is refused before the run is created', async (context) => {
     const result = await headlessReading(context, UNAVAILABLE, 'text');
 
     expect(log).not.toContain('createRun');

@@ -14,15 +14,15 @@ describe('readModelChanges', () => {
     const before = h.store.sessionMaxEventId(session.id);
     h.store.setPermissionMode(session.id, 'plan');
     expect(h.store.append(claim, notices(300)).kind).toBe('ok');
-    h.store.setModelAlias(session.id, 'other');
+    h.store.setModel(session.id, 'other');
     expect(h.store.append(claim, notices(300)).kind).toBe('ok');
-    h.store.setModelAlias(session.id, 'third');
+    h.store.setModel(session.id, 'third');
     expect(h.store.append(claim, notices(300)).kind).toBe('ok');
 
     const changes = h.store.readModelChanges(session.id, before);
 
-    expect(changes.map((event) => [event.type, event.previousModelAlias, event.modelAlias])).toEqual([
-      ['model.changed', session.modelAlias, 'other'],
+    expect(changes.map((event) => [event.type, event.previousModel, event.model])).toEqual([
+      ['model.changed', session.model, 'other'],
       ['model.changed', 'other', 'third'],
     ]);
   });
@@ -31,13 +31,13 @@ describe('readModelChanges', () => {
     const h = harness();
     const session = newSession(h.store);
     const other = newSession(h.store, '/work/b');
-    h.store.setModelAlias(session.id, 'other');
-    h.store.setModelAlias(other.id, 'elsewhere');
+    h.store.setModel(session.id, 'other');
+    h.store.setModel(other.id, 'elsewhere');
     const after = h.store.sessionMaxEventId(session.id);
-    h.store.setModelAlias(session.id, 'third');
+    h.store.setModel(session.id, 'third');
 
-    expect(h.store.readModelChanges(session.id, after).map((event) => event.modelAlias)).toEqual(['third']);
-    expect(h.store.readModelChanges(session.id, 0).map((event) => event.modelAlias)).toEqual(['other', 'third']);
+    expect(h.store.readModelChanges(session.id, after).map((event) => event.model)).toEqual(['third']);
+    expect(h.store.readModelChanges(session.id, 0).map((event) => event.model)).toEqual(['other', 'third']);
   });
 
   it('is answered from an index on the session and the event id, not by scanning the events of the session', () => {

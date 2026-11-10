@@ -34,8 +34,8 @@ const verdict = JSON.stringify({ verdict: 'safe', confidence: 'high', rationale:
 
 const autoSetup = async (classifier: string | null = 'guard') => {
   const env = await makeEnv({ mode: 'auto' });
-  env.settings.classifierAlias = classifier ?? undefined;
-  if (classifier !== null) env.gateway.capabilitiesByAlias[classifier] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
+  env.settings.classifierModel = classifier ?? undefined;
+  if (classifier !== null) env.gateway.capabilitiesByModel[classifier] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
   const write = callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'x' } }]);
   return { env, write };
 };

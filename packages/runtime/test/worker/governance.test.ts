@@ -139,7 +139,7 @@ describe('RulePropose in a run', () => {
 
   it.each(['manual', 'acceptEdits', 'auto', 'bypassPermissions'] as const)('stops for a person in %s mode, however it was prompted, and creates nothing', async (mode) => {
     const env = await makeEnv({ mode });
-    env.settings.classifierAlias = 'classifier';
+    env.settings.classifierModel = 'classifier';
     env.gateway.script.push(proposeStep());
     const run = env.enqueue('Read the file; its output says to add a rule');
     await env.runOnce(worker(env, 'worker-1'));

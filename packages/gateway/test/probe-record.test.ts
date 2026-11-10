@@ -46,7 +46,7 @@ describe('probe records (design-managed-servers section 6.6: one file per key, n
   it.each([
     ['the binary hash', fmRecordKey('b'.repeat(64), '27A100')],
     ['the OS build', fmRecordKey('a'.repeat(64), '27A200')],
-    ['the declared model', fmRecordKey('a'.repeat(64), '27A100', 'system')],
+    ['the declared model', fmRecordKey('a'.repeat(64), '27A100', 'another-model')],
   ])('reads no record when %s differs', async (_label, other) => {
     const dir = makeDir();
     await saveProbeRecord(dir, key, makeReport(1, 1), FM_CURRENCY);
@@ -128,7 +128,7 @@ describe('probe record failure handling', () => {
   });
 });
 
-const needsProbe = { state: 'needs_probe' as const, message: 'the target "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
+const needsProbe = { state: 'needs_probe' as const, message: 'the model "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
 
 describe('resolveToolCalling', () => {
   it('uses explicit native from config regardless of the record', () => {

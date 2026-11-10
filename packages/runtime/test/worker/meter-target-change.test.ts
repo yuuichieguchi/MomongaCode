@@ -17,7 +17,7 @@ const answeredFirstBy = (step: ScriptStep, target: string): ScriptStep => ({
   events: step.events.map(
     (event): StreamEvent =>
       event.type === 'response.completed'
-        ? { ...event, response: { ...event.response, momonga: { alias: 'fm', target, counter: fakeCounterOf(target), attempts: 1, usageSource: 'reported' } } }
+        ? { ...event, response: { ...event.response, momonga: { model: 'fm', target, counter: fakeCounterOf(target), attempts: 1, usageSource: 'reported' } } }
         : event,
   ),
 });
@@ -32,7 +32,7 @@ const measuredAcrossRuns = async (): Promise<[number, number]> => {
   return measuring.gateway.streams.map((stream) => inputTokensOf(stream.body)) as [number, number];
 };
 
-describe('the alias meter after the alias moved to another first target', () => {
+describe('the model meter after the model moved to another first target', () => {
   it('does not split the first request of a run answered by t2 on the report of t1 from an earlier run', async () => {
     const [firstCount, secondCount] = await measuredAcrossRuns();
     expect(secondCount - firstCount).toBeGreaterThanOrEqual(firstCount);
@@ -41,10 +41,10 @@ describe('the alias meter after the alias moved to another first target', () => 
       answeredFirstBy(textStep('Done.', { usage: usageOf(2 * firstCount, 5) }), 't1'),
       answeredFirstBy(textStep('Again.', { usage: usageOf(secondCount, 5) }), 't2'),
     );
-    env.gateway.targetsByAlias[env.session.modelAlias] = ['t1'];
+    env.gateway.chainsByModel[env.session.model] = ['t1'];
     const one = env.enqueue(FIRST_TASK);
     await env.runOnce(env.worker());
-    env.gateway.targetsByAlias[env.session.modelAlias] = ['t2'];
+    env.gateway.chainsByModel[env.session.model] = ['t2'];
     const two = env.enqueue(SECOND_TASK);
     await env.runOnce(env.worker('worker-2'));
 

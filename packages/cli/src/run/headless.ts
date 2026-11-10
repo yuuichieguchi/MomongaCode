@@ -1,5 +1,6 @@
+import { isRecord } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { TARGET_NOT_READY, agentReadiness, readinessText } from '@momonga/protocol';
+import { TARGET_NOT_READY, agentReadiness, readinessShownText } from '@momonga/protocol';
 import type { MomongaModelEntry, PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
@@ -8,6 +9,7 @@ import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { shellModelsOf } from '../plain-http.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
@@ -42,9 +44,9 @@ export type HeadlessOptions = {
   format: OutputFormat;
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
-  modelAlias?: string;
+  model?: string;
   reopen?: HeadlessReopen;
-  capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
+  capabilitiesOf(model: string): Promise<MomongaModelEntry['capabilities']>;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -299,7 +301,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       ...onNewerOf(ports),
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
-      ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }),
+      ...(options.model === undefined ? {} : { model: options.model }),
       ...(options.reopen === undefined ? {} : { reopen: options.reopen }),
     });
   } catch (error) {
@@ -338,24 +340,33 @@ const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, erro
   return EXIT_RUN_FAILED;
 };
 
+const MODEL_PARAM = 'model';
+
+const isModelRefusal = (error: RunApiError): boolean => isRecord(error.body) && isRecord(error.body['error']) && error.body['error']['param'] === MODEL_PARAM;
+
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {
   const adoption = adoptionOf(ports.handover?.started, ['headless']);
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
   if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
   const move = streamMoveOf(ports, paths, 'headless');
+  shellModelsOf(ports);
   let session: CliSession | undefined;
   try {
     session = await openInterruptibleSession(ports, paths, options);
   } catch (error) {
     if (error instanceof RunApiError && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
+    if (error instanceof RunApiError && isModelRefusal(error)) {
+      ports.stderr.write(`${escapedLines([`momonga: ${error.reason}`])}\n`);
+      return EXIT_RUN_FAILED;
+    }
     throw error;
   }
   if (session === undefined) return EXIT_CANCELLED;
   try {
-    const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.modelAlias));
+    const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.model));
     if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
     if (readiness.state === 'needs_probe' || readiness.state === 'unavailable') {
-      const message = readinessText(readiness);
+      const message = readinessShownText(readiness, 'shell');
       ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);
       if (options.format !== 'text') {
         const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
@@ -363,7 +374,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
       }
       return EXIT_RUN_FAILED;
     }
-    if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessText(readiness).split('\n')))}\n`);
+    if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessShownText(readiness, 'shell').split('\n')))}\n`);
     const sessionId = session.created.session.id;
     const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
     const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));

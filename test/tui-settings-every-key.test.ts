@@ -4,7 +4,7 @@ import { DEFAULT_SLASH_COMMANDS } from '../packages/cli/src/tui/commands/index.t
 import { COMMAND_LINKS, SETTINGS_REACHED_BY_COMMAND, SETTING_ROWS, SETTING_SECTIONS, settingLeaves } from '../packages/cli/src/tui/settings-screen.tsx';
 import { SCREEN_MODES } from '../packages/cli/src/tui/terminal/modes.ts';
 
-const EDITED_ONLY_BY_THE_MODELS_COMMANDS_TO_COME = ['autoMode.classifier', 'models.aliases', 'models.targets', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
+const EDITED_BY_THE_MODELS_COMMANDS = ['autoMode.classifier', 'models.connections', 'models.start', 'models.fallback', 'models.servers', 'models.billingChanges', 'models.roles.compaction', 'models.roles.reflection', 'models.roles.analysis', 'models.headersTimeoutMs', 'models.idleTimeoutMs'];
 
 const wayOf = (key: string): string[] => [...(SETTING_ROWS[key] === undefined ? [] : ['row']), ...(SETTINGS_REACHED_BY_COMMAND[key] === undefined ? [] : ['command'])];
 
@@ -18,7 +18,9 @@ describe('every key of the settings schema a person may change has its way in th
     expect(keys).toContain('memory.reflection.maxTokens');
     expect(keys).toContain('telemetry.otlp.endpoint');
     expect(keys).toContain('hooks');
-    expect(keys).toContain('models.targets');
+    expect(keys).toContain('models.connections');
+    expect(keys).not.toContain('models.targets');
+    expect(keys).not.toContain('models.aliases');
     expect(keys).not.toContain('memory.reflection');
     expect(new Set(keys.map((key) => key.split('.')[0]))).toEqual(new Set(Object.keys(SETTINGS_SCHEMA.properties)));
   });
@@ -48,8 +50,8 @@ describe('every key of the settings schema a person may change has its way in th
     for (const name of Object.keys(COMMAND_LINKS)) expect(commands, name).toContain(name);
   });
 
-  it('lists the keys whose command does not edit them yet', () => {
-    expect(Object.keys(SETTINGS_REACHED_BY_COMMAND).filter((key) => SETTINGS_REACHED_BY_COMMAND[key] === 'models')).toEqual(EDITED_ONLY_BY_THE_MODELS_COMMANDS_TO_COME);
+  it('lists the keys the /models flows edit, and none of them names the old shape', () => {
+    expect(Object.keys(SETTINGS_REACHED_BY_COMMAND).filter((key) => SETTINGS_REACHED_BY_COMMAND[key] === 'models')).toEqual(EDITED_BY_THE_MODELS_COMMANDS);
   });
 
   it('stores the screen modes the terminal layer has', () => {

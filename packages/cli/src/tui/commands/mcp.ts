@@ -94,7 +94,7 @@ export const mcpCommand: SlashCommand = {
       await shellForm.run(args, context);
       return;
     }
-    if (context.modelAlias === undefined) {
+    if (context.model === undefined) {
       context.info(NEEDS_SESSION_NOTE);
       return;
     }

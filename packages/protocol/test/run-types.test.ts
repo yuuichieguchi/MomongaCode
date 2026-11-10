@@ -262,7 +262,7 @@ describe('run event payloads', () => {
       type: 'tool.permission.classified';
       callId: string;
       subjectDigest: string;
-      alias?: string;
+      model?: string;
       outcome: 'allow' | 'ask';
       verdict?: 'safe' | 'unsafe';
       confidence?: 'high' | 'medium' | 'low';

@@ -50,7 +50,7 @@ describe('anthropic thinking blocks (R2b)', () => {
 
     await readSse(
       await postJson(gateway.client, '/v1/responses', {
-        model: 'fast',
+        model: 'scripted/upstream-model',
         stream: true,
         tools: [readFileTool],
         input: [...userInput('read a.txt'), ...output, { type: 'function_call_output', call_id: 'toolu_01', output: 'alpha' }],

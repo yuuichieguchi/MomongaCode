@@ -8,12 +8,12 @@ export type CreateSessionBody = {
   cwd: string;
   env: Record<string, string>;
   permissionMode?: PermissionMode;
-  modelAlias?: string;
+  model?: string;
   bypassAllowed?: boolean;
   mcpServers?: Record<string, Record<string, unknown>>;
 };
 
-export type PatchSessionBody = { permissionMode?: PermissionMode; modelAlias?: string; mcpServers?: Record<string, Record<string, unknown>> };
+export type PatchSessionBody = { permissionMode?: PermissionMode; model?: string; mcpServers?: Record<string, Record<string, unknown>> };
 
 export type CreateRunBody = {
   input: string;

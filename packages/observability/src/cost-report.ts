@@ -239,7 +239,7 @@ export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], o
 const describeTotals = (totals: RoleCost): string => {
   const fallback = (totals.fallbacks ?? []).map(
     (entry) =>
-      `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
+      `, ${entry.calls} of ${totals.calls} call(s) were answered by the fallback model ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
   const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions });
   return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${fallback.join('')}`;

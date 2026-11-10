@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
-import { detectModels } from '../src/commands/models.ts';
+import { detectModels, serversDetector } from '../src/commands/models.ts';
+import type { ModelsShell } from '../src/commands/models.ts';
 import { withIdentityReadFetch, withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -63,11 +64,11 @@ describe('the CLI network', () => {
 
     const interrupt = new AbortController().signal;
     const code = await withIdentityReadFetch(ports, interrupt, (fetch) =>
-      detectModels(ports, { home: ports.home, settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
+      detectModels({ stdout: ports.stdout, home: ports.home, interrupt, detect: serversDetector(ports, fetch) } as unknown as ModelsShell, { typed: [silent], json: true }),
     );
 
     expect(code).toBe(0);
-    const found = JSON.parse(written.join('')) as Array<{ baseUrl: string }>;
-    expect(found.map((server) => server.baseUrl)).not.toContain(silent);
+    const found = JSON.parse(written.join('')) as { servers: Array<{ address: string }> };
+    expect(found.servers.map((server) => server.address)).not.toContain(silent);
   });
 });

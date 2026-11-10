@@ -9,8 +9,8 @@ import type { UnderRule, WeightMeter } from './weight-meter.ts';
 
 type PortsWithFallbacks = BuildContextPorts & { fallbackMeters: readonly TokenMeter[] };
 
-const portsWith = (alias: WeightMeter, fallbacks: readonly WeightMeter[]): BuildContextPorts => {
-  const ports: PortsWithFallbacks = { meter: alias, fallbackMeters: fallbacks, blobs: fakeBlobs(), instructions: fakeReader() };
+const portsWith = (model: WeightMeter, fallbacks: readonly WeightMeter[]): BuildContextPorts => {
+  const ports: PortsWithFallbacks = { meter: model, fallbackMeters: fallbacks, blobs: fakeBlobs(), instructions: fakeReader() };
   return ports;
 };
 
@@ -45,16 +45,16 @@ const nothingUnder: UnderRule = () => 0;
 const wholeUnder: UnderRule = (tokens) => tokens;
 const highMarkOf = (capacity: number): number => floorTokens + floorRatio(COMPACT_AT, capacity - floorTokens);
 
-describe('C is the minimum of C_t over the alias targets (4.7, M5; B9, B10)', () => {
+describe('C is the minimum of C_t over the model targets (4.7, M5; B9, B10)', () => {
   const smallerCapacity = capacityFor(estimated, wholeUnder);
   const aliasCapacity = capacityFor(estimated, nothingUnder);
 
-  it('has a fallback target whose C_t is below the alias meter capacity', () => {
+  it('has a fallback target whose C_t is below the model meter capacity', () => {
     expect(aliasCapacity).toBe(budgetFor(estimated, 0).I);
     expect(highMarkOf(smallerCapacity) + 1).toBeLessThan(highMarkOf(aliasCapacity));
   });
 
-  it('evicts above the high mark of the fallback target C_t while the alias meter alone would keep everything', async () => {
+  it('evicts above the high mark of the fallback target C_t while the model meter alone would keep everything', async () => {
     const history = historyTotalling(highMarkOf(smallerCapacity) + 1);
 
     const built = await buildContext(observedInput(estimated, history), portsWith(weightMeter(nothingUnder), [weightMeter(wholeUnder)]));

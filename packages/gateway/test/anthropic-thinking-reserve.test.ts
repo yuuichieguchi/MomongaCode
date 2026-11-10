@@ -20,7 +20,7 @@ describe('compaction on a budget-form target', () => {
     const todayLimit = summaryInputLimitFor(BUDGET_TARGET, summaryTokenCapFor(BUDGET_TARGET), 0);
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(todayLimit), anthropicTextReply(['summary'])], capabilities: BUDGET_TARGET });
 
-    await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'scripted/upstream-model', input: userInput('do X') }));
 
     const sent: any[] = gateway.fake.requests.filter((request) => request.path === '/v1/messages').map((request) => request.body);
     for (const body of sent) expect(todayLimit + body.max_tokens).toBeLessThanOrEqual(BUDGET_TARGET.contextWindow);

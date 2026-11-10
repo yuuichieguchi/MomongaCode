@@ -8,8 +8,9 @@ import type { GenerationRole, RolePort, UdsClient, UdsResponse } from '@momonga/
 import { createGateway } from '@momonga/gateway';
 import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
-import type { StreamEvent, TargetBilling } from '@momonga/protocol';
-import { CLEANUP_KILL_DEADLINE_MS, closeOnceStarted, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
+import { parseCanon } from '@momonga/protocol';
+import type { MomongaModelRoles, StreamEvent, TargetAnswers, TargetBilling } from '@momonga/protocol';
+import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator, closeOnceStarted } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
 export const START_MS = 1_800_000_000_000;
@@ -68,21 +69,31 @@ export const switchableRole = (initial: GenerationRole = 'serving'): SwitchableR
 
 export const counterForTest = (target: string): string => createHash('sha256').update(`test counter of ${target}`).digest('hex');
 
+export const PRIMARY = 'scripted/scripted-primary';
+
+export const NO_START_MODEL = '';
+
+type ConfiguredTarget = GatewayConfig['models']['targets'][string];
+
 export type TargetSpec = {
   kind?: string;
-  provider?: string;
-  model: string;
-  billing?: GatewayConfig['models']['targets'][string]['billing'];
+  defaultTag?: string;
+  answers?: TargetAnswers;
+  billing?: ConfiguredTarget['billing'];
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
-  capabilities?: GatewayConfig['models']['targets'][string]['capabilities'];
+  capabilities?: ConfiguredTarget['capabilities'];
   counter?: string;
+  plan?: ConfiguredTarget['plan'];
+  keyGroup?: string;
 };
 
 export type ConfigOverrides = {
-  aliases?: Record<string, string[]>;
-  billingChanges?: ReadonlyArray<{ from: TargetBilling; to: TargetBilling; alias?: string }>;
   targets?: Record<string, TargetSpec>;
+  chains?: Record<string, string[]>;
+  billingChanges?: ReadonlyArray<{ from: TargetBilling; to: TargetBilling; model?: string }>;
+  start?: string;
+  roles?: MomongaModelRoles;
   retry?: Partial<GatewayConfig['retry']>;
   breaker?: Partial<GatewayConfig['breaker']>;
   limits?: Partial<GatewayConfig['limits']>;
@@ -93,26 +104,39 @@ export type ConfigOverrides = {
   websocketConnectionMs?: number;
 };
 
+const identityOf = (canon: string): { provider: string; ownName: string } => {
+  const identity = parseCanon(canon);
+  if (identity === undefined) throw new Error(`the test model ${JSON.stringify(canon)} is not written as server/name`);
+  return identity;
+};
+
 export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
   const targets: GatewayConfig['models']['targets'] = {};
-  const specs = overrides.targets ?? { primary: { model: 'scripted-primary' } };
-  for (const [name, spec] of Object.entries(specs)) {
-    targets[name] = {
+  const specs = overrides.targets ?? { [PRIMARY]: {} };
+  for (const [canon, spec] of Object.entries(specs)) {
+    const { provider, ownName } = identityOf(canon);
+    targets[canon] = {
       kind: spec.kind ?? 'scripted',
-      provider: spec.provider ?? 'scripted',
-      model: spec.model,
+      provider,
+      model: ownName,
+      ...(spec.defaultTag === undefined ? {} : { defaultTag: spec.defaultTag }),
+      ...(spec.answers === undefined ? {} : { answers: spec.answers }),
       billing: spec.billing ?? 'metered',
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
-      counter: spec.counter ?? counterForTest(name),
+      counter: spec.counter ?? counterForTest(canon),
       ...(spec.capabilities === undefined ? {} : { capabilities: spec.capabilities }),
+      ...(spec.plan === undefined ? {} : { plan: spec.plan }),
+      ...(spec.keyGroup === undefined ? {} : { keyGroup: spec.keyGroup }),
     };
   }
   return {
     models: {
-      aliases: overrides.aliases ?? { fast: ['primary'] },
       targets,
+      chains: { ...Object.fromEntries(Object.keys(targets).map((canon) => [canon, [canon]])), ...overrides.chains },
       ...(overrides.billingChanges === undefined ? {} : { billingChanges: overrides.billingChanges.map((change) => ({ ...change })) }),
+      ...(overrides.start === undefined ? {} : { start: overrides.start }),
+      ...(overrides.roles === undefined ? {} : { roles: overrides.roles }),
     },
     retry: { maxAttempts: 3, totalWaitMs: 84_000, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },
@@ -133,6 +157,7 @@ export type Harness = {
   dir: string;
   socketPath: string;
   dbPath: string;
+  model: string;
 };
 
 export type HarnessOptions = {
@@ -160,13 +185,15 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const timers = options.timers ?? createFakeTimers(clock);
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
+  const config = buildConfig(options.config);
+  const model = Object.keys(config.models.chains)[0] ?? NO_START_MODEL;
   const gateway = await createGateway({
     role: options.role ?? fixedRolePort('serving'),
     ...(options.probeFlights === undefined ? {} : { probeFlights: options.probeFlights }),
     random: options.random ?? (() => 0.5),
     credentials: options.credentials ?? [],
     ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),
-    config: buildConfig(options.config),
+    config,
     adapters: options.adapters,
     clock,
     timers,
@@ -183,7 +210,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   registerCleanup(() => gateway.close());
   const client = createUdsClient(fixedSocket(socketPath));
   registerCleanup(() => client.close());
-  return { gateway, client, clock, timers, dir, socketPath, dbPath };
+  return { gateway, client, clock, timers, dir, socketPath, dbPath, model };
 };
 
 export const userInput = (text: string) => [
@@ -263,3 +290,50 @@ export const outputText = (resource: { output: Array<Record<string, any>> }): st
     .join('');
 
 export type { StreamEvent };
+
+export type ServerSpec = TargetSpec & { model: string };
+
+export type TestChain = {
+  first: string;
+  canon(server: string): string;
+  config: { targets: Record<string, TargetSpec>; chains: Record<string, string[]> };
+  keyed<T>(byServer: Record<string, T>): Record<string, T>;
+};
+
+export const chainOfServers = (servers: Record<string, ServerSpec>): TestChain => {
+  const canon = (server: string): string => {
+    const spec = Object.hasOwn(servers, server) ? servers[server] : undefined;
+    if (spec === undefined) throw new Error(`the test chain has no server named ${JSON.stringify(server)}`);
+    return `${server}/${spec.model}`;
+  };
+  const members = Object.keys(servers).map(canon);
+  const [first] = members;
+  if (first === undefined) throw new Error('a test chain needs at least one server');
+  return {
+    first,
+    canon,
+    config: {
+      targets: Object.fromEntries(Object.entries(servers).map(([server, { model: _model, ...spec }]) => [canon(server), spec])),
+      chains: { [first]: members },
+    },
+    keyed: (byServer) => Object.fromEntries(Object.entries(byServer).map(([server, value]) => [canon(server), value])),
+  };
+};
+
+export type ModelClient = UdsClient & { readonly model: string };
+
+export const clientOfModel = (client: UdsClient, model: string): ModelClient => Object.assign(client, { model });
+
+export type ListedMember = { model: string; counter: string; capabilities: Record<string, unknown>; key?: { group: string }; plan?: { profile: string; account?: string } };
+
+export type ListedEntry = { id: string; capabilities: Record<string, unknown>; chain: ListedMember[] };
+
+export const listedEntryOf = (listing: { data: unknown }, model: string): ListedEntry => {
+  const found = (listing.data as ListedEntry[]).find((entry) => entry.id === model);
+  if (found === undefined) throw new Error(`the models listing has no entry for ${model}`);
+  return found;
+};
+
+export const listedMembersOf = (listing: { data: unknown }, model: string): Record<string, ListedMember> => Object.fromEntries(listedEntryOf(listing, model).chain.map((member) => [member.model, member]));
+
+export const listedCountersOf = (listing: { data: unknown }, model: string): Record<string, string> => Object.fromEntries(listedEntryOf(listing, model).chain.map((member) => [member.model, member.counter]));

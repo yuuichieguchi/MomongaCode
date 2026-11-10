@@ -13,8 +13,8 @@ const TOOLS = [
 ];
 
 const twoTargets = {
-  aliases: { fast: ['a', 'b'] },
-  targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
+  chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] },
+  targets: { 'scripted/model-a': {}, 'scripted/model-b': {} },
 };
 
 describe('router fallback', () => {
@@ -23,8 +23,8 @@ describe('router fallback', () => {
       calls: [{ failure: { status: 503, message: 'a down' } }, { failure: { status: 503, message: 'a still down' } }],
     });
     const b = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['from b'] }) }] });
-    const { client, timers } = await startGateway({ adapters: { a, b }, config: { ...twoTargets, retry: { maxAttempts: 2 } } });
-    const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config: { ...twoTargets, retry: { maxAttempts: 2 } } });
+    const pending = postJson(client, '/v1/responses', { model: 'scripted/model-a', input: userInput('hi') });
     await waitFor(() => a.calls.length === 1 && timers.pending().length > 0, { description: 'backoff before retry on a' });
     timers.advance(timers.pending().at(-1)?.delayMs ?? 0);
     const response = await readJson(await pending);
@@ -35,12 +35,12 @@ describe('router fallback', () => {
     expect(outputText(response.body)).toBe('from b');
     expect(response.body.model).toBe('model-b');
     expect(response.body.momonga).toEqual({
-      alias: 'fast',
-      target: 'b',
-      counter: counterForTest('b'),
+      model: 'scripted/model-a',
+      target: 'scripted/model-b',
+      counter: counterForTest('scripted/model-b'),
       attempts: 3,
-      fallbackFrom: ['a'],
-      fallbackCauses: [{ target: 'a', code: 'upstream_error', message: 'a still down' }],
+      fallbackFrom: ['scripted/model-a'],
+      fallbackCauses: [{ target: 'scripted/model-a', name: 'model-a', code: 'upstream_error', message: 'a still down' }],
       usageSource: 'reported',
       unpriced: { code: 'no_price_entry', reason: 'no price table' },
     });
@@ -50,8 +50,8 @@ describe('router fallback', () => {
   it('does not fall back on a non-retryable upstream error and returns it to the client', async () => {
     const a = createScriptedAdapter({ calls: [{ failure: { status: 400, message: 'context too long' } }] });
     const b = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { a, b }, config: twoTargets });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config: twoTargets });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-a', input: userInput('hi') }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'upstream_rejected' });
     expect(a.calls).toHaveLength(1);
@@ -62,8 +62,8 @@ describe('router fallback', () => {
     const aEvents = textResponseEvents({ model: 'model-a', chunks: ['partial ', 'answer'] });
     const a = createScriptedAdapter({ calls: [{ events: aEvents.slice(0, 5), failure: { status: 503, message: 'connection reset' } }] });
     const b = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-b', chunks: ['from b'] }) }] });
-    const { client } = await startGateway({ adapters: { a, b }, config: twoTargets });
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    const { client } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config: twoTargets });
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/model-a', input: userInput('hi'), stream: true }));
 
     expect(b.calls).toHaveLength(0);
     expect(a.calls).toHaveLength(1);
@@ -87,31 +87,31 @@ describe('capability filter', () => {
     const plain = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'none' } });
     const tooled = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-t', chunks: ['ok'] }) }] });
     const { client } = await startGateway({
-      adapters: { plain, tooled },
+      adapters: { 'scripted/model-p': plain, 'scripted/model-t': tooled },
       config: {
-        aliases: { fast: ['plain', 'tooled'] },
-        targets: { plain: { model: 'model-p' }, tooled: { model: 'model-t' } },
+        chains: { 'scripted/model-p': ['scripted/model-p', 'scripted/model-t'] },
+        targets: { 'scripted/model-p': {}, 'scripted/model-t': {} },
       },
     });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-p', input: userInput('hi'), tools: TOOLS }));
     expect(response.status).toBe(200);
     expect(plain.calls).toHaveLength(0);
     expect(tooled.calls).toHaveLength(1);
     expect(tooled.calls[0]?.request.tools).toEqual(TOOLS);
-    expect(response.body.momonga.target).toBe('tooled');
+    expect(response.body.momonga.target).toBe('scripted/model-t');
     expect(response.body.momonga.fallbackFrom).toBeUndefined();
   });
 
   it('applies the config capability override over the adapter declaration when filtering', async () => {
     const declaredNative = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'native' } });
     const { client } = await startGateway({
-      adapters: { only: declaredNative },
+      adapters: { 'scripted/model-o': declaredNative },
       config: {
-        aliases: { fast: ['only'] },
-        targets: { only: { model: 'model-o', capabilities: { toolCalling: 'none' } } },
+        chains: { 'scripted/model-o': ['scripted/model-o'] },
+        targets: { 'scripted/model-o': { capabilities: { toolCalling: 'none' } } },
       },
     });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-o', input: userInput('hi'), tools: TOOLS }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported', param: 'tools' });
     expect(declaredNative.calls).toHaveLength(0);
@@ -120,13 +120,13 @@ describe('capability filter', () => {
   it('returns 400 capability_unsupported when no target of the alias supports tools', async () => {
     const plain = createScriptedAdapter({ calls: [], capabilities: { toolCalling: 'none' } });
     const { client } = await startGateway({
-      adapters: { plain },
-      config: { aliases: { fast: ['plain'] }, targets: { plain: { model: 'model-p' } } },
+      adapters: { 'scripted/model-p': plain },
+      config: { chains: { 'scripted/model-p': ['scripted/model-p'] }, targets: { 'scripted/model-p': {} } },
     });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), tools: TOOLS }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-p', input: userInput('hi'), tools: TOOLS }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'capability_unsupported', param: 'tools' });
-    expect(response.body.error.message).toContain('fast');
+    expect(response.body.error.message).toBe('"model-p" and its fallback models do not support tool calling');
   });
 
   it('serves a request without tools from a target whose toolCalling is none', async () => {
@@ -135,10 +135,10 @@ describe('capability filter', () => {
       capabilities: { toolCalling: 'none' },
     });
     const { client } = await startGateway({
-      adapters: { plain },
-      config: { aliases: { fast: ['plain'] }, targets: { plain: { model: 'model-p' } } },
+      adapters: { 'scripted/model-p': plain },
+      config: { chains: { 'scripted/model-p': ['scripted/model-p'] }, targets: { 'scripted/model-p': {} } },
     });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-p', input: userInput('hi') }));
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('fine');
     expect((await getJson(client, '/v1/momonga/health')).status).toBe(200);

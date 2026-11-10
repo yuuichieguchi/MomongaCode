@@ -56,7 +56,8 @@ export type ManagedTarget = {
   binary?: string;
   readyTimeoutMs?: number;
   answers?: TargetAnswers;
-  model?: string;
+  billing?: TargetBilling;
+  model: string;
   outputBoundField?: OutputBoundField;
   toolCalling?: ToolCallingSetting;
   capabilities?: ManagedDeclaredCapabilities;
@@ -72,7 +73,6 @@ export type ChatCompletionsTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider: string;
   toolCalling?: ToolCallingSetting;
   billing?: TargetBilling;
   capabilities: DeclaredTargetCapabilities;
@@ -90,7 +90,6 @@ export type OpenResponsesTarget = {
   socketPath?: string;
   apiKeyEnv?: string;
   apiKeySecret?: string;
-  provider: string;
   toolCalling?: 'native' | 'none';
   billing?: TargetBilling;
   capabilities: RemoteTargetCapabilities;
@@ -138,7 +137,6 @@ export type PlanOpenResponsesTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   plan: PlanReference;
-  provider?: string;
   toolCalling?: 'native' | 'none';
   billing?: TargetBilling;
   capabilities?: PlanTargetCapabilities;
@@ -148,17 +146,31 @@ export type PlanOpenResponsesTarget = {
 
 export type ModelTarget = ManagedTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget;
 
+type ConnectionKeys = 'adapter' | 'answers' | 'billing' | 'baseUrl' | 'socketPath' | 'apiKeyEnv' | 'apiKeySecret' | 'plan' | 'apiVersion' | 'server' | 'binary' | 'readyTimeoutMs';
+
+type EntryOf<Target extends ModelTarget> = Target extends ModelTarget ? { id: string } & Omit<Target, ConnectionKeys | 'model'> : never;
+
+type ConnectionOf<Target extends ModelTarget> = Target extends ModelTarget
+  ? Pick<Target, Extract<keyof Target, ConnectionKeys>> & { provider?: string; maxConcurrency?: number; admissionTimeoutMs?: number; models?: EntryOf<Target>[] }
+  : never;
+
+export type ModelEntry = EntryOf<ModelTarget>;
+
+export type ModelConnection = ConnectionOf<ModelTarget>;
+
+export type ConnectionDraft = Omit<ModelConnection, 'models'>;
+
 export type ResolvedManagedTarget = {
   adapter: 'managed';
   server: string;
   binary: string;
   readyTimeoutMs: number;
   answers?: TargetAnswers;
-  model?: string;
+  model: string;
   outputBoundField?: OutputBoundField;
   toolCalling: ToolCallingSetting;
   capabilities?: ManagedDeclaredCapabilities;
-  billing: 'local';
+  billing: TargetBilling;
   maxConcurrency: number;
   admissionTimeoutMs: number;
 };
@@ -252,20 +264,19 @@ export type ResolvedModelTarget =
   | ResolvedAnthropicTarget
   | ResolvedOllamaTarget;
 
-export type ModelAlias = string | string[];
-
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
 export type ModelRoles = Partial<Record<ModelRole, string>>;
 
-export type BillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
+export type BillingChange = { from: TargetBilling; to: TargetBilling; model?: string };
 
 export type DeclaredServer = { command: string; args: string[]; readyPath: string; endpoint?: { forms: ManagedEndpointForm[] } };
 
 export type ModelsSettings = {
-  aliases?: Record<string, ModelAlias>;
+  connections?: ModelConnection[];
+  start?: string;
+  fallback?: string[];
   billingChanges?: BillingChange[];
-  targets?: Record<string, ModelTarget>;
   servers?: Record<string, DeclaredServer>;
   dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
@@ -393,19 +404,41 @@ const assertNotHttpSse = (server: unknown, source: string, name: string): void =
   }
 };
 
+const OLD_MODEL_KEYS: Readonly<Record<string, string>> = {
+  targets: 'models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).',
+  aliases: 'models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
+};
+
+const OLD_BILLING_SCOPE_KEY = 'alias';
+
+const assertNoOldModelKeys = (value: unknown, source: string): void => {
+  const models = isRecord(value) ? value['models'] : undefined;
+  if (!isRecord(models)) return;
+  for (const [key, sentence] of Object.entries(OLD_MODEL_KEYS)) {
+    if (Object.hasOwn(models, key)) throw new Error(`${source}: ${sentence}`);
+  }
+  const changes = models['billingChanges'];
+  if (!Array.isArray(changes)) return;
+  changes.forEach((change, index) => {
+    if (isRecord(change) && Object.hasOwn(change, OLD_BILLING_SCOPE_KEY)) {
+      throw new Error(`${source}: models.billingChanges[${index}].${OLD_BILLING_SCOPE_KEY} is not a setting any more; write "model" with the model it applies to (see README, Models).`);
+    }
+  });
+};
+
 const assertPlanAdapters = (value: unknown, source: string): void => {
   const models = isRecord(value) ? value['models'] : undefined;
-  const targets = isRecord(models) ? models['targets'] : undefined;
-  if (!isRecord(targets)) return;
-  for (const [name, target] of Object.entries(targets)) {
-    const plan = isRecord(target) ? target['plan'] : undefined;
+  const connections = isRecord(models) ? models['connections'] : undefined;
+  if (!Array.isArray(connections)) return;
+  connections.forEach((connection: unknown, index) => {
+    const plan = isRecord(connection) ? connection['plan'] : undefined;
     const profileId = isRecord(plan) ? plan['profile'] : undefined;
-    if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) continue;
+    if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) return;
     const required = (PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>).adapter;
-    if ((target as Record<string, unknown>)['adapter'] !== required) {
-      throw new Error(`${source}: models.targets.${name}: profile ${profileId} requires adapter ${required}`);
+    if ((connection as Record<string, unknown>)['adapter'] !== required) {
+      throw new Error(`${source}: models.connections[${index}]: profile ${profileId} requires adapter ${required}`);
     }
-  }
+  });
 };
 
 const assertTuiValues = (value: unknown, source: string): void => {
@@ -439,6 +472,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
+  assertNoOldModelKeys(value, source);
   assertPlanAdapters(value, source);
   assertStopValues(value, source);
   assertMcpConnectTimeout(value, source);

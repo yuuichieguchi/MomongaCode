@@ -1,6 +1,6 @@
 import { isRecord } from '@momonga/foundation';
-import { editUserSettings } from './add-model-connection.ts';
-import type { EditUserSettingsOptions } from './add-model-connection.ts';
+import { editUserSettings } from './edit-user-settings.ts';
+import type { EditUserSettingsOptions } from './edit-user-settings.ts';
 import type { ResolvedTuiSettings } from './settings.ts';
 
 export const writeTuiSetting = async <Name extends keyof ResolvedTuiSettings>(

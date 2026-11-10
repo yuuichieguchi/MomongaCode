@@ -7,7 +7,7 @@ import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../packages/cli/src/eva
 import { titleOf } from './support/cases.ts';
 import { startCli, runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
@@ -65,7 +65,7 @@ describe('momonga eval context after SIGKILL', () => {
     const hanging = path.join(home.root, 'hang.json');
     fs.writeFileSync(hanging, datasetOf('hang', HANG_TASK));
 
-    const running = startCli(home, ['eval', 'context', hanging, '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
+    const running = startCli(home, ['eval', 'context', hanging, '--model', UPSTREAM_MODEL_REF], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     const root = await until(() => rootOwnedBy(running.pid), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case home to name its owner' });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case run to reach the upstream' });
     const lock = await inspectProcessLock(generationLayout(root, FIRST_GENERATION).locks.supervisor);
@@ -82,7 +82,7 @@ describe('momonga eval context after SIGKILL', () => {
 
     const quick = path.join(home.root, 'quick.json');
     fs.writeFileSync(quick, datasetOf('quick', QUICK_TASK));
-    const next = await runCli(home, ['eval', 'context', quick, '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
+    const next = await runCli(home, ['eval', 'context', quick, '--model', UPSTREAM_MODEL_REF], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     expect(next.code).toBe(0);
     expect(fs.existsSync(root)).toBe(false);
   });

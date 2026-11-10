@@ -252,7 +252,7 @@ describe('notices', () => {
     map(call, { state });
 
     const effects = map(
-      { type: 'tool.permission.classified', callId: 'call-1', subjectDigest: 'digest-1', alias: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high', rationale: 'inside the workspace' },
+      { type: 'tool.permission.classified', callId: 'call-1', subjectDigest: 'digest-1', model: 'guard', outcome: 'allow', verdict: 'safe', confidence: 'high', rationale: 'inside the workspace' },
       { state, features: ALL },
     );
 

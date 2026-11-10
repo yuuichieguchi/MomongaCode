@@ -56,7 +56,7 @@ describe('the Anthropic adapter follows the promptCache capability of the answer
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(80), anthropicTextReply(['summary'])], capabilities: CACHING });
     const response = await readJson(
       await postJson(gateway.client, '/v1/responses/compact', {
-        model: 'fast',
+        model: 'scripted/upstream-model',
         input: [...userInput('do X'), { type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '{"path":"a.ts"}' }, { type: 'function_call_output', call_id: 'c1', output: 'body' }],
       }),
     );
@@ -68,7 +68,7 @@ describe('the Anthropic adapter follows the promptCache capability of the answer
   it('sends no breakpoint on a count, even when the target declares breakpoints', async () => {
     const gateway = await startAnthropicGateway({ script: [anthropicCountTokensReply(321)], capabilities: CACHING });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'fast', instructions: 'be brief', input: userInput('hello'), tools: [readFileTool] }),
+      await postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'scripted/upstream-model', instructions: 'be brief', input: userInput('hello'), tools: [readFileTool] }),
     );
     expect(response.status).toBe(200);
     expect(breakpointsIn(gateway.fake.requests[0]?.body)).toBe(0);

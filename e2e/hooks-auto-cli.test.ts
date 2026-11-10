@@ -6,16 +6,17 @@ import { skipCase, titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, withClassifierAlias, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, upstreamModelRef, withClassifierModel, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
-const CLASSIFIER_ALIAS = 'guard';
+const CLASSIFIER_ID = 'guard';
+const CLASSIFIER_MODEL = upstreamModelRef(CLASSIFIER_ID);
 
 const verdictReply = (verdict: 'safe' | 'unsafe', confidence: 'high' | 'medium' | 'low'): FakeScriptedReply =>
   textReply(JSON.stringify({ verdict, confidence, rationale: `scripted ${verdict}/${confidence}` }));
 
-const withClassifier = (settings: Record<string, unknown>): Record<string, unknown> => withClassifierAlias(settings, CLASSIFIER_ALIAS);
+const withClassifier = (settings: Record<string, unknown>): Record<string, unknown> => withClassifierModel(settings, CLASSIFIER_ID);
 
 const blockingHook = (event: 'PreToolUse' | 'UserPromptSubmit', message: string) => ({
   [event]: [{ ...(event === 'PreToolUse' ? { matcher: 'Write' } : {}), hooks: [{ type: 'command', command: `echo "${message}" >&2; exit 2` }] }],
@@ -58,7 +59,7 @@ describe('momonga -p with hooks and auto mode', () => {
     const result = await runCli(home, ['-p', 'Write the file', '--permission-mode', 'auto']);
 
     expect(result.code).toBe(0);
-    expect(result.stderr).toContain(`momonga: auto mode allowed Write allowed.txt; classifier ${CLASSIFIER_ALIAS} judged Write allowed.txt safe with high confidence: scripted safe/high\n`);
+    expect(result.stderr).toContain(`momonga: auto mode allowed Write allowed.txt; classifier ${CLASSIFIER_MODEL} judged Write allowed.txt safe with high confidence: scripted safe/high\n`);
     expect(fs.readFileSync(target, 'utf8')).toBe('written\n');
   });
 
@@ -68,7 +69,7 @@ describe('momonga -p with hooks and auto mode', () => {
     const result = await runCli(home, ['-p', 'Say hello', '--permission-mode', 'auto']);
 
     expect(result.code).toBe(1);
-    expect(result.stderr).toContain('momonga: permission mode unavailable: auto mode needs a classifier model alias: set autoMode.classifier in the user settings\n');
+    expect(result.stderr).toContain('momonga: permission mode unavailable: auto mode needs a classifier model: set autoMode.classifier in the user settings, or run /auto-mode and choose one\n');
     expect(chatCompletions(fake)).toHaveLength(0);
   });
 

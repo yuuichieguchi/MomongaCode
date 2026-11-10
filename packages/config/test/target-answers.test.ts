@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
 
@@ -14,19 +14,19 @@ const TARGETS: Record<string, Record<string, unknown>> = {
 
 const load = (target: Record<string, unknown>) => {
   const tree = makeTree();
-  writeJson(userSettingsPath(tree), { models: { targets: { main: target }, aliases: { default: 'main' } } });
+  writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('main', target)] } });
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
 describe('a target declares what answers it', () => {
   it.each(Object.entries(TARGETS))('%s: answers model is accepted and resolved with the target', async (_adapter, target) => {
     const { loaded } = load({ ...target, answers: 'model' });
-    expect((await loaded).settings.models.targets['main']).toMatchObject({ answers: 'model' });
+    expect(modelOf((await loaded).settings, 'main')).toMatchObject({ answers: 'model' });
   });
 
   it.each(Object.entries(TARGETS))('%s: answers script is accepted and resolved with the target', async (_adapter, target) => {
     const { loaded } = load({ ...target, answers: 'script' });
-    expect((await loaded).settings.models.targets['main']).toMatchObject({ answers: 'script' });
+    expect(modelOf((await loaded).settings, 'main')).toMatchObject({ answers: 'script' });
   });
 
   it.each(Object.entries(TARGETS))('%s: another value is rejected, naming the setting', async (_adapter, target) => {
@@ -34,14 +34,14 @@ describe('a target declares what answers it', () => {
     await expect(loaded).rejects.toThrow(userSettingsPath(tree));
     await expect(load({ ...target, answers: 'human' }).loaded).rejects.toThrow(/answers/);
     const accepted = await load({ ...target, answers: 'model' }).loaded;
-    expect(accepted.settings.models.targets['main']).toMatchObject({ answers: 'model' });
+    expect(modelOf(accepted.settings, 'main')).toMatchObject({ answers: 'model' });
   });
 
   it.each(Object.entries(TARGETS))('%s: an undeclared target resolves with no answers, never a default', async (_adapter, target) => {
     const { loaded } = load(target);
-    const resolved = (await loaded).settings.models.targets['main'] as Record<string, unknown>;
+    const resolved = modelOf((await loaded).settings, 'main') as Record<string, unknown>;
     expect(Object.hasOwn(resolved, 'answers')).toBe(false);
     const declared = await load({ ...target, answers: 'script' }).loaded;
-    expect(declared.settings.models.targets['main']).toMatchObject({ answers: 'script' });
+    expect(modelOf(declared.settings, 'main')).toMatchObject({ answers: 'script' });
   });
 });

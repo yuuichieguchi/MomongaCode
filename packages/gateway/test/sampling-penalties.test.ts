@@ -9,7 +9,7 @@ import { REMOTE_CAPABILITIES, startOpenResponsesGateway } from './upstream-gatew
 const PENALTIES = { frequency_penalty: 0.3, presence_penalty: 0.4 } as const;
 const EVERY_SAMPLING_FIELD = { temperature: 0.2, top_p: 0.9, ...PENALTIES } as const;
 
-const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
+const singleTarget = { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote' } } };
 
 const withSampling = (capabilities: Capabilities, sampling: SamplingCapability | undefined, extra: Record<string, unknown> = {}): Capabilities =>
   Object.assign({}, capabilities, extra, sampling === undefined ? {} : { sampling });
@@ -17,14 +17,14 @@ const withSampling = (capabilities: Capabilities, sampling: SamplingCapability |
 const startChatCompletionsGateway = async (capabilities: Capabilities) => {
   const fake = await startFake({ scenario: 'tools-ok' });
   const adapter = makeAdapter(fake, { capabilities: async () => capabilities });
-  const harness = await startGateway({ adapters: { remote: adapter }, config: singleTarget });
+  const harness = await startGateway({ adapters: { 'scripted/upstream-model': adapter }, config: singleTarget });
   return { ...harness, fake };
 };
 
 describe('the penalties reach the adapters that render them', () => {
   it('a chat-completions target with nothing declared forwards both penalties', async () => {
     const gateway = await startChatCompletionsGateway(CC_CAPABILITIES);
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...PENALTIES }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...PENALTIES }));
     expect(response.status).toBe(200);
     const [body] = completionBodies(gateway.fake);
     expect(body.frequency_penalty).toBe(0.3);
@@ -33,7 +33,7 @@ describe('the penalties reach the adapters that render them', () => {
 
   it('an open-responses target with nothing declared forwards both penalties', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['ok'])] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...PENALTIES }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...PENALTIES }));
     expect(response.status).toBe(200);
     const body = gateway.fake.requests[0]?.body as Record<string, unknown> | undefined;
     expect(body?.['frequency_penalty']).toBe(0.3);
@@ -53,20 +53,20 @@ describe('the penalties reach the adapters that render them', () => {
 describe('the penalties go through the same acceptance check', () => {
   it.for(['frequency_penalty', 'presence_penalty'] as const)('a chat-completions target that declares none refuses %s, naming it and the target', async (param) => {
     const gateway = await startChatCompletionsGateway(withSampling(CC_CAPABILITIES, { accepts: 'none' }));
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), [param]: PENALTIES[param] }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), [param]: PENALTIES[param] }));
     expect(response.status).toBe(400);
     expect(response.body.error.param).toBe(param);
     expect(response.body.error.message).toContain(param);
-    expect(response.body.error.message).toContain('remote');
+    expect(response.body.error.message).toContain('upstream-model');
     expect(completionBodies(gateway.fake)).toEqual([]);
   });
 
   it('an open-responses target that declares none refuses temperature, naming it and the target', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['ok'])], capabilities: withSampling(REMOTE_CAPABILITIES, { accepts: 'none' }) });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), temperature: 0.2 }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), temperature: 0.2 }));
     expect(response.status).toBe(400);
     expect(response.body.error.param).toBe('temperature');
-    expect(response.body.error.message).toContain('remote');
+    expect(response.body.error.message).toContain('upstream-model');
     expect(gateway.fake.requests).toEqual([]);
   });
 });
@@ -76,11 +76,11 @@ describe('thinking on through the reasoning_effort control', () => {
     const capabilities = withSampling(CC_CAPABILITIES, { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } }, { reasoning: { control: 'reasoning_effort', lowest: 'none' } });
     const gateway = await startChatCompletionsGateway(capabilities);
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), reasoning: { effort: 'high' }, temperature: 0.2 }),
+      await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), reasoning: { effort: 'high' }, temperature: 0.2 }),
     );
     expect(response.status).toBe(400);
     expect(response.body.error.param).toBe('temperature');
-    expect(response.body.error.message).toContain('remote');
+    expect(response.body.error.message).toContain('upstream-model');
     expect(completionBodies(gateway.fake)).toEqual([]);
   });
 });
@@ -90,7 +90,7 @@ describe('thinking off through the reasoning_effort control', () => {
     const capabilities = withSampling(CC_CAPABILITIES, { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } }, { reasoning: { control: 'reasoning_effort', lowest: 'none' } });
     const gateway = await startChatCompletionsGateway(capabilities);
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), reasoning: { effort: 'none' }, temperature: 0.2 }),
+      await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), reasoning: { effort: 'none' }, temperature: 0.2 }),
     );
     expect(response.status).toBe(200);
     const [body] = completionBodies(gateway.fake);
@@ -101,8 +101,8 @@ describe('thinking off through the reasoning_effort control', () => {
 describe('the response echoes every sampling field the request carried', () => {
   it('the non-streamed resource and the streamed terminal resource both echo the request values', async () => {
     const gateway = await startChatCompletionsGateway(CC_CAPABILITIES);
-    const unary = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...EVERY_SAMPLING_FIELD }));
-    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hi'), ...EVERY_SAMPLING_FIELD }));
+    const unary = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...EVERY_SAMPLING_FIELD }));
+    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', stream: true, input: userInput('hi'), ...EVERY_SAMPLING_FIELD }));
     const streamed = frames.at(-1)?.data.response;
     expect(unary.status).toBe(200);
     expect(unary.body).toMatchObject(EVERY_SAMPLING_FIELD);

@@ -1,9 +1,14 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { loadUserSettings } from '@momonga/config';
+import type { ResolvedModelTarget } from '@momonga/config';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import type { ProbeOutputPolicy } from './probe/decide.ts';
 
-type ResolvedTarget = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string];
+type ResolvedTarget = ResolvedModelTarget & { canon?: string; ownName?: string; defaultTag?: string };
+
+const definitionOf = (target: ResolvedTarget): ResolvedModelTarget => {
+  const { canon: _canon, ownName: _ownName, defaultTag: _defaultTag, ...definition } = target;
+  return definition;
+};
 
 export type ServedAccount = { profile: string; account: string | null };
 
@@ -26,7 +31,7 @@ export const readsOutputPolicy = (target: ResolvedTarget): boolean =>
 export const targetCounterOf = ({ target, codeDigest, probeKey, upstreamIdentity, server, served, reported, outputPolicy }: TargetCounterInput): string =>
   sha256Hex(
     canonicalJson({
-      definition: target,
+      definition: definitionOf(target),
       codeDigest,
       ...(server === undefined ? {} : { server }),
       ...(probeKey === undefined ? {} : { probeKey }),

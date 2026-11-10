@@ -8,7 +8,7 @@ import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@mom
 import { START_MS, registerCleanup, validator } from './gateway-helpers.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
-export const TARGET: AdapterTarget = { name: 'fm', model: 'system' };
+export const TARGET: AdapterTarget = { name: 'fm', display: 'fm', model: 'system' };
 
 export const CC_CAPABILITIES: Capabilities = {
   contextWindow: 4096,

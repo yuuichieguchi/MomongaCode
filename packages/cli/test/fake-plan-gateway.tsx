@@ -10,14 +10,13 @@ import type {
   TargetBilling,
   TargetHealth,
 } from '@momonga/protocol';
-import type { ModelConnection } from '@momonga/config';
 import { App } from '../src/tui/app.tsx';
 import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import type { SignInListener, TuiBackend } from '../src/tui/backend.ts';
 import type { SignInWaitTimers, StartSignInListener } from '../src/plan/sign-in.ts';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { fakeBackend } from './fake-backend.ts';
+import { SESSION, fakeBackend } from './fake-backend.ts';
 import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
 import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
 import type { Instance } from './ink-helpers.ts';
@@ -28,8 +27,6 @@ const shipped = PLAN_PROFILES['chatgpt'];
 if (shipped === undefined) throw new Error('the chatgpt profile is not shipped');
 
 export const CHATGPT: PlanProfileView = { id: shipped.id, usageUrl: shipped.usageUrl, messages: shipped.messages, loginLabel: shipped.loginLabel };
-
-export type DetectedServer = Omit<DetectedLocalServer, 'models'> & { models: readonly (DetectedLocalServer['models'][number] & { trainedContext?: number; contextWindow?: number })[] };
 
 export const LISTENER_PORT = 49152;
 export const PLAN_TEST_TIMEOUT_MS = FRAME_BOUND_MS * 4;
@@ -55,7 +52,6 @@ export type FakePlanOptions = FakeBackendOptions & {
   health?: Readonly<Record<string, TargetHealth>>;
   billing?: Readonly<Record<string, TargetBilling>>;
   planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
-  detected?: readonly DetectedServer[];
   dismissed?: Readonly<Record<string, string>>;
   callbackArrives?: boolean;
   completeHeld?: Promise<void>;
@@ -70,33 +66,31 @@ export type FakePlanOptions = FakeBackendOptions & {
 export type FakePlanBackend = FakeBackend & {
   readonly plan: PlanGatewayClient;
   readonly planCalls: PlanCall[];
-  readonly connections: ModelConnection[];
   readonly dismissals: string[];
   readonly listenerPaths: string[];
-  readonly detections: (readonly string[])[];
   readonly clipboard: string[];
 };
 
 export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend => {
   const base = fakeBackend(options);
+  const writtenModels = base.models;
   const planCalls: PlanCall[] = [];
-  const connections: ModelConnection[] = [];
   const dismissals: string[] = [];
   const listenerPaths: string[] = [];
-  const detections: (readonly string[])[] = [];
   const clipboard: string[] = [];
-  let aliases: string[] = [...(options.aliases ?? ['default'])];
+  let models: string[] = [...(options.models ?? [SESSION.model])];
   let accounts: PlanAccountView[] = [...(options.accounts ?? [])];
-  const targets = [...(options.targets ?? ['primary'])];
+  const members = (): string[] => [...(options.chain ?? models)];
   const called = (route: string, body?: unknown): void => {
     planCalls.push(body === undefined ? { route } : { route, body });
   };
-  const withBilling = (entry: MomongaModelEntry): MomongaModelEntry =>
-    ({
-      ...entry,
-      targetBilling: Object.fromEntries(entry.targets.map((target) => [target, options.billing?.[target] ?? 'metered'])),
-      targetPlan: Object.fromEntries(entry.targets.flatMap((target) => (options.planTargets?.[target] === undefined ? [] : [[target, options.planTargets[target]]]))),
-    }) as MomongaModelEntry;
+  const withBilling = (entry: MomongaModelEntry): MomongaModelEntry => {
+    const chain = entry.chain.map((member) => {
+      const plan = options.planTargets?.[member.model];
+      return { ...member, billing: options.billing?.[member.model] ?? ('metered' as const), ...(plan === undefined ? {} : { plan }) };
+    });
+    return { ...entry, billing: chain[0]?.billing ?? entry.billing, chain };
+  };
   const plan: PlanGatewayClient = {
     accounts: async () => {
       called('accounts');
@@ -147,8 +141,9 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     },
     addTarget: async (label, request) => {
       called(`accounts/${label}/targets`, request);
-      aliases = [...aliases, request.slug];
-      return { target: request.slug, alias: request.slug };
+      const added = `${options.profiles?.[0]?.id ?? CHATGPT.id}/${request.slug}`;
+      models = [...models, added];
+      return { model: added };
     },
   };
   const listener = async (path: string): Promise<SignInListener> => {
@@ -171,20 +166,19 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
   const backend: FakePlanBackend = Object.assign(base, {
     plan,
     planCalls,
-    connections,
     dismissals,
     listenerPaths,
-    detections,
     clipboard,
     copyToClipboard: async (text: string) => {
       clipboard.push(text);
       return { kind: 'copied' as const, characters: [...text].length };
     },
-    models: async () => (await fakeBackend({ ...options, aliases }).models()).map(withBilling),
+    models: async () => [...(await fakeBackend({ ...options, models }).models()).map(withBilling), ...(await writtenModels()).filter((entry) => !models.includes(entry.id))],
+    modelList: async () => ({ object: 'list' as const, data: await backend.models(), start: null, roles: {} }),
     model: async () => withBilling(await fakeBackend(options).model()),
     health: async (): Promise<GatewayHealth> => ({
       ok: true,
-      targets: Object.fromEntries(targets.map((target) => [target, options.health?.[target] ?? { ok: true, breaker: 'closed' }])),
+      models: Object.fromEntries(members().map((member) => [member, options.health?.[member] ?? { ok: true, breaker: 'closed' as const }])),
       version: '0.0.0',
       apiVersion: 1,
       pid: 1,
@@ -195,16 +189,6 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     sandbox: async () => 'seatbelt' as const,
     startSignInListener: options.startListener ?? listener,
     signInTimers: options.signInTimers ?? createFakeTimers(createFakeClock(0)),
-    detectLocalServers: async (typed: readonly string[]) => {
-      detections.push(typed);
-      return [...(options.detected ?? [])];
-    },
-    addModelConnection: async (connection: ModelConnection) => {
-      connections.push(connection);
-      const name = connection.kind === 'managed' ? connection.server : connection.model;
-      aliases = [...aliases, name];
-      return { target: name, alias: name };
-    },
     dismissedNotices: async () => ({ ...(options.dismissed ?? {}) }),
     dismissNotice: async (key: string) => {
       dismissals.push(key);

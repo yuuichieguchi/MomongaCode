@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { TARGET_PROBING, TARGET_PROBING_MESSAGE, tokensForText } from '@momonga/protocol';
 import { GatewayRequestError, ModelUnlistedError } from '@momonga/runtime';
-import { MODEL_ALIAS, OTHER_ALIAS, defaultModelCapabilities, expectError, expectSchema, startService } from './helpers.ts';
+import { MODEL_ID, OTHER_MODEL_ID, defaultModelCapabilities, expectError, expectSchema, startService } from './helpers.ts';
 
 const textRule = (project: string, overrides: Record<string, unknown> = {}) => ({
   kind: 'constraint',
@@ -25,14 +25,14 @@ describe('rules api', () => {
     const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
     const tokens = tokensForText('never touch production');
     expect(added.json.size).toEqual([
-      { target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
-      { target: OTHER_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
+      { target: MODEL_ID, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
+      { target: OTHER_MODEL_ID, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 },
     ]);
   });
 
   it('adds the fact and carries a warning in the response when the gateway cannot answer for the size', async () => {
     const env = await startService({ fakeTimers: true });
-    env.ports.aliasesFailure.error = new GatewayRequestError({ status: 503, type: 'server_error', code: 'unavailable', message: 'the gateway is down' });
+    env.ports.listingFailure.error = new GatewayRequestError({ status: 503, type: 'server_error', code: 'unavailable', message: 'the gateway is down' });
     const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
     expect(added.status).toBe(201);
     expect(added.json.size).toEqual([]);
@@ -45,37 +45,37 @@ describe('rules api', () => {
 
   it('lets a failure that is not the gateway answering through, and adds nothing', async () => {
     const env = await startService({ fakeTimers: true });
-    env.ports.aliasesFailure.error = new TypeError('a defect');
+    env.ports.listingFailure.error = new TypeError('a defect');
     const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
     expect(added.status).toBe(500);
     const listed = await env.http('GET', `/v1/rules?project=${encodeURIComponent(env.layout.project)}`);
     expect(listed.json.facts).toEqual([]);
   });
 
-  it('adding a rule with one alias unavailable measures the others and names the unavailable one in warnings', async () => {
-    const capabilitiesOf = async (alias: string) => {
-      if (alias === OTHER_ALIAS) throw new ModelUnlistedError({ status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: 'no numbers for a' });
+  it('adding a rule with one model unavailable measures the others and names the unavailable one in warnings', async () => {
+    const capabilitiesOf = async (model: string) => {
+      if (model === OTHER_MODEL_ID) throw new ModelUnlistedError({ status: 412, type: 'invalid_request', code: 'capabilities_unknown', message: 'no numbers for a' });
       return defaultModelCapabilities();
     };
     const env = await startService({ fakeTimers: true, capabilitiesOf });
     const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
     const tokens = tokensForText('never touch production');
     expect(added.status).toBe(201);
-    expect(added.json.size).toEqual([{ target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
-    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model alias ${OTHER_ALIAS}: no numbers for a`]);
+    expect(added.json.size).toEqual([{ target: MODEL_ID, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
+    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model "${OTHER_MODEL_ID}": no numbers for a`]);
   });
 
-  it('the same for a probing alias', async () => {
-    const capabilitiesOf = async (alias: string) => {
-      if (alias === OTHER_ALIAS) throw new ModelUnlistedError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: TARGET_PROBING_MESSAGE });
+  it('the same for a probing model', async () => {
+    const capabilitiesOf = async (model: string) => {
+      if (model === OTHER_MODEL_ID) throw new ModelUnlistedError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: TARGET_PROBING_MESSAGE });
       return defaultModelCapabilities();
     };
     const env = await startService({ fakeTimers: true, capabilitiesOf });
     const added = await env.http('POST', '/v1/rules', { body: textRule(env.layout.project) });
     const tokens = tokensForText('never touch production');
     expect(added.status).toBe(201);
-    expect(added.json.size).toEqual([{ target: MODEL_ALIAS, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
-    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model alias ${OTHER_ALIAS}: ${TARGET_PROBING_MESSAGE}`]);
+    expect(added.json.size).toEqual([{ target: MODEL_ID, contextWindow: 8192, tokens, percent: (tokens * 100) / 8192 }]);
+    expect(added.json.warnings).toEqual([`the size of this rule was not measured against the model "${OTHER_MODEL_ID}": ${TARGET_PROBING_MESSAGE}`]);
   });
 
   it('refuses a repeat of a live fact with the id of the existing one, and stores nothing', async () => {

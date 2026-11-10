@@ -11,7 +11,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, removeTempDir } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, closeOnceStarted, createFakeTimers, createTempDir, driveFakeTime, fakeReapTiming, killGroupsForCleanup, modelSettings, removeTempDir } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 import { fixedSandboxBindings } from '@momonga/runtime';
@@ -84,21 +84,8 @@ export const writeInvalidUserSettings = (home: string): void => {
 
 export const writeProjectSettings = (projectDir: string, value: unknown): void => writeJson(path.join(projectDir, '.momonga', 'settings.json'), value);
 
-export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> => ({
-  models: {
-    targets: {
-      m: {
-        adapter: 'chat-completions',
-        provider: 'fake',
-        model: 'x',
-        baseUrl: 'https://api.example.com/v1',
-        apiKeyEnv,
-        capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-      },
-    },
-    aliases: { default: 'm' },
-  },
-});
+export const chatTargetSettings = (apiKeyEnv: string): Record<string, unknown> =>
+  modelSettings({ models: [{ provider: 'fake', id: 'x', baseUrl: 'https://api.example.com/v1', apiKeyEnv, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] });
 
 export type CountingCache = UserSettingsCache & { snapshots: number };
 
@@ -146,7 +133,7 @@ export const createSession = (
     cwd,
     env: extra.env ?? {},
     permissionMode: 'manual',
-    modelAlias: 'default',
+    model: 'default',
     ...(extra.additionalDirectories === undefined ? {} : { additionalDirectories: extra.additionalDirectories }),
     ...(extra.mcpServers === undefined ? {} : { mcpServers: extra.mcpServers }),
   });

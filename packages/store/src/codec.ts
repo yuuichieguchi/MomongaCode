@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { FILE_ACCESSES, INBOX_DELIVERIES, INBOX_STATES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, planAccountRefOf } from '@momonga/protocol';
-import type { InboxRowView, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, UserShellRecord } from '@momonga/protocol';
+import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, STORED_MODEL_KEYS, decodeStoredModel, planAccountRefOf, INBOX_DELIVERIES, INBOX_STATES } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload, InboxRowView, UserShellRecord } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -38,7 +38,7 @@ export const decodeSession = (row: Row, context: DecodeContext): Session => {
     cwd: reader.string('cwd'),
     env: expectStringRecord('sessions', identity, 'env_json', reader.json('env_json')),
     permissionMode: storedOneOf(context, 'sessions', identity, 'permission_mode', PERMISSION_MODES, reader.string('permission_mode')),
-    modelAlias: reader.string('model_alias'),
+    model: reader.string('model'),
     bypassAllowed: reader.flag('bypass_allowed'),
     additionalDirectories: expectAbsolutePaths('sessions', identity, 'additional_directories_json', reader.json('additional_directories_json')),
     mcpServers: expectServerRecords(identity, reader.json('mcp_servers_json')),
@@ -245,11 +245,12 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   const reader = readerFor('events', identity, row);
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
   if (type === 'model.changed') {
-    const { modelAlias, previousModelAlias } = payload;
-    if (typeof modelAlias !== 'string' || typeof previousModelAlias !== 'string') {
-      throw corrupt('events', identity, 'payload_json modelAlias and previousModelAlias must be strings');
+    const model = decodeStoredModel(payload, STORED_MODEL_KEYS.modelChanged);
+    const previousModel = decodeStoredModel(payload, STORED_MODEL_KEYS.previousModel);
+    if (model === undefined || previousModel === undefined) {
+      throw corrupt('events', identity, 'payload_json model and previousModel must be strings');
     }
-    return { type: 'model.changed', modelAlias, previousModelAlias, ...envelope };
+    return { type: 'model.changed', model, previousModel, ...envelope };
   }
   if (type === 'inbox.changed') {
     const { pending } = payload;

@@ -7,7 +7,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, createFakeFm, fakeExec, killGroupsForCleanup, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, prepareHome } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, homePaths, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import {
   REDACTED,
@@ -25,7 +25,7 @@ import { placeFakeFm } from './fm-record-support.ts';
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'primary/system', input: userInput('hi') };
 
 const echo401 = (message: string): FakeScriptedReply => ({
   kind: 'error',
@@ -67,7 +67,7 @@ const startKeyedStack = async (
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   writeSettings(home, {
-    models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) } },
+    models: modelsOf({ primary: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   const log = captureLog();
   const handle = await ownedStart(context, startGatewayProcess({
@@ -263,7 +263,7 @@ describe('T4: compaction over the process gateway', () => {
       path: '/v1/responses/compact',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'fast',
+        model: 'primary/system',
         input: [
           ...userInput('Fix the parser bug'),
           { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{"path":"src/parse.ts"}' },
@@ -304,10 +304,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   writeSettings(home, {
-    models: {
-      aliases: { default: ['fm'], keyed: ['cc'] },
-      targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
-    },
+    models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) }),
   });
   await placeFakeFm(home, fm.binaryPath);
   const handle = await ownedStart(context, startGatewayProcess({
@@ -340,7 +337,7 @@ describe('T5: fm text with a configured key on another target', () => {
     const response = await client.request({ method: 'GET', path: '/v1/momonga/health' });
     const text = await response.text();
     expect(response.status).toBe(200);
-    expect(JSON.parse(text).targets.fm).toMatchObject({ ok: false, reason: 'precondition_failed', detail: `license status: ${REDACTED}` });
+    expect(JSON.parse(text).models['fm/system']).toMatchObject({ ok: false, reason: 'precondition_failed', detail: `license status: ${REDACTED}` });
     expectRedacted(text, TEST_API_KEY);
   });
 
@@ -353,11 +350,11 @@ describe('T5: fm text with a configured key on another target', () => {
       method: 'POST',
       path: '/v1/momonga/count_tokens',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model: 'default', input: 'one two three' }),
+      body: JSON.stringify({ model: 'fm/system', input: 'one two three' }),
     });
     const text = await response.text();
     expect(response.status).toBe(502);
-    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `the target "fm": the token counter failed with exit code 2: bad ${REDACTED}` });
+    expect(JSON.parse(text).error).toMatchObject({ code: 'adapter_error', message: `the model "fm/system": the token counter failed with exit code 2: bad ${REDACTED}` });
     expectRedacted(text, TEST_API_KEY);
   });
 });

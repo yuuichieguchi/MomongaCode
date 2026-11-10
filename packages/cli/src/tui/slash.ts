@@ -1,5 +1,7 @@
-import { PERMISSION_MODES, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
-import type { PermissionMode } from '@momonga/protocol';
+import { ModelRefError, PERMISSION_MODES, displayMapOf, isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
+import type { MomongaModelEntry, PermissionMode } from '@momonga/protocol';
+import { listingViewsOf } from '../client/gateway-client.ts';
+import { listedModelOf } from '../commands/models.ts';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
 import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
@@ -8,6 +10,9 @@ import type { TuiBackend } from './backend.ts';
 import { keyReported, needsReport, sentAsEscape, shownKey } from './keys/table.ts';
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
 import type { KeyBindingsScreen } from './commands/keybindings.ts';
+import type { FoundServers } from './models/context.ts';
+import { writeStart } from './models/order.ts';
+import { startingModelSetText } from './models/texts.ts';
 import type { OverlayPorts } from './picker.tsx';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -27,7 +32,11 @@ export type SessionsPort = { startNew(): Promise<void>; resume(id: string): Prom
 
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
-  readonly modelAlias: string | undefined;
+  readonly model: string | undefined;
+  readonly found: FoundServers;
+  wait<T>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  toast(text: string): void;
+  refreshConnection(): Promise<void>;
   readonly commands: readonly SlashCommand[];
   readonly backend: TuiBackend;
   info(text: string): void;
@@ -35,7 +44,7 @@ export type SlashContext = ModeAvailability & {
   compact(instructions: string | undefined): Promise<void>;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
-  setModel(modelAlias: string): Promise<void>;
+  setModel(model: string): Promise<void>;
   background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   readonly autoMode: AutoModePort;
   readonly shell: ShellPort;
@@ -52,12 +61,14 @@ export type SlashContext = ModeAvailability & {
 
 export type SlashCommand = {
   readonly name: string;
-  readonly aliases?: readonly string[];
+  readonly otherNames?: readonly string[];
   readonly description: string;
   readonly usage?: string;
   readonly needsSession?: boolean;
   run(args: string, context: SlashContext): Promise<void>;
 };
+
+export const namesOf = (command: SlashCommand): readonly string[] => [command.name, ...(command.otherNames ?? [])];
 
 export type SlashRegistry = {
   list(): readonly SlashCommand[];
@@ -66,7 +77,7 @@ export type SlashRegistry = {
 
 export const createSlashRegistry = (commands: readonly SlashCommand[]): SlashRegistry => ({
   list: () => commands,
-  find: (name) => commands.find((command) => command.name === name || command.aliases?.includes(name) === true),
+  find: (name) => commands.find((command) => namesOf(command).includes(name)),
 });
 
 export const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
@@ -138,7 +149,7 @@ const help: SlashCommand = {
 const exit: SlashCommand = {
   name: 'exit',
   needsSession: false,
-  aliases: ['quit'],
+  otherNames: ['quit'],
   description: 'leave momonga; a running task continues in the daemon',
   run: async (_args, context) => {
     context.exit();
@@ -163,27 +174,40 @@ const mode: SlashCommand = {
   },
 };
 
-export const switchModel = async (args: string, entries: readonly { id: string }[], context: SlashContext): Promise<void> => {
-  const chosen = entries.find((entry) => entry.id === args);
-  if (chosen === undefined) {
-    context.info(`unknown model ${args}; available: ${entries.map((entry) => entry.id).join(', ')}`);
+export const START_FLAG = '--start';
+
+export const switchModel = async (args: string, entries: readonly MomongaModelEntry[], context: SlashContext): Promise<void> => {
+  const words = args.split(/\s+/).filter((word) => word !== '');
+  const text = words.filter((word) => word !== START_FLAG).join(' ');
+  let chosen: string;
+  try {
+    chosen = listedModelOf(entries, text);
+  } catch (error) {
+    if (!(error instanceof ModelRefError)) throw error;
+    context.info(error.message);
     return;
   }
-  await context.setModel(chosen.id);
+  await context.setModel(chosen);
+  if (!words.includes(START_FLAG)) return;
+  await writeStart(context, chosen);
+  context.toast(startingModelSetText(displayMapOf(listingViewsOf(entries)).get(chosen) ?? chosen));
 };
+
+export const MODEL_USAGE = `[model] [${START_FLAG}]`;
 
 const model: SlashCommand = {
   name: 'model',
-  usage: '[alias]',
-  description: 'list the model aliases with the current one marked, or switch the model from the next task',
+  usage: MODEL_USAGE,
+  description: 'list the configured models with the current one marked, or switch the model from the next task',
   run: async (args, context) => {
     const entries = await context.backend.models();
     if (args === '') {
+      const displays = displayMapOf(listingViewsOf(entries));
       context.info(
         [
           'models (the current one is marked *):',
-          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${isNotListedCapabilities(entry.capabilities) ? notListedMessage(entry.capabilities) : `${entry.capabilities.contextWindow}-token window`}`),
-          'switch with /model <alias>; a change applies from the next task',
+          ...entries.map((entry) => `  ${entry.id === context.model ? '*' : ' '} ${displays.get(entry.id) ?? entry.id}  ${isNotListedCapabilities(entry.capabilities) ? notListedMessage(entry.capabilities) : `${entry.capabilities.contextWindow}-token window`}`),
+          'switch with /model <model>; a change applies from the next task',
         ].join('\n'),
       );
       return;

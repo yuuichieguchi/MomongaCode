@@ -25,5 +25,6 @@ export const MOMONGA_SPAN_NOTES = {
 
 export const MOMONGA_REQUEST_FIELDS = {
   target: 'momonga.target',
+  exactModel: 'momonga.exact_model',
   maxSummaryTokens: 'momonga.max_summary_tokens',
 } as const;

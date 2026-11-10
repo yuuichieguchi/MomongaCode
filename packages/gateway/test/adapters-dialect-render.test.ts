@@ -55,14 +55,14 @@ describe('every adapter sends tool parameters rendered in the dialect of the tar
       apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
-    await drain(adapter, { name: 'remote', model: 'claude-fake' }, toolRequest('edit', EDIT_PARAMETERS));
+    await drain(adapter, { name: 'remote', display: 'remote', model: 'claude-fake' }, toolRequest('edit', EDIT_PARAMETERS));
     expect((fake.requests.at(-1)?.body as any).tools[0].input_schema).toEqual(EDIT_STRICT_CLOSED);
   });
 
   it('ollama sends the strict-closed rendering as function parameters', async () => {
     const fake = await startFakeOllama({ chat: [{ kind: 'ndjson', lines: [chunkLine({ role: 'assistant', content: 'ok' }), doneLine()] }] });
     const adapter = makeOllamaAdapter(fake, { capabilities: async () => withDialect(OLLAMA_CAPABILITIES, 'strict-closed') });
-    await drain(adapter, { name: 'local', model: 'devstral-small-2' }, toolRequest('edit', EDIT_PARAMETERS));
+    await drain(adapter, { name: 'local', display: 'local', model: 'devstral-small-2' }, toolRequest('edit', EDIT_PARAMETERS));
     expect(fake.chatBodies().at(-1).tools[0].function.parameters).toEqual(EDIT_STRICT_CLOSED);
   });
 
@@ -75,7 +75,7 @@ describe('every adapter sends tool parameters rendered in the dialect of the tar
       clock: createFakeClock(START_MS),
     });
     registerCleanup(() => adapter.close());
-    await drain(adapter, { name: 'remote', model: 'gpt-fake' }, toolRequest('edit', EDIT_PARAMETERS));
+    await drain(adapter, { name: 'remote', display: 'remote', model: 'gpt-fake' }, toolRequest('edit', EDIT_PARAMETERS));
     expect((fake.requests.at(-1)?.body as any).tools[0].parameters).toEqual(EDIT_STRICT_CLOSED);
   });
 

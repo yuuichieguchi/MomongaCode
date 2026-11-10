@@ -59,33 +59,33 @@ const assertRejected = async (args: string[], pattern: RegExp) => {
 
 describe('momonga context improve', () => {
   it('guards a command with no input: --dataset is required', async () => {
-    await assertRejected(['context', 'improve', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /--dataset/);
+    await assertRejected(['context', 'improve', '--model', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /--dataset/);
   });
 
-  it('guards a declared provenance: --model is no longer an option, the kind comes from the pins', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'real', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /unknown option '--model'/);
+  it('guards a name that is not a model: --alias is no longer an option', async () => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /unknown option '--alias'/);
   });
 
-  it('guards an unchosen analysis model: --alias is required', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--token-cap', '700', '--outcome', 'o.json'], /--alias/);
+  it('guards an unchosen analysis model: --model is required', async () => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--token-cap', '700', '--outcome', 'o.json'], /--model/);
   });
 
   it('guards a cost nobody accepted: --token-cap is required and checked before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--outcome', 'o.json'], /--token-cap/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--outcome', 'o.json'], /--token-cap/);
   });
 
   it.each(['0', '-5', '1.5', 'many'])('guards an invented cap: --token-cap %s is refused before the dataset is read', async (value) => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--outcome', 'o.json', '--token-cap', value], /--token-cap/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--outcome', 'o.json', '--token-cap', value], /--token-cap/);
   });
 });
 
 describe('momonga context improve and adopt', () => {
   it('guards an outcome that is never written: --outcome is required, before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--token-cap', '700'], /--outcome/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--token-cap', '700'], /--outcome/);
   });
 
   it('guards a text stored unseen: improve has no --adopt', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json', '--adopt'], /--adopt/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'opus', '--token-cap', '700', '--outcome', 'o.json', '--adopt'], /--adopt/);
   });
 
   it('guards an adoption of nothing: adopt takes an outcome file', async () => {
@@ -103,7 +103,7 @@ describe('what a model reply puts in the text of context improve', () => {
     const outcome: ImproveOutcome = {
       status: 'no_winner',
       model: 'real',
-      alias: 'opus',
+      analysisModel: 'opus',
       seed: 1,
       candidateCount: 1,
       tokenCap: 700,
@@ -131,7 +131,7 @@ describe('adopting from an outcome file', () => {
   const outcome = (parent: { version: number; text: string } | undefined): ImproveOutcome => ({
     status: 'winner',
     model: 'real',
-    alias: 'opus',
+    analysisModel: 'opus',
     seed: 7,
     candidateCount: 5,
     tokenCap: 700,

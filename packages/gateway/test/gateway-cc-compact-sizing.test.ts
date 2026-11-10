@@ -5,13 +5,13 @@ import { waitFor } from '@momonga/testkit';
 import { getJson, postJson, readJson } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake, userText } from './cc-support.ts';
-import { ccAdapterFor, startCcGateway, summaryOfResource, textReply } from './cc-compact-support.ts';
+import { ccAdapterFor, ccModelOf, startCcGateway, summaryOfResource, textReply } from './cc-compact-support.ts';
 
 const compact = async (harness: Harness, body: Record<string, unknown> = {}) =>
-  readJson(await postJson(harness.client, '/v1/responses/compact', { model: 'fast', input: [userText('summarise this')], ...body }));
+  readJson(await postJson(harness.client, '/v1/responses/compact', { model: harness.model, input: [userText('summarise this')], ...body }));
 
 const breakerOf = async (harness: Harness, target: string): Promise<string> =>
-  (await getJson(harness.client, '/v1/momonga/health')).body.targets[target].breaker as string;
+  (await getJson(harness.client, '/v1/momonga/health')).body.models[ccModelOf(target)].breaker as string;
 
 const failingCounter = async () => {
   const fake = await startFake({ scenario: 'tools-ok', script: [textReply('never')] });
@@ -189,7 +189,7 @@ describe('a dead request stops sizing instead of dropping the candidate', () => 
     const pending = postJson(
       harness.client,
       '/v1/responses/compact',
-      { model: 'fast', input: [userText('summarise this')] },
+      { model: 'first/system', input: [userText('summarise this')] },
       kind === 'keyed' ? { 'idempotency-key': 'closing' } : {},
     ).then(
       (response) => readJson(response),
@@ -217,7 +217,7 @@ describe('a dead request stops sizing instead of dropping the candidate', () => 
     const first = await heldCounter();
     const second = await countingCounter();
     const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
-    const body = JSON.stringify({ model: 'fast', input: [userText('summarise this')] });
+    const body = JSON.stringify({ model: 'first/system', input: [userText('summarise this')] });
     const client = new AbortController();
     const pending = harness.client
       .request({

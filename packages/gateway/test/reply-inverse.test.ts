@@ -126,7 +126,7 @@ type Reader = { kind: string; adapter: ProviderAdapter; target: AdapterTarget };
 
 const strict = (base: Capabilities): Capabilities => ({ ...base, schemaDialect: STRICT_CLOSED });
 
-const CC_TARGET: AdapterTarget = { name: 'fm', model: 'system' };
+const CC_TARGET: AdapterTarget = { name: 'fm', display: 'fm', model: 'system' };
 
 const ccNative = async (name: string, args: string): Promise<Reader> => {
   const reply: FakeScriptedReply = {
@@ -164,7 +164,7 @@ const anthropic = async (name: string, args: string): Promise<Reader> => {
     apiVersion: '2026-10-21',
   });
   registerCleanup(() => adapter.close());
-  return { kind: 'anthropic', adapter, target: { name: 'remote', model: 'claude-fake' } };
+  return { kind: 'anthropic', adapter, target: { name: 'remote', display: 'remote', model: 'claude-fake' } };
 };
 
 const ollama = async (name: string, args: string): Promise<Reader> => {
@@ -172,7 +172,7 @@ const ollama = async (name: string, args: string): Promise<Reader> => {
     chat: [{ kind: 'ndjson', lines: [chunkLine({ role: 'assistant', content: '', tool_calls: [{ id: 'call_1', function: { index: 0, name, arguments: JSON.parse(args) } }] }), doneLine()] }],
   });
   const adapter = makeOllamaAdapter(fake, { capabilities: async () => strict(OLLAMA_CAPABILITIES) });
-  return { kind: 'ollama', adapter, target: { name: 'local', model: 'devstral-small-2' } };
+  return { kind: 'ollama', adapter, target: { name: 'local', display: 'local', model: 'devstral-small-2' } };
 };
 
 const openResponses = async (name: string, args: string): Promise<Reader> => {
@@ -184,7 +184,7 @@ const openResponses = async (name: string, args: string): Promise<Reader> => {
     clock: createFakeClock(START_MS),
   });
   registerCleanup(() => adapter.close());
-  return { kind: 'open-responses', adapter, target: { name: 'remote', model: 'gpt-fake' } };
+  return { kind: 'open-responses', adapter, target: { name: 'remote', display: 'remote', model: 'gpt-fake' } };
 };
 
 const READERS = [ccNative, ccConstrained, anthropic, ollama, openResponses];

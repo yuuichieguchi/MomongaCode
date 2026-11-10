@@ -59,7 +59,7 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
     const h = withPreparer();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
-    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
+    const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, model: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
     await h.store.requestCancel(parent.id);

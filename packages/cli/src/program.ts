@@ -9,7 +9,7 @@ import { registerProductCommands } from './commands/register.ts';
 import { runUpdate } from './commands/update.ts';
 import { describeFailure } from './failure.ts';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from './update/background.ts';
-import { probeTarget } from './commands/gateway.ts';
+import { probeModel } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
@@ -92,7 +92,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
     .option('-p, --print <prompt>', 'run the prompt without a terminal UI and print the result')
     .addOption(outputFormatOption())
     .addOption(new Option('--permission-mode <mode>', 'permission mode of the session').choices(PERMISSION_MODES))
-    .option('--model <alias>', 'the model alias of the session; momonga models lists them, and /model switches it in an interactive session')
+    .option('--model <model>', 'the model of the session, for example devstral-small-2 (momonga models lists them; /model switches it in an interactive session)')
     .option('--dangerously-skip-permissions', 'run in bypassPermissions mode')
     .option('--skill <name>', 'run the prompt with this skill activated')
     .option('--image <path>', 'attach an image to the prompt; repeat for several (needs a model that declares image input)', collectValues, [])
@@ -105,16 +105,16 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       const permissionMode = options.dangerouslySkipPermissions === true ? 'bypassPermissions' : options.permissionMode;
       const session = {
         ...(permissionMode === undefined ? {} : { permissionMode }),
-        ...(options.model === undefined ? {} : { modelAlias: options.model }),
+        ...(options.model === undefined ? {} : { model: options.model }),
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {
         const resumed = headlessReopenOf(reopen);
         const paths = await pathsOf(ports);
-        const capabilitiesOf = async (alias: string) => {
+        const capabilitiesOf = async (model: string) => {
           const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
           try {
-            return await gateway.capabilitiesOf(alias);
+            return await gateway.capabilitiesOf(model);
           } finally {
             await gateway.close();
           }
@@ -195,12 +195,12 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
 
   const gateway = program.command('gateway').description('inspect and tune the model gateway');
   gateway
-    .command('probe <target>')
-    .description('measure a managed server, chat-completions or ollama target and record the result for the gateway (an ollama target: trained context length, tools, vision, thinking and model digest; a managed or chat-completions target: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
+    .command('probe <model>')
+    .description('measure a model of a managed server, an OpenAI-compatible server or an Ollama server and record the result for the gateway (an Ollama server: trained context length, tools, vision, thinking and model digest; a managed or OpenAI-compatible server: tool calling, structured output, stop sequences, parallel calls, reasoning control, usage)')
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
-    .action(async (target: string, options: { samples?: number }) => {
+    .action(async (model: string, options: { samples?: number }) => {
       deps.complete(
-        await probeTarget(ports, await pathsOf(ports), target, {
+        await probeModel(ports, await pathsOf(ports), model, {
           interrupt: deps.interrupt,
           ...(options.samples === undefined ? {} : { samples: options.samples }),
         }),

@@ -52,7 +52,7 @@ const permissionMode = enumOf(PERMISSION_MODES);
 const storedPermissionMode = storedEnumOf(PERMISSION_MODES);
 const autoClassifierView = closed(
   {
-    alias: string,
+    model: string,
     key: closed({ classifier: string, codeDigest: string, datasetDigest: string }, ['classifier', 'codeDigest', 'datasetDigest']),
     measurement: enumOf(AUTO_FIT_MEASUREMENTS),
     facts: closed(
@@ -60,7 +60,7 @@ const autoClassifierView = closed(
       ['recordedAt', 'falseAllows', 'total', 'upperBound'],
     ),
   },
-  ['alias', 'key', 'measurement'],
+  ['model', 'key', 'measurement'],
 );
 const sessionMcpServers: JsonSchema = { type: 'object', additionalProperties: { type: 'object' } };
 const historyMode = enumOf(['inherit', 'fresh']);
@@ -273,7 +273,7 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   rootRunId: string,
   sessionId: string,
   definitionsVersion: nonNegativeInteger,
-  modelAlias: string,
+  model: string,
   mode: storedPermissionMode,
   agent: string,
   origin: string,
@@ -403,7 +403,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     properties: {
       callId: string,
       subjectDigest: string,
-      alias: string,
+      model: string,
       outcome: enumOf(['allow', 'ask']),
       verdict: enumOf(['safe', 'unsafe']),
       confidence: enumOf(['high', 'medium', 'low']),
@@ -531,7 +531,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
     required: ['entries'],
   },
   'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
-  'model.changed': { properties: { modelAlias: { type: 'string', minLength: 1 }, previousModelAlias: { type: 'string', minLength: 1 } }, required: ['modelAlias', 'previousModelAlias'] },
+  'model.changed': { properties: { model: { type: 'string', minLength: 1 }, previousModel: { type: 'string', minLength: 1 } }, required: ['model', 'previousModel'] },
   'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
   user_shell: { properties: { command: string, exitCode: nullable(integer), output: string, include: boolean }, required: ['command', 'exitCode', 'output', 'include'] },
   'usage.updated': {
@@ -697,7 +697,7 @@ const runTracePrefix = closed(
   ['preservedItems', 'toolsChanged', 'causes'],
 );
 
-const fallbackCauseBase = { target: string, code: nullable(string), message: string };
+const fallbackCauseBase = { target: string, name: string, code: nullable(string), message: string };
 
 const fallbackCauseSchema: JsonSchema = {
   oneOf: [
@@ -1241,14 +1241,14 @@ export const RUN_API_SCHEMAS = {
         cwd: { type: 'string', minLength: 1 },
         env: { type: 'object', additionalProperties: string },
         permissionMode,
-        modelAlias: { type: 'string', minLength: 1 },
+        model: { type: 'string', minLength: 1 },
         bypassAllowed: boolean,
         mcpServers: sessionMcpServers,
       },
       ['cwd', 'env'],
     ),
   ),
-  PatchSessionRequest: root({ ...closed({ permissionMode, modelAlias: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
+  PatchSessionRequest: root({ ...closed({ permissionMode, model: { type: 'string', minLength: 1 }, mcpServers: sessionMcpServers }, []), minProperties: 1 }),
   CreateRunRequest: root(
     closed(
       {
@@ -1355,7 +1355,7 @@ export const RUN_API_SCHEMAS = {
         id: string,
         cwd: string,
         permissionMode: storedPermissionMode,
-        modelAlias: string,
+        model: string,
         bypassAllowed: boolean,
         createdAt: integer,
         envKeys: { type: 'array', items: string },
@@ -1365,7 +1365,7 @@ export const RUN_API_SCHEMAS = {
         lastEventId: nonNegativeInteger,
         autoClassifier: autoClassifierView,
       },
-      ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories', 'lastEventId'],
+      ['id', 'cwd', 'permissionMode', 'model', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories', 'lastEventId'],
     ),
   ),
   TrustView: root(trustView),

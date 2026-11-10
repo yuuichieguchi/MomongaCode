@@ -1,4 +1,4 @@
-import { canonicalJson, defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema, isRecord, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
 import { GATE_CHECKS, TOKEN_PRIMARY_METRICS } from './context-compare.ts';
@@ -10,7 +10,10 @@ import type { CandidateDerivation, ImproveOutcome, ImproveStatus, SkippedScenari
 import { describeFirstError } from './dataset.ts';
 import { EvalError } from './runner.ts';
 
-export const GUIDELINE_OUTCOME_FORMAT = 'momonga-guideline-outcome/2';
+export const GUIDELINE_OUTCOME_FORMAT = 'momonga-guideline-outcome/3';
+const RETIRED_GUIDELINE_OUTCOME_FORMATS: Readonly<Record<string, string>> = {
+  'momonga-guideline-outcome/2': 'the model of the analysis and candidate calls (it was recorded by alias name)',
+};
 
 export type OutcomeCandidate = { index: number; text?: string; skipped?: string; contrastiveFailures?: number; gate?: ContextComparison['gate'] };
 
@@ -18,7 +21,7 @@ export type GuidelineOutcomeBody = {
   format: typeof GUIDELINE_OUTCOME_FORMAT;
   status: ImproveStatus;
   model: ContextModel;
-  alias: string;
+  analysisModel: string;
   seed: number;
   candidateCount: number;
   tokenCap: number;
@@ -45,7 +48,7 @@ const adoptionReportOf = (outcome: ImproveOutcome, datasetName: string): Record<
     source: 'context improve',
     dataset: datasetName,
     model: outcome.model,
-    alias: outcome.alias,
+    analysisModel: outcome.analysisModel,
     seed: outcome.seed,
     candidateIndex: winner.index,
     contrastive: outcome.contrastive,
@@ -67,7 +70,7 @@ export const outcomeFileOf = (outcome: ImproveOutcome, dataset: { name: string; 
     format: GUIDELINE_OUTCOME_FORMAT,
     status: outcome.status,
     model: outcome.model,
-    alias: outcome.alias,
+    analysisModel: outcome.analysisModel,
     seed: outcome.seed,
     candidateCount: outcome.candidateCount,
     tokenCap: outcome.tokenCap,
@@ -136,7 +139,7 @@ const REPORT_SCHEMA = {
     source: { const: 'context improve' },
     dataset: { type: 'string' },
     model: modelKind,
-    alias: { type: 'string' },
+    analysisModel: { type: 'string' },
     seed: { type: 'integer' },
     candidateIndex: count,
     contrastive: stringList,
@@ -150,7 +153,7 @@ const REPORT_SCHEMA = {
     gate,
     tokens,
   },
-  required: ['source', 'dataset', 'model', 'alias', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'],
+  required: ['source', 'dataset', 'model', 'analysisModel', 'seed', 'candidateIndex', 'contrastive', 'baseline', 'contrastiveFailures', 'gate', 'tokens'],
   additionalProperties: false,
 } as const;
 
@@ -168,7 +171,7 @@ const OUTCOME_FILE_SCHEMA = {
         format: { const: GUIDELINE_OUTCOME_FORMAT },
         status: { enum: [...IMPROVE_STATUSES] },
         model: modelKind,
-        alias: { type: 'string' },
+        analysisModel: { type: 'string' },
         seed: { type: 'integer' },
         candidateCount: count,
         tokenCap: count,
@@ -206,7 +209,7 @@ const OUTCOME_FILE_SCHEMA = {
         report: REPORT_SCHEMA,
         tokens,
   },
-  required: ['digest', 'format', 'status', 'model', 'alias', 'seed', 'candidateCount', 'tokenCap', 'dataset', 'parent', 'parentText', 'contrastive', 'skipped', 'candidates', 'tokens'],
+  required: ['digest', 'format', 'status', 'model', 'analysisModel', 'seed', 'candidateCount', 'tokenCap', 'dataset', 'parent', 'parentText', 'contrastive', 'skipped', 'candidates', 'tokens'],
   additionalProperties: false,
 } as const;
 
@@ -218,6 +221,11 @@ export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
     value = parseOutsideJson(text);
   } catch (error) {
     throw new EvalError(`the outcome file is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+  if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_GUIDELINE_OUTCOME_FORMATS, value['format'])) {
+    throw new EvalError(
+      `the outcome file is format ${value['format']}, which does not record ${RETIRED_GUIDELINE_OUTCOME_FORMATS[value['format']]}, so it is retired and cannot be adopted as ${GUIDELINE_OUTCOME_FORMAT}; run \`momonga context improve\` again`,
+    );
   }
   const verdict = validateOutcomeFile(value);
   if (!verdict.valid) throw new EvalError(`the outcome file is not a ${GUIDELINE_OUTCOME_FORMAT} file: ${describeFirstError(verdict.errors)}`);

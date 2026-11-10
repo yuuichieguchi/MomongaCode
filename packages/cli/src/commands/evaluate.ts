@@ -1,6 +1,5 @@
 import os from 'node:os';
 import path from 'node:path';
-import { loadUserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
   GATE_NAMES,
@@ -30,10 +29,11 @@ import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureCurrentDaemon } from '../daemon/ensure-daemon.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
-import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
+import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { shellModelsOf } from '../plain-http.ts';
 
 export class EvaluateUsageError extends Error {
   constructor(message: string) {
@@ -89,7 +89,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
 export type EvaluateContextOptions = {
   replay?: string;
   record?: string;
-  alias?: string;
+  model?: string;
   seed?: number;
   report?: string;
   settings?: string;
@@ -102,27 +102,28 @@ const seedOfTranscripts = (transcripts: readonly Transcript[]): number | undefin
   return seeds[0];
 };
 
-const assertLiveOptions = (options: EvaluateContextOptions): { alias: string } => {
-  if (options.alias === undefined) throw new EvaluateUsageError('--alias <alias> is required for a live run: it names the model alias every session of the run is pinned to');
-  return { alias: options.alias };
+const assertLiveOptions = (options: EvaluateContextOptions): { model: string } => {
+  if (options.model === undefined) throw new EvaluateUsageError('--model <model> is required for a live run: it names the model every session of the run uses');
+  return { model: options.model };
 };
 
 const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal },
+  options: { model: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal },
 ): Promise<Transcript[]> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.mkdir(options.record);
   const { record } = options;
+  const models = shellModelsOf(ports);
   return runContextLive(hostEffects(ports), {
     dataset,
     seed: options.seed,
-    alias: options.alias,
+    model: pinnedModelOf(models, options.model),
     policy: options.policy,
     codeDigest: await codeDigestOfRunningProcess(),
-    models: loadUserModels({ home: ports.home }),
+    models,
     planRelaySocket: currentSocketResolver(momongaPaths(ports.home), 'gateway'),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
@@ -141,8 +142,8 @@ export const evaluateContext = async (
 ): Promise<number> => {
   if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
   const { replay } = options;
-  if (replay !== undefined && (options.alias !== undefined || options.seed !== undefined)) {
-    throw new EvaluateUsageError('--alias and --seed belong to a live run; a replay takes the aliases and the seed from the transcripts');
+  if (replay !== undefined && (options.model !== undefined || options.seed !== undefined)) {
+    throw new EvaluateUsageError('--model and --seed belong to a live run; a replay takes the models and the seed from the transcripts');
   }
   if (replay !== undefined && options.settings !== undefined) {
     throw new EvaluateUsageError('--settings belongs to a live run; a replayed transcript was produced under a policy this command cannot know');
@@ -158,7 +159,7 @@ export const evaluateContext = async (
   } else {
     datasetSeed = options.seed ?? DEFAULT_DATASET_SEED;
     transcripts = await runContextLiveCommand(ports, hostEffects, dataset, {
-      alias: mode.alias,
+      model: mode.model,
       seed: datasetSeed,
       policy,
       record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),

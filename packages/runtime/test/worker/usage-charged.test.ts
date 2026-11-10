@@ -48,8 +48,8 @@ describe('token spend outside the main model calls counts against the run', () =
 
   it('stops a run at its token budget when the classifier spend alone exhausts it', async () => {
     const env = await makeEnv({ mode: 'auto' });
-    env.settings.classifierAlias = 'guard';
-    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    env.settings.classifierModel = 'guard';
+    env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }], usageOf(100, 10)),
@@ -94,9 +94,9 @@ describe('token spend outside the main model calls counts against the run', () =
 
   it('copies the answering target of the classifier response into its usage.charged (D17 section 7)', async () => {
     const env = await makeEnv({ mode: 'auto' });
-    env.settings.classifierAlias = 'guard';
-    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
-    env.gateway.targetsByAlias['guard'] = ['guard-target'];
+    env.settings.classifierModel = 'guard';
+    env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    env.gateway.chainsByModel['guard'] = ['guard-target'];
     const target = path.join(env.project, 'out.txt');
     env.gateway.script.push(
       callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }], usageOf(100, 10)),

@@ -32,8 +32,8 @@ const startPlanRoute = async (capabilities: Capabilities): Promise<{ fake: FakeP
     clock: createFakeClock(START_MS),
   });
   registerCleanup(() => adapter.close());
-  const harness = await startGateway({ adapters: { plan: adapter }, config: { aliases: { fast: ['plan'] }, targets: { plan: { model: 'plan-model' } } } });
-  return { fake, post: async (body) => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', ...body })) };
+  const harness = await startGateway({ adapters: { 'scripted/plan-model': adapter }, config: { chains: { 'scripted/plan-model': ['scripted/plan-model'] }, targets: { 'scripted/plan-model': {} } } });
+  return { fake, post: async (body) => readJson(await postJson(harness.client, '/v1/responses', { model: 'scripted/plan-model', ...body })) };
 };
 
 const sentBody = (fake: FakePlanResponses): Record<string, any> => {

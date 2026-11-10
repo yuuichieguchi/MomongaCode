@@ -25,7 +25,7 @@ const SHA = 'a'.repeat(64);
 const REPLY = JSON.stringify({ candidates: [] });
 
 const pinsWith = (roles: Record<string, string> | undefined): Record<string, unknown> => ({
-  modelAlias: 'fm',
+  model: 'fm',
   systemPromptDigest: 'system-prompt-digest',
   toolSetDigest: 'tool-set-digest',
   capabilities: { contextWindow: 100_000, maxOutputTokens: 4096, parallelToolCalls: false, streaming: true, tokenCounting: 'exact', toolCalling: 'native' },
@@ -52,7 +52,6 @@ const setup = () => {
     trusted: (target: { cwd: string }) => store.trust.decisionFor(target.cwd).decision === 'trusted',
     verification: async () => ({ commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] }),
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
-    modelRoles: () => ({ reflection: 'live-settings-alias' }),
   };
   const reflector = (): Reflector =>
     exported<(options: unknown) => Reflector>('createReflector')({
@@ -77,28 +76,29 @@ const setup = () => {
 };
 
 describe('the reflection role', () => {
-  it('guards a role that is ignored: the call, its capabilities and its charge go to the pinned reflection alias', async () => {
+  it('guards a role that is ignored: the call, its capabilities and its charge go to the pinned reflection model', async () => {
     const env = setup();
-    env.gateway.capabilitiesByAlias['cheap'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    env.gateway.capabilitiesByModel['cheap'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const run = await env.finishedRun({ reflection: 'cheap' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['cheap']);
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual(['reflection']);
+    expect(env.gateway.streams.map((stream) => stream.body.momonga?.exact_model)).toEqual([true]);
     expect(env.gateway.capabilityRequests).toEqual(['cheap']);
     expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: (await run).id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
   });
 
-  it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role alias', async () => {
+  it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role model', async () => {
     const env = setup();
-    env.gateway.capabilitiesByAlias['cheap'] = capabilitiesFor(8192, { structuredOutput: 'json_schema' });
+    env.gateway.capabilitiesByModel['cheap'] = capabilitiesFor(8192, { structuredOutput: 'json_schema' });
     await env.finishedRun({ reflection: 'cheap' });
     env.gateway.script.push(textStep(REPLY));
     await env.reflector().runOne(SIGNAL);
     expect(env.gateway.streams[0]?.body.max_output_tokens).toBe(492);
   });
 
-  it('guards a default that moves: a run pinned with no reflection role reflects on the run alias, whatever the settings say now', async () => {
+  it('guards a default that moves: a run pinned with no reflection role reflects on the run model, whatever the settings say now', async () => {
     const env = setup();
     await env.finishedRun({ compaction: 'cheap' });
     env.gateway.script.push(textStep(REPLY));
@@ -106,7 +106,7 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm']);
   });
 
-  it('guards a run recorded before roles existed: pins without roles reflect on the run alias', async () => {
+  it('guards a run recorded before roles existed: pins without roles reflect on the run model', async () => {
     const env = setup();
     await env.finishedRun(undefined);
     env.gateway.script.push(textStep(REPLY));
@@ -116,7 +116,7 @@ describe('the reflection role', () => {
 
   it('guards a charge spent on a target that cannot enforce the schema: a reflection target reporting no structured output is not called and ends done naming the role and the alias', async () => {
     const env = setup();
-    env.gateway.capabilitiesByAlias['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
+    env.gateway.capabilitiesByModel['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     const run = await env.finishedRun({ reflection: 'plain' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
@@ -131,7 +131,7 @@ describe('the reflection role', () => {
 
   it('guards a blanket skip: a reflection target reporting json_schema is still called and charged', async () => {
     const env = setup();
-    env.gateway.capabilitiesByAlias['strict'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
+    env.gateway.capabilitiesByModel['strict'] = capabilitiesFor(100_000, { structuredOutput: 'json_schema' });
     const run = await env.finishedRun({ reflection: 'strict' });
     env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');

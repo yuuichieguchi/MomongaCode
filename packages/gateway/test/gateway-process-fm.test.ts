@@ -9,7 +9,7 @@ import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
 import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import { FM_CURRENCY, fmRecordKey, saveFakeFmRecord } from './fm-record-support.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
-import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
+import { getJson, makeDir, postJson, readJson, registerCleanup, userInput, listedCountersOf, listedEntryOf } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import {
   MINIMAL_PATH,
@@ -22,6 +22,7 @@ import {
   makeHome,
   until,
   writeSettings,
+  modelsOf
 } from './gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -29,7 +30,7 @@ vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 const MINIMAL_NAMES = new Set(['PATH', 'HOME', 'LANG', 'TMPDIR']);
 const PRODUCTION_SPAWNED = new Set(['serve', 'count-tokens']);
 const DARWIN_INJECTED_NAMES = new Set(['__CF_USER_TEXT_ENCODING']);
-const body = { model: 'default', input: userInput('hello fm') };
+const body = { model: 'fm/system', input: userInput('hello fm') };
 
 type DumpRecord = { argv: string[]; pid: number; env: Record<string, string> };
 
@@ -54,11 +55,11 @@ const fakeFmSetup = async () => {
 };
 
 const declareNativeFm = (home: string, binary: string): void => {
-  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary, toolCalling: 'native' } } } });
+  writeSettings(home, { models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', binary, toolCalling: 'native' } }) });
 };
 
 const declareAutoFm = (home: string, binary: string): void => {
-  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary } } } });
+  writeSettings(home, { models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', binary } }) });
 };
 
 const servePids = (dumpFile: string): number[] =>
@@ -86,7 +87,7 @@ describe('managed fm under startGatewayProcess', () => {
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env, version: PROCESS_VERSION, exec: fakeExec });
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', body))).status).toBe(200);
-    expect((await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'default', input: 'one two three' }))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fm/system', input: 'one two three' }))).status).toBe(200);
 
     const records = readDump(dumpFile).filter((record) => PRODUCTION_SPAWNED.has(record.argv[0] ?? ''));
     expect(new Set(records.map((record) => record.argv[0]))).toEqual(PRODUCTION_SPAWNED);
@@ -160,10 +161,10 @@ describe('managed fm under startGatewayProcess', () => {
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
     expect(health.body.state).toBe('running');
-    expect(health.body.targets.fm).toMatchObject({
+    expect(health.body.models['fm/system']).toMatchObject({
       ok: false,
       reason: 'precondition_failed',
-      detail: `the target "fm": the executable was not found at ${missing}`,
+      detail: `the model "system": the executable was not found at ${missing}`,
     });
   });
 
@@ -175,9 +176,9 @@ describe('managed fm under startGatewayProcess', () => {
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), fmRecordKey(binarySha256, FAKE_OS_BUILD), makeReport(1, 1), FM_CURRENCY);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
-    const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
-    expect(entry.targets).toEqual(['fm']);
-    expect(entry.capabilities.source).toBe('probed');
+    const entry = listedEntryOf(models.body, 'fm/system');
+    expect(entry.chain.map((member) => member.model)).toEqual(['fm/system']);
+    expect(entry.capabilities['source']).toBe('probed');
   });
 
   it('lists the fm target counter over its resolved definition, its probe key and the code digest', async () => {
@@ -187,12 +188,12 @@ describe('managed fm under startGatewayProcess', () => {
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
-    const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
+    const counters = listedCountersOf(models.body, 'fm/system');
     const { settings } = await loadUserSettings({ home });
-    const target = settings.models.targets['fm'];
+    const target = settings.models.models.get('fm/system');
     if (target === undefined) throw new Error('the default settings resolved no fm target');
-    expect(entry.targetCounters).toEqual({
-      fm: targetCounterOf({
+    expect(counters).toEqual({
+      'fm/system': targetCounterOf({
         target,
         server: FM_SERVER,
         codeDigest: await codeDigestOfRunningProcess(),
@@ -213,7 +214,7 @@ describe('managed fm under startGatewayProcess', () => {
     fm.configure({ envDumpFile: dumpFile, serve: { stallNativeSamples: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], stallMs: 600_000 } });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
-    const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
+    const entry = listedEntryOf(models.body, 'fm/system');
     expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
     await until(() => servePids(dumpFile).length === 1, 'the probe of the current key to start its fm serve');
   });

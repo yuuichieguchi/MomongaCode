@@ -2,7 +2,7 @@ import { credentialEnvNames, stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules } from '@momonga/config';
 import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
 
-export type CredentialSettings = Parameters<typeof credentialEnvNames>[0] & { credentials?: CredentialRules };
+export type CredentialSettings = { models: Parameters<typeof credentialEnvNames>[0]; credentials?: CredentialRules };
 
 export type SourceEnv = Readonly<Record<string, string | undefined>>;
 
@@ -17,12 +17,12 @@ const collidesWithMinimalEnv = (name: string): boolean => MINIMAL_NAMES.has(name
 export const definedEnv = (env: SourceEnv): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
 
-export const handedCredentialNames = (settings: CredentialSettings): readonly string[] => credentialEnvNames(settings).filter((name) => !collidesWithMinimalEnv(name));
+export const handedCredentialNames = (settings: CredentialSettings): readonly string[] => credentialEnvNames(settings.models).filter((name) => !collidesWithMinimalEnv(name));
 
 export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: string, onSkipped: (name: string) => void = () => undefined): Record<string, string> => {
   const source = definedEnv(env);
   const result: Record<string, string> = {};
-  for (const name of credentialEnvNames(settings)) {
+  for (const name of credentialEnvNames(settings.models)) {
     if (collidesWithMinimalEnv(name)) {
       onSkipped(name);
       continue;
@@ -42,6 +42,6 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
 
 export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } => {
   const source = definedEnv(env);
-  const stripped = stripCredentialEnv(source, credentialEnvNames(settings), settings.credentials);
+  const stripped = stripCredentialEnv(source, credentialEnvNames(settings.models), settings.credentials);
   return { env: { ...stripped.env, ...secretStoreEnvFor(source) }, removed: stripped.removed };
 };

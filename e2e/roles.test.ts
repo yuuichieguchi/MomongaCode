@@ -10,14 +10,13 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
+import { UPSTREAM_MODEL, baseSettings, startStack, upstreamEntryOf, upstreamModelRef, withUpstreamConnection } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 import { firstGeneration } from '@momonga/testkit';
 
-const SUMMARY_TARGET = 'summarizer';
 const SUMMARY_MODEL = 'summary-model';
-const SUMMARY_ALIAS = 'cheap';
+const SUMMARY_MODEL_REF = upstreamModelRef(SUMMARY_MODEL);
 const SUMMARY = 'The user sent several long requests about unrelated subjects. Next step: answer the latest request.';
 const LONG_REQUESTS = 3;
 const SCRIPTED_OUTPUT_TOKENS = 5;
@@ -26,15 +25,13 @@ type EventRow = { seq: number; type: string; payload_json: string };
 type Json = Record<string, any>;
 
 const roleSettings = (home: E2eHome): Record<string, unknown> => {
-  const models = baseSettings(home, 'none')['models'] as { aliases: Record<string, unknown>; targets: Record<string, Record<string, unknown>> };
-  const primary = models.targets[UPSTREAM_TARGET] as Record<string, unknown>;
-  return {
-    models: {
-      targets: { ...models.targets, [SUMMARY_TARGET]: { ...primary, model: SUMMARY_MODEL } },
-      aliases: { ...models.aliases, [SUMMARY_ALIAS]: [SUMMARY_TARGET] },
-      roles: { compaction: SUMMARY_ALIAS },
-    },
-  };
+  const base = baseSettings(home, 'none');
+  const models = base['models'] as Record<string, unknown>;
+  const withSummary = withUpstreamConnection({ models: { ...models, roles: { compaction: SUMMARY_MODEL_REF } } }, (connection) => ({
+    ...connection,
+    models: [...connection.models, { ...upstreamEntryOf(base), id: SUMMARY_MODEL }],
+  }));
+  return { models: withSummary['models'] };
 };
 
 const journalOf = (home: E2eHome, runId: string): JournalEvent[] =>
@@ -59,7 +56,7 @@ const getJson = async (home: E2eHome, target: string): Promise<{ status: number;
 
 const modelOf = (body: unknown): unknown => (body as { model?: unknown }).model;
 
-describe('roles: a compaction role alias', () => {
+describe('roles: a compaction role model', () => {
   it(titleOf('roles-compaction'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const script = [textReply('Hello.')];
@@ -104,7 +101,7 @@ describe('roles: a compaction role alias', () => {
 
     for (const runId of runIds) {
       const started = ofType(journalOf(home, runId), 'run.started');
-      for (const event of started) expect((event.data['pins'] as Json)['roles']).toEqual({ compaction: SUMMARY_ALIAS });
+      for (const event of started) expect((event.data['pins'] as Json)['roles']).toEqual({ compaction: SUMMARY_MODEL_REF });
     }
 
     const tokensOf = (selected: typeof posts): number => selected.reduce((sum, post) => sum + reportedTokensOfRequest(post.body), 0);

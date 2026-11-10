@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadMcpServers, loadSettings } from '@momonga/config';
 import { setCaseSensitivityProbe } from '@momonga/foundation';
-import { makeDir, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeDir, makeTree, mcpJsonPath, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const kernelFoldsCase = (): boolean => {
@@ -25,7 +25,7 @@ const CAPABILITIES = { contextWindow: 128000, maxOutputTokens: 4096 };
 const socketTarget = (socketPath: string) => ({ adapter: 'chat-completions', provider: 'fake', model: 'gpt-x', socketPath, capabilities: CAPABILITIES });
 
 const loadWithSocket = (tree: Tree, socketPath: string) => {
-  writeJson(userSettingsPath(tree), { models: { targets: { remote: socketTarget(socketPath) }, aliases: { default: 'remote' } } });
+  writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', socketTarget(socketPath))] } });
   return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
@@ -97,7 +97,7 @@ describe('socketPath containment', () => {
       const tree = makeTree();
       const socketPath = path.join(tree.home, '.momonga', 'RUN', 'fm.sock');
       const result = await loadWithSocket(tree, socketPath);
-      expect(result.settings.models.targets['remote']).toMatchObject({ socketPath });
+      expect(modelOf(result.settings, 'remote')).toMatchObject({ socketPath });
     } finally {
       setCaseSensitivityProbe(undefined);
     }
@@ -107,6 +107,6 @@ describe('socketPath containment', () => {
     const tree = makeTree();
     const socketPath = path.join(tree.home, 'llm', 'server.sock');
     const result = await loadWithSocket(tree, socketPath);
-    expect(result.settings.models.targets['remote']).toMatchObject({ socketPath });
+    expect(modelOf(result.settings, 'remote')).toMatchObject({ socketPath });
   });
 });

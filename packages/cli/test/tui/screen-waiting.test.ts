@@ -12,6 +12,7 @@ import { capabilitiesOf } from '../fake-backend.ts';
 import { manualClock } from './screen-clock.ts';
 import { fold, plainOf, storeOf, ROW_FACTS } from './screen-fakes.ts';
 import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+import { SESSION, listedEntryOf } from '../fake-backend.ts';
 
 const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
 const waitingRowText = (waiting: Parameters<typeof waitingRowTextWith>[0], tick: number, now: number) => waitingRowTextWith(waiting, { kind: 'spinner', tick }, now, DEFAULT_KEY_TABLE);
@@ -185,7 +186,7 @@ describe('the running subagents (3.3)', () => {
 describe('the measuring poll (6.2)', () => {
   const entryOf = (toolCalling: ToolCallingState | undefined): MomongaModelEntry => {
     const capabilities = { ...capabilitiesOf(), ...(toolCalling === undefined ? {} : { toolCalling }) };
-    return { id: 'default', object: 'model', targets: ['primary'], targetCounters: {}, capabilities, targetCapabilities: {} } as MomongaModelEntry;
+    return listedEntryOf(SESSION.model, capabilities);
   };
   const probing = (retryAfterSeconds: number): ToolCallingState => ({ state: 'probing', message: 'measuring', retryAfterSeconds });
   const unavailable: ToolCallingState = { state: 'unavailable', status: 503, type: 'server_error', code: 'target_probe_failed', message: 'measuring this model failed: no answer' };

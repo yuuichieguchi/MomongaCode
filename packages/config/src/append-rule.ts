@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { editUserSettings } from './add-model-connection.ts';
+import { editUserSettings } from './edit-user-settings.ts';
 import { localSettingsDirectory, reRootedRule, worktreeRootOf } from './local-settings.ts';
 import { parseRule } from './rule.ts';
 import type { RuleEffect } from './rule.ts';

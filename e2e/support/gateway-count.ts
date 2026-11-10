@@ -2,11 +2,11 @@ import type { Capabilities, CountTokensRequest, CountTokensResult, CreateRespons
 import { createGatewayClient } from '@momonga/runtime';
 import type { GatewayClient } from '@momonga/runtime';
 import { registerE2eCleanup } from './home.ts';
-import { SUPERVISOR_APP_VERSION } from './stack.ts';
+import { SUPERVISOR_APP_VERSION, UPSTREAM_MODEL_REF } from './stack.ts';
 import { E2E_MARGIN_MS } from './wait.ts';
 import { fixedSocket } from '@momonga/foundation';
 
-export const E2E_MODEL_ALIAS = 'default';
+export const E2E_MODEL = UPSTREAM_MODEL_REF;
 
 export type GatewayCountClient = {
   readonly gateway: GatewayClient;
@@ -34,6 +34,6 @@ export const createGatewayCountClient = (gatewaySocket: string): GatewayCountCli
   return {
     gateway,
     count: (body) => gateway.countTokens(countRequestOf(body as CreateResponseBody), { signal: signal() }),
-    capabilities: () => gateway.capabilities(E2E_MODEL_ALIAS, { signal: signal() }),
+    capabilities: () => gateway.capabilities(E2E_MODEL, { signal: signal() }),
   };
 };

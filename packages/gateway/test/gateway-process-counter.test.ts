@@ -5,8 +5,8 @@ import { SECURITY_BINARY, codeDigestOfRunningProcess, FIRST_GENERATION } from '@
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
-import { getJson } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePaths, launchGateway, makeHome, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
+import { getJson, listedCountersOf } from './gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, fakeSecretHost, homePaths, launchGateway, makeHome, portOnSecretHost, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import type { SecretHostProgram } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
@@ -20,14 +20,13 @@ const KEYCHAIN_HOST: SecretHostProgram = { program: 'security', canonicalBinary:
 
 const listedCounters = async (socketPath: string): Promise<Record<string, string>> => {
   const models = await getJson(clientFor(socketPath), '/v1/momonga/models');
-  const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
-  return entry.targetCounters;
+  return listedCountersOf(models.body, 'primary/system');
 };
 
 const resolvedSettings = async (home: string) => (await loadUserSettings({ home })).settings;
 
 const resolvedPrimary = async (home: string) => {
-  const target = (await resolvedSettings(home)).models.targets['primary'];
+  const target = (await resolvedSettings(home)).models.models.get('primary/system');
   if (target === undefined) throw new Error('the settings resolved no primary target');
   return target;
 };
@@ -38,17 +37,17 @@ describe('the counters a started gateway lists', () => {
   it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
+    writeSettings(home, { models: modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'native' }) }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const counters = await listedCounters(handle.socketPath);
 
-    expect(counters).toEqual({ primary: targetCounterOf({ target: await resolvedPrimary(home), codeDigest: await codeDigestOfRunningProcess() }) });
+    expect(counters).toEqual({ 'primary/system': targetCounterOf({ target: await resolvedPrimary(home), codeDigest: await codeDigestOfRunningProcess() }) });
   });
 
   it('keeps the value of a key out of the counter: two values of the same apiKeyEnv give the same counter', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeyEnv: KEY_VARIABLE }) } } };
+    const settings = { models: modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeyEnv: KEY_VARIABLE }) }) };
     const firstHome = makeHome();
     writeSettings(firstHome, settings);
     const secondHome = makeHome();
@@ -60,13 +59,13 @@ describe('the counters a started gateway lists', () => {
     const second = await launchGateway({ generation: FIRST_GENERATION, home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
     const secondCounters = await listedCounters(second.socketPath);
 
-    expect(firstCounters['primary']).toMatch(/^[0-9a-f]{64}$/);
+    expect(firstCounters['primary/system']).toMatch(/^[0-9a-f]{64}$/);
     expect(secondCounters).toEqual(firstCounters);
   });
 
   it('keeps the value of a stored secret out of the counter: two values of the same apiKeySecret give the same counter', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeySecret: SECRET_NAME }) } } };
+    const settings = { models: modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeySecret: SECRET_NAME }) }) };
     const launchWithSecret = async (value: string) => {
       const home = makeHome();
       writeSettings(home, settings);
@@ -83,13 +82,13 @@ describe('the counters a started gateway lists', () => {
 
     expect(first.reads).toEqual([]);
     expect(second.reads).toEqual([]);
-    expect(first.counters['primary']).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.counters['primary/system']).toMatch(/^[0-9a-f]{64}$/);
     expect(second.counters).toEqual(first.counters);
   });
 
   it('covers the upstream identity of the probe record of a probed endpoint target, and changes with a newly saved record', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } } };
+    const settings = { models: modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) }) };
     const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
     const launchWithRecord = async (identity: string) => {
       const home = makeHome();
@@ -105,8 +104,8 @@ describe('the counters a started gateway lists', () => {
     const two = await launchWithRecord('identity-two');
 
     const codeDigest = await codeDigestOfRunningProcess();
-    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
-    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
-    expect(two.counters['primary']).not.toBe(one.counters['primary']);
+    expect(one.counters).toEqual({ 'primary/system': targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one', outputPolicy: one.outputPolicy }) });
+    expect(two.counters).toEqual({ 'primary/system': targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two', outputPolicy: two.outputPolicy }) });
+    expect(two.counters['primary/system']).not.toBe(one.counters['primary/system']);
   });
 });

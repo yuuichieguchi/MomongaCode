@@ -5,7 +5,7 @@ import { createFakeClock, createFakeTimers, startFakeChatCompletions } from '@mo
 import { createReasoningOriginCodec } from '../src/core/reasoning-origin.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import { createRouter } from '../src/core/router.ts';
-import { listAlias } from '../src/server/capability-listing.ts';
+import { listModel } from '../src/server/capability-listing.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
@@ -96,17 +96,17 @@ describe('an alias over several targets reports the JSON-only mode every target 
   const aliasModeOf = async (modes: readonly [JsonMode, JsonMode]): Promise<Capabilities> => {
     const fake = await startFake({ scenario: 'tools-ok', script: [] });
     const router = createRouter({
-      config: buildConfig({ aliases: { fast: ['a', 'b'] }, targets: { a: { model: 'system' }, b: { model: 'system' } } }),
+      config: buildConfig({ chains: { 'scripted/system': ['scripted/system', 'b/system'] }, targets: { 'scripted/system': {}, 'b/system': {} } }),
       adapters: {
-        a: makeAdapter(fake, { capabilities: async () => withJsonMode(CC_CAPABILITIES, modes[0]) }),
-        b: makeAdapter(fake, { capabilities: async () => withJsonMode(CC_CAPABILITIES, modes[1]) }),
+        'scripted/system': makeAdapter(fake, { capabilities: async () => withJsonMode(CC_CAPABILITIES, modes[0]) }),
+        'b/system': makeAdapter(fake, { capabilities: async () => withJsonMode(CC_CAPABILITIES, modes[1]) }),
       },
       clock: createFakeClock(START_MS),
       timers: createFakeTimers(createFakeClock(START_MS)),
       redactor: createRedactor({ credentials: [] }),
       reasoningOrigin: createReasoningOriginCodec(HMAC_KEY),
     });
-    return (await listAlias(router, 'fast', new AbortController().signal)).capabilities as Capabilities;
+    return (await listModel(router, 'scripted/system', new AbortController().signal)).capabilities as Capabilities;
   };
 
   it('is json_object when every target has it, and absent when one target is unmeasured', async () => {

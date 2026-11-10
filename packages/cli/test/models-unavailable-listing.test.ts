@@ -3,12 +3,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 import { fixedSocket } from '@momonga/foundation';
-import type { MomongaModelEntry } from '@momonga/protocol';
+import type { MomongaModelEntry, MomongaModelList } from '@momonga/protocol';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { createGatewayClient } from '../src/client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../src/client/gateway-client.ts';
 import { authStatus } from '../src/commands/auth.ts';
-import { formatModels } from '../src/commands/models.ts';
+import { formatModels, modelsDocumentOf } from '../src/commands/models.ts';
 import { BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { CHATGPT } from './fake-plan-gateway.tsx';
@@ -35,18 +35,25 @@ const LOCAL = {
   source: 'probed',
 };
 
+const member = (model: string, upstream: string, billing: string, capabilities: unknown) => ({ model, counter: '1'.repeat(64), billing, adapter: 'chat-completions', answers: 'model', upstream, capabilities });
+
+const PLAN_MODEL = 'chatgpt/plan-model';
+const LOCAL_MODEL = 'lmstudio/local-model';
+const SLOW_MODEL = 'apple/slow';
+
 const LISTING = [
-  { id: 'plan-alias', object: 'model', targets: ['plan-gpt'], capabilities: UNAV, targetCapabilities: { 'plan-gpt': UNAV }, targetBilling: { 'plan-gpt': 'plan' } },
-  { id: 'mixed', object: 'model', targets: ['plan-gpt', 'local'], capabilities: UNAV, targetCapabilities: { 'plan-gpt': UNAV, local: LOCAL }, targetBilling: { 'plan-gpt': 'plan', local: 'metered' } },
-  { id: 'local-alias', object: 'model', targets: ['local'], capabilities: LOCAL, targetCapabilities: { local: LOCAL }, targetBilling: { local: 'metered' } },
-  { id: 'probing-alias', object: 'model', targets: ['slow'], capabilities: PROBING, targetCapabilities: { slow: PROBING }, targetBilling: { slow: 'metered' } },
+  { id: PLAN_MODEL, object: 'model', provider: 'chatgpt', ownName: 'plan-model', billing: 'plan', capabilities: UNAV, chain: [member(PLAN_MODEL, 'plan-model', 'plan', UNAV), member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local', capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] },
+  { id: SLOW_MODEL, object: 'model', provider: 'apple', ownName: 'slow', billing: 'local', capabilities: PROBING, chain: [member(SLOW_MODEL, 'slow', 'local', PROBING)] },
 ];
 
 const ENTRIES = LISTING as unknown as readonly MomongaModelEntry[];
 
+const LISTED: MomongaModelList = { object: 'list', data: [...ENTRIES], start: null, roles: {} };
+
 const serveListing = async (context: TestContext): Promise<GatewayClient> => {
   const socketPath = path.join(withTempDir(context), 'g.sock');
-  const body = JSON.stringify({ object: 'list', data: LISTING });
+  const body = JSON.stringify({ object: 'list', data: LISTING, start: null, roles: {} });
   const server = http.createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'application/json' }).end(body);
   });
@@ -60,15 +67,15 @@ const serveListing = async (context: TestContext): Promise<GatewayClient> => {
   return client;
 };
 
-describe('the CLI shows an alias that is not listed with capabilities by its reason (G1)', () => {
+describe('the CLI shows a model that is not listed with capabilities by its state (G1)', () => {
   it('isModelList accepts an unavailable entry', async (context) => {
     const client = await serveListing(context);
     const models = await client.models();
-    expect(models.map((model) => model.id)).toEqual(['plan-alias', 'mixed', 'local-alias', 'probing-alias']);
+    expect(models.map((model) => model.id)).toEqual([PLAN_MODEL, LOCAL_MODEL, SLOW_MODEL]);
     expect(models[0]?.capabilities).toEqual(UNAV);
   });
 
-  it('refuses a listing whose targetCapabilities holds a malformed value, as it refuses a malformed alias capabilities', async (context) => {
+  it('refuses a listing whose chain member holds malformed capabilities, as it refuses malformed capabilities of the entry', async (context) => {
     const malformed = { ...LOCAL, contextWindow: 'wide' };
     const answerTo = async (entry: Record<string, unknown>): Promise<{ refusal: string | undefined; expected: string }> => {
       const data = [entry];
@@ -79,49 +86,42 @@ describe('the CLI shows an alias that is not listed with capabilities by its rea
         () => undefined,
         (error: unknown) => (error instanceof Error ? error.message : String(error)),
       );
-      return { refusal, expected: `GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify({ object: 'list', data })}` };
+      return { refusal, expected: `GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify({ object: 'list', data, start: null, roles: {} })}` };
     };
-    const base = { id: 'local-alias', object: 'model', targets: ['local'], targetBilling: { local: 'metered' } };
-    const aliasLevel = await answerTo({ ...base, capabilities: malformed, targetCapabilities: { local: LOCAL } });
-    expect(aliasLevel.refusal).toBe(aliasLevel.expected);
-    const targetLevel = await answerTo({ ...base, capabilities: LOCAL, targetCapabilities: { local: malformed } });
-    expect(targetLevel.refusal).toBe(targetLevel.expected);
+    const base = { id: LOCAL_MODEL, object: 'model', provider: 'lmstudio', ownName: 'local-model', billing: 'local' };
+    const entryLevel = await answerTo({ ...base, capabilities: malformed, chain: [member(LOCAL_MODEL, 'local-model', 'local', LOCAL)] });
+    expect(entryLevel.refusal).toBe(entryLevel.expected);
+    const memberLevel = await answerTo({ ...base, capabilities: LOCAL, chain: [member(LOCAL_MODEL, 'local-model', 'local', malformed)] });
+    expect(memberLevel.refusal).toBe(memberLevel.expected);
   });
 
-  it('momonga models prints the reason line for a not-listed alias and the block for a listed one', () => {
-    expect(formatModels(ENTRIES)).toBe(
-      [
-        'plan-alias  -> plan-gpt',
-        `    ${M}`,
-        'mixed  -> plan-gpt, local',
-        `    ${M}`,
-        'local-alias  -> local',
-        '    context window: 32768, max output: 8192',
-        '    tool calling: native, parallel tool calls: unknown, structured output: json_schema',
-        '    JSON-only mode: not measured',
-        '    image input: no, streaming: yes, stop sequences: yes',
-        '    token counting: estimated, usage reported: yes, max concurrency: 4',
-        '    schema dialect: json-schema-2020-12, source: probed',
-        'probing-alias  -> slow',
-        `    ${PROBING_MESSAGE}`,
-      ].join('\n'),
+  it('momonga models prints a plan model with its billing, a listed one with its window and a measured one without a window', () => {
+    expect(formatModels(modelsDocumentOf(LISTED, new Map([['lmstudio', 'http://127.0.0.1:1234/v1']]), new Set()))).toBe(
+      ['chatgpt', '  plan-model  ·  plan', 'lmstudio  ·  http://127.0.0.1:1234/v1', '  local-model  ·  32.8k tokens  ·  local', 'apple', '  slow  ·  window not known'].join('\n'),
     );
+  });
+
+  it('momonga models --json names the state of each model, with the code and the message of an unavailable one', () => {
+    expect(modelsDocumentOf(LISTED, new Map(), new Set()).models.map(({ model, state, code, message }) => ({ model, state, code, message }))).toEqual([
+      { model: PLAN_MODEL, state: 'unavailable', code: 'capabilities_unknown', message: M },
+      { model: LOCAL_MODEL, state: 'ready', code: undefined, message: undefined },
+      { model: SLOW_MODEL, state: 'probing', code: undefined, message: undefined },
+    ]);
   });
 
   it('/model prints the reason in the row', async () => {
     const shown: string[] = [];
-    const context = { modelAlias: 'local-alias', backend: { models: async () => ENTRIES }, info: (text: string) => void shown.push(text) } as unknown as SlashContext;
+    const context = { model: LOCAL_MODEL, backend: { models: async () => ENTRIES }, info: (text: string) => void shown.push(text) } as unknown as SlashContext;
     const command = BUILTIN_SLASH_COMMANDS.find((candidate) => candidate.name === 'model');
     await command?.run('', context);
     expect(shown).toEqual(
       [
         [
           'models (the current one is marked *):',
-          `    plan-alias  ${M}`,
-          `    mixed  ${M}`,
-          '  * local-alias  32768-token window',
-          `    probing-alias  ${PROBING_MESSAGE}`,
-          'switch with /model <alias>; a change applies from the next task',
+          `    plan-model  ${M}`,
+          '  * local-model  32768-token window',
+          `    slow  ${PROBING_MESSAGE}`,
+          'switch with /model <model>; a change applies from the next task',
         ].join('\n'),
       ],
     );
@@ -129,13 +129,13 @@ describe('the CLI shows an alias that is not listed with capabilities by its rea
 
   it('contextWindowOf rejects with the reason text', async (context) => {
     const client = await serveListing(context);
-    await expect(client.contextWindowOf('plan-alias')).rejects.toThrow(new Error(M));
+    await expect(client.contextWindowOf(PLAN_MODEL)).rejects.toThrow(new Error(M));
   });
 
-  it('auth status prints the model line of an unavailable alias', async () => {
+  it('auth status prints the model line of an unavailable model', async () => {
     const written: string[] = [];
     const plan = { accounts: async () => ({ profiles: [CHATGPT], accounts: [] }) } as unknown as PlanGatewayClient;
-    expect(await authStatus({ stdout: { write: (text: string) => void written.push(text) }, plan, models: async () => ENTRIES }, { json: false, alias: 'plan-alias' })).toBe(0);
-    expect(written.join('').split('\n')).toContain('model: plan-alias -> plan-gpt (plan)');
+    expect(await authStatus({ stdout: { write: (text: string) => void written.push(text) }, plan, listing: async () => LISTED }, { json: false, model: 'plan-model' })).toBe(0);
+    expect(written.join('').split('\n')).toContain('model: plan-model (plan)');
   });
 });

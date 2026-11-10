@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createFileCredentialStore, credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
-import { getJson } from './gateway-helpers.ts';
+import { getJson, listedEntryOf } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
 import { ACCOUNT, accountRoute, recordingLogger, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway, RecordedEvent } from './plan-signin-support.ts';
@@ -114,12 +114,11 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets['gpt'].ok).toBe(true);
-    expect(health.body.targets['gpt']).not.toHaveProperty('reason');
+    expect(health.body.models['gpt/plan-model'].ok).toBe(true);
+    expect(health.body.models['gpt/plan-model']).not.toHaveProperty('reason');
     const models = await getJson(clientFor(gateway.socketPath), '/v1/momonga/models');
     expect(models.status).toBe(200);
-    const entry = (models.body.data as Array<{ targetCapabilities: Record<string, { contextWindow?: unknown }> }>).find((model) => model.targetCapabilities['gpt'] !== undefined);
-    expect(entry?.targetCapabilities['gpt']?.contextWindow).toBe(200000);
+    expect(listedEntryOf(models.body, 'gpt/plan-model').capabilities['contextWindow']).toBe(200000);
     expect(listReads(gateway)).toBe(reads);
     await gateway.close();
   });
@@ -131,7 +130,7 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
     const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
-    expect(health.body.targets['gpt']).toMatchObject({ ok: false, reason: 'capabilities_unknown' });
+    expect(health.body.models['gpt/plan-model']).toMatchObject({ ok: false, reason: 'capabilities_unknown' });
     expect(listReads(gateway)).toBe(reads);
     await gateway.close();
   });
@@ -177,45 +176,23 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', () => 
   });
 });
 
-describe('accounts/{account}/targets adds an unpinned target named by the P6.8 rule (O-R5-4 c)', () => {
+describe('accounts/{account}/targets adds a model of the plan through the one settings writer (design-model-names 4.11)', () => {
   const add = (gateway: PlanGateway, slug: string) => gateway.post(accountRoute(PLAN_ROUTES.accountTargets), { profile: 'chatgpt', slug });
 
-  it('writes { adapter, model: slug, plan: { profile } } under the slug name with an alias of the same name, and is idempotent', async () => {
+  it('adds the model under the plan connection of its profile, answers its full reference, and writes nothing the second time', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
     await gateway.get(modelsRoute());
     const created = await add(gateway, 'reported-model');
-    expect({ status: created.status, body: created.body }).toEqual({ status: 200, body: { target: 'reported-model', alias: 'reported-model' } });
+    expect({ status: created.status, body: created.body }).toEqual({ status: 200, body: { model: 'chatgpt/reported-model' } });
     const settings = settingsOf(gateway);
-    expect(settings.models.targets['reported-model']).toEqual({ adapter: 'open-responses', model: 'reported-model', plan: { profile: 'chatgpt' } });
-    expect(settings.models.aliases['reported-model']).toEqual(expect.arrayContaining(['reported-model']));
+    expect(settings.models.connections.at(-1)).toEqual({ adapter: 'open-responses', plan: { profile: 'chatgpt' }, models: [{ id: 'reported-model' }] });
+    expect(settings.models).not.toHaveProperty('start');
+    expect(settings.models).not.toHaveProperty('fallback');
     const before = fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8');
     const again = await add(gateway, 'reported-model');
-    expect(again.body).toEqual({ target: 'reported-model', alias: 'reported-model' });
+    expect(again.body).toEqual({ model: 'chatgpt/reported-model' });
     expect(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8')).toBe(before);
-    await gateway.close();
-  });
-
-  it('takes the first free of n, n-2, n-3 when n is a key of targets or aliases, and slugs that sanitise alike get distinct names (O-R5-5 item 3)', async () => {
-    const gateway = await startPlanGateway({
-      models: [
-        { slug: 'a b', display_name: 'Spaced', visibility: 'list', context_window: 100000 },
-        { slug: 'a-b', display_name: 'Dashed', visibility: 'list', context_window: 100000 },
-        { slug: 'taken', display_name: 'Taken', visibility: 'list', context_window: 100000 },
-      ],
-    });
-    await signIn(gateway);
-    await gateway.get(modelsRoute());
-    const settingsFile = path.join(gateway.home, '.momonga', 'settings.json');
-    const settings = settingsOf(gateway);
-    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, models: { ...settings.models, aliases: { ...settings.models.aliases, taken: 'gpt', 'taken-2': 'gpt' } } }));
-    expect((await add(gateway, 'a b')).body).toEqual({ target: 'a-b', alias: 'a-b' });
-    expect((await add(gateway, 'a-b')).body).toEqual({ target: 'a-b-2', alias: 'a-b-2' });
-    expect((await add(gateway, 'taken')).body).toEqual({ target: 'taken-3', alias: 'taken-3' });
-    expect((await add(gateway, 'a b')).body).toEqual({ target: 'a-b', alias: 'a-b' });
-    const after = settingsOf(gateway);
-    expect(after.models.targets['a-b-2']).toEqual({ adapter: 'open-responses', model: 'a-b', plan: { profile: 'chatgpt' } });
-    expect(after.models.targets['taken-3']).toEqual({ adapter: 'open-responses', model: 'taken', plan: { profile: 'chatgpt' } });
     await gateway.close();
   });
 

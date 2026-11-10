@@ -184,7 +184,7 @@ describe('anthropic declaring forced single tool and filtered tools: the stable 
   const sentBody = async (toolChoice: unknown): Promise<any> => {
     const gateway = await startAnthropicGateway({ capabilities: ANTHROPIC, script: [anthropicTextReply(['ok'])] });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }),
     );
     expect(response.status).toBe(200);
     return gateway.fake.requests[0]?.body;
@@ -256,7 +256,7 @@ describe('open-responses declaring the native allowed set: forwarded with a conc
   const sentBody = async (toolChoice: unknown): Promise<any> => {
     const gateway = await startOpenResponsesGateway({ capabilities: OPEN_NATIVE, script: [openResponsesTextReply(['ok'])] });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }),
     );
     expect(response.status).toBe(200);
     return gateway.fake.requests[0]?.body;
@@ -291,10 +291,10 @@ describe('the form comes from declared capability data, never from the target na
   it('answers 400 naming allowed_tools and the target when an open-responses target declares no form', async () => {
     const gateway = await startOpenResponsesGateway({ capabilities: REMOTE_CAPABILITIES, script: [openResponsesTextReply(['ok'])] });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: TWO_AUTO }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: TWO_AUTO }),
     );
     expect(response.status).toBe(400);
-    expectNamedRefusal(response.body.error, 'remote');
+    expectNamedRefusal(response.body.error, 'upstream-model');
     expect(gateway.fake.requests).toHaveLength(0);
   });
 
@@ -317,7 +317,7 @@ describe('one validation for /v1/responses and /v1/momonga/count_tokens', () => 
   const ANTHROPIC = withAllowedTools(REMOTE_CAPABILITIES, ['single_tool', 'filter']);
 
   const post = (gateway: UpstreamGateway, path: string, toolChoice: unknown) =>
-    postJson(gateway.client, path, { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }).then(readJson);
+    postJson(gateway.client, path, { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice }).then(readJson);
 
   const countingGateway = () => startAnthropicGateway({ capabilities: ANTHROPIC, script: [anthropicCountTokensReply(42)] });
   const creatingGateway = () => startAnthropicGateway({ capabilities: ANTHROPIC, script: [anthropicTextReply(['ok'])] });
@@ -355,7 +355,7 @@ describe('the response echoes tool_choice with a concrete mode', () => {
       script: [openResponsesTextReply(['ok'])],
     });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: TWO_NO_MODE }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: TWO_NO_MODE }),
     );
     expect(response.status).toBe(200);
     expect(response.body.tool_choice).toEqual(allowed(['alpha', 'beta'], 'auto'));
@@ -366,7 +366,7 @@ describe('count what is sent: the count body carries the create body tools and t
   const sentAndCounted = async (capabilities: Capabilities, toolChoice: unknown) => {
     const creating = await startAnthropicGateway({ capabilities, script: [anthropicTextReply(['ok'])] });
     const counting = await startAnthropicGateway({ capabilities, script: [anthropicCountTokensReply(42)] });
-    const body = { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice };
+    const body = { model: creating.model, input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice };
     const created = await readJson(await postJson(creating.client, '/v1/responses', body));
     const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', body));
     expect(created.status).toBe(200);
@@ -467,7 +467,7 @@ describe('an allowed set equal to the request tools is the plain mode, on a targ
   it('anthropic sends plain auto through the gateway and echoes the request as given', async () => {
     const gateway = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: ALL_AUTO }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: ALL_AUTO }),
     );
     expect(response.status).toBe(200);
     const body = gateway.fake.requests[0]?.body as any;
@@ -479,7 +479,7 @@ describe('an allowed set equal to the request tools is the plain mode, on a targ
   it('anthropic sends plain required as tool_choice any', async () => {
     const gateway = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
     const response = await readJson(
-      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: ALL_REQUIRED }),
+      await postJson(gateway.client, '/v1/responses', { model: gateway.model, input: userInput('hello'), tools: TOOLS, tool_choice: ALL_REQUIRED }),
     );
     expect(response.status).toBe(200);
     expect((gateway.fake.requests[0]?.body as any).tool_choice).toEqual({ type: 'any' });
@@ -496,22 +496,23 @@ describe('an allowed set equal to the request tools is the plain mode, on a targ
 
 const SUBSET_TOOLS = [toolNamed('alpha'), toolNamed('beta')];
 
-const countBody = (tools: unknown, toolChoice: unknown) => ({ model: 'fast', input: userInput('hello'), tools, tool_choice: toolChoice });
+const countBodyFor = (model: string, tools: unknown, toolChoice: unknown) => ({ model, input: userInput('hello'), tools, tool_choice: toolChoice });
+const countBody = (tools: unknown, toolChoice: unknown) => countBodyFor('scripted/devstral-small-2', tools, toolChoice);
 
 const startOllamaGateway = async (capabilities: Capabilities) => {
   const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
   const adapter = makeOllamaAdapter(fake, { capabilities: async () => capabilities });
   return startGateway({
-    adapters: { local: adapter },
-    config: { aliases: { fast: ['local'] }, targets: { local: { model: 'devstral-small-2', kind: 'local' } } },
+    adapters: { 'scripted/devstral-small-2': adapter },
+    config: { chains: { 'scripted/devstral-small-2': ['scripted/devstral-small-2'] }, targets: { 'scripted/devstral-small-2': { kind: 'local' } } },
   });
 };
 
 describe('count what is sent on adapters that count by estimate', () => {
   it('ollama with the filter form counts the allowed tools that create sends, not every tool', async () => {
     const gateway = await startOllamaGateway(withAllowedTools(OLLAMA_CAPABILITIES, ['filter']));
-    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
-    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, SUBSET_TOOLS, 'auto')));
     expect(filtered.status).toBe(200);
     expect(subset.status).toBe(200);
     expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
@@ -519,8 +520,8 @@ describe('count what is sent on adapters that count by estimate', () => {
 
   it('open-responses with the filter form counts the allowed tools that create sends, not every tool', async () => {
     const gateway = await startOpenResponsesGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['filter']), script: [] });
-    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
-    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, SUBSET_TOOLS, 'auto')));
     expect(filtered.status).toBe(200);
     expect(subset.status).toBe(200);
     expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
@@ -533,14 +534,14 @@ describe('a replay adapter in record mode carries the wire of the adapter it wra
     const inner = makeOllamaAdapter(fake, { capabilities: async () => withAllowedTools(OLLAMA_CAPABILITIES, ['filter']) });
     const recorder = createReplayAdapter({ path: path.join(makeDir(), 'recording.jsonl'), mode: 'record', inner });
     const gateway = await startGateway({
-      adapters: { local: recorder },
-      config: { aliases: { fast: ['local'] }, targets: { local: { model: 'devstral-small-2', kind: 'local' } } },
+      adapters: { 'scripted/devstral-small-2': recorder },
+      config: { chains: { 'scripted/devstral-small-2': ['scripted/devstral-small-2'] }, targets: { 'scripted/devstral-small-2': { kind: 'local' } } },
     });
-    const created = await readJson(await postJson(gateway.client, '/v1/responses', countBody(TOOLS, TWO_AUTO)));
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', countBodyFor(gateway.model, TOOLS, TWO_AUTO)));
     expect(created.status).toBe(200);
     expect(listedNames(fake.chatBodies()[0])).toEqual(['alpha', 'beta']);
-    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
-    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBodyFor(gateway.model, SUBSET_TOOLS, 'auto')));
     expect(filtered.status).toBe(200);
     expect(subset.status).toBe(200);
     expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
@@ -582,8 +583,8 @@ describe('one validation of the allowed-set size for create and count_tokens', (
     const tooMany = allowed(Array.from({ length: 129 }, () => 'alpha'), 'auto');
     const creating = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
     const counting = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicCountTokensReply(42)] });
-    const created = await readJson(await postJson(creating.client, '/v1/responses', countBody(TOOLS, tooMany)));
-    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', countBody(TOOLS, tooMany)));
+    const created = await readJson(await postJson(creating.client, '/v1/responses', countBodyFor(creating.model, TOOLS, tooMany)));
+    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', countBodyFor(counting.model, TOOLS, tooMany)));
     expect(created.status).toBe(400);
     expect(counted.status).toBe(400);
     expect(created.body.error.param).toBe('tool_choice.tools');
@@ -605,7 +606,7 @@ describe('the request validator maps an oversized allowed set to its own oneOf b
 
   it('reports tool_choice.tools and the 128-item limit for create and count_tokens alike', () => {
     const validator = createRequestValidator();
-    const body = { model: 'fast', input: 'hello', tools: TOOLS, tool_choice: allowed(Array.from({ length: 129 }, () => 'alpha'), 'auto') };
+    const body = { model: 'scripted/devstral-small-2', input: 'hello', tools: TOOLS, tool_choice: allowed(Array.from({ length: 129 }, () => 'alpha'), 'auto') };
     const fromCreate = thrownBy(() => validator.parseCreate(body));
     const fromCount = thrownBy(() => validator.parseCountTokens(body));
     expect(fromCreate?.body?.param).toBe('tool_choice.tools');
@@ -623,7 +624,7 @@ describe('duplicate allowed names count once', () => {
 
   it('a required set naming one tool twice forces that tool through single_tool', async () => {
     const gateway = await startAnthropicGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['single_tool']), script: [anthropicTextReply(['ok'])] });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', countBody(TOOLS, allowed(['alpha', 'alpha'], 'required'))));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', countBodyFor(gateway.model, TOOLS, allowed(['alpha', 'alpha'], 'required'))));
     expect(response.status).toBe(200);
     expect((gateway.fake.requests[0]?.body as any).tool_choice).toEqual({ type: 'tool', name: 'alpha' });
   });
@@ -632,7 +633,7 @@ describe('duplicate allowed names count once', () => {
 describe('the streaming echo carries a concrete mode', () => {
   it('echoes mode auto in response.created and the terminal event for a request that omits mode', async () => {
     const gateway = await startOpenResponsesGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['native']), script: [openResponsesTextReply(['ok'])] });
-    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { ...countBody(TOOLS, TWO_NO_MODE), stream: true }));
+    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { ...countBodyFor(gateway.model, TOOLS, TWO_NO_MODE), stream: true }));
     const withResource = frames.filter((frame) => frame.data?.response !== undefined);
     expect(withResource.length).toBeGreaterThan(1);
     for (const frame of withResource) expect(frame.data.response.tool_choice).toEqual(allowed(['alpha', 'beta'], 'auto'));

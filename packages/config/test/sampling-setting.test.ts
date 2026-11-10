@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { loadSettings } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { connectionOf, makeTree, modelOf, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 type SamplingAdapter = 'anthropic' | 'chat-completions' | 'open-responses' | 'ollama';
 
@@ -22,7 +22,7 @@ const targetOf = (adapter: SamplingAdapter, sampling: unknown): Record<string, u
 
 const settingsWith = (target: Record<string, unknown>) => {
   const tree = makeTree();
-  writeJson(userSettingsPath(tree), { models: { targets: { remote: target }, aliases: { default: 'remote' } } });
+  writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
@@ -46,14 +46,14 @@ describe('declared sampling acceptance on the adapters that render sampling para
     '$name',
     async ({ adapter, sampling }) => {
       const { settings } = await settingsWith(targetOf(adapter, sampling)).loaded;
-      expect(settings.models.targets['remote']).toMatchObject({ capabilities: { sampling } });
+      expect(modelOf(settings, 'remote')).toMatchObject({ capabilities: { sampling } });
     },
   );
 
   it.for(ADAPTERS_THAT_RENDER_SAMPLING)('%s without a sampling declaration resolves with none, so values are forwarded as today', async (adapter) => {
     const target = targetOf(adapter, undefined);
     const { settings } = await settingsWith({ ...target, capabilities: CAPABILITIES }).loaded;
-    expect((settings.models.targets['remote'] as { capabilities: Record<string, unknown> }).capabilities['sampling']).toBeUndefined();
+    expect((modelOf(settings, 'remote') as unknown as { capabilities: Record<string, unknown> }).capabilities['sampling']).toBeUndefined();
   });
 });
 
@@ -63,7 +63,7 @@ describe('a malformed sampling declaration is refused, naming the target and the
     async ({ adapter, sampling, fragment }) => {
       const { tree, loaded } = settingsWith(targetOf(adapter, sampling));
       await expect(loaded).rejects.toThrow(userSettingsPath(tree));
-      await expect(loaded).rejects.toThrow('remote');
+      await expect(loaded).rejects.toThrow(/models[./]connections[[/]0/);
       await expect(loaded).rejects.toThrow('sampling');
       await expect(loaded).rejects.toThrow(fragment);
     },

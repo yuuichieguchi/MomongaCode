@@ -52,6 +52,3 @@ export const PLAN_SIGN_IN_DEFAULTS = {
 } as const;
 
 export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 } as const;
-
-export const ANTHROPIC_PROVIDER_NAME = 'anthropic';
-export const OLLAMA_PROVIDER_NAME = 'ollama';

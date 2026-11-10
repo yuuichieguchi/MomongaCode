@@ -37,14 +37,14 @@ import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import { adapterContextOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
-import { CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
+import { CandidateDropped, CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
 import type { UnknownFields } from './unknown-fields.ts';
 
 export type ResponseJob = {
-  alias: string;
+  model: string;
   body: CreateResponseBody;
   unknownFields: UnknownFields;
   clientInput: InputItem[];
@@ -181,7 +181,7 @@ const openAttempt = async (
     capabilities = await narrowed.capabilitiesOf(target);
   } catch (error) {
     release();
-    if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
+    if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
     const failure = failureFrom(target.adapter, error, signal);
     const failed = startSpan();
     failed.fail(errorTypeOf(failure), failure, messageOf(failure));
@@ -434,7 +434,7 @@ async function* relaySteps(
             table: services.priceTable,
           });
     return {
-      alias: job.alias,
+      model: job.model,
       target: target.name,
       counter: target.counter,
       attempts,
@@ -590,7 +590,7 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const narrowed = await services.router.candidates(job.alias, {
+  const narrowed = await services.router.candidates(job.model, {
     tools: (job.body.tools?.length ?? 0) > 0,
     images: inputHasImages(resolved.forAdapter),
     inputKinds: inputKindsOf(resolved.forAdapter, job.body.tools),

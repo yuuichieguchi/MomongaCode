@@ -15,7 +15,7 @@ describe('the unavailable state of a models listing entry', () => {
   });
 
   it('agentReadiness maps an unavailable state to the unavailable readiness', () => {
-    expect(agentReadiness({ toolCalling: UNAVAILABLE as unknown as ToolCallingState })).toEqual({ state: 'unavailable', message: 'm', remedy: 'Choose a model with /model, or set one up with /models detect.' });
+    expect(agentReadiness({ toolCalling: UNAVAILABLE as unknown as ToolCallingState })).toEqual({ state: 'unavailable', message: 'm' });
   });
 
   it('isUnavailableCapabilities, isNotListedCapabilities and notListedMessage', () => {

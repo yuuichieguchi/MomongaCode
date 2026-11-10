@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { momongaLayout, momongaPaths, volumeIsCaseInsensitive } from '@momonga/foundation';
 import { GatewayRequestError } from '@momonga/runtime';
-import { MODEL_ALIAS, expectError, expectSchema, onCleanup, startService } from './helpers.ts';
+import { MODEL_ID, expectError, expectSchema, onCleanup, startService } from './helpers.ts';
 import type { JsonResponse, ServiceEnv } from './helpers.ts';
 
 afterEach(() => {
@@ -223,7 +223,7 @@ describe('session create validation (fake timers)', () => {
     expect(env.store.listSessions()).toEqual([]);
   });
 
-  it('503 gateway_unavailable with retry-after 1 for a transport error or a 5xx from modelAliases', async () => {
+  it('503 gateway_unavailable with retry-after 1 for a transport error or a 5xx from the model listing', async () => {
     const env = await startService({ fakeTimers: true });
     const failures = [
       ...['gateway_unavailable', 'client_destroyed', 'invalid_response', 'deadline_exceeded', 'gateway_timeout'].map(
@@ -233,7 +233,7 @@ describe('session create validation (fake timers)', () => {
       new GatewayRequestError({ status: 500, type: 'server_error', code: 'internal_error', message: 'internal' }),
     ];
     for (const failure of failures) {
-      env.ports.aliasesFailure.error = failure;
+      env.ports.listingFailure.error = failure;
       const response = await post(env, { cwd: env.layout.project });
       expect({ status: response.status, code: response.json?.error?.code, type: response.json?.error?.type, retryAfter: response.headers['retry-after'] }, failure.code).toEqual({
         status: 503,
@@ -247,10 +247,10 @@ describe('session create validation (fake timers)', () => {
     expect(env.store.listSessions()).toEqual([]);
   });
 
-  it('500 for a 4xx from modelAliases', async () => {
+  it('500 for a 4xx from the model listing', async () => {
     const env = await startService({ fakeTimers: true });
     const failure = new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'invalid_request', message: 'bad request' });
-    env.ports.aliasesFailure.error = failure;
+    env.ports.listingFailure.error = failure;
     expectError(await post(env, { cwd: env.layout.project }), 500, 'internal_error');
     expect(env.errors).toEqual([failure]);
   });
@@ -261,7 +261,7 @@ describe('session create validation (fake timers)', () => {
     env.ports.settingsByCwd.set(env.layout.projectReal, { additionalDirectories: [shared] });
     const created = await post(env, { cwd: env.layout.project });
     expect(created.status).toBe(201);
-    expect(created.json.session).toMatchObject({ cwd: env.layout.projectReal, modelAlias: MODEL_ALIAS, additionalDirectories: [shared] });
+    expect(created.json.session).toMatchObject({ cwd: env.layout.projectReal, model: MODEL_ID, additionalDirectories: [shared] });
     expectSchema('SessionView', created.json.session);
     const listed = await env.http('GET', '/v1/sessions');
     expect(listed.json.sessions.map((session: { additionalDirectories: string[] }) => session.additionalDirectories)).toEqual([[shared]]);

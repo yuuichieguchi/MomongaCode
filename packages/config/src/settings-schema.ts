@@ -1,5 +1,5 @@
 import { MCP_CONNECT_TIMEOUT_LIMITS, SECRET_NAME_PATTERN, SHUTDOWN_SETTING_LIMITS } from '@momonga/foundation';
-import { MANAGED_DECLARABLE_FIELDS, MANAGED_ENDPOINT_FORMS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
+import { MANAGED_DECLARABLE_FIELDS, ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, JSON_MODES, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, PROVIDER_NAME_PATTERN, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS, MANAGED_ENDPOINT_FORMS } from '@momonga/protocol';
 import type { CallRole, ManagedDeclarableField } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -49,9 +49,8 @@ export const MCP_SERVER_SCHEMA = {
   ],
 } as const;
 
-export const TARGET_NAME_PATTERN = '^[A-Za-z][A-Za-z0-9._-]*$';
 export const ENV_NAME_PATTERN = '^[A-Za-z_][A-Za-z0-9_]*$';
-export const PROVIDER_NAME_PATTERN = '^[a-z][a-z0-9._-]*$';
+export const PROVIDER_NAME_PATTERN_SOURCE = PROVIDER_NAME_PATTERN.source;
 
 const POSITIVE_INTEGER = { type: 'integer', minimum: 1 } as const;
 const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
@@ -84,25 +83,43 @@ const MANAGED_DECLARABLE_SCHEMAS: Record<ManagedDeclarableField, object> = {
   maxOutputTokens: POSITIVE_INTEGER,
 };
 
-const MANAGED_TARGET_SCHEMA = {
+const MODEL_ID_SCHEMA = { type: 'string', minLength: 1 } as const;
+
+const PROVIDER_SCHEMA = { type: 'string', minLength: 1 } as const;
+
+const BILLING_SCHEMA = { enum: [...TARGET_BILLINGS] } as const;
+
+const SERVING_PROPERTIES = { maxConcurrency: POSITIVE_INTEGER, admissionTimeoutMs: NON_NEGATIVE_INTEGER } as const;
+
+const CONNECTION_COMMON_PROPERTIES = { provider: PROVIDER_SCHEMA, answers: ANSWERS_SCHEMA, billing: BILLING_SCHEMA, ...SERVING_PROPERTIES } as const;
+
+const entriesOf = (properties: object, required: readonly string[]) =>
+  ({
+    type: 'array',
+    items: { type: 'object', properties: { id: MODEL_ID_SCHEMA, ...properties, ...SERVING_PROPERTIES }, required: ['id', ...required], additionalProperties: false },
+  }) as const;
+
+const MANAGED_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'managed' },
+    ...CONNECTION_COMMON_PROPERTIES,
     server: { type: 'string', minLength: 1 },
     binary: { type: 'string', minLength: 1 },
     readyTimeoutMs: { type: 'integer', minimum: READY_TIMEOUT_LIMITS.min, maximum: READY_TIMEOUT_LIMITS.max },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    toolCalling: { enum: ['auto', 'native', 'constrained'] },
-    outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA,
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
-    capabilities: {
-      type: 'object',
-      properties: Object.fromEntries(MANAGED_DECLARABLE_FIELDS.map((field) => [field, MANAGED_DECLARABLE_SCHEMAS[field]])),
-      required: [...MANAGED_DECLARABLE_FIELDS],
-      additionalProperties: false,
-    },
+    models: entriesOf(
+      {
+        toolCalling: { enum: ['auto', 'native', 'constrained'] },
+        outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA,
+        capabilities: {
+          type: 'object',
+          properties: Object.fromEntries(MANAGED_DECLARABLE_FIELDS.map((field) => [field, MANAGED_DECLARABLE_SCHEMAS[field]])),
+          required: [...MANAGED_DECLARABLE_FIELDS],
+          additionalProperties: false,
+        },
+      },
+      [],
+    ),
   },
   required: ['adapter', 'server'],
   additionalProperties: false,
@@ -256,9 +273,6 @@ const CHAT_COMPLETIONS_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROM
 
 const OLLAMA_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(OLLAMA_PROMPT_CACHE);
 
-const BILLING_SCHEMA = { enum: [...TARGET_BILLINGS] } as const;
-
-
 const API_KEY_PROPERTIES = {
   apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
   apiKeySecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
@@ -275,44 +289,32 @@ const EXACTLY_ONE_API_KEY = {
   ],
 } as const;
 
-const CHAT_COMPLETIONS_TARGET_SCHEMA = {
+const ADDRESS_PROPERTIES = { baseUrl: { type: 'string', minLength: 1 }, socketPath: { type: 'string', minLength: 1 } } as const;
+
+const CHAT_COMPLETIONS_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'chat-completions' },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    baseUrl: { type: 'string', minLength: 1 },
-    socketPath: { type: 'string', minLength: 1 },
+    ...CONNECTION_COMMON_PROPERTIES,
+    ...ADDRESS_PROPERTIES,
     ...API_KEY_PROPERTIES,
-    provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
-    toolCalling: { enum: ['auto', 'native', 'constrained'] },
-    billing: BILLING_SCHEMA,
-    capabilities: CHAT_COMPLETIONS_CAPABILITIES_SCHEMA,
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    models: entriesOf({ toolCalling: { enum: ['auto', 'native', 'constrained'] }, capabilities: CHAT_COMPLETIONS_CAPABILITIES_SCHEMA }, ['capabilities']),
   },
-  required: ['adapter', 'model', 'provider', 'capabilities'],
+  required: ['adapter'],
   ...AT_MOST_ONE_API_KEY,
   additionalProperties: false,
 } as const;
 
-const OPEN_RESPONSES_TARGET_SCHEMA = {
+const OPEN_RESPONSES_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'open-responses' },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    baseUrl: { type: 'string', minLength: 1 },
-    socketPath: { type: 'string', minLength: 1 },
+    ...CONNECTION_COMMON_PROPERTIES,
+    ...ADDRESS_PROPERTIES,
     ...API_KEY_PROPERTIES,
-    provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
-    toolCalling: { enum: ['native', 'none'] },
-    billing: BILLING_SCHEMA,
-    capabilities: KEYED_CAPABILITIES_SCHEMA,
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    models: entriesOf({ toolCalling: { enum: ['native', 'none'] }, capabilities: KEYED_CAPABILITIES_SCHEMA }, ['capabilities']),
   },
-  required: ['adapter', 'model', 'provider', 'capabilities'],
+  required: ['adapter'],
   ...AT_MOST_ONE_API_KEY,
   additionalProperties: false,
 } as const;
@@ -327,68 +329,53 @@ const PLAN_REFERENCE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const PLAN_OPEN_RESPONSES_TARGET_SCHEMA = {
+const PLAN_OPEN_RESPONSES_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'open-responses' },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    baseUrl: { type: 'string', minLength: 1 },
-    socketPath: { type: 'string', minLength: 1 },
+    ...CONNECTION_COMMON_PROPERTIES,
+    ...ADDRESS_PROPERTIES,
     ...API_KEY_PROPERTIES,
     plan: PLAN_REFERENCE_SCHEMA,
-    provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
-    toolCalling: { enum: ['native', 'none'] },
-    billing: BILLING_SCHEMA,
-    capabilities: PLAN_CAPABILITIES_SCHEMA,
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    models: entriesOf({ toolCalling: { enum: ['native', 'none'] }, capabilities: PLAN_CAPABILITIES_SCHEMA }, []),
   },
-  required: ['adapter', 'model', 'plan'],
+  required: ['adapter', 'plan'],
   additionalProperties: false,
 } as const;
 
-const ANTHROPIC_TARGET_SCHEMA = {
+const ANTHROPIC_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'anthropic' },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    baseUrl: { type: 'string', minLength: 1 },
-    socketPath: { type: 'string', minLength: 1 },
+    ...CONNECTION_COMMON_PROPERTIES,
+    ...ADDRESS_PROPERTIES,
     ...API_KEY_PROPERTIES,
-    billing: BILLING_SCHEMA,
-    capabilities: ANTHROPIC_CAPABILITIES_SCHEMA,
     apiVersion: { enum: [...ANTHROPIC_API_VERSIONS] },
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    models: entriesOf({ capabilities: ANTHROPIC_CAPABILITIES_SCHEMA }, ['capabilities']),
   },
-  required: ['adapter', 'model', 'capabilities'],
+  required: ['adapter'],
   ...EXACTLY_ONE_API_KEY,
   additionalProperties: false,
 } as const;
 
-const OLLAMA_TARGET_SCHEMA = {
+const OLLAMA_CONNECTION_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'ollama' },
-    answers: ANSWERS_SCHEMA,
-    model: { type: 'string', minLength: 1 },
-    baseUrl: { type: 'string', minLength: 1 },
-    socketPath: { type: 'string', minLength: 1 },
-    billing: BILLING_SCHEMA,
-    capabilities: OLLAMA_CAPABILITIES_SCHEMA,
-    maxConcurrency: POSITIVE_INTEGER,
-    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+    ...CONNECTION_COMMON_PROPERTIES,
+    ...ADDRESS_PROPERTIES,
+    models: entriesOf({ capabilities: OLLAMA_CAPABILITIES_SCHEMA }, ['capabilities']),
   },
-  required: ['adapter', 'model', 'capabilities'],
+  required: ['adapter'],
   additionalProperties: false,
 } as const;
 
-const MODEL_TARGET_SCHEMA = {
+const MODEL_CONNECTION_SCHEMA = {
   type: 'object',
-  oneOf: [MANAGED_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, PLAN_OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
+  oneOf: [MANAGED_CONNECTION_SCHEMA, CHAT_COMPLETIONS_CONNECTION_SCHEMA, OPEN_RESPONSES_CONNECTION_SCHEMA, PLAN_OPEN_RESPONSES_CONNECTION_SCHEMA, ANTHROPIC_CONNECTION_SCHEMA, OLLAMA_CONNECTION_SCHEMA],
 } as const;
+
+const MODEL_REFERENCE_SCHEMA = { type: 'string', minLength: 1 } as const;
 
 const HOOK_COMMAND_SCHEMA = {
   type: 'object',
@@ -409,12 +396,6 @@ const HOOK_MATCHER_GROUP_SCHEMA = {
   },
   required: ['hooks'],
   additionalProperties: false,
-} as const;
-
-export const LOCAL_CONNECTION_TARGET_SCHEMAS = {
-  ollama: OLLAMA_TARGET_SCHEMA,
-  'chat-completions': CHAT_COMPLETIONS_TARGET_SCHEMA,
-  managed: MANAGED_TARGET_SCHEMA,
 } as const;
 
 export const SETTINGS_SCHEMA = {
@@ -461,18 +442,12 @@ export const SETTINGS_SCHEMA = {
     models: {
       type: 'object',
       properties: {
-        aliases: {
-          type: 'object',
-          additionalProperties: { oneOf: [{ type: 'string', minLength: 1 }, { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 }] },
-        },
-        targets: {
-          type: 'object',
-          propertyNames: { pattern: TARGET_NAME_PATTERN },
-          additionalProperties: MODEL_TARGET_SCHEMA,
-        },
+        connections: { type: 'array', items: MODEL_CONNECTION_SCHEMA },
+        start: MODEL_REFERENCE_SCHEMA,
+        fallback: { type: 'array', items: MODEL_REFERENCE_SCHEMA },
         servers: {
           type: 'object',
-          propertyNames: { pattern: PROVIDER_NAME_PATTERN },
+          propertyNames: { pattern: PROVIDER_NAME_PATTERN_SOURCE },
           additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
@@ -485,7 +460,7 @@ export const SETTINGS_SCHEMA = {
             properties: {
               from: BILLING_SCHEMA,
               to: BILLING_SCHEMA,
-              alias: { type: 'string', minLength: 1 },
+              model: MODEL_REFERENCE_SCHEMA,
             },
             required: ['from', 'to'],
             additionalProperties: false,
@@ -575,7 +550,7 @@ export const SETTINGS_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
+          provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN_SOURCE },
           model: { type: 'string', minLength: 1 },
           effectiveFrom: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
           inputPerMTok: { type: 'number', minimum: 0 },

@@ -26,18 +26,18 @@ describe('a relay that throws before the response concludes', () => {
           : Reflect.get(target, property, receiver),
     });
     const { client } = await startGateway({
-      adapters: { primary },
+      adapters: { 'scripted/scripted-primary': primary },
       clock,
       telemetry,
       priceTable,
       config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
-    const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    const response = await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') });
     await response.text();
     await telemetry.forceFlush();
     const chats = memory.getFinishedSpans().filter((span) => span.attributes['gen_ai.operation.name'] === 'chat');
     expect(chats).toHaveLength(1);
     expect(chats[0]?.attributes['error.type']).not.toBe('cancelled');
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.primary.breaker).toBe('open');
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/scripted-primary'].breaker).toBe('open');
   });
 });

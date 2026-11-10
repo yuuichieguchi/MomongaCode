@@ -26,7 +26,7 @@ const constructWith = (debugTcp: { host: string; port: number; token: string }) 
       random: () => 0.5,
       credentials: [],
       config: buildConfig(),
-      adapters: { primary: createScriptedAdapter({ calls: [] }) },
+      adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) },
       clock,
       timers: createFakeTimers(clock),
       dbPath: path.join(dir, 'state', 'gateway.db'),
@@ -42,7 +42,7 @@ describe('TCP debug listener', () => {
   it('requires the bearer token over TCP but not over the unix socket', async () => {
     const primary = createScriptedAdapter({ calls: [] });
     const { gateway, client } = await startGateway({
-      adapters: { primary },
+      adapters: { 'scripted/scripted-primary': primary },
       debugTcp: { host: '127.0.0.1', port: 0, token: DEBUG_TOKEN },
     });
     const agent = new Agent();
@@ -65,7 +65,7 @@ describe('TCP debug listener', () => {
   });
 
   it('has no TCP port when debugTcp is not configured', async () => {
-    const { gateway } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const { gateway } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     expect(gateway.tcpPort).toBeUndefined();
   });
 

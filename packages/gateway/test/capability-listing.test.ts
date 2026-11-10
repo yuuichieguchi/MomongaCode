@@ -41,84 +41,93 @@ const available = () => createScriptedAdapter({ calls: [], capabilities: AVAILAB
 
 const failing = (fails: () => unknown) => capabilityFailingAdapter({ inner: available(), fails });
 
-type Entry = { id: string; capabilities: Record<string, unknown>; targetCapabilities: Record<string, Record<string, unknown>> };
+type Member = { model: string; capabilities: Record<string, unknown> };
+type Entry = { id: string; capabilities: Record<string, unknown>; chain: Member[] };
 
-const listing = async (adapters: Record<string, ProviderAdapter>, aliases: Record<string, string[]>): Promise<{ status: number; entries: Entry[] }> => {
-  const targets = Object.fromEntries(Object.keys(adapters).map((name) => [name, { model: `model-${name}` }]));
-  const { client } = await startGateway({ credentials: [KEY], adapters, config: { aliases, targets } });
+const canonOf = (server: string): string => `${server}/model-${server}`;
+
+const listing = async (adapters: Record<string, ProviderAdapter>, chains: readonly string[][]): Promise<{ status: number; entries: Entry[] }> => {
+  const targets = Object.fromEntries(Object.keys(adapters).map((server) => [canonOf(server), {}]));
+  const { client } = await startGateway({
+    credentials: [KEY],
+    adapters: Object.fromEntries(Object.entries(adapters).map(([server, adapter]) => [canonOf(server), adapter])),
+    config: { targets, chains: Object.fromEntries(chains.map((members) => [canonOf(members[0] as string), members.map(canonOf)])) },
+  });
   const response = await getJson(client, '/v1/momonga/models');
   return { status: response.status, entries: response.status === 200 ? (response.body.data as Entry[]) : [] };
 };
 
-const entryOf = (entries: Entry[], id: string): Entry => {
-  const found = entries.find((entry) => entry.id === id);
-  if (found === undefined) throw new Error(`no entry ${id}`);
+const entryOf = (entries: Entry[], server: string): Entry => {
+  const found = entries.find((entry) => entry.id === canonOf(server));
+  if (found === undefined) throw new Error(`no entry ${server}`);
   return found;
 };
 
-describe('the models listing gives every target what asking it for capabilities answers (P-G1)', () => {
-  it('a target whose capabilities() throws capabilities_unknown is listed unavailable, and the other alias is listed with numbers', async () => {
-    const { status, entries } = await listing({ A: failing(unknownNumbersOf('no numbers for A')), B: available() }, { a: ['A'], b: ['B'] });
+const memberOf = (entry: Entry, server: string): Record<string, unknown> | undefined => entry.chain.find((member) => member.model === canonOf(server))?.capabilities;
+
+describe('the models listing gives every member of a chain what asking it for capabilities answers (rule L)', () => {
+  it('a model whose capabilities() throws capabilities_unknown is listed unavailable, and the other model is listed with numbers', async () => {
+    const { status, entries } = await listing({ a: failing(unknownNumbersOf('no numbers for A')), b: available() }, [['a'], ['b']]);
     expect(status).toBe(200);
     const a = entryOf(entries, 'a');
     expect(a.capabilities).toEqual(unavailableOf('no numbers for A'));
-    expect(a.targetCapabilities['A']).toEqual(unavailableOf('no numbers for A'));
+    expect(memberOf(a, 'a')).toEqual(unavailableOf('no numbers for A'));
     expect(entryOf(entries, 'b').capabilities['contextWindow']).toBe(8192);
   });
 
-  it('an alias [B, A] (available, unavailable) is listed with the unavailable state of A and lists B with numbers in targetCapabilities', async () => {
-    const { status, entries } = await listing({ A: failing(unknownNumbersOf('no numbers for A')), B: available() }, { mixed: ['B', 'A'] });
+  it('a chain [b, a] (available, unavailable) is listed with the numbers of b, and a shows its unavailable state among the members', async () => {
+    const { status, entries } = await listing({ b: available(), a: failing(unknownNumbersOf('no numbers for A')) }, [['b', 'a'], ['a']]);
     expect(status).toBe(200);
-    const mixed = entryOf(entries, 'mixed');
-    expect(mixed.capabilities).toEqual(unavailableOf('no numbers for A'));
-    expect(mixed.targetCapabilities['B']?.['contextWindow']).toBe(8192);
-    expect(mixed.targetCapabilities['A']).toEqual(unavailableOf('no numbers for A'));
+    const mixed = entryOf(entries, 'b');
+    expect(mixed.capabilities['contextWindow']).toBe(8192);
+    expect(memberOf(mixed, 'b')?.['contextWindow']).toBe(8192);
+    expect(memberOf(mixed, 'a')).toEqual(unavailableOf('no numbers for A'));
   });
 
-  it('with two unavailable members [A1(412), A2(413)] the alias carries the state of A1', async () => {
-    const { status, entries } = await listing({ A1: failing(unknownNumbersOf('first', 412)), A2: failing(unknownNumbersOf('second', 413)) }, { both: ['A1', 'A2'] });
+  it('with two unavailable members [a1(412), a2(413)] the model carries the state of a1, its own', async () => {
+    const { status, entries } = await listing({ a1: failing(unknownNumbersOf('first', 412)), a2: failing(unknownNumbersOf('second', 413)) }, [['a1', 'a2'], ['a2']]);
     expect(status).toBe(200);
-    const both = entryOf(entries, 'both');
+    const both = entryOf(entries, 'a1');
     expect(both.capabilities).toEqual(unavailableOf('first', 412));
-    expect(both.targetCapabilities['A2']).toEqual(unavailableOf('second', 413));
+    expect(memberOf(both, 'a2')).toEqual(unavailableOf('second', 413));
   });
 
   it('an adapter bug is listed unavailable', async () => {
-    const { status, entries } = await listing({ A: failing(() => new TypeError(`boom ${KEY}`)) }, { a: ['A'] });
+    const { status, entries } = await listing({ a: failing(() => new TypeError(`boom ${KEY}`)) }, [['a']]);
     expect(status).toBe(200);
     const a = entryOf(entries, 'a');
     expect(a.capabilities).toEqual({ toolCalling: { state: 'unavailable', status: 502, type: 'server_error', code: 'adapter_error', message: `boom ${REDACTED_MARKER}` }, source: 'unprobed' });
     expect(a.capabilities['toolCalling']).not.toHaveProperty('param');
   });
 
-  it('a probing target is listed with the probing value and an unavailable one beside it is listed unavailable', async () => {
-    const { status, entries } = await listing({ P: failing(probingError), U: failing(unknownNumbersOf('no numbers for U')) }, { probing: ['P'], unavailable: ['U'] });
+  it('a probing model is listed with the probing value and an unavailable one beside it is listed unavailable', async () => {
+    const { status, entries } = await listing({ p: failing(probingError), u: failing(unknownNumbersOf('no numbers for U')) }, [['p'], ['u']]);
     expect(status).toBe(200);
-    expect(entryOf(entries, 'probing').capabilities).toEqual(PROBING);
-    expect(entryOf(entries, 'unavailable').capabilities).toEqual(unavailableOf('no numbers for U'));
+    expect(entryOf(entries, 'p').capabilities).toEqual(PROBING);
+    expect(entryOf(entries, 'u').capabilities).toEqual(unavailableOf('no numbers for U'));
   });
 
-  it('an alias [probing, unavailable] carries the probing state and [unavailable, probing] the unavailable state of its first member; targetCapabilities list each member\'s own state', async () => {
-    const { status, entries } = await listing({ P: failing(probingError), U: failing(unknownNumbersOf('no numbers for U')) }, { pu: ['P', 'U'], up: ['U', 'P'] });
+  it('a chain [probing, unavailable] carries the probing state and [unavailable, probing] the unavailable state of its first member; the members list each one\'s own state', async () => {
+    const { status, entries } = await listing({ p: failing(probingError), u: failing(unknownNumbersOf('no numbers for U')) }, [['p', 'u'], ['u', 'p']]);
     expect(status).toBe(200);
-    const pu = entryOf(entries, 'pu');
-    const up = entryOf(entries, 'up');
+    const pu = entryOf(entries, 'p');
+    const up = entryOf(entries, 'u');
     expect(pu.capabilities).toEqual(PROBING);
     expect(up.capabilities).toEqual(unavailableOf('no numbers for U'));
     for (const entry of [pu, up]) {
-      expect(entry.targetCapabilities['P']).toEqual(PROBING);
-      expect(entry.targetCapabilities['U']).toEqual(unavailableOf('no numbers for U'));
+      expect(memberOf(entry, 'p')).toEqual(PROBING);
+      expect(memberOf(entry, 'u')).toEqual(unavailableOf('no numbers for U'));
     }
   });
 
-  it('an alias with an unavailable member is never listed with capabilities', async () => {
+  it('a model that is itself probing or unavailable is never listed with capabilities, whatever follows it', async () => {
     const { status, entries } = await listing(
-      { A: failing(unknownNumbersOf('no numbers for A')), A1: failing(unknownNumbersOf('first', 412)), A2: failing(unknownNumbersOf('second', 413)), B: available(), P: failing(probingError), U: failing(unknownNumbersOf('no numbers for U')) },
-      { mixed: ['B', 'A'], both: ['A1', 'A2'], pu: ['P', 'U'], up: ['U', 'P'] },
+      { a1: failing(unknownNumbersOf('first', 412)), b: available(), p: failing(probingError) },
+      [['a1', 'b'], ['p', 'b'], ['b']],
     );
     expect(status).toBe(200);
-    for (const id of ['mixed', 'both', 'pu', 'up']) {
-      const entry = entryOf(entries, id);
+    for (const server of ['a1', 'p']) {
+      const entry = entryOf(entries, server);
       expect(entry.capabilities).not.toHaveProperty('contextWindow');
       expect(['probing', 'unavailable']).toContain((entry.capabilities['toolCalling'] as { state: string }).state);
     }

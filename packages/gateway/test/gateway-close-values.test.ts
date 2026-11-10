@@ -6,8 +6,8 @@ import { bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway
 describe('close() with the values of the stop', () => {
   it('a close grace of 0 closes without waiting for in-flight calls and cancels them', async () => {
     const primary = createHangingAdapter(bigTextEvents(80, 100_000));
-    const { gateway, timers, clock, socketPath } = await startGateway({ adapters: { primary }, config: { closeGraceMs: 750 } });
-    await openUnreadStream(socketPath, { model: 'fast', input: userInput('hi'), stream: true });
+    const { gateway, timers, clock, socketPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { closeGraceMs: 750 } });
+    await openUnreadStream(socketPath, { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     await waitFor(() => primary.pulled.count >= 5, { description: 'adapter streaming' });
 
     const began = clock.now();

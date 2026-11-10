@@ -6,7 +6,7 @@ import { START_MS, postJson, startGateway, userInput } from './gateway-helpers.t
 import { BUDGET, driveTimers } from './retry-support.ts';
 
 const IDLE_HEADER = 'momonga-stream-idle-ms';
-const request = { model: 'fast', input: userInput('hi'), stream: true };
+const request = { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true };
 const decoder = new TextDecoder();
 
 const errorEventOf = (text: string): unknown => {
@@ -36,7 +36,7 @@ describe('gateway stream liveness before the first upstream event', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['late'] }), gate: { name: 'g', afterEvents: 0 } }],
     });
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { sseKeepAliveMs: 15_000 } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { sseKeepAliveMs: 15_000 } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
 
@@ -59,7 +59,7 @@ describe('gateway stream liveness before the first upstream event', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['late'] }), gate: { name: 'g', afterEvents: 0 } }],
     });
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { sseKeepAliveMs: 2500 } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { sseKeepAliveMs: 2500 } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3600000' });
 
@@ -75,7 +75,7 @@ describe('gateway stream liveness before the first upstream event', () => {
 
   it('rejects an idle bound that is not a positive integer', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: 'soon' });
 
@@ -89,12 +89,12 @@ describe('gateway stream liveness before the first upstream event', () => {
     const primary = createScriptedAdapter({ calls: [{ delayMs: 3500, failure: { status: 500, message: 'primary is down' } }], timers });
     const secondary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'scripted-secondary', chunks: ['from secondary'] }) }] });
     const { client } = await startGateway({
-      adapters: { primary, secondary },
+      adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary },
       clock,
       timers,
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+        chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+        targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
         retry: { maxAttempts: 1, totalWaitMs: 1, baseMs: 100, maxMs: 10_000 },
       },
     });
@@ -112,13 +112,13 @@ describe('gateway stream liveness before the first upstream event', () => {
 
     const rest = await drain(chunks);
     expect(rest).toContain('from secondary');
-    expect(rest).toContain('"fallbackFrom":["primary"]');
+    expect(rest).toContain('"fallbackFrom":["scripted/scripted-primary"]');
     expect(secondary.calls).toHaveLength(1);
   });
 
   it('reports a failure before the first event as an error event carrying the HTTP status', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 422, message: 'bad schema' } }] });
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
 
@@ -138,7 +138,7 @@ describe('gateway stream liveness before the first upstream event', () => {
         { failure: { status: 429, message: 'slow down again', retryAfterMs: 4000 } },
       ],
     });
-    const harness = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 6000, baseMs: 100, maxMs: 10_000 } } });
+    const harness = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 6000, baseMs: 100, maxMs: 10_000 } } });
     const reading = postJson(harness.client, '/v1/responses', request, { [IDLE_HEADER]: '3000' }).then((response) => drain(response.body[Symbol.asyncIterator]()));
 
     await driveTimers(harness, [reading], (timer) => timer.delayMs === 1000);
@@ -151,7 +151,7 @@ describe('gateway stream liveness before the first upstream event', () => {
 
   it('carries the deferral in the error event of a stream whose only target asks for longer than the whole budget', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'come back later', retryAfterMs: 100_000 } }] });
-    const { client } = await startGateway({ adapters: { primary }, config: { retry: BUDGET } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: BUDGET } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
 
@@ -168,7 +168,7 @@ describe('gateway stream liveness before the first upstream event', () => {
   it('sends a later stream to the only target although its breaker is open, and reports that target error', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 500, message: 'down' } }, { failure: { status: 500, message: 'still down' } }] });
     const { client } = await startGateway({
-      adapters: { primary },
+      adapters: { 'scripted/scripted-primary': primary },
       config: { retry: { maxAttempts: 1, totalWaitMs: 1, baseMs: 100, maxMs: 10_000 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     await (await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' })).text();
@@ -185,7 +185,7 @@ describe('gateway stream liveness before the first upstream event', () => {
 });
 
 describe('compaction liveness', () => {
-  const compactRequest = { model: 'fast', input: userInput('hi') };
+  const compactRequest = { model: 'scripted/scripted-primary', input: userInput('hi') };
 
   const frameOf = (text: string, name: string): { event: string; data: unknown } | undefined => {
     const frame = text.split('\n\n').find((part) => part.includes(`event: ${name}`));
@@ -195,7 +195,7 @@ describe('compaction liveness', () => {
 
   it('opens at once and writes comment lines while the compaction runs, then sends the result as its final event', async () => {
     const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x', compactGate: 'g' });
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { sseKeepAliveMs: 15_000 } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { sseKeepAliveMs: 15_000 } });
 
     const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: '3000' });
 
@@ -216,7 +216,7 @@ describe('compaction liveness', () => {
 
   it('answers a compaction without the header as one JSON body, as before', async () => {
     const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses/compact', compactRequest);
 
@@ -227,7 +227,7 @@ describe('compaction liveness', () => {
 
   it('still rejects a malformed compaction request with its HTTP status when the header is present', async () => {
     const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses/compact', { input: userInput('hi') }, { [IDLE_HEADER]: '3000' });
 
@@ -237,7 +237,7 @@ describe('compaction liveness', () => {
 
   it('rejects an idle bound that is not a positive integer on a compaction too', async () => {
     const primary = createScriptedAdapter({ calls: [], compactSummary: 'GOAL: x' });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: 'soon' });
 
@@ -247,7 +247,7 @@ describe('compaction liveness', () => {
 
   it('reports a failed compaction as an error event carrying the HTTP status', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
 
     const response = await postJson(client, '/v1/responses/compact', compactRequest, { [IDLE_HEADER]: '3000' });
 

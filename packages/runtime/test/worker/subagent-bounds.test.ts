@@ -15,6 +15,7 @@ import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { keepAliveOnly, startRealGateway, within } from './keep-alive-gateway.ts';
+import { fakeViewsOf } from './fake-gateway.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -29,7 +30,7 @@ const agentsPortOf = (env: Env): AgentsPort =>
     home: env.home,
     fileSystem: createNodeSkillFileSystem(),
     settings: { trusted: () => env.settings.trustedValue },
-    runs: createChildRuns({ store: env.store, modelAliases: async () => ['fm'] }),
+    runs: createChildRuns({ store: env.store, modelViews: async () => fakeViewsOf(['fm']) }),
   });
 
 const writeAgent = (env: Env): void => {

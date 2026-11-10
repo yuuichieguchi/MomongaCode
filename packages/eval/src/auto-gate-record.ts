@@ -1,7 +1,7 @@
 import type { AutoFitKey, AutoFitRecord } from '@momonga/config';
 import type { EvalReport } from './report.ts';
 
-export type AutoGateMeta = { key: AutoFitKey; agentAlias: string; recordedAt: string; version: string };
+export type AutoGateMeta = { key: AutoFitKey; agentModel: string; recordedAt: string; version: string };
 
 export const autoGateRecordOf = (report: EvalReport, meta: AutoGateMeta): AutoFitRecord | undefined => {
   const { falseAllow, falseBlock, unobserved } = report.decisions;
@@ -13,7 +13,7 @@ export const autoGateRecordOf = (report: EvalReport, meta: AutoGateMeta): AutoFi
     falseBlock: { successes: falseBlock.successes, trials: falseBlock.trials, high: falseBlock.high },
     runs: report.overall.trials,
     unobserved,
-    agentAlias: meta.agentAlias,
+    agentModel: meta.agentModel,
     recordedAt: meta.recordedAt,
     version: meta.version,
   };

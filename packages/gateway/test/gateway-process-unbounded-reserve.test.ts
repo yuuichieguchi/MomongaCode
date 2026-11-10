@@ -7,7 +7,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { getJson } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -18,14 +18,14 @@ describe('the gateway reads context.unboundedOutputReserve from user settings pe
   it('lists outputBoundField none for a probed-none record by default and while the user setting is on, and not while it is off, with no restart', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
-    const models = { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } };
+    const models = modelsOf({ primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) });
     writeSettings(home, { models });
     await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), { endpoint: `unix:${fake.socketPath}`, model: 'system' }, 'identity-one', ['id', 'object', 'owned_by'], honoursNoBound as never, CURRENT_DIALECTS);
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const listed = async () => {
       const response = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
       expect(response.status).toBe(200);
-      return response.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities;
+      return response.body.data.find((entry: { id: string }) => entry.id === 'primary/system').capabilities;
     };
 
     expect((await listed()).outputBoundField).toBe('none');

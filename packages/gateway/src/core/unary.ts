@@ -26,8 +26,9 @@ import { errorTypeOf, messageOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
+import { adapterTargetOf } from './router.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
-import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
+import { CandidateDropped, CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { withPinnedServices } from './services.ts';
 import type { GatewayServices, Services } from './services.ts';
@@ -142,9 +143,9 @@ const countOnTarget = async (
   attemptNumber: number,
 ): Promise<Counted> => {
   const capabilities = await narrowed.capabilitiesOf(target);
-  const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, { name: target.name, model: target.model });
+  const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, adapterTargetOf(target));
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), capabilities.allowedTools, target.name, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), capabilities.allowedTools, target.display, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
@@ -155,7 +156,7 @@ const countOnTarget = async (
       renderWire.call(
         target.adapter,
         counted,
-        { name: target.name, model: target.model },
+        adapterTargetOf(target),
         {
           reasoningOrigin: originOf(services, target),
           capabilities,
@@ -202,16 +203,17 @@ const countTokens = async (
   const request = validator.parseCountTokens(rawBody);
   const unknownFields = validator.unknownCountTokensFields(rawBody);
   const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-  const aliasTargets = services.router.targetsOf(request.model);
+  const { router } = services;
+  const model = router.resolveRequestModel(request.model, request.momonga?.exact_model === true);
+  const chain = router.chainOf(model);
   const named = request.momonga?.target;
-  const found = named === undefined ? undefined : aliasTargets.find((candidate) => candidate.name === named);
+  const found = named === undefined ? undefined : chain.find((candidate) => candidate.name === named);
   if (named !== undefined && found === undefined) {
-    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, MOMONGA_REQUEST_FIELDS.target);
+    throw invalidRequest('invalid_target', `model "${router.displayOf(named)}" is not "${router.displayOf(model)}" or one of its fallback models`, MOMONGA_REQUEST_FIELDS.target);
   }
-  const candidates = found === undefined ? aliasTargets : [found];
-  if (candidates.length === 0) throw new Error(`model alias "${request.model}" has no targets`);
+  const candidates = found === undefined ? chain : [found];
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
-  const narrowed = await services.router.narrow(request.model, candidates, {
+  const narrowed = await router.narrow(model, candidates, {
     images: inputHasImages(resolved.forAdapter),
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
     unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
@@ -232,16 +234,18 @@ const compactOnce = async (
   deadlineAt: number | undefined,
   trace: CompactTrace,
 ): Promise<CompactResource> => {
-  const targets = services.router.targetsOf(request.model);
+  const { router } = services;
+  const model = router.resolveRequestModel(request.model, request.momonga?.exact_model === true);
+  const targets = router.chainOf(model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const narrowed = await services.router.narrow(request.model, targets, {
+  const narrowed = await router.narrow(model, targets, {
     images: inputHasImages(resolved.forAdapter),
     ...(request.momonga?.max_summary_tokens === undefined ? {} : { summaryCap: request.momonga.max_summary_tokens }),
     unknownFields: { keys: Object.keys(unknownFields), operation: 'compact' },
   });
   const supporting = narrowed.targets.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
-    throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
+    throw invalidRequest('capability_unsupported', `"${router.displayOf(model)}" and its fallback models do not support compaction`, 'model');
   }
   const compactRequestFor = (target: TargetRuntime, cap: number): AdapterCompactRequest => ({
     model: target.model,
@@ -259,7 +263,7 @@ const compactOnce = async (
     const renderCompactWire = target.adapter.renderCompactWire;
     if (renderCompactWire === undefined) return undefined;
     return asGatewayError(target, () =>
-      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target), capabilities),
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), adapterTargetOf(target), cap, originOf(services, target), capabilities),
     );
   };
   const fitsWindow = (capabilities: Capabilities, cap: number, counted: CountTokensResult): boolean => {
@@ -294,7 +298,7 @@ const compactOnce = async (
   const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, messageOf(failure));
   const outcome = await callTargets(services, supporting, narrowed, signal, deadlineAt, async (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
-    if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
+    if (compact === undefined) throw new TypeError(`model "${target.display}" lost its compact capability`);
     let capabilities: Capabilities;
     let cap: number;
     try {
@@ -305,7 +309,7 @@ const compactOnce = async (
         throw new CandidateRefused(sizeRefusal);
       }
     } catch (error) {
-      if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
+      if (error instanceof CandidateRefused || error instanceof CandidateDropped || error instanceof UnprobedTarget) throw error;
       const failure = failureFrom(target.adapter, error, guarded);
       failSpan(startSpan(target, attemptNumber, undefined), failure);
       throw failure;
@@ -324,7 +328,7 @@ const compactOnce = async (
   outcome.settle('success');
   const resourceId = identifier(services, 'resp');
   const attempt = spans.get(outcome.target);
-  if (attempt === undefined) throw new TypeError(`target "${outcome.target.name}" answered the compaction without an attempt span`);
+  if (attempt === undefined) throw new TypeError(`model "${outcome.target.display}" answered the compaction without an attempt span`);
   attempt.succeed({
     responseModel: outcome.target.model,
     responseId: resourceId,

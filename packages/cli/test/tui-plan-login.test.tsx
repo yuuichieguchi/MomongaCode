@@ -154,7 +154,7 @@ describe('the account picker and a new sign-in', () => {
   it('ends a sign-in that leaves no target in the model picker; choosing a row creates the target, opens the session and sends the prompt once', async () => {
     const { app, backend } = await startPlan(
       {
-        aliases: [],
+        models: [],
         accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })],
         complete: { outcome: 'signed_in', account: account({ pinnedBy: [] }), firstSignIn: false },
         catalogs: { chatgpt: { readAt: '2026-11-10T00:00:00.000Z', models: [{ slug: 'gpt-5.1', displayName: 'GPT-5.1', usable: true, contextWindow: 272000, maxOutputTokens: 128000 }] } },
@@ -236,7 +236,7 @@ describe('/logout of an account with nothing to sign out', () => {
 
 describe('Using ChatGPT plan in the footer', () => {
   const planned = {
-    targets: ['plan-gpt', 'metered-key'],
+    chain: ['plan-gpt', 'metered-key'],
     billing: { 'plan-gpt': 'plan', 'metered-key': 'metered' } as const,
     planTargets: { 'plan-gpt': { profile: 'chatgpt', account: 'chatgpt' } },
     accounts: [account()],
@@ -254,7 +254,7 @@ describe('Using ChatGPT plan in the footer', () => {
     app.unmount();
   });
 
-  it('follows the call, not the alias: the label goes away when the next call is served by a metered target', async () => {
+  it('follows the call, not the session model: the label goes away when the next call is served by a metered target', async () => {
     const { app, backend } = await startPlan(planned);
     await ready(app);
     await runStarted(backend, app, 'go');
@@ -272,7 +272,7 @@ describe('Using ChatGPT plan in the footer', () => {
 describe('the model picker', () => {
   it('turns a plan target that needs sign-in into the sign-in flow for its profile', async () => {
     const { app } = await startPlan({
-      targets: ['plan-gpt'],
+      chain: ['plan-gpt'],
       billing: { 'plan-gpt': 'plan' },
       planTargets: { 'plan-gpt': { profile: 'chatgpt', account: 'chatgpt' } },
       health: { 'plan-gpt': { ok: false, breaker: 'closed', reason: 'sign_in_required' } },
@@ -280,7 +280,7 @@ describe('the model picker', () => {
     });
     await ready(app);
     await submitLine(app, '/model');
-    await choose(app, 'default');
+    await choose(app, 'plan-gpt');
     await untilFrame(app, SENTENCE);
     app.unmount();
   });
@@ -307,7 +307,7 @@ describe('the model picker', () => {
     await choose(app, 'gpt-5.1');
     await eventually(() => routesOf(backend).includes('accounts/chatgpt/targets'), 'the target creation');
     expect(bodyOf(backend, 'accounts/chatgpt/targets')).toEqual({ profile: 'chatgpt', slug: 'gpt-5.1' });
-    await backend.called('model:gpt-5.1');
+    await backend.called('model:chatgpt/gpt-5.1');
     app.unmount();
   });
 });

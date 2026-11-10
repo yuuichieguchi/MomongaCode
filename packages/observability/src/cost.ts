@@ -114,7 +114,7 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
   if (cached !== undefined && cached + written > usage.inputTokens) {
     return { kind: 'unpriced', code: 'unpriceable_usage', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
   }
-  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', code: 'unknown_billing', reason: 'the billing of the target is unknown' };
+  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', code: 'unknown_billing', reason: 'the billing of the model is unknown' };
   if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
   if (billing === 'plan') return { kind: 'unpriced', code: 'plan', reason: 'plan' };
   if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', code: 'unpriceable_usage', reason: 'the time of the call is not a valid date' };

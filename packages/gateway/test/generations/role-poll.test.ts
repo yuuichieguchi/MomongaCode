@@ -11,7 +11,7 @@ const SECOND_GENERATION = 2;
 
 const launch = async () => {
   const home = makeHome();
-  writeSettings(home, { models: { aliases: {}, targets: {} } });
+  writeSettings(home, {});
   const clock = createFakeClock(Date.now());
   const timers = createFakeTimers(clock);
   const logLines: string[] = [];

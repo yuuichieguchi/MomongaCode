@@ -5,7 +5,7 @@ import type { AnthropicApiVersion, Capabilities, ProviderAdapter } from '@momong
 import { anthropicTextReply, createFakeClock, startFakeAnthropic } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake } from './cc-support.ts';
-import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { chainOfServers, START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
@@ -45,14 +45,12 @@ const upstreamFor = (name: string): Promise<Upstream> => {
 const startAlias = async (order: readonly string[]) => {
   const upstreams: Record<string, Upstream> = {};
   for (const name of order) upstreams[name] = await upstreamFor(name);
+  const chain = chainOfServers(Object.fromEntries(order.map((name) => [name, { model: 'upstream-model', kind: 'remote' as const }])));
   const harness = await startGateway({
-    adapters: Object.fromEntries(Object.entries(upstreams).map(([name, upstream]) => [name, upstream.adapter])),
-    config: {
-      aliases: { fast: [...order] },
-      targets: Object.fromEntries(order.map((name) => [name, { model: 'upstream-model', kind: 'remote' as const }])),
-    },
+    adapters: chain.keyed(Object.fromEntries(Object.entries(upstreams).map(([name, upstream]) => [name, upstream.adapter]))),
+    config: chain.config,
   });
-  const post = async (body: Record<string, unknown>) => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...body }));
+  const post = async (body: Record<string, unknown>) => readJson(await postJson(harness.client, '/v1/responses', { model: harness.model, input: userInput('hi'), ...body }));
   return { post, sentTo: (name: string) => (upstreams[name] as Upstream).sent() };
 };
 

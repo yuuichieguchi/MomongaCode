@@ -4,14 +4,14 @@ import { driveTimers } from './retry-support.ts';
 import { expectErrorBody, getJson, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 
 const ok = (model: string, text = 'ok') => ({ events: textResponseEvents({ model, chunks: [text] }) });
-const request = { model: 'fast', input: userInput('hi') };
+const request = { model: 'scripted/scripted-primary', input: userInput('hi') };
 
 describe('retry', () => {
   it('waits at least retryAfterMs after a 429 before retrying, then succeeds', async () => {
     const primary = createScriptedAdapter({
       calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 3000 } }, ok('scripted-primary', 'second try')],
     });
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const pending = postJson(client, '/v1/responses', request);
     await waitFor(() => primary.calls.length === 1 && timers.pending().length > 0, { description: 'retry timer' });
     const wait = timers.pending().at(-1);
@@ -31,24 +31,24 @@ describe('retry', () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 86_400_000 } }] });
     const secondary = createScriptedAdapter({ calls: [ok('scripted-secondary', 'from secondary')] });
     const { client, timers } = await startGateway({
-      adapters: { primary, secondary },
+      adapters: { 'scripted/scripted-primary': primary, 'scripted/scripted-secondary': secondary },
       config: {
-        aliases: { fast: ['primary', 'secondary'] },
-        targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
+        chains: { 'scripted/scripted-primary': ['scripted/scripted-primary', 'scripted/scripted-secondary'] },
+        targets: { 'scripted/scripted-primary': {}, 'scripted/scripted-secondary': {} },
         retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 },
       },
     });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('from secondary');
-    expect(response.body.momonga.fallbackFrom).toEqual(['primary']);
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/scripted-primary']);
     expect(primary.calls).toHaveLength(1);
     expect(timers.pending().some((timer) => timer.delayMs > 10_000)).toBe(false);
   });
 
   it('returns the 429 with its Retry-After when the only target asks for a wait longer than retry.maxMs', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 86_400_000 } }] });
-    const { client } = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 } } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000 } } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('86400');
@@ -57,7 +57,7 @@ describe('retry', () => {
 
   it('does not retry a 400-class upstream error', async () => {
     const primary = createScriptedAdapter({ calls: [{ failure: { status: 422, message: 'bad schema' } }] });
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'upstream_rejected' });
@@ -77,7 +77,7 @@ describe('retry', () => {
       ],
     });
     const harness = await startGateway({
-      adapters: { primary },
+      adapters: { 'scripted/scripted-primary': primary },
       config: { retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000, totalWaitMs: 1000 } },
     });
     const { client, timers } = harness;
@@ -96,7 +96,7 @@ describe('retry', () => {
     const primary = createScriptedAdapter({
       calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 5000 } }, ok('scripted-primary')],
     });
-    const { client, timers } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request, { 'momonga-deadline-ms': '1000' }));
     expect(response.status).toBe(504);
     expectErrorBody(response.body, { type: 'server_error', code: 'deadline_exceeded' });
@@ -106,7 +106,7 @@ describe('retry', () => {
 
   it('rejects a malformed momonga-deadline-ms header', async () => {
     const primary = createScriptedAdapter({ calls: [] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request, { 'momonga-deadline-ms': 'soon' }));
     expect(response.status).toBe(400);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'invalid_deadline' });
@@ -119,49 +119,49 @@ describe('circuit breaker', () => {
     const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }, ok('model-a', 'a back')] });
     const b = createScriptedAdapter({ calls: [ok('model-b', 'b one'), ok('model-b', 'b two')] });
     const { client, clock } = await startGateway({
-      adapters: { a, b },
+      adapters: { 'scripted/model-a': a, 'scripted/model-b': b },
       config: {
-        aliases: { fast: ['a', 'b'] },
-        targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
+        chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] },
+        targets: { 'scripted/model-a': {}, 'scripted/model-b': {} },
         retry: { maxAttempts: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
     });
-    const first = await readJson(await postJson(client, '/v1/responses', request));
+    const first = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
     expect(outputText(first.body)).toBe('b one');
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'open', ok: false });
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/model-a']).toMatchObject({ breaker: 'open', ok: false });
 
-    const second = await readJson(await postJson(client, '/v1/responses', request));
+    const second = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
     expect(outputText(second.body)).toBe('b two');
-    expect(second.body.momonga.fallbackFrom).toEqual(['a']);
+    expect(second.body.momonga.fallbackFrom).toEqual(['scripted/model-a']);
     expect(a.calls).toHaveLength(1);
 
     clock.advance(10_000);
-    const third = await readJson(await postJson(client, '/v1/responses', request));
+    const third = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
     expect(outputText(third.body)).toBe('a back');
     expect(a.calls).toHaveLength(2);
     expect(b.calls).toHaveLength(2);
     const health = (await getJson(client, '/v1/momonga/health')).body;
-    expect(health.targets.a).toMatchObject({ breaker: 'closed', ok: true });
-    expect(health.targets.b).toMatchObject({ breaker: 'closed', ok: true });
+    expect(health.models['scripted/model-a']).toMatchObject({ breaker: 'closed', ok: true });
+    expect(health.models['scripted/model-b']).toMatchObject({ breaker: 'closed', ok: true });
   });
 
   it('ignores an open breaker when no later candidate exists and sends to the target anyway', async () => {
     const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }, ok('model-a', 'a answers')] });
     const { client } = await startGateway({
-      adapters: { a },
+      adapters: { 'scripted/model-a': a },
       config: {
-        aliases: { fast: ['a'] },
-        targets: { a: { model: 'model-a' } },
+        chains: { 'scripted/model-a': ['scripted/model-a'] },
+        targets: { 'scripted/model-a': {} },
         retry: { maxAttempts: 1, totalWaitMs: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
     });
-    const failed = await readJson(await postJson(client, '/v1/responses', request));
+    const failed = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
     expect(failed.status).toBe(502);
-    expect((await getJson(client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'open' });
+    expect((await getJson(client, '/v1/momonga/health')).body.models['scripted/model-a']).toMatchObject({ breaker: 'open' });
 
-    const response = await readJson(await postJson(client, '/v1/responses', request));
+    const response = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('a answers');
@@ -172,21 +172,21 @@ describe('circuit breaker', () => {
     const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }, ok('model-a', 'a answers')] });
     const b = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'b down' } }] });
     const { client } = await startGateway({
-      adapters: { a, b },
+      adapters: { 'scripted/model-a': a, 'scripted/model-b': b },
       config: {
-        aliases: { fast: ['a', 'b'] },
-        targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
+        chains: { 'scripted/model-a': ['scripted/model-a', 'scripted/model-b'] },
+        targets: { 'scripted/model-a': {}, 'scripted/model-b': {} },
         retry: { maxAttempts: 1, totalWaitMs: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
     });
-    const failed = await readJson(await postJson(client, '/v1/responses', request));
+    const failed = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
     expect(failed.status).toBe(502);
     const health = (await getJson(client, '/v1/momonga/health')).body;
-    expect(health.targets.a).toMatchObject({ breaker: 'open' });
-    expect(health.targets.b).toMatchObject({ breaker: 'open' });
+    expect(health.models['scripted/model-a']).toMatchObject({ breaker: 'open' });
+    expect(health.models['scripted/model-b']).toMatchObject({ breaker: 'open' });
 
-    const response = await readJson(await postJson(client, '/v1/responses', request));
+    const response = await readJson(await postJson(client, '/v1/responses', { ...request, model: 'scripted/model-a' }));
 
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe('a answers');
@@ -196,23 +196,24 @@ describe('circuit breaker', () => {
 });
 
 describe('concurrency limiter', () => {
+  const limitedRequest = { ...request, model: 'scripted/model-a' };
   const limited = {
-    aliases: { fast: ['a'], other: ['b'] },
+    chains: { 'scripted/model-a': ['scripted/model-a'], 'scripted/model-b': ['scripted/model-b'] },
     targets: {
-      a: { model: 'model-a', maxConcurrency: 1, admissionTimeoutMs: 5000 },
-      b: { model: 'model-b' },
+      'scripted/model-a': { maxConcurrency: 1, admissionTimeoutMs: 5000 },
+      'scripted/model-b': {},
     },
   };
 
-  it('makes a second concurrent request wait and admits it when the first finishes', async () => {
+  it('makes a second concurrent limitedRequest wait and admits it when the first finishes', async () => {
     const a = createScriptedAdapter({
       calls: [{ ...ok('model-a', 'first'), gate: { name: 'first', afterEvents: 0 } }, ok('model-a', 'second')],
     });
     const b = createScriptedAdapter({ calls: [] });
-    const { client, timers } = await startGateway({ adapters: { a, b }, config: limited });
-    const first = postJson(client, '/v1/responses', request);
+    const { client, timers } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config: limited });
+    const first = postJson(client, '/v1/responses', limitedRequest);
     await waitFor(() => a.calls.length === 1);
-    const second = postJson(client, '/v1/responses', request);
+    const second = postJson(client, '/v1/responses', limitedRequest);
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 5000), { description: 'admission timer' });
     expect(a.calls).toHaveLength(1);
     a.release('first');
@@ -225,13 +226,13 @@ describe('concurrency limiter', () => {
   it('answers 429 too_many_requests with Retry-After when admission waits longer than admissionTimeoutMs', async () => {
     const a = createScriptedAdapter({ calls: [{ ...ok('model-a', 'first'), gate: { name: 'first', afterEvents: 0 } }] });
     const b = createScriptedAdapter({ calls: [ok('model-b', 'unaffected')] });
-    const { client, timers } = await startGateway({ adapters: { a, b }, config: limited });
-    const first = postJson(client, '/v1/responses', request);
+    const { client, timers } = await startGateway({ adapters: { 'scripted/model-a': a, 'scripted/model-b': b }, config: limited });
+    const first = postJson(client, '/v1/responses', limitedRequest);
     await waitFor(() => a.calls.length === 1);
-    const second = postJson(client, '/v1/responses', request);
+    const second = postJson(client, '/v1/responses', limitedRequest);
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 5000), { description: 'admission timer' });
 
-    const other = await readJson(await postJson(client, '/v1/responses', { model: 'other', input: userInput('hi') }));
+    const other = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/model-b', input: userInput('hi') }));
     expect(outputText(other.body)).toBe('unaffected');
 
     timers.advance(5000);

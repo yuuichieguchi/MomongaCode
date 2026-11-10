@@ -248,7 +248,7 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes no call, no charge and no candidate when the run alias reports no structured output, and ends done naming the role setting and the alias', async () => {
+  it('makes no call, no charge and no candidate when the run model reports no structured output, and ends done naming the role setting and the model', async () => {
     const env = setup({ structured: false });
     const run = await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts']), { usage: usageOf(100, 20) }));

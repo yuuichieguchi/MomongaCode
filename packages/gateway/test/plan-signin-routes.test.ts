@@ -70,7 +70,7 @@ describe('sign-in complete installs a validated identity (P5b, 5.3)', () => {
     expect(completed.status).toBe(200);
     expect(completed.body).toMatchObject({ outcome: 'signed_in', firstSignIn: true, account: { label: ACCOUNT, state: 'active', email: gateway.auth.identity.email } });
     const accounts = await gateway.get(PLAN_ROUTES.accounts);
-    expect(accounts.body.accounts).toEqual([expect.objectContaining({ label: ACCOUNT, state: 'active', active: true, pinnedBy: ['gpt'] })]);
+    expect(accounts.body.accounts).toEqual([expect.objectContaining({ label: ACCOUNT, state: 'active', active: true, pinnedBy: ['gpt/plan-model'] })]);
     expect(JSON.stringify(accounts.body)).not.toContain('access_token');
     const records = fs.readdirSync(sessionsDirectory(gateway.home)).filter((name) => name.endsWith('.json'));
     expect(records).toHaveLength(1);

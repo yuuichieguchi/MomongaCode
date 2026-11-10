@@ -200,21 +200,21 @@ export const momongaLayout = (
 export type ManagedInstancePurpose = 'serve' | 'probe';
 
 export type ManagedInstance =
-  | { owner: 'gateway'; generation: number; purpose: 'serve'; target: string; incarnation: number }
-  | { owner: 'gateway'; generation: number; purpose: 'probe'; target: string }
-  | { owner: 'cli'; purpose: ManagedInstancePurpose; target: string };
+  | { owner: 'gateway'; generation: number; purpose: 'serve'; provider: string; incarnation: number }
+  | { owner: 'gateway'; generation: number; purpose: 'probe'; provider: string }
+  | { owner: 'cli'; purpose: ManagedInstancePurpose; provider: string };
 
 type GatewayInstance = Extract<ManagedInstance, { owner: 'gateway' }>;
 
 export type ManagedInstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
 
 const gatewayInstanceStem = (instance: GatewayInstance): string => {
-  if (instance.purpose === 'probe') return `_probe-${instance.target}`;
+  if (instance.purpose === 'probe') return `_probe-${instance.provider}`;
   if (!Number.isSafeInteger(instance.incarnation) || instance.incarnation < 1) throw new RangeError(`an incarnation number must be a positive integer, got ${instance.incarnation}`);
-  return `${instance.target}-${instance.incarnation}`;
+  return `${instance.provider}-${instance.incarnation}`;
 };
 
-const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, target: string): string => `_cli-${purpose}-${target}`;
+const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, provider: string): string => `_cli-${purpose}-${provider}`;
 
 export const GENERATION_TARGETS_DIRECTORY = 'targets';
 
@@ -236,11 +236,11 @@ export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInsta
       markerDirectory: path.join(paths.markers.root, generation, GENERATION_TARGETS_DIRECTORY, stem),
     };
   }
-  const stem = CLI_INSTANCE_STEM(instance.purpose, instance.target);
+  const stem = CLI_INSTANCE_STEM(instance.purpose, instance.provider);
   return {
     socketPath: path.join(paths.run, `${stem}.sock`),
     lockPath: path.join(paths.run, `${stem}.lock`),
-    markerDirectory: path.join(paths.markers.root, CLI_MARKER_DIRECTORY, `${instance.purpose}-${instance.target}`),
+    markerDirectory: path.join(paths.markers.root, CLI_MARKER_DIRECTORY, `${instance.purpose}-${instance.provider}`),
   };
 };
 

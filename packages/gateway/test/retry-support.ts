@@ -1,7 +1,7 @@
 import { driveFakeTime, textResponseEvents } from '@momonga/testkit';
 import type { PendingTimer } from '@momonga/testkit';
 import type { Harness } from './gateway-helpers.ts';
-import { userInput } from './gateway-helpers.ts';
+import { PRIMARY, userInput } from './gateway-helpers.ts';
 
 export const TOTAL_WAIT_MS = 84_000;
 export const BASE_MS = 500;
@@ -12,7 +12,7 @@ export const DEFERRED_HEADER = 'momonga-deferred';
 
 export const capOf = (retryIndex: number): number => Math.min(MAX_MS, BASE_MS * 2 ** retryIndex);
 
-export const request = { model: 'fast', input: userInput('hi') };
+export const request = { model: PRIMARY, input: userInput('hi') };
 
 export const unavailable = (count: number, retryAfterMs?: number) =>
   Array.from({ length: count }, (_unused, index) => ({

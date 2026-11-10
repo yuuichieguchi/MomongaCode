@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createSlashRegistry, BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
 import { App } from '../src/tui/app.tsx';
-import { fakeBackend, runView } from './fake-backend.ts';
+import { SESSION, fakeBackend, runView } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
 import { startPlan } from './fake-plan-gateway.tsx';
@@ -53,6 +53,7 @@ describe('App startup', () => {
   });
 });
 
+const QWEN = 'ollama/qwen3.8:27b';
 const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: manual \(shift\+tab\)/;
 
 describe('App run rendering', () => {
@@ -339,7 +340,7 @@ describe('App slash commands', () => {
     await type(app, '/help', '> /help');
     app.stdin.write(KEYS.enter);
     const output = await untilOutput(app, 'ctrl+j: new line (shift+enter works only if this terminal reports it; this one has not)');
-    for (const name of ['Commands', '/help', '/clear', '/mode', '/model [alias]', '/exit', 'Keys', 'Mouse']) expect(output).toContain(name);
+    for (const name of ['Commands', '/help', '/clear', '/mode', '/model [model] [--start]', '/exit', 'Keys', 'Mouse']) expect(output).toContain(name);
     app.unmount();
   });
 
@@ -356,24 +357,25 @@ describe('App slash commands', () => {
     app.unmount();
   });
 
-  it('/model opens the model picker with a row per alias and the current one marked', async () => {
-    const { app } = await startPlan({ aliases: ['default', 'qwen-local'] });
+  it('/model opens the model picker with a row per configured model and the current one marked', async () => {
+    const { app } = await startPlan({ models: [SESSION.model, QWEN] });
     await untilFrame(app, 'mode: manual');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const picker = await untilFrame(app, 'qwen-local · primary');
-    expect(picker).toContain('default (current) · primary');
-    expect(picker).not.toContain('qwen-local (current)');
+    const picker = await untilFrame(app, 'qwen3.8:27b  ·  metered');
+    expect(picker).toContain('scripted-model  ·  metered  ·  current');
+    expect(picker).not.toContain('qwen3.8:27b  ·  metered  ·  current');
+    expect(picker).toContain('tab: also use at every start');
     app.unmount();
   });
 
   it('/model switches the model of the session and the context size the status line measures against', async () => {
-    const { backend, app } = await start({ aliases: ['default', 'qwen-local'], windows: { default: 8192, 'qwen-local': 32768 } });
+    const { backend, app } = await start({ models: [SESSION.model, QWEN], windows: { [SESSION.model]: 8192, [QWEN]: 32768 } });
     await untilFrame(app, 'mode: manual');
-    await type(app, '/model qwen-local', '> /model qwen-local');
+    await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: qwen-local; applies from the next task');
-    expect(backend.calls).toContain('model:qwen-local');
+    await untilOutput(app, 'model: qwen3.8:27b; applies from the next task');
+    expect(backend.calls).toContain(`model:${QWEN}`);
     await runStarted(backend, app, 'what is here');
     backend.emit(frame({ type: 'model.responded', attempt: 0, response: { status: 'completed', output: [], usage: { input_tokens: 1500, output_tokens: 100, total_tokens: 1600 } } }));
     backend.emit(frame({ type: 'usage.updated', inputTokens: 1500, outputTokens: 100, totalTokens: 1600 }));
@@ -381,23 +383,23 @@ describe('App slash commands', () => {
     app.unmount();
   });
 
-  it('/model refuses an alias that is not listed', async () => {
-    const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
+  it('/model refuses a model that is not configured with the sentence of the resolver', async () => {
+    const { backend, app } = await start({ models: [SESSION.model, QWEN] });
     await untilFrame(app, 'mode: manual');
     await type(app, '/model turbo', '> /model turbo');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'unknown model turbo; available: default, qwen-local');
+    await untilOutput(app, 'The model "turbo" is not configured. Configured models: scripted-model, qwen3.8:27b.');
     expect(backend.calls.some((call) => call.startsWith('model:'))).toBe(false);
     app.unmount();
   });
 
   it('/model says that a running task keeps its model', async () => {
-    const { backend, app } = await start({ aliases: ['default', 'qwen-local'] });
+    const { backend, app } = await start({ models: [SESSION.model, QWEN] });
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'long task');
-    await type(app, '/model qwen-local', '> /model qwen-local');
+    await type(app, '/model qwen3.8:27b', '> /model qwen3.8:27b');
     app.stdin.write(KEYS.enter);
-    await untilOutput(app, 'model: qwen-local; the running task keeps default, the next task uses qwen-local');
+    await untilOutput(app, 'model: qwen3.8:27b; the running task keeps scripted-model, the next task uses qwen3.8:27b');
     app.unmount();
   });
 

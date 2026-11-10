@@ -94,19 +94,19 @@ describe('what a run is made of', () => {
 });
 
 describe('provenance of a report', () => {
-  it('carries a digest of the dataset and the model aliases the runs pinned', () => {
+  it('carries a digest of the dataset and the models the runs used', () => {
     const transcripts = base([summarized(3, fidelity([], 1, 1))], [summarized(3, fidelity([], 1, 1))]).map((entry) =>
-      entry.caseId === 's1-on' ? { ...entry, run: { ...entry.run, modelAlias: 'alias-b' } } : entry.caseId === 's2-on' ? { ...entry, run: { ...entry.run, modelAlias: 'alias-a' } } : entry,
+      entry.caseId === 's1-on' ? { ...entry, run: { ...entry.run, model: 'ollama/model-b' } } : entry.caseId === 's2-on' ? { ...entry, run: { ...entry.run, model: 'ollama/model-a' } } : entry,
     );
     const report = build(sample(), transcripts);
     expect(report.datasetDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(report.datasetDigest).not.toBe(build(sample({ input: 'another task' }), base([summarized(2, fidelity([], 1, 1))])).datasetDigest);
-    expect(report.modelAliases).toEqual(['alias-a', 'alias-b']);
+    expect(report.models).toEqual(['ollama/model-a', 'ollama/model-b']);
   });
 
-  it('says that the kind of model is derived from the pinned provenance of the answering targets', () => {
+  it('says that the kind of model is derived from the pinned provenance of the answering models', () => {
     const text = formatContextReport(build(sample(), base([summarized(2, fidelity([], 1, 1))])));
-    expect(text).toMatch(/derived from the pinned provenance of the targets that answered: opus \(model\)/);
+    expect(text).toMatch(/derived from the pinned provenance of the models that answered: opus \(model\)/);
     expect(text).not.toMatch(/declared by the operator/);
   });
 });

@@ -119,7 +119,7 @@ const setup = async (config: Setup = {}) => {
   const warnings: string[] = [];
   const fmServe: ManagedServer = createManagedServer({
     description: FM_SERVER,
-    target: 'fm',
+    target: 'scripted/system',
     lockPath: `${socketPath}.lock`,
     readyTimeoutMs: 400,
     readStopGraceMs: () => 30,
@@ -257,7 +257,7 @@ describe('createManagedTarget token counting', () => {
   it('counts with fm count-tokens on stdin and applies the probed calibration', async () => {
     const report = { ...makeReport(1, 1), tokenCalibration: { ratio: 1.25, errorBound: 0.25 } };
     const { managed, execCalls } = await setup({ report, countStdout: '20\n' });
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', instructions: 'Be terse.', input: [userText('count these words')] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/system', instructions: 'Be terse.', input: [userText('count these words')] }, new AbortController().signal);
     expect(result).toEqual({ input_tokens: 25, method: 'calibrated', error_bound: 7, error_shape: { ratio: 0.25, minimum: 1 } });
     expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
     expect(execCalls).toHaveLength(1);
@@ -269,21 +269,21 @@ describe('createManagedTarget token counting', () => {
 
   it('reports an estimated count without a calibration', async () => {
     const { managed } = await setup({ countStdout: '20\n' });
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/system', input: 'count these words' }, new AbortController().signal);
     expect(result).toEqual({ input_tokens: 20, method: 'estimated', error_bound: 6, error_shape: ESTIMATED_ERROR_SHAPE });
     expect(result.error_bound).toBe(errorBoundOfShape(result.error_shape, result.input_tokens));
   });
 
   it('counts a request with no text as zero tokens without running fm count-tokens', async () => {
     const { managed, execCalls } = await setup({ countStdout: '20\n' });
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: [], tools: [] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/system', input: [], tools: [] }, new AbortController().signal);
     expect(result.input_tokens).toBe(0);
     expect(execCalls.filter((call) => call.args[0] === 'count-tokens')).toEqual([]);
   });
 
   it('still runs fm count-tokens with the text of a non-empty request', async () => {
     const { managed, execCalls } = await setup({ countStdout: '20\n' });
-    const result = await countTokensOf(managed)(TARGET, { model: 'fast', input: [userText('hello')] }, new AbortController().signal);
+    const result = await countTokensOf(managed)(TARGET, { model: 'scripted/system', input: [userText('hello')] }, new AbortController().signal);
     expect(result.input_tokens).toBe(20);
     expect(execCalls).toEqual([{ file: BINARY, args: ['count-tokens', '-q'], stdin: 'hello' }]);
   });
@@ -294,7 +294,7 @@ describe('createManagedTarget token counting', () => {
       { type: 'function' as const, name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } } }, strict: true },
       { type: 'function' as const, name: 'Bash', description: 'Run a command', parameters: { type: 'object', properties: {} } },
     ];
-    await countTokensOf(managed)(TARGET, { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }, new AbortController().signal);
+    await countTokensOf(managed)(TARGET, { model: 'scripted/system', instructions: 'Be terse.', tools, input: [userText('count these words')] }, new AbortController().signal);
     const lines = (execCalls[0]?.stdin ?? '').split('\n');
     expect(lines).toEqual([
       'Be terse.',
@@ -308,22 +308,22 @@ describe('createManagedTarget token counting', () => {
 describe('createManagedTarget token counter failure: one generic text for every exit code, with no exit code given a meaning of its own (design-managed-servers section 9, text table)', () => {
   it('rejects a counter exit 69 with the generic token counter text, not a licence precondition', async () => {
     const { managed } = await setup({ countExitCode: 69 });
-    const failure = await countTokensOf(managed)(TARGET, { model: 'fast', input: 'count these words' }, new AbortController().signal).catch((error: unknown) => error);
+    const failure = await countTokensOf(managed)(TARGET, { model: 'scripted/system', input: 'count these words' }, new AbortController().signal).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).name).not.toBe('PreconditionFailedError');
-    expect((failure as Error).message).toMatch(/^the target "fm": the token counter failed with exit code 69: /);
+    expect((failure as Error).message).toMatch(/^the model "fm": the token counter failed with exit code 69: /);
   });
 
   it('answers /v1/momonga/count_tokens with 502 adapter_error carrying that text when the counter exits 69', async () => {
     const { managed, clock, execCalls } = await setup({ countExitCode: 69 });
     const { client } = await startGateway({
-      adapters: { fm: adapterFor(managed, clock) },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+      adapters: { 'scripted/system': adapterFor(managed, clock) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
     });
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: 'count these words' }));
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/system', input: 'count these words' }));
     expect(response.status).toBe(502);
     expect(response.body.error).toMatchObject({ code: 'adapter_error' });
-    expect(response.body.error.message).toMatch(/the target "fm": the token counter failed with exit code 69: /);
+    expect(response.body.error.message).toMatch(/the model "fm": the token counter failed with exit code 69: /);
     expect(execCalls).toHaveLength(1);
   });
 
@@ -347,13 +347,13 @@ describe('createManagedTarget health', () => {
     const { managed, clock } = await setup({ licenseExitCode: 69 });
     const adapter = adapterFor(managed, clock);
     const { client } = await startGateway({
-      adapters: { fm: adapter },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+      adapters: { 'scripted/system': adapter },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
     });
     const health = await getJson(client, '/v1/momonga/health');
     expect(health.status).toBe(200);
     expect(health.body.ok).toBe(false);
-    expect(health.body.targets.fm).toMatchObject({ ok: false, breaker: 'closed', reason: 'precondition_failed', remediation: 'sudo fm license' });
+    expect(health.body.models['scripted/system']).toMatchObject({ ok: false, breaker: 'closed', reason: 'precondition_failed', remediation: 'sudo fm license' });
   });
 });
 
@@ -372,10 +372,10 @@ describe('createManagedTarget compaction and wire counting', () => {
   it('answers /v1/responses/compact for a managed fm alias', async () => {
     const { managed, clock } = await setup();
     const { client } = await startGateway({
-      adapters: { fm: adapterFor(managed, clock) },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+      adapters: { 'scripted/system': adapterFor(managed, clock) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
     });
-    const response = await readJson(await postJson(client, '/v1/responses/compact', { model: 'fast', input: [userText('summarise this')] }));
+    const response = await readJson(await postJson(client, '/v1/responses/compact', { model: 'scripted/system', input: [userText('summarise this')] }));
     expect(response.status).toBe(200);
     expect(response.body.object).toBe('response.compaction');
   });
@@ -383,12 +383,12 @@ describe('createManagedTarget compaction and wire counting', () => {
   it('feeds fm count-tokens the text parts of the wire through /v1/momonga/count_tokens', async () => {
     const { managed, clock, execCalls } = await setup({ countStdout: '20\n' });
     const { client } = await startGateway({
-      adapters: { fm: adapterFor(managed, clock) },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+      adapters: { 'scripted/system': adapterFor(managed, clock) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
     });
     const tools = [{ type: 'function' as const, name: 'Read', description: 'Read a file', parameters: { type: 'object', properties: { path: { type: 'string' } } } }];
     const response = await readJson(
-      await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', instructions: 'Be terse.', tools, input: [userText('count these words')] }),
+      await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/system', instructions: 'Be terse.', tools, input: [userText('count these words')] }),
     );
     expect(response.status).toBe(200);
     const stdin = execCalls.find((call) => call.args[0] === 'count-tokens')?.stdin ?? '';
@@ -401,10 +401,10 @@ describe('createManagedTarget compaction and wire counting', () => {
   it('counts an empty wire request as zero tokens through /v1/momonga/count_tokens without running fm count-tokens', async () => {
     const { managed, clock, execCalls } = await setup({ countStdout: '20\n' });
     const { client } = await startGateway({
-      adapters: { fm: adapterFor(managed, clock) },
-      config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } },
+      adapters: { 'scripted/system': adapterFor(managed, clock) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } },
     });
-    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'fast', input: [], tools: [] }));
+    const response = await readJson(await postJson(client, '/v1/momonga/count_tokens', { model: 'scripted/system', input: [], tools: [] }));
     expect(response.status).toBe(200);
     expect(response.body.input_tokens).toBe(0);
     expect(execCalls.filter((call) => call.args[0] === 'count-tokens')).toEqual([]);

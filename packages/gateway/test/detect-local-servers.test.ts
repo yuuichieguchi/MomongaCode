@@ -4,9 +4,11 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterMicrotasks } from '@momonga/testkit';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { LocalServerDetection } from '@momonga/protocol';
 import { detectLocalServers } from '../src/index.ts';
+import type { DetectFetch } from '../src/index.ts';
 
 type Route = (body: string) => { status: number; json?: unknown };
 
@@ -76,9 +78,9 @@ const noManagedHost = {
 } as const;
 
 const run = (candidates: readonly string[], options: { typed?: readonly string[]; fetch?: typeof fetch } = {}) =>
-  detectLocalServers({ candidates, typed: options.typed ?? [], signal: new AbortController().signal, fetch: options.fetch ?? fetch, ...noManagedHost });
+  detectLocalServers({ candidates, typed: options.typed ?? [], signal: new AbortController().signal, fetch: (options.fetch ?? fetch) as DetectFetch, ...noManagedHost });
 
-const endpointsOf = (found: readonly LocalServerDetection[]): string[] => found.flatMap((server) => (server.shape === 'managed' ? [] : [server.baseUrl]));
+const endpointsOf = (found: readonly LocalServerDetection[]): string[] => found.flatMap((server) => ('shape' in server ? [] : [server.address]));
 
 describe('detecting a local model server is a measurement that writes nothing', () => {
   it('ships its candidates as loopback data', () => {
@@ -86,18 +88,19 @@ describe('detecting a local model server is a measurement that writes nothing', 
     for (const candidate of LOCAL_SERVER_CANDIDATES) expect(['127.0.0.1', 'localhost', '[::1]']).toContain(new URL(candidate).hostname);
   });
 
-  it('lists an endpoint that answers in the Ollama shape, with its models and the tool capability it reports, whatever its port', async () => {
+  it('lists an endpoint that answers as Ollama with its models, whatever its port; the tool capability is read when a model is chosen', async () => {
     const baseUrl = await serve(ollamaShaped());
 
     const found = await run([baseUrl]);
 
     expect(found).toEqual([
       {
-        baseUrl,
-        shape: 'ollama',
+        kind: 'ollama',
+        provider: `ollama-127.0.0.1-${new URL(baseUrl).port}`,
+        address: baseUrl,
         models: [
-          { id: 'coder:7b', tools: 'yes' },
-          { id: 'chatter:3b', tools: 'no' },
+          { id: 'coder:7b', tools: 'unknown' },
+          { id: 'chatter:3b', tools: 'unknown' },
         ],
       },
     ]);
@@ -108,7 +111,7 @@ describe('detecting a local model server is a measurement that writes nothing', 
 
     const found = await run([baseUrl]);
 
-    expect(found).toEqual([{ baseUrl, shape: 'openai', models: [{ id: 'served-model', tools: 'unknown' }] }]);
+    expect(found).toEqual([{ kind: 'generic', provider: `srv-127.0.0.1-${new URL(baseUrl).port}`, address: `${baseUrl}/v1`, models: [{ id: 'served-model', tools: 'unknown' }] }]);
   });
 
   it('skips an endpoint whose shape it does not know instead of guessing one', async () => {
@@ -124,7 +127,7 @@ describe('detecting a local model server is a measurement that writes nothing', 
 
     const found = await run([refused, live]);
 
-    expect(endpointsOf(found)).toEqual([live]);
+    expect(endpointsOf(found)).toEqual([`${live}/v1`]);
     expect(timeouts).not.toHaveBeenCalled();
   });
 
@@ -138,11 +141,25 @@ describe('detecting a local model server is a measurement that writes nothing', 
     const cancel = new AbortController();
     const timeouts = vi.spyOn(AbortSignal, 'timeout');
 
-    const pending = detectLocalServers({ candidates: [live, silent], typed: [], signal: cancel.signal, fetch, ...noManagedHost });
-    await arrived.promise;
+    const liveListed = Promise.withResolvers<void>();
+    const observed: DetectFetch = async (url, init) => {
+      const response = await (fetch as DetectFetch)(url, init);
+      const { body } = response;
+      if (url !== `${live}/v1/models` || body === null) return response;
+      return {
+        ok: response.ok,
+        body: (async function* () {
+          yield* body;
+          liveListed.resolve();
+        })(),
+      };
+    };
+    const pending = detectLocalServers({ candidates: [live, silent], typed: [], signal: cancel.signal, fetch: observed, ...noManagedHost });
+    await Promise.all([arrived.promise, liveListed.promise]);
+    await afterMicrotasks();
     cancel.abort();
 
-    expect(endpointsOf(await pending)).toEqual([live]);
+    expect(endpointsOf(await pending)).toEqual([`${live}/v1`]);
     expect(timeouts).not.toHaveBeenCalled();
     hanging.closeAllConnections();
   });
@@ -153,7 +170,7 @@ describe('detecting a local model server is a measurement that writes nothing', 
 
     const found = await run(['http://192.0.2.10:11434', live], { fetch: recorder.fetch });
 
-    expect(endpointsOf(found)).toEqual([live]);
+    expect(endpointsOf(found)).toEqual([`${live}/v1`]);
     expect(recorder.contacted.filter((url) => url.includes('192.0.2.10'))).toEqual([]);
     expect(recorder.contacted.length).toBeGreaterThan(0);
   });

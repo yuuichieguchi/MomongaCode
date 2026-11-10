@@ -110,7 +110,7 @@ const responsesAdapter = (socketPath: string, capabilities: Capabilities = REMOT
   return adapter;
 };
 
-const target = { name: 'remote', model: 'upstream-model' };
+const target = { name: 'remote', display: 'remote', model: 'upstream-model' };
 
 describe('G1: the upstream idle bound restarts only when content arrives (audit-unbounded-waits-2026-11-07.md, R-G1a)', () => {
   it('keeps one default for models.idleTimeoutMs, 300 s', () => {

@@ -6,7 +6,7 @@ import type { PermissionMode, RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { MODEL_ALIAS, assistantMessage, textStep } from './scripts.ts';
+import { MODEL_ID, assistantMessage, textStep } from './scripts.ts';
 import { envNeutralJson, firstConversation, firstRequestInput, resolvedInheritedOf as inheritedEventOf, modeChangedText, modeMarkersOf, settle } from './inheritance-support.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
@@ -22,7 +22,7 @@ const answeredWithoutRecordedMode = async (env: Env, task: string, answer: strin
   const run = env.enqueue(task);
   const payloads: RunEventPayload[] = [
     { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {} },
-    { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: MODEL_ALIAS, input: 'seed' } },
+    { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: MODEL_ID, input: 'seed' } },
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_old', answer)], usage: USAGE } },
   ];
   const claim = await env.seed(run.id, payloads, 'hold');

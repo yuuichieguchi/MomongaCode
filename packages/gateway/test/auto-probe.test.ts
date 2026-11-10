@@ -11,7 +11,7 @@ import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import type { FakeClock, FakeFmConfig } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { readFileTool } from './cc-support.ts';
 import { fmRecordKey } from './fm-record-support.ts';
 
@@ -46,19 +46,17 @@ const setup = async (options: SetupOptions = {}) => {
   fm.configure({ envDumpFile: dumpFile, serve: probeServeOf(options.probe ?? 'stall') });
   const home = makeHome();
   writeSettings(home, {
-    models: {
-      aliases: { default: ['fm'], other: ['spare'] },
-      targets: {
+    models: modelsOf({
         fm: {
           adapter: 'managed',
           server: 'fm',
+          model: 'system',
           binary: fm.binaryPath,
           ...(options.toolCalling === undefined ? {} : { toolCalling: options.toolCalling }),
           ...(options.declared === undefined ? {} : { capabilities: options.declared }),
         },
-        spare: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } },
-      },
-    },
+        spare: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } },
+      }),
   });
   const host = { licenseExit: 0, swVersCalls: 0 };
   const exec = async (file: string, args: readonly string[]) => {
@@ -97,7 +95,7 @@ const setup = async (options: SetupOptions = {}) => {
   const client = clientFor(handle.socketPath);
   const probeDir = path.join(home, '.momonga', 'state', 'probe');
   const keyNow = (): KnownProbeKey => fmRecordKey(sha256Of(fm.binaryPath), FAKE_OS_BUILD);
-  const request = (withTools = false) => postJson(client, '/v1/responses', { model: 'default', input: userInput('hello fm'), ...(withTools ? { tools: [readFileTool] } : {}) });
+  const request = (withTools = false) => postJson(client, '/v1/responses', { model: 'fm/system', input: userInput('hello fm'), ...(withTools ? { tools: [readFileTool] } : {}) });
   const send = async (withTools = false) => readJson(await request(withTools));
   const sendRaw = (withTools = false) => request(withTools);
   const recordFileOf = (key: KnownProbeKey): string => path.join(probeDir, `${key.digest}.json`);
@@ -156,7 +154,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expect(response.status).toBe(200);
       expect(gateway.probes()).toEqual([]);
       const listing = await getJson(gateway.client, '/v1/momonga/models');
-      const entry = (listing.body as { data: Array<{ id: string; capabilities: { contextWindow: number; source: string } }> }).data.find((model) => model.id === 'default');
+      const entry = (listing.body as { data: Array<{ id: string; capabilities: { contextWindow: number; source: string } }> }).data.find((model) => model.id === 'fm/system');
       expect(entry?.capabilities).toMatchObject({ contextWindow: 8192, source: 'declared' });
     });
 
@@ -174,10 +172,10 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
       expect(listing.status).toBe(200);
       const entries = (listing.body as { data: Array<Record<string, unknown>> }).data;
-      const probing = entries.find((entry) => entry['id'] === 'default');
+      const probing = entries.find((entry) => entry['id'] === 'fm/system');
       expect(probing?.['capabilities']).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
       expect(probing).not.toHaveProperty('probing');
-      expect(entries.map((entry) => entry['id']).sort()).toEqual(['default', 'other']);
+      expect(entries.map((entry) => entry['id']).sort()).toEqual(['fm/system', 'spare/system']);
     });
   });
 
@@ -198,14 +196,15 @@ describe('the automatic probe of an fm target with no probe record', () => {
       expectProbing(await gateway.send(true));
       await probeStarted(gateway);
       const paths = momongaPaths(gateway.home, process.platform, {});
-      const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]);
+      const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'fm' });
 
       const outcome = await probeManagedFm({
         platform: process.platform,
         paths,
         instance,
         description: FM_SERVER,
-        target: 'fm',
+        target: 'fm/system',
+        model: 'system',
         binary: gateway.fm.binaryPath,
         readyTimeoutMs: FM_SERVER.ready.limitMs,
         env: baseEnv(gateway.home),
@@ -379,7 +378,7 @@ describe('the automatic probe of an fm target with no probe record', () => {
 
       expect(isAlive(pgid)).toBe(false);
       expect(fs.readdirSync(markers)).toEqual([]);
-      expect(gateway.logLines.some((line) => line.includes('the automatic probe of the target fm was stopped'))).toBe(true);
+      expect(gateway.logLines.some((line) => line.includes('the automatic probe of the model fm/system was stopped'))).toBe(true);
       expect(gateway.logLines.some((line) => line.includes('failed and recorded nothing'))).toBe(false);
     });
   });
@@ -406,7 +405,7 @@ const createInstanceProbe = (options: InstanceProbeOptions): InstanceProbe => {
 
 const RETRY_AFTER_MS = 120_000;
 const REASON = 'sw_vers is not on PATH';
-const NOTICE = `the target "apple": its probe key needs the OS build, which cannot be read: ${REASON}; it is measured each time its server starts and no probe record is kept`;
+const NOTICE = `the model "apple": its probe key needs the OS build, which cannot be read: ${REASON}; it is measured each time its server starts and no probe record is kept`;
 
 const deferredReport = <T>() => {
   let resolve!: (value: T) => void;

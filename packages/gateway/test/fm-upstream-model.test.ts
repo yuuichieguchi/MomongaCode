@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf } from './gateway-process-helpers.ts';
 import { placeFakeFm } from './fm-record-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
@@ -20,7 +20,7 @@ const servePidsOf = (dumpFile: string): number[] =>
         .map((record) => record.pid)
     : [];
 
-const runThroughFakeFm = async (settings: unknown, alias: string, target: string) => {
+const runThroughFakeFm = async (settings: unknown, model: string) => {
   const fm = await createFakeFm({ dir: makeDir() });
   const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
   fm.configure({ envDumpFile: dumpFile });
@@ -29,19 +29,19 @@ const runThroughFakeFm = async (settings: unknown, alias: string, target: string
   writeSettings(home, settings);
   await placeFakeFm(home, fm.binaryPath);
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
-  return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: alias, input: userInput('hello fm') }));
+  return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model, input: userInput('hello fm') }));
 };
 
 describe('the model id a run sends to fm serve', () => {
-  it('is a model fm serve lists, for the fm target the person configured under the alias default', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'managed', server: 'fm', toolCalling: 'native' } }, aliases: { default: ['fm'] } } }, 'default', 'fm');
+  it('is a model fm serve lists, for the fm model named by its full reference', async () => {
+    const reply = await runThroughFakeFm({ models: modelsOf({ fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }) }, 'fm/system');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');
   });
 
-  it('is a model fm serve lists, whatever the alias and the target are named', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { apple: { adapter: 'managed', server: 'fm', toolCalling: 'native' } }, aliases: { work: ['apple'] } } }, 'work', 'apple');
+  it('is a model fm serve lists, whatever the server is named, by its own name alone', async () => {
+    const reply = await runThroughFakeFm({ models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }) }, 'system');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');

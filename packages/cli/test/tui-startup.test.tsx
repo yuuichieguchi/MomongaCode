@@ -17,7 +17,7 @@ const bannerRows = (output: string): string[] => output.split('\n').filter((row)
 
 describe('startup screen', () => {
   it('shows the squirrel, the version, the model by its name and the shortened folder side by side, and no mode line', async () => {
-    const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', modelAlias: 'smart' }, targets: ['local-fm', 'cloud'] }, { startup: config() }, { columns: 80, rows: 16 });
+    const { app } = await start({ session: { cwd: '/Users/ada/projects/demo', model: 'lmstudio/smart' }, models: ['lmstudio/smart', 'openai/cloud'], chain: ['lmstudio/smart', 'openai/cloud'] }, { startup: config() }, { columns: 80, rows: 16 });
     const screen = await untilFrame(app, 'mode: manual (shift+tab)');
     const text = screen
       .replace(/\u001b\[[0-9;]*m/g, '')
@@ -35,11 +35,11 @@ describe('startup screen', () => {
   it('shows the model line before the gateway answers, does not block the prompt and does not rewrite the line afterwards', async () => {
     const pending = Promise.withResolvers<void>();
     const { app } = await start({ modelPending: pending.promise }, { startup: config() });
-    const before = await untilFrame(app, 'model: default');
+    const before = await untilFrame(app, 'model: scripted-model');
     expect(before).toContain('mode: manual (shift+tab)');
     pending.resolve();
     const after = await untilFrame(app, 'context: 0%');
-    expect(after).toContain('model: default');
+    expect(after).toContain('model: scripted-model');
     expect(after).not.toContain('→');
     app.unmount();
   });
@@ -49,13 +49,13 @@ describe('startup screen', () => {
   });
 
   it('drops the art, rather than wrapping it, below the width its own size and the text need', async () => {
-    const lines = textLines(config(), 'default', '/Users/ada/p');
+    const lines = textLines(config(), 'scripted-model', '/Users/ada/p');
     const needed = ART_WIDTH + ART_GAP + Math.max(...lines.map((line) => line.length)) + 4;
     expect(artFits(needed, lines)).toBe(true);
     expect(artFits(needed - 1, lines)).toBe(false);
 
     const { app } = await start({ session: { cwd: '/Users/ada/p' } }, { startup: config() }, { columns: needed - 1 + SCROLLBAR_COLUMNS });
-    const screen = await untilFrame(app, 'model: default');
+    const screen = await untilFrame(app, 'model: scripted-model');
     expect(screen).not.toContain('•ᴥ•');
     app.unmount();
   });

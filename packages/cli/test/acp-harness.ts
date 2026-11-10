@@ -3,7 +3,8 @@ import type { AcpBridge, AcpDeps, FollowRequest, FollowSessionRequest } from '..
 import { withReplayedInitialize } from '../src/acp/handover.ts';
 import type { AgentConnection, AnyMessage } from '@agentclientprotocol/sdk';
 import type { MessageStream } from '../src/acp/handover.ts';
-import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
+import type { ModelViews, PublicRunEvent, SkillsResponse } from '@momonga/protocol';
+import { SCRIPTED_MODEL_ID, SCRIPTED_PROVIDER } from '@momonga/testkit';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
 import type { ApprovalView, ElicitationView, RunView, SessionView } from '../src/client/views.ts';
@@ -151,7 +152,7 @@ export type FakeRuntime = RuntimeClient & {
   createRunResult: (input: string) => Promise<RunView>;
   failures: Map<string, Error>;
   modeChanged: ((mode: SessionView['permissionMode']) => void) | undefined;
-  modelAliasChanged: ((modelAlias: string, previousModelAlias: string) => void) | undefined;
+  modelChanged: ((model: string, previousModel: string) => void) | undefined;
 };
 
 const unexpected = (name: string) => (): never => {
@@ -197,7 +198,7 @@ export const fakeRuntime = (): FakeRuntime => {
     createRunResult: async () => runView({ id: 'run-1', status: 'QUEUED' }),
     failures: new Map(),
     modeChanged: undefined,
-    modelAliasChanged: undefined,
+    modelChanged: undefined,
     health: unexpected('health'),
     createSession: async (input): Promise<CreatedSession> => {
       record(`createSession ${JSON.stringify({ cwd: input.cwd, mcpServers: input.mcpServers })}`);
@@ -231,13 +232,13 @@ export const fakeRuntime = (): FakeRuntime => {
       runtime.modeChanged?.(mode);
       return runtime.session;
     },
-    setModelAlias: async (id, modelAlias) => {
-      record(`setModelAlias ${id} ${modelAlias}`);
-      const failure = runtime.failures.get('setModelAlias');
+    setModel: async (id, model) => {
+      record(`setModel ${id} ${model}`);
+      const failure = runtime.failures.get('setModel');
       if (failure !== undefined) throw failure;
-      const previousModelAlias = runtime.session.modelAlias;
-      runtime.session = { ...runtime.session, modelAlias };
-      runtime.modelAliasChanged?.(modelAlias, previousModelAlias);
+      const previousModel = runtime.session.model;
+      runtime.session = { ...runtime.session, model };
+      runtime.modelChanged?.(model, previousModel);
       return runtime.session;
     },
     compact: async (sessionId, instructions) => {
@@ -367,13 +368,23 @@ export const modeChangedFrame = (id: number, mode: SessionView['permissionMode']
   data: { id, sessionId: SESSION.id, createdAt: 1, type: 'mode.changed', mode },
 });
 
-export const modelChangedFrame = (id: number, modelAlias: string, previousModelAlias: string): RunEventFrame => ({
+export const modelChangedFrame = (id: number, model: string, previousModel: string): RunEventFrame => ({
   id,
   event: 'model.changed',
-  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'model.changed', modelAlias, previousModelAlias },
+  data: { id, sessionId: SESSION.id, createdAt: 1, type: 'model.changed', model, previousModel },
 });
 
-export const MODEL_ALIASES = [SESSION.modelAlias, 'fm-large'] as const;
+export const OTHER_MODEL = 'apple/fm-large';
+
+export const MODEL_VIEWS: ModelViews = [
+  { canon: SESSION.model, provider: SCRIPTED_PROVIDER, ownName: SCRIPTED_MODEL_ID },
+  { canon: OTHER_MODEL, provider: 'apple', ownName: 'fm-large' },
+];
+
+export const MODEL_OPTIONS = [
+  { value: SESSION.model, name: SCRIPTED_MODEL_ID },
+  { value: OTHER_MODEL, name: 'fm-large' },
+];
 
 export type Harness = {
   readonly bridge: AcpBridge;
@@ -391,7 +402,7 @@ export type Harness = {
 export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?: unknown): Harness => {
   const runtime = fakeRuntime();
   const scripts = new Map<string, RunScript>();
-  const contextWindows = new Map<string, number>([[SESSION.modelAlias, 8192]]);
+  const contextWindows = new Map<string, number>([[SESSION.model, 8192]]);
   const reports: string[] = [];
   const firstReport = Promise.withResolvers<void>();
   const sessionStreams: FollowSessionRequest[] = [];
@@ -403,19 +414,19 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?
     request.onEvent(modeChangedFrame(nextEventId, mode));
     nextEventId += 1;
   };
-  runtime.modelAliasChanged = (modelAlias, previousModelAlias) => {
+  runtime.modelChanged = (model, previousModel) => {
     const request = sessionStreams.at(-1);
     if (request === undefined) throw new Error('the session event stream is not open');
-    request.onEvent(modelChangedFrame(nextEventId, modelAlias, previousModelAlias));
+    request.onEvent(modelChangedFrame(nextEventId, model, previousModel));
     nextEventId += 1;
   };
   const deps: AcpDeps = {
     version: '9.9.9',
     runtime,
-    modelAliases: async () => [...MODEL_ALIASES],
-    contextWindowOf: async (alias) => {
-      const size = contextWindows.get(alias);
-      if (size === undefined) throw new Error(`no context window for ${alias}`);
+    models: async () => MODEL_VIEWS,
+    contextWindowOf: async (model) => {
+      const size = contextWindows.get(model);
+      if (size === undefined) throw new Error(`no context window for ${model}`);
       return size;
     },
     readinessOf: async () => ({ state: 'ready' }),

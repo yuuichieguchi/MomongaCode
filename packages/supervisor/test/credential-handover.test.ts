@@ -4,7 +4,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, createUdsClient, fixedSocket, minimalChildEnv } from '@momonga/foundation';
 import { registerCleanup } from '@momonga/testkit';
-import { chatTarget, fakeSettingsWatch, pump, pumpUntil, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
+import { chatModel, fakeSettingsWatch, pump, pumpUntil, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, SimpleResponse } from './fixtures/p3-harness.ts';
 import { testHostPath } from '@momonga/testkit';
 
@@ -37,9 +37,7 @@ const watched = async (context: CleanupContext): Promise<Watched> => {
 };
 
 const declareTargetsWithKeys = async (h: Watched, ...names: string[]): Promise<void> => {
-  const base = validSettings() as { models: { targets: Record<string, unknown>; aliases: Record<string, unknown> } };
-  const added = Object.fromEntries(names.map((name, index) => [`added${index}`, chatTarget({ model: `gpt-added-${index}`, apiKeyEnv: name })]));
-  writeSettings(h.home, { ...base, models: { ...base.models, targets: { ...base.models.targets, ...added } } });
+  writeSettings(h.home, validSettings({ added: names.map((name, index) => chatModel(`added${index}`, { id: `gpt-added-${index}`, apiKeyEnv: name })) }));
   h.watch.fire();
   await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50);
 };

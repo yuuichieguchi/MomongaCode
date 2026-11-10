@@ -8,7 +8,7 @@ import { terminalChoice } from '../plan/terminal-choice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { authLogin, authLogout, authResetHost, authResume, authStatus } from './auth.ts';
-import { modelsAdd, modelsCatalog } from './models.ts';
+import { modelsCatalog } from './models.ts';
 import type { AuthLoginOptions } from './auth.ts';
 
 const withGateway = async (ports: CliPorts, paths: MomongaPaths, work: (gateway: GatewayClient) => Promise<number>): Promise<number> => {
@@ -21,8 +21,8 @@ const withGateway = async (ports: CliPorts, paths: MomongaPaths, work: (gateway:
   }
 };
 
-export const runAuthStatus = (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> =>
-  withGateway(ports, paths, (gateway) => authStatus({ stdout: ports.stdout, plan: gateway.plan, models: () => gateway.models() }, { json }));
+export const runAuthStatus = (ports: CliPorts, paths: MomongaPaths, options: { json: boolean; model?: string }): Promise<number> =>
+  withGateway(ports, paths, (gateway) => authStatus({ stdout: ports.stdout, plan: gateway.plan, listing: () => gateway.modelList() }, options));
 
 const terminalPorts = (ports: CliPorts, interrupt: AbortSignal) =>
   ports.terminal === undefined ? { isTerminal: false as const } : { isTerminal: true as const, choose: terminalChoice(ports.terminal, interrupt) };
@@ -38,9 +38,6 @@ export const runAuthResetHost = (ports: CliPorts, paths: MomongaPaths, yes: bool
 
 export const runModelsCatalog = (ports: CliPorts, paths: MomongaPaths, options: { json: boolean; account?: string }): Promise<number> =>
   withGateway(ports, paths, (gateway) => modelsCatalog({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, options));
-
-export const runModelsAdd = (ports: CliPorts, paths: MomongaPaths, options: { slug: string; account?: string }): Promise<number> =>
-  withGateway(ports, paths, (gateway) => modelsAdd({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, options));
 
 export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: AuthLoginOptions, interrupt: AbortSignal): Promise<number> =>
   withGateway(ports, paths, (gateway) =>

@@ -7,7 +7,7 @@ import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { expectErrorBody, postJson, readJson, readSse } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, TARGET, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, userText, MODEL_FRAMING } from './cc-support.ts';
-import { UNTRUSTED_NOTICE, ccAdapterFor, signedCompaction, startCcGateway } from './cc-compact-support.ts';
+import { UNTRUSTED_NOTICE, ccAdapterFor, ccModelOf, signedCompaction, startCcGateway } from './cc-compact-support.ts';
 
 const tokensOfWire = (wire: unknown): number => Math.max(1, Math.ceil(JSON.stringify(wire).length / 4));
 
@@ -33,10 +33,10 @@ const gatewayFor = async (mode: ToolCallingMode): Promise<{ harness: Harness; fa
 };
 
 const count = async (harness: Harness, body: Record<string, unknown>) =>
-  readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: 'fast', ...body }));
+  readJson(await postJson(harness.client, '/v1/momonga/count_tokens', { model: harness.model, ...body }));
 
 const sentWire = async (harness: Harness, fake: FakeChatCompletionsServer, body: Record<string, unknown>): Promise<unknown> => {
-  const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: 'fast', stream: true, store: false, ...body }));
+  const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: harness.model, stream: true, store: false, ...body }));
   expect(frames.at(-1)?.data.type).toBe('response.completed');
   return wireOf(lastCompletionBody(fake));
 };
@@ -345,7 +345,7 @@ describe('counting for a named target of the alias', () => {
 
   it('counts for the target the request names', async () => {
     const harness = await twoTargets();
-    const counted = await count(harness, { input: [userText('count these words')], momonga: { target: 'second' } });
+    const counted = await count(harness, { input: [userText('count these words')], momonga: { target: ccModelOf('second') } });
     expect(counted.body).toEqual({ input_tokens: 55, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } });
   });
 

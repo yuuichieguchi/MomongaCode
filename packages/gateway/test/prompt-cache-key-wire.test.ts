@@ -75,7 +75,7 @@ describe('the open-responses relay sends prompt_cache_key only for key and never
 
   const relayed = async (promptCache: PromptCacheCapability | undefined): Promise<Record<string, unknown>> => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['ok'])], capabilities: withCache(REMOTE_CAPABILITIES, promptCache) });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input, prompt_cache_key: KEY, momonga: { cache: MARKS } }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input, prompt_cache_key: KEY, momonga: { cache: MARKS } }));
     expect(response.status).toBe(200);
     expect(gateway.fake.requests).toHaveLength(1);
     return gateway.fake.requests[0]?.body as Record<string, unknown>;

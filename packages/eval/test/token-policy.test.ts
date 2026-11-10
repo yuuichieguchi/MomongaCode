@@ -54,7 +54,7 @@ describe('parsePolicyOverlay', () => {
 
   it.each([
     ['a memory key outside the token design', { memory: { forgetAfterDays: 3 } }],
-    ['a section outside the token design', { models: { aliases: {} } }],
+    ['a section outside the token design', { models: { fallback: [] } }],
     ['an unknown tools key', { tools: { lazy: true } }],
     ['a value of the wrong type', { context: { cachePrefix: 'yes' } }],
     ['an unknown formatter', { context: { outputFormatters: ['markdown'] } }],
@@ -171,7 +171,7 @@ describe('the context report format', () => {
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/policy .*recorded relative to the old defaults/);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(
-      /momonga eval context <dataset> --alias <alias> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --alias <alias> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
+      /momonga eval context <dataset> --model <model> --settings <base policy file> --report <base report>.*momonga eval context <dataset> --model <model> --report <candidate report>.*momonga eval compare <base report> <candidate report> --gate token/,
     );
   });
 

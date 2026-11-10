@@ -20,11 +20,11 @@ const events = (text: string) => textResponseEvents({ model: 'scripted-primary',
 describe('rows read back from gateway.db are validated', () => {
   it('names the responses table and id when a stored output is malformed', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });
-    const { client, dbPath } = await startGateway({ adapters: { primary } });
-    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('q'), store: true }));
+    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q'), store: true }));
     corrupt(dbPath, 'UPDATE responses SET output_json = ? WHERE id = ?', '[{"type":"message","role":"bogus"}]', stored.body.id);
     const followUp = await readJson(
-      await postJson(client, '/v1/responses', { model: 'fast', input: userInput('q2'), previous_response_id: stored.body.id }),
+      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
     );
     expect(followUp.status).toBe(500);
     expect(followUp.body.error.message).toContain('responses');
@@ -34,11 +34,11 @@ describe('rows read back from gateway.db are validated', () => {
 
   it('names the responses table when stored input is not an array', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });
-    const { client, dbPath } = await startGateway({ adapters: { primary } });
-    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('q'), store: true }));
+    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const stored = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q'), store: true }));
     corrupt(dbPath, 'UPDATE responses SET input_json = ? WHERE id = ?', '{"not":"an array"}', stored.body.id);
     const followUp = await readJson(
-      await postJson(client, '/v1/responses', { model: 'fast', input: userInput('q2'), previous_response_id: stored.body.id }),
+      await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('q2'), previous_response_id: stored.body.id }),
     );
     expect(followUp.status).toBe(500);
     expect(followUp.body.error.message).toContain('responses');
@@ -46,8 +46,8 @@ describe('rows read back from gateway.db are validated', () => {
 
   it('names the idempotency table and key when stored frames are malformed', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('one') }] });
-    const { client, dbPath } = await startGateway({ adapters: { primary } });
-    const body = { model: 'fast', input: userInput('q') };
+    const { client, dbPath } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const body = { model: 'scripted/scripted-primary', input: userInput('q') };
     await readJson(await postJson(client, '/v1/responses', body, { 'idempotency-key': 'k-corrupt' }));
     corrupt(dbPath, 'UPDATE idempotency SET frames_json = ? WHERE key = ?', '[{"type":"response.completed"}]', 'k-corrupt');
     const replayed = await readJson(await postJson(client, '/v1/responses', body, { 'idempotency-key': 'k-corrupt' }));

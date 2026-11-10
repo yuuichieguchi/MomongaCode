@@ -2,16 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, createUserSettingsCache, loadSettings, loadUserSettings, noKeptRecords } from '@momonga/config';
-import {
-  localSettingsDir,
-  localSettingsPath,
-  makeTree,
-  projectSettingsPath,
-  trusting,
-  userSettingsPath,
-  writeJson,
-  writeText,
-} from './helpers.ts';
+import { canonsOf, localSettingsDir, localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const T0 = new Date('2026-01-01T00:00:00Z');
@@ -33,8 +24,9 @@ describe('loadUserSettings', () => {
     const tree = makeTree();
     const result = await loadUserSettings({ home: tree.home });
     expect(result.settings.autoUpdates).toBe(true);
-    expect(result.settings.models.targets).toEqual({});
-    expect(result.settings.models.aliases).toEqual({});
+    expect(canonsOf(result.settings)).toEqual([]);
+    expect((result.settings.models as unknown as { start: string | undefined; fallback: readonly string[] }).start).toBeUndefined();
+    expect((result.settings.models as unknown as { start: string | undefined; fallback: readonly string[] }).fallback).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.files).toEqual([]);
   });
@@ -150,7 +142,7 @@ describe('createUserSettingsCache', () => {
     writeAt(file, { env: { MODE: 'good' } }, T0);
     const { cache, warnings } = cacheFor(tree);
     expect(cache.get().env).toEqual({ MODE: 'good' });
-    writeAt(file, { models: { targets: { remote: { adapter: 'chat-completions', provider: 'fake', model: 'x' } } } }, T1);
+    writeAt(file, { models: { connections: [{ adapter: 'chat-completions', provider: 'remote', models: [{ id: 'x' }] }] } }, T1);
     expect(cache.get().env).toEqual({ MODE: 'good' });
     expect(warnings).toHaveLength(1);
   });

@@ -3,7 +3,7 @@ import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixed
 import { startGatewayProcess } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, ownedStart, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, writeSettings, prepareHome } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, writeSettings, modelsOf, prepareHome } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
@@ -17,10 +17,7 @@ const startPricedGateway = async (context: CleanupContext, pricing: unknown[] | 
   const home = withTempDir(context, { asHome: true });
   prepareHome(home);
   writeSettings(home, {
-    models: {
-      aliases: { fast: ['local'] },
-      targets: { local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } },
-    },
+    models: modelsOf({ local: { adapter: 'open-responses', provider: 'acme', model: 'local-fake', socketPath: upstream.socketPath, capabilities: CAPABILITIES, ...(billing === undefined ? {} : { billing }) } }),
     ...(pricing === undefined ? {} : { pricing }),
   });
   const handle = await ownedStart(context, startGatewayProcess({
@@ -44,7 +41,7 @@ const costOfRun = async (client: ReturnType<typeof createUdsClient>) => {
     method: 'POST',
     path: '/v1/responses',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'fast', input: userInput('hi'), metadata: { run_id: 'run-1' } }),
+    body: JSON.stringify({ model: 'acme/local-fake', input: userInput('hi'), metadata: { run_id: 'run-1' } }),
   });
   expect(created.status).toBe(200);
   await created.text();

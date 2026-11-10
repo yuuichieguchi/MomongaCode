@@ -25,8 +25,8 @@ describe('the origin travels outside the request data (item 5)', () => {
         yield* events;
       },
     };
-    const { client } = await startGateway({ adapters: { primary } });
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const { client } = await startGateway({ adapters: { 'scripted/scripted-primary': primary } });
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi') }));
     expect(response.status).toBe(200);
     expect(digests).toHaveLength(1);
   });
@@ -46,7 +46,7 @@ describe('compaction through the gateway sends only own reasoning (item 5)', () 
     expect(reasoningOf(foreignOutput).encrypted_content).not.toBe(reasoningOf(ownOutput).encrypted_content);
     const history = [...ask('one'), ...ownOutput, ...ask('two'), ...foreignOutput];
 
-    const response = await readJson(await postJson(world.client, '/v1/responses/compact', { model: 'via-open-responses', input: history }));
+    const response = await readJson(await postJson(world.client, '/v1/responses/compact', { model: world.modelOf('open-responses'), input: history }));
 
     expect(response.status).toBe(200);
     const wire = world.upstreams['open-responses']!.wire();

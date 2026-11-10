@@ -126,12 +126,12 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     options.spawn ??
     (options.markerDirectory === undefined
       ? (): ManagedChild => {
-          throw new Error(`the target "${target}": the server has no marker directory, so it cannot be launched`);
+          throw new Error(`the model "${target}": the server has no marker directory, so it cannot be launched`);
         }
       : createGroupSpawn({ env: options.env, markerDirectory: options.markerDirectory, onWarning: options.onWarning }));
   const timers = options.timers ?? defaultTimers;
   const argv = argvOf(description, options.socketPath);
-  const said = (text: string): string => `the target "${target}": ${text}`;
+  const said = (text: string): string => `the model "${target}": ${text}`;
 
   let state: State = 'idle';
   let generation = 0;
@@ -202,7 +202,7 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
     if (refusal === undefined) return undefined;
     return new TargetNotReadyError(
       said(
-        `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter target name`,
+        `its server socket path is ${refusal.byteLength} bytes, and the system refused to bind a socket path of that length in ${refusal.directory} (${refusal.code}); choose a shorter server name`,
       ),
     );
   };

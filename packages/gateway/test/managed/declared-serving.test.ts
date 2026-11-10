@@ -10,7 +10,7 @@ import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, createFakeManagedServer, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 import type { GatewayProcessOptions } from '../gateway-process-helpers.ts';
 import { makeReport } from '../report-fixture.ts';
 import { registryOf } from './declared-support.ts';
@@ -32,7 +32,9 @@ const readDump = (file: string): DumpRecord[] =>
 
 const sha256OfFile = (file: string): string => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
-const ask = () => ({ model: 'default', input: userInput('hello') });
+const ask = (model = 'workbench/fake-1') => ({ model, input: userInput('hello') });
+
+const recordOf = (model: string) => ({ ...makeReport(1, 1), modelId: model });
 
 const targetsDir = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
 const targetMarkers = (home: string, stem: string): string => path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', stem);
@@ -44,6 +46,7 @@ const launch = (home: string) => launchGateway({ generation: FIRST_GENERATION, h
 type Kind = {
   label: string;
   target: string;
+  provider: string;
   server: string;
   serveCommand: string;
   model: string;
@@ -54,7 +57,8 @@ type Kind = {
 const KINDS: Kind[] = [
   {
     label: 'a server declared in the user settings (the fake launcher, never tested as fm)',
-    target: 'workbench',
+    target: 'workbench/fake-1',
+    provider: 'workbench',
     server: 'loom',
     serveCommand: 'run',
     model: 'fake-1',
@@ -65,16 +69,13 @@ const KINDS: Kind[] = [
       return { binary: fake.binaryPath, dumpFile };
     },
     settings: (binary, target) => ({
-      models: {
-        servers: { loom: { command: binary, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { workbench: { adapter: 'managed', server: 'loom', model: 'fake-1', ...target } },
-        aliases: { default: ['workbench'] },
-      },
+      models: modelsOf({ workbench: { adapter: 'managed', server: 'loom', model: 'fake-1', ...target } }, { servers: { loom: { command: binary, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     }),
   },
   {
     label: 'the built-in fm',
-    target: 'apple',
+    target: 'apple/system',
+    provider: 'apple',
     server: FM_SERVER.id,
     serveCommand: 'serve',
     model: 'system',
@@ -85,7 +86,7 @@ const KINDS: Kind[] = [
       return { binary: fm.binaryPath, dumpFile };
     },
     settings: (binary, target) => ({
-      models: { targets: { apple: { adapter: 'managed', server: FM_SERVER.id, binary, model: 'system', ...target } }, aliases: { default: ['apple'] } },
+      models: modelsOf({ apple: { adapter: 'managed', server: FM_SERVER.id, binary, model: 'system', ...target } }),
     }),
   },
 ];
@@ -118,7 +119,7 @@ const served = async (kind: Kind, target: Record<string, unknown> = {}) => {
   const description = await descriptionIn(home, kind.server);
   const saveRecord = async (): Promise<KnownProbeKey> => {
     const key = keyOf(description, binary, kind.model);
-    await saveProbeRecord(probeDir(home), key, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), key, recordOf(kind.model), managedCurrencyOf(description, { userDialects: {} }));
     return key;
   };
   return { dir, binary, dumpFile, home, description, saveRecord };
@@ -131,11 +132,11 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     const { home, dumpFile, saveRecord } = await served(kind);
     await saveRecord();
     const handle = await launch(home);
-    expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()))).status).toBe(200);
+    expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(kind.target)))).status).toBe(200);
     const runs = serves(dumpFile, kind.serveCommand);
     expect(runs).toHaveLength(1);
     const argv = (runs[0] as DumpRecord).argv;
-    expect(argv[argv.indexOf('--socket') + 1]).toBe(path.join(targetsDir(home), `${kind.target}-1.sock`));
+    expect(argv[argv.indexOf('--socket') + 1]).toBe(path.join(targetsDir(home), `${kind.provider}-1.sock`));
   });
 
   it('refuses with 412 and the row-0 text when the executable is missing, before any launch', async () => {
@@ -143,11 +144,11 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     await saveRecord();
     const handle = await launch(home);
     fs.rmSync(binary);
-    const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
+    const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(kind.target)));
     expect(answered.status).toBe(412);
     const text = JSON.stringify(answered.body);
-    expect(text).toContain(`the target \\"${kind.target}\\" is not ready: the executable is missing`);
-    expect(text).toContain(`the target \\"${kind.target}\\": the executable was not found at ${binary}`);
+    expect(text).toContain(`the model \\"${kind.model}\\" is not ready: the executable is missing`);
+    expect(text).toContain(`the model \\"${kind.model}\\": the executable was not found at ${binary}`);
     expect(serves(dumpFile, kind.serveCommand)).toEqual([]);
   });
 
@@ -155,7 +156,7 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     const { home, binary, description } = await served(kind);
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
-    const first = await postJson(client, '/v1/responses', ask());
+    const first = await postJson(client, '/v1/responses', ask(kind.target));
     expect(first.status).toBe(503);
     expect(first.headers['retry-after']).toBeDefined();
     const key = keyOf(description, binary, kind.model);
@@ -166,7 +167,7 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     await handle.close();
     fs.appendFileSync(binary, '\n');
     const again = await launch(home);
-    expect((await postJson(clientFor(again.socketPath), '/v1/responses', ask())).status).toBe(503);
+    expect((await postJson(clientFor(again.socketPath), '/v1/responses', ask(kind.target))).status).toBe(503);
     const changed = keyOf(description, binary, kind.model);
     await until(() => recordFiles(home).includes(`${changed.digest}.json`), 'the probe record of the changed binary');
     expect(changed.digest).not.toBe(key.digest);
@@ -177,11 +178,11 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     await saveRecord();
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
-    expect((await readJson(await postJson(client, '/v1/responses', ask()))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask(kind.target)))).status).toBe(200);
     const first = serves(dumpFile, kind.serveCommand)[0] as DumpRecord;
     process.kill(first.pid, 'SIGKILL');
     await until(() => !isAlive(first.pid), 'the killed child to end');
-    expect((await readJson(await postJson(client, '/v1/responses', ask()))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', ask(kind.target)))).status).toBe(200);
     expect(serves(dumpFile, kind.serveCommand).length).toBeGreaterThanOrEqual(2);
   });
 
@@ -189,10 +190,10 @@ describe.each(KINDS)('one mechanism serves $label with the five assertions of se
     const { home, dumpFile, saveRecord } = await served(kind);
     await saveRecord();
     const handle = await launch(home);
-    expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()))).status).toBe(200);
+    expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(kind.target)))).status).toBe(200);
     await handle.close();
     for (const record of serves(dumpFile, kind.serveCommand)) expect(isAlive(record.pid)).toBe(false);
-    expect(fs.readdirSync(targetMarkers(home, `${kind.target}-1`))).toEqual([]);
+    expect(fs.readdirSync(targetMarkers(home, `${kind.provider}-1`))).toEqual([]);
   });
 });
 
@@ -201,16 +202,12 @@ describe('a declared server whose command is missing answers the row-0 text, not
     const home = makeHome();
     const missing = path.join(makeDir(), 'absent-server');
     writeSettings(home, {
-      models: {
-        servers: { loom: { command: missing, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { workbench: { adapter: 'managed', server: 'loom', model: 'fake-1', toolCalling: 'auto' } },
-        aliases: { default: ['workbench'] },
-      },
+      models: modelsOf({ workbench: { adapter: 'managed', server: 'loom', model: 'fake-1', toolCalling: 'auto' } }, { servers: { loom: { command: missing, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     });
     const handle = await launch(home);
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
     expect(answered.status).toBe(412);
-    expect(JSON.stringify(answered.body)).toContain(`the target \\"workbench\\": the executable was not found at ${missing}`);
+    expect(JSON.stringify(answered.body)).toContain(`the model \\"fake-1\\": the executable was not found at ${missing}`);
   });
 });
 
@@ -224,19 +221,15 @@ describe.skipIf(process.platform === 'win32')('a declared server socket path too
     const socket = path.join(targetsDir(home), `${name}-1.sock`);
     expect(Buffer.byteLength(socket)).toBe(limit + 1);
     writeSettings(home, {
-      models: {
-        servers: { loom: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-        targets: { [name]: { adapter: 'managed', server: 'loom', model: 'fake-1', ...DECLARED_BOUNDS, toolCalling: 'auto' } },
-        aliases: { default: [name] },
-      },
+      models: modelsOf({ [name]: { adapter: 'managed', server: 'loom', model: 'fake-1', ...DECLARED_BOUNDS, toolCalling: 'auto' } }, { servers: { loom: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
     });
     const description = await descriptionIn(home, 'loom');
-    await saveProbeRecord(probeDir(home), keyOf(description, fake.binaryPath, 'fake-1'), makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), keyOf(description, fake.binaryPath, 'fake-1'), recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
     const handle = await launch(home);
-    const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
+    const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask(`${name}/fake-1`)));
     expect(answered.status).toBe(412);
-    expect(answered.body.error.message).toContain(`the target "${name}": its server socket path is ${limit + 1} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
-    expect(answered.body.error.message).toMatch(/\((ENAMETOOLONG|EINVAL)\); choose a shorter target name/);
+    expect(answered.body.error.message).toContain(`the model "fake-1": its server socket path is ${limit + 1} bytes, and the system refused to bind a socket path of that length in ${path.dirname(socket)} (`);
+    expect(answered.body.error.message).toMatch(/\((ENAMETOOLONG|EINVAL)\); choose a shorter server name/);
     expect(fs.existsSync(targetMarkers(home, `${name}-1`))).toBe(false);
     expect(fs.existsSync(socket)).toBe(false);
   });
@@ -250,11 +243,7 @@ const declaredFake = async () => {
   registerCleanup(() => killGroupsForCleanup(readDump(dumpFile).map((record) => record.pid)));
   const home = makeHome();
   writeSettings(home, {
-    models: {
-      servers: { bench: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } },
-      targets: { workbench: { adapter: 'managed', server: 'bench', model: 'fake-1', toolCalling: 'auto' } },
-      aliases: { default: ['workbench'] },
-    },
+    models: modelsOf({ workbench: { adapter: 'managed', server: 'bench', model: 'fake-1', toolCalling: 'auto' } }, { servers: { bench: { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' } } }),
   });
   return { binary: fake.binaryPath, dumpFile, home, description: await descriptionIn(home, 'bench') };
 };
@@ -278,7 +267,7 @@ describe('the running instance reads its record under the start key captured whe
   it('keeps answering from the start key record after the binary bytes change, and starts no probe of the new key', async () => {
     const { binary, home, description } = await declaredFake();
     const startKey = keyOf(description, binary, 'fake-1');
-    await saveProbeRecord(probeDir(home), startKey, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), startKey, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
     const handle = await launch(home);
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', ask()))).status).toBe(200);
@@ -295,7 +284,7 @@ describe('the running instance reads its record under the start key captured whe
     fs.appendFileSync(binary, '\n');
     const keyAtChildStart = keyOf(description, binary, 'fake-1');
     expect(keyAtChildStart.digest).not.toBe(keyAtGatewayStart.digest);
-    await saveProbeRecord(probeDir(home), keyAtChildStart, makeReport(1, 1), managedCurrencyOf(description, { userDialects: {} }));
+    await saveProbeRecord(probeDir(home), keyAtChildStart, recordOf('fake-1'), managedCurrencyOf(description, { userDialects: {} }));
     const answered = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', ask()));
     expect(answered.status).toBe(200);
     expect(serves(dumpFile, 'run').map((record) => record.argv[record.argv.indexOf('--socket') + 1])).toEqual([path.join(targetsDir(home), 'workbench-1.sock')]);

@@ -149,22 +149,22 @@ export const b7Goal = (arith: ProofArith, floor: ToolFloor): ProofBool => {
   );
 };
 
-export type AliasMember = { readonly window: ProofInt; readonly maxOutput: ProofInt };
+export type ChainMember = { readonly window: ProofInt; readonly maxOutput: ProofInt };
 
-export type AliasWindow = Window & { readonly members: readonly AliasMember[] };
+export type ChainWindow = Window & { readonly members: readonly ChainMember[] };
 
-export const ALIAS_MEMBERS = 3;
+export const CHAIN_MEMBERS = 3;
 
-export const aliasWindowOf = (arith: ProofArith, options: { readonly loadRule: boolean }): AliasWindow => {
+export const chainWindowOf = (arith: ProofArith, options: { readonly loadRule: boolean }): ChainWindow => {
   const { ctx } = arith;
-  const members = Array.from({ length: ALIAS_MEMBERS }, (_unused, index): AliasMember => {
+  const members = Array.from({ length: CHAIN_MEMBERS }, (_unused, index): ChainMember => {
     const window = arith.int(`W${index}`);
     const maxOutput = arith.int(`M${index}`);
     arith.given(window.ge(1), window.le(ctx.Int.val(MAX_WINDOW)), maxOutput.ge(1), maxOutput.le(window));
     return { window, maxOutput };
   });
-  const smallest = members.slice(1).reduce((least, member) => arith.min(least, member.window), (members[0] as AliasMember).window);
-  const largest = members.slice(1).reduce((most, member) => arith.max(most, member.maxOutput), (members[0] as AliasMember).maxOutput);
+  const smallest = members.slice(1).reduce((least, member) => arith.min(least, member.window), (members[0] as ChainMember).window);
+  const largest = members.slice(1).reduce((most, member) => arith.max(most, member.maxOutput), (members[0] as ChainMember).maxOutput);
   const W = named(arith, 'W', smallest);
   const U = named(arith, 'U', largest);
   const margin = named(arith, 'margin', arith.max(ceilOf(arith, MARGIN, W), ctx.Int.val(MIN_MARGIN)));

@@ -97,7 +97,7 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
   });
 
   it('has the CLI writer, the actor Manual, go through the same guarded probe and restart no daemon to refresh a cached record', () => {
-    const probeFm = /export const probeFm = [\s\S]*?\n};\n/.exec(cliProbe)?.[0];
+    const probeFm = /const probeManaged = [\s\S]*?\n};\n/.exec(cliProbe)?.[0];
 
     expect(probeFm).toBeDefined();
     expect(probeFm).toContain('probeManagedFm');

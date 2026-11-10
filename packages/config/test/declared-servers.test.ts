@@ -3,7 +3,7 @@ import { derivedInputsOf, loadSettings, loadUserSettings, managedServerDigest, s
 import type { ResolvedSettings } from '@momonga/config';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import { localSettingsPath, makeTree, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
+import { canonsOf, connectionOf, connectionsOf, localSettingsPath, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const COMMAND = '/opt/mine/bin/mine-server';
@@ -16,7 +16,7 @@ const workbench = (server: string, extra: Record<string, unknown> = {}) => ({ wo
 
 const userFile = (tree: Tree, models: Record<string, unknown>): string => writeJson(userSettingsPath(tree), { models });
 
-const declaring = (servers: Record<string, unknown>, targets: Record<string, unknown> = workbench('mine')) => ({ servers, targets, aliases: { default: Object.keys(targets) } });
+const declaring = (servers: Record<string, unknown>, targets: Record<string, Record<string, unknown>> = workbench('mine')) => ({ servers, connections: connectionsOf(targets) });
 
 const loadUser = async (models: Record<string, unknown>) => {
   const tree = makeTree();
@@ -70,7 +70,7 @@ describe('a server declared in the user settings resolves to the one description
       recordedDefaults: { stopSequences: false, imageInput: false, tokenCounting: 'estimated', usageReported: false, maxConcurrency: 1 },
       sampling: 'none',
     });
-    expect(loaded.settings.models.targets['workbench']).toMatchObject({ adapter: 'managed', server: 'mine', binary: COMMAND, readyTimeoutMs: 10_000 });
+    expect(modelOf(loaded.settings, 'workbench')).toMatchObject({ adapter: 'managed', server: 'mine', binary: COMMAND, readyTimeoutMs: 10_000 });
   });
 
   it('refuses an unknown field timeout with the schema text', async () => {
@@ -135,24 +135,24 @@ describe('readyPath starts with a slash (19.2; R-S19-6)', () => {
 describe('an unknown server lists the built-in and the declared ids, sorted (19.2; R-S19-7)', () => {
   it('refuses server "mine" when only "kiln" is declared, listing fm and kiln', async () => {
     expect(await refusalOf(declaring({ kiln: DECLARATION }, workbench('mine')))).toContain(
-      'models.targets.workbench: server "mine" is not a managed server this build supports; supported: fm, kiln',
+      'models.connections[0]: server "mine" is not a managed server this build supports; supported: fm, kiln',
     );
   });
 });
 
 describe('a declaration outside the user settings is discarded with a warning (19.2; R-S19-8)', () => {
-  const projectModels = { servers: { mine: DECLARATION }, targets: workbench('mine'), aliases: { default: ['workbench'] } };
+  const projectModels = { servers: { mine: DECLARATION }, connections: connectionsOf(workbench('mine')) };
 
   it.each([
     ['the project settings file', projectSettingsPath],
     ['the local settings file', localSettingsPath],
-  ])('discards models.servers in %s and the target that names it', async (_label, fileOf) => {
+  ])('discards models.servers in %s and the connection that names it', async (_label, fileOf) => {
     const tree = makeTree();
-    userFile(tree, { targets: { remote: { adapter: 'chat-completions', model: 'm', provider: 'example', baseUrl: 'https://example.invalid/v1', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } } } });
+    userFile(tree, { connections: [connectionOf('remote', { adapter: 'chat-completions', model: 'm', baseUrl: 'https://example.invalid/v1', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } })] });
     const file = writeJson(fileOf(tree), { models: projectModels });
     const loaded = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(loaded.warnings).toContain(`${file}: models.servers is only honored in user settings; discarded`);
-    expect(Object.keys(loaded.settings.models.targets)).toEqual(['remote']);
+    expect(canonsOf(loaded.settings)).toEqual(['remote/m']);
   });
 });
 

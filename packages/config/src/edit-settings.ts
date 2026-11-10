@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { canonicalJson, isRecord, systemFileLockPorts } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
-import { editUserSettings } from './add-model-connection.ts';
+import { editUserSettings } from './edit-user-settings.ts';
 import { appendPermissionRule } from './append-rule.ts';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { readJsonFile } from './json-file.ts';

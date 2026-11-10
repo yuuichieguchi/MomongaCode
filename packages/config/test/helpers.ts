@@ -50,3 +50,30 @@ export const mcpJsonPath = (tree: Tree): string => path.join(tree.project, '.mcp
 
 export const trusting = (tree: Tree) => ({ isTrusted: (p: string): boolean => fs.realpathSync(p) === fs.realpathSync(tree.project) });
 export const distrusting = () => ({ isTrusted: (_p: string): boolean => false });
+
+export type FlatModel = Record<string, unknown>;
+
+export const connectionOf = (provider: string, flat: FlatModel): Record<string, unknown> => {
+  const { model, capabilities, toolCalling, ...connection } = flat;
+  return {
+    ...connection,
+    provider,
+    models: [{ id: model ?? `${provider}-model`, ...(capabilities === undefined ? {} : { capabilities }), ...(toolCalling === undefined ? {} : { toolCalling }) }],
+  };
+};
+
+export const connectionsOf = (flatByProvider: Record<string, FlatModel>): Record<string, unknown>[] => Object.entries(flatByProvider).map(([provider, flat]) => connectionOf(provider, flat));
+
+type ResolvedModelLike = Record<string, unknown> & { canon: string; provider: string; ownName: string; model: string };
+
+type ModelsLike = { models: ReadonlyMap<string, unknown> };
+
+export const resolvedModels = (settings: { models: unknown }): ResolvedModelLike[] => [...(settings.models as ModelsLike).models.values()] as ResolvedModelLike[];
+
+export const modelOf = (settings: { models: unknown }, provider: string): ResolvedModelLike => {
+  const found = resolvedModels(settings).find((model) => model.provider === provider);
+  if (found === undefined) throw new Error(`no model of the server ${provider} is resolved`);
+  return found;
+};
+
+export const canonsOf = (settings: { models: unknown }): string[] => [...(settings.models as ModelsLike).models.keys()];

@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, PROMPT_TEXT_MAX_CHARS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText } from '@momonga/protocol';
+import { MIN_SUMMARY_TOKENS, MOMONGA_REQUEST_FIELDS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText, PROMPT_TEXT_MAX_CHARS } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 import type { UnknownFields } from './unknown-fields.ts';
@@ -288,10 +288,18 @@ const momongaRecord = (value: unknown): SchemaObject | undefined => {
   return value as SchemaObject;
 };
 
+const requireExactModelFlag = (momonga: SchemaObject): void => {
+  const exact = momonga['exact_model'];
+  if (exact !== undefined && typeof exact !== 'boolean') {
+    throw invalidRequest('invalid_exact_model', `${MOMONGA_REQUEST_FIELDS.exactModel} must be a boolean`, MOMONGA_REQUEST_FIELDS.exactModel);
+  }
+};
+
 const validateCompactMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions'], ['momonga']);
+  requireKnownKeys(momonga, ['max_summary_tokens', 'retains_user_request', 'guideline', 'instructions', 'exact_model'], ['momonga']);
+  requireExactModelFlag(momonga);
   const cap = momonga['max_summary_tokens'];
   if (cap !== undefined && (!Number.isInteger(cap) || (cap as number) < MIN_SUMMARY_TOKENS)) {
     throwIssue({ segments: ['momonga', 'max_summary_tokens'], message: `must be an integer of at least ${MIN_SUMMARY_TOKENS}` });
@@ -313,10 +321,11 @@ const validateCompactMomonga = (value: unknown): void => {
 const validateCountMomonga = (value: unknown): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['lenient_items', 'target'], ['momonga']);
+  requireKnownKeys(momonga, ['lenient_items', 'target', 'exact_model'], ['momonga']);
+  requireExactModelFlag(momonga);
   const target = momonga['target'];
   if (target !== undefined && (typeof target !== 'string' || target === '')) {
-    throwIssue({ segments: ['momonga', 'target'], message: 'must be a non-empty string naming a target of the alias' });
+    throwIssue({ segments: ['momonga', 'target'], message: 'must be a non-empty string naming the model or one of its fallback models' });
   }
   const lenient = momonga['lenient_items'];
   if (lenient === undefined) return;
@@ -338,7 +347,8 @@ const CACHE_MARK_NAMES = ['stable', 'fixed', 'previousHistory', 'history'] as co
 const validateCreateMomonga = (value: unknown, inputLength: number): void => {
   const momonga = momongaRecord(value);
   if (momonga === undefined) return;
-  requireKnownKeys(momonga, ['cache'], ['momonga']);
+  requireKnownKeys(momonga, ['cache', 'exact_model'], ['momonga']);
+  requireExactModelFlag(momonga);
   const cache = momonga['cache'];
   if (cache === undefined) return;
   const at = ['momonga', 'cache'];

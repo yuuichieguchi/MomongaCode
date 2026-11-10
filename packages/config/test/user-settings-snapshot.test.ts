@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, createUserSettingsCache, loadMcpServers, loadSettings, noKeptRecords } from '@momonga/config';
 import type { UserLayer, UserSettingsSnapshot } from '@momonga/config';
-import { makeTree, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
+import { canonsOf, makeTree, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
 const T0 = new Date('2026-01-01T00:00:00Z');
@@ -48,7 +48,7 @@ describe('UserSettingsCache.snapshot', () => {
     expect(snapshot.user.layer?.source).toBe(file);
     expect(snapshot.user.layer?.origin).toBe('user');
     expect(snapshot.user.layer?.settings).toEqual({ env: { TZ: 'user' }, autoUpdates: false });
-    expect(snapshot.user.models.targets).toEqual({});
+    expect(canonsOf({ models: snapshot.user.models })).toEqual([]);
     expect(snapshot.user.warnings).toEqual([]);
   });
 

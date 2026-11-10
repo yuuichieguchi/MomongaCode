@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ProbeRecordKey, ResolvedModelTarget, UserModels } from '@momonga/config';
+import type { ProbeRecordKey, ResolvedModel, ResolvedModelTarget, UserModels } from '@momonga/config';
 import { loadUserSettings, probeRecordKeyOf } from '@momonga/config';
 import type { EntryIo } from '@momonga/foundation';
 import { momongaPaths } from '@momonga/foundation';
@@ -10,6 +10,7 @@ import { endpointRecordFileName } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createTempDir, removeTempDir } from '@momonga/testkit';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { liveSettingsFor } from '../src/eval/context-host.ts';
+import { userModelsOf } from './user-models.ts';
 import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
@@ -73,9 +74,9 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
   return { codes, stdout: stdout.join(''), stderr: stderr.join('') };
 };
 
-const endpointKeyFor = (name: string, target: ResolvedModelTarget) => {
-  const key = probeRecordKeyOf(name, target);
-  if (key?.kind !== 'endpoint') throw new Error(`the target ${name} has no endpoint probe record key`);
+const endpointKeyFor = (model: ResolvedModel) => {
+  const key = probeRecordKeyOf(model.canon, model);
+  if (key?.kind !== 'endpoint') throw new Error(`the model ${model.canon} has no endpoint probe record key`);
   return key.key;
 };
 
@@ -84,22 +85,22 @@ const writeOllamaSettings = (home: string, baseUrl: string): void => {
   fs.mkdirSync(root, { recursive: true, mode: 0o700 });
   fs.writeFileSync(
     path.join(root, 'settings.json'),
-    JSON.stringify({ models: { targets: { local: { adapter: 'ollama', model: OLLAMA_MODEL, baseUrl, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } } } } }),
+    JSON.stringify({ models: { connections: [{ adapter: 'ollama', provider: 'local', baseUrl, models: [{ id: OLLAMA_MODEL, capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } }] }] } }),
     { mode: 0o600 },
   );
 };
 
 describe('the probe command writes the record under the key probeRecordKeyOf gives (W-5)', () => {
-  it('writes an ollama target given with a trailing slash under the key the gateway and the eval host read', async () => {
+  it('writes an Ollama model of a server given with a trailing slash under the key the gateway and the eval host read', async () => {
     const fake = await startFakeOllama({ cacheProbe: 'none' });
     const home = freshHome();
     writeOllamaSettings(home, `${fake.origin}/`);
     const { settings } = await loadUserSettings({ home });
-    const resolved = settings.models.targets['local'];
-    if (resolved === undefined) throw new Error('the settings resolved no local target');
-    const key = endpointKeyFor('local', resolved);
+    const [resolved] = settings.models.models.values();
+    if (resolved === undefined) throw new Error('the settings resolved no model');
+    const key = endpointKeyFor(resolved);
 
-    const result = await runCli(home, ['gateway', 'probe', 'local']);
+    const result = await runCli(home, ['gateway', 'probe', resolved.canon]);
 
     expect(result.codes).toEqual([0]);
     const probeDir = momongaPaths(home, process.platform, {}).probe;
@@ -107,53 +108,30 @@ describe('the probe command writes the record under the key probeRecordKeyOf giv
   });
 });
 
-const capabilities = {
-  contextWindow: 8192,
-  maxOutputTokens: 1024,
-  structuredOutput: 'none',
-  streaming: true,
-  stopSequences: true,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'estimated',
-  usageReported: true,
-  source: 'config',
-  maxConcurrency: 4,
-} as const;
-
-const remote = { billing: 'metered', capabilities, maxConcurrency: 4, admissionTimeoutMs: 30000 } as const;
 const declaredCapabilities = { contextWindow: 8192, maxOutputTokens: 1024 };
 
+const TCP_MODEL = 'ollama/qwen3:latest';
+const SOCKET_MODEL = 'sock/qwen3:latest';
+
 const hostModels = (): UserModels =>
-  ({
-    declared: {
-      aliases: { default: ['tcp', 'socket'] },
-      targets: {
-        tcp: { adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434/', capabilities: declaredCapabilities },
-        socket: { adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock', capabilities: declaredCapabilities },
-      },
-    },
-    resolved: {
-      aliases: { default: ['tcp', 'socket'] },
-      targets: {
-        tcp: { ...remote, adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434/' },
-        socket: { ...remote, adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock' },
-      },
-      roles: {},
-    },
-  }) as unknown as UserModels;
+  userModelsOf({
+    connections: [
+      { adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434/', models: [{ id: 'qwen3', capabilities: declaredCapabilities }] },
+      { adapter: 'ollama', provider: 'sock', socketPath: '/s/ollama.sock', models: [{ id: 'qwen3', capabilities: declaredCapabilities }] },
+    ],
+    fallback: [SOCKET_MODEL],
+  });
 
 describe('the eval host carries the key probeRecordKeyOf gives instead of rebuilding it (W-5)', () => {
-  it('carries the record key of a TCP target with a trailing slash and of a socket target', () => {
+  it('carries the record key of a model of a TCP server with a trailing slash and of a model of a socket server', () => {
     const models = hostModels();
-    const expected = ['tcp', 'socket'].map((name) => endpointKeyFor(name, models.resolved.targets[name] as ResolvedModelTarget));
+    const expected = [TCP_MODEL, SOCKET_MODEL].map((canon) => endpointKeyFor(models.resolved.models.get(canon) as ResolvedModel));
     expect(expected).toEqual([
       { endpoint: 'http://127.0.0.1:11434', model: 'qwen3:latest' },
       { endpoint: 'unix:/s/ollama.sock', model: 'qwen3:latest' },
     ]);
 
-    expect(liveSettingsFor(models, ['default']).endpointProbes).toEqual(expected);
+    expect(liveSettingsFor(models, [TCP_MODEL]).endpointProbes).toEqual(expected);
   });
 });
 

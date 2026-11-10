@@ -8,7 +8,7 @@ const CAP = 200;
 const TOO_SMALL_OUTPUT = CAP - 1;
 
 const compact = async (harness: Harness) =>
-  readJson(await postJson(harness.client, '/v1/responses/compact', { model: 'fast', input: [userText('summarise this')], momonga: { max_summary_tokens: CAP } }));
+  readJson(await postJson(harness.client, '/v1/responses/compact', { model: harness.model, input: [userText('summarise this')], momonga: { max_summary_tokens: CAP } }));
 
 const limitedAdapter = async () => {
   const fake = await startFake({ scenario: 'tools-ok', script: [textReply('never')] });

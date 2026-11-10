@@ -6,7 +6,7 @@ import { endpointFormsOfSocket, generationLayout, pipePathFor } from '@momonga/f
 import { instanceSocketOf } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedEndpointForm, ManagedServerDescription } from '@momonga/protocol';
-import { makeHome, writeSettings } from '../gateway-process-helpers.ts';
+import { makeHome, modelsOf, writeSettings } from '../gateway-process-helpers.ts';
 
 const HOME = '/Users/someone';
 const WIN_HOME = 'C:\\Users\\someone';
@@ -14,11 +14,10 @@ const WIN_HOME = 'C:\\Users\\someone';
 const accepting = (forms: readonly ManagedEndpointForm[]): ManagedServerDescription => ({ ...FM_SERVER, id: 'loom', endpoint: { forms } });
 
 const declaring = (endpoint: Record<string, unknown> | undefined) => ({
-  models: {
-    servers: { loom: { command: '/opt/loom/bin/loom', args: ['run', '--socket', '{socket}'], readyPath: '/ready', ...(endpoint === undefined ? {} : { endpoint }) } },
-    targets: { workbench: { adapter: 'managed', server: 'loom', model: 'loom-1' } },
-    aliases: { default: ['workbench'] },
-  },
+  models: modelsOf(
+    { workbench: { adapter: 'managed', server: 'loom', model: 'loom-1' } },
+    { servers: { loom: { command: '/opt/loom/bin/loom', args: ['run', '--socket', '{socket}'], readyPath: '/ready', ...(endpoint === undefined ? {} : { endpoint }) } } },
+  ),
 });
 
 describe('the endpoint forms of a managed server are data (design-update 18.2.6, 20.59)', () => {
@@ -36,10 +35,10 @@ describe('the endpoint forms of a managed server are data (design-update 18.2.6,
   });
 
   it('refuses a description with no offered form with the text of 18.2.6', () => {
-    expect(() => requireOfferedEndpointForm(accepting(['unix']), ['pipe'], 'models.targets.workbench')).toThrow(
-      'models.targets.workbench: server "loom" accepts only the endpoint forms [unix], and this host offers [pipe]; the target cannot be used on this platform',
+    expect(() => requireOfferedEndpointForm(accepting(['unix']), ['pipe'], 'models.connections[0]')).toThrow(
+      'models.connections[0]: server "loom" accepts only the endpoint forms [unix], and this host offers [pipe]; the target cannot be used on this platform',
     );
-    expect(() => requireOfferedEndpointForm(accepting(['unix', 'pipe']), [], 'models.targets.workbench')).toThrow('accepts only the endpoint forms [unix, pipe], and this host offers []');
+    expect(() => requireOfferedEndpointForm(accepting(['unix', 'pipe']), [], 'models.connections[0]')).toThrow('accepts only the endpoint forms [unix, pipe], and this host offers []');
   });
 
   it('places a pipe instance at pipePathFor(home, g<N>-managed-<stem>) and leaves a unix instance at its socket file', () => {
@@ -69,7 +68,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     expect(registeredServer(settings.models.servers, 'loom')?.endpoint).toEqual({ forms: ['pipe', 'unix'] });
   });
 
-  it('refuses at load a target whose server accepts no form this host offers, naming the settings file', async () => {
+  it('refuses at load a connection whose server accepts no form this host offers, naming the settings file', async () => {
     const home = makeHome();
     writeSettings(home, declaring({ forms: ['pipe'] }));
     const file = fs.realpathSync(path.join(home, '.momonga', 'settings.json'));
@@ -77,7 +76,7 @@ describe.skipIf(process.platform === 'win32')('a server declared in the user set
     const refusal = await loadUserSettings({ home }).catch((error: unknown) => error);
 
     expect(refusal).toBeInstanceOf(ConfigError);
-    expect((refusal as Error).message).toContain(`${file}: models.targets.workbench: server "loom" accepts only the endpoint forms [pipe], and this host offers [unix]; the target cannot be used on this platform`);
+    expect((refusal as Error).message).toContain(`${file}: models.connections[0]: server "loom" accepts only the endpoint forms [pipe], and this host offers [unix]; the target cannot be used on this platform`);
   });
 
   it('refuses an endpoint form that is not one of unix and pipe by the schema', async () => {

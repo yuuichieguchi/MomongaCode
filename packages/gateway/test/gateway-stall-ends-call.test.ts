@@ -51,9 +51,9 @@ const responsesTo = (fake: FakeUpstreamServer): number => fake.requests.filter((
 const startSingleTarget = async (script: FakeUpstreamReply[]) => {
   const remote = await startUpstream(script);
   const harness = await startGateway({
-    adapters: { remote: remote.adapter },
+    adapters: { 'scripted/upstream-model': remote.adapter },
     timers: realTimers,
-    config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } },
+    config: { chains: { 'scripted/upstream-model': ['scripted/upstream-model'] }, targets: { 'scripted/upstream-model': { kind: 'remote' } } },
   });
   return { harness, fake: remote.fake };
 };
@@ -62,11 +62,11 @@ const startWithFallback = async (remoteScript: FakeUpstreamReply[], backupScript
   const remote = await startUpstream(remoteScript);
   const backup = await startUpstream(backupScript);
   const harness = await startGateway({
-    adapters: { remote: remote.adapter, backup: backup.adapter },
+    adapters: { 'scripted/upstream-model': remote.adapter, 'backup/upstream-model': backup.adapter },
     timers: realTimers,
     config: {
-      aliases: { fast: ['remote', 'backup'] },
-      targets: { remote: { model: 'upstream-model', kind: 'remote' }, backup: { model: 'upstream-model', kind: 'remote' } },
+      chains: { 'scripted/upstream-model': ['scripted/upstream-model', 'backup/upstream-model'] },
+      targets: { 'scripted/upstream-model': { kind: 'remote' }, 'backup/upstream-model': { kind: 'remote' } },
       ...(breaker === undefined ? {} : { breaker }),
     },
   });
@@ -74,7 +74,7 @@ const startWithFallback = async (remoteScript: FakeUpstreamReply[], backupScript
 };
 
 const ask = async (client: Parameters<typeof postJson>[0], stream: boolean) => {
-  const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...(stream ? { stream: true } : {}) });
+  const response = await postJson(client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi'), ...(stream ? { stream: true } : {}) });
   if (response.headers['content-type']?.startsWith('text/event-stream') !== true) return readJson(response);
   const frames = await readSse(response);
   return { status: response.status, headers: response.headers, body: frames.at(-1)?.data };
@@ -113,7 +113,7 @@ describe('a stalled attempt ends the call at once and is never retried inside th
     expect(responsesTo(backup)).toBe(0);
     const next = await ask(harness.client, false);
     expect(next.status).toBe(200);
-    expect(next.body.momonga.fallbackFrom).toEqual(['remote']);
+    expect(next.body.momonga.fallbackFrom).toEqual(['scripted/upstream-model']);
     expect(responsesTo(remote)).toBe(1);
     expect(responsesTo(backup)).toBe(1);
   });

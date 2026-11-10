@@ -22,9 +22,24 @@ export class SecretVerificationError extends Error {
 
 const NAME_SHAPE = new RegExp(SECRET_NAME_PATTERN);
 
-export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: string, interrupt: AbortSignal): Promise<number> => {
+const checkSecretName = (name: string): void => {
   if (!NAME_SHAPE.test(name)) throw new SecretInputError(`secret name ${JSON.stringify(name)} does not match ${SECRET_NAME_PATTERN}`);
   if (name.startsWith(CREDENTIAL_KEY_PREFIX)) throw new SecretInputError(`secret names starting with ${CREDENTIAL_KEY_PREFIX} are reserved for the key of the encrypted credential store`);
+};
+
+export const storeSecretValue = async (ports: Pick<CliPorts, 'secretStore'>, name: string, value: string, interrupt: AbortSignal): Promise<void> => {
+  checkSecretName(name);
+  if (value === '') throw new SecretInputError('a secret value must not be empty');
+  const store = ports.secretStore();
+  const readBack = await withinCommandLimit(interrupt, async (signal) => {
+    await store.write(name, value, signal);
+    return store.read(name, signal);
+  });
+  if (readBack !== value) throw new SecretVerificationError(name);
+};
+
+export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: string, interrupt: AbortSignal): Promise<number> => {
+  checkSecretName(name);
   if (ports.terminal === undefined) throw new SecretInputError('momonga secret set reads the value from the terminal; run it in an interactive terminal');
   const value = await withHiddenInput(ports.terminal, interrupt, async (read) => {
     const entered = await read(`Value for secret ${name} (input is hidden): `);
@@ -32,12 +47,7 @@ export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: stri
     if ((await read('Enter it again to confirm: ')) !== entered) throw new SecretInputError('the two entries differ; nothing was stored');
     return entered;
   });
-  const store = ports.secretStore();
-  const readBack = await withinCommandLimit(interrupt, async (signal) => {
-    await store.write(name, value, signal);
-    return store.read(name, signal);
-  });
-  if (readBack !== value) throw new SecretVerificationError(name);
+  await storeSecretValue(ports, name, value, interrupt);
   ports.stdout.write(`stored secret ${name}\n`);
   const supervisor = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
   try {

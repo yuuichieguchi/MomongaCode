@@ -15,7 +15,7 @@ const factsRow = (runId: string, sessionId: string): RunFactsView => ({
   rootRunId: runId,
   sessionId,
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-  modelAlias: 'fm',
+  model: 'fm',
   mode: 'manual',
   agent: 'build',
   origin: 'cli',

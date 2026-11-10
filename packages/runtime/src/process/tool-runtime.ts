@@ -197,7 +197,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
           ...(connectTimeoutMs === undefined ? {} : { connectTimeoutMs }),
         };
         const { credentials } = loaded.settings;
-        const credentialNames = credentialEnvNames(loaded.settings);
+        const credentialNames = credentialEnvNames(loaded.settings.models);
         const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames, ...(Object.keys(callBounds).length === 0 ? {} : { callBounds }) }));
         const acquired = mcpPools.acquire(runId, {
           key,

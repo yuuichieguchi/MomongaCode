@@ -1,9 +1,9 @@
 ------------------------- MODULE SettingsSwap -------------------------
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS Ops, AdmitOps, Jobs, MaxV, MaxEdits, MaxCrashes, Underivable, Observer, AbortOps, Variant
+CONSTANTS Ops, AdmitOps, Jobs, MaxV, MaxEdits, MaxCrashes, Underivable, Observer, AbortOps, Swapped, Variant
 
-ASSUME Variant \in {"decided", "restartOnChange", "retireEager", "staleRead", "strictInRun", "sweepWithJob", "splitGate", "lockWait", "lateWake", "parallelDerive", "awaitOlder", "lazyLastGood", "recordFirst", "firstCallerSignal", "recordThrows"}
+ASSUME Variant \in {"decided", "restartOnChange", "retireEager", "staleRead", "strictInRun", "sweepWithJob", "splitGate", "lockWait", "lateWake", "parallelDerive", "awaitOlder", "lazyLastGood", "recordFirst", "firstCallerSignal", "recordThrows", "carryByPosition"}
 ASSUME AdmitOps \subseteq Ops
 ASSUME Ops \cap Jobs = {}
 ASSUME MaxV \in Nat \ {0}
@@ -12,6 +12,7 @@ ASSUME MaxCrashes \in Nat
 ASSUME Underivable \subseteq 2..MaxV
 ASSUME Observer \in BOOLEAN
 ASSUME AbortOps \subseteq Ops
+ASSUME Swapped \subseteq 1..MaxV
 
 DerivedObjects == {"D1", "D2", "D3", "D4", "D5"}
 InputsD1 == {"models", "network", "pricing", "context.unboundedOutputReserve"}
@@ -22,6 +23,8 @@ InputsD5 == {"network", "credentials.plaintextTokenFiles"}
 
 Tg == {"a", "b"}
 Pos(t) == IF t = "a" THEN 1 ELSE 2
+Order(s, t) == IF s \in Swapped THEN 3 - Pos(t) ELSE Pos(t)
+IdAt(s, q) == CHOOSE u \in Tg : Order(s, u) = q
 
 Def(s, t) ==
     IF t = "a"
@@ -90,7 +93,8 @@ JobHolder(o) == {j \in Jobs : jobSt[j] = "live" /\ jobObj[j] = o}
 Holders(o) == Holder(o) \cup JobHolder(o)
 Live(o) == oSt[o] \in {"cur", "old"}
 
-LiveSrc(s, t) == {o \in ObjIds : Live(o) /\ Def(s, t) # 0 /\ Def(oVer[o], t) = Def(s, t)}
+SrcKey(s, t, o) == IF Variant = "carryByPosition" THEN IdAt(oVer[o], Order(s, t)) ELSE t
+LiveSrc(s, t) == {o \in ObjIds : Live(o) /\ Def(s, t) # 0 /\ Def(oVer[o], SrcKey(s, t, o)) = Def(s, t)}
 Src(s, t) == CHOOSE o \in LiveSrc(s, t) : TRUE
 Carry(p, s, t) == LiveSrc(s, t) # {}
 CarryGate(p, s, t) == Carry(p, s, t) /\ (Variant # "splitGate" \/ Net(s) = Net(oVer[Src(s, t)]))
@@ -100,13 +104,13 @@ FreshSrvs(p, s) == Cardinality({u \in Tg : Def(s, u) # 0 /\ ~Carry(p, s, u)})
 
 GateOf(p, s, t) ==
     IF Def(s, t) = 0 THEN 0
-    ELSE IF CarryGate(p, s, t) THEN oGate[Src(s, t)][t]
-    ELSE nGate + Cardinality({u \in Tg : Pos(u) <= Pos(t) /\ Def(s, u) # 0 /\ ~CarryGate(p, s, u)})
+    ELSE IF CarryGate(p, s, t) THEN oGate[Src(s, t)][SrcKey(s, t, Src(s, t))]
+    ELSE nGate + Cardinality({u \in Tg : Order(s, u) <= Order(s, t) /\ Def(s, u) # 0 /\ ~CarryGate(p, s, u)})
 
 SrvOf(p, s, t) ==
     IF Def(s, t) = 0 THEN 0
-    ELSE IF Carry(p, s, t) THEN oSrv[Src(s, t)][t]
-    ELSE nSrv + Cardinality({u \in Tg : Pos(u) <= Pos(t) /\ Def(s, u) # 0 /\ ~Carry(p, s, u)})
+    ELSE IF Carry(p, s, t) THEN oSrv[Src(s, t)][SrcKey(s, t, Src(s, t))]
+    ELSE nSrv + Cardinality({u \in Tg : Order(s, u) <= Order(s, t) /\ Def(s, u) # 0 /\ ~Carry(p, s, u)})
 
 NewSrvState(p, s) == [x \in SrvIds |-> IF x > nSrv /\ x <= nSrv + FreshSrvs(p, s) THEN "idle" ELSE sSt[x]]
 NewSrvTgt(p, s) == [x \in SrvIds |-> IF x > nSrv /\ x <= nSrv + FreshSrvs(p, s) THEN CHOOSE u \in Tg : SrvOf(p, s, u) = x ELSE sTgt[x]]
@@ -127,8 +131,8 @@ Init ==
     /\ nObj = 1 /\ cur = 1
     /\ oSt = [o \in ObjIds |-> IF o = 1 THEN "cur" ELSE "free"]
     /\ oVer = [o \in ObjIds |-> IF o = 1 THEN 1 ELSE 0]
-    /\ oGate = [o \in ObjIds |-> [t \in Tg |-> IF o = 1 /\ Def(1, t) # 0 THEN Pos(t) ELSE 0]]
-    /\ oSrv = [o \in ObjIds |-> [t \in Tg |-> IF o = 1 /\ Def(1, t) # 0 THEN Pos(t) ELSE 0]]
+    /\ oGate = [o \in ObjIds |-> [t \in Tg |-> IF o = 1 /\ Def(1, t) # 0 THEN Order(1, t) ELSE 0]]
+    /\ oSrv = [o \in ObjIds |-> [t \in Tg |-> IF o = 1 /\ Def(1, t) # 0 THEN Order(1, t) ELSE 0]]
     /\ nGate = 2 /\ nSrv = 2
     /\ sSt = [x \in SrvIds |-> IF x <= 2 THEN "idle" ELSE "none"]
     /\ sTgt = [x \in SrvIds |-> IF x = 1 THEN "a" ELSE IF x = 2 THEN "b" ELSE "none"]

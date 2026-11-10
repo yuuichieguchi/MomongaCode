@@ -5,7 +5,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { defineTool } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
-import { MODEL_ALIAS, functionCallItem, requestedOffering, textStep } from './scripts.ts';
+import { MODEL_ID, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 describe('worker recovery of a not_applied call under the current policy', () => {
   it('asks for approval before re-executing, then executes exactly once after allow_once', async () => {
@@ -70,7 +70,7 @@ describe('worker reporter with a throwing onError hook', () => {
   it('falls back to the claim notice, keeps claiming and stops cleanly', async () => {
     const env = await makeEnv();
     const failing = env.enqueue('Fails to load');
-    const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', modelAlias: MODEL_ALIAS });
+    const other = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'manual', model: MODEL_ID });
     const healthy = createdRun(env.store.createRunAndEnqueue(other.id, { input: 'Say hello', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {} }));
     env.gateway.script.push(textStep('Hello.'));
     const store: RuntimeStore = {

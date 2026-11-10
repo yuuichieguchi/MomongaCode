@@ -10,8 +10,8 @@ import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import type { GatewayClient } from '../../src/gateway-client.ts';
 import { capabilitiesFor } from './harness.ts';
-import { MODEL_ALIAS } from './scripts.ts';
-import { fixedRolePort, fixedSocket } from '@momonga/foundation';
+import { MODEL_ID } from './scripts.ts';
+import { fixedSocket, fixedRolePort } from '@momonga/foundation';
 
 export const KEEP_ALIVE_EVERY_MS = 40;
 
@@ -25,7 +25,7 @@ export const answer = (text: string): FakeScriptedReply => ({
 
 export type RealGateway = { client: GatewayClient; upstream: FakeChatCompletionsServer };
 
-const TARGET = 'upstream';
+const TARGET = MODEL_ID;
 
 export const BREAKER_STAYS_CLOSED_SO_EVERY_REQUEUED_ATTEMPT_REACHES_THE_ONE_TARGET = Number.MAX_SAFE_INTEGER;
 
@@ -46,7 +46,7 @@ export const startRealGateway = async (options: { clock: FakeClock; idleTimeoutM
     config: {
       ...GATEWAY_CONFIG_DEFAULTS,
       models: {
-        aliases: { [MODEL_ALIAS]: [TARGET] },
+        chains: { [TARGET]: [TARGET] },
         targets: {
           [TARGET]: { kind: 'chat-completions', provider: 'fake', model: 'system', billing: 'metered', maxConcurrency: 1, admissionTimeoutMs: 5_000, counter: createHash('sha256').update(TARGET).digest('hex') },
         },

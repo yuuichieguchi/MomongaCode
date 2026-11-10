@@ -15,7 +15,7 @@ const rawStatus = (socketPath: string, rawPath: string): Promise<number> =>
 
 describe('raw backslash in the request path', () => {
   it('is answered 400 by the gateway listener', async () => {
-    const { socketPath } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) } });
+    const { socketPath } = await startGateway({ adapters: { 'scripted/scripted-primary': createScriptedAdapter({ calls: [] }) } });
     expect(await rawStatus(socketPath, '/v1/momonga/health')).toBe(200);
     expect(await rawStatus(socketPath, '/v1/momonga\\health')).toBe(400);
     expect(await rawStatus(socketPath, '/v1\\momonga/health')).toBe(400);

@@ -134,27 +134,34 @@ export type World = {
   client: Awaited<ReturnType<typeof startGateway>>['client'];
   upstreams: Record<string, Upstream>;
   turn: (target: string, input: unknown[]) => Promise<any[]>;
+  modelOf: (target: string) => string;
 };
+
+const canonOf = (plan: TargetPlan): string => `${plan.name}/${plan.model}`;
 
 export const startWorld = async (plans: readonly TargetPlan[], hmacKey: Uint8Array = HMAC_KEY): Promise<World> => {
   const upstreams: Record<string, Upstream> = {};
   for (const plan of plans) upstreams[plan.name] = await startUpstream(plan.kind, plan.script);
   const { client } = await startGateway({
     hmacKey,
-    adapters: Object.fromEntries(plans.map((plan) => [plan.name, upstreams[plan.name]!.adapter])),
+    adapters: Object.fromEntries(plans.map((plan) => [canonOf(plan), upstreams[plan.name]!.adapter])),
     config: {
-      aliases: Object.fromEntries(plans.map((plan) => [`via-${plan.name}`, [plan.name]])),
-      targets: Object.fromEntries(plans.map((plan) => [plan.name, { model: plan.model, kind: 'remote' as const }])),
+      targets: Object.fromEntries(plans.map((plan) => [canonOf(plan), { kind: 'remote' as const }])),
       retry: { maxAttempts: 1 },
     },
   });
+  const modelOf = (target: string): string => {
+    const plan = plans.find((candidate) => candidate.name === target);
+    if (plan === undefined) throw new Error(`no upstream is named ${target}`);
+    return canonOf(plan);
+  };
   const turn = async (target: string, input: unknown[]): Promise<any[]> => {
-    const frames = await readSse(await postJson(client, '/v1/responses', { model: `via-${target}`, stream: true, input }));
+    const frames = await readSse(await postJson(client, '/v1/responses', { model: modelOf(target), stream: true, input }));
     const last = frames.at(-1)?.data;
     if (last?.type !== 'response.completed') throw new Error(`turn on ${target} did not complete: ${JSON.stringify(last)}`);
     return last.response.output;
   };
-  return { client, upstreams, turn };
+  return { client, upstreams, turn, modelOf };
 };
 
 export const reasoningOf = (output: readonly any[]): any => {

@@ -33,3 +33,13 @@ export class UnprobedTarget extends Error {
     this.error = error;
   }
 }
+
+export class CandidateDropped extends Error {
+  readonly error: GatewayError;
+
+  constructor(error: GatewayError) {
+    super(error.message);
+    this.name = 'CandidateDropped';
+    this.error = error;
+  }
+}

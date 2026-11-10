@@ -127,7 +127,7 @@ describe('a running instance keeps the key it started with (19.11-a, 19.14 item 
     });
     return { managed, started };
   };
-  const target = { name: 'workbench', model: 'fake-1' };
+  const target = { name: 'workbench', display: 'workbench', model: 'fake-1' };
   const signal = (): AbortSignal => AbortSignal.timeout(REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('answers from the start key record after the binary is replaced, and measures the new key only after the instance next starts', async () => {
@@ -187,7 +187,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
 
   it('answers 503 target_probing with toolCalling auto, no record and nothing declared, and starts the probe of its key', async () => {
     const { managed, started } = await targetOf(await loadedDeclaration('mine', DECLARATION), 'auto');
-    await expect(managed.capabilities({ name: 'workbench', model: 'fake-1' })).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
+    await expect(managed.capabilities({ name: 'workbench', display: 'workbench', model: 'fake-1' })).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
     expect(started).toEqual([KEY_A]);
   });
 
@@ -195,7 +195,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     const bounds = { contextWindow: 4096, maxOutputTokens: 512 };
     const answerOf = async (description: ManagedServerDescription) => {
       const { managed, started } = await targetOf(description, 'constrained', bounds);
-      const target = { name: 'workbench', model: 'fake-1' };
+      const target = { name: 'workbench', display: 'workbench', model: 'fake-1' };
       const capabilities = await managed.capabilities(target);
       return { capabilities: { ...capabilities, allowedTools: undefined }, envelope: managed.envelopeShape(target), dialect: managed.schemaDialect(target), started };
     };
@@ -214,7 +214,7 @@ describe('a declared server follows the one generic declared-only rule (19.11-b,
     registerCleanup(() => killGroupsForCleanup(dumpedPids(dumpFile)));
     const home = makeHome();
     const description = await loadedDeclaration('bench', { command: fake.binaryPath, args: ['run', '--socket', '{socket}'], readyPath: '/ready' }, home);
-    const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', target: 'workbench' });
+    const instance = managedInstancePaths(momongaPaths(home, process.platform, {}), { owner: 'cli', purpose: 'probe', provider: 'workbench' });
     fs.mkdirSync(instance.markerDirectory, { recursive: true, mode: 0o700 });
     const report = await measureManagedServer({
       description,

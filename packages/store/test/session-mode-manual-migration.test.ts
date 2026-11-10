@@ -54,7 +54,7 @@ describe('the stored asking mode is manual (design 8.3)', () => {
       insertSession(db, 'old', 'default');
       for (const mode of ['acceptEdits', 'plan', 'auto', 'bypassPermissions']) insertSession(db, mode, mode);
       const before = db.prepare("SELECT * FROM sessions WHERE id <> 'old' ORDER BY id").all();
-      migrate(db, MIGRATIONS);
+      migrate(db, MIGRATIONS.filter((migration) => migration.version <= renaming().version));
       expect(db.prepare("SELECT * FROM sessions WHERE id = 'old'").get()).toEqual({
         id: 'old',
         cwd: '/work/old',
@@ -75,7 +75,7 @@ describe('the stored asking mode is manual (design 8.3)', () => {
   it('accepts exactly the five mode names afterwards and refuses default', () => {
     const db = openBefore();
     try {
-      migrate(db, MIGRATIONS);
+      migrate(db, MIGRATIONS.filter((migration) => migration.version <= renaming().version));
       expect(checkList(db)).toEqual([...PERMISSION_MODES]);
       for (const mode of PERMISSION_MODES) insertSession(db, mode, mode);
       expect(() => insertSession(db, 'refused', 'default')).toThrow(/CHECK constraint failed/);
@@ -92,7 +92,7 @@ describe('the stored asking mode is manual (design 8.3)', () => {
       const indexesBefore = namesOf(db, 'index', 'sessions');
       const triggersBefore = namesOf(db, 'trigger', 'sessions');
       const allTriggersBefore = db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' ORDER BY name").all();
-      migrate(db, MIGRATIONS);
+      migrate(db, MIGRATIONS.filter((migration) => migration.version <= renaming().version));
       expect(db.prepare('PRAGMA table_info(sessions)').all().map((column) => ({ ...column, cid: undefined }))).toEqual(columnsBefore);
       expect(namesOf(db, 'index', 'sessions')).toEqual(indexesBefore);
       expect(triggersBefore).toEqual(['fidelity_verdicts_session_delete', 'search_docs_session_delete']);
@@ -113,7 +113,7 @@ describe('the stored asking mode is manual (design 8.3)', () => {
       const eventColumns = db.prepare('PRAGMA table_info(events)').all().map((column) => String(column['name']));
       expect(eventColumns).toContain('payload_json');
       db.prepare("INSERT INTO events (session_id, type, payload_json, created_at) VALUES ('old', 'mode.changed', ?, ?)").run('{"type":"mode.changed","from":"default","to":"plan"}', START_MS);
-      migrate(db, MIGRATIONS);
+      migrate(db, MIGRATIONS.filter((migration) => migration.version <= renaming().version));
       expect(db.prepare("SELECT payload_json FROM events WHERE session_id = 'old'").all()).toEqual([{ payload_json: '{"type":"mode.changed","from":"default","to":"plan"}' }]);
     } finally {
       db.close();

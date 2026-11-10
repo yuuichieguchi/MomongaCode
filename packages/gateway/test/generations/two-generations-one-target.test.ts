@@ -4,14 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { makeDir, postJson, readJson, registerCleanup, userInput } from '../gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, prepareHome, until, writeSettings } from '../gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, isAlive, launchGateway, makeHome, prepareHome, until, writeSettings, modelsOf } from '../gateway-process-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type DumpRecord = { argv: string[]; pid: number };
 
 const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } };
-const ASK = { model: 'default', input: userInput('hello') };
+const ASK = { model: 'apple/system', input: userInput('hello') };
 
 const servesIn = (file: string): DumpRecord[] =>
   fs.existsSync(file)
@@ -28,8 +28,8 @@ const socketOf = (record: DumpRecord): string => record.argv[record.argv.indexOf
 describe('two generations serve one managed target, each with its own instance (design-update 18.2.1 to 18.2.3, 20.57)', () => {
   it('gives each generation its own socket, lock and marker directory, and keeps the CLI instance outside every generation', () => {
     const paths = momongaPaths('/Users/someone', process.platform, {});
-    const of = (generation: number) => managedInstancePaths(paths, { owner: 'gateway', generation, purpose: 'serve', target: 'gateway', incarnation: 1 });
-    const cli = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'apple' });
+    const of = (generation: number) => managedInstancePaths(paths, { owner: 'gateway', generation, purpose: 'serve', provider: 'gateway', incarnation: 1 });
+    const cli = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', provider: 'apple' });
 
     expect(of(1)).toEqual({
       socketPath: path.join(paths.run, 'g1', 'targets', 'gateway-1.sock'),
@@ -55,7 +55,7 @@ describe('two generations serve one managed target, each with its own instance (
     registerCleanup(() => killGroupsForCleanup(servesIn(dumpFile).map((record) => record.pid)));
     const home = makeHome();
     prepareHome(home, 2);
-    writeSettings(home, { models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...DECLARED } }, aliases: { default: ['apple'] } } });
+    writeSettings(home, { models: modelsOf({ apple: { adapter: 'managed', server: 'fm', model: 'system', binary: fm.binaryPath, ...DECLARED } }) });
     const paths = momongaPaths(home, process.platform, {});
     const launch = (generation: number) => launchGateway({ generation, home, env: baseEnv(home), version: PROCESS_VERSION, exec: fakeExec });
 

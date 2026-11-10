@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
-import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, expectSchema, startService } from './helpers.ts';
+import { DECLARED_CREDENTIAL, MODEL_ID, OTHER_MODEL_ID, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, expectSchema, startService } from './helpers.ts';
 
 const SECRET = 'hunter2-value';
 const TOKEN_PREFIX = 'sk-';
@@ -40,7 +40,7 @@ describe('session creation, listing and reading', () => {
       id: expect.any(String),
       cwd: env.layout.projectReal,
       permissionMode: 'manual',
-      modelAlias: MODEL_ALIAS,
+      model: MODEL_ID,
       bypassAllowed: false,
       createdAt: START_MS,
       envKeys: expect.any(Array),
@@ -242,9 +242,9 @@ describe('session permission mode rules', () => {
     expect(response.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
   });
 
-  it('accepts auto at creation and by PATCH when a known classifier alias is configured', async () => {
+  it('accepts auto at creation and by PATCH when a known classifier model is configured', async () => {
     const env = await startService();
-    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_ALIAS });
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_MODEL_ID });
     const session = await env.createSession({ permissionMode: 'auto' });
     expect(session.permissionMode).toBe('auto');
     const other = await env.createSession();
@@ -253,12 +253,12 @@ describe('session permission mode rules', () => {
     expect(patched.json.session.permissionMode).toBe('auto');
   });
 
-  it('rejects auto with 409 when the classifier alias is not known to the gateway', async () => {
+  it('rejects auto with 409 when the classifier model is not known to the gateway', async () => {
     const env = await startService();
-    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: 'missing-alias' });
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: 'missing-model' });
     const response = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
     expectError(response, 409, AUTO_MODE_UNAVAILABLE.code);
-    expect(response.json).toMatchObject({ error: { message: expect.stringContaining('missing-alias') } });
+    expect(response.json).toMatchObject({ error: { message: expect.stringContaining('missing-model') } });
   });
 
   it('rejects an unknown mode with 400', async () => {
@@ -267,16 +267,16 @@ describe('session permission mode rules', () => {
   });
 });
 
-describe('session model alias', () => {
-  it('accepts a known alias', async () => {
+describe('session model', () => {
+  it('accepts a known model', async () => {
     const env = await startService();
-    const session = await env.createSession({ modelAlias: OTHER_ALIAS });
-    expect(session.modelAlias).toBe(OTHER_ALIAS);
+    const session = await env.createSession({ model: OTHER_MODEL_ID });
+    expect(session.model).toBe(OTHER_MODEL_ID);
   });
 
-  it('rejects an unknown alias with 400', async () => {
+  it('rejects an unknown model with 400', async () => {
     const env = await startService();
-    expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, modelAlias: 'unknown-model' } }), 400, 'invalid_request');
+    expectError(await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, model: 'unknown-model' } }), 400, 'invalid_request');
   });
 });
 
@@ -343,42 +343,42 @@ describe('session PATCH', () => {
   });
 });
 
-describe('session PATCH of the model alias', () => {
-  it('switches the alias and appends one session-scoped model.changed that names both aliases', async () => {
+describe('session PATCH of the model', () => {
+  it('switches the model and appends one session-scoped model.changed that names both models', async () => {
     const env = await startService();
     const session = await env.createSession();
 
-    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID } });
 
     expect(patched.status).toBe(200);
-    expect(patched.json.session).toMatchObject({ id: session.id, modelAlias: OTHER_ALIAS });
-    expect(env.store.getSession(session.id)?.modelAlias).toBe(OTHER_ALIAS);
+    expect(patched.json.session).toMatchObject({ id: session.id, model: OTHER_MODEL_ID });
+    expect(env.store.getSession(session.id)?.model).toBe(OTHER_MODEL_ID);
     const events = env.store.readSessionEvents(session.id, 0, 1000);
     expect(events.filter((event) => event.type === 'model.changed')).toEqual([
-      { id: expect.any(Number), sessionId: session.id, createdAt: expect.any(Number), type: 'model.changed', modelAlias: OTHER_ALIAS, previousModelAlias: session.modelAlias },
+      { id: expect.any(Number), sessionId: session.id, createdAt: expect.any(Number), type: 'model.changed', model: OTHER_MODEL_ID, previousModel: session.model },
     ]);
     const stream = await env.stream(`/v1/sessions/${session.id}/events`, { idField: 'id' });
     const seen = await stream.until((event) => event.type === 'model.changed');
-    expect(seen.at(-1)).toMatchObject({ type: 'model.changed', modelAlias: OTHER_ALIAS, previousModelAlias: session.modelAlias, sessionId: session.id });
+    expect(seen.at(-1)).toMatchObject({ type: 'model.changed', model: OTHER_MODEL_ID, previousModel: session.model, sessionId: session.id });
     expect(seen.at(-1)).not.toHaveProperty('runId');
   });
 
-  it('appends no event when the alias is unchanged', async () => {
+  it('appends no event when the model is unchanged', async () => {
     const env = await startService();
     const session = await env.createSession();
     const before = env.store.readSessionEvents(session.id, 0, 1000).length;
 
-    const unchanged = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: session.modelAlias } });
+    const unchanged = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: session.model } });
 
     expect(unchanged.status).toBe(200);
     expect(env.store.readSessionEvents(session.id, 0, 1000)).toHaveLength(before);
   });
 
-  it('refuses an alias the gateway does not list, and leaves the session as it was', async () => {
+  it('refuses a model the gateway does not list, and leaves the session as it was', async () => {
     const env = await startService();
     const session = await env.createSession();
-    expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: 'unknown-model' } }), 400, 'invalid_request');
-    expect(env.store.getSession(session.id)?.modelAlias).toBe(session.modelAlias);
+    expectError(await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: 'unknown-model' } }), 400, 'invalid_request');
+    expect(env.store.getSession(session.id)?.model).toBe(session.model);
     expect(env.store.readSessionEvents(session.id, 0, 1000).filter((event) => event.type === 'model.changed')).toEqual([]);
   });
 
@@ -389,10 +389,10 @@ describe('session PATCH of the model alias', () => {
     env.append(env.claimRun(run.id), env.notices(1));
     const before = env.runEvents(run.id);
 
-    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID } });
 
     expect(patched.status).toBe(200);
-    expect(patched.json.session).toMatchObject({ modelAlias: OTHER_ALIAS, activeRunId: run.id });
+    expect(patched.json.session).toMatchObject({ model: OTHER_MODEL_ID, activeRunId: run.id });
     expect(env.runEvents(run.id)).toEqual(before);
     expect((await env.getRun(run.id)).status).toBe('RUNNING');
   });
@@ -400,14 +400,14 @@ describe('session PATCH of the model alias', () => {
   it('can be combined with a mode change in one request', async () => {
     const env = await startService();
     const session = await env.createSession();
-    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS, permissionMode: 'plan' } });
-    expect(patched.json.session).toMatchObject({ modelAlias: OTHER_ALIAS, permissionMode: 'plan' });
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID, permissionMode: 'plan' } });
+    expect(patched.json.session).toMatchObject({ model: OTHER_MODEL_ID, permissionMode: 'plan' });
   });
 
   it('is answered with the schema of the session view', async () => {
     const env = await startService();
     const session = await env.createSession();
-    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { modelAlias: OTHER_ALIAS } });
+    const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { model: OTHER_MODEL_ID } });
     expectSchema('SessionView', patched.json.session);
   });
 });

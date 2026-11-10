@@ -8,10 +8,12 @@ import { KEYS, untilFrame, untilOutput } from '../ink-helpers.ts';
 import { runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
 import { turnTimers } from './turn-timers.ts';
+import { SESSION } from '../fake-backend.ts';
 
 const NOW = 10_000_000_000;
 const HOUR = 3_600_000;
 const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: \w+ \(shift\+tab\)/;
+const QWEN = 'ollama/qwen3.8:27b';
 const ERASE_SCROLLBACK = '\u001b[3J';
 const ERASE_SCREEN = '\u001b[2J\u001b[H';
 
@@ -21,7 +23,7 @@ const framesOf = (runId: string, events: readonly Record<string, unknown>[]): Ru
 const ended = { type: 'run.status', from: 'RUNNING', to: 'COMPLETED' };
 
 const LOGIN: FakeConversation = {
-  session: { id: 'aaaaaaaa11111111', createdAt: NOW - 2 * HOUR, permissionMode: 'acceptEdits', modelAlias: 'default' },
+  session: { id: 'aaaaaaaa11111111', createdAt: NOW - 2 * HOUR, permissionMode: 'acceptEdits', model: SESSION.model },
   firstPrompt: 'fix the login bug',
   runs: [
     {
@@ -203,12 +205,12 @@ describe('the session named at exit (9.3)', () => {
 
 describe('/clear (9.4)', () => {
   it.each(['fullscreen', 'scrollback'] as const)('opens a new session with the current mode and model, keeps the old one reopenable and never erases the scrollback (%s)', async (screen) => {
-    const { app, backend, exited } = await start({ aliases: ['default', 'qwen-local'] }, { now: () => 300_001 }, { screen });
+    const { app, backend, exited } = await start({ models: [SESSION.model, QWEN] }, { now: () => 300_001 }, { screen });
     await untilFrame(app, 'mode: manual');
     await enter(app, '/mode acceptEdits');
     await untilFrame(app, 'mode: acceptEdits');
-    await enter(app, '/model qwen-local');
-    await backend.called('model:qwen-local');
+    await enter(app, '/model qwen3.8:27b');
+    await backend.called(`model:${QWEN}`);
     await runStarted(backend, app, 'first task');
     backend.finish(runView());
     await untilFrame(app, IDLE);
@@ -216,7 +218,7 @@ describe('/clear (9.4)', () => {
     await enter(app, '/clear');
     await untilFrame(app, (frame) => screen === 'scrollback' || !frame.includes('> first task'));
     await untilFrame(app, IDLE);
-    expect(backend.opened[1]).toEqual({ modelAlias: 'qwen-local', permissionMode: 'acceptEdits' });
+    expect(backend.opened[1]).toEqual({ model: QWEN, permissionMode: 'acceptEdits' });
     expect(app.frames.join('')).not.toContain(ERASE_SCROLLBACK);
     expect(app.frames.join('').includes(ERASE_SCREEN)).toBe(screen === 'scrollback');
 

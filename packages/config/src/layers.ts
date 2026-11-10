@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { isTransientErrno } from '@momonga/foundation';
+import { isRecord, isTransientErrno } from '@momonga/foundation';
 import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
@@ -69,11 +69,6 @@ const USER_ONLY_TUI_KEYS = ['screen', 'mouse', 'copyOnSelect'] as const;
 
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
-
-  if (settings.models !== undefined) {
-    for (const key of Object.keys(settings.models)) warnings.push(`${source}: models.${key} is only honored in user settings; discarded`);
-    delete restricted.models;
-  }
 
   if (settings.env !== undefined) {
     const kept: Record<string, string> = {};
@@ -171,6 +166,13 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
   return restricted;
 };
 
+const withoutModels = (value: unknown, source: string, warnings: string[]): unknown => {
+  if (!isRecord(value) || !isRecord(value['models'])) return value;
+  const { models, ...rest } = value;
+  for (const key of Object.keys(models)) warnings.push(`${source}: models.${key} is only honored in user settings; discarded`);
+  return rest;
+};
+
 const buildLayer = (
   read: JsonFile,
   file: string,
@@ -182,7 +184,8 @@ const buildLayer = (
 ): Layer | undefined => {
   if (!read.found) return undefined;
   assertRipgrepSetting(read.value, file);
-  const settings = normalizeHooks(assertSettings(read.value, file), file, warnings);
+  const value = restricted ? withoutModels(read.value, file, warnings) : read.value;
+  const settings = normalizeHooks(assertSettings(value, file), file, warnings);
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);
   }
@@ -235,7 +238,7 @@ export const userLayerFrom = (home: string, read: JsonFile, planProfiles: PlanPr
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
     const declared = layer?.settings.models;
-    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles });
+    const models = resolveModels(declared, { source: file, home, warnings, servers: serverRegistryOf(declared?.servers, file), planProfiles, classifier: layer?.settings.autoMode?.classifier });
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);

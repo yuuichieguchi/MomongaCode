@@ -78,7 +78,8 @@ describe('RUN_API_SCHEMAS', () => {
 describe('request schemas', () => {
   it('validates the session creation body and rejects unknown properties', () => {
     expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: { PATH: '/usr/bin' } })).toBe(true);
-    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, permissionMode: 'plan', modelAlias: 'fm', bypassAllowed: true })).toBe(true);
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, permissionMode: 'plan', model: 'devstral-small-2', bypassAllowed: true })).toBe(true);
+    expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, modelAlias: 'fm' })).toBe(false);
     expect(accepts('CreateSessionRequest', { cwd: '/work/a' })).toBe(false);
     expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: { PATH: 1 } })).toBe(false);
     expect(accepts('CreateSessionRequest', { cwd: '/work/a', env: {}, permissionMode: 'yolo' })).toBe(false);
@@ -192,7 +193,7 @@ describe('response schemas', () => {
       id: 'sess-1',
       cwd: '/work/a',
       permissionMode: 'manual',
-      modelAlias: 'fm',
+      model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
       envKeys: ['PATH'],
@@ -210,7 +211,7 @@ describe('response schemas', () => {
       id: 'sess-1',
       cwd: '/work/a',
       permissionMode: 'manual',
-      modelAlias: 'fm',
+      model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
       envKeys: [],
@@ -229,7 +230,7 @@ describe('response schemas', () => {
       id: 'sess-1',
       cwd: '/work/a',
       permissionMode: 'manual',
-      modelAlias: 'fm',
+      model: 'apple/fm-model',
       bypassAllowed: false,
       createdAt: 1_800_000_000_000,
       envKeys: ['PATH'],

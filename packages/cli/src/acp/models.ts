@@ -1,24 +1,34 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
+import { displayMapOf, resolveTypedModelRef, typedModelText } from '@momonga/protocol';
+import type { ModelViews } from '@momonga/protocol';
 
 export const MODEL_CONFIG_ID = 'model';
 
-export const modelOptionOf = (aliases: readonly string[], current: string): SessionConfigOption => ({
-  id: MODEL_CONFIG_ID,
-  name: 'Model',
-  category: 'model',
-  type: 'select',
-  currentValue: current,
-  options: aliases.map((alias) => ({ value: alias, name: alias })),
-});
+const displaysOf = (views: ModelViews): string[] => {
+  const displays = displayMapOf(views);
+  return views.map((view) => displays.get(view.canon) ?? view.canon);
+};
 
-export const selectableAliasOf = (aliases: readonly string[], request: { configId: string; value?: unknown }): string => {
+export const modelOptionOf = (views: ModelViews, current: string): SessionConfigOption => {
+  const displays = displaysOf(views);
+  return {
+    id: MODEL_CONFIG_ID,
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue: current,
+    options: views.map((view, index) => ({ value: view.canon, name: displays[index] ?? view.canon })),
+  };
+};
+
+export const selectableModelOf = (views: ModelViews, request: { configId: string; value?: unknown }): string => {
   if (request.configId !== MODEL_CONFIG_ID) {
     throw RequestError.invalidParams({ configId: request.configId }, `the session offers no configuration option ${request.configId}; its only option is ${MODEL_CONFIG_ID}`);
   }
-  const alias = aliases.find((candidate) => candidate === request.value);
-  if (alias === undefined) {
-    throw RequestError.invalidParams({ configId: request.configId, value: request.value }, `the model ${String(request.value)} is not one of the configured aliases: ${aliases.join(', ')}`);
+  const resolution = typeof request.value === 'string' ? resolveTypedModelRef(typedModelText(request.value), views) : undefined;
+  if (resolution?.kind !== 'found') {
+    throw RequestError.invalidParams({ configId: request.configId, value: request.value }, `The model "${String(request.value)}" is not one of the configured models: ${displaysOf(views).join(', ')}.`);
   }
-  return alias;
+  return resolution.model.canon;
 };

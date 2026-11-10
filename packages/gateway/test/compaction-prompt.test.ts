@@ -111,7 +111,7 @@ describe('every adapter renders the same prompt', () => {
 
 describe('momonga.guideline validation', () => {
   const parse = (guideline: unknown) =>
-    createRequestValidator().parseCompact({ model: 'fast', input: [userText('hi')], momonga: { guideline } });
+    createRequestValidator().parseCompact({ model: 'scripted/upstream-model', input: [userText('hi')], momonga: { guideline } });
 
   it('accepts a guideline of exactly the cap', () => {
     const guideline = 'g'.repeat(MAX_COMPACTION_GUIDELINE_CHARS);

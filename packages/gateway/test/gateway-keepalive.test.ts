@@ -7,8 +7,8 @@ describe('SSE keep-alive', () => {
     const primary = createScriptedAdapter({
       calls: [{ events: textResponseEvents({ model: 'scripted-primary', chunks: ['slow'] }), gate: { name: 'g', afterEvents: 5 } }],
     });
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { sseKeepAliveMs: 2500 } });
-    const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+    const { client, timers } = await startGateway({ adapters: { 'scripted/scripted-primary': primary }, config: { sseKeepAliveMs: 2500 } });
+    const pending = postJson(client, '/v1/responses', { model: 'scripted/scripted-primary', input: userInput('hi'), stream: true });
     await waitFor(() => primary.calls[0]?.emitted === 5 && timers.pending().some((timer) => timer.delayMs === 2500), { description: 'keep-alive timer' });
     timers.advance(2500);
     const response = await pending;

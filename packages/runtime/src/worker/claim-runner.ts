@@ -4,7 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
-import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
+import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, displayMapOf, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -27,7 +27,9 @@ import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
 import { watchMode } from './mode-watch.ts';
 import { foldMeterFor } from './meter-journal.ts';
-import { aliasChainReaches } from './model-switch.ts';
+import { modelChainReaches } from './model-switch.ts';
+import { roleModelNotConfiguredText, sessionModelNotConfiguredText } from './model-texts.ts';
+import { EXACT_MODEL } from './exact-model.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
 import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
@@ -42,6 +44,7 @@ import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TracerPort, TraceSpan } from '../ports.ts';
+import { MODEL_ROLES } from '@momonga/config';
 import type { Lease } from '@momonga/config';
 import { modelKey } from '../model-key.ts';
 import { MEMORY_PAGE_ROWS, REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
@@ -50,7 +53,8 @@ import type { ClaimTouched } from './touched-paths.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
-import { GatewayRequestError } from '../gateway-client.ts';
+import { GatewayRequestError, MODEL_NOT_FOUND_CODE, isModelNotFound } from '../gateway-client.ts';
+import type { GatewayModel } from '../gateway-client.ts';
 import { heldSessionOf } from './known.ts';
 
 const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.some((terminal) => terminal === status));
@@ -63,15 +67,25 @@ export type ClaimHost = {
   forget(runId: string): void;
 };
 
+const listedOrUndefined = async (control: ClaimControl, gateway: WorkerOptions['gateway'], model: string): Promise<GatewayModel | undefined> => {
+  try {
+    return await control.recordingRaised(gateway.model(model, { signal: control.signal }));
+  } catch (error) {
+    if (isModelNotFound(error)) return undefined;
+    throw error;
+  }
+};
+
 const capabilitiesOrReason = async (
   gateway: WorkerOptions['gateway'],
-  alias: string,
+  model: string,
   signal: AbortSignal,
   interruptions: number,
-): Promise<{ capabilities: Capabilities } | { unavailable: string }> => {
+): Promise<{ capabilities: Capabilities } | { unavailable: string } | { notConfigured: true }> => {
   try {
-    return { capabilities: await gateway.capabilities(alias, { signal }) };
+    return { capabilities: await gateway.capabilities(model, { signal }) };
   } catch (error) {
+    if (isModelNotFound(error)) return { notConfigured: true };
     if (!(error instanceof GatewayRequestError)) throw error;
     const disposition = dispositionOf(error, interruptions);
     if (disposition.kind === 'fail') return { unavailable: disposition.message };
@@ -326,7 +340,11 @@ const drive = async (
 
   const recorded = journal.state.pins;
   const pinned = recorded === undefined ? undefined : readPins(recorded);
-  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.modelAlias, control.signal, memory.interruptions) : { capabilities: pinned.capabilities };
+  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.model, control.signal, memory.interruptions) : { capabilities: pinned.capabilities };
+  if ('notConfigured' in read) {
+    await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: sessionModelNotConfiguredText(session.model) } });
+    return;
+  }
   if ('unavailable' in read) {
     await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(agentReadiness({ unavailable: read.unavailable })) } });
     return;
@@ -363,17 +381,28 @@ const drive = async (
     });
     return;
   }
+  const listing = await listedOrUndefined(control, gateway, pinned?.model ?? session.model);
+  if (listing === undefined) {
+    await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: sessionModelNotConfiguredText(pinned?.model ?? session.model) } });
+    return;
+  }
+  const newRoles = pinned === undefined ? rolesFor({ store: options.store, listed: listing.roles, run }) : undefined;
+  const lostRole = newRoles === undefined ? undefined : MODEL_ROLES.find((role) => newRoles[role] !== undefined && !listing.views.some((view) => view.canon === newRoles[role]));
+  if (newRoles !== undefined && lostRole !== undefined) {
+    await terminals.finish('FAILED', { error: { code: MODEL_NOT_FOUND_CODE, message: roleModelNotConfiguredText(lostRole, newRoles[lostRole] ?? '') } });
+    return;
+  }
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
     pinned === undefined
       ? {
-          modelAlias: session.modelAlias,
+          model: session.model,
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
           capabilities,
-          roles: rolesFor({ store: options.store, settings: options.settings, run }),
-          targets: { ...options.settings.modelTargets() },
+          roles: newRoles ?? {},
+          targets: { ...listing.targets },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
           token: {
@@ -400,9 +429,9 @@ const drive = async (
   }
 
   if (recorded !== undefined) {
-    if (!aliasChainReaches(options.store, { runId: run.id, sessionId: session.id, pinned: pins.modelAlias, current: session.modelAlias })) {
+    if (!modelChainReaches(options.store, { runId: run.id, sessionId: session.id, pinned: pins.model, current: session.model })) {
       await terminals.finish('FAILED', {
-        error: { code: 'pins_mismatch', message: 'the model alias changed without a recorded model switch since this run started, so it cannot be resumed' },
+        error: { code: 'pins_mismatch', message: 'the model changed without a recorded model switch since this run started, so it cannot be resumed' },
       });
       return;
     }
@@ -421,41 +450,35 @@ const drive = async (
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
-  const listing = await control.recordingRaised(gateway.model(pins.modelAlias, { signal: control.signal }));
   const counterOf = (target: string): string => {
-    const counter = listing.targetCounters[target];
-    if (counter === undefined) throw new Error(`the gateway lists no counter for the target ${target} of the model ${pins.modelAlias}`);
+    const counter = listing.chain.find((member) => member.model === target)?.counter;
+    if (counter === undefined) throw new Error(`the gateway lists no counter for the model ${target} that the model ${pins.model} falls back to`);
     return counter;
   };
-  const [firstTarget] = listing.targets;
-  const firstCapabilities = firstTarget === undefined ? undefined : listing.targetCapabilities[firstTarget];
-  if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
-  const aliasCounter = counterOf(firstTarget);
-  const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  const [first, ...fallbackMembers] = listing.chain;
+  if (first === undefined) throw new Error(`the gateway lists no chain for the model ${pins.model}`);
+  const chainCounter = first.counter;
+  const chainMeterCapabilities = withCalibration(pins.capabilities, first.capabilities);
   if (journal.needsWindow()) {
-    const targetCapabilitiesOf = (target: string): Capabilities => {
-      const capabilities = listing.targetCapabilities[target];
-      if (capabilities === undefined) throw new Error(`the gateway lists no capabilities for the target ${target} of the model ${pins.modelAlias}`);
-      return capabilities;
-    };
-    const windowTargets = [aliasMeterCapabilities, ...listing.targets.slice(1).map(targetCapabilitiesOf)];
+    const windowTargets = [chainMeterCapabilities, ...fallbackMembers.map((member) => member.capabilities)];
     journal.installWindow(await store.journalFacts.inheritedWindow({ runId: run.id, ...inheritanceWindowFor(windowTargets) }, control.signal));
   }
+  const displays = displayMapOf(listing.views);
   const token = tokenPolicyOf(pins.token);
-  const aliasMeter = createTokenMeter({
-    counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
-    model: pins.modelAlias,
-    capabilities: aliasMeterCapabilities,
+  const chainMeter = createTokenMeter({
+    counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, ...EXACT_MODEL } }, { signal: control.signal })) },
+    model: pins.model,
+    capabilities: chainMeterCapabilities,
     observedCapacity: token.observedCapacity,
   });
-  aliasMeter.restore(await foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
+  chainMeter.restore(await foldMeterFor(options.store, session.id, chainMeterCapabilities, chainCounter));
   const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
     const known = targetFacts.get(target);
     if (known !== undefined) return known;
-    const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
+    const capabilities = await control.recordingRaised(gateway.capabilities(pins.model, { signal: control.signal, target }));
     const meter = createTokenMeter({
-      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-      model: pins.modelAlias,
+      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target, ...EXACT_MODEL } }, { signal: control.signal })) },
+      model: pins.model,
       capabilities,
       observedCapacity: token.observedCapacity,
     });
@@ -466,7 +489,7 @@ const drive = async (
     return created;
   };
   const fallbackMeters = token.observedCapacity
-    ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
+    ? (await Promise.all(fallbackMembers.map((member) => factsOf(member.model)))).map((facts) => facts.meter)
     : [];
   const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offeredSet = loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading));
@@ -495,7 +518,8 @@ const drive = async (
     options,
     claim,
     run,
-    alias: pins.modelAlias,
+    model: pins.model,
+    display: (model) => displays.get(model) ?? model,
     capabilities: pins.capabilities,
     toolLess,
     roles: pins.roles,
@@ -514,16 +538,16 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)) }),
+    outputFit: meteredOutputFit({ meter: chainMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)) }),
     reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,
     terminals,
     agentSpan,
     tracer,
-    meter: aliasMeter,
+    meter: chainMeter,
     fallbackMeters,
-    counter: aliasCounter,
+    counter: chainCounter,
     calibration: listing.capabilities,
     targetFacts: factsOf,
     pinnedDigest: { value: undefined },

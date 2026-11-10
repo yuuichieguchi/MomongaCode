@@ -35,7 +35,7 @@ const runJob = async (survives: boolean) => {
   const clock = createFakeClock(START_MS);
   const timers = createFakeTimers(clock);
   const store: RuntimeStore = openRuntimeStore({ path: path.join(root, 'runtime.db'), home: root, clock, leaseMs: 1000, maxAttempts: 5, maxTotalAttempts: 50 });
-  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', modelAlias: 'fm' });
+  const session = store.createSession({ cwd: root, env: {}, permissionMode: 'manual', model: 'fm' });
   const created = store.createRunAndEnqueue(session.id, { input: 'go', timeoutMs: 3_600_000, limits: {}, pins: {} });
   if (created.kind !== 'created') throw new Error('expected a run');
   const timing = virtualTiming();

@@ -24,7 +24,7 @@ const factsOf = (runId: string, overrides: Partial<RunFactsView> = {}): RunFacts
   rootRunId: runId,
   sessionId: `s-${runId}`,
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-  modelAlias: 'fm',
+  model: 'fm',
   mode: 'acceptEdits',
   agent: 'build',
   origin: 'eval',

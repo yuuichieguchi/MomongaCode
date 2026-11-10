@@ -19,7 +19,7 @@ import { outputStep, textStep } from '../../packages/runtime/test/worker/scripts
 import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } from './haystack.ts';
 import type { Haystack } from './haystack.ts';
 import type { E2eHome } from './home.ts';
-import { E2E_MODEL_ALIAS, countRequestOf } from './gateway-count.ts';
+import { E2E_MODEL, countRequestOf } from './gateway-count.ts';
 import type { GatewayCountClient } from './gateway-count.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
@@ -171,7 +171,7 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
 export const seenOutputTokens = async (count: GatewayCountClient, call: { callId: string; tool: string }, output: string): Promise<number> => {
   const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools())), false);
   const counted = await count.gateway.countTokens(
-    { model: E2E_MODEL_ALIAS, input: [render.full], momonga: { lenient_items: { call_names: { [call.callId]: call.tool }, with_tools: true } } },
+    { model: E2E_MODEL, input: [render.full], momonga: { lenient_items: { call_names: { [call.callId]: call.tool }, with_tools: true } } },
     { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
   );
   return counted.input_tokens;
@@ -191,7 +191,7 @@ const estimatingCounter = (capabilities: Capabilities): TokenCounter => ({
 
 export const underAtAfterReport = async (capabilities: Capabilities, known: number): Promise<(tokens: number) => number> => {
   if (capabilities.tokenCounting !== 'estimated') throw new Error(`the bound after a report is derived for an estimated target, not ${capabilities.tokenCounting}`);
-  const meter = createTokenMeter({ counter: estimatingCounter(capabilities), model: E2E_MODEL_ALIAS, capabilities });
+  const meter = createTokenMeter({ counter: estimatingCounter(capabilities), model: E2E_MODEL, capabilities });
   const first = await meter.count({ input: [textItemOf(known)], tools: [] });
   meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens });
   const grown = await meter.count({ input: [textItemOf(known), textItemOf(1)], tools: [] });
@@ -404,9 +404,9 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
   const client = createGatewayClient({ resolveSocket: fixedSocket(plan.gatewaySocket), clock: env.clock, version: SUPERVISOR_APP_VERSION });
   try {
     const fake = env.gateway;
-    const listing = await client.model(E2E_MODEL_ALIAS, { signal: AbortSignal.timeout(30_000) });
-    fake.targetsByAlias[E2E_MODEL_ALIAS] = [...listing.targets];
-    for (const [target, counter] of Object.entries(listing.targetCounters)) fake.countersByTarget.set(target, counter);
+    const listing = await client.model(E2E_MODEL, { signal: AbortSignal.timeout(30_000) });
+    fake.chainsByModel[E2E_MODEL] = listing.chain.map((member) => member.model);
+    for (const member of listing.chain) fake.countersByTarget.set(member.model, member.counter);
     fake.script = dryRunStepsOf(steps, plan.spec.toolCalling);
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
@@ -426,8 +426,9 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       stream: reportingStream,
       cancel: (key, options) => fake.cancel(key, options),
       compact: (request, options) => client.compact(request, options),
-      capabilities: (alias, options) => client.capabilities(alias, options),
-      model: (alias, options) => client.model(alias, options),
+      capabilities: (model, options) => client.capabilities(model, options),
+      model: (model, options) => client.model(model, options),
+      listing: (options) => client.listing(options),
       countTokens: async (request, options) => {
         const result = await client.countTokens(request, options);
         const perturbed = { ...result, input_tokens: Math.max(0, result.input_tokens + perturbation) };
@@ -444,7 +445,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
       env: { HOME: plan.home.home, PATH: SESSION_PATH, TMPDIR: plan.home.sessionTmp },
       permissionMode: 'bypassPermissions',
       bypassAllowed: true,
-      modelAlias: E2E_MODEL_ALIAS,
+      model: E2E_MODEL,
     });
     const created = env.store.createRunAndEnqueue(session.id, { input: ACCEPTANCE_TASK, timeoutMs: RUNTIME_DEFAULTS.runTimeoutMs, limits: {}, pins: {} });
     if (created.kind !== 'created') throw new Error(`dry run: the run was not created (${created.kind})`);

@@ -3,7 +3,7 @@ import type { Capabilities, McpServerView, MomongaModelEntry, RunTraceSpan, RunT
 import { waitFor } from '@momonga/testkit';
 import { describeFailure } from '../src/failure.ts';
 import { formatMcpServers, mcpAuthorizationInvitation } from '../src/commands/mcp.ts';
-import { formatModels } from '../src/commands/models.ts';
+import { formatModels, modelsDocumentOf } from '../src/commands/models.ts';
 import { daemonStatusText } from '../src/commands/daemon.ts';
 import { renderTrace } from '../src/commands/trace.ts';
 import { announceUpdate, startBackgroundCheck } from '../src/update/background.ts';
@@ -34,7 +34,7 @@ describe('a value a person did not write stays on its own line in command output
     expect(mcpAuthorizationInvitation(`docs ${FORGED}`, `https://e.test/ ${FORGED}`)).toBe(`Authorize MCP server docs ${SHOWN} in your browser:\nhttps://e.test/ ${SHOWN}`);
   });
 
-  it('shows a model alias and its targets with a newline on the alias line', () => {
+  it('shows a model whose name holds a newline on its own row, the name of its server on the row above', () => {
     const capabilities = {
       contextWindow: 1,
       maxOutputTokens: 1,
@@ -49,30 +49,10 @@ describe('a value a person did not write stays on its own line in command output
       source: 'declared',
       imageInput: false,
     } as Capabilities;
-    const entry: MomongaModelEntry = { id: `fast ${FORGED}`, object: 'model', targets: [`t ${FORGED}`], targetCounters: { [`t ${FORGED}`]: '0123456789abcdef' }, capabilities, targetCapabilities: {} };
-    const lines = formatModels([entry]).split('\n');
-    expect(lines[0]).toBe(`fast ${SHOWN}  -> t ${SHOWN}`);
-    expect(lines).toHaveLength(7);
-  });
-
-  it('shows the probe remedy for a needs-probe tool calling state', () => {
-    const toolCalling = { state: 'needs_probe', message: 'm', evidence: 'e', remedy: 'run `momonga gateway probe fm`' };
-    const capabilities = {
-      contextWindow: 1,
-      maxOutputTokens: 1,
-      toolCalling,
-      structuredOutput: 'none',
-      streaming: true,
-      stopSequences: true,
-      schemaDialect: 'json-schema-2020-12',
-      tokenCounting: 'exact',
-      usageReported: true,
-      maxConcurrency: 1,
-      source: 'unprobed',
-      imageInput: false,
-    } as Capabilities;
-    const entry: MomongaModelEntry = { id: 'fast', object: 'model', targets: ['fm'], targetCounters: { fm: '0123456789abcdef' }, capabilities, targetCapabilities: {} };
-    expect(formatModels([entry])).toContain('tool calling: needs probe: run `momonga gateway probe fm`,');
+    const ownName = `google/fast:7b ${FORGED}`;
+    const entry: MomongaModelEntry = { id: `lmstudio/${ownName}`, object: 'model', provider: 'lmstudio', ownName, billing: 'local', capabilities, chain: [] };
+    const lines = formatModels(modelsDocumentOf({ object: 'list', data: [entry], start: null, roles: {} }, new Map([['lmstudio', `http://e.test/ ${FORGED}`]]), new Set())).split('\n');
+    expect(lines).toEqual([`lmstudio  ·  http://e.test/ ${SHOWN}`, `  google/fast:7b ${SHOWN}  ·  1 tokens  ·  local`]);
   });
 
   it('shows a daemon child held reason with a newline on the child line', () => {

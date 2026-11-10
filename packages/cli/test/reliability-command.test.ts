@@ -18,7 +18,7 @@ const row = (runId: string, overrides: Partial<RunFactsView> = {}): RunFactsView
   rootRunId: runId,
   sessionId: 'sess',
   definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-  modelAlias: 'fm',
+  model: 'apple/fm',
   mode: 'manual',
   agent: 'build',
   origin: 'cli',

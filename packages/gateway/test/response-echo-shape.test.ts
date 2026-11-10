@@ -51,7 +51,7 @@ describe.each(upstreams)('response echo of request fields through the $name adap
 
   it.for(cases)('returns $name in the response shape the spec requires without streaming', async ({ request, field, echoed }) => {
     const gateway = await start();
-    const { status, body } = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), ...request }));
+    const { status, body } = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hello'), ...request }));
     expect(status).toBe(200);
     expect(validator.validate('ResponseResource', body).errors).toEqual([]);
     expect(body[field]).toEqual(echoed);

@@ -19,21 +19,21 @@ const cases: ReadonlyArray<{ label: string; apiVersion: AnthropicApiVersion | un
 describe('the anthropic-version header is the target API version on every upstream request', () => {
   it.for(cases)('$label sends $expected on a non-streamed create', async ({ apiVersion, expected }) => {
     const gateway = await gatewayWith(apiVersion, [anthropicTextReply(['ok'])]);
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(200);
     expect(versionsSent(gateway)).toEqual([expected]);
   });
 
   it.for(cases)('$label sends $expected on a streamed create', async ({ apiVersion, expected }) => {
     const gateway = await gatewayWith(apiVersion, [anthropicTextReply(['ok'])]);
-    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hi') }));
+    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { model: 'scripted/upstream-model', stream: true, input: userInput('hi') }));
     expect(frames.at(-1)?.data.type).toBe('response.completed');
     expect(versionsSent(gateway)).toEqual([expected]);
   });
 
   it.for(cases)('$label sends $expected on count_tokens', async ({ apiVersion, expected }) => {
     const gateway = await gatewayWith(apiVersion, [anthropicCountTokensReply(42)]);
-    const response = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'fast', input: userInput('hi') }));
+    const response = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', { model: 'scripted/upstream-model', input: userInput('hi') }));
     expect(response.status).toBe(200);
     expect(gateway.fake.requests.map((request) => request.path)).toEqual(['/v1/messages/count_tokens']);
     expect(versionsSent(gateway)).toEqual([expected]);

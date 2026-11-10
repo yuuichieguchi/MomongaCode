@@ -9,10 +9,11 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 });
 
+const servedModelOf = (settings: { models: unknown }): string | undefined => [...(settings.models as { models: ReadonlyMap<string, { model: string }> }).models.values()][0]?.model;
+
 const settingsWithModel = (model: string) => ({
   models: {
-    aliases: { default: ['remote'] },
-    targets: { remote: { adapter: 'chat-completions', provider: 'fake', model, baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } },
+    connections: [{ adapter: 'chat-completions', provider: 'remote', baseUrl: 'https://api.example.com/v1', models: [{ id: model, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }] }],
   },
 });
 
@@ -47,12 +48,12 @@ describe('S7: an unreadable applied record is no newer copy (design-settings-liv
       tree.write(JSON.stringify(settingsWithModel('a')));
       const warnings: string[] = [];
       const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords, appliedRecord: tree.record });
-      expect((cache.get().models.targets['remote'] as { model?: string }).model).toBe('a');
+      expect(servedModelOf(cache.get())).toBe('a');
       fs.writeFileSync(tree.record, text, { mode: 0o600 });
       tree.write('{ "models": ');
       const before = warnings.length;
       expect(() => cache.read()).not.toThrow();
-      expect((cache.get().models.targets['remote'] as { model?: string }).model).toBe('a');
+      expect(servedModelOf(cache.get())).toBe('a');
       expect(warnings.slice(before).filter((message) => message.includes(tree.record))).toHaveLength(1);
     });
 

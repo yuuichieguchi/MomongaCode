@@ -44,7 +44,7 @@ const analysis = (): string =>
 const improve = async (tokenCap: number) => {
   const requests: GuidelineCompletionRequest[] = [];
   const benchmarked: (string | undefined)[] = [];
-  const input = { seed: 42, bootstrapSeed: 1, alias: 'opus', tokenCap, current: undefined } as unknown as ImproveInput;
+  const input = { seed: 42, bootstrapSeed: 1, analysisModel: 'opus', tokenCap, current: undefined } as unknown as ImproveInput;
   const outcome = await improveGuideline(input, {
     benchmark: async (guideline) => {
       benchmarked.push(guideline);
@@ -105,8 +105,8 @@ describe('K is derived from the token cap the person states', () => {
     expect(Math.floor((record.tokenCap - record.derivation.baselineTokens - record.derivation.analysisTokens) / record.derivation.candidateRunTokens)).toBe(record.candidateCount);
   });
 
-  it('the outcome file is format momonga-guideline-outcome/2 and keeps the cap and K', async () => {
-    expect(GUIDELINE_OUTCOME_FORMAT).toBe('momonga-guideline-outcome/2');
+  it('the outcome file is format momonga-guideline-outcome/3 and keeps the cap and K', async () => {
+    expect(GUIDELINE_OUTCOME_FORMAT).toBe('momonga-guideline-outcome/3');
     const { outcome } = await improve(3 * BENCHMARK_TOKENS);
     const file = parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, { name: 'improve', digest: 'e'.repeat(64) })));
     expect(file).toMatchObject({ tokenCap: 300, candidateCount: 1 });

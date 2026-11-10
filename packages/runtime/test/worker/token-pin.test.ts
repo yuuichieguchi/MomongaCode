@@ -27,7 +27,7 @@ const SESSION = { id: 'sess-1', cwd: '/work/a' } as unknown as Session;
 const rootRun = { id: 'run-root', parentRunId: null } as unknown as Run;
 const childRun = { id: 'run-child', parentRunId: 'run-root' } as unknown as Run;
 
-const BASE_PINS = { modelAlias: 'fm', systemPromptDigest: 'd'.repeat(64), toolSetDigest: 't'.repeat(64), capabilities: capabilitiesFor(100_000) };
+const BASE_PINS = { model: 'fm', systemPromptDigest: 'd'.repeat(64), toolSetDigest: 't'.repeat(64), capabilities: capabilitiesFor(100_000) };
 
 describe('the token pin of a root run', () => {
   it('pins nothing when every token setting is off', async () => {

@@ -30,7 +30,7 @@ export type ContextRunPorts = {
   policy: PolicyOverlay;
   codeDigest: string;
   openCase(entry: ExpandedCase): Promise<ContextCaseHost>;
-  modelAlias: string;
+  model: string;
   deadline(caseId: string, signal: AbortSignal): Promise<void>;
   bounds: LiveBounds;
   onTranscript?(transcript: Transcript): Promise<void>;
@@ -148,10 +148,10 @@ const installRules = async (entry: ExpandedCase, host: ContextCaseHost): Promise
 
 type Measured = Omit<Transcript, 'policy' | 'codeDigest'>;
 
-const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, modelAlias: string): Measured => ({
+const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, model: string): Measured => ({
   caseId: entry.id,
   runIndex,
-  run: { id: `stopped-${entry.id}-${runIndex}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, modelAlias },
+  run: { id: `stopped-${entry.id}-${runIndex}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, model },
   events: [],
   children: [],
   answeredBy: [],
@@ -185,7 +185,7 @@ const runCase = async (
     expiry.passed = true;
   });
   const tagged = (): Pick<Transcript, 'ruleIds' | 'datasetSeed'> => ({ ...(Object.keys(ruleIds).length === 0 ? {} : { ruleIds }), datasetSeed: expanded.seed });
-  const placeholder = (runIndex: number, reason: string): Measured => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.modelAlias);
+  const placeholder = (runIndex: number, reason: string): Measured => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.model);
   const driveWithin = async (runId: string): Promise<{ driven: Driven; expired: boolean }> => {
     const driving = driveRun(host.api, entry, runId);
     const first = await Promise.race([driving.then(() => 'done' as const), expired.then(() => 'expired' as const)]);
@@ -210,7 +210,7 @@ const runCase = async (
     stop ??= refusal();
     if (stop !== undefined) return emit(placeholder(runIndex, stop));
     for (const step of (entry.workspace ?? []).filter((candidate) => candidate.beforeRun === runIndex)) await host.applyStep(step);
-    const session = await host.api.createSession({ cwd: host.cwd, permissionMode: entry.permissionMode, modelAlias: ports.modelAlias });
+    const session = await host.api.createSession({ cwd: host.cwd, permissionMode: entry.permissionMode, model: ports.model });
     let noiseTokens = 0;
     let noiseReflectionsUnsettled = 0;
     for (const turn of entry.noiseTurns) {
@@ -267,7 +267,7 @@ export const runContextDataset = async (expanded: ExpandedContextDataset, ports:
   for (const entry of expanded.cases) {
     if (state.spent >= ports.bounds.datasetTokens) {
       for (let runIndex = 0; runIndex < entry.runs; runIndex += 1) {
-        await emit(stoppedBeforeStart(entry, runIndex, COST_CAP_REASON, { datasetSeed: expanded.seed }, ports.modelAlias));
+        await emit(stoppedBeforeStart(entry, runIndex, COST_CAP_REASON, { datasetSeed: expanded.seed }, ports.model));
       }
       continue;
     }

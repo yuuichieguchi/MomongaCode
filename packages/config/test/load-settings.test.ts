@@ -3,16 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SETTINGS_SCHEMA, loadSettings } from '@momonga/config';
 import type { HookMatcherGroup } from '@momonga/protocol';
-import {
-  distrusting,
-  localSettingsPath,
-  makeTree,
-  projectSettingsPath,
-  trusting,
-  userSettingsPath,
-  writeJson,
-  writeText,
-} from './helpers.ts';
+import { canonsOf, connectionOf, distrusting, localSettingsPath, makeTree, modelOf, projectSettingsPath, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 
 describe('SETTINGS_SCHEMA', () => {
   it('is a JSON Schema 2020-12 object describing the known top-level keys', () => {
@@ -198,31 +189,30 @@ describe('loadSettings security restrictions', () => {
     });
   });
 
-  it('discards models.targets and models.aliases from project and local settings with a warning', async () => {
+  it('discards models.connections and models.fallback from project and local settings with a warning', async () => {
     const tree = makeTree();
     const target = (model: string) => ({
       adapter: 'chat-completions',
-      provider: 'fake',
       model,
       baseUrl: 'https://api.example.com/v1',
       capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
     });
     writeJson(userSettingsPath(tree), {
-      models: { aliases: { default: 'local-small', fast: 'local-small' }, targets: { 'local-small': target('m1') } },
+      models: { connections: [connectionOf('local-small', target('m1'))], fallback: ['local-small/m1'] },
     });
     writeJson(projectSettingsPath(tree), {
-      models: { aliases: { fast: 'evil' }, targets: { evil: target('x') } },
+      models: { connections: [connectionOf('evil', target('x'))], fallback: ['evil/x'] },
     });
     writeJson(localSettingsPath(tree), {
-      models: { targets: { 'local-small': target('hijacked') } },
+      models: { connections: [connectionOf('local-small', target('hijacked'))] },
     });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(Object.keys(result.settings.models.targets)).toEqual(['local-small']);
-    expect(result.settings.models.targets['local-small']).toMatchObject({ model: 'm1', baseUrl: 'https://api.example.com/v1' });
-    expect([result.settings.models.aliases['fast']].flat()).toEqual(['local-small']);
-    expect(Object.keys(result.settings.models.aliases).sort()).toEqual(['default', 'fast']);
-    expect(result.warnings.filter((w) => w.includes('models.targets'))).toHaveLength(2);
-    expect(result.warnings.filter((w) => w.includes('models.aliases'))).toHaveLength(1);
+    expect(canonsOf(result.settings)).toEqual(['local-small/m1']);
+    expect(modelOf(result.settings, 'local-small')).toMatchObject({ model: 'm1', baseUrl: 'https://api.example.com/v1' });
+    expect((result.settings.models as unknown as { fallback: readonly string[]; start: string | undefined }).fallback).toEqual(['local-small/m1']);
+    expect((result.settings.models as unknown as { fallback: readonly string[]; start: string | undefined }).start).toBe('local-small/m1');
+    expect(result.warnings.filter((w) => w.includes('models.connections is only honored in user settings'))).toHaveLength(2);
+    expect(result.warnings.filter((w) => w.includes('models.fallback is only honored in user settings'))).toHaveLength(1);
   });
 
   it('discards credential-looking env keys from project and local settings only', async () => {
@@ -276,13 +266,17 @@ describe('loadSettings security restrictions', () => {
     expect(fromCli.settings.permissions?.defaultMode).toBe('bypassPermissions');
   });
 
-  it('accepts auto mode and the classifier alias from user settings and auto mode from cli', async () => {
+  it('accepts auto mode and the classifier model from user settings and auto mode from cli', async () => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'guard' } });
+    writeJson(userSettingsPath(tree), {
+      permissions: { defaultMode: 'auto' },
+      autoMode: { classifier: 'guard/guard-model' },
+      models: { connections: [connectionOf('guard', { adapter: 'chat-completions', model: 'guard-model', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })] },
+    });
     const fromUser = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(fromUser.settings.permissions.defaultMode).toBe('auto');
     expect(fromUser.settings.permissions.defaultModeOrigin).toBe('user');
-    expect(fromUser.settings.autoMode).toEqual({ classifier: 'guard' });
+    expect(fromUser.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
     const other = makeTree();
     const fromCli = await loadSettings({ home: other.home, projectDir: other.project, cli: { permissions: { defaultMode: 'auto' } }, trust: trusting(other) });
     expect(fromCli.settings.permissions.defaultMode).toBe('auto');
@@ -293,11 +287,15 @@ describe('loadSettings security restrictions', () => {
     ['local', localSettingsPath],
   ] as const)('ignores auto mode and discards autoMode from %s settings with a warning', async (_label, locate) => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' }, autoMode: { classifier: 'guard' } });
+    writeJson(userSettingsPath(tree), {
+      permissions: { defaultMode: 'acceptEdits' },
+      autoMode: { classifier: 'guard/guard-model' },
+      models: { connections: [connectionOf('guard', { adapter: 'chat-completions', model: 'guard-model', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })] },
+    });
     const file = writeJson(locate(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'attacker' } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.defaultMode).toBe('acceptEdits');
-    expect(result.settings.autoMode).toEqual({ classifier: 'guard' });
+    expect(result.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
     expect(result.warnings.some((w) => w.includes('auto mode') && w.includes(file))).toBe(true);
     expect(result.warnings.some((w) => w.includes('autoMode') && w.includes(file))).toBe(true);
   });

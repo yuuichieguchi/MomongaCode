@@ -4,7 +4,7 @@ export type SessionView = {
   readonly id: string;
   readonly cwd: string;
   readonly permissionMode: PermissionMode;
-  readonly modelAlias: string;
+  readonly model: string;
   readonly bypassAllowed: boolean;
   readonly createdAt: number;
   readonly envKeys: readonly string[];

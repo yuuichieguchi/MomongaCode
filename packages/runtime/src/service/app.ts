@@ -6,14 +6,15 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock, GenerationRole } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, USER_SHELL_RUN_ACTIVE_CODE, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, outputReserveFor, readinessText } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, displayMapOf, modelRefErrorOf, readinessText, resolveStoredModelRef, resolveTypedModelRef, storedModelRef, typedModelText, INBOX_FULL_CODE, USER_SHELL_RUN_ACTIVE_CODE, inboxFullMessage, outputReserveFor } from '@momonga/protocol';
+import type { Capabilities, CostBreakdownView, GatewayCostReportView, ModelViews, PermissionMode, RunStatus, RunTraceView, CompactSessionRequest } from '@momonga/protocol';
 import { mentionsOf } from '@momonga/context';
 import type { AttachedMentions } from '@momonga/context';
-import type { Capabilities, CompactSessionRequest, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
+import { sessionModelNotConfiguredText } from '../worker/model-texts.ts';
 import type { AgentCatalogPort, SkillsPort, UserInputPort } from '../ports.ts';
 import { registerUserShellRoutes } from './user-shell-routes.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
@@ -30,6 +31,7 @@ import {
   invalidRequest,
   methodNotAllowed,
   modeNotAllowed,
+  modelNotConfigured,
   moved,
   notFound,
   serviceUnavailable,
@@ -61,7 +63,9 @@ import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toS
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
 
-export type RunServiceDefaults = { modelAlias: string; runTimeoutMs: number; limits: RunLimitDefaults };
+export type RunServiceDefaults = { runTimeoutMs: number; limits: RunLimitDefaults };
+
+export type ModelListing = { views: ModelViews; start: string | null };
 
 export type SessionCreateSettings = {
   defaultMode?: PermissionMode;
@@ -78,8 +82,8 @@ export type RunAppDeps = {
   clock: Clock;
   home: string;
   version: string;
-  modelAliases: () => Promise<readonly string[]>;
-  modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
+  modelListing: (signal: AbortSignal) => Promise<ModelListing>;
+  modelCapabilities: (model: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string, signal: AbortSignal) => Promise<SessionCreateSettings>;
   sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
@@ -138,11 +142,19 @@ const capabilitiesReadFailure = (error: unknown): unknown => {
   return error;
 };
 
-const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
+const requestedModelOf = (text: string, views: ModelViews): string => {
+  const resolution = resolveTypedModelRef(typedModelText(text), views);
+  if (resolution.kind === 'found') return resolution.model.canon;
+  throw invalidRequest(modelRefErrorOf(text, resolution, views).message, 'model');
+};
+
+const displayIn = (views: ModelViews, model: string): string => displayMapOf(views).get(model) ?? model;
+
+const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, views: ModelViews): void => {
   if (mode === 'auto') {
     if (autoModeClassifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
-    if (!aliases.includes(autoModeClassifier)) {
-      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${autoModeClassifier} is not known to the gateway`);
+    if (resolveStoredModelRef(storedModelRef(autoModeClassifier), views) === undefined) {
+      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier model "${autoModeClassifier}" is not known to the gateway`);
     }
   }
   if (mode === 'bypassPermissions' && !bypassAllowed) {
@@ -222,9 +234,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (deps.role() === 'retiring') throw moved();
   };
 
-  const gatewayAliases = async (): Promise<readonly string[]> => {
+  const gatewayListing = async (signal: AbortSignal): Promise<ModelListing> => {
     try {
-      return await deps.modelAliases();
+      return await deps.modelListing(signal);
     } catch (error) {
       if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
       throw error;
@@ -249,7 +261,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (session.permissionMode !== 'auto') return view;
     const settings = loaded ?? (await sessionReadSettingsOf(session.cwd));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
-    const autoClassifier = await readAutoClassifierView({ alias: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
+    const autoClassifier = await readAutoClassifierView({ model: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
     return { ...view, autoClassifier };
   };
 
@@ -261,10 +273,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const cwd = resolved.path;
     const cwdArea = protectedAreaOf(deps.protectedRootAreas, cwd);
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
-    const modelAlias = body.modelAlias ?? deps.defaults.modelAlias;
-    const aliases = await gatewayAliases();
-    if (aliases.length === 0) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
-    if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
+    const { views, start } = await gatewayListing(context.req.raw.signal);
+    if (views.length === 0 || start === null) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
+    const model = body.model === undefined ? start : requestedModelOf(body.model, views);
     const settings = await sessionSettingsOf(cwd, context.req.raw.signal);
     const additionalDirectories: string[] = [];
     const seen = new Set<string>([comparablePath(cwd)]);
@@ -281,11 +292,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'manual';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
-    checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
+    checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, views);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     refuseNewWork();
-    const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
+    const session = store.createSession({ cwd, env: stripped.env, permissionMode, model, bypassAllowed, additionalDirectories, mcpServers });
     return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
@@ -311,13 +322,13 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
       const settings = await sessionReadSettingsOf(session.cwd);
-      checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
+      checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, (await gatewayListing(context.req.raw.signal)).views);
     }
-    if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
+    const model = body.model === undefined ? undefined : requestedModelOf(body.model, (await gatewayListing(context.req.raw.signal)).views);
     const mcpServers = body.mcpServers === undefined ? undefined : checkedMcpServers(body.mcpServers);
     let current = session;
-    if (body.modelAlias !== undefined) {
-      const switched = store.setModelAlias(session.id, body.modelAlias);
+    if (model !== undefined) {
+      const switched = store.setModel(session.id, model);
       if (switched.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = switched.session;
     }
@@ -363,7 +374,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const capabilitiesOf = async (session: Session, signal: AbortSignal): Promise<Capabilities> => {
     try {
-      return await deps.modelCapabilities(session.modelAlias, signal);
+      return await deps.modelCapabilities(session.model, signal);
     } catch (error) {
       throw capabilitiesReadFailure(error);
     }
@@ -371,7 +382,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const requireImageInput = async (session: Session, images: readonly unknown[] | undefined, signal: AbortSignal): Promise<void> => {
     if (images === undefined || images.length === 0) return;
-    if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(session.modelAlias);
+    if (!(await capabilitiesOf(session, signal)).imageInput) throw imageInputUnsupported(displayIn((await gatewayListing(signal)).views, session.model));
   };
 
   const attachedTo = async (session: Session, body: CreateRunBody, signal: AbortSignal): Promise<AttachedMentions> => {
@@ -405,6 +416,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const replayed = replay();
     if (replayed !== undefined) return replayed;
     await sessionSettingsOf(session.cwd, context.req.raw.signal);
+    const { views } = await gatewayListing(context.req.raw.signal);
+    if (resolveStoredModelRef(storedModelRef(session.model), views) === undefined) throw modelNotConfigured(sessionModelNotConfiguredText(session.model));
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     await requireImageInput(session, body.images, context.req.raw.signal);
     const attached = await attachedTo(session, body, context.req.raw.signal);
@@ -678,7 +691,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   registerRuleRoutes(route, {
     store,
     clock: deps.clock,
-    modelAliases: deps.modelAliases,
+    modelListing: deps.modelListing,
     modelCapabilities: deps.modelCapabilities,
     maxBodyBytes: deps.maxBodyBytes,
     closeSignal: deps.closeSignal,

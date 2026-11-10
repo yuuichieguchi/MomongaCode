@@ -16,7 +16,7 @@ const unreportedCall: RunEventPayload = {
 } as unknown as RunEventPayload;
 
 describe('the transcript format records whether each call reported its cache reads', () => {
-  it('is /7 and keeps a call that did not report its cache reads through a round trip', () => {
+  it('is /8 and keeps a call that did not report its cache reads through a round trip', () => {
     const transcript = recorded('a-on', 0, [unreportedCall]);
     const text = encodeTranscript(transcript);
 

@@ -49,7 +49,7 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
   });
 
   it('the holding configurations check every property of the design', () => {
-    for (const name of ['SettingsSwap', 'SettingsSwap.underivable', 'SettingsSwap.removal']) {
+    for (const name of ['SettingsSwap', 'SettingsSwap.underivable', 'SettingsSwap.removal', 'SettingsSwap.reorderHolds']) {
       const invariants = invariantsOf(configOf(name));
       for (const property of DESIGN_PROPERTIES) expect(invariants, `${name} ${property}`).toContain(property);
       expect(constantOf(configOf(name), 'Variant'), name).toBe('"decided"');
@@ -83,5 +83,20 @@ describe('the code follows SettingsSwap.tla (settings applied in place)', () => 
     expect(constantOf(configOf('SettingsSwap'), 'Observer')).toBe('TRUE');
     expect(constantOf(configOf('SettingsSwap.alone'), 'Observer')).toBe('FALSE');
     expect(invariantsOf(configOf('SettingsSwap.alone'))).toContain('LastValidWins');
+  });
+
+  it('the reorder pair differs in the variant only: the same swapped version, the evidence carries by position and violates CarryOverByIdentity, the check carries by identity and holds', () => {
+    const holds = configOf('SettingsSwap.reorderHolds');
+    const violates = configOf('SettingsSwap.reorder');
+    expect(constantOf(holds, 'Variant')).toBe('"decided"');
+    expect(constantOf(violates, 'Variant')).toBe('"carryByPosition"');
+    expect(constantOf(holds, 'Swapped')).not.toBe('{}');
+    expect(constantOf(violates, 'Swapped')).toBe(constantOf(holds, 'Swapped'));
+    const manifest = readManifest(path.join(specDir, 'manifest.json')).entries;
+    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorder')).toMatchObject({ role: 'evidence', expect: { violates: 'CarryOverByIdentity', exitCode: 12 }, tier: 'every-run' });
+    expect(manifest.find((entry) => entry.config === 'SettingsSwap.reorderHolds')).toMatchObject({ role: 'check', expect: 'holds', tier: 'every-run' });
+    for (const entry of manifest.filter((candidate) => candidate.config.startsWith('SettingsSwap') && candidate.config !== 'SettingsSwap.reorder' && candidate.config !== 'SettingsSwap.reorderHolds')) {
+      expect(constantOf(configOf(entry.config), 'Swapped'), entry.config).toBe('{}');
+    }
   });
 });

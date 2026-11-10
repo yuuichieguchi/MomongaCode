@@ -6,6 +6,7 @@ import { targetCounterOf } from '@momonga/gateway';
 import * as targetCounterModule from '../src/target-counter.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { fmRecordKey } from './fm-record-support.ts';
+import { modelsOf } from './gateway-process-helpers.ts';
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const CODE_DIGEST = 'a'.repeat(64);
@@ -15,10 +16,10 @@ const HOSTED = { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.
 const resolvedTarget = async (target: Record<string, unknown>) => {
   const home = makeDir();
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { only: target }, aliases: { default: 'only' } } }), { mode: 0o600 });
+  fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: modelsOf({ only: target }) }), { mode: 0o600 });
   const { settings } = await loadUserSettings({ home });
-  const resolved = settings.models.targets['only'];
-  if (resolved === undefined) throw new Error('the settings resolved no target');
+  const [resolved] = [...settings.models.models.values()];
+  if (resolved === undefined) throw new Error('the settings resolved no model');
   return resolved;
 };
 
@@ -34,7 +35,7 @@ describe('targetCounterOf', () => {
   it.each([
     ['the upstream model', { model: 'm2' }],
     ['the endpoint', { baseUrl: 'https://api.example.org/v1' }],
-    ['the provider', { provider: 'other' }],
+    ['the server name', { provider: 'other' }],
     ['the capability override', { capabilities: { ...CAPABILITIES, tokenErrorRatio: 0.25 } }],
     ['maxConcurrency, which does not change counting', { maxConcurrency: 7 }],
     ['admissionTimeoutMs, which does not change counting', { admissionTimeoutMs: 1234 }],
@@ -61,7 +62,7 @@ describe('targetCounterOf', () => {
   });
 
   it('changes for a managed target when its probe key changes (the binary sha256, the OS build or the declared model)', async () => {
-    const target = await resolvedTarget({ adapter: 'managed', server: 'fm' });
+    const target = await resolvedTarget({ adapter: 'managed', server: 'fm', model: 'system' });
     expect(target.adapter).toBe('managed');
     const keyOf = (binarySha256: string, osBuild: string, model?: string) => fmRecordKey(binarySha256, osBuild, model).canonical;
     const base = targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354') });
@@ -69,7 +70,7 @@ describe('targetCounterOf', () => {
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354') })).toBe(base);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('2'.repeat(64), '25A354') })).not.toBe(base);
     expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A355') })).not.toBe(base);
-    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354', 'system') })).not.toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354', 'another-model') })).not.toBe(base);
   });
 
   it('changes for a probed endpoint target when its probe record names another upstream identity', async () => {
@@ -115,7 +116,7 @@ describe('O-R5-6 L3: counter inputs', () => {
   });
 
   it('outputPolicy changes only the two kinds that read it: managed and chat-completions with toolCalling auto', async () => {
-    const managed = await resolvedTarget({ adapter: 'managed', server: 'fm' });
+    const managed = await resolvedTarget({ adapter: 'managed', server: 'fm', model: 'system' });
     const ollama = await resolvedTarget(OLLAMA);
     const probed = await resolvedTarget({ ...HOSTED, toolCalling: 'auto' });
     const native = await resolvedTarget(HOSTED);

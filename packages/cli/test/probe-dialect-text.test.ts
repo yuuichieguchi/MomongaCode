@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Capabilities } from '@momonga/protocol';
 import { probeEndpointText, probeFmText } from '../src/commands/gateway.ts';
-import { formatModels } from '../src/commands/models.ts';
 
 const reportWith = (schemaDialect: unknown) =>
   ({
@@ -33,31 +31,5 @@ describe('the probe output names the measured dialect (rule 4) and a refused dec
     expect(line).toContain('refused');
     expect(line).toContain('Invalid schema: additionalProperties');
     expect(dialectLine(probeFmText('t', '/r', REFUSED, 'native'))).toContain('Invalid schema: additionalProperties');
-  });
-});
-
-describe('momonga models with a merged alias that omits the dialect id', () => {
-  const capabilities = {
-    contextWindow: 4096,
-    maxOutputTokens: 512,
-    toolCalling: 'native',
-    structuredOutput: 'json_schema',
-    streaming: true,
-    stopSequences: false,
-    imageInput: false,
-    tokenCounting: 'exact',
-    usageReported: true,
-    maxConcurrency: 1,
-    source: 'declared',
-  } as unknown as Capabilities;
-
-  it('never prints undefined for the dialect', () => {
-    const text = formatModels([{ id: 'mixed', targets: ['a', 'b'], capabilities } as never]);
-    expect(text).not.toContain('undefined');
-  });
-
-  it('prints the id when the alias carries one', () => {
-    const text = formatModels([{ id: 'one', targets: ['a'], capabilities: { ...capabilities, schemaDialect: 'explicit-keys' } } as never]);
-    expect(text).toContain('schema dialect: explicit-keys');
   });
 });

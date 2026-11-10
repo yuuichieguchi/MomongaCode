@@ -2,7 +2,7 @@ import { spawn } from '@momonga/testkit/child-process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { modelSettings, startFakeChatCompletions } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { SUPERVISOR_APP_VERSION } from './support/app-version.ts';
@@ -17,7 +17,7 @@ const BUN = path.join(COMPLIANCE_DIR, 'node_modules', '.bin', 'bun');
 const SUITE_ENTRY = path.join(COMPLIANCE_DIR, 'suite', 'bin', 'compliance-test.ts');
 const EXPECTED_TESTS = 17;
 const DEBUG_TOKEN = 'fake-open-responses-debug-token';
-const MODEL_ALIAS = 'default';
+const MODEL = 'fake/system';
 
 type SuiteResult = { id: string; name: string; status: 'passed' | 'failed' | 'skipped'; errors?: string[] };
 type SuiteOutput = { summary: { passed: number; failed: number; skipped: number; total: number }; results: SuiteResult[] };
@@ -28,7 +28,7 @@ const runSuite = (baseUrl: string, cwd: string, env: Record<string, string>): Pr
       reject(new Error(`bun is not installed at ${BUN}; run: npm ci --prefix compliance/open-responses`));
       return;
     }
-    const child = spawn(BUN, ['run', SUITE_ENTRY, '--base-url', baseUrl, '--api-key', DEBUG_TOKEN, '--model', MODEL_ALIAS, '--json'], {
+    const child = spawn(BUN, ['run', SUITE_ENTRY, '--base-url', baseUrl, '--api-key', DEBUG_TOKEN, '--model', MODEL, '--json'], {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -71,19 +71,18 @@ describe('Open Responses compliance suite against the supervised gateway debug l
       home,
       upstream: fake,
       settings: {
-        models: {
-          aliases: { [MODEL_ALIAS]: ['primary'] },
-          targets: {
-            primary: {
+        ...modelSettings({
+          models: [
+            {
               adapter: 'chat-completions',
               provider: 'fake',
-              model: 'system',
+              id: 'system',
               socketPath: home.upstreamSocket,
               maxConcurrency: 8,
               capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 }, parallelToolCalls: true },
             },
-          },
-        },
+          ],
+        }),
       },
       deps: {
         ...DEFAULT_E2E_DEPS,

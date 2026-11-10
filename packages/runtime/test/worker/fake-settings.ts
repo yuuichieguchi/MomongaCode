@@ -1,7 +1,7 @@
 import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
-import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
-import type { SettingsPort, TargetFacts } from '@momonga/runtime';
+import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
 
 export type FakeSettings = SettingsPort & {
@@ -17,11 +17,7 @@ export type FakeSettings = SettingsPort & {
   contextValue: ResolvedContextSettings;
   context: (session: Session) => Promise<ResolvedContextSettings>;
   toolsValue: ResolvedToolsSettings;
-  classifierAlias: string | undefined;
-  rolesValue: ModelRoles;
-  modelRoles: () => ModelRoles;
-  targetsValue: Record<string, TargetFacts>;
-  modelTargets: () => Record<string, TargetFacts>;
+  classifierModel: string | undefined;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {
@@ -39,17 +35,13 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
     contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false },
     toolsValue: { deferral: false, conciseDescriptions: false, ripgrep: 'bundled' },
-    classifierAlias: undefined,
-    rolesValue: {},
-    modelRoles: () => ({ ...settings.rolesValue }),
-    targetsValue: {},
-    modelTargets: () => ({ ...settings.targetsValue }),
+    classifierModel: undefined,
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
     memory: async () => settings.memoryValue,
     context: async () => settings.contextValue,
     tools: async () => settings.toolsValue,
-    autoModeClassifier: () => settings.classifierAlias,
+    autoModeClassifier: () => settings.classifierModel,
     rules: async (session) => {
       settings.ruleReads += 1;
       await settings.rulesHook?.(settings.ruleReads);

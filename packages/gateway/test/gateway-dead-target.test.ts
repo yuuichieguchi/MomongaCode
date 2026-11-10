@@ -8,7 +8,7 @@ import { CC_CAPABILITIES, startFake } from './cc-support.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
-const request = { model: 'fast', input: userInput('hi'), stream: false };
+const request = { model: 'scripted/upstream-model', input: userInput('hi'), stream: false };
 
 const refusedBaseUrl = async (): Promise<string> => {
   const server = net.createServer();
@@ -21,8 +21,8 @@ const refusedBaseUrl = async (): Promise<string> => {
 const SENDS_PER_BUDGET = 18;
 
 const deadConfig = {
-  aliases: { fast: ['dead'] },
-  targets: { dead: { model: 'upstream-model' } },
+  chains: { 'scripted/upstream-model': ['scripted/upstream-model'] },
+  targets: { 'scripted/upstream-model': {} },
   retry: GATEWAY_CONFIG_DEFAULTS.retry,
   breaker: GATEWAY_CONFIG_DEFAULTS.breaker,
 };
@@ -39,7 +39,7 @@ describe('a target that refuses connections', () => {
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
-    const harness = await startGateway({ adapters: { dead: adapter }, config: deadConfig });
+    const harness = await startGateway({ adapters: { 'scripted/upstream-model': adapter }, config: deadConfig });
     const requests = GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1;
 
     for (let call = 1; call <= requests; call += 1) {
@@ -51,7 +51,7 @@ describe('a target that refuses connections', () => {
       expect(refused.body.error.message).toContain('the chat-completions upstream is unreachable');
       expect(connectAttempts).toBe(call * SENDS_PER_BUDGET);
     }
-    expect((await getJson(harness.client, '/v1/momonga/health')).body.targets.dead).toMatchObject({ breaker: 'open' });
+    expect((await getJson(harness.client, '/v1/momonga/health')).body.models['scripted/upstream-model']).toMatchObject({ breaker: 'open' });
   });
 
   it('serves the next call as soon as the target comes back, without waiting out the cooldown', async () => {
@@ -63,7 +63,7 @@ describe('a target that refuses connections', () => {
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
-    const harness = await startGateway({ adapters: { dead: adapter }, config: deadConfig });
+    const harness = await startGateway({ adapters: { 'scripted/upstream-model': adapter }, config: deadConfig });
     for (let call = 1; call <= GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold; call += 1) {
       const pending = postJson(harness.client, '/v1/responses', request);
       await driveTimers(harness, [pending]);

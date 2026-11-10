@@ -56,8 +56,8 @@ export type {
   ServiceTimers,
   SessionCreateSettings,
 } from './service/index.ts';
-export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, ModelUnlistedError, createGatewayClient, isGatewayNeverReached, isGenerationRetiredRefusal } from './gateway-client.ts';
-export type { GatewayClient, GatewayClientOptions, GatewayModel, GatewayRequestErrorFields } from './gateway-client.ts';
+export { GATEWAY_UNAVAILABLE_CODE, GatewayRequestError, MODEL_NOT_FOUND_CODE, ModelUnlistedError, createGatewayClient, gatewayListingOf, gatewayModelIn, isGatewayNeverReached, isGenerationRetiredRefusal, isModelNotFound } from './gateway-client.ts';
+export type { GatewayChainMember, GatewayClient, GatewayClientOptions, GatewayListing, GatewayModel, GatewayRequestErrorFields, ListedChainMember, ListedGatewayModel } from './gateway-client.ts';
 export { createTracerPort, fixedTracers } from './tracer.ts';
 export { LeaseLostError, ShutdownError } from './worker/errors.ts';
 export { asError } from './process/as-error.ts';

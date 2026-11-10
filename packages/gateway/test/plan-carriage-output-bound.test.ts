@@ -3,7 +3,7 @@ import type { CapabilityOverride } from '@momonga/protocol';
 import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/testkit';
 import type { ScriptedAdapter } from '@momonga/testkit';
 import { REFUSAL_STAGES } from '../src/core/candidate-refusal.ts';
-import { getJson, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { chainOfServers, getJson, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 
 const answering = (model: string, capabilities: CapabilityOverride): ScriptedAdapter =>
   createScriptedAdapter({
@@ -19,14 +19,9 @@ const BOUNDED: CapabilityOverride = { outputBoundField: 'max_output_tokens', con
 
 const startAlias = async (members: Record<string, CapabilityOverride>) => {
   const adapters = Object.fromEntries(Object.entries(members).map(([name, capabilities]) => [name, answering(`model-${name}`, capabilities)]));
-  const harness = await startGateway({
-    adapters,
-    config: {
-      aliases: { fast: Object.keys(members) },
-      targets: Object.fromEntries(Object.keys(members).map((name) => [name, { model: `model-${name}` }])),
-    },
-  });
-  const post = async (body: Record<string, unknown>) => readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...body }));
+  const chain = chainOfServers(Object.fromEntries(Object.keys(members).map((name) => [name, { model: `model-${name}` }])));
+  const harness = await startGateway({ adapters: chain.keyed(adapters), config: chain.config });
+  const post = async (body: Record<string, unknown>) => readJson(await postJson(harness.client, '/v1/responses', { model: harness.model, input: userInput('hi'), ...body }));
   return { harness, adapters: adapters as Record<string, ScriptedAdapter>, post };
 };
 
@@ -65,7 +60,7 @@ describe('the alias merge takes the weakest output bound and the largest unbound
     const alias = await startAlias(members);
     const response = await getJson(alias.harness.client, '/v1/momonga/models');
     expect(response.status).toBe(200);
-    return response.body.data.find((entry: { id: string }) => entry.id === 'fast').capabilities;
+    return response.body.data.find((entry: { id: string }) => entry.id === alias.harness.model).capabilities;
   };
 
   it('reports outputBoundField none and unboundedOutputTokens as the largest maxOutputTokens of any member when one member is unbounded', async () => {

@@ -67,7 +67,7 @@ describe('the cost of a call reaches the response as a momonga extension', () =>
   });
 
   it('prices a local target at nothing whether or not the table has an entry for it, like the cost report', async () => {
-    const local = { targets: { remote: { model: 'upstream-model', kind: 'remote', billing: 'local' as const } }, aliases: { fast: ['remote'] } };
+    const local = { targets: { 'scripted/upstream-model': { kind: 'remote', billing: 'local' as const } } };
     const priced = terminalOf(
       await streamResponse(
         await startAnthropicGateway({ script: [plainTurn()], config: local, priceTable: definePriceTable([{ ...ENTRY, inputPerMTok: 0, cachedInputPerMTok: 0, cacheWritePerMTok: 0, outputPerMTok: 0 }]) }),

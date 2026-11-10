@@ -41,8 +41,8 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
   const classifierKeyPorts = { exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
   const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
-    const classifier = resolved.autoMode?.classifier;
-    if (classifier === undefined || !Object.hasOwn(resolved.models.aliases, classifier)) return undefined;
+    const { classifier } = resolved.models;
+    if (classifier === undefined) return undefined;
     const probeKeys = await readClassifierProbeKeys(resolved.models, classifier, { ...classifierKeyPorts, signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS) });
     const result = autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE, probeKeys);
     return result.kind === 'known' ? result.key : undefined;
@@ -78,13 +78,13 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
   const sessionSettingsFrom = async (snapshot: UserSnapshot, loaded: LoadSettingsResult): Promise<SessionCreateSettings> => {
     const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
-    const classifier = snapshot.settings.autoMode?.classifier;
+    const { classifier } = snapshot.settings.models;
     const autoModeKey = await autoFitKeyFor(snapshot.settings);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
       additionalDirectories: permissions.additionalDirectories,
-      credentialEnvNames: credentialEnvNames(snapshot.settings),
+      credentialEnvNames: credentialEnvNames(snapshot.settings.models),
       ...(hasCredentialRules(credentialRulesOf(snapshot.settings.credentials)) ? { credentials: credentialRulesOf(snapshot.settings.credentials) } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
       ...(autoModeKey === undefined ? {} : { autoModeKey }),
@@ -103,7 +103,7 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
 
   const envFor = (session: Session): ToolEnv => {
     const { settings: userSettings } = takeUserSnapshot();
-    return Object.freeze(stripCredentialEnv(session.env, credentialEnvNames(userSettings), userSettings.credentials).env);
+    return Object.freeze(stripCredentialEnv(session.env, credentialEnvNames(userSettings.models), userSettings.credentials).env);
   };
 
   const settings: SettingsPort = {
@@ -114,14 +114,6 @@ export const createSettingsComposition = ({ home, platform, cache, store }: Sett
     context: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.context,
     tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
-    modelRoles: () => takeUserSnapshot().settings.models.roles,
-    modelTargets: () =>
-      Object.fromEntries(
-        Object.entries(takeUserSnapshot().settings.models.targets).map(([name, target]) => [
-          name,
-          { adapter: target.adapter, model: target.model ?? target.adapter, ...(target.answers === undefined ? {} : { answers: target.answers }) },
-        ]),
-      ),
     appendRule: (session, { effect, rule }, signal) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect, signal }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };

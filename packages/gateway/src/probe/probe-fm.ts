@@ -130,7 +130,7 @@ export type ManagedProbeSubjectOptions = {
 
 export class UnreadableProbeKeyError extends Error {
   constructor(target: string, component: string, reason: string) {
-    super(`the target "${target}" is not ready: its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}`);
+    super(`the model "${target}" is not ready: its probe key needs the ${probeKeyComponentLabel(component)}, which cannot be read: ${reason}`);
     this.name = 'UnreadableProbeKeyError';
   }
 }

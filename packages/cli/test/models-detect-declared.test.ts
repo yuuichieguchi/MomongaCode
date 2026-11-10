@@ -5,19 +5,22 @@ import { momongaLayout } from '@momonga/foundation';
 import { FM_SERVER } from '@momonga/protocol';
 import { withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { detectModels } from '../src/commands/models.ts';
+import { detectModels, serversDetector } from '../src/commands/models.ts';
+import type { ModelsShell } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
 
 const DECLARED_ID = 'workbench';
 
-const portsOf = (written: string[]): CliPorts =>
-  ({
-    stdout: { write: (text: string) => void written.push(text) },
+const shellOf = (written: string[], home: string, fetchFn: typeof fetch): ModelsShell => {
+  const ports = {
+    home,
     exec: async (file: string) => {
       throw new Error(`this test runs no host program; asked to run ${file}`);
     },
     files: { exists: async (file: string) => file !== FM_SERVER.binary.defaultPath && fs.existsSync(file) },
-  }) as unknown as CliPorts;
+  } as unknown as CliPorts;
+  return { stdout: { write: (text: string) => void written.push(text) }, home, interrupt: new AbortController().signal, detect: serversDetector(ports, fetchFn) } as unknown as ModelsShell;
+};
 
 const nothingAnswers = (async (input: string | URL | Request) => {
   throw new TypeError(`fetch failed: ${String(input)}`);
@@ -36,8 +39,7 @@ const homeDeclaring = (context: CleanupContext, commandExists: boolean) => {
     JSON.stringify({
       models: {
         servers: { [DECLARED_ID]: { command, args: ['{socket}'], readyPath: '/health' } },
-        targets: { bench: { adapter: 'managed', server: DECLARED_ID, model: 'bench-1' } },
-        aliases: { default: ['bench'] },
+        connections: [{ adapter: 'managed', server: DECLARED_ID, models: [{ id: 'bench-1' }] }],
       },
     }),
     { mode: 0o600 },
@@ -47,7 +49,7 @@ const homeDeclaring = (context: CleanupContext, commandExists: boolean) => {
 
 const detected = async (paths: ReturnType<typeof momongaLayout>, json: boolean): Promise<string> => {
   const written: string[] = [];
-  const code = await detectModels(portsOf(written), paths, { typed: [], json, interrupt: new AbortController().signal, fetch: nothingAnswers });
+  const code = await detectModels(shellOf(written, paths.home, nothingAnswers), { typed: [], json });
   expect(code).toBe(0);
   return written.join('');
 };
@@ -55,7 +57,7 @@ const detected = async (paths: ReturnType<typeof momongaLayout>, json: boolean):
 describe('O-R5-6 (E): momonga models detect lists the managed servers of the loaded settings, not only the shipped ones', () => {
   it('lists a declared server whose command exists as a managed row', async (context) => {
     const { paths, command } = homeDeclaring(context, true);
-    const rows = JSON.parse(await detected(paths, true)) as Array<Record<string, unknown>>;
+    const rows = (JSON.parse(await detected(paths, true)) as { managed: Array<Record<string, unknown>> }).managed;
     expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([{ shape: 'managed', id: DECLARED_ID, provider: DECLARED_ID, binary: command }]);
   });
 
@@ -66,7 +68,7 @@ describe('O-R5-6 (E): momonga models detect lists the managed servers of the loa
 
   it('lists no managed row when the declared command does not exist', async (context) => {
     const { paths } = homeDeclaring(context, false);
-    const rows = JSON.parse(await detected(paths, true)) as Array<Record<string, unknown>>;
+    const rows = (JSON.parse(await detected(paths, true)) as { managed: Array<Record<string, unknown>> }).managed;
     expect(rows.filter((row) => row['shape'] === 'managed' && row['id'] === DECLARED_ID)).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@ export type UpstreamEndpointKeyed = { kind: 'unix'; socketPath: string } | { kin
 
 export type EndpointProbeKey = { endpoint: string; model: string };
 
-export type ProbeRecordKey = { kind: 'target'; target: string } | { kind: 'endpoint'; key: EndpointProbeKey };
+export type ProbeRecordKey = { kind: 'model'; model: string } | { kind: 'endpoint'; key: EndpointProbeKey };
 
 export const endpointKeyOf = (upstream: UpstreamEndpointKeyed): string =>
   upstream.kind === 'unix' ? `unix:${upstream.socketPath}` : upstream.baseUrl.replace(/\/+$/, '');
@@ -15,8 +15,8 @@ export const upstreamEndpointOf = (target: Exclude<ResolvedModelTarget, { adapte
   throw new Error(`${target.adapter} target has neither socketPath nor baseUrl`);
 };
 
-export const probeRecordKeyOf = (name: string, target: ResolvedModelTarget): ProbeRecordKey | undefined => {
-  if (target.adapter === 'managed') return { kind: 'target', target: name };
+export const probeRecordKeyOf = (canon: string, target: ResolvedModelTarget): ProbeRecordKey | undefined => {
+  if (target.adapter === 'managed') return { kind: 'model', model: canon };
   if (target.adapter === 'ollama' || (target.adapter === 'chat-completions' && target.toolCalling === 'auto')) {
     return { kind: 'endpoint', key: { endpoint: endpointKeyOf(upstreamEndpointOf(target)), model: target.model } };
   }

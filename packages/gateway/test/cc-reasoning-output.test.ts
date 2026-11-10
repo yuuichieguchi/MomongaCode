@@ -110,15 +110,15 @@ describe('chat-completions reasoning through the gateway (R2b input rule)', () =
       scenario: 'tools-ok',
       script: [{ kind: 'stream', chunks: fieldChunks('reasoning', ['Look at a.txt first.']) }, { kind: 'stream', chunks: [{ delta: { content: 'done' } }, { delta: {}, finishReason: 'stop' }] }],
     });
-    const { client } = await startGateway({ adapters: { fm: makeAdapter(fake) }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
+    const { client } = await startGateway({ adapters: { 'scripted/system': makeAdapter(fake) }, config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': {} } } });
 
-    const first = await readSse(await postJson(client, '/v1/responses', { model: 'fast', stream: true, tools: [readFileTool], input: userInput('read a.txt') }));
+    const first = await readSse(await postJson(client, '/v1/responses', { model: 'scripted/system', stream: true, tools: [readFileTool], input: userInput('read a.txt') }));
     const output: any[] = first.at(-1)?.data.response.output;
     expect(output.map((item) => item.type)).toEqual(['reasoning', 'message', 'function_call']);
 
     await readSse(
       await postJson(client, '/v1/responses', {
-        model: 'fast',
+        model: 'scripted/system',
         stream: true,
         tools: [readFileTool],
         input: [...userInput('read a.txt'), ...output, { type: 'function_call_output', call_id: 'call_r1', output: 'alpha' }],

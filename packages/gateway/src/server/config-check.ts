@@ -12,19 +12,15 @@ const requirePositiveInteger = (name: string, value: number): void => {
 
 const checkModels = (options: FixedModelsOptions): void => {
   const { config, adapters } = options;
-  const targetNames = Object.keys(config.models.targets);
-  for (const [name, target] of Object.entries(config.models.targets)) {
-    if (!Object.hasOwn(adapters, name)) {
-      throw new Error(`createGateway: target "${name}" has no adapter keyed by its name`);
-    }
-    requirePositiveInteger(`models.targets.${name}.maxConcurrency`, target.maxConcurrency);
-    requirePositiveInteger(`models.targets.${name}.admissionTimeoutMs`, target.admissionTimeoutMs);
+  const { targets, chains } = config.models;
+  const configured = Object.keys(targets);
+  for (const [name, target] of Object.entries(targets)) {
+    if (!Object.hasOwn(adapters, name)) throw new Error(`createGateway: model "${name}" has no adapter`);
+    requirePositiveInteger(`maxConcurrency of model "${name}"`, target.maxConcurrency);
+    requirePositiveInteger(`admissionTimeoutMs of model "${name}"`, target.admissionTimeoutMs);
   }
-  for (const [alias, names] of Object.entries(config.models.aliases)) {
-    if (names.length === 0) throw new Error(`createGateway: alias "${alias}" lists no targets`);
-    for (const name of names) {
-      if (!targetNames.includes(name)) throw new Error(`createGateway: alias "${alias}" references unknown target "${name}"`);
-    }
+  for (const name of [...Object.keys(chains), ...Object.values(chains).flat()]) {
+    if (!configured.includes(name)) throw new Error(`createGateway: the fallback order names "${name}", which is not a configured model`);
   }
 };
 

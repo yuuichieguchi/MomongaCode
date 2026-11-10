@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
 import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, notTheRoleTick } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings, modelsOf, notTheRoleTick } from './gateway-process-helpers.ts';
 import { RECORDED_SERVER_VERSION, startFakeOllama } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
@@ -13,7 +13,6 @@ const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 
 const v1Target = (adapter: 'chat-completions' | 'open-responses', origin: string) => ({
   adapter,
-  provider: 'fake',
   model: 'devstral-small-2',
   baseUrl: `${origin}/v1`,
   toolCalling: 'native',
@@ -25,12 +24,12 @@ const v1Requests = (fake: Awaited<ReturnType<typeof startFakeOllama>>) => fake.r
 const startedWith = async (adapter: 'chat-completions' | 'open-responses', options: FakeOllamaOptions) => {
   const fake = await startFakeOllama(options);
   const home = makeHome();
-  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target(adapter, fake.origin) } } });
+  writeSettings(home, { models: modelsOf({ local: v1Target(adapter, fake.origin) }) });
   const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return { fake, handle };
 };
 
-const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
+const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'local/devstral-small-2', input: userInput('hi') }));
 
 describe('decision 3: a chat-completions or open-responses target whose server is Ollama', () => {
   it('does not ask at start, and asks the origin of the baseUrl for GET /api/version at the first use, before the request is sent', async () => {
@@ -66,7 +65,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
       res.end();
     });
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target('chat-completions', server.origin) } } });
+    writeSettings(home, { models: modelsOf({ local: v1Target('chat-completions', server.origin) }) });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await ask(handle.socketPath);
@@ -120,7 +119,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     const origin = closed.origin;
     await closed.close();
     const home = makeHome();
-    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target('chat-completions', origin) } } });
+    writeSettings(home, { models: modelsOf({ local: v1Target('chat-completions', origin) }) });
     const clock = createFakeClock(Date.now());
     const timers = createFakeTimers(clock);
     const startedAt = clock.now();

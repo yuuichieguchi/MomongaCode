@@ -7,7 +7,7 @@ const totals = { calls: 1, localCalls: 0, unpricedCalls: 1, unknownBillingCalls:
 const IMAGE = { mediaType: 'image/png', data: PNG_BYTES.toString('base64') };
 
 describe('POST /v1/sessions/:id/runs with images', () => {
-  it('records the images on the user message when the model alias declares image input', async () => {
+  it('records the images on the user message when the model declares image input', async () => {
     const env = await startService({ imageInput: true });
     const session = await env.createSession();
 
@@ -20,7 +20,7 @@ describe('POST /v1/sessions/:id/runs with images', () => {
     expect(JSON.stringify(toPublicRunEvent(first))).not.toContain(IMAGE.data);
   });
 
-  it('refuses images with image_input_unsupported when the alias does not declare image input', async () => {
+  it('refuses images with image_input_unsupported when the model does not declare image input', async () => {
     const env = await startService({ imageInput: false });
     const session = await env.createSession();
 

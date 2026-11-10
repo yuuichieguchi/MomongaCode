@@ -9,7 +9,7 @@ import { MINIMAL_CHILD_PATH, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
-import { productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
+import { modelSettings, productTestEnv, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
@@ -30,8 +30,7 @@ export { SUPERVISOR_APP_VERSION };
 export const SUPERVISOR_ENV_PATH = MINIMAL_CHILD_PATH;
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
-export const UPSTREAM_TARGET = 'primary';
-export const STRUCTURED_TARGET = 'structured';
+export const UPSTREAM_PROVIDER = 'fake';
 export const UPSTREAM_CONTEXT_WINDOW = 8192;
 
 export const DEFAULT_E2E_DEPS: E2eDeps = {
@@ -101,84 +100,93 @@ const UTF8_CONTINUATION_BITS = 0x80;
 
 let settingsWriteCounter = 0;
 
+type StackModelEntry = { id: string; capabilities: Record<string, unknown>; [key: string]: unknown };
+
+type StackConnection = { provider: string; models: StackModelEntry[]; [key: string]: unknown };
+
+type StackModels = { connections: StackConnection[]; roles?: Record<string, unknown>; [key: string]: unknown };
+
+export const upstreamModelRef = (id: string): string => `${UPSTREAM_PROVIDER}/${id}`;
+
+export const UPSTREAM_MODEL_REF = upstreamModelRef(UPSTREAM_MODEL);
+
 export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<string, unknown> => ({
-  models: {
-    aliases: { default: [UPSTREAM_TARGET] },
-    targets: {
-      [UPSTREAM_TARGET]: {
+  ...modelSettings({
+    start: UPSTREAM_MODEL_REF,
+    models: [
+      {
+        provider: UPSTREAM_PROVIDER,
         adapter: 'chat-completions',
-        provider: 'fake',
-        model: UPSTREAM_MODEL,
+        id: UPSTREAM_MODEL,
         answers: 'script' satisfies TargetAnswers,
         socketPath: home.upstreamSocket,
         capabilities: { contextWindow: UPSTREAM_CONTEXT_WINDOW, maxOutputTokens: 1024 },
       },
-    },
-  },
+    ],
+  }),
   sandbox,
   tools: { ripgrep: pinnedRipgrepPath() },
   runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS },
 });
 
-export const withStructuredAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => {
-  const models = settings['models'] as { aliases: Record<string, unknown>; targets: Record<string, { capabilities: Record<string, unknown> }> };
-  const upstream = models.targets[UPSTREAM_TARGET];
-  if (upstream === undefined) throw new Error(`withStructuredAlias: no ${UPSTREAM_TARGET} target to derive ${STRUCTURED_TARGET} from`);
-  return {
-    ...settings,
-    models: {
-      ...models,
-      aliases: { ...models.aliases, [alias]: [STRUCTURED_TARGET] },
-      targets: { ...models.targets, [STRUCTURED_TARGET]: { ...upstream, capabilities: { ...upstream.capabilities, structuredOutput: 'json_schema' } } },
-    },
-  };
+const modelsOf = (settings: Readonly<Record<string, unknown>>): StackModels => settings['models'] as StackModels;
+
+export const upstreamConnectionOf = (settings: Readonly<Record<string, unknown>>): StackConnection => {
+  const connection = modelsOf(settings).connections.find((candidate) => candidate.provider === UPSTREAM_PROVIDER);
+  if (connection === undefined) throw new Error(`no ${UPSTREAM_PROVIDER} connection in the settings`);
+  return connection;
 };
 
-export const withClassifierAlias = (settings: Readonly<Record<string, unknown>>, alias: string): Record<string, unknown> => ({
-  ...withStructuredAlias(settings, alias),
-  autoMode: { classifier: alias },
+export const upstreamEntryOf = (settings: Readonly<Record<string, unknown>>): StackModelEntry => {
+  const entry = upstreamConnectionOf(settings).models.find((candidate) => candidate.id === UPSTREAM_MODEL);
+  if (entry === undefined) throw new Error(`no ${UPSTREAM_MODEL_REF} model in the settings`);
+  return entry;
+};
+
+export const withUpstreamConnection = (settings: Readonly<Record<string, unknown>>, change: (connection: StackConnection) => StackConnection): Record<string, unknown> => {
+  const models = modelsOf(settings);
+  const upstream = upstreamConnectionOf(settings);
+  return { ...settings, models: { ...models, connections: models.connections.map((connection) => (connection === upstream ? change(connection) : connection)) } };
+};
+
+export const withUpstreamEntry = (settings: Readonly<Record<string, unknown>>, change: (entry: StackModelEntry) => StackModelEntry): Record<string, unknown> => {
+  const upstream = upstreamEntryOf(settings);
+  return withUpstreamConnection(settings, (connection) => ({ ...connection, models: connection.models.map((entry) => (entry === upstream ? change(entry) : entry)) }));
+};
+
+export const withStructuredModel = (settings: Readonly<Record<string, unknown>>, id: string): Record<string, unknown> => {
+  const upstream = upstreamEntryOf(settings);
+  const structured = { ...upstream, id, capabilities: { ...upstream.capabilities, structuredOutput: 'json_schema' } };
+  return withUpstreamConnection(settings, (connection) => ({ ...connection, models: [...connection.models, structured] }));
+};
+
+export const withClassifierModel = (settings: Readonly<Record<string, unknown>>, id: string): Record<string, unknown> => ({
+  ...withStructuredModel(settings, id),
+  autoMode: { classifier: upstreamModelRef(id) },
 });
 
 export type StructuredRole = 'reflection' | 'analysis';
 
-export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, role: StructuredRole, alias: string): Record<string, unknown> => {
-  const structured = withStructuredAlias(settings, alias);
-  const models = structured['models'] as { roles?: Record<string, unknown> };
-  return { ...structured, models: { ...models, roles: { ...models.roles, [role]: alias } } };
+export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, role: StructuredRole, id: string): Record<string, unknown> => {
+  const structured = withStructuredModel(settings, id);
+  const models = modelsOf(structured);
+  return { ...structured, models: { ...models, roles: { ...models.roles, [role]: upstreamModelRef(id) } } };
 };
 
-export const withTargetsAnswering = (settings: Readonly<Record<string, unknown>>, answers: TargetAnswers): Record<string, unknown> => {
-  const models = settings['models'] as { targets: Record<string, Record<string, unknown>> };
-  return {
-    ...settings,
-    models: { ...models, targets: Object.fromEntries(Object.entries(models.targets).map(([name, target]) => [name, { ...target, answers }])) },
-  };
+export const withModelsAnswering = (settings: Readonly<Record<string, unknown>>, answers: TargetAnswers): Record<string, unknown> => {
+  const models = modelsOf(settings);
+  return { ...settings, models: { ...models, connections: models.connections.map((connection) => ({ ...connection, answers })) } };
 };
 
-export const contextWindowOf = (home: E2eHome): number => {
-  const models = baseSettings(home, 'none')['models'] as { targets: Record<string, { capabilities: { contextWindow: number } }> };
-  return (models.targets[UPSTREAM_TARGET] as { capabilities: { contextWindow: number } }).capabilities.contextWindow;
-};
+export const contextWindowOf = (home: E2eHome): number => upstreamEntryOf(baseSettings(home, 'none')).capabilities['contextWindow'] as number;
 
 export const settingsWithTarget = (settings: Readonly<Record<string, unknown>>, target: StackTarget): Record<string, unknown> => {
-  const models = settings['models'] as { aliases: unknown; targets: Record<string, Record<string, unknown>> };
-  const primary = models.targets[UPSTREAM_TARGET];
-  if (primary === undefined) throw new Error(`settingsWithTarget: no ${UPSTREAM_TARGET} target to override`);
-  return {
-    ...settings,
-    models: {
-      ...models,
-      targets: {
-        ...models.targets,
-        [UPSTREAM_TARGET]: {
-          ...primary,
-          ...(target.capabilities === undefined ? {} : { capabilities: { ...target.capabilities } }),
-          ...(target.toolCalling === undefined ? {} : { toolCalling: target.toolCalling }),
-          ...(target.answers === undefined ? {} : { answers: target.answers }),
-        },
-      },
-    },
-  };
+  const entryChanged = withUpstreamEntry(settings, (entry) => ({
+    ...entry,
+    ...(target.capabilities === undefined ? {} : { capabilities: { ...target.capabilities } }),
+    ...(target.toolCalling === undefined ? {} : { toolCalling: target.toolCalling }),
+  }));
+  return target.answers === undefined ? entryChanged : withUpstreamConnection(entryChanged, (connection) => ({ ...connection, answers: target.answers }));
 };
 
 export const writeSettingsFile = (home: E2eHome, value: Readonly<Record<string, unknown>> | string): void => {

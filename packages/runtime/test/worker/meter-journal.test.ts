@@ -42,27 +42,27 @@ const threeSteps = (tag: string) => [
 ];
 
 describe('the claim start folds the reports of the meter counter and reads only the request bodies the fold keeps', () => {
-  it('folds the latest report of the same counter from another alias, skips a later report of another counter, and returns at most one model.requested to the claim start', async () => {
+  it('folds the latest report of the same counter from another model, skips a later report of another counter, and returns at most one model.requested to the claim start', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(16384, { maxOutputTokens: 1024 }) });
-    const aliasOf = env.session.modelAlias;
-    env.gateway.targetsByAlias[aliasOf] = [PRIMARY_TARGET];
-    env.gateway.targetsByAlias['twin-model'] = [PRIMARY_TARGET];
-    env.gateway.targetsByAlias['other-model'] = [OTHER_TARGET];
+    const aliasOf = env.session.model;
+    env.gateway.chainsByModel[aliasOf] = [PRIMARY_TARGET];
+    env.gateway.chainsByModel['twin-model'] = [PRIMARY_TARGET];
+    env.gateway.chainsByModel['other-model'] = [OTHER_TARGET];
     env.gateway.script.push(...threeSteps('a'));
     const first = env.enqueue('First task');
     await env.runOnce(env.worker());
     env.gateway.script.push(...threeSteps('c'));
     const third = env.enqueue('Second task');
     await env.runOnce(env.worker());
-    env.setModelAlias('twin-model');
+    env.setModel('twin-model');
     env.gateway.script.push(...threeSteps('t'));
-    const twin = env.enqueue('Task for the twin alias with a longer text than the others');
+    const twin = env.enqueue('Task for the twin model with a longer text than the others');
     await env.runOnce(env.worker());
-    env.setModelAlias('other-model');
+    env.setModel('other-model');
     env.gateway.script.push(...threeSteps('b'));
     const other = env.enqueue('Task for the other model, whose first target counts with another counter');
     await env.runOnce(env.worker());
-    env.setModelAlias(aliasOf);
+    env.setModel(aliasOf);
 
     for (const run of [first, third, twin, other]) expect(env.run(run.id).status).toBe('COMPLETED');
     for (const request of env.ofType(twin.id, 'model.requested')) expect((request.body as { model?: unknown }).model).toBe('twin-model');

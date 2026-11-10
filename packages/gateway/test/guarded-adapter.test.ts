@@ -19,7 +19,7 @@ import type { TargetRuntime } from '../src/core/router.ts';
 import { REDACTED, TEST_API_KEY, expectRedacted } from './credential-support.ts';
 
 const redactor = createRedactor({ credentials: [TEST_API_KEY] });
-const TARGET: AdapterTarget = { name: 'primary', model: 'scripted-primary' };
+const TARGET: AdapterTarget = { name: 'primary', display: 'primary', model: 'scripted-primary' };
 const ctx = (): AdapterContext => ({ signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES });
 const REQUEST: AdapterRequest = { model: 'scripted-primary', input: [] };
 const COMPACT_REQUEST: AdapterCompactRequest = { model: 'scripted-primary', input: [] };

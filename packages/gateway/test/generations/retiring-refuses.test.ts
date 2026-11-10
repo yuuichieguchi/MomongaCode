@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { GENERATION_RETIRED_CODE } from '@momonga/foundation';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
-import { getJson, postJson, readJson, startGateway, switchableRole, userInput } from '../gateway-helpers.ts';
+import { PRIMARY, getJson, postJson, readJson, startGateway, switchableRole, userInput } from '../gateway-helpers.ts';
 
 const RETIRED_MESSAGE = 'This gateway belongs to a replaced generation and takes no new requests. The request was not run; send it again.';
 
@@ -22,15 +22,15 @@ const upgradeStatus = (socketPath: string): Promise<number | 'open'> =>
 const retiringGateway = async () => {
   const role = switchableRole('retiring');
   const primary = createScriptedAdapter({ calls: [textCall('never sent')], compactSummary: 'never sent' });
-  const harness = await startGateway({ adapters: { primary }, role });
+  const harness = await startGateway({ adapters: { [PRIMARY]: primary }, role });
   return { ...harness, primary, role };
 };
 
 describe('a retiring gateway refuses new calls and sends nothing upstream (design-update 18.1, 20.3, 20.60)', () => {
   it.each([
-    ['/v1/responses', { model: 'fast', input: userInput('hi') }],
-    ['/v1/responses/compact', { model: 'fast', input: userInput('hi') }],
-    ['/v1/momonga/count_tokens', { model: 'fast', input: userInput('hi') }],
+    ['/v1/responses', { model: PRIMARY, input: userInput('hi') }],
+    ['/v1/responses/compact', { model: PRIMARY, input: userInput('hi') }],
+    ['/v1/momonga/count_tokens', { model: PRIMARY, input: userInput('hi') }],
   ])('answers POST %s with 503 generation_retired and the text of 18.1, and closes the connection', async (route, body) => {
     const { client, primary } = await retiringGateway();
 
@@ -53,7 +53,7 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
   it('refuses a new request on a WebSocket connection opened before retirement, and closes the connection', async () => {
     const role = switchableRole('serving');
     const primary = createScriptedAdapter({ calls: [textCall('never sent')] });
-    const { socketPath } = await startGateway({ adapters: { primary }, role });
+    const { socketPath } = await startGateway({ adapters: { [PRIMARY]: primary }, role });
     const socket = new WebSocket(`ws+unix://${socketPath}:/v1/responses`);
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -63,7 +63,7 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
     const closed = new Promise<number>((resolve) => socket.once('close', (code) => resolve(code)));
 
     role.become('retiring');
-    socket.send(JSON.stringify({ type: 'response.create', model: 'fast', store: false, input: userInput('hi') }));
+    socket.send(JSON.stringify({ type: 'response.create', model: PRIMARY, store: false, input: userInput('hi') }));
 
     expect(await answered).toMatchObject({ type: 'error', status: 503, error: { code: GENERATION_RETIRED_CODE, message: RETIRED_MESSAGE } });
     expect(await closed).toBe(1001);
@@ -72,7 +72,7 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
 
   it('closes an idle WebSocket connection when the gateway releases its idle connections', async () => {
     const role = switchableRole('serving');
-    const { gateway, socketPath } = await startGateway({ adapters: { primary: createScriptedAdapter({ calls: [] }) }, role });
+    const { gateway, socketPath } = await startGateway({ adapters: { [PRIMARY]: createScriptedAdapter({ calls: [] }) }, role });
     const socket = new WebSocket(`ws+unix://${socketPath}:/v1/responses`);
     await new Promise<void>((resolve, reject) => {
       socket.once('open', () => resolve());
@@ -122,11 +122,11 @@ describe('a retiring gateway refuses new calls and sends nothing upstream (desig
   it('serves calls while its role is starting or serving, and reports state running', async () => {
     const role = switchableRole('starting');
     const primary = createScriptedAdapter({ calls: [textCall('one'), textCall('two')] });
-    const { client } = await startGateway({ adapters: { primary }, role });
+    const { client } = await startGateway({ adapters: { [PRIMARY]: primary }, role });
 
-    expect((await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') }))).status).toBe(200);
+    expect((await readJson(await postJson(client, '/v1/responses', { model: PRIMARY, input: userInput('hi') }))).status).toBe(200);
     role.become('serving');
-    const served = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    const served = await postJson(client, '/v1/responses', { model: PRIMARY, input: userInput('hi') });
     expect(served.status).toBe(200);
     expect(served.headers['connection']).not.toBe('close');
     await served.text();

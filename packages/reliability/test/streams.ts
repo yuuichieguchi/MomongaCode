@@ -16,13 +16,13 @@ export const COMPLETION = [{ id: 'tests', command: 'npm test' }];
 
 export const started = (
   attempt: number,
-  options: { declared?: boolean; modelAlias?: string; mode?: PermissionMode; now?: number } = {},
+  options: { declared?: boolean; model?: string; mode?: PermissionMode; now?: number } = {},
 ): RunEventPayload =>
   ({
     type: 'run.started',
     attempt,
     now: options.now ?? T0,
-    pins: { modelAlias: options.modelAlias ?? 'fm', ...(options.declared === true ? { mandate: { completion: COMPLETION } } : {}) },
+    pins: { model: options.model ?? 'fm', ...(options.declared === true ? { mandate: { completion: COMPLETION } } : {}) },
     ...(options.mode === undefined ? {} : { mode: options.mode }),
   }) as RunEventPayload;
 
@@ -99,7 +99,7 @@ export const runInfo = (
   limits: {},
   step: 1,
   tokensTotal: 100,
-  modelAlias: 'fm',
+  model: 'fm',
   mode: 'manual',
   agent: 'build',
   origin: 'cli',

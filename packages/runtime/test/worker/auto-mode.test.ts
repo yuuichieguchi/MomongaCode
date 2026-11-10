@@ -16,8 +16,8 @@ const verdict = (overrides: Record<string, unknown> = {}): string =>
 
 const setup = async (classifier: string | null = 'guard') => {
   const env = await makeEnv({ mode: 'auto' });
-  env.settings.classifierAlias = classifier ?? undefined;
-  if (classifier !== null) env.gateway.capabilitiesByAlias[classifier] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
+  env.settings.classifierModel = classifier ?? undefined;
+  if (classifier !== null) env.gateway.capabilitiesByModel[classifier] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'json_schema' });
   const target = path.join(env.project, 'out.txt');
   const write = callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]);
   return { env, target, write };
@@ -33,11 +33,11 @@ describe('auto mode in the worker', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([
-      { outcome: 'allow', alias: 'guard', verdict: 'safe', confidence: 'high' },
+      { outcome: 'allow', model: 'guard', verdict: 'safe', confidence: 'high' },
     ]);
   });
 
-  it('sends the classifier alias, the schema, the instructions and the quoted call', async () => {
+  it('sends the classifier model, the schema, the instructions and the quoted call', async () => {
     const { env, write } = await setup();
     env.gateway.script.push(write, textStep(verdict()), textStep('Written.'));
     env.enqueue('Write out.txt');
@@ -84,7 +84,7 @@ describe('auto mode in the worker', () => {
     expect(classified?.failure).toContain(fragment);
   });
 
-  it('asks the person when no classifier alias is configured', async () => {
+  it('asks the person when no classifier model is configured', async () => {
     const { env, write } = await setup(null);
     env.gateway.script.push(write);
     const run = env.enqueue('Write out.txt');
@@ -92,19 +92,19 @@ describe('auto mode in the worker', () => {
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const [classified] = env.ofType(run.id, 'tool.permission.classified');
     expect(classified).toMatchObject({ outcome: 'ask' });
-    expect(classified).not.toHaveProperty('alias');
+    expect(classified).not.toHaveProperty('model');
     expect(env.gateway.streams).toHaveLength(1);
   });
 
-  it('calls the classifier and allows a safe plain-text verdict when its alias has no structured output', async () => {
+  it('calls the classifier and allows a safe plain-text verdict when its model has no structured output', async () => {
     const { env, target, write } = await setup();
-    env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'none' });
+    env.gateway.capabilitiesByModel['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'none' });
     env.gateway.script.push(write, textStep(verdict()), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.gateway.streams).toHaveLength(3);
     expect(env.gateway.streams[1]?.body.text?.format).toMatchObject({ type: 'json_schema' });
-    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'guard', verdict: 'safe' }]);
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', model: 'guard', verdict: 'safe' }]);
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
@@ -249,8 +249,8 @@ describe('auto mode classifier verdict after a crash', () => {
       options: {
         settings: { autoModeClassifier: () => 'guard' },
         gateway: {
-          capabilities: async () => {
-            gatewayCalls.push('capabilities');
+          listing: async () => {
+            gatewayCalls.push('listing');
             throw new Error('the gateway was asked');
           },
         },
@@ -263,6 +263,6 @@ describe('auto mode classifier verdict after a crash', () => {
     expect(appended).toEqual([]);
     expect(gatewayCalls).toEqual([]);
     await expect(classifier.classify({ ...request, subjectDigest: 'digest-b' })).rejects.toThrow('the gateway was asked');
-    expect(gatewayCalls).toEqual(['capabilities']);
+    expect(gatewayCalls).toEqual(['listing']);
   });
 });

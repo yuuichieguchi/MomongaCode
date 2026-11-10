@@ -17,6 +17,7 @@ import { MemoryEvidenceError, bindMemoryEvidence, readGitHead, runFactsOf } from
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
+import { EXACT_MODEL } from '../worker/exact-model.ts';
 import { outputBoundOf } from '../worker/output-bound.ts';
 
 export type ReflectorOptions = {
@@ -176,16 +177,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
     if (started?.type !== 'run.started') throw new Error(`run ${runId} has no run.started event`);
     const pins = readPins(started.pins);
-    const alias = pins.roles.reflection ?? pins.modelAlias;
-    const capabilities = await gateway.capabilities(alias, { signal });
+    const model = pins.roles.reflection ?? pins.model;
+    const capabilities = await gateway.capabilities(model, { signal });
     const format: TextFormat = { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true };
     if (jsonReplyPathFor(format, capabilities) !== 'enforced') {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection target ${alias} reports no structured output` });
+      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: `models.roles.reflection model ${model} reports no structured output` });
       return;
     }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
-      model: alias,
+      model,
       instructions: REFLECTION_INSTRUCTIONS,
       input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }],
       text: { format },
@@ -195,6 +196,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store: false,
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },
+      momonga: { ...EXACT_MODEL },
     };
     const { terminal, usage, detail } = await complete(runId, body, signal);
     if (usage !== null) {
@@ -203,7 +205,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         purpose: 'reflection',
         runId,
         project,
-        model: alias,
+        model,
         inputTokens: usage.input_tokens,
         outputTokens: usage.output_tokens,
         totalTokens: usage.total_tokens,

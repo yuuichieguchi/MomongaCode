@@ -92,7 +92,7 @@ describe('run.started carries no recovery field', () => {
   });
 
   it('projects run.started to the attempt alone, dropping pins and now', () => {
-    const event = { ...ENVELOPE, leaseToken: 4, type: 'run.started', attempt: 2, now: 1_800_000_000_900, pins: { modelAlias: 'fm' } } as RunEvent;
+    const event = { ...ENVELOPE, leaseToken: 4, type: 'run.started', attempt: 2, now: 1_800_000_000_900, pins: { model: 'apple/fm-model' } } as RunEvent;
     expect(toPublicRunEvent(event)).toEqual({ ...ENVELOPE, type: 'run.started', attempt: 2 });
   });
 });
@@ -103,7 +103,7 @@ describe('protocol/src/reliability.ts', () => {
     expect(REPORT_PAGE_ROWS).toBe(500);
     expect(FACTS_SWEEP_BATCH_RUNS).toBe(3);
     expect(INDICATOR_DEFINITIONS_VERSION).toBe(1);
-    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/2');
+    expect(RELIABILITY_FORMAT).toBe('momonga-reliability/3');
   });
 
   it('names the two recovery causes and the four episode outcomes', () => {

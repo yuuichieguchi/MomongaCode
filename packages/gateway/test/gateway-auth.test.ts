@@ -13,7 +13,7 @@ const rejection = (status: number): FakeScriptedReply => ({
 const completions = (fake: Awaited<ReturnType<typeof startFake>>) =>
   fake.requests.filter((request) => request.path === '/v1/chat/completions');
 
-const body = { model: 'fast', input: userInput('hi') };
+const body = { model: 'scripted/system', input: userInput('hi') };
 
 describe('chat-completions classification of upstream auth failures', () => {
   it.each([401, 403])('maps %i to a non-retryable authentication_failed', async (status) => {
@@ -29,22 +29,22 @@ describe('chat-completions classification of upstream auth failures', () => {
 
 describe('authentication_failed skip outcome', () => {
   const twoTargets = {
-    aliases: { fast: ['a', 'b'] },
-    targets: { a: { kind: 'chat-completions', model: 'system' }, b: { kind: 'chat-completions', model: 'system' } },
+    chains: { 'scripted/system': ['scripted/system', 'b/system'] },
+    targets: { 'scripted/system': { kind: 'chat-completions' }, 'b/system': { kind: 'chat-completions' } },
   };
 
   it('falls back to the next target without retrying the first', async () => {
     const fakeA = await startFake({ scenario: 'tools-ok', script: [rejection(401)] });
     const fakeB = await startFake({ scenario: 'tools-ok' });
     const { client } = await startGateway({
-      adapters: { a: makeAdapter(fakeA), b: makeAdapter(fakeB) },
+      adapters: { 'scripted/system': makeAdapter(fakeA), 'b/system': makeAdapter(fakeB) },
       config: { ...twoTargets, retry: { maxAttempts: 3 } },
     });
     const response = await readJson(await postJson(client, '/v1/responses', body));
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe(FAKE_DETERMINISTIC_REPLY);
-    expect(response.body.momonga.target).toBe('b');
-    expect(response.body.momonga.fallbackFrom).toEqual(['a']);
+    expect(response.body.momonga.target).toBe('b/system');
+    expect(response.body.momonga.fallbackFrom).toEqual(['scripted/system']);
     expect(completions(fakeA)).toHaveLength(1);
     expect(completions(fakeB)).toHaveLength(1);
   });
@@ -53,7 +53,7 @@ describe('authentication_failed skip outcome', () => {
     const fakeA = await startFake({ scenario: 'tools-ok', script: [rejection(401), rejection(403), rejection(401)] });
     const fakeB = await startFake({ scenario: 'tools-ok' });
     const { client } = await startGateway({
-      adapters: { a: makeAdapter(fakeA), b: makeAdapter(fakeB) },
+      adapters: { 'scripted/system': makeAdapter(fakeA), 'b/system': makeAdapter(fakeB) },
       config: { ...twoTargets, breaker: { failureThreshold: 1 } },
     });
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -62,14 +62,14 @@ describe('authentication_failed skip outcome', () => {
     expect(completions(fakeA)).toHaveLength(3);
     expect(completions(fakeB)).toHaveLength(3);
     const health = await readJson(await client.request({ method: 'GET', path: '/v1/momonga/health' }));
-    expect(health.body.targets.a.breaker).toBe('closed');
+    expect(health.body.models['scripted/system'].breaker).toBe('closed');
   });
 
   it('surfaces 401 authentication_failed when no target is left, with one upstream call', async () => {
     const fakeA = await startFake({ scenario: 'tools-ok', script: [rejection(401)] });
     const { client } = await startGateway({
-      adapters: { a: makeAdapter(fakeA) },
-      config: { aliases: { fast: ['a'] }, targets: { a: { kind: 'chat-completions', model: 'system' } }, retry: { maxAttempts: 3 } },
+      adapters: { 'scripted/system': makeAdapter(fakeA) },
+      config: { chains: { 'scripted/system': ['scripted/system'] }, targets: { 'scripted/system': { kind: 'chat-completions' } }, retry: { maxAttempts: 3 } },
     });
     const response = await readJson(await postJson(client, '/v1/responses', body));
     expect(response.status).toBe(401);

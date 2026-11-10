@@ -52,7 +52,7 @@ export type Session = {
   cwd: string;
   env: Record<string, string>;
   permissionMode: Stored<PermissionMode>;
-  modelAlias: string;
+  model: string;
   bypassAllowed: boolean;
   additionalDirectories: readonly string[];
   mcpServers: SessionMcpServers;
@@ -63,7 +63,7 @@ export type CreateSessionInput = {
   cwd: string;
   env: Record<string, string>;
   permissionMode: PermissionMode;
-  modelAlias: string;
+  model: string;
   bypassAllowed?: boolean;
   additionalDirectories?: readonly string[];
   mcpServers?: SessionMcpServers;
@@ -173,7 +173,7 @@ export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFo
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
 export type SetPermissionModeResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 
-export type SetModelAliasResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
+export type SetModelResult = { kind: 'ok'; session: Session; changed: boolean } | NotFound;
 export type SetSessionMcpServersResult = { kind: 'ok'; session: Session } | NotFound;
 export type ResolveApprovalResult =
   | { kind: 'ok'; approval: Approval; run: Run }
@@ -619,7 +619,7 @@ export type RuntimeStore = {
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): Promise<RunMutationResult>;
   requestCancel(runId: string): Promise<RequestCancelResult>;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
-  setModelAlias(sessionId: string, modelAlias: string): SetModelAliasResult;
+  setModel(sessionId: string, model: string): SetModelResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
   listRuns(sessionId: string, statuses?: readonly RunStatus[]): Run[];
   appendAsService(
@@ -845,7 +845,7 @@ export type ChildRunInput = {
   parentCallId: string;
   input: string;
   pins: Record<string, unknown>;
-  modelAlias: string;
+  model: string;
 };
 
 export type CreateChildRunResult =

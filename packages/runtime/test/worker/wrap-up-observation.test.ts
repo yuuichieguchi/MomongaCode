@@ -43,7 +43,7 @@ describe('usage observation by the token meter', () => {
     const step = textStep('Done.', { usage: usageOf(321, 5) });
     const events = step.events.map((event) =>
       event.type === 'response.completed'
-        ? { ...event, response: { ...event.response, momonga: { alias: 'default', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported' as const, contextInputTokens: 55 } } }
+        ? { ...event, response: { ...event.response, momonga: { model: 'default', target: 'primary', counter: fakeCounterOf('primary'), attempts: 1, usageSource: 'reported' as const, contextInputTokens: 55 } } }
         : event,
     );
     env.gateway.script.push({ ...step, events });

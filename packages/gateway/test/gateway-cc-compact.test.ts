@@ -11,6 +11,7 @@ import {
   RESTATE_CLAUSE,
   callReply,
   ccAdapterFor,
+  ccModelOf,
   emptyReply,
   instructionsFor,
   lengthReply,
@@ -29,10 +30,10 @@ const conversation = [
 ];
 
 const compact = async (harness: Harness, body: Record<string, unknown>, headers: Record<string, string> = {}) =>
-  readJson(await postJson(harness.client, '/v1/responses/compact', { model: 'fast', input: conversation, ...body }, headers));
+  readJson(await postJson(harness.client, '/v1/responses/compact', { model: harness.model, input: conversation, ...body }, headers));
 
 const breakerOf = async (harness: Harness, target: string): Promise<string> =>
-  (await getJson(harness.client, '/v1/momonga/health')).body.targets[target].breaker as string;
+  (await getJson(harness.client, '/v1/momonga/health')).body.models[ccModelOf(target)].breaker as string;
 
 describe('POST /v1/responses/compact for a chat-completions target', () => {
   it('summarises through the upstream and returns a signed compaction item', async () => {
@@ -54,7 +55,7 @@ describe('POST /v1/responses/compact for a chat-completions target', () => {
     const item = response.body.output.find((entry: { type: string }) => entry.type === 'compaction');
     await readSse(
       await postJson(harness.client, '/v1/responses', {
-        model: 'fast',
+        model: 'fm/system',
         stream: true,
         input: [{ type: 'compaction', encrypted_content: item.encrypted_content }, ...userInput('continue')],
       }),

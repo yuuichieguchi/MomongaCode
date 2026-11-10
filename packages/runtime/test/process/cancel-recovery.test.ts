@@ -72,7 +72,7 @@ const openSeedStore = async (temp: RunHome) => {
 const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: string) => {
   const store = await openSeedStore(temp);
   try {
-    const session = store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'bypassPermissions', modelAlias: 'default', bypassAllowed: true });
+    const session = store.createSession({ cwd: temp.project, env: { ...sessionEnvFor(temp.home) }, permissionMode: 'bypassPermissions', model: 'default', bypassAllowed: true });
     const created = store.createRunAndEnqueue(session.id, { input: 'Work', timeoutMs: 6 * 3_600_000, limits: {}, pins: {} }) as { run?: { id: string } };
     const runId = created.run?.id;
     if (runId === undefined) throw new Error('the seed run was not created');

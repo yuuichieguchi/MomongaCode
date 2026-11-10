@@ -26,7 +26,8 @@ const thrown = (action: () => unknown): Error & Record<string, unknown> => {
 
 const clauses = (text: string): number => text.match(/\bmust\b/g)?.length ?? 0;
 
-const OLLAMA_TARGET = { adapter: 'ollama', model: 'devstral-small-2', baseUrl: 'http://127.0.0.1:50175/', capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } };
+const OLLAMA_ENTRY = { id: 'devstral-small-2', capabilities: { contextWindow: 12288, maxOutputTokens: 2048 } };
+const OLLAMA_CONNECTION = { adapter: 'ollama', baseUrl: 'http://127.0.0.1:50175/', models: [OLLAMA_ENTRY] };
 const UNKNOWN_EVENT = { id: 8, sessionId: 'sess-1', createdAt: 1800000000000, type: 'martian', mode: 'plan' };
 
 describe('settings and MCP config errors keep a specific message', () => {
@@ -36,19 +37,30 @@ describe('settings and MCP config errors keep a specific message', () => {
     );
   });
 
-  it('names the tag of a target whose adapter is unknown, not the count of variants', () => {
-    const message = thrown(() => assertSettings({ models: { targets: { local: { ...OLLAMA_TARGET, adapter: 'nope' } } } }, 'settings.json')).message;
-    expect(message).toMatch(/^settings\.json: invalid settings at \/models\/targets\/local/);
+  it('names the tag of a connection whose adapter is unknown, not the count of variants', () => {
+    const message = thrown(() => assertSettings({ models: { connections: [{ ...OLLAMA_CONNECTION, adapter: 'nope' }] } }, 'settings.json')).message;
+    expect(message).toMatch(/^settings\.json: invalid settings at \/models\/connections\/0/);
     expect(message).toContain('adapter');
     expect(message).not.toMatch(FLATTENED_VARIANTS);
   });
 
-  it('names the property a tagged target is missing', () => {
-    const { capabilities: _capabilities, ...withoutCapabilities } = OLLAMA_TARGET;
-    const message = thrown(() => assertSettings({ models: { targets: { local: withoutCapabilities } } }, 'settings.json')).message;
-    expect(message).toMatch(/^settings\.json: invalid settings at \/models\/targets\/local/);
+  it('names the property a model entry of a tagged connection is missing', () => {
+    const { capabilities: _capabilities, ...withoutCapabilities } = OLLAMA_ENTRY;
+    const message = thrown(() => assertSettings({ models: { connections: [{ ...OLLAMA_CONNECTION, models: [withoutCapabilities] }] } }, 'settings.json')).message;
+    expect(message).toMatch(/^settings\.json: invalid settings at \/models\/connections\/0\/models\/0/);
     expect(message).toContain("must have required property 'capabilities'");
     expect(message).not.toMatch(FLATTENED_VARIANTS);
+  });
+
+  it('refuses the keys of an earlier build with the sentence that says what replaces each, before the schema', () => {
+    const old = (models: unknown): string => thrown(() => assertSettings({ models }, 'settings.json')).message;
+    expect(old({ targets: { local: { ...OLLAMA_ENTRY, adapter: 'ollama' } } })).toBe('settings.json: models.targets is not a setting any more; declare each server under models.connections with its models (see README, Models).');
+    expect(old({ connections: [OLLAMA_CONNECTION], aliases: { default: ['local'] } })).toBe(
+      'settings.json: models.aliases is not a setting any more; list the models to try after the model in models.fallback and choose the first with models.start (see README, Models).',
+    );
+    expect(old({ connections: [OLLAMA_CONNECTION], billingChanges: [{ from: 'local', to: 'metered', alias: 'default' }] })).toBe(
+      'settings.json: models.billingChanges[0].alias is not a setting any more; write "model" with the model it applies to (see README, Models).',
+    );
   });
 
   it('names the property an MCP server is missing and the field of an MCP file that has the wrong type', () => {
@@ -135,7 +147,7 @@ describe('eval files keep a specific message', () => {
   });
 
   it('names the property an outcome file is missing', () => {
-    expect(thrown(() => parseOutcomeFile(JSON.stringify({ digest: 'x' }))).message).toBe("the outcome file is not a momonga-guideline-outcome/2 file: /: must have required property 'alias'");
+    expect(thrown(() => parseOutcomeFile(JSON.stringify({ digest: 'x' }))).message).toBe("the outcome file is not a momonga-guideline-outcome/3 file: /: must have required property 'analysisModel'");
   });
 
   it('names what is wrong with a model reply to a guideline prompt', () => {

@@ -26,7 +26,7 @@ const encodedWith = (kind: ReportKind, harness: unknown): string => {
   return JSON.stringify({ ...encoded, kind, harness });
 };
 
-describe('decision 47: the harness field of momonga-reliability/2', () => {
+describe('decision 47: the harness field of momonga-reliability/3', () => {
   it('a benchmark report carries the suite, the answerers, the unrecorded count and the code digest, and the decoder keeps them', () => {
     const report = build('benchmark', HARNESS);
     expect((report as unknown as { harness: unknown }).harness).toEqual(HARNESS);
