@@ -3880,10 +3880,10 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 5448214,
-      "measuredSeconds": 66.71,
-      "measuredCpuSeconds": 253.23,
-      "budgetCpuSeconds": 510,
-      "note": "測定は負荷が 15 以上のときの実行です（開始時の一分平均 34.94）。CPU 秒と秒数は前の値のままです。静かな時間帯に再測定します（CPU to be measured in the quiet window）。"
+      "measuredSeconds": 783.13,
+      "measuredCpuSeconds": 2746.5,
+      "budgetCpuSeconds": 5496,
+      "note": "2026-11-11 に測定（-fp 0 -workers 5、一度に一つ、/usr/bin/time -l の user + sys、開始時の一分平均 5.09）。"
     },
     {
       "config": "StopProtocol.noReap",
@@ -3954,11 +3954,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 109757763,
-      "measuredSeconds": 42.03,
-      "measuredCpuSeconds": 222.28,
-      "budgetCpuSeconds": 448,
-      "note": "開始時の一分平均は 9.52 で 15 未満でしたが、他の java の TLC が動いていないかは確かめていません。そのため、この行の CPU 秒と秒数は前の値のままです。CPU to be measured in the quiet window。exit 12、NoOutlast に違反（状態数は違反で止まるまでの数で、ワーカー数に依ります）。"
+      "distinctStates": 113927830,
+      "measuredSeconds": 702.21,
+      "measuredCpuSeconds": 3718.32,
+      "budgetCpuSeconds": 7440,
+      "note": "2026-11-11 に測定（-fp 0 -workers 5、一度に一つ、/usr/bin/time -l の user + sys、開始時の一分平均 2.37）。exit 12、NoOutlast に違反（状態数は違反で止まるまでの数で、ワーカー数に依ります）。"
     },
     {
       "config": "StopProtocol.noDeadline",

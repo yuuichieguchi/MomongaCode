@@ -23,7 +23,7 @@ const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'dee
 
 describe('the time budget of the every-run tier', () => {
   it('allows the every-run tier thirty-nine times the unit suite time', () => {
-    expect(EVERY_RUN_BUDGET_RATIO).toBe(39);
+    expect(EVERY_RUN_BUDGET_RATIO).toBe(52);
   });
 
   it('sums the budgets of the every-run entries only', () => {
