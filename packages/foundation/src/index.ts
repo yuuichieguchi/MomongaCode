@@ -160,6 +160,7 @@ export {
   SECRET_BACKEND_ENV,
   SECRET_PROGRAM_ENV,
   SECRET_REFUSAL_ENV,
+  SECRET_STORE_SEARCHED_PROGRAMS,
   createSecretServiceStore,
   createCredentialManagerStore,
   credentialReadScript,

@@ -1,21 +1,28 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MINIMAL_CHILD_PATH } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_STORE_SEARCHED_PROGRAMS } from '@momonga/foundation';
 
 export const TEST_SECRET_PROGRAMS_ENV = 'MOMONGA_TEST_SECRET_PROGRAMS';
 
-const FAKE_SECURITY_MAIN = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-security-main.ts');
+const FAKE_PROGRAM_MAIN = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fake-secret-program-main.ts');
 
 const shellQuoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
 
-export const installFakeSecretPrograms = (root: string): string => {
+const launcherOf = (platform: NodeJS.Platform, items: string, program: string): { name: string; text: string } =>
+  platform === 'win32'
+    ? { name: `${program}.cmd`, text: `@"${process.execPath}" "${FAKE_PROGRAM_MAIN}" "${items}" ${program} %*\r\n` }
+    : { name: program, text: `#!/bin/sh\nexec ${shellQuoted(process.execPath)} ${shellQuoted(FAKE_PROGRAM_MAIN)} ${shellQuoted(items)} ${program} "$@"\n` };
+
+export const installFakeSecretPrograms = (root: string, platform: NodeJS.Platform = process.platform): string => {
   const bin = path.join(root, 'bin');
   const items = path.join(root, 'items');
   fs.mkdirSync(bin, { recursive: true, mode: 0o700 });
   fs.mkdirSync(items, { recursive: true, mode: 0o700 });
-  const script = `#!/bin/sh\nexec ${shellQuoted(process.execPath)} ${shellQuoted(FAKE_SECURITY_MAIN)} ${shellQuoted(items)} "$@"\n`;
-  fs.writeFileSync(path.join(bin, 'security'), script, { mode: 0o755 });
+  for (const program of SECRET_STORE_SEARCHED_PROGRAMS) {
+    const launcher = launcherOf(platform, items, program);
+    fs.writeFileSync(path.join(bin, launcher.name), launcher.text, { mode: 0o755 });
+  }
   return bin;
 };
 
