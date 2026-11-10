@@ -110,6 +110,8 @@ export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeH
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
 export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, SyncClaimUnsupportedError, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf, sidecarSuffixOf } from './platform/lock-form.ts';
 export type { EntryKind, LockForm } from './platform/lock-form.ts';
+export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordOwner } from './handover-leftovers.ts';
+export type { ProcessProbe } from './handover-leftovers.ts';
 export { nodeLeftoverFiles, sweepLeftovers } from './leftover-sweep.ts';
 export type { LeftoverDirectory, LeftoverFiles, LeftoverSweep, SweepLeftoversOptions } from './leftover-sweep.ts';
 export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';

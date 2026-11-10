@@ -11,12 +11,13 @@ export type HandoverHost = { args: readonly string[]; started: HandoverStart | u
 
 export type RecordFiles = { read(file: string): string; write(file: string, text: string): void; remove(file: string): void };
 
-export type HandoverInvocation = { version: string; self: SelfExecutable; argv: readonly string[]; env: Record<string, string | undefined>; execArgv: readonly string[]; files: RecordFiles };
+export type HandoverInvocation = { version: string; pid: number; self: SelfExecutable; argv: readonly string[]; env: Record<string, string | undefined>; execArgv: readonly string[]; files: RecordFiles };
 
-export const createHandoverHost = ({ version, self, argv, env, execArgv, files }: HandoverInvocation): HandoverHost => {
+export const createHandoverHost = ({ version, pid, self, argv, env, execArgv, files }: HandoverInvocation): HandoverHost => {
   const { args, started } = takeHandoverStart(argv, env, files.read);
   const mover = createMover({
     version,
+    pid,
     write: files.write,
     remove: files.remove,
     target: (recordFile, terminal) => handoverTarget({ self, execArgv, args, env }, recordFile, terminal),

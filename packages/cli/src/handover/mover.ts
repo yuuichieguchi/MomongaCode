@@ -18,6 +18,7 @@ export type MoveSurface = {
 
 export type MoverPorts = {
   version: string;
+  pid: number;
   write(file: string, text: string): void;
   remove(file: string): void;
   target(recordFile: string, terminal: HandoverTerminal | undefined): ReplaceTarget;
@@ -55,7 +56,7 @@ export const createMover = (ports: MoverPorts): Mover => {
   const replaceWith = async (on: MoveSurface, file: string, version: string): Promise<void> => {
     let written = false;
     try {
-      const encoded = encodeRecord(on.snapshot(version));
+      const encoded = encodeRecord(on.snapshot(version), ports.pid);
       if (encoded.kind !== 'fits') {
         on.resume();
         tooLarge(on, version);
@@ -72,7 +73,7 @@ export const createMover = (ports: MoverPorts): Mover => {
   };
 
   const attempt = async (on: MoveSurface, file: string, version: string): Promise<void> => {
-    if (encodeRecord(on.snapshot(version)).kind !== 'fits') {
+    if (encodeRecord(on.snapshot(version), ports.pid).kind !== 'fits') {
       tooLarge(on, version);
       return;
     }

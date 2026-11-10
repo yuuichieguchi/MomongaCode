@@ -13,7 +13,7 @@ const TERMINAL = { screen: 'fullscreen', modes: ['alt-screen', 'mouse', 'bracket
 const VALUE = handoverTerminalValue({ screen: TERMINAL.screen, modes: [...TERMINAL.modes] });
 
 const textOf = (record: StreamRecord): string => {
-  const encoded = encodeRecord(record);
+  const encoded = encodeRecord(record, 4242);
   if (encoded.kind !== 'fits') throw new Error('the record did not fit');
   return encoded.text;
 };

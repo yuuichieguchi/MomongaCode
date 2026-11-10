@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -7,8 +7,24 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
-import { LIFELINE_FD, createBrowserOpener, createExecWithStdin, createHostExec, createPlatformSecretStore, minimalChildEnv, nodeFileSystem, systemClock, systemRandom, writeFileAtomically } from '@momonga/foundation';
-import type { LaunchProgram } from '@momonga/foundation';
+import {
+  EntryLockHeldError,
+  LIFELINE_FD,
+  claimNewEntrySync,
+  createBrowserOpener,
+  createExecWithStdin,
+  createHostExec,
+  createPlatformSecretStore,
+  hostKernelLock,
+  minimalChildEnv,
+  nodeFileSystem,
+  nodeFileSystemSync,
+  systemClock,
+  systemRandom,
+  writeFileAtomically,
+  writeFileAtomicallySync,
+} from '@momonga/foundation';
+import type { HeldKernelLock, LaunchProgram } from '@momonga/foundation';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
@@ -108,6 +124,30 @@ export const nodeSelf = (argv: readonly string[], singleBinary: () => boolean): 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
+const heldRecords = new Map<string, HeldKernelLock>();
+
+const claimRecord = (file: string): HeldKernelLock | undefined => {
+  const mine = heldRecords.get(file);
+  if (mine !== undefined) return mine;
+  try {
+    return claimNewEntrySync(hostKernelLock(), file, 'sidecar');
+  } catch (error) {
+    if (error instanceof EntryLockHeldError) return undefined;
+    throw error;
+  }
+};
+
+const dropRecord = (file: string, held: HeldKernelLock | undefined): void => {
+  heldRecords.delete(file);
+  try {
+    rmSync(file, { force: true });
+  } catch (error) {
+    held?.release();
+    throw error;
+  }
+  held?.dispose();
+};
+
 export const nodeRecordFiles: RecordFiles = {
   read: (file) => {
     if (statSync(file).size > HANDOVER_RECORD_MAX_BYTES) throw new Error('it is larger than 1 MiB');
@@ -115,17 +155,19 @@ export const nodeRecordFiles: RecordFiles = {
   },
   write: (file, text) => {
     mkdirSync(path.dirname(file), { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
-    const temporary = `${file}.${process.pid}.tmp`;
+    const held = claimRecord(file);
+    if (held === undefined) throw new EntryLockHeldError(file);
+    heldRecords.set(file, held);
     try {
-      writeFileSync(temporary, text, { mode: PRIVATE_FILE_MODE });
-      renameSync(temporary, file);
+      writeFileAtomicallySync(nodeFileSystemSync, systemRandom, file, text, { mode: PRIVATE_FILE_MODE });
     } catch (error) {
-      rmSync(temporary, { force: true });
+      heldRecords.delete(file);
+      held.dispose();
       throw error;
     }
   },
   remove: (file) => {
-    rmSync(file, { force: true });
+    dropRecord(file, claimRecord(file));
   },
 };
 
@@ -142,7 +184,7 @@ export const nodePorts = (version: string): CliPorts => {
     clock: nodeClock,
     random: Math.random,
     self,
-    handover: createHandoverHost({ version, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles }),
+    handover: createHandoverHost({ version, pid: process.pid, self, argv: process.argv.slice(2), env: process.env, execArgv: process.execArgv, files: nodeRecordFiles }),
     spawnDetached: nodeSpawnDetached,
     terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
     files: nodeFiles,

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { isRecord, parseOutsideJson } from '@momonga/foundation';
+import { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { ImageAttachment } from '@momonga/protocol';
 import { OUTPUT_FORMATS } from '../run/output-format.ts';
@@ -10,10 +10,9 @@ import { isNegotiationState, NEWLINE_HINT } from '../tui/terminal/negotiation.ts
 import type { NegotiationState, NewlineHint } from '../tui/terminal/negotiation.ts';
 
 export const HANDOVER_FORMAT = 'handover/1';
-export const HANDOVER_RECORD_MAX_BYTES = 1024 * 1024;
-export const HANDOVER_DIRECTORY = 'handover';
+export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES };
 
-const RECORD_SUFFIX = '.json';
+const RECORD_SUFFIX = HANDOVER_RECORD_SUFFIX;
 const TOO_LARGE_REASON = 'the record is larger than 1 MiB';
 
 export const HANDOVER_KINDS = ['tui', 'acp', 'attach', 'headless'] as const;
@@ -61,13 +60,13 @@ export type EncodedRecord = { kind: 'fits'; text: string } | { kind: 'too-large'
 
 export type ParsedRecord = { kind: 'record'; record: HandoverRecord } | { kind: 'refused'; reason: string };
 
-export const encodeRecord = (record: HandoverRecord): EncodedRecord => {
-  const text = JSON.stringify(record);
+export const encodeRecord = (record: HandoverRecord, writerPid: number): EncodedRecord => {
+  const text = JSON.stringify({ ...record, [HANDOVER_RECORD_OWNER_FIELD]: writerPid });
   const bytes = Buffer.byteLength(text, 'utf8');
   return bytes > HANDOVER_RECORD_MAX_BYTES ? { kind: 'too-large', bytes } : { kind: 'fits', text };
 };
 
-export const recordFileOf = (paths: Pick<MomongaPaths, 'run'>, session: string): string => path.join(paths.run, HANDOVER_DIRECTORY, `${session}${RECORD_SUFFIX}`);
+export const recordFileOf = (paths: Pick<MomongaPaths, 'run'>, session: string): string => path.join(handoverDirectoryOf(paths), `${session}${RECORD_SUFFIX}`);
 
 export const sessionOfRecordFile = (file: string): string => path.basename(file, RECORD_SUFFIX);
 
