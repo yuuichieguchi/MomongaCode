@@ -111,7 +111,7 @@ describe('gateway probe of a target whose key is a secret the store cannot give'
   const COMMAND_LIMIT_MS = 300_000;
 
   const homeWithSecretTarget = (): string => {
-    const home = freshDir('mm-home-');
+    const home = freshShortDir();
     const root = path.join(home, '.momonga');
     fs.mkdirSync(root, { mode: 0o700 });
     fs.writeFileSync(
