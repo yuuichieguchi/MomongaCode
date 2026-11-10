@@ -9,6 +9,7 @@ import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
 import { fakeBackend } from './fake-backend.ts';
+import { createFoundServers } from '../src/tui/models/context.ts';
 
 const spies = vi.hoisted(() => ({
   check: vi.fn(async () => ({ measurement: 'did_not_pass' as const })),
@@ -62,7 +63,11 @@ const slashContext = (overrides: Partial<SlashContext> & Record<string, unknown>
   };
   const context = {
     mode: 'manual',
-    modelAlias: 'session-model',
+    model: 'session-model',
+    found: createFoundServers(),
+    wait: <T>(_phase: string, work: (signal: AbortSignal) => Promise<T>) => work(new AbortController().signal),
+    toast: () => undefined,
+    refreshConnection: async () => undefined,
     bypassAllowed: false,
     autoAvailable: true,
     commands: DEFAULT_SLASH_COMMANDS,
@@ -132,7 +137,7 @@ describe('/auto-mode in the TUI', () => {
     await Promise.all(pending);
   });
 
-  it("defaults the agent in the TUI to the session's model alias", async () => {
+  it("defaults the agent in the TUI to the session's model", async () => {
     const { context, checks, release, pending } = slashContext();
     await runSlash('/auto-mode check', context);
     expect(checks[0]?.['agent']).toBe('session-model');

@@ -1,5 +1,5 @@
 import type { PlanFlows } from '../plan-flows.ts';
-import { switchModel } from '../slash.ts';
+import { MODEL_USAGE, switchModel } from '../slash.ts';
 import type { SlashCommand } from '../slash.ts';
 
 export const planSlashCommands = (flows: PlanFlows): readonly SlashCommand[] => [
@@ -20,12 +20,12 @@ export const planSlashCommands = (flows: PlanFlows): readonly SlashCommand[] => 
 
 export const modelPickerCommand = (flows: PlanFlows): SlashCommand => ({
   name: 'model',
-  usage: '[alias]',
-  description: 'choose the model from a list, or switch to an alias from the next task',
+  usage: MODEL_USAGE,
+  description: 'choose the model from a list, or switch to another from the next task',
   needsSession: false,
   run: async (args, context) => {
     if (args === '') {
-      await flows.modelPicker(context.modelAlias);
+      await flows.modelPicker(context.model);
       return;
     }
     await switchModel(args, await context.backend.models(), context);

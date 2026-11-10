@@ -6,6 +6,7 @@ import { account, startPlan } from '../fake-plan-gateway.tsx';
 import { KEYS, untilFrame } from '../ink-helpers.ts';
 import { frame, runStarted, start, type } from '../tui-harness.tsx';
 import { manualClock } from './screen-clock.ts';
+import { SESSION } from '../fake-backend.ts';
 
 const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n');
 
@@ -72,7 +73,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
 
   it('is a row while the model is measured, not an entry, and becomes one warning with the cause and the remedy', async () => {
     const clock = manualClock(1000);
-    const toolCalling: Record<string, ToolCallingState> = { default: probing };
+    const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app, backend } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
     const measuring = linesOf(await untilFrame(app, 'measuring this model'));
     expect(measuring[9]).toBe('⠋ measuring this model (once per model and OS build) 0s');
@@ -80,7 +81,7 @@ describe('the measuring row ends with its cause (6.2)', () => {
     clock.advance(5000);
     await settle();
     expect(app.lastFrame()).toContain('measuring this model (once per model and OS build) 5s');
-    toolCalling['default'] = unavailable;
+    toolCalling[SESSION.model] = unavailable;
     clock.advance(5000);
     const ended = await untilFrame(app, 'measuring this model failed: no answer');
     expect(ended).toContain('Choose a model with /model');
@@ -92,10 +93,10 @@ describe('the measuring row ends with its cause (6.2)', () => {
 
   it('disappears without a word when the model is ready', async () => {
     const clock = manualClock(1000);
-    const toolCalling: Record<string, ToolCallingState> = { default: probing };
+    const toolCalling: Record<string, ToolCallingState> = { [SESSION.model]: probing };
     const { app } = await start({ toolCalling }, { now: clock.now, timers: clock.timers }, { columns: 100, rows: 14 });
     await untilFrame(app, 'measuring this model');
-    toolCalling['default'] = 'native';
+    toolCalling[SESSION.model] = 'native';
     clock.advance(5000);
     const ready = await untilFrame(app, (shown) => !shown.includes('measuring') && shown.includes('context: 0%'));
     expect(linesOf(ready).slice(0, 9).join('').trim()).toBe('');
@@ -142,7 +143,7 @@ describe('a state that ends is not an entry (6.5)', () => {
 
 describe('the start screen without a model (6.4)', () => {
   it('says that no model is connected on its model line and keeps the footer wording', async () => {
-    const { app } = await startPlan({ aliases: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] }, { startup: { version: '1.2.3', home: '/home/none', color: false } }, { columns: 100, rows: 16 });
+    const { app } = await startPlan({ models: [], accounts: [account({ state: 'needs_sign_in', active: false, pinnedBy: [] })] }, { startup: { version: '1.2.3', home: '/home/none', color: false } }, { columns: 100, rows: 16 });
     const screen = await untilFrame(app, 'model: not connected  (use /login)');
     expect(screen).toContain('MomongaCode v1.2.3');
     expect(screen).toContain('no model connected · /login');

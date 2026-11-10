@@ -45,18 +45,7 @@ const PERMANENT_FOR_COMMAND_AND_PATH_ALIASES: readonly string[] = [
   'packages/cli/src/tui/slash.ts',
 ];
 
-const ALLOWED_UNTIL: readonly Listed[] = [
-  { file: 'packages/cli/src/tui/app.tsx', tokens: ['modelAlias', 'AliasCapabilities', 'aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/commands/auth.ts', tokens: ['modelAlias', 'an alias'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/commands/auto-mode.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/commands/clear.ts', tokens: ['aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/commands/mcp.ts', tokens: ['modelAlias'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/commands/shell-commands.ts', tokens: ['model alias', '--alias', 'aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/plan-flows.ts', tokens: ['models.aliases', 'models.targets', 'an alias', 'aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/screen/menu.tsx', tokens: ['aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/settings-screen.tsx', tokens: ['models.aliases', 'models.targets', 'aliases'], removedBy: 'N3b' },
-  { file: 'packages/cli/src/tui/slash.ts', tokens: ['modelAlias', 'model alias'], removedBy: 'N3b' },
-];
+const ALLOWED_UNTIL: readonly Listed[] = [];
 
 const filesUnder = (directory: string): string[] =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {

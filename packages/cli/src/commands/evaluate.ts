@@ -1,6 +1,5 @@
 import os from 'node:os';
 import path from 'node:path';
-import { loadUserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
   GATE_NAMES,
@@ -34,6 +33,7 @@ import { pinnedModelOf, runContextLive, unownedHomesNotice, unreadableHomesNotic
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
+import { shellModelsOf } from '../plain-http.ts';
 
 export class EvaluateUsageError extends Error {
   constructor(message: string) {
@@ -116,7 +116,7 @@ const runContextLiveCommand = async (
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.mkdir(options.record);
   const { record } = options;
-  const models = loadUserModels({ home: ports.home });
+  const models = shellModelsOf(ports);
   return runContextLive(hostEffects(ports), {
     dataset,
     seed: options.seed,

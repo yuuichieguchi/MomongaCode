@@ -111,17 +111,17 @@ describe('the CLI shows a model that is not listed with capabilities by its stat
 
   it('/model prints the reason in the row', async () => {
     const shown: string[] = [];
-    const context = { modelAlias: LOCAL_MODEL, backend: { models: async () => ENTRIES }, info: (text: string) => void shown.push(text) } as unknown as SlashContext;
+    const context = { model: LOCAL_MODEL, backend: { models: async () => ENTRIES }, info: (text: string) => void shown.push(text) } as unknown as SlashContext;
     const command = BUILTIN_SLASH_COMMANDS.find((candidate) => candidate.name === 'model');
     await command?.run('', context);
     expect(shown).toEqual(
       [
         [
           'models (the current one is marked *):',
-          `    ${PLAN_MODEL}  ${M}`,
-          `  * ${LOCAL_MODEL}  32768-token window`,
-          `    ${SLOW_MODEL}  ${PROBING_MESSAGE}`,
-          'switch with /model <alias>; a change applies from the next task',
+          `    plan-model  ${M}`,
+          '  * local-model  32768-token window',
+          `    slow  ${PROBING_MESSAGE}`,
+          'switch with /model <model>; a change applies from the next task',
         ].join('\n'),
       ],
     );

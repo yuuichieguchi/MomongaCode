@@ -9,6 +9,7 @@ import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { NewerListener } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
+import { shellModelsOf } from '../plain-http.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
@@ -348,6 +349,7 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr }, adoption);
   if (adoption.kind === 'record') return resumeStream(ports, paths, adoption, options.interrupt);
   const move = streamMoveOf(ports, paths, 'headless');
+  shellModelsOf(ports);
   let session: CliSession | undefined;
   try {
     session = await openInterruptibleSession(ports, paths, options);

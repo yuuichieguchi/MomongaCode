@@ -31,13 +31,7 @@ const OPERATIONS = [
   'setDialects',
 ] as const;
 
-const PENDING: readonly Pending[] = [
-  { form: '/models billing', removedBy: 'N3b' },
-  { form: '/models fallback', removedBy: 'N3b' },
-  { form: '/models role', removedBy: 'N3b' },
-  { form: '/models start', removedBy: 'N3b' },
-  { form: '/models timeouts', removedBy: 'N3b' },
-];
+const PENDING: readonly Pending[] = [];
 
 const rows = (): readonly WriterRow[] => {
   const table = (config as Record<string, unknown>)['MODELS_SETTING_WRITERS'];

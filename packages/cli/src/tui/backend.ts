@@ -1,15 +1,15 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { findProgramOnPath, systemTiming } from '@momonga/foundation';
 import type { FileCandidates } from '@momonga/foundation';
-import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
-import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
-import { editModelsSettings, loadUserSettings, addModelConnection, editSettings, readSettingsSnapshot } from '@momonga/config';
-import type { AddModelChoice } from '../commands/models.ts';
-import type { ModelConnection, SettingsLayer, SettingsOperation, SettingsSnapshot, WrittenConnection } from '@momonga/config';
+import type { AddRuleRequest, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, MomongaModelList, PermissionMode, RuleAddResponse, SkillsResponse, UserShellRecord, McpServerView } from '@momonga/protocol';
+import { editSettings, readSettingsSnapshot } from '@momonga/config';
+import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
+import { programModelOf, serversDetector } from '../commands/models.ts';
+import type { ModelsHost } from '../commands/models.ts';
+import { storeSecretValue } from '../commands/secret.ts';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.ts';
 import { withIdentityReadFetch } from '../network.ts';
-import { localManagedPorts } from '../local-managed-ports.ts';
 import { loopbackSignInListener } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInListener, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
@@ -99,8 +99,9 @@ export type TuiBackend = {
   sandbox(): Promise<SandboxKind>;
   startSignInListener: StartSignInListener;
   signInTimers: SignInWaitTimers;
-  detectLocalServers(typed: readonly string[]): Promise<readonly LocalServerDetection[]>;
-  addModelConnection(choice: AddModelChoice): Promise<{ model: string | undefined }>;
+  modelList(): Promise<MomongaModelList>;
+  modelsHost(signal: AbortSignal, onWarning: (message: string) => void): ModelsHost;
+  storeSecret(name: string, value: string, signal: AbortSignal): Promise<void>;
   dismissedNotices(): Promise<DismissedNotices>;
   dismissNotice(key: string): Promise<void>;
   settings(): Promise<SettingsSnapshot>;
@@ -187,14 +188,21 @@ export const createTuiBackend = (
     sandbox: async () => (await runtime().health()).sandbox,
     startSignInListener: loopbackSignInListener(closing.signal),
     signInTimers: systemTiming,
-    detectLocalServers: async (typed) => {
-      const { detectLocalServers } = await import('@momonga/gateway');
-      const { settings } = await loadUserSettings({ home: paths.home });
-      return withIdentityReadFetch(ports, closing.signal, (fetch) =>
-        detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers, ports) }),
-      );
+    modelList: () => withGateway((gateway) => gateway.modelList(closing.signal)),
+    modelsHost: (signal, onWarning) => {
+      const interrupt = AbortSignal.any([closing.signal, signal]);
+      return {
+        home: paths.home,
+        settingsFile: paths.settingsFile,
+        platform: ports.platform,
+        interrupt,
+        files: ports.files,
+        listing: () => withGateway((gateway) => gateway.modelList(interrupt)),
+        detect: (request) => withIdentityReadFetch(ports, request.signal, (fetch) => serversDetector(ports, fetch)(request)),
+        programModel: (program, measuring) => programModelOf(ports, paths, program, measuring, onWarning),
+      };
     },
-    addModelConnection: async (choice) => ({ model: (await editModelsSettings(paths.home, paths.settingsFile, [{ kind: 'addModel', choice }], { signal: closing.signal })).model }),
+    storeSecret: (name, value, signal) => storeSecretValue(ports, name, value, AbortSignal.any([closing.signal, signal])),
     dismissedNotices: () => readDismissedNotices(ports.files, paths.state, onNotice),
     dismissNotice: (key) => dismissNotice(ports.files, paths.state, key, new Date(ports.clock.now()), closing.signal),
     settings: async () => readSettingsSnapshot({ home: paths.home, projectDir: ports.cwd, trusted: (await runtime().trust(ports.cwd)).decision === 'trusted' }),

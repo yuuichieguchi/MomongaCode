@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Text, useApp, useStdout } from 'ink';
-import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, isNotListedCapabilities } from '@momonga/protocol';
-import type { AliasCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, NO_MODEL_CONNECTED_TEXT, agentReadiness, autoModeNotice, displayMapOf, isNotListedCapabilities } from '@momonga/protocol';
+import type { ChainCapabilities, ImageAttachment, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import { listingViewsOf } from '../client/gateway-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
@@ -17,6 +18,8 @@ import { autoNoticeDue } from './notices.ts';
 import type { AutoNoticePair } from './notices.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
 import { modelPickerCommand, planSlashCommands } from './commands/auth.ts';
+import { createFoundServers } from './models/context.ts';
+import { notConfiguredAnyMoreText } from './models/texts.ts';
 import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
 import type { StartupBanner, StartupConfig } from './startup.tsx';
@@ -56,7 +59,7 @@ import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
 import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
-import { createSlashRegistry, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
+import { createSlashRegistry, namesOf, parseSlash, NEEDS_SESSION_NOTE } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
 import type { ScreenMode } from './terminal/modes.ts';
@@ -147,7 +150,7 @@ const PROMPT_CONTEXTS: readonly KeyContext[] = ['select', 'viewer', 'chat'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
-const NO_MODEL_NOTE = 'No model is connected. Use /login to connect one.';
+const NO_MODEL_NOTE = NO_MODEL_CONNECTED_TEXT;
 const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 
 const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
@@ -212,8 +215,12 @@ export function App(props: AppProps) {
   const [autoAvailable, setAutoAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
-  const [alias, setAlias] = useState<string | undefined>(undefined);
+  const [sessionModel, setSessionModel] = useState<string | undefined>(undefined);
   const [notices, setNotices] = useState<readonly string[]>([]);
+  const [displays, setDisplays] = useState<ReadonlyMap<string, string>>(new Map());
+  const displaysRef = useRef<ReadonlyMap<string, string>>(new Map());
+  const [found] = useState(createFoundServers);
+  const unconfiguredModel = useRef(false);
   const capabilities: ChainCapabilities | undefined = model === undefined || isNotListedCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [attachOn, setAttachOn] = useState(tuiSettings.initial.attachFileMentions);
@@ -248,8 +255,8 @@ export function App(props: AppProps) {
   const [profiles, setProfiles] = useState<readonly PlanProfileView[]>([]);
   const [servedTarget, setServedTarget] = useState<string | undefined>(undefined);
   const typedRef = useRef(false);
-  const aliasRef = useRef<string | undefined>(undefined);
-  const signInFailedRun = useRef<{ text: string; options: StartRunOptions; alias: string } | undefined>(undefined);
+  const sessionModelRef = useRef<string | undefined>(undefined);
+  const signInFailedRun = useRef<{ text: string; options: StartRunOptions; sessionModel: string } | undefined>(undefined);
   const busyRef = useRef(false);
   const facts = useRef<ScreenFacts>({ overlay: false, position: FOLLOWING, tasks, terminal, flush: waitUntilRenderFlush });
   const [handover] = useState(() => {
@@ -374,8 +381,23 @@ export function App(props: AppProps) {
     append({ kind: 'info', text });
   };
 
+  const waitFor = <T,>(phase: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    const waiting: WaitingPhase = { text: phase, startedAt: now() };
+    setCommands((running) => [...running, waiting]);
+    return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== waiting)));
+  };
+
   const reportError = (error: unknown): void => {
     append({ kind: 'notice', level: 'error', text: describeFailure(error) });
+  };
+
+  const shownModel = (stored: string): string => displaysRef.current.get(stored) ?? stored;
+
+  const readDisplays = async (): Promise<ReadonlyMap<string, string>> => {
+    const read = displayMapOf(listingViewsOf(await backend.models()));
+    displaysRef.current = read;
+    setDisplays(read);
+    return read;
   };
 
   const bannerOf = (shownModel: StartupBanner['model'], shownNotices: readonly string[]): StartupBanner | undefined =>
@@ -391,7 +413,7 @@ export function App(props: AppProps) {
   const resetTranscript = (): void => {
     store.reset();
     renewHistory();
-    if (aliasRef.current !== undefined) showBanner(aliasRef.current, notices);
+    if (sessionModelRef.current !== undefined) showBanner(shownModel(sessionModelRef.current), notices);
   };
 
   const switchScreen = async (next: ScreenMode): Promise<void> => {
@@ -435,22 +457,28 @@ export function App(props: AppProps) {
       stopMeasuring.current = followMeasurement({ read: () => backend.model(), timers }, readiness.retryAfterSeconds, (measured) => showModel(measured), (error) => modelUnread(error));
       return;
     }
-    const text = readinessNoticeOf(readiness);
+    const text = readinessNoticeOf(readiness, 'tui');
     if (text !== undefined && announce) append({ kind: 'notice', level: 'warning', text });
   };
 
   const showSession = async (session: SessionView): Promise<void> => {
     openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
     setModeState(session.permissionMode);
-    aliasRef.current = session.model;
-    setAlias(session.model);
+    sessionModelRef.current = session.model;
+    setSessionModel(session.model);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
-    showBanner(session.modelAlias, notices);
+    const configured = (await readDisplays()).has(session.model);
+    unconfiguredModel.current = !configured;
+    showBanner(shownModel(session.model), notices);
     const announce = !startsFromRecord.current;
     if (announce) showAutoNotice(session);
     enterPhase({ kind: 'ready' });
     endMeasuring();
+    if (!configured) {
+      if (announce) append({ kind: 'notice', level: 'warning', text: notConfiguredAnyMoreText(session.model) });
+      return;
+    }
     void backend.model().then(
       (entry) => showModel(entry, announce),
       (error: unknown) => modelUnread(error, announce),
@@ -471,7 +499,7 @@ export function App(props: AppProps) {
     );
     void backend.skills().then(
       ({ skills }) => {
-        const taken = new Set(baseSlash.list().flatMap((command) => [command.name, ...(command.aliases ?? [])]));
+        const taken = new Set(baseSlash.list().flatMap(namesOf));
         const loaded = skillCommands(skills, taken);
         setSkillSlash(loaded.commands);
         if (loaded.shadowed.length > 0 && announce) note(`skills shadowed by a built-in command and reachable only through the model: ${loaded.shadowed.join(', ')}`);
@@ -482,22 +510,21 @@ export function App(props: AppProps) {
     );
   };
 
-  const openSession = async (modelAlias: string | undefined): Promise<void> => enterFirstSession(await backend.openSession(modelAlias));
+  const openSession = async (chosen: string | undefined): Promise<void> => enterFirstSession(await backend.openSession(chosen));
 
   const runFlow = (work: () => Promise<void>): void => {
     work().catch(reportError);
   };
 
   const applyModel = async (chosen: string): Promise<void> => {
-    const previous = aliasRef.current;
+    const previous = sessionModelRef.current;
     const session = await backend.setModel(chosen);
-    aliasRef.current = session.model;
-    setAlias(session.model);
-    note(
-      busyRef.current
-        ? `model: ${session.model}; the running task keeps ${previous}, the next task uses ${session.model}`
-        : `model: ${session.model}; applies from the next task`,
-    );
+    sessionModelRef.current = session.model;
+    setSessionModel(session.model);
+    unconfiguredModel.current = false;
+    await readDisplays();
+    const name = shownModel(session.model);
+    note(busyRef.current ? `model: ${name}; the running task keeps ${previous === undefined ? previous : shownModel(previous)}, the next task uses ${name}` : `model: ${name}; applies from the next task`);
     endMeasuring();
     void backend.model().then(showModel, modelUnread);
   };
@@ -506,8 +533,8 @@ export function App(props: AppProps) {
     setProfiles(listed.profiles);
   };
 
-  const connectAlias = async (chosen: string): Promise<void> => {
-    if (aliasRef.current === undefined) {
+  const connectModel = async (chosen: string): Promise<void> => {
+    if (sessionModelRef.current === undefined) {
       await openSession(chosen);
       return;
     }
@@ -516,7 +543,10 @@ export function App(props: AppProps) {
 
   const refreshConnection = async (): Promise<void> => {
     rememberProfiles(await backend.plan.accounts());
-    if (aliasRef.current !== undefined) return;
+    if (sessionModelRef.current !== undefined) {
+      await readDisplays();
+      return;
+    }
     if ((await backend.models()).length > 0) await openSession(undefined);
     else enterPhase({ kind: 'unconnected' });
   };
@@ -568,14 +598,14 @@ export function App(props: AppProps) {
     const kept = signInFailedRun.current;
     if (kept === undefined) return;
     const [entries, health] = await Promise.all([backend.models(), backend.health()]);
-    const entry = entries.find((candidate) => candidate.id === kept.alias);
+    const entry = entries.find((candidate) => candidate.id === kept.sessionModel);
     if (entry === undefined || !entry.chain.some((member) => health.models[member.model]?.ok === true)) return;
     signInFailedRun.current = undefined;
     note(RESUBMIT_NOTICE);
     await runPrompt(kept.text, kept.options);
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, connected: connectAlias, refreshConnection, signedIn: resubmitAfterSignIn });
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, toast: (text) => view.showToast(text), connected: connectModel, refreshConnection, signedIn: resubmitAfterSignIn, found, model: () => sessionModelRef.current, wait: waitFor });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
@@ -615,7 +645,7 @@ export function App(props: AppProps) {
         try {
           await flows.welcome(listed.profiles);
         } finally {
-          if (aliasRef.current === undefined) enterPhase({ kind: 'unconnected' });
+          if (sessionModelRef.current === undefined) enterPhase({ kind: 'unconnected' });
         }
       });
       return;
@@ -687,7 +717,7 @@ export function App(props: AppProps) {
     });
   };
 
-  const watchRun = async (runId: string, replay: Replay | undefined, resubmit: { text: string; options: StartRunOptions; alias: string } | undefined): Promise<void> => {
+  const watchRun = async (runId: string, replay: Replay | undefined, resubmit: { text: string; options: StartRunOptions; sessionModel: string } | undefined): Promise<void> => {
     runIdRef.current = runId;
     const run = await follow(runId, replay);
     await replay?.queue.drained();
@@ -782,11 +812,11 @@ export function App(props: AppProps) {
 
   const startNewSession = async (): Promise<void> => {
     if (refusedWhileWorking()) return;
-    if (aliasRef.current === undefined) {
+    if (sessionModelRef.current === undefined) {
       clearScreen();
       return;
     }
-    const session = await backend.openSession(aliasRef.current, mode);
+    const session = await backend.openSession(sessionModelRef.current, mode);
     clearScreen();
     await showSession(session);
   };
@@ -921,7 +951,7 @@ export function App(props: AppProps) {
     await refreshInbox();
   };
 
-  type Resubmit = { text: string; options: StartRunOptions; alias: string };
+  type Resubmit = { text: string; options: StartRunOptions; sessionModel: string };
 
   const runStarted = async (prepare: () => { start: () => Promise<RunView>; resubmit: Resubmit | undefined }): Promise<void> => {
     setBusyState(true);
@@ -956,8 +986,8 @@ export function App(props: AppProps) {
         ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }),
         ...(attachOn && hasMentionToken(text) ? { attachMentions: true } : {}),
       };
-      const runAlias = aliasRef.current;
-      return { start: () => backend.startRun(text, 'inherit', runOptions), resubmit: runAlias === undefined ? undefined : { text, options: runOptions, alias: runAlias } };
+      const runModel = sessionModelRef.current;
+      return { start: () => backend.startRun(text, 'inherit', runOptions), resubmit: runModel === undefined ? undefined : { text, options: runOptions, sessionModel: runModel } };
     });
 
   const runCompaction = (instructions: string | undefined): Promise<void> =>
@@ -974,13 +1004,17 @@ export function App(props: AppProps) {
       note(`unknown command /${parsed.name}; /help lists the commands`);
       return true;
     }
-    if (alias === undefined && command.needsSession !== false) {
+    if (sessionModel === undefined && command.needsSession !== false) {
       note(NEEDS_SESSION_NOTE);
       return true;
     }
     const ran = command.run(parsed.args, {
       mode,
-      modelAlias: alias,
+      model: sessionModel,
+      found,
+      wait: waitFor,
+      toast: (text) => view.showToast(text),
+      refreshConnection,
       bypassAllowed,
       autoAvailable,
       commands: slash.list(),
@@ -996,11 +1030,7 @@ export function App(props: AppProps) {
       compact: runCompaction,
       sessions: { startNew: startNewSession, resume: resumeSession, now, columns: () => terminal.state().size.columns },
       exit: () => finish({}),
-      background: (label, work) => {
-        const command: WaitingPhase = { text: commandPhaseText(label), startedAt: now() };
-        setCommands((running) => [...running, command]);
-        return tasks.run(work).finally(() => setCommands((running) => running.filter((other) => other !== command)));
-      },
+      background: (label, work) => waitFor(commandPhaseText(label), work),
       autoMode: props.autoMode ?? unavailableAutoMode,
       shell: props.shell ?? unavailableShell,
       screen: { current: () => terminal.state().screen, set: switchScreen },
@@ -1055,8 +1085,12 @@ export function App(props: AppProps) {
       setHint(taskRunningHint(keys));
       return;
     }
-    if (alias === undefined) {
+    if (sessionModel === undefined) {
       note(NO_MODEL_NOTE);
+      return;
+    }
+    if (unconfiguredModel.current) {
+      await flows.modelPicker(sessionModel);
       return;
     }
     await runPrompt(text);
@@ -1103,11 +1137,11 @@ export function App(props: AppProps) {
 
   const unconnected = phase.kind === 'unconnected';
   const syncBanner = useEffectEvent((): void => {
-    if (alias === undefined ? unconnected : store.byKey(BANNER_KEY) !== undefined) showBanner(alias, notices);
+    if (sessionModel === undefined ? unconnected : store.byKey(BANNER_KEY) !== undefined) showBanner(sessionModel === undefined ? undefined : (displays.get(sessionModel) ?? sessionModel), notices);
   });
   useEffect(() => {
     syncBanner();
-  }, [alias, notices, unconnected]);
+  }, [sessionModel, notices, unconnected, displays]);
 
   useEffect(
     () => () => {
@@ -1180,7 +1214,7 @@ export function App(props: AppProps) {
       setHint(taskRunningHint(keys));
       return;
     }
-    if (alias === undefined) {
+    if (sessionModel === undefined) {
       note(NEEDS_SESSION_NOTE);
       return;
     }
@@ -1267,7 +1301,7 @@ export function App(props: AppProps) {
       else sendWhileBusy(delivery);
       return;
     }
-    if (!command && alias === undefined) {
+    if (!command && sessionModel === undefined) {
       note(NO_MODEL_NOTE);
       return;
     }
@@ -1327,7 +1361,7 @@ export function App(props: AppProps) {
       prompts.dismissInvitation();
     }
     if (action === 'mode.cycle') {
-      if (alias !== undefined) cycleMode();
+      if (sessionModel !== undefined) cycleMode();
       return;
     }
     if (prompts.runPromptKey(event, pressed)) return;
@@ -1376,7 +1410,7 @@ export function App(props: AppProps) {
   const servedMember = model?.chain.find((member) => member.model === servedTarget);
   const servedPlan = servedMember?.billing === 'plan' ? servedMember.plan : undefined;
   const servedProfile = servedPlan === undefined ? undefined : profiles.find((profile) => profile.id === servedPlan.profile);
-  const planRow = phase.kind !== 'ready' || servedProfile === undefined ? undefined : `${alias ?? ''} · ${servedProfile.messages.planInUseLabel} · ${servedProfile.messages.manageUsageLabel}: ${servedProfile.usageUrl}`;
+  const planRow = phase.kind !== 'ready' || servedProfile === undefined ? undefined : `${sessionModel === undefined ? '' : (displays.get(sessionModel) ?? sessionModel)} · ${servedProfile.messages.planInUseLabel} · ${servedProfile.messages.manageUsageLabel}: ${servedProfile.usageUrl}`;
   const fullscreen = terminalState.screen === 'fullscreen';
   const panelFacts = { trustPath: phase.kind === 'trust' ? phase.path : undefined, ready: phase.kind === 'ready' };
   const panel = prompts.panel(panelFacts);

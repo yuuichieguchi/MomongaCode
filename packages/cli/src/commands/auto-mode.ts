@@ -1,4 +1,4 @@
-import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, loadUserModels, readAutoFitRecord, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
+import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf, autoGatePasses, readAutoFitRecord, readClassifierProbeKeys, systemFileLockPorts, writeAutoFitRecord } from '@momonga/config';
 import type { AutoFitKey, UserModels } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, currentSocketResolver, momongaPaths, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
@@ -9,6 +9,7 @@ import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlan
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
+import { shellModelsOf } from '../plain-http.ts';
 
 export class AutoModeCheckError extends Error {
   constructor(message: string) {
@@ -149,7 +150,7 @@ export const autoModeStatus = async (ports: AutoModeStatusPorts, options: AutoMo
 
 export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string) => void): Promise<AutoModeCheckPorts> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
-  const models = loadUserModels({ home: ports.home });
+  const models = shellModelsOf(ports);
   return {
     effects: nodeContextEffects(ports),
     models,
@@ -164,6 +165,6 @@ export const autoModeCheckPortsOf = async (ports: CliPorts, write: (text: string
 };
 
 export const autoModeStatusPortsOf = (ports: CliPorts, write: (text: string) => void): AutoModeStatusPorts => {
-  const models = loadUserModels({ home: ports.home });
+  const models = shellModelsOf(ports);
   return { models, configuredClassifier: models.autoModeClassifier, home: ports.home, platform: ports.platform, write };
 };

@@ -1,39 +1,41 @@
+import fs from 'node:fs';
+import type { LocalServerDetection } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import { untilFrame } from './ink-helpers.ts';
-import { PLAN_TEST_TIMEOUT_MS, choose, eventually, startPlan } from './fake-plan-gateway.tsx';
-import type { DetectedServer } from './fake-plan-gateway.tsx';
+import { PLAN_TEST_TIMEOUT_MS, choose, startPlan } from './fake-plan-gateway.tsx';
 
 vi.setConfig({ testTimeout: PLAN_TEST_TIMEOUT_MS });
 
-const managed = { shape: 'managed', id: 'ready-server', provider: 'someone', binary: '/opt/ready/serve' } as unknown as DetectedServer;
-const refused = {
+const managed: LocalServerDetection = { shape: 'managed', id: 'fm', provider: 'apple', binary: '/usr/bin/fm' };
+const refused: LocalServerDetection = {
   shape: 'managed',
   id: 'gated-server',
   provider: 'someone',
   binary: '/opt/gated/serve',
   refused: { message: 'the licence has not been accepted', remedy: 'gated license' },
-} as unknown as DetectedServer;
-const ollama: DetectedServer = { baseUrl: 'http://127.0.0.1:11434', shape: 'ollama', models: [{ id: 'bare:3b', tools: 'no' }] };
+};
+const ollama: LocalServerDetection = { kind: 'ollama', provider: 'ollama', address: 'http://127.0.0.1:11434', models: [{ id: 'bare:3b', tools: 'no' }] };
 
-describe('managed servers and unusable models in the detection list (O-R5-5 item 4, S7, S10)', () => {
-  it('shows a usable managed row, a disabled refused row with its remedy, and the Ollama row with no trained context', async () => {
-    const { app } = await startPlan({ aliases: [], accounts: [], detected: [managed, refused, ollama] });
+describe('server programs in the list of local servers (O-R5-5 item 4, S7, S10)', () => {
+  it('shows a row for a usable program, a disabled row with its remedy for a refused one, and a row for the servers that answered', async () => {
+    const { app } = await startPlan({ models: [], accounts: [], detected: [managed, refused, ollama] });
     await choose(app, 'Use a local server');
-    const frame = await untilFrame(app, 'ready-server');
-    expect(frame).toContain('ready-server · /opt/ready/serve · managed');
-    expect(frame).toContain('gated-server · /opt/gated/serve · the licence has not been accepted (gated license)');
-    expect(frame).toContain('bare:3b · http://127.0.0.1:11434 · the server reports no trained context length for this model');
+    const frame = await untilFrame(app, 'Use the Apple on-device model');
+    expect(frame).toContain('A model server that answered');
+    expect(frame).toContain('Use gated-server · the licence has not been accepted (gated license)');
     app.unmount();
   });
 
-  it('writes a managed connection for the chosen managed row and nothing for the refused one', async () => {
-    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [managed, refused] });
+  it('reads the model of the chosen program by starting it once and writes its connection after the confirm row, and nothing for the refused one', async () => {
+    const { app, backend } = await startPlan({ models: [], accounts: [], detected: [managed, refused], programModel: 'apple-fm' });
     await choose(app, 'Use a local server');
-    await untilFrame(app, 'ready-server');
-    await choose(app, 'ready-server');
-    await eventually(() => backend.connections.length > 0, 'the managed connection');
-    expect(backend.connections).toHaveLength(1);
-    expect(backend.connections[0]).toMatchObject({ kind: 'managed', server: 'ready-server' });
+    await choose(app, 'Use the Apple on-device model');
+    await untilFrame(app, 'Add apple-fm to your settings?');
+    expect(fs.existsSync(backend.modelsFile())).toBe(false);
+    await choose(app, 'Yes');
+    await backend.called('openSession');
+    const written = JSON.parse(fs.readFileSync(backend.modelsFile(), 'utf8')) as { models: { connections: unknown[] } };
+    expect(written.models.connections).toMatchObject([{ adapter: 'managed', server: 'fm', models: [{ id: 'apple-fm' }] }]);
     app.unmount();
   });
 });

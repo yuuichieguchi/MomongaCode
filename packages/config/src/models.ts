@@ -77,7 +77,10 @@ export type ResolvedModels = {
   headersTimeoutMs: number;
   idleTimeoutMs: number;
   servers: ServerRegistry;
+  plainHttp: readonly string[];
 };
+
+export const plainHttpWarningText = (server: string): string => `The address of ${server} is plain http to another computer: what you send to it is not encrypted.`;
 
 export const FIVE_MINUTES_MS = 300_000;
 
@@ -557,6 +560,8 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   const loaded: Loaded = { models: configured.models, chains, displays };
   warnUnsafeChains(loaded, source, warnings);
   warnUnallowedBillingChanges(references.billingChanges, loaded, source, warnings);
+  const plainHttp = configured.connections.filter((connection) => connection.baseUrl !== undefined && transportUrlProblem(connection.baseUrl) === 'cleartext').map((connection) => connection.provider);
+  warnings.push(...plainHttp.map(plainHttpWarningText));
   return {
     connections: configured.connections,
     models: configured.models,
@@ -571,6 +576,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,
     idleTimeoutMs: models?.idleTimeoutMs ?? FIVE_MINUTES_MS,
     servers,
+    plainHttp,
   };
 };
 

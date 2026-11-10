@@ -1,8 +1,9 @@
-import { ConfigError, SETTINGS_SCHEMA } from '@momonga/config';
+import { ConfigError, ModelsEditRefused, SETTINGS_SCHEMA, editModelsSettings } from '@momonga/config';
 import type { SettingsLayer, SettingsOperation, SettingsSnapshot } from '@momonga/config';
 import { isRecord } from '@momonga/foundation';
 import type { PickRow } from './picker.tsx';
 import { switchWordOf } from './screen/a11y.ts';
+import { settingsFileLine } from './models/texts.ts';
 import type { SlashContext } from './slash.ts';
 
 export const SETTINGS_TITLE = 'Settings';
@@ -107,8 +108,9 @@ export const SETTINGS_REACHED_BY_COMMAND: Readonly<Record<string, string>> = {
   enabledMcpjsonServers: 'mcp',
   disabledMcpjsonServers: 'mcp',
   'autoMode.classifier': 'models',
-  'models.aliases': 'models',
-  'models.targets': 'models',
+  'models.connections': 'models',
+  'models.start': 'models',
+  'models.fallback': 'models',
   'models.servers': 'models',
   'models.billingChanges': 'models',
   'models.roles.compaction': 'models',
@@ -217,7 +219,7 @@ export const settingsRows = (snapshot: SettingsSnapshot, commands: readonly { re
   return { rows, listed };
 };
 
-export const settingsFileLines = (snapshot: SettingsSnapshot): string[] => [...snapshot.layers.map((view) => `${view.layer}: ${view.file}`), ...(snapshot.mcpFile === undefined ? [] : [`.mcp.json: ${snapshot.mcpFile}`])];
+export const settingsFileLines = (snapshot: SettingsSnapshot): string[] => [...snapshot.layers.map((view) => (view.layer === 'user' ? settingsFileLine(view.file) : `${view.layer}: ${view.file}`)), ...(snapshot.mcpFile === undefined ? [] : [`.mcp.json: ${snapshot.mcpFile}`])];
 
 export type Refusal = { readonly refused: string };
 
@@ -514,7 +516,39 @@ const editStructured = async (context: SlashContext, snapshot: SettingsSnapshot,
   }
 };
 
+export const DIALECTS_KEY = 'models.dialects';
+
+const writeDialects = async (context: SlashContext, dialects: object): Promise<Refusal | undefined> => {
+  const host = context.backend.modelsHost(new AbortController().signal, context.info);
+  try {
+    await context.background(SAVING_SETTING, (signal) => editModelsSettings(host.home, host.settingsFile, [{ kind: 'setDialects', dialects }], { signal }));
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof ModelsEditRefused)) throw error;
+    return { refused: error.message };
+  }
+};
+
+const editDialects = async (context: SlashContext, snapshot: SettingsSnapshot, leaf: SettingLeaf, presentation: SettingPresentation): Promise<Outcome> => {
+  let draft = JSON.stringify(inLayer(snapshot, 'user', leaf.path) ?? {}, null, 2);
+  let sentence: string | undefined;
+  for (;;) {
+    const text = await context.overlays.promptText({ title: presentation.label, lines: [...STRUCTURED_LINES, ...(sentence === undefined ? [] : [sentence])], initial: draft, validate: jsonProblem });
+    if (text === undefined) return LEFT;
+    draft = text;
+    const value: unknown = JSON.parse(text);
+    if (!isRecord(value)) {
+      sentence = 'The schema dialects are a JSON object.';
+      continue;
+    }
+    const refusal = await writeDialects(context, value);
+    if (refusal === undefined) return { kind: 'written' };
+    sentence = refusal.refused;
+  }
+};
+
 const editSetting = async (context: SlashContext, snapshot: SettingsSnapshot, leaf: SettingLeaf, presentation: SettingPresentation, live: readonly LiveSetting[]): Promise<Outcome> => {
+  if (leaf.key === DIALECTS_KEY) return editDialects(context, snapshot, leaf, presentation);
   if (leaf.kind === 'toggle' || leaf.kind === 'choice' || leaf.kind === 'number' || leaf.kind === 'text') return editScalar(context, snapshot, leaf, presentation, liveOf(leaf, live));
   const layer = await saveTargetOf(context, snapshot, currentOf(snapshot, leaf.path).source);
   if (layer === undefined) return LEFT;

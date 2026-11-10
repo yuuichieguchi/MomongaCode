@@ -221,7 +221,7 @@ describe('/config, the settings screen', () => {
     await press(started, KEYS.enter, /Unexpected end of JSON input|JSON/);
     await press(started, '7}', '> {"mine":7}');
     const refused = await press(started, KEYS.enter, '/models/dialects/mine');
-    expect(unwrapped(refused)).toContain(`${place.userFile}: invalid settings at /models/dialects/mine`);
+    expect(unwrapped(refused)).toContain('invalid settings at /models/dialects/mine: must be object');
     expect(refused).toContain('> {"mine":7}');
     expect(fs.existsSync(place.userFile)).toBe(false);
     started.app.unmount();
@@ -268,8 +268,8 @@ describe('/config, the settings screen', () => {
     const place = freshPlace();
     const started = await startAt(place);
     await open(started);
-    await press(started, KEYS.enter, (frame) => !frame.includes(SETTINGS_TITLE));
-    await outputHolds(started, `user: ${place.userFile}`);
+    await press(started, KEYS.enter, (frame) => !frame.includes(OPEN_SETTINGS_FILE_ROW));
+    await outputHolds(started, `Settings file: ${place.userFile}`);
     await outputHolds(started, `project: ${place.projectFile}`);
     await outputHolds(started, `local: ${localFileOf(place)}`);
     await outputHolds(started, `.mcp.json: ${path.join(place.project, '.mcp.json')}`);

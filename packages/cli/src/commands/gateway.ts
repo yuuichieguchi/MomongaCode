@@ -9,6 +9,7 @@ import { restartGeneration } from '../daemon/ensure-daemon.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { withOutboundNetwork } from '../network.ts';
+import { announcePlainHttp } from '../plain-http.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 type OllamaModel = Extract<ResolvedModel, { adapter: 'ollama' }>;
@@ -56,6 +57,7 @@ export const restartDaemon = async (ports: Pick<CliPorts, 'stdout'> & DaemonPort
 
 export const probeModel = async (ports: CliPorts, paths: MomongaPaths, text: string, options: ProbeOptions): Promise<number> => {
   const { settings } = await loadUserSettings({ home: ports.home });
+  announcePlainHttp(ports, settings.models.plainHttp);
   const subject = probeSubjectOf(settings.models, text);
   const { model } = subject;
   if (model.adapter === 'managed') return probeManaged(ports, paths, subject, model, settings, options);

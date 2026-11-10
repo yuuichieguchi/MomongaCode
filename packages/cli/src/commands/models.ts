@@ -30,6 +30,7 @@ import { formatTokens } from '../format-tokens.ts';
 import { localManagedPorts } from '../local-managed-ports.ts';
 import { NOT_LISTED_BY_SERVER_MARK, NO_SERVER_ANSWERED_TEXT, RUN_AGAIN_WITH_YES_TEXT, noModelsText, noServerAnsweredAtText, notListedByServerText } from '../models-texts.ts';
 import { withIdentityReadFetch } from '../network.ts';
+import { announcePlainHttp } from '../plain-http.ts';
 import type { CliFiles, CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
 import { cliProbeInstance } from './gateway.ts';
@@ -39,6 +40,10 @@ type Writer = { write(text: string): void };
 export type DetectRequest = { candidates: readonly string[]; typed: readonly string[]; signal: AbortSignal };
 
 export type DeclaredProgram = { id: string; command: string; args: readonly string[]; readyPath: string };
+
+export type BuiltInProgram = { id: string; builtIn: true };
+
+export type ServerProgram = DeclaredProgram | BuiltInProgram;
 
 export type ModelsShell = {
   stdout: Writer;
@@ -50,18 +55,22 @@ export type ModelsShell = {
   files: Pick<CliFiles, 'readText' | 'readTextIfPresent'>;
   listing(): Promise<MomongaModelList>;
   detect(request: DetectRequest): Promise<readonly LocalServerDetection[]>;
-  programModel(program: DeclaredProgram, signal: AbortSignal): Promise<string>;
+  programModel(program: ServerProgram, signal: AbortSignal): Promise<string>;
 };
+
+export type ModelsHost = Omit<ModelsShell, 'stdout' | 'stderr'>;
 
 const EXIT_USAGE = 2;
 const EXIT_REFUSED = 1;
-const SEPARATOR = '  ·  ';
+export const SEPARATOR = '  ·  ';
 const ROW_INDENT = '  ';
-const START_MARK = 'starts new sessions';
+export const START_MARK = 'starts new sessions';
 const WINDOW_NOT_KNOWN = 'window not known';
-const SESSION_MODEL_TEXT = "the session's model";
+export const SESSION_MODEL_TEXT = "the session's model";
 
 const print = (writer: Writer, lines: readonly string[]): void => writer.write(`${escapedLines(lines)}\n`);
+
+type Print = (lines: readonly string[]) => void;
 
 export const listedModelOf = (entries: readonly MomongaModelEntry[], text: string): string => {
   const views = listingViewsOf(entries);
@@ -85,7 +94,7 @@ export type ListedModel = {
 
 export type ModelsDocument = { start: string | null; roles: MomongaModelRoles; models: ListedModel[] };
 
-const addressesOf = (resolved: ResolvedModels): ReadonlyMap<string, string> =>
+export const addressesOf = (resolved: ResolvedModels): ReadonlyMap<string, string> =>
   new Map(resolved.connections.flatMap((connection): [string, string][] => (connection.baseUrl === undefined || connection.plan !== undefined ? [] : [[connection.provider, connection.baseUrl]])));
 
 const stateOf = (entry: MomongaModelEntry, name: string, notListed: boolean): Pick<ListedModel, 'state' | 'code' | 'message'> => {
@@ -118,7 +127,7 @@ const windowPartsOf = (model: ListedModel): string[] => {
   return model.contextWindow === null ? [WINDOW_NOT_KNOWN] : [`${formatTokens(model.contextWindow)} tokens`, model.billing];
 };
 
-const modelRowOf = (model: ListedModel, start: string | null): string =>
+export const modelRowOf = (model: ListedModel, start: string | null): string =>
   `${ROW_INDENT}${[model.name, ...windowPartsOf(model), ...(model.model === start ? [START_MARK] : []), ...(model.code === MODEL_NOT_LISTED_CODE ? [NOT_LISTED_BY_SERVER_MARK] : [])].join(SEPARATOR)}`;
 
 const modelLinesOf = (document: ModelsDocument): string[] => {
@@ -141,15 +150,16 @@ const printDocument = (shell: ModelsShell, document: ModelsDocument, json: boole
 export const listModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
   const { resolved } = loadUserModels({ home: shell.home });
+  announcePlainHttp(shell, resolved.plainHttp);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), new Set()), options.json);
   return 0;
 };
 
-const isLocalServer = (server: LocalServerDetection): server is DetectedLocalServer => 'kind' in server;
+export const isLocalServer = (server: LocalServerDetection): server is DetectedLocalServer => 'kind' in server;
 
-const offeredServers = (found: readonly LocalServerDetection[]): DetectedLocalServer[] => found.filter(isLocalServer).filter((server) => server.models.length > 0);
+export const offeredServers = (found: readonly LocalServerDetection[]): DetectedLocalServer[] => found.filter(isLocalServer).filter((server) => server.models.length > 0);
 
-const notListedOf = async (shell: ModelsShell, resolved: ResolvedModels): Promise<ReadonlySet<string>> => {
+export const notListedOf = async (shell: ModelsHost, resolved: ResolvedModels): Promise<ReadonlySet<string>> => {
   const configured = [...resolved.models.values()];
   const asked = await Promise.all(
     [...addressesOf(resolved)].map(async ([provider, address]) => {
@@ -165,6 +175,7 @@ const notListedOf = async (shell: ModelsShell, resolved: ResolvedModels): Promis
 export const checkModels = async (shell: ModelsShell, options: { json: boolean }): Promise<number> => {
   const listing = await shell.listing();
   const { resolved } = loadUserModels({ home: shell.home });
+  announcePlainHttp(shell, resolved.plainHttp);
   printDocument(shell, modelsDocumentOf(listing, addressesOf(resolved), await notListedOf(shell, resolved)), options.json);
   return 0;
 };
@@ -260,19 +271,19 @@ export type FormInput = { args: readonly string[]; options: Readonly<Record<stri
 
 class UsageError extends Error {}
 
-class ShellRefusal extends Error {}
+export class ShellRefusal extends Error {}
 
 type Json = Record<string, unknown>;
 
-type Edit = { document: Json; resolved: ResolvedModels; displays: ReadonlyMap<string, string>; ports: ModelsEditPorts };
+export type ModelsEdit = { document: Json; resolved: ResolvedModels; displays: ReadonlyMap<string, string>; ports: ModelsEditPorts };
 
-type AcceptedPlan = Exclude<ModelsEditPlan, { refused: unknown }>;
+export type AcceptedPlan = Exclude<ModelsEditPlan, { refused: unknown }>;
 
-type Proposal = { operations: ModelsOperations; confirm(plan: AcceptedPlan): string };
+export type ModelsProposal = { operations: ModelsOperations; confirm(plan: AcceptedPlan): string };
 
 const BUILT_IN_SERVERS = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
 
-const editOf = async (shell: ModelsShell): Promise<Edit> => {
+export const modelsEditOf = async (shell: ModelsHost): Promise<ModelsEdit> => {
   const text = await shell.files.readTextIfPresent(shell.settingsFile);
   const document: unknown = text === undefined ? {} : parseOutsideJson(text);
   if (!isRecord(document)) throw new ShellRefusal(`${shell.settingsFile}: settings must be a JSON object`);
@@ -280,9 +291,9 @@ const editOf = async (shell: ModelsShell): Promise<Edit> => {
   return { document, resolved, displays: displayMapOf(resolved.views), ports: { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS, home: shell.home } };
 };
 
-const displayIn = (edit: Edit, canon: string): string => edit.displays.get(canon) ?? canon;
+export const displayIn = (edit: ModelsEdit, canon: string): string => edit.displays.get(canon) ?? canon;
 
-const canonOfTyped = (edit: Edit, text: string): string => {
+const canonOfTyped = (edit: ModelsEdit, text: string): string => {
   const resolution = resolveTypedModelRef(typedModelText(text), edit.resolved.views);
   if (resolution.kind !== 'found') throw modelRefErrorOf(text, resolution, edit.resolved.views);
   return resolution.model.canon;
@@ -316,15 +327,15 @@ const wholeNumber = (text: string, minimum: number): number => {
   return value;
 };
 
-const connectionsOf = (document: Json): Json[] => {
+export const connectionsOf = (document: Json): Json[] => {
   const models = document['models'];
   const connections = isRecord(models) ? models['connections'] : undefined;
   return Array.isArray(connections) ? connections.filter(isRecord) : [];
 };
 
-const textOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+export const textOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
-const nameInputOf = (connection: Json): ProviderNameInput => {
+export const nameInputOf = (connection: Json): ProviderNameInput => {
   const plan = connection['plan'];
   return {
     adapter: String(connection['adapter']),
@@ -336,7 +347,7 @@ const nameInputOf = (connection: Json): ProviderNameInput => {
   };
 };
 
-const viewsOfDocument = (document: Json, ports: ModelsEditPorts): ModelViews =>
+export const viewsOfDocument = (document: Json, ports: ModelsEditPorts): ModelViews =>
   connectionsOf(document).flatMap((connection) => {
     const provider = providerNameOf(nameInputOf(connection), ports.kinds);
     const defaultTag = serverKindOf({ adapter: String(connection['adapter']) }, ports.kinds)?.defaultTag;
@@ -347,12 +358,12 @@ const viewsOfDocument = (document: Json, ports: ModelsEditPorts): ModelViews =>
     });
   });
 
-const addedDisplayOf = (edit: Edit, plan: AcceptedPlan): string => {
+export const addedDisplayOf = (edit: ModelsEdit, plan: AcceptedPlan): string => {
   if (plan.model === undefined) throw new TypeError('the plan of an added model names no model');
   return displayMapOf(viewsOfDocument(plan.document, edit.ports)).get(plan.model) ?? plan.model;
 };
 
-const JOB_WORDS: Readonly<Record<string, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis', classifier: 'the auto-mode classifier' };
+export const JOB_WORDS: Readonly<Record<string, string>> = { compaction: 'summaries', reflection: 'reflection', analysis: 'analysis', classifier: 'the auto-mode classifier' };
 
 const referenceWordOf = (reference: ModelsReference): string => {
   switch (reference.kind) {
@@ -369,7 +380,7 @@ const referenceWordOf = (reference: ModelsReference): string => {
   }
 };
 
-const referenceList = (references: readonly ModelsReference[]): string => [...new Set(references.map(referenceWordOf))].join(', ');
+export const referenceList = (references: readonly ModelsReference[]): string => [...new Set(references.map(referenceWordOf))].join(', ');
 
 const alsoModelFor = (references: readonly ModelsReference[]): string => (references.length === 0 ? '' : ` It is also the model for: ${referenceList(references)}.`);
 
@@ -393,21 +404,21 @@ const choiceOf = (connection: Json, model: Json): AddModelChoice => ({ connectio
 
 const addOperation = (connection: Json, model: Json): ModelsOperation => ({ kind: 'addModel', choice: choiceOf(connection, model) });
 
-const entryOf = (id: string, window: number | undefined): Json => ({ id, ...(window === undefined ? {} : { capabilities: { contextWindow: window, maxOutputTokens: maxOutputTokensFor(window) } }) });
+export const entryOf = (id: string, window: number | undefined): Json => ({ id, ...(window === undefined ? {} : { capabilities: { contextWindow: window, maxOutputTokens: maxOutputTokensFor(window) } }) });
 
 const windowOf = (input: FormInput): number | undefined => {
   const text = optionText(input, 'window');
   return text === undefined ? undefined : wholeNumber(text, 1);
 };
 
-const addProposalOf = (edit: Edit, connection: Json, model: Json, confirm?: string): Proposal => ({
+export const addProposalOf = (edit: ModelsEdit, connection: Json, model: Json, confirm?: string): ModelsProposal => ({
   operations: [addOperation(connection, model)],
   confirm: (plan) => confirm ?? `Add ${addedDisplayOf(edit, plan)} to your settings?`,
 });
 
-const foundRowOf = (server: DetectedLocalServer): string => `${server.provider}${SEPARATOR}${server.address}${SEPARATOR}${server.models.length} ${server.models.length === 1 ? 'model' : 'models'}`;
+export const foundRowOf = (server: DetectedLocalServer): string => `${server.provider}${SEPARATOR}${server.address}${SEPARATOR}${server.models.length} ${server.models.length === 1 ? 'model' : 'models'}`;
 
-const kindOf = (server: DetectedLocalServer): ServerKind => {
+export const kindOf = (server: DetectedLocalServer): ServerKind => {
   const kind = SERVER_KINDS.find((candidate) => candidate.kind === server.kind);
   if (kind === undefined) throw new ShellRefusal(`The server at ${server.address} is of the kind "${server.kind}", which this version does not know.`);
   return kind;
@@ -418,7 +429,7 @@ const detectedConnectionOf = (server: DetectedLocalServer, kind: ServerKind): Js
 export const detectedChoiceOf = (server: DetectedLocalServer, model: DetectedModel, window: number | undefined): AddModelChoice =>
   choiceOf(detectedConnectionOf(server, kindOf(server)), entryOf(model.id, window));
 
-const foundProposalOf = (edit: Edit, input: FormInput, server: DetectedLocalServer, model: DetectedModel): Proposal => {
+export const foundProposalOf = (edit: ModelsEdit, input: FormInput, server: DetectedLocalServer, model: DetectedModel): ModelsProposal => {
   const kind = kindOf(server);
   const api = optionText(input, 'api');
   const service = optionText(input, 'service');
@@ -431,12 +442,12 @@ const foundProposalOf = (edit: Edit, input: FormInput, server: DetectedLocalServ
   return addProposalOf(edit, connection, entryOf(model.id, windowOf(input) ?? model.contextWindow));
 };
 
-const proposeSearchedAdd = async (shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeSearchedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print): Promise<ModelsProposal> => {
   const servers = offeredServers(await shell.detect({ candidates: LOCAL_SERVER_CANDIDATES, typed: [], signal: shell.interrupt }));
   if (servers.length === 0) throw new ShellRefusal(NO_SERVER_ANSWERED_TEXT);
   const id = optionText(input, 'model');
   if (id === undefined) {
-    print(shell.stdout, servers.map(foundRowOf));
+    print(servers.map(foundRowOf));
     throw new UsageError();
   }
   const holders = servers.flatMap((server) => server.models.filter((model) => model.id === id).map((model) => ({ server, model })));
@@ -446,7 +457,7 @@ const proposeSearchedAdd = async (shell: ModelsShell, edit: Edit, input: FormInp
   return foundProposalOf(edit, input, only.server, only.model);
 };
 
-const proposeAddressedAdd = async (shell: ModelsShell, edit: Edit, input: FormInput, address: string): Promise<Proposal> => {
+const proposeAddressedAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, address: string, print: Print): Promise<ModelsProposal> => {
   const [server] = (await shell.detect({ candidates: [], typed: [address], signal: shell.interrupt })).filter(isLocalServer);
   const id = optionText(input, 'model');
   if (server === undefined) {
@@ -457,7 +468,7 @@ const proposeAddressedAdd = async (shell: ModelsShell, edit: Edit, input: FormIn
     return addProposalOf(edit, connection, entryOf(id, windowOf(input)), noServerAnsweredAtText(address));
   }
   if (id === undefined) {
-    print(shell.stdout, [foundRowOf(server)]);
+    print([foundRowOf(server)]);
     throw new UsageError();
   }
   const model = server.models.find((candidate) => candidate.id === id);
@@ -465,17 +476,17 @@ const proposeAddressedAdd = async (shell: ModelsShell, edit: Edit, input: FormIn
   return foundProposalOf(edit, input, server, model);
 };
 
-const proposeAdd = async (shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeAdd = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print): Promise<ModelsProposal> => {
   const profile = optionText(input, 'plan');
   if (profile !== undefined) {
     const account = optionText(input, 'account');
     return addProposalOf(edit, { adapter: 'open-responses', plan: { profile, ...(account === undefined ? {} : { account }) } }, entryOf(requiredOption(input, 'model'), windowOf(input)));
   }
   const address = optionText(input, 'address');
-  return address === undefined ? proposeSearchedAdd(shell, edit, input) : proposeAddressedAdd(shell, edit, input, address);
+  return address === undefined ? proposeSearchedAdd(shell, edit, input, print) : proposeAddressedAdd(shell, edit, input, address, print);
 };
 
-const proposeRemove = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeRemove = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const model = canonOfTyped(edit, argument(input, 0));
   return {
     operations: [{ kind: 'removeModel', model }],
@@ -483,7 +494,7 @@ const proposeRemove = async (_shell: ModelsShell, edit: Edit, input: FormInput):
   };
 };
 
-const proposeRemoveServer = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeRemoveServer = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const provider = argument(input, 0);
   const count = edit.resolved.views.filter((view) => view.provider === provider).length;
   return {
@@ -495,7 +506,7 @@ const proposeRemoveServer = async (_shell: ModelsShell, edit: Edit, input: FormI
   };
 };
 
-const proposeStart = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeStart = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   if (input.options['clear'] === true) return { operations: [{ kind: 'setStart', model: null }], confirm: () => 'Start new sessions with the first model in your settings?' };
   const model = canonOfTyped(edit, argument(input, 0));
   return { operations: [{ kind: 'setStart', model }], confirm: () => `Start new sessions with ${displayIn(edit, model)}?` };
@@ -512,7 +523,7 @@ const positionOf = (text: string, last: number): number => {
   return position;
 };
 
-const proposeFallbackAdd = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeFallbackAdd = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const model = canonOfTyped(edit, argument(input, 0));
   const last = edit.resolved.fallback.filter((entry) => entry !== model).length + 1;
   const given = optionText(input, 'position');
@@ -520,18 +531,18 @@ const proposeFallbackAdd = async (_shell: ModelsShell, edit: Edit, input: FormIn
   return { operations: [{ kind: 'setFallback', models: placedAt(edit.resolved.fallback, model, position) }], confirm: () => `Add ${displayIn(edit, model)} as fallback ${position}?` };
 };
 
-const fallbackMemberOf = (edit: Edit, input: FormInput): string => {
+const fallbackMemberOf = (edit: ModelsEdit, input: FormInput): string => {
   const model = canonOfTyped(edit, argument(input, 0));
   if (!edit.resolved.fallback.includes(model)) throw new ShellRefusal(`${displayIn(edit, model)} is not one of the fallback models.`);
   return model;
 };
 
-const proposeFallbackRemove = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeFallbackRemove = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const model = fallbackMemberOf(edit, input);
   return { operations: [{ kind: 'setFallback', models: edit.resolved.fallback.filter((entry) => entry !== model) }], confirm: () => `Remove ${displayIn(edit, model)} from the fallback models?` };
 };
 
-const proposeFallbackMove = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeFallbackMove = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const text = argument(input, 0);
   const to = requiredOption(input, 'to');
   const model = fallbackMemberOf(edit, { ...input, args: [text] });
@@ -545,21 +556,21 @@ const billingOf = (text: string): TargetBilling => {
   return billing;
 };
 
-const billingChangeOf = (edit: Edit, input: FormInput): { from: TargetBilling; to: TargetBilling; model?: string } => {
+const billingChangeOf = (edit: ModelsEdit, input: FormInput): { from: TargetBilling; to: TargetBilling; model?: string } => {
   const from = billingOf(argument(input, 0));
   const to = billingOf(argument(input, 1));
   const scope = optionText(input, 'model');
   return { from, to, ...(scope === undefined ? {} : { model: canonOfTyped(edit, scope) }) };
 };
 
-const scopeText = (edit: Edit, model: string | undefined): string => (model === undefined ? '' : ` for ${displayIn(edit, model)}`);
+const scopeText = (edit: ModelsEdit, model: string | undefined): string => (model === undefined ? '' : ` for ${displayIn(edit, model)}`);
 
-const proposeBillingAllow = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeBillingAllow = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const change = billingChangeOf(edit, input);
   return { operations: [{ kind: 'allowBillingChange', ...change }], confirm: () => `Allow requests to fall from ${change.from} to ${change.to}${scopeText(edit, change.model)}?` };
 };
 
-const proposeBillingForbid = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeBillingForbid = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const change = billingChangeOf(edit, input);
   return { operations: [{ kind: 'forbidBillingChange', ...change }], confirm: () => `Forbid requests to fall from ${change.from} to ${change.to}${scopeText(edit, change.model)}?` };
 };
@@ -572,7 +583,7 @@ const roleOperationOf = (job: string, model: string | null): ModelsOperation => 
   throw new UsageError();
 };
 
-const proposeRoleSet = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeRoleSet = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const job = argument(input, 0);
   const text = argument(input, 1);
   roleOperationOf(job, null);
@@ -580,7 +591,7 @@ const proposeRoleSet = async (_shell: ModelsShell, edit: Edit, input: FormInput)
   return { operations: [roleOperationOf(job, model)], confirm: () => `Use ${displayIn(edit, model)} for ${JOB_WORDS[job]}?` };
 };
 
-const proposeRoleClear = async (_shell: ModelsShell, _edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeRoleClear = async (_shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const job = argument(input, 0);
   return { operations: [roleOperationOf(job, null)], confirm: () => `Use ${SESSION_MODEL_TEXT} for ${JOB_WORDS[job]}?` };
 };
@@ -600,7 +611,7 @@ const ENTRY_FIELD_PREFIX = 'models[].';
 
 const fieldPathOf = (field: string): string[] => field.split('.');
 
-const proposeModelField = (set: boolean) => async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeModelField = (set: boolean) => async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const text = argument(input, 0);
   const field = argument(input, 1);
   const value = set ? typedValueOf(argument(input, 2)) : undefined;
@@ -612,7 +623,7 @@ const proposeModelField = (set: boolean) => async (_shell: ModelsShell, edit: Ed
   };
 };
 
-const proposeServerField = (set: boolean) => async (_shell: ModelsShell, _edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeServerField = (set: boolean) => async (_shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const provider = argument(input, 0);
   const field = argument(input, 1);
   const value = set ? typedValueOf(argument(input, 2)) : undefined;
@@ -622,14 +633,14 @@ const proposeServerField = (set: boolean) => async (_shell: ModelsShell, _edit: 
   };
 };
 
-const derivedNameOf = (edit: Edit, provider: string): string => {
+export const derivedNameOf = (edit: ModelsEdit, provider: string): string => {
   const index = edit.resolved.connections.findIndex((connection) => connection.provider === provider);
   const written = connectionsOf(edit.document)[index];
   if (written === undefined) throw new TypeError(`the server ${provider} passed the plan but is not in the settings`);
   return providerNameOf({ ...nameInputOf(written), provider: undefined }, edit.ports.kinds);
 };
 
-const proposeName = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeName = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const provider = argument(input, 0);
   const clear = input.options['clear'] === true;
   const name = clear ? null : argument(input, 1);
@@ -642,7 +653,7 @@ const proposeName = async (_shell: ModelsShell, edit: Edit, input: FormInput): P
 
 const refusedMessageOf = (plan: ModelsEditPlan): string | undefined => ('refused' in plan ? plan.refused.message : undefined);
 
-const proposeAddProgram = async (shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeAddProgram = async (shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const command = requiredOption(input, 'command');
   const readyPath = requiredOption(input, 'readyPath');
   const taken = new Set([...edit.resolved.connections.map((connection) => connection.provider), ...Object.keys(edit.resolved.servers)]);
@@ -668,7 +679,7 @@ const programValueOf = (field: (typeof PROGRAM_FIELDS)[number], text: string): u
   return parsed;
 };
 
-const proposeSetProgram = async (_shell: ModelsShell, _edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeSetProgram = async (_shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const id = argument(input, 0);
   const named = argument(input, 1);
   const text = argument(input, 2);
@@ -677,7 +688,7 @@ const proposeSetProgram = async (_shell: ModelsShell, _edit: Edit, input: FormIn
   return { operations: [{ kind: 'setServerField', id, field, value: programValueOf(field, text) }], confirm: () => `Set ${field} of ${id}?` };
 };
 
-const proposeForgetProgram = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeForgetProgram = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const id = argument(input, 0);
   const users = edit.resolved.connections.filter((connection) => connection.server === id).length;
   return { operations: [{ kind: 'forgetServer', id }], confirm: () => `Forget ${id}? ${users} ${users === 1 ? 'server uses' : 'servers use'} it.` };
@@ -690,7 +701,7 @@ const minutesOf = (input: FormInput, name: string): number | undefined => {
   return text === undefined ? undefined : wholeNumber(text, 0) * MINUTE_MS;
 };
 
-const proposeTimeouts = async (_shell: ModelsShell, edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeTimeouts = async (_shell: ModelsHost, edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const headersTimeoutMs = minutesOf(input, 'headers');
   const idleTimeoutMs = minutesOf(input, 'idle');
   if (headersTimeoutMs === undefined && idleTimeoutMs === undefined) throw new UsageError();
@@ -700,38 +711,38 @@ const proposeTimeouts = async (_shell: ModelsShell, edit: Edit, input: FormInput
   };
 };
 
-const proposeDialectsSet = async (shell: ModelsShell, _edit: Edit, input: FormInput): Promise<Proposal> => {
+const proposeDialectsSet = async (shell: ModelsHost, _edit: ModelsEdit, input: FormInput): Promise<ModelsProposal> => {
   const file = requiredOption(input, 'file');
   const dialects: unknown = parseOutsideJson(await shell.files.readText(file));
   if (!isRecord(dialects)) throw new ShellRefusal(`${file} does not hold a JSON object.`);
   return { operations: [{ kind: 'setDialects', dialects }], confirm: () => `Save the schema dialects of ${file}?` };
 };
 
-const fallbackRows = (edit: Edit): string[] =>
+export const fallbackRows = (edit: ModelsEdit): string[] =>
   edit.resolved.fallback.length === 0
     ? ['No fallback models. If the model cannot answer, the request fails.']
     : edit.resolved.fallback.map((model, index) => `${index + 1}  ${displayIn(edit, model)}`);
 
-const billingRows = (edit: Edit): string[] =>
+export const billingRows = (edit: ModelsEdit): string[] =>
   edit.resolved.billingChanges.length === 0
     ? ['No billing change is allowed.']
     : edit.resolved.billingChanges.map((change) => `${change.from} → ${change.to}${SEPARATOR}${change.model === undefined ? 'every model' : `only ${displayIn(edit, change.model)}`}`);
 
-const roleRows = (edit: Edit): string[] => {
+export const roleRows = (edit: ModelsEdit): string[] => {
   const { roles, classifier } = edit.resolved;
   const row = (label: string, model: string | undefined): string => `${label}${SEPARATOR}${model === undefined ? SESSION_MODEL_TEXT : displayIn(edit, model)}`;
   return [row('Summaries (compaction)', roles.compaction), row('Reflection', roles.reflection), row('Analysis', roles.analysis), row('Auto-mode classifier', classifier)];
 };
 
-const dialectRows = (edit: Edit): string[] => {
+const dialectRows = (edit: ModelsEdit): string[] => {
   const models = edit.document['models'];
   const dialects = isRecord(models) && isRecord(models['dialects']) ? models['dialects'] : {};
   return JSON.stringify(dialects, null, 2).split('\n');
 };
 
-type Propose = (shell: ModelsShell, edit: Edit, input: FormInput) => Promise<Proposal>;
+type Propose = (shell: ModelsHost, edit: ModelsEdit, input: FormInput, print: Print) => Promise<ModelsProposal>;
 
-type FormSpec = { usage: string } & ({ propose: Propose } | { print(edit: Edit): string[] });
+type FormSpec = { usage: string } & ({ propose: Propose } | { print(edit: ModelsEdit): string[] });
 
 const usage = (form: ModelsForm, rest: string): string => `usage: momonga models ${form}${rest === '' ? '' : ` ${rest}`}`;
 
@@ -766,10 +777,14 @@ const FORM_SPECS: Readonly<Record<ModelsForm, FormSpec>> = {
   'dialects set': { usage: usage('dialects set', '--file <path> [--yes]'), propose: proposeDialectsSet },
 };
 
-const proposeAndWrite = async (shell: ModelsShell, edit: Edit, proposal: Proposal, yes: boolean): Promise<number> => {
+export const plannedOf = (edit: ModelsEdit, proposal: ModelsProposal): string => {
   const plan = planModelsEdit(edit.document, proposal.operations, edit.ports);
   if ('refused' in plan) throw new ShellRefusal(plan.refused.message);
-  print(shell.stdout, [proposal.confirm(plan)]);
+  return proposal.confirm(plan);
+};
+
+const proposeAndWrite = async (shell: ModelsShell, edit: ModelsEdit, proposal: ModelsProposal, yes: boolean): Promise<number> => {
+  print(shell.stdout, [plannedOf(edit, proposal)]);
   if (!yes) {
     print(shell.stderr, [RUN_AGAIN_WITH_YES_TEXT]);
     return EXIT_USAGE;
@@ -779,23 +794,30 @@ const proposeAndWrite = async (shell: ModelsShell, edit: Edit, proposal: Proposa
   return 0;
 };
 
-const isRefusal = (error: unknown): error is Error => error instanceof ShellRefusal || error instanceof ModelRefError || error instanceof ModelsEditRefused;
+export const isModelsRefusal = (error: unknown): error is Error => error instanceof ShellRefusal || error instanceof ModelRefError || error instanceof ModelsEditRefused;
+
+export const proposeForm = (host: ModelsHost, edit: ModelsEdit, form: ModelsForm, input: FormInput): Promise<ModelsProposal> => {
+  const spec = FORM_SPECS[form];
+  if (!('propose' in spec)) throw new TypeError(`momonga models ${form} writes nothing`);
+  return spec.propose(host, edit, input, () => undefined);
+};
 
 export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input: FormInput): Promise<number> => {
   const spec = FORM_SPECS[form];
   try {
-    const edit = await editOf(shell);
+    const edit = await modelsEditOf(shell);
+    announcePlainHttp(shell, edit.resolved.plainHttp);
     if ('print' in spec) {
       print(shell.stdout, spec.print(edit));
       return 0;
     }
-    return await proposeAndWrite(shell, edit, await spec.propose(shell, edit, input), input.options['yes'] === true);
+    return await proposeAndWrite(shell, edit, await spec.propose(shell, edit, input, (lines) => print(shell.stdout, lines)), input.options['yes'] === true);
   } catch (error) {
     if (error instanceof UsageError) {
       print(shell.stderr, [spec.usage]);
       return EXIT_USAGE;
     }
-    if (isRefusal(error)) {
+    if (isModelsRefusal(error)) {
       print(shell.stderr, [error.message]);
       return EXIT_REFUSED;
     }
@@ -803,18 +825,19 @@ export const runModelsForm = async (shell: ModelsShell, form: ModelsForm, input:
   }
 };
 
-const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: DeclaredProgram, signal: AbortSignal): Promise<string> => {
+export const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: ServerProgram, signal: AbortSignal, onWarning: (message: string) => void): Promise<string> => {
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
   const { settings } = await loadUserSettings({ home: ports.home });
-  const description = registeredServer(serverRegistryOf({ [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } }, paths.settingsFile), program.id);
-  if (description === undefined) throw new TypeError(`the server program ${program.id} was declared and is not in its own registry`);
+  const declared = 'builtIn' in program ? undefined : { [program.id]: { command: program.command, args: [...program.args], readyPath: program.readyPath } };
+  const description = registeredServer(serverRegistryOf(declared, paths.settingsFile), program.id);
+  if (description === undefined) throw new TypeError(`the server program ${program.id} is not in the registry of server programs`);
   const { report } = await probeManagedFm({
     paths,
     platform: ports.platform,
     instance: cliProbeInstance(paths, program.id),
     description,
     target: program.id,
-    binary: program.command,
+    binary: 'builtIn' in program ? description.binary.defaultPath : program.command,
     readyTimeoutMs: description.ready.limitMs,
     env: ports.env,
     userDialects: settings.models.dialects,
@@ -822,7 +845,7 @@ const programModelOf = async (ports: CliPorts, paths: MomongaPaths, program: Dec
     hashes: createBinaryHashCache(),
     isUsableBinary: systemProcessFiles.isUsableBinary,
     readStopGraceMs: () => settings.gateway.managedServerStopGraceMs,
-    onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
+    onWarning,
   });
   return report.modelId;
 };
@@ -853,5 +876,5 @@ export const modelsShellOf = (ports: CliPorts, paths: MomongaPaths, interrupt: A
     }
   },
   detect: (request) => withIdentityReadFetch(ports, request.signal, (fetch) => serversDetector(ports, fetch)(request)),
-  programModel: (program, signal) => programModelOf(ports, paths, program, signal),
+  programModel: (program, signal) => programModelOf(ports, paths, program, signal, (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`)),
 });

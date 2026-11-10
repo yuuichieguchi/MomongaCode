@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { loadUserModels } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
 import {
   adoptionOf,
@@ -30,6 +29,7 @@ import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts, Sink } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 import { isNotListedCapabilities, notListedMessage } from '@momonga/protocol';
+import { shellModelsOf } from '../plain-http.ts';
 
 export class ContextImproveError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -151,7 +151,7 @@ export const contextImprove = async (
     const limits = { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs };
     const reflection = { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS };
     const codeDigest = await codeDigestOfRunningProcess();
-    const models = loadUserModels({ home: ports.home });
+    const models = shellModelsOf(ports);
     const pinned = pinnedModelOf(models, options.model);
     const analysis = await analysisModelFor({ roles: models.resolved.roles, model: pinned, capabilitiesOf: async (model) => {
         const capabilities = await gatewayInfo.capabilitiesOf(model);

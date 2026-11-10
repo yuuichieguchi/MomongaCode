@@ -21,13 +21,13 @@ export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'mcp', usage: 'list [--json] | login <server> [--no-browser]', description: 'inspect and authorize the MCP servers of this folder', longRunning: (tokens) => tokens[0] === 'login' },
   {
     name: 'context',
-    usage: 'improve --dataset <file> --alias <alias> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
+    usage: 'improve --dataset <file> --model <model> --token-cap <n> --outcome <file> | guideline adopt <file> | guideline list | guideline rollback <version>',
     description: 'improve how the context is compacted, and inspect, adopt and roll back the compaction guideline',
     longRunning: (tokens) => tokens[0] === 'improve',
   },
   { name: 'policy', usage: 'verify [--json] [--mode <mode>] [--secret <path>]', description: 'check the permission rules of this folder', longRunning: always },
-  { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the model aliases with the capabilities their targets declare, or find the local model servers that are running', longRunning: (tokens) => tokens[0] === 'detect' },
-  { name: 'gateway', usage: 'probe <target> [--samples <count>]', description: 'measure a model target and record the result for the gateway', longRunning: always },
+  { name: 'models', usage: '[--json] | detect [url...] [--json]', description: 'list the configured models with the capabilities they declare, or find the local model servers that are running', longRunning: (tokens) => tokens[0] === 'detect' || tokens[0] === 'check' || tokens[0] === 'add' || tokens[0] === 'add-program' },
+  { name: 'gateway', usage: 'probe <model> [--samples <count>]', description: 'measure a model and record the result for the gateway', longRunning: always },
 ];
 
 export const runShellCommand = async (name: string, args: string, context: SlashContext, longRunning: boolean): Promise<void> => {
@@ -58,7 +58,7 @@ const commandOf = (entry: ShellSlash): SlashCommand => ({
   run: (args, context) => runShellCommand(entry.name, args, context, entry.longRunning(args.split(/\s+/).filter((part) => part !== ''))),
 });
 
-export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp'];
+export const SCREEN_COMMAND_NAMES: readonly string[] = ['mcp', 'models'];
 
 export const shellSlashCommands: readonly SlashCommand[] = SHELL_SLASH_COMMANDS.filter((entry) => !SCREEN_COMMAND_NAMES.includes(entry.name)).map(commandOf);
 
