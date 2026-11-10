@@ -1,19 +1,19 @@
 import { createFakeSecretPrograms, posixPathLine, removeFakeSecretPrograms } from '../packages/testkit/src/fake-secret-programs.ts';
 
 const USAGE =
-  'usage: node scripts/fake-secret-programs.ts install | node scripts/fake-secret-programs.ts remove <directory>; install prints the directory and a PATH line for a POSIX shell';
+  'usage: node scripts/fake-secret-programs.ts install | node scripts/fake-secret-programs.ts remove <directory> <token>; install prints the directory, a PATH line for a POSIX shell and the token that remove requires';
 
 type Output = { out(text: string): void; err(text: string): void };
 
 export const runFakeSecretPrograms = (argv: readonly string[], platform: NodeJS.Platform, output: Output): number => {
-  const [command, directory] = argv;
+  const [command, directory, token] = argv;
   try {
     if (platform === 'win32') throw new Error('no fake secret store program that the product can start exists for Windows yet.');
     if (command === 'install' && directory === undefined) {
-      const { root, bin } = createFakeSecretPrograms();
-      output.out(`${root}\n${posixPathLine(bin)}\n`);
-    } else if (command === 'remove' && directory !== undefined) {
-      removeFakeSecretPrograms(directory);
+      const created = createFakeSecretPrograms();
+      output.out(`${created.root}\n${posixPathLine(created.bin)}\n${created.token}\n`);
+    } else if (command === 'remove' && directory !== undefined && token !== undefined) {
+      removeFakeSecretPrograms(directory, token);
     } else {
       throw new Error(USAGE);
     }

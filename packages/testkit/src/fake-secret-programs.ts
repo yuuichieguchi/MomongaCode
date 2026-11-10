@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,7 @@ const ROOT_PREFIX = 'momonga-secret-programs-';
 const MARKER_FILE = '.momonga-fake-secret-programs';
 const ROOT_ENTRIES = [MARKER_FILE, 'bin', 'items'].sort();
 
-export type FakeSecretPrograms = { root: string; bin: string };
+export type FakeSecretPrograms = { root: string; bin: string; token: string };
 
 type Marker = { token: string; root: string };
 
@@ -44,10 +44,13 @@ export const createFakeSecretPrograms = (): FakeSecretPrograms => {
   const bin = installFakeSecretPrograms(root);
   const marker: Marker = { token: randomBytes(32).toString('hex'), root };
   fs.writeFileSync(path.join(root, MARKER_FILE), JSON.stringify(marker), { mode: 0o600, flag: 'wx' });
-  return { root, bin };
+  return { root, bin, token: marker.token };
 };
 
-const isCreatedHere = (root: string): boolean => {
+const TOKEN_SHAPE = /^[0-9a-f]{64}$/;
+
+const isCreatedWith = (root: string, token: string): boolean => {
+  if (!TOKEN_SHAPE.test(token)) return false;
   let real: string;
   try {
     real = fs.realpathSync(root);
@@ -57,11 +60,11 @@ const isCreatedHere = (root: string): boolean => {
   if (path.dirname(real) !== fs.realpathSync(os.tmpdir()) || !path.basename(real).startsWith(ROOT_PREFIX)) return false;
   if (JSON.stringify(fs.readdirSync(real).sort()) !== JSON.stringify(ROOT_ENTRIES)) return false;
   const marker = JSON.parse(fs.readFileSync(path.join(real, MARKER_FILE), 'utf8')) as Partial<Marker>;
-  return marker.root === real && typeof marker.token === 'string' && /^[0-9a-f]{64}$/.test(marker.token);
+  return marker.root === real && typeof marker.token === 'string' && TOKEN_SHAPE.test(marker.token) && timingSafeEqual(Buffer.from(marker.token), Buffer.from(token));
 };
 
-export const removeFakeSecretPrograms = (root: string): void => {
-  if (!isCreatedHere(root)) throw new Error(`${root} is not a fake secret programs directory`);
+export const removeFakeSecretPrograms = (root: string, token: string): void => {
+  if (!isCreatedWith(root, token)) throw new Error(`${root} is not a fake secret programs directory this token created`);
   fs.rmSync(fs.realpathSync(root), { recursive: true, force: true });
 };
 
