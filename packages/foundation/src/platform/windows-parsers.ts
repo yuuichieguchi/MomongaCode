@@ -1,4 +1,5 @@
 import { parseOutsideJson } from '../json-depth.ts';
+import type { StartTime } from './inspector-types.ts';
 
 export type WindowsProcessRow = { pid: number; ppid: number; startMs: number };
 
@@ -29,7 +30,7 @@ export const parsePidList = (text: string): number[] =>
     return value;
   });
 
-export const parseStartTimeMs = (text: string): bigint | undefined => {
+export const parseStartTime = (text: string): StartTime | undefined => {
   const trimmed = text.trim();
   if (trimmed === '') return undefined;
   if (!/^\d+$/.test(trimmed)) throw new Error(`creation time is not an integer: ${JSON.stringify(trimmed)}`);

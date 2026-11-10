@@ -5,7 +5,7 @@ import type { WindowsProcessRow } from '../../src/platform/windows-parsers.ts';
 import type { CommandResult, CommandRunner } from '../../src/platform/command-runner.ts';
 import { createAsyncSignalSender, createProcessGroupPort } from '../../src/platform/group-port.ts';
 import { createWindowsGroupControl, createWindowsInspector } from '../../src/platform/windows-inspector.ts';
-import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from '../../src/platform/windows-parsers.ts';
+import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTime } from '../../src/platform/windows-parsers.ts';
 import { holdersScript, powershellLiteral, startTimeScript } from '../../src/platform/windows-scripts.ts';
 
 const LIVE = { signal: new AbortController().signal };
@@ -41,9 +41,9 @@ describe('windows parsers (shape of ConvertTo-Json -Compress output)', () => {
     expect(parsePidList('12')).toEqual([12]);
     expect(parsePidList('')).toEqual([]);
     expect(() => parsePidList('[0]')).toThrow('positive integer');
-    expect(parseStartTimeMs('133400000000000001\r\n')).not.toEqual(parseStartTimeMs('133400000000000002\r\n'));
-    expect(parseStartTimeMs('')).toBeUndefined();
-    expect(() => parseStartTimeMs('Monday')).toThrow('integer');
+    expect(parseStartTime('133400000000000001\r\n')).not.toEqual(parseStartTime('133400000000000002\r\n'));
+    expect(parseStartTime('')).toBeUndefined();
+    expect(() => parseStartTime('Monday')).toThrow('integer');
   });
 });
 
