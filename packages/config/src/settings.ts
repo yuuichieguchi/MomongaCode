@@ -357,11 +357,11 @@ export type TuiTheme = (typeof TUI_THEMES)[number];
 
 export type TuiNotify = (typeof TUI_NOTIFY_MODES)[number];
 
-export type TuiSettings = { theme?: TuiTheme; notify?: TuiNotify };
+export type TuiSettings = { theme?: TuiTheme; notify?: TuiNotify; screenReader?: boolean; reducedMotion?: boolean };
 
 export type ResolvedTuiSettings = Required<TuiSettings>;
 
-export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off' });
+export const defaultTuiSettings = (): ResolvedTuiSettings => ({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false });
 
 export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
 

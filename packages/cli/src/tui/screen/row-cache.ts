@@ -1,5 +1,6 @@
 import type { Entry } from '../transcript.ts';
 import { assistantTextRows, rowsOfEntry } from './entry-rows.ts';
+import type { RowFacts } from './tool-view.ts';
 import type { StoreEntry, TranscriptStore } from './store.ts';
 import type { Row } from './wrap.ts';
 
@@ -37,7 +38,9 @@ const segmentOf = (text: string, from: number, boundary: number): string => {
   return segment.endsWith('\r') ? segment.slice(0, -1) : segment;
 };
 
-export const createRowCache = (renderers: RowRenderers = { entryRows: rowsOfEntry, assistantRows: assistantTextRows }): RowCache => {
+export const rowRenderersOf = (facts: RowFacts): RowRenderers => ({ entryRows: (entry, width) => rowsOfEntry(entry, width, facts), assistantRows: (text, width) => assistantTextRows(text, width, facts) });
+
+export const createRowCache = (renderers: RowRenderers): RowCache => {
   const cache = new Map<number, Cached>();
 
   const answerRows = (text: string, width: number, before: Cached | undefined): Cached => {

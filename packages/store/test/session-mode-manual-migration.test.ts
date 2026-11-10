@@ -42,9 +42,9 @@ const checkList = (db: DatabaseSync): string[] => {
 };
 
 describe('the stored asking mode is manual (design 8.3)', () => {
-  it('is the last migration, one step of its own, and rebuilds a referenced table', () => {
+  it('is one step of its own and rebuilds a referenced table', () => {
     const migration = renaming();
-    expect(migration.version).toBe(Math.max(...MIGRATIONS.map((candidate) => candidate.version)));
+    expect(MIGRATIONS.filter((candidate) => candidate.version === migration.version)).toEqual([migration]);
     expect(migration.rebuildsReferencedTable).toBe(true);
   });
 

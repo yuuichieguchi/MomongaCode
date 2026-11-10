@@ -5,9 +5,11 @@ import type { ElicitationDecision, ElicitationFlow } from '../../elicit/flow.ts'
 import { diffOfToolInput } from '../diff.ts';
 import type { DiffLine } from '../diff.ts';
 import type { EditorState } from '../editor.ts';
+import type { KeyTable } from '../keys/table.ts';
 import { joinHint } from '../select.tsx';
 import type { SelectLine, SelectSpec } from '../select.tsx';
 import type { PendingApproval, PendingElicitation, ToolEntry } from '../transcript.ts';
+import { currentA11y } from './a11y.ts';
 import { PanelInputBox } from './input-box.tsx';
 
 const shown = (text: string): string => escapeTerminalBlock(text.replaceAll('\r\n', '\n'));
@@ -91,15 +93,19 @@ export const elicitationSpec = (elicitation: PendingElicitation, title: string, 
   };
 };
 
-const FIELD_HINT = joinHint(['enter to confirm the value', 'esc: decline or cancel instead']);
+export const fieldHint = (keys: KeyTable): string => {
+  const confirm = keys.keyHint('select.decide');
+  const leave = keys.keyHint('select.escape');
+  return joinHint([...(confirm === '' ? [] : [`${confirm} to confirm the value`]), ...(leave === '' ? [] : [`${leave}: decline or cancel instead`])]);
+};
 
-export function ElicitationFields({ elicitation, title, editor, waiting }: { elicitation: PendingElicitation; title: string; editor: EditorState; waiting: number }) {
+export function ElicitationFields({ elicitation, title, editor, waiting, keys }: { elicitation: PendingElicitation; title: string; editor: EditorState; waiting: number; keys: KeyTable }) {
   const { flow } = elicitation;
   const request = currentRequest(flow);
   const field = currentField(flow);
   return (
     <Box flexDirection="column">
-      <Box flexDirection="column" borderStyle="round" paddingX={1}>
+      <Box flexDirection="column" {...(currentA11y().screenReader ? {} : { borderStyle: 'round' as const, paddingX: 1 })}>
         <Text bold>{shown(elicitationTitle(elicitation, title, waiting))}</Text>
         <Text>{shown(request.message)}</Text>
         {request.mode === 'url' ? <Text>{shown(`URL: ${request.url}`)}</Text> : null}
@@ -113,7 +119,7 @@ export function ElicitationFields({ elicitation, title, editor, waiting }: { eli
           </Box>
         )}
         {flow.error === undefined ? null : <Text color="red">{shown(flow.error)}</Text>}
-        <Text dimColor>{FIELD_HINT}</Text>
+        <Text dimColor>{fieldHint(keys)}</Text>
       </Box>
       <PanelInputBox editor={editor} />
     </Box>

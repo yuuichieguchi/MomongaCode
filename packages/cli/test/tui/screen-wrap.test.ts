@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { assistantTextRows, rowsOfEntry } from '../../src/tui/screen/entry-rows.ts';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { assistantTextRows as assistantTextRowsWith, rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { displayWidth, logicalText, wrapLine, wrapText } from '../../src/tui/screen/wrap.ts';
 import { appendEntry, foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf, randomText, seeded, storeOf } from './screen-fakes.ts';
+import { eventOf, randomText, seeded, storeOf, ROW_FACTS, ROW_RENDERERS } from './screen-fakes.ts';
+
+const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
+const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 
 const delta = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });
 

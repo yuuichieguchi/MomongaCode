@@ -29,7 +29,7 @@ const working = async (size = { columns: 70, rows: 14 }) => {
 describe('the waiting row in the screen (6.1)', () => {
   it('shows each phase with its seconds, advances with the one timer and leaves when the run ends', async () => {
     const { app, backend, clock } = await working();
-    expect(linesOf(app.lastFrame())[9]).toBe('⠋ waiting for the model 0s · esc to cancel');
+    expect(linesOf(app.lastFrame())[8]).toBe('⠋ waiting for the model 0s · esc to cancel');
     clock.advance(2100);
     await untilFrame(app, '⠙ waiting for the model 2s · esc to cancel');
     backend.emit(frame({ type: 'model.requested', attempt: 0, digest: 'd', createdAt: 12_000 }));

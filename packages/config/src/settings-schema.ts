@@ -529,7 +529,7 @@ export const SETTINGS_SCHEMA = {
     autoUpdates: { type: 'boolean' },
     tui: {
       type: 'object',
-      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] } },
+      properties: { theme: { enum: [...TUI_THEMES] }, notify: { enum: [...TUI_NOTIFY_MODES] }, screenReader: { type: 'boolean' }, reducedMotion: { type: 'boolean' } },
       additionalProperties: false,
     },
     gateway: {

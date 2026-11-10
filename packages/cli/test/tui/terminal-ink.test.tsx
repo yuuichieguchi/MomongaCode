@@ -8,7 +8,6 @@ import { WINDOW_TOO_SMALL } from '../../src/tui/terminal/constants.ts';
 import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
 import { TerminalFrame } from '../../src/tui/terminal/frame.tsx';
 import type { FrameLayer } from '../../src/tui/terminal/frame.tsx';
-import { legacyKeyOf } from '../../src/tui/keys/legacy.ts';
 import { createInkStdin } from '../../src/tui/terminal/ink-stdin.ts';
 import type { ScreenRequest, TerminalState } from '../../src/tui/terminal/layer.ts';
 
@@ -31,37 +30,6 @@ const unmounts: (() => void)[] = [];
 
 afterEach(() => {
   for (const unmount of unmounts.splice(0)) unmount();
-});
-
-describe('the key a prompt panel reads from a terminal event', () => {
-  const pressed = (event: KeyEvent): string[] => {
-    const { key } = legacyKeyOf(event);
-    return Object.entries(key).flatMap(([name, on]) => (on === true ? [name] : []));
-  };
-
-  it.each<[string, KeyEvent, string, string[]]>([
-    ['text', text('a'), 'a', []],
-    ['enter', named('enter'), '', ['return']],
-    ['shift+enter', named('enter', { shift: true }), '', ['return', 'shift']],
-    ['alt+enter', named('enter', { alt: true }), '', ['return', 'meta']],
-    ['escape', named('escape'), '', ['escape']],
-    ['tab', named('tab'), '', ['tab']],
-    ['shift+tab', named('tab', { shift: true }), '', ['tab', 'shift']],
-    ['backspace', named('backspace'), '', ['backspace']],
-    ['delete', named('delete'), '', ['delete']],
-    ['ctrl+c', text('c', { ctrl: true }), 'c', ['ctrl']],
-    ['up', named('up'), '', ['upArrow']],
-    ['down', named('down'), '', ['downArrow']],
-    ['left', named('left'), '', ['leftArrow']],
-    ['right', named('right'), '', ['rightArrow']],
-    ['page up', named('pageup'), '', ['pageUp']],
-    ['page down', named('pagedown'), '', ['pageDown']],
-    ['home', named('home'), '', ['home']],
-    ['end', named('end'), '', ['end']],
-  ])('%s', (_name, event, input, flags) => {
-    expect(legacyKeyOf(event).input).toBe(input);
-    expect(pressed(event).toSorted()).toEqual(flags.toSorted());
-  });
 });
 
 describe('the input stream given to Ink', () => {

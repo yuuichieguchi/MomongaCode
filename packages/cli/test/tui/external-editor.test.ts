@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createExternalEditor, EDITOR_UNSET_HINT } from '../../src/tui/external-editor.ts';
+import { createExternalEditor, editorUnsetHint } from '../../src/tui/external-editor.ts';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
 import type { ExternalEditorHost } from '../../src/tui/external-editor.ts';
 
 const hostOf = (env: ExternalEditorHost['env'], edit: (text: string) => string = (text) => text) => {
@@ -51,7 +52,7 @@ describe('the external editor', () => {
     const { host, steps } = hostOf({ VISUAL: ' ' });
     expect(await createExternalEditor(host).edit('x')).toEqual({ kind: 'unset' });
     expect(steps).toEqual([]);
-    expect(EDITOR_UNSET_HINT).toBe('Set $EDITOR to use ctrl+g.');
+    expect(editorUnsetHint(DEFAULT_KEY_TABLE)).toBe('Set $EDITOR to use ctrl+g.');
   });
 
   it('re-enters the screen and removes the file when the editor cannot be started', async () => {

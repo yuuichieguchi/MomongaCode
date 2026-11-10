@@ -41,6 +41,7 @@ export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
   readFile: nodeFileSystem.readFile,
   readTextFile: nodeFileSystem.readTextFile,
+  stat: nodeFileSystem.stat,
   mkdir: nodeFileSystem.mkdir,
   mkdirPrivate: nodeFileSystem.mkdirPrivate,
   mkdtemp: nodeFileSystem.mkdtemp,

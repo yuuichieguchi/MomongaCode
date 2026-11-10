@@ -1,7 +1,9 @@
 import { Box, Text } from 'ink';
-import type { Key } from 'ink';
 import type { ReactNode } from 'react';
 import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import type { ActionId, KeyContext, KeyTable } from './keys/table.ts';
+import { currentA11y } from './screen/a11y.ts';
+import type { KeyEvent } from './terminal/events.ts';
 import { styleOf as styleOfTokens } from './screen/theme.ts';
 import { withoutTabs, wrapLine } from './screen/wrap.ts';
 
@@ -18,7 +20,7 @@ export type SelectSpec = {
   readonly escape: number | 'back' | 'inactive';
   readonly interrupt: 'exit' | 'cancel-run' | 'back';
   readonly filter: boolean;
-  readonly confirm?: (row: SelectRow) => string;
+  readonly confirm?: (row: SelectRow, decideKey: string) => string;
   readonly alt?: { readonly label: string };
 };
 
@@ -47,7 +49,19 @@ export type SelectLayout = {
 };
 
 export const SENDING_TEXT = 'sending...';
-export const DETAIL_HINT_PARTS = ['up/down to scroll', 'esc to return'] as const;
+const keyPair = (keys: KeyTable, first: ActionId, second: ActionId): string => [keys.keyHint(first), keys.keyHint(second)].filter((key) => key !== '').join('/');
+
+const keyed = (key: string, text: (key: string) => string): string[] => (key === '' ? [] : [text(key)]);
+
+export const detailHintParts = (keys: KeyTable): string[] => [...keyed(keyPair(keys, 'viewer.up', 'viewer.down'), (key) => `${key} to scroll`), ...keyed(keys.keyHint('viewer.close'), (key) => `${key} to return`)];
+
+export const moreLinesText = (more: number, keys: KeyTable): string => {
+  const key = keys.keyHint('select.detail');
+  return `… ${more} more lines${key === '' ? '' : ` (${key} shows all)`}`;
+};
+
+export const selectedText = (label: string): string => `selected: ${label}`;
+
 export const SELECTED_MARKER = '›';
 
 const HINT_SEPARATOR = ' · ';
@@ -58,17 +72,24 @@ const CONTINUATION = '  ';
 
 export const joinHint = (parts: readonly string[]): string => parts.join(HINT_SEPARATOR);
 
-export const selectHint = (spec: SelectSpec): string => {
-  const choose = spec.decideOn === 'immediate' && !spec.filter ? '1-9 or enter to choose' : 'enter to choose';
-  const move = 'up/down to move';
+export const SELECT_CONTEXTS: readonly KeyContext[] = ['select'];
+
+export const selectHint = (spec: SelectSpec, keys: KeyTable): string => {
+  const decide = keys.keyHint('select.decide');
+  const digits = spec.decideOn === 'immediate' && !spec.filter ? ['1-9'] : [];
+  const choosers = [...digits, ...(decide === '' ? [] : [decide])];
+  const choose = choosers.length === 0 ? [] : [`${choosers.join(' or ')} to choose`];
+  const move = keyed(keyPair(keys, 'select.up', 'select.down'), (key) => `${key} to move`);
+  const escapeKey = keys.keyHint('select.escape');
   const escapeRow = typeof spec.escape === 'number' ? spec.rows[spec.escape] : undefined;
+  const alt = spec.alt;
   return joinHint([
-    ...(spec.decideOn === 'enter' ? [move, choose] : [choose, move]),
+    ...(spec.decideOn === 'enter' ? [...move, ...choose] : [...choose, ...move]),
     ...(spec.filter ? ['type to filter'] : []),
-    ...(spec.alt === undefined ? [] : [`tab: ${spec.alt.label}`]),
-    ...(spec.escape === 'back' ? ['esc: go back'] : []),
-    ...(escapeRow === undefined ? [] : [`esc: ${escapeRow.label}`]),
-    ...(spec.interrupt === 'cancel-run' ? ['ctrl+c: cancel the run'] : []),
+    ...(alt === undefined ? [] : keyed(keys.keyHint('select.alt'), (key) => `${key}: ${alt.label}`)),
+    ...(spec.escape === 'back' ? keyed(escapeKey, (key) => `${key}: go back`) : []),
+    ...(escapeRow === undefined ? [] : keyed(escapeKey, (key) => `${key}: ${escapeRow.label}`)),
+    ...(spec.interrupt === 'cancel-run' ? keyed(keys.keyHint('select.interrupt'), (key) => `${key}: cancel the run`) : []),
   ]);
 };
 
@@ -125,30 +146,48 @@ const filtered = (spec: SelectSpec, state: SelectState, filter: string, capacity
 const DIGIT = /^[1-9]$/;
 const PRINTABLE = /^[^\p{Control}]+$/u;
 
-export const selectKey = (spec: SelectSpec, state: SelectState, input: string, key: Key, capacity: number): SelectStep => {
-  if (key.ctrl && input === 'c') return { state, outcome: { kind: 'interrupt', action: spec.interrupt } };
-  if (key.upArrow || (key.ctrl && input === 'p')) return moved(spec, state, capacity, (position, count) => (position + count - 1) % count);
-  if (key.downArrow || (key.ctrl && input === 'n')) return moved(spec, state, capacity, (position, count) => (position + 1) % count);
-  if (key.pageUp) return moved(spec, state, capacity, (position) => Math.max(0, position - capacity));
-  if (key.pageDown) return moved(spec, state, capacity, (position, count) => Math.min(count - 1, position + capacity));
-  if (key.home) return moved(spec, state, capacity, () => 0);
-  if (key.end) return moved(spec, state, capacity, (_, count) => count - 1);
-  if (key.return) return stopsOf(spec, state.filter).includes(state.index) ? chosen(spec, state, state.index, capacity) : { state };
-  if (key.escape) {
-    if (state.filter !== '') return filtered(spec, state, '', capacity);
-    if (spec.escape === 'back') return { state, outcome: { kind: 'back' } };
-    return spec.escape === 'inactive' ? { state } : { state, outcome: { kind: 'decide', index: spec.escape } };
+const stepUp = (position: number, count: number): number => (position + count - 1) % count;
+const stepDown = (position: number, count: number): number => (position + 1) % count;
+
+export const selectAct = (spec: SelectSpec, state: SelectState, action: ActionId, capacity: number): SelectStep => {
+  switch (action) {
+    case 'select.interrupt':
+      return { state, outcome: { kind: 'interrupt', action: spec.interrupt } };
+    case 'select.up':
+      return moved(spec, state, capacity, stepUp);
+    case 'select.down':
+      return moved(spec, state, capacity, stepDown);
+    case 'select.pageUp':
+      return moved(spec, state, capacity, (position) => Math.max(0, position - capacity));
+    case 'select.pageDown':
+      return moved(spec, state, capacity, (position, count) => Math.min(count - 1, position + capacity));
+    case 'select.first':
+      return moved(spec, state, capacity, () => 0);
+    case 'select.last':
+      return moved(spec, state, capacity, (_, count) => count - 1);
+    case 'select.decide':
+      return stopsOf(spec, state.filter).includes(state.index) ? chosen(spec, state, state.index, capacity) : { state };
+    case 'select.escape':
+      if (state.filter !== '') return filtered(spec, state, '', capacity);
+      if (spec.escape === 'back') return { state, outcome: { kind: 'back' } };
+      return spec.escape === 'inactive' ? { state } : { state, outcome: { kind: 'decide', index: spec.escape } };
+    case 'select.alt':
+      return spec.alt !== undefined && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
+    case 'select.filterBack':
+      return spec.filter ? filtered(spec, state, state.filter.slice(0, -1), capacity) : { state };
+    default:
+      return { state };
   }
-  if (key.tab) return spec.alt !== undefined && spec.rows[state.index]?.disabled !== true && stopsOf(spec, state.filter).includes(state.index) ? { state, outcome: { kind: 'alt', index: state.index } } : { state };
-  if (key.ctrl || key.meta) return { state };
-  if (spec.filter) {
-    if (key.backspace || key.delete) return filtered(spec, state, state.filter.slice(0, -1), capacity);
-    return PRINTABLE.test(input) ? filtered(spec, state, `${state.filter}${input}`, capacity) : { state };
-  }
-  if (input === 'k') return moved(spec, state, capacity, (position, count) => (position + count - 1) % count);
-  if (input === 'j') return moved(spec, state, capacity, (position, count) => (position + 1) % count);
-  if (DIGIT.test(input)) {
-    const index = stopsOf(spec, state.filter)[Number(input) - 1];
+};
+
+export const selectKey = (spec: SelectSpec, state: SelectState, event: KeyEvent, keys: KeyTable, capacity: number): SelectStep => {
+  const typed = keys.typedOf(event);
+  const action = spec.filter && typed !== undefined ? undefined : keys.actionOf(SELECT_CONTEXTS, event, 'plain');
+  if (action !== undefined) return selectAct(spec, state, action, capacity);
+  if (typed === undefined) return { state };
+  if (spec.filter) return PRINTABLE.test(typed) ? filtered(spec, state, `${state.filter}${typed}`, capacity) : { state };
+  if (DIGIT.test(typed)) {
+    const index = stopsOf(spec, state.filter)[Number(typed) - 1];
     if (index === undefined) return { state };
     return spec.decideOn === 'immediate' ? chosen(spec, state, index, capacity) : { state: { ...highlighted(spec, state, index, capacity), confirming: undefined } };
   }
@@ -237,7 +276,8 @@ function TextRows({ rows }: { rows: readonly TextRow[] }) {
 }
 
 function Panel({ border, children }: { border: boolean; children: ReactNode }) {
-  return border ? (
+  const { screenReader } = currentA11y();
+  return border && !screenReader ? (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       {children}
     </Box>
@@ -247,49 +287,58 @@ function Panel({ border, children }: { border: boolean; children: ReactNode }) {
 }
 
 export function ChoiceRow({ selected, label, number, disabled }: { selected: boolean; label: string; number?: number; disabled?: boolean }) {
+  const { screenReader } = currentA11y();
+  const text = `${number === undefined ? '' : `${number}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`;
+  if (screenReader) return <Text wrap="truncate">{text}</Text>;
   return (
     <Text wrap="truncate" {...(selected ? styleOfTokens(['choice.selected']) : {})}>
-      {`${selected ? SELECTED_MARKER : ' '} ${number === undefined ? '' : `${number}. `}${escapeTerminalLine(label)}${disabled === true ? ' (unavailable)' : ''}`}
+      {`${selected ? SELECTED_MARKER : ' '} ${text}`}
     </Text>
   );
 }
 
+export const moreRowText = (direction: 'up' | 'down', count: number, screenReader: boolean): string => (screenReader ? `${count} more ${direction === 'up' ? 'above' : 'below'}` : `  ${direction === 'up' ? '↑' : '↓'} ${count} more`);
+
 export function MoreRow({ direction, count }: { direction: 'up' | 'down'; count: number }) {
-  return <Text dimColor wrap="truncate">{`  ${direction === 'up' ? '↑' : '↓'} ${count} more`}</Text>;
+  const { screenReader } = currentA11y();
+  return <Text dimColor wrap="truncate">{moreRowText(direction, count, screenReader)}</Text>;
 }
 
-export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; error?: string };
+export type SelectViewProps = { spec: SelectSpec; state: SelectState; layout: SelectLayout; border: boolean; sending: boolean; keys: KeyTable; error?: string };
 
-export function SelectView({ spec, state, layout, border, sending, error }: SelectViewProps) {
+export function SelectView({ spec, state, layout, border, sending, keys, error }: SelectViewProps) {
+  const { screenReader } = currentA11y();
   const stops = spec.rows.flatMap((row, index) => (row.separator === true ? [] : [index]));
   const confirming = state.confirming === undefined ? undefined : spec.rows[state.confirming];
+  const highlightedRow = spec.rows[state.index];
   return (
     <Panel border={border}>
       <TextRows rows={layout.text} />
-      {layout.more > 0 ? <Text dimColor wrap="truncate">{`… ${layout.more} more lines (ctrl+o shows all)`}</Text> : null}
+      {layout.more > 0 ? <Text dimColor wrap="truncate">{moreLinesText(layout.more, keys)}</Text> : null}
+      {screenReader && highlightedRow !== undefined ? <Text wrap="truncate">{escapeTerminalLine(selectedText(highlightedRow.label))}</Text> : null}
       {spec.filter ? <Text wrap="truncate">{`filter: ${escapeTerminalLine(state.filter)}`}</Text> : null}
       {layout.above > 0 ? <MoreRow direction="up" count={layout.above} /> : null}
-      {layout.items.length === 0 ? <Text dimColor>  no match</Text> : null}
+      {layout.items.length === 0 ? <Text dimColor>{screenReader ? 'no match' : '  no match'}</Text> : null}
       {layout.items.map((index) => {
         const row = spec.rows[index];
         if (row === undefined) return null;
-        if (row.separator === true) return <Text key={index} dimColor wrap="truncate">{`  ${escapeTerminalLine(row.label)}`}</Text>;
+        if (row.separator === true) return <Text key={index} dimColor wrap="truncate">{`${screenReader ? '' : '  '}${escapeTerminalLine(row.label)}`}</Text>;
         return <ChoiceRow key={index} selected={index === state.index} number={stops.indexOf(index) + 1} label={row.label} {...(row.disabled === true ? { disabled: true } : {})} />;
       })}
       {layout.below > 0 ? <MoreRow direction="down" count={layout.below} /> : null}
-      {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming))}</Text>}
+      {confirming === undefined || spec.confirm === undefined ? null : <Text {...styleOfTokens(['warning'])} wrap="truncate">{escapeTerminalLine(spec.confirm(confirming, keys.keyHint('select.decide')))}</Text>}
       {error === undefined ? null : <Text {...styleOfTokens(['error'])} wrap="truncate">{escapeTerminalLine(error)}</Text>}
-      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : selectHint(spec)}</Text>
+      <Text dimColor wrap="truncate">{sending ? SENDING_TEXT : selectHint(spec, keys)}</Text>
     </Panel>
   );
 }
 
-export function DetailView({ text, frame, top }: { text: readonly TextRow[]; frame: SelectFrame; top: number }) {
+export function DetailView({ text, frame, top, keys }: { text: readonly TextRow[]; frame: SelectFrame; top: number; keys: KeyTable }) {
   const from = detailTop(text, frame, top);
   return (
     <Panel border={frame.border}>
       <TextRows rows={text.slice(from, from + detailCapacity(frame))} />
-      <Text dimColor wrap="truncate">{joinHint(DETAIL_HINT_PARTS)}</Text>
+      <Text dimColor wrap="truncate">{joinHint(detailHintParts(keys))}</Text>
     </Panel>
   );
 }

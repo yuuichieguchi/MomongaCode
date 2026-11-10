@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { WHEEL_ROWS } from '../../src/tui/screen/constants.ts';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import type { TranscriptStore } from '../../src/tui/screen/store.ts';
-import { clamped, FOLLOWING, moved, sourceOf, thumbRow, viewportMoveOf, windowOf } from '../../src/tui/screen/viewport.ts';
+import { clamped, FOLLOWING, moved, sourceOf, thumbRow, viewportMoveOf as viewportMoveOfWith, windowOf } from '../../src/tui/screen/viewport.ts';
 import type { Position } from '../../src/tui/screen/viewport.ts';
 import { appendEntry } from '../../src/tui/transcript.ts';
+import { ROW_RENDERERS } from './screen-fakes.ts';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
+const viewportMoveOf = (event: Parameters<typeof viewportMoveOfWith>[0], height: number) => viewportMoveOfWith(event, height, DEFAULT_KEY_TABLE);
 
 const filled = (count: number, text = (index: number) => `line ${index}`): TranscriptStore => {
   const store = createTranscriptStore();

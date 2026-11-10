@@ -25,9 +25,9 @@ const until = async (met: () => boolean, what: string): Promise<void> => {
 };
 
 const storedSettings = (initial: Partial<ResolvedTuiSettings> = {}) => {
-  const saved: { name: string; value: string; aborted: boolean }[] = [];
+  const saved: { name: string; value: string | boolean; aborted: boolean }[] = [];
   const port: TuiSettingsPort = {
-    initial: { theme: 'auto', notify: 'off', ...initial },
+    initial: { theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false, ...initial },
     save: async (name, value, signal) => {
       saved.push({ name, value, aborted: signal.aborted });
     },

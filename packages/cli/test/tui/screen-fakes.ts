@@ -9,6 +9,38 @@ import { NEWLINE_HINT } from '../../src/tui/terminal/negotiation.ts';
 import type { NegotiationState } from '../../src/tui/terminal/negotiation.ts';
 import { foldChildEvent, foldEvent } from '../../src/tui/transcript.ts';
 import type { Entry } from '../../src/tui/transcript.ts';
+import type { Key } from 'ink';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+import { NO_A11Y } from '../../src/tui/screen/a11y.ts';
+import { rowRenderersOf } from '../../src/tui/screen/row-cache.ts';
+import type { RowFacts } from '../../src/tui/screen/tool-view.ts';
+import type { KeyEvent, KeyName } from '../../src/tui/terminal/events.ts';
+
+export const ROW_FACTS: RowFacts = { keys: DEFAULT_KEY_TABLE, a11y: NO_A11Y };
+
+export const ROW_RENDERERS = rowRenderersOf(ROW_FACTS);
+
+const INK_NAMES: readonly (readonly [keyof Key, KeyName])[] = [
+  ['upArrow', 'up'],
+  ['downArrow', 'down'],
+  ['leftArrow', 'left'],
+  ['rightArrow', 'right'],
+  ['pageUp', 'pageup'],
+  ['pageDown', 'pagedown'],
+  ['home', 'home'],
+  ['end', 'end'],
+  ['return', 'enter'],
+  ['escape', 'escape'],
+  ['tab', 'tab'],
+  ['backspace', 'backspace'],
+  ['delete', 'delete'],
+];
+
+export const keyEventOf = (input: string, key: Partial<Key>): KeyEvent => {
+  const modifiers = { ctrl: key.ctrl === true, alt: key.meta === true, shift: key.shift === true };
+  const named = INK_NAMES.find(([flag]) => key[flag] === true);
+  return named === undefined ? { type: 'key', text: input, ...modifiers } : { type: 'key', name: named[1], ...modifiers };
+};
 
 export const envelope = { id: 1, runId: 'r', sessionId: 's', seq: 1, step: 1, createdAt: 1 } as const;
 

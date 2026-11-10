@@ -1,12 +1,14 @@
 import { createElement, useEffect, useEffectEvent, useReducer, useRef } from 'react';
 import type { ReactNode } from 'react';
-import type { Key } from 'ink';
 import { escapeTerminalBlock } from '@momonga/protocol';
 import { DetailView, detailCapacity } from '../select.tsx';
 import type { SelectFrame, TextRow } from '../select.tsx';
-import type { TerminalEvent } from '../terminal/events.ts';
+import type { KeyContext, KeyTable } from '../keys/table.ts';
+import type { KeyEvent, TerminalEvent } from '../terminal/events.ts';
 import { tickRunningTools, toggleNewestThought, toolOf } from '../transcript.ts';
 import type { ToolEntry } from '../transcript.ts';
+import { STATIC_MARK } from './a11y.ts';
+import type { A11y } from './a11y.ts';
 import { WHEEL_ROWS } from './constants.ts';
 import { BLOCK_INDENT, DIFF_PREVIEW_ROWS, diffHeader, diffLines, diffRowCount, omittedText } from './diff.ts';
 import type { ViewLine } from './diff.ts';
@@ -26,7 +28,6 @@ import type { Row } from './wrap.ts';
 export const OUTPUT_TAIL_MAX_BYTES = 8 * 1024;
 export const OUTPUT_TAIL_LINES = 5;
 export const VIEWER_UNIT_BYTES = MARKDOWN_UNIT_BYTES;
-export const VIEWER_KEY = 'ctrl+o';
 export const TOOL_TICK_MS = 1000;
 
 const ELLIPSIS = '…';
@@ -34,7 +35,15 @@ const LOW_SURROGATE = /^[\uDC00-\uDFFF]/;
 
 export type OutputTail = { lines: readonly string[]; hidden: number };
 
-export const expandRowText = (hidden: number): string => `${ELLIPSIS} +${hidden} lines (${VIEWER_KEY} to expand)`;
+export type RowFacts = { readonly keys: KeyTable; readonly a11y: A11y };
+
+const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
+const CHAT_CONTEXTS: readonly KeyContext[] = ['chat'];
+
+export const expandRowText = (hidden: number, keys: KeyTable): string => {
+  const key = keys.keyHint('transcript.detail');
+  return `${ELLIPSIS} +${hidden} lines${key === '' ? '' : ` (${key} to expand)`}`;
+};
 
 export const tailOf = (output: string): OutputTail | undefined => {
   const end = output.endsWith('\n') ? output.length - 1 : output.length;
@@ -70,9 +79,9 @@ const cutRow = (line: ViewLine, width: number): Row => {
 
 const dimLine = (text: string): ViewLine => ({ prefix: BLOCK_INDENT, text, token: 'dim' });
 
-const tailRows = (tail: OutputTail, width: number): Row[] => [...(tail.hidden > 0 ? [dimLine(expandRowText(tail.hidden))] : []), ...tail.lines.map(dimLine)].map((line) => cutRow(line, width));
+const tailRows = (tail: OutputTail, width: number, keys: KeyTable): Row[] => [...(tail.hidden > 0 ? [dimLine(expandRowText(tail.hidden, keys))] : []), ...tail.lines.map(dimLine)].map((line) => cutRow(line, width));
 
-const diffRows = (diff: NonNullable<ToolEntry['diff']>, width: number): Row[] => {
+const diffRows = (diff: NonNullable<ToolEntry['diff']>, width: number, keys: KeyTable): Row[] => {
   const header = cutRow({ prefix: '', text: diffHeader(diff) }, width);
   if (diff.hunks === undefined) return [header];
   const rows = [header];
@@ -83,22 +92,22 @@ const diffRows = (diff: NonNullable<ToolEntry['diff']>, width: number): Row[] =>
     rows.push(cutRow(next.value, width));
   }
   const hidden = diffRowCount(diff.hunks) - DIFF_PREVIEW_ROWS;
-  if (hidden > 0) rows.push(cutRow(dimLine(expandRowText(hidden)), width));
+  if (hidden > 0) rows.push(cutRow(dimLine(expandRowText(hidden, keys)), width));
   if (diff.omitted !== undefined) rows.push(cutRow(dimLine(omittedText(diff.omitted)), width));
   return rows;
 };
 
-export const toolBlockRows = (entry: ToolEntry, width: number): Row[] => {
+export const toolBlockRows = (entry: ToolEntry, width: number, keys: KeyTable): Row[] => {
   if (entry.denial !== undefined) return [];
-  if (entry.diff !== undefined) return diffRows(entry.diff, width);
-  return entry.tail === undefined ? [] : tailRows(entry.tail, width);
+  if (entry.diff !== undefined) return diffRows(entry.diff, width, keys);
+  return entry.tail === undefined ? [] : tailRows(entry.tail, width, keys);
 };
 
 export const elapsedSecondsOf = (entry: ToolEntry): number => Math.max(0, Math.floor((entry.shownAt - entry.calledAt) / 1000));
 
-export const runningToolText = (entry: ToolEntry): string => {
+export const runningToolText = (entry: ToolEntry, a11y: A11y): string => {
   const seconds = elapsedSecondsOf(entry);
-  return `${SPINNER_FRAMES[seconds % SPINNER_FRAMES.length]} ${entry.title} · ${seconds}s`;
+  return `${a11y.reducedMotion ? STATIC_MARK : SPINNER_FRAMES[seconds % SPINNER_FRAMES.length]} ${entry.title} · ${seconds}s`;
 };
 
 export const hasHiddenLines = (entry: ToolEntry): boolean => {
@@ -109,7 +118,7 @@ export const hasHiddenLines = (entry: ToolEntry): boolean => {
 
 export const hasOutput = (entry: ToolEntry): boolean => entry.denial === undefined && (entry.diff !== undefined || entry.tail !== undefined);
 
-export const isExpandRow = (row: Row): boolean => row.prefixCols === BLOCK_INDENT.length && /^ {2}… \+\d+ lines \(/.test(row.text);
+export const isExpandRow = (row: Row): boolean => row.prefixCols === BLOCK_INDENT.length && /^ {2}… \+\d+ lines/.test(row.text);
 
 function* outputLines(output: string): Generator<ViewLine> {
   const end = output.endsWith('\n') ? output.length - 1 : output.length;
@@ -176,6 +185,8 @@ export type ToolViewHost = {
   terminal: ScreenTerminal;
   now(): number;
   timers: ScreenTimers;
+  keys: KeyTable;
+  a11y: A11y;
   frame: SelectFrame;
   yielded: boolean;
   window: ViewWindow | undefined;
@@ -183,7 +194,7 @@ export type ToolViewHost = {
   reportError(error: unknown): void;
 };
 
-export type ToolView = { shown: boolean; view: ReactNode; showNewest(): void; key(input: string, key: Key): boolean };
+export type ToolView = { shown: boolean; view: ReactNode; showNewest(): void; key(event: KeyEvent, keys: KeyTable): boolean };
 
 type Opened = { callId: string; index: number; width: number; pager: Pager; top: number };
 
@@ -204,7 +215,7 @@ export const useToolView = (host: ToolViewHost): ToolView => {
   const { store, terminal, timers, now } = host;
   const opened = useRef<Opened | undefined>(undefined);
   const [, redraw] = useReducer((count: number) => count + 1, 0);
-  const running = store.state().runningTools.length > 0;
+  const running = store.state().runningTools.length > 0 && !host.a11y.screenReader;
 
   useEffect(() => (running ? every(timers, TOOL_TICK_MS, () => tickRunningTools(store, now())) : undefined), [running, timers, now, store]);
 
@@ -263,18 +274,20 @@ export const useToolView = (host: ToolViewHost): ToolView => {
     else if (thought !== undefined) toggleNewestThought(store);
   };
 
-  const key = (input: string, pressed: Key): boolean => {
+  const key = (event: KeyEvent, keys: KeyTable): boolean => {
     const shown = current();
     if (shown === undefined) return false;
-    if (pressed.ctrl && input === 'c') return false;
-    if (pressed.escape) close();
-    else if (pressed.tab) step(shown, pressed.shift ? 1 : -1);
-    else if (pressed.upArrow) place(shown, shown.top - 1);
-    else if (pressed.downArrow) place(shown, shown.top + 1);
-    else if (pressed.pageUp) place(shown, shown.top - capacity());
-    else if (pressed.pageDown) place(shown, shown.top + capacity());
-    else if (pressed.home) place(shown, 0);
-    else if (pressed.end) toEnd(shown).catch(host.reportError);
+    const action = keys.actionOf(VIEWER_CONTEXTS, event, 'plain');
+    if (action === undefined) return keys.actionOf(CHAT_CONTEXTS, event) !== 'prompt.interrupt';
+    if (action === 'viewer.close') close();
+    else if (action === 'viewer.older') step(shown, -1);
+    else if (action === 'viewer.newer') step(shown, 1);
+    else if (action === 'viewer.up') place(shown, shown.top - 1);
+    else if (action === 'viewer.down') place(shown, shown.top + 1);
+    else if (action === 'viewer.pageUp') place(shown, shown.top - capacity());
+    else if (action === 'viewer.pageDown') place(shown, shown.top + capacity());
+    else if (action === 'viewer.first') place(shown, 0);
+    else if (action === 'viewer.last') toEnd(shown).catch(host.reportError);
     return true;
   };
 
@@ -300,7 +313,7 @@ export const useToolView = (host: ToolViewHost): ToolView => {
   const shown = current();
   return {
     shown: shown !== undefined,
-    view: shown === undefined ? null : createElement(DetailView, { text: shown.pager.rows.slice(shown.top, shown.top + capacity()).map(textRowOf), frame: host.frame, top: 0 }),
+    view: shown === undefined ? null : createElement(DetailView, { text: shown.pager.rows.slice(shown.top, shown.top + capacity()).map(textRowOf), frame: host.frame, top: 0, keys: host.keys }),
     showNewest,
     key,
   };

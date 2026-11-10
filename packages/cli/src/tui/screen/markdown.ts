@@ -342,17 +342,19 @@ const recordRows = (headers: readonly Inline[], body: readonly (readonly Inline[
   ]);
 };
 
-const tableRows = (lines: readonly string[], width: number): Row[] => {
+export type TableDrawing = 'grid' | 'records';
+
+const tableRows = (lines: readonly string[], width: number, drawing: TableDrawing): Row[] => {
   const sources = lines.filter((_, index) => index !== 1).map(cellsOf);
   const columns = Math.max(...sources.map((cells) => cells.length));
   const [headers = [], ...body] = sources.map((cells, row) => Array.from({ length: columns }, (_, column) => inlineOf(cells[column] ?? '', row === 0 ? 'tableHeader' : undefined)));
   const natural = Array.from({ length: columns }, (_, column) => Math.max(...[headers, ...body].map((cells) => displayWidth(cells[column]?.text ?? ''))));
   const widths = columnWidths(headers, natural, width - (3 * columns + 1));
-  if (widths === undefined) return recordRows(headers, body, width);
+  if (widths === undefined || drawing === 'records') return recordRows(headers, body, width);
   return [borderRow(widths, '┌', '┬', '┐'), ...gridRows(headers, widths), borderRow(widths, '├', '┼', '┤'), ...body.flatMap((cells) => gridRows(cells, widths)), borderRow(widths, '└', '┴', '┘')];
 };
 
-export const markdownRows = (text: string, width: number): Row[] => {
+export const markdownRowsWith = (text: string, width: number, { tables }: { tables: TableDrawing }): Row[] => {
   const lines = inertText(text).split('\n');
   const rows: Row[] = [];
   let fenced = false;
@@ -367,9 +369,11 @@ export const markdownRows = (text: string, width: number): Row[] => {
     else if (isTableStart(line, lines[index + 1])) {
       let end = index + 2;
       while (isTableRow(lines[end])) end += 1;
-      rows.push(...tableRows(lines.slice(index, end), width));
+      rows.push(...tableRows(lines.slice(index, end), width, tables));
       index = end - 1;
     } else rows.push(...lineRows(line, width));
   }
   return rows;
 };
+
+export const markdownRows = (text: string, width: number): Row[] => markdownRowsWith(text, width, { tables: 'grid' });

@@ -1,3 +1,6 @@
+import type { KeyContext, KeyTable } from './keys/table.ts';
+import type { KeyEvent } from './terminal/events.ts';
+
 export type PastedSpan = { readonly label: string; readonly text: string };
 
 type Snapshot = { readonly text: string; readonly cursor: number };
@@ -13,22 +16,6 @@ export type EditorState = {
   pasteCount: number;
   undo: readonly Snapshot[];
   typing: boolean;
-};
-
-export type KeyPress = {
-  input: string;
-  return?: boolean;
-  shift?: boolean;
-  ctrl?: boolean;
-  meta?: boolean;
-  backspace?: boolean;
-  delete?: boolean;
-  leftArrow?: boolean;
-  rightArrow?: boolean;
-  upArrow?: boolean;
-  downArrow?: boolean;
-  home?: boolean;
-  end?: boolean;
 };
 
 export type EditorOutcome = { state: EditorState; submit?: string };
@@ -245,31 +232,16 @@ export const enterOf = (state: EditorState): EnterOutcome => {
   return { kind: 'submit', state: emptyEditor(pushHistory(state.history, text)), text };
 };
 
-const legacyActionOf = (key: KeyPress): EditorAction | undefined => {
-  if (key.return === true) return key.shift === true || key.meta === true ? 'prompt.newline' : undefined;
-  if (key.ctrl === true) {
-    const byLetter: Readonly<Record<string, EditorAction>> = { j: 'prompt.newline', a: 'editor.lineStart', e: 'editor.lineEnd', u: 'editor.killLineStart', k: 'editor.killLineEnd', w: 'editor.killWordBefore', y: 'editor.yank', _: 'editor.undo' };
-    return byLetter[key.input];
-  }
-  if (key.backspace === true) return 'editor.deleteBefore';
-  if (key.delete === true) return 'editor.deleteAfter';
-  if (key.leftArrow === true) return 'editor.left';
-  if (key.rightArrow === true) return 'editor.right';
-  if (key.home === true) return 'editor.lineStart';
-  if (key.end === true) return 'editor.lineEnd';
-  if (key.upArrow === true) return 'editor.up';
-  if (key.downArrow === true) return 'editor.down';
-  return undefined;
-};
+const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat'];
 
-export const applyKey = (state: EditorState, key: KeyPress): EditorOutcome => {
-  const action = legacyActionOf(key);
-  if (action !== undefined) return { state: applyAction(state, action) };
-  if (key.return === true) {
+export const applyKeyEvent = (state: EditorState, event: KeyEvent, keys: KeyTable): EditorOutcome => {
+  const action = keys.actionOf(EDITOR_CONTEXTS, event);
+  if (isEditorAction(action)) return { state: applyAction(state, action) };
+  if (action === 'prompt.submit') {
     const outcome = enterOf(state);
     if (outcome.kind === 'blank') return { state };
     return outcome.kind === 'newline' ? { state: outcome.state } : { state: outcome.state, submit: outcome.text };
   }
-  if (key.ctrl === true || key.meta === true) return { state };
-  return { state: insertText(state, key.input) };
+  const typed = action === undefined ? keys.typedOf(event) : undefined;
+  return typed === undefined ? { state } : { state: insertText(state, typed) };
 };

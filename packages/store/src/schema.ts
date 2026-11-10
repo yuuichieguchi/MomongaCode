@@ -1057,6 +1057,23 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const RUN_INBOX = `
+CREATE TABLE run_inbox (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  delivery TEXT NOT NULL CHECK (delivery IN ('steer', 'queue')),
+  text TEXT NOT NULL,
+  attachments TEXT NOT NULL DEFAULT '[]',
+  seq INTEGER NOT NULL CHECK (seq >= 1),
+  state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'withdrawn')),
+  created_at INTEGER NOT NULL,
+  settled_at INTEGER,
+  UNIQUE (session_id, seq),
+  CHECK ((state = 'pending') = (settled_at IS NULL))
+);
+CREATE INDEX run_inbox_pending ON run_inbox (session_id, seq) WHERE state = 'pending';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -1129,5 +1146,10 @@ export const MIGRATIONS: readonly Migration[] = [
     name: "name the asking mode manual: rebuild sessions with a permission_mode CHECK list that holds 'manual' in place of 'default', rewrite each stored 'default' to 'manual', and re-create the index and the two triggers of sessions",
     sql: SESSIONS_MODE_MANUAL,
     rebuildsReferencedTable: true,
+  },
+  {
+    version: 31,
+    name: 'hold the messages typed while a run works in run_inbox, each to steer the run or queued as the next run, pending until delivered or withdrawn',
+    sql: RUN_INBOX,
   },
 ];

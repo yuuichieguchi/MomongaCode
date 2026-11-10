@@ -17,6 +17,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     home,
     root,
     settingsFile: path.join(root, 'settings.json'),
+    keybindingsFile: path.join(root, 'keybindings.json'),
     run,
     current: path.join(run, 'current'),
     generationLock: path.join(run, 'generation.lock'),

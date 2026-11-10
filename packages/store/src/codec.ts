@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, planAccountRefOf } from '@momonga/protocol';
-import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import { FILE_ACCESSES, INBOX_DELIVERIES, INBOX_STATES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, planAccountRefOf } from '@momonga/protocol';
+import type { InboxRowView, OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
 import { DATABASE_NOT_NEWER } from './decode-context.ts';
 import type { DecodeContext } from './decode-context.ts';
@@ -161,7 +161,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   notice: true,
 };
 
-const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true };
+const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.changed': true, 'model.changed': true, 'inbox.changed': true };
 
 const isToolFile = (value: unknown): boolean =>
   isRecord(value) &&
@@ -222,6 +222,17 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
   return { ...payload, ...envelope } as RunEvent;
 };
 
+const isInboxRowView = (value: unknown): value is InboxRowView =>
+  isRecord(value) &&
+  typeof value['id'] === 'string' &&
+  typeof value['sessionId'] === 'string' &&
+  typeof value['text'] === 'string' &&
+  Number.isInteger(value['seq']) &&
+  Number.isInteger(value['createdAt']) &&
+  (value['settledAt'] === null || Number.isInteger(value['settledAt'])) &&
+  INBOX_DELIVERIES.some((delivery) => delivery === value['delivery']) &&
+  INBOX_STATES.some((state) => state === value['state']);
+
 const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>, context: DecodeContext): SessionEvent => {
   const reader = readerFor('events', identity, row);
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
@@ -231,6 +242,11 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
       throw corrupt('events', identity, 'payload_json modelAlias and previousModelAlias must be strings');
     }
     return { type: 'model.changed', modelAlias, previousModelAlias, ...envelope };
+  }
+  if (type === 'inbox.changed') {
+    const { pending } = payload;
+    if (!Array.isArray(pending) || !pending.every(isInboxRowView)) throw corrupt('events', identity, 'payload_json pending must hold inbox rows');
+    return { type: 'inbox.changed', pending, ...envelope };
   }
   const mode = payload['mode'];
   if (typeof mode !== 'string') throw corrupt('events', identity, 'payload_json mode must be a string');

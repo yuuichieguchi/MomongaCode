@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SWITCH_CHUNK_ROWS } from '../../src/tui/screen/constants.ts';
 import { createHistoryFeed } from '../../src/tui/screen/history-feed.ts';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { sourceOf } from '../../src/tui/screen/viewport.ts';
 import { appendEntry, foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf } from './screen-fakes.ts';
+import { eventOf, ROW_RENDERERS } from './screen-fakes.ts';
+
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 
 describe('the history feed', () => {
   it('hands the settled rows over once, in order, in chunks of at most 200 rows', () => {

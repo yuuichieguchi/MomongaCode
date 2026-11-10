@@ -18,7 +18,7 @@ describe('what is known of the focus', () => {
 describe('when the bell is due', () => {
   it('has the two values off and bell, and off is the value without a settings file', () => {
     expect(NOTIFY_MODES).toEqual(['off', 'bell']);
-    expect(UNSTORED_TUI_SETTINGS.initial).toEqual({ theme: 'auto', notify: 'off' });
+    expect(UNSTORED_TUI_SETTINGS.initial).toEqual({ theme: 'auto', notify: 'off', screenReader: false, reducedMotion: false });
   });
 
   it('never rings while the switch is off', () => {

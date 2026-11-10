@@ -183,6 +183,9 @@ const planText = (entries: readonly PlanEntry[]): string => entries.map((item) =
 const foldEntries = (store: TranscriptStore, event: PublicRunEvent): void => {
   const state = store.state();
   switch (event.type) {
+    case 'user.message':
+      if (event.source !== undefined) appendEntry(store, { kind: 'user', text: event.text });
+      return;
     case 'agent.thought.delta': {
       const key = thoughtKey(event.itemId);
       if (store.byKey(key) !== undefined) {
@@ -399,6 +402,15 @@ const foldPhase = (store: TranscriptStore, event: PublicRunEvent): void => {
 export const foldEvent = (store: TranscriptStore, event: PublicRunEvent): void => {
   foldEntries(store, event);
   foldPhase(store, event);
+};
+
+export type PromptEvent = Extract<PublicRunEvent, { type: 'user.message' }>;
+
+export const isPrompt = (event: PublicRunEvent, firstSeq: number | undefined): event is PromptEvent => event.type === 'user.message' && event.seq === firstSeq;
+
+export const foldReplayedEvent = (store: TranscriptStore, event: PublicRunEvent, firstSeq: number | undefined): void => {
+  if (isPrompt(event, firstSeq)) appendEntry(store, { kind: 'user', text: event.text });
+  else foldEvent(store, event);
 };
 
 export const runCreated = (store: TranscriptStore, runId: string, startedAt: number): void => {

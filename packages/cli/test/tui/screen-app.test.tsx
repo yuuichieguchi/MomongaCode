@@ -22,7 +22,7 @@ const wheel = (button: 'wheel-up' | 'wheel-down'): TerminalEvent => ({ type: 'mo
 
 const linesOf = (text: string | undefined): string[] => (text ?? '').split('\n');
 
-const IDLE = /^(?![\s\S]*esc to cancel)[\s\S]*mode: manual/;
+const IDLE = /^(?![\s\S]*esc to cancel)(?![\s\S]*enter: queue)[\s\S]*mode: manual/;
 
 const numbered = (count: number, word = 'line'): string => Array.from({ length: count }, (_, index) => `${word} ${index}`).join('\n');
 
@@ -61,7 +61,7 @@ describe('the layout of the full screen', () => {
 
   it('gives the transcript two rows at the smallest size', async () => {
     const { app } = await startWith({ columns: 20, rows: 6 }, numbered(9));
-    const lines = linesOf(app.lastFrame());
+    const lines = linesOf(await untilFrame(app, (shown) => shown.startsWith('line 7')));
     expect(lines).toHaveLength(6);
     expect(lines.slice(0, 2).map((line) => line.replace(/ *[│█]$/, ''))).toEqual(['line 7', 'line 8']);
     expect(lines[3]).toMatch(/^│ > +│$/);
@@ -85,8 +85,10 @@ describe('the layout of the full screen', () => {
     await runStarted(backend, app, 'go');
     const lines = linesOf(await untilFrame(app, 'esc to cancel'));
     expect(lines).toHaveLength(12);
-    expect(lines[7]).toBe('⠋ waiting for the model 0s · esc to cancel');
-    expect(lines[8]).toMatch(/^╭─+╮$/);
+    expect(lines[6]).toBe('⠋ waiting for the model 0s · esc to cancel');
+    expect(lines[7]).toMatch(/^╭─+╮$/);
+    expect(lines[10]).toContain('mode: manual');
+    expect(lines[11]).toBe('enter: queue for after this run · tab: steer after the next…');
     app.unmount();
   });
 
@@ -114,10 +116,10 @@ describe('the layout of the full screen', () => {
     backend.following().onChildStarted('tester', 'child-2');
     const lines = linesOf(await untilFrame(app, 'tester · starting · 0s'));
     expect(lines).toHaveLength(30);
-    expect(lines.slice(27)).toEqual([expect.stringContaining('mode: manual'), 'reviewer · starting · 12s', 'tester · starting · 0s']);
+    expect(lines.slice(26)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: queue for after this run'), 'reviewer · starting · 12s', 'tester · starting · 0s']);
     backend.following().onChildEnded('reviewer', 'child-1');
     const after = linesOf(await untilFrame(app, (shown) => !shown.includes('reviewer')));
-    expect(after.slice(28)).toEqual([expect.stringContaining('mode: manual'), 'tester · starting · 0s']);
+    expect(after.slice(27)).toEqual([expect.stringContaining('mode: manual'), expect.stringContaining('enter: queue for after this run'), 'tester · starting · 0s']);
     app.unmount();
   });
 

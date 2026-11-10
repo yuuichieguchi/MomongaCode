@@ -212,23 +212,18 @@ describe('pastes', () => {
 describe('typed text while a run works', () => {
   const PDF: SkillView = { name: 'pdf', description: 'Extract PDF text', scope: 'project', location: '/p/.agents/skills/pdf/SKILL.md' };
 
-  it('keeps the draft at Enter and at Tab, shows the hint until the next key, and sends it after the run', async () => {
+  it('sends the draft to the inbox at Enter and at Tab instead of keeping it (5.3), and starts no second run itself', async () => {
     const { backend, app } = await start();
     await untilFrame(app, READY);
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
-    expect(await untilFrame(app, TASK_RUNNING)).toContain('> two');
+    await backend.called('inbox:queue:two');
+    await type(app, 'three', '> three');
     app.stdin.write(KEYS.tab);
-    await untilFrame(app, (shown) => shown.includes('> two') && !shown.includes(TASK_RUNNING));
-    await type(app, '!', '> two!');
+    await backend.called('inbox:steer:three');
+    expect(app.lastFrame()).not.toContain(TASK_RUNNING);
     expect(backend.started).toHaveLength(1);
-    backend.emit(frame({ type: 'run.status', from: 'RUNNING', to: 'COMPLETED' }));
-    backend.finish(runView());
-    await untilFrame(app, (shown) => !shown.includes('esc to') && shown.includes('> two!'));
-    app.stdin.write(KEYS.enter);
-    await untilOutput(app, '> two!');
-    expect(backend.started.map((run) => run.text)).toEqual(['one', 'two!']);
     app.unmount();
   });
 

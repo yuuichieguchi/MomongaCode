@@ -18,6 +18,8 @@ import type { HistoryStore } from '../history-store.ts';
 import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
+import { continuedSession, hasRun, newestFirst, resolveSession } from '../run/resolve-session.ts';
+import type { BusyInbox } from './busy-input.ts';
 import type { NoticeSource } from './notices.ts';
 import { createClipboardPrograms } from './screen/clipboard-host.ts';
 import type { ClipboardPrograms } from './screen/clipboard-host.ts';
@@ -35,6 +37,8 @@ export type FollowHandlers = {
   onReconnecting(attempt: number): void;
 };
 
+export type ListedSession = { id: string; createdAt: number; runs: number; firstPrompt: string };
+
 export type StartRunOptions = { skill?: string; images?: readonly ImageAttachment[] };
 
 export type { SandboxKind, SignInListener, StartSignInListener };
@@ -43,7 +47,11 @@ export type TuiBackend = {
   readonly cwd: string;
   boot(): Promise<TrustView>;
   decideTrust(decision: 'trusted' | 'untrusted'): Promise<void>;
-  openSession(modelAlias?: string): Promise<SessionView>;
+  openSession(modelAlias?: string, permissionMode?: PermissionMode): Promise<SessionView>;
+  resumeSession(id: string): Promise<SessionView>;
+  continueSession(): Promise<SessionView>;
+  sessions(): Promise<readonly ListedSession[]>;
+  runs(): Promise<readonly RunView[]>;
   setMode(mode: PermissionMode): Promise<SessionView>;
   models(): Promise<readonly MomongaModelEntry[]>;
   setModel(modelAlias: string): Promise<SessionView>;
@@ -51,6 +59,7 @@ export type TuiBackend = {
   startRun(text: string, history: 'inherit' | 'fresh', options?: StartRunOptions): Promise<RunView>;
   follow(runId: string, handlers: FollowHandlers): Promise<RunView>;
   cancel(runId: string): Promise<void>;
+  readonly inbox: BusyInbox;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
   openUrl(url: URL, watch: AbortSignal | undefined, onFailure: (message: string) => void): void;
@@ -115,6 +124,29 @@ export const createTuiBackend = (
     }
   };
 
+  const conversationRuns = async (sessionId: string): Promise<RunView[]> => (await runtime().listRuns(sessionId)).filter((run) => run.parentRunId === null).sort((left, right) => left.ordinal - right.ordinal);
+
+  const firstPromptOf = async (runId: string): Promise<string> => {
+    const reading = new AbortController();
+    try {
+      for await (const frame of runtime().streamEvents(runId, { signal: AbortSignal.any([closing.signal, reading.signal]) })) return frame.data.type === 'user.message' ? frame.data.text : '';
+      return '';
+    } finally {
+      reading.abort();
+    }
+  };
+
+  const listed = async (stored: SessionView): Promise<ListedSession> => {
+    const runs = await conversationRuns(stored.id);
+    const [first] = runs;
+    return { id: stored.id, createdAt: stored.createdAt, runs: runs.length, firstPrompt: first === undefined ? '' : await firstPromptOf(first.id) };
+  };
+
+  const adopt = (view: SessionView): SessionView => {
+    session = view;
+    return view;
+  };
+
   const plan: PlanGatewayClient = {
     accounts: () => withGateway((gateway) => gateway.plan.accounts()),
     signInBegin: (request) => withGateway((gateway) => gateway.plan.signInBegin(request)),
@@ -153,18 +185,28 @@ export const createTuiBackend = (
     decideTrust: async (decision) => {
       await runtime().setTrust(ports.cwd, decision);
     },
-    openSession: async (modelAlias) => {
+    openSession: async (modelAlias, permissionMode) => {
       const chosenAlias = modelAlias ?? options.modelAlias;
+      const chosenMode = permissionMode ?? options.permissionMode;
       const created = await runtime().createSession({
         cwd: ports.cwd,
         env: await environmentSnapshot(ports),
-        ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
+        ...(chosenMode === undefined ? {} : { permissionMode: chosenMode }),
         ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
         ...(chosenAlias === undefined ? {} : { modelAlias: chosenAlias }),
       });
-      session = created.session;
-      return session;
+      return adopt(created.session);
     },
+    resumeSession: async (id) => adopt(await resolveSession(runtime(), ports.cwd, id)),
+    continueSession: async () => adopt(await continuedSession(runtime(), ports.cwd)),
+    sessions: async () => {
+      const found: ListedSession[] = [];
+      for (const stored of newestFirst((await runtime().listSessions(ports.cwd)).filter(hasRun))) {
+        if (stored.id !== session?.id) found.push(await listed(stored));
+      }
+      return found;
+    },
+    runs: () => conversationRuns(current().id),
     setMode: async (mode) => {
       session = await runtime().setPermissionMode(current().id, mode);
       return session;
@@ -194,6 +236,12 @@ export const createTuiBackend = (
       }),
     cancel: async (runId) => {
       await runtime().cancel(runId);
+    },
+    inbox: {
+      add: (delivery, text, images) => runtime().inboxAdd(current().id, delivery, text, images),
+      withdraw: (id) => runtime().inboxWithdraw(id),
+      list: () => runtime().inboxList(current().id),
+      successor: (runId) => runtime().runSuccessor(runId),
     },
     resolveApproval: async (approvalId, optionId) => {
       await runtime().resolveApproval(approvalId, optionId);

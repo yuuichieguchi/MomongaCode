@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, INBOX_MAX_PENDING, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, InboxDelivery, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
@@ -32,6 +32,7 @@ import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSI
 import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
+import { createInboxTable, inboxRowView } from './inbox.ts';
 import type {
   Approval,
   ApprovalView,
@@ -42,7 +43,14 @@ import type {
   ContributionMeasured,
   ContributionPreparer,
   CreateChildRunResult,
+  CreateRunInput,
   CreateRunResult,
+  InboxAddResult,
+  InboxDeliverResult,
+  InboxRow,
+  InboxStore,
+  InboxWithdrawResult,
+  QueuedRunTerms,
   ElicitationView,
   FinishJobResult,
   HeartbeatResult,
@@ -628,6 +636,60 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return [{ type: 'context.contribution', items: contribution.items }];
   };
 
+  const inboxTable = createInboxTable(db, clock);
+
+  const announceInbox = (sessionId: string): InboxRow[] => {
+    const pending = inboxTable.pending(sessionId);
+    insertEvent({ runId: null, sessionId, seq: null, step: null, leaseToken: null, createdAt: clock.now(), payload: { type: 'inbox.changed', pending: pending.map(inboxRowView) } });
+    return pending;
+  };
+
+  const insertRootRun = (sessionRow: Row, input: CreateRunInput, source?: InboxDelivery): Run => {
+    const session = decodeSession(sessionRow, decodeContext);
+    const sessionId = session.id;
+    const ordinalRow = sql.nextOrdinal.get({ sessionId });
+    if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
+    const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
+    const previous = sql.latestRunOfSession.get({ sessionId });
+    const id = uuidv7(clock);
+    const now = clock.now();
+    sql.insertRun.run({
+      id,
+      sessionId,
+      ordinal,
+      idempotencyKey: input.idempotencyKey ?? null,
+      requestDigest: input.requestDigest ?? null,
+      previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
+      historyMode: input.history ?? 'inherit',
+      parentRunId: null,
+      parentCallId: null,
+      availableAt: now,
+      deadlineAt: now + input.timeoutMs,
+      limits: canonicalJson(input.limits),
+      usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
+      pins: canonicalJson(input.pins),
+      createdAt: now,
+      origin: originOf(session.cwd),
+    });
+    const inserted = appendPayloads(requireRun(id), [
+      { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }), ...(source === undefined ? {} : { source }) },
+      ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
+    ]);
+    writeRun(inserted);
+    return requireRun(id);
+  };
+
+  const startNextQueued = (sessionId: string, terms: QueuedRunTerms): void => {
+    if (inboxTable.pendingCount(sessionId) === 0 || inboxTable.sessionHasOpenRun(sessionId)) return;
+    const sessionRow = sql.selectSession.get({ id: sessionId });
+    if (sessionRow === undefined) throw new Error(`session ${sessionId} of a waiting message does not exist`);
+    inboxTable.queuePendingSteer(sessionId);
+    const head = inboxTable.firstPending(sessionId);
+    if (head === undefined || !inboxTable.settle(head.id, 'delivered')) throw new Error(`the first waiting message of session ${sessionId} could not be delivered`);
+    insertRootRun(sessionRow, { input: head.text, ...(head.images === undefined ? {} : { images: head.images }), timeoutMs: terms.timeoutMs, limits: terms.limits, pins: {}, history: 'inherit' }, 'queue');
+    announceInbox(sessionId);
+  };
+
   const cancelOriginOf = (status: RunStatus): CancelOrigin => {
     const origin = CANCEL_ORIGINS.find((candidate) => candidate === status);
     if (origin === undefined) throw new Error(`a run in status ${status} cannot become CANCELLING`);
@@ -669,6 +731,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     writeRun(next);
     if (isTerminal(to) || to === 'CANCELLING') cancelChildren(run.id);
     if (isTerminal(to)) wakeParent(run);
+    if (isTerminal(to) && run.parentRunId === null) startNextQueued(run.sessionId, { timeoutMs: run.deadlineAt - run.createdAt, limits: run.limits });
     return requireRun(run.id);
   };
 
@@ -1047,6 +1110,57 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
   };
 
+  const inbox: InboxStore = {
+    add: (sessionId, input) =>
+      transaction<InboxAddResult>(() => {
+        if (sql.selectSession.get({ id: sessionId }) === undefined) return { kind: 'not_found' };
+        if (inboxTable.pendingCount(sessionId) >= INBOX_MAX_PENDING) return { kind: 'full' };
+        const added = inboxTable.insert({ id: uuidv7(clock), sessionId, delivery: input.delivery, text: input.text, images: input.images });
+        const open = inboxTable.sessionHasOpenRun(sessionId);
+        if (open) announceInbox(sessionId);
+        else startNextQueued(sessionId, input.run);
+        const row = inboxTable.get(added.id);
+        if (row === undefined) throw new Error(`inbox row ${added.id} vanished after it was written`);
+        return { kind: 'added', row, pending: inboxTable.pending(sessionId) };
+      }),
+    withdraw: (id) =>
+      transaction<InboxWithdrawResult>(() => {
+        const found = inboxTable.get(id);
+        if (found === undefined) return { kind: 'not_found' };
+        const changed = inboxTable.settle(id, 'withdrawn');
+        if (changed) announceInbox(found.sessionId);
+        const row = inboxTable.get(id);
+        if (row === undefined) throw new Error(`inbox row ${id} vanished while it was withdrawn`);
+        return { kind: row.state === 'delivered' ? 'already_delivered' : 'withdrawn', row, pending: inboxTable.pending(row.sessionId) };
+      }),
+    list: (sessionId) => inboxTable.pending(sessionId),
+    deliverSteering: (claim) =>
+      transaction<InboxDeliverResult>(() => {
+        const run = fenced(claim);
+        if (run === undefined) return leaseLost;
+        const rows = inboxTable.pendingSteer(run.sessionId);
+        if (rows.length === 0) return { kind: 'ok', delivered: [] };
+        const delivered = rows.map((row) => {
+          if (!inboxTable.settle(row.id, 'delivered')) throw new Error(`inbox row ${row.id} could not be delivered`);
+          const settled = inboxTable.get(row.id);
+          if (settled === undefined) throw new Error(`inbox row ${row.id} vanished while it was delivered`);
+          return settled;
+        });
+        const next = appendPayloads(
+          run,
+          delivered.map((row): RunEventPayload => ({ type: 'user.message', text: row.text, ...(row.images === undefined ? {} : { images: row.images }), source: 'steer' })),
+        );
+        writeRun(next);
+        derived.repairPage(next.id, next.lastSeq);
+        announceInbox(run.sessionId);
+        return { kind: 'ok', delivered };
+      }),
+    successorOf: (runId) => {
+      const row = inboxTable.nextRunAfter(runId);
+      return row === undefined ? undefined : decodeRun(row, decodeContext);
+    },
+  };
+
   const store: RuntimeStore = {
     createSession: (input) =>
       transaction(() => {
@@ -1124,36 +1238,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
             return sameRunRequest(existing, input.requestDigest) ? { kind: 'existing', run: existing.run } : { kind: 'key_reused' };
           }
         }
-        const ordinalRow = sql.nextOrdinal.get({ sessionId });
-        if (ordinalRow === undefined) throw new Error(`could not compute the next run ordinal for session ${sessionId}`);
-        const ordinal = readerFor('runs', sessionId, ordinalRow).number('next');
-        const previous = sql.latestRunOfSession.get({ sessionId });
-        const id = uuidv7(clock);
-        const now = clock.now();
-        sql.insertRun.run({
-          id,
-          sessionId,
-          ordinal,
-          idempotencyKey: input.idempotencyKey ?? null,
-          requestDigest: input.requestDigest ?? null,
-          previousRunId: previous === undefined ? null : readerFor('runs', sessionId, previous).string('id'),
-          historyMode: input.history ?? 'inherit',
-          parentRunId: null,
-          parentCallId: null,
-          availableAt: now,
-          deadlineAt: now + input.timeoutMs,
-          limits: canonicalJson(input.limits),
-          usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
-          pins: canonicalJson(input.pins),
-          createdAt: now,
-          origin: originOf(decodeSession(sessionRow, decodeContext).cwd),
-        });
-        const inserted = appendPayloads(requireRun(id), [
-          { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }) },
-          ...(input.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: input.skill.name, content: input.skill.content }]),
-        ]);
-        writeRun(inserted);
-        return { kind: 'created', run: requireRun(id) };
+        return { kind: 'created', run: insertRootRun(sessionRow, input) };
       }),
 
     createChildRun: (input) =>
@@ -1639,6 +1724,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
+    inbox,
     memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },
     sessionTouched: {
       after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, (view) => view.touchedAfter(sessionId, afterEventId, limit, afterPath)),

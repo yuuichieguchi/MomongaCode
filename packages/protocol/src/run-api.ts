@@ -15,8 +15,8 @@ import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
-import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, INBOX_DELIVERIES, INBOX_MAX_PENDING, INBOX_STATES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+import type { ImageMediaType, InboxDelivery, InboxRowView, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
 import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
@@ -83,6 +83,25 @@ const imageAttachment = closed(
 );
 
 const imageSummary = closed({ mediaType: enumOf(IMAGE_MEDIA_TYPES), byteLength: nonNegativeInteger }, ['mediaType', 'byteLength']);
+
+const PROMPT_TEXT: JsonSchema = { type: 'string', minLength: 1, maxLength: 1_000_000 };
+
+const inboxRowView = closed(
+  {
+    id: string,
+    sessionId: string,
+    delivery: enumOf(INBOX_DELIVERIES),
+    text: PROMPT_TEXT,
+    images: { type: 'array', items: imageSummary },
+    seq: { type: 'integer', minimum: 1 },
+    state: enumOf(INBOX_STATES),
+    createdAt: integer,
+    settledAt: nullable(integer),
+  },
+  ['id', 'sessionId', 'delivery', 'text', 'seq', 'state', 'createdAt', 'settledAt'],
+);
+
+const inboxPending: JsonSchema = { type: 'array', items: inboxRowView, maxItems: INBOX_MAX_PENDING };
 
 export const base64ByteLength = (data: string): number => {
   const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
@@ -282,7 +301,7 @@ type PayloadSchema<Type> = {
 };
 
 const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
-  'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
+  'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary }, source: enumOf(INBOX_DELIVERIES) }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
   'attempt.failed': { properties: { attempt: integer, code: string, retryAt: integer, limit: integer }, required: ['attempt', 'code', 'retryAt', 'limit'] },
   'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
@@ -494,6 +513,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
   },
   'mode.changed': { properties: { mode: permissionMode }, required: ['mode'] },
   'model.changed': { properties: { modelAlias: { type: 'string', minLength: 1 }, previousModelAlias: { type: 'string', minLength: 1 } }, required: ['modelAlias', 'previousModelAlias'] },
+  'inbox.changed': { properties: { pending: inboxPending }, required: ['pending'] },
   'usage.updated': {
     properties: { inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger, totalTokens: nonNegativeInteger },
     required: ['inputTokens', 'outputTokens', 'totalTokens'],
@@ -590,7 +610,7 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
   const schema: PayloadSchema<typeof type> = PAYLOAD_SCHEMAS[type];
   const { properties, required } = schema;
   const exclusive = schema.exclusive === undefined ? {} : atMostOneOf(schema.exclusive);
-  if (type === 'mode.changed' || type === 'model.changed') {
+  if (type === 'mode.changed' || type === 'model.changed' || type === 'inbox.changed') {
     return closed(
       { id: integer, sessionId: string, createdAt: integer, type: constant(type), ...properties },
       ['id', 'sessionId', 'createdAt', 'type', ...required],
@@ -1167,6 +1187,16 @@ const runView = closed(
   ],
 );
 
+export const INBOX_WITHDRAW_OUTCOMES = ['withdrawn', 'already_delivered'] as const;
+
+export type InboxWithdrawOutcome = (typeof INBOX_WITHDRAW_OUTCOMES)[number];
+
+export type InboxResponse = { pending: InboxRowView[] };
+
+export type InboxAddResponse = { row: InboxRowView; pending: InboxRowView[] };
+
+export type InboxWithdrawResponse = { outcome: InboxWithdrawOutcome; row: InboxRowView; pending: InboxRowView[] };
+
 export const RUN_API_SCHEMAS = {
   CreateSessionRequest: root(
     closed(
@@ -1185,7 +1215,7 @@ export const RUN_API_SCHEMAS = {
   CreateRunRequest: root(
     closed(
       {
-        input: { type: 'string', minLength: 1, maxLength: 1_000_000 },
+        input: PROMPT_TEXT,
         limits: runLimits,
         timeoutMs: boundedInteger(1000, 7 * DAY_MS),
         history: historyMode,
@@ -1196,6 +1226,12 @@ export const RUN_API_SCHEMAS = {
     ),
   ),
   ResolveApprovalRequest: root(closed({ optionId: { type: 'string', minLength: 1 } }, ['optionId'])),
+  AddInboxRequest: root(closed({ delivery: enumOf(INBOX_DELIVERIES), text: PROMPT_TEXT, images: { type: 'array', items: imageAttachment } }, ['delivery', 'text'])),
+  InboxRowView: root(inboxRowView),
+  InboxResponse: root(closed({ pending: inboxPending }, ['pending'])),
+  InboxAddResponse: root(closed({ row: inboxRowView, pending: inboxPending }, ['row', 'pending'])),
+  InboxWithdrawResponse: root(closed({ outcome: enumOf(INBOX_WITHDRAW_OUTCOMES), row: inboxRowView, pending: inboxPending }, ['outcome', 'row', 'pending'])),
+  RunSuccessorResponse: root(closed({ successor: nullable(runView) }, ['successor'])),
   McpAuthorizationView: root(
     closed(
       {
@@ -1480,7 +1516,7 @@ type ReducedEventType =
 
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
-  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
+  | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[]; source?: InboxDelivery }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
@@ -1560,6 +1596,7 @@ const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
         type: event.type,
         text: event.text,
         ...(event.images === undefined ? {} : { images: event.images.map((image) => ({ mediaType: image.mediaType, byteLength: base64ByteLength(image.data) })) }),
+        ...(event.source === undefined ? {} : { source: event.source }),
       };
     case 'model.requested':
       return {

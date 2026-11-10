@@ -1,3 +1,4 @@
+import type { ActionId, KeyContext, KeyTable } from '../keys/table.ts';
 import type { TerminalEvent } from '../terminal/events.ts';
 import { WHEEL_ROWS } from './constants.ts';
 import type { RowCache } from './row-cache.ts';
@@ -121,19 +122,24 @@ export const moved = (source: ViewSource, position: Position, height: number, mo
   return { anchor: anchorOf(next.rows[0]), following: next.atBottom };
 };
 
-export const viewportMoveOf = (event: TerminalEvent, height: number): ViewportMove | undefined => {
+export const VIEWPORT_CONTEXTS: readonly KeyContext[] = ['viewport'];
+
+export const viewportMoveOfAction = (action: ActionId | undefined, height: number): ViewportMove | undefined => {
+  const half = Math.max(1, Math.floor(height / 2));
+  if (action === 'viewport.pageUp') return { kind: 'rows', rows: -half };
+  if (action === 'viewport.pageDown') return { kind: 'rows', rows: half };
+  if (action === 'viewport.top') return { kind: 'top' };
+  if (action === 'viewport.bottom') return { kind: 'bottom' };
+  return undefined;
+};
+
+export const viewportMoveOf = (event: TerminalEvent, height: number, keys: KeyTable): ViewportMove | undefined => {
   if (event.type === 'mouse') {
     if (event.kind !== 'wheel') return undefined;
     if (event.button === 'wheel-up') return { kind: 'rows', rows: -WHEEL_ROWS };
     return event.button === 'wheel-down' ? { kind: 'rows', rows: WHEEL_ROWS } : undefined;
   }
-  if (event.type !== 'key' || !('name' in event) || event.alt || event.shift) return undefined;
-  const half = Math.max(1, Math.floor(height / 2));
-  if (event.name === 'pageup' && !event.ctrl) return { kind: 'rows', rows: -half };
-  if (event.name === 'pagedown' && !event.ctrl) return { kind: 'rows', rows: half };
-  if (event.name === 'home' && event.ctrl) return { kind: 'top' };
-  if (event.name === 'end') return { kind: 'bottom' };
-  return undefined;
+  return event.type === 'key' ? viewportMoveOfAction(keys.actionOf(VIEWPORT_CONTEXTS, event), height) : undefined;
 };
 
 export const thumbRow = (window: ViewWindow, count: number, height: number): number => {

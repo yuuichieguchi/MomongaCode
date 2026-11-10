@@ -1,8 +1,12 @@
 import path from 'node:path';
+import type { KeyTable } from './keys/table.ts';
 
 export const EDITOR_VARIABLES = ['VISUAL', 'EDITOR'] as const;
 
-export const EDITOR_UNSET_HINT = 'Set $EDITOR to use ctrl+g.';
+export const editorUnsetHint = (keys: KeyTable): string => {
+  const key = keys.keyHint('editor.external');
+  return key === '' ? 'Set $EDITOR to edit the draft in an editor.' : `Set $EDITOR to use ${key}.`;
+};
 
 export type ExternalEdit = { kind: 'edited'; text: string } | { kind: 'unset' };
 

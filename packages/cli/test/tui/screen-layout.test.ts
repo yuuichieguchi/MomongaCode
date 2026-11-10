@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { footerRow } from '../../src/tui/screen/footer.tsx';
+import { footerRow as footerRowWith } from '../../src/tui/screen/footer.tsx';
 import { allocate, regionAt } from '../../src/tui/screen/layout.ts';
 import type { RowRequests } from '../../src/tui/screen/layout.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';
 import { MIN_ROWS } from '../../src/tui/terminal/constants.ts';
 import { seeded } from './screen-fakes.ts';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+
+const footerRow = (facts: Parameters<typeof footerRowWith>[0], width: number) => footerRowWith(facts, width, DEFAULT_KEY_TABLE);
 
 const none: RowRequests = { waiting: 0, inputRows: 1, menu: 0, subagents: 0, footerSecond: 0, lines: 0, panel: undefined };
 

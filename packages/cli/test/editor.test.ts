@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { applyKey, emptyEditor } from '../src/tui/editor.ts';
-import type { EditorState, KeyPress } from '../src/tui/editor.ts';
+import type { Key } from 'ink';
+import { applyKeyEvent, emptyEditor } from '../src/tui/editor.ts';
+import type { EditorState } from '../src/tui/editor.ts';
+import { DEFAULT_KEY_TABLE } from '../src/tui/keys/table.ts';
+import { keyEventOf } from './tui/screen-fakes.ts';
+
+type KeyPress = Partial<Key> & { input: string };
+
+const applyKey = (state: EditorState, key: KeyPress) => applyKeyEvent(state, keyEventOf(key.input, key), DEFAULT_KEY_TABLE);
 
 const press = (state: EditorState, ...keys: (string | KeyPress)[]): { state: EditorState; submitted: string[] } => {
   let current = state;

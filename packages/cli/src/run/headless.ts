@@ -20,6 +20,7 @@ import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
 import type { CliSession } from './open-session.ts';
+import type { HeadlessReopen } from './resolve-session.ts';
 import { resolveSkillInvocation } from './skill-invocation.ts';
 
 export const OUTPUT_FORMATS = ['text', 'json', 'stream-json'] as const;
@@ -35,6 +36,7 @@ export type HeadlessOptions = {
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
   modelAlias?: string;
+  reopen?: HeadlessReopen;
   capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
   skill?: string;
   images?: readonly string[];
@@ -237,6 +239,7 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
       ...(options.permissionMode === undefined ? {} : { permissionMode: options.permissionMode }),
       ...(options.bypassAllowed === undefined ? {} : { bypassAllowed: options.bypassAllowed }),
       ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }),
+      ...(options.reopen === undefined ? {} : { reopen: options.reopen }),
     });
   } catch (error) {
     if (options.interrupt.aborted && error === options.interrupt.reason) return undefined;

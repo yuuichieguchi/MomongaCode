@@ -1,4 +1,5 @@
 import type { PickRequest } from '../picker.tsx';
+import type { A11y, A11ySetting } from '../screen/a11y.ts';
 import type { NotifyMode } from '../screen/notify.ts';
 import { THEME_IDS } from '../screen/theme.ts';
 import type { ThemeId } from '../screen/theme.ts';
@@ -10,6 +11,9 @@ export type DisplayPort = {
   storeTheme(theme: ThemeId, signal: AbortSignal): Promise<void>;
   notify(): NotifyMode;
   storeNotify(mode: NotifyMode, signal: AbortSignal): Promise<void>;
+  a11y(): A11y;
+  storedA11y(name: A11ySetting): boolean;
+  storeA11y(name: A11ySetting, value: boolean, signal: AbortSignal): Promise<void>;
   pick(request: PickRequest): Promise<number | undefined>;
 };
 

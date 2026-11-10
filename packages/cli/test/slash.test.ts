@@ -7,6 +7,8 @@ import { BUILTIN_SLASH_COMMANDS, createSlashRegistry, helpText, newlineHelpLines
 import type { SlashContext } from '../src/tui/slash.ts';
 import { fakeBackend } from './fake-backend.ts';
 import type { FakeBackendOptions } from './fake-backend.ts';
+import { fixedKeyBindings } from '../src/tui/keys/store.ts';
+import { NO_A11Y } from '../src/tui/screen/a11y.ts';
 
 describe('parseSlash', () => {
   it.each([
@@ -35,8 +37,13 @@ const unusedDisplay: SlashContext['display'] = {
   storeTheme: async () => undefined,
   notify: () => 'off',
   storeNotify: async () => undefined,
+  a11y: () => NO_A11Y,
+  storedA11y: () => false,
+  storeA11y: async () => undefined,
   pick: async () => undefined,
 };
+
+const unusedKeyBindings: SlashContext['keyBindings'] = { store: fixedKeyBindings(DEFAULT_KEY_TABLE), choose: async () => undefined, captureKey: async () => undefined };
 
 const unusedAutoMode: SlashContext['autoMode'] = {
   check: async () => ({ measurement: 'passed' }),
@@ -52,8 +59,10 @@ describe('registry', () => {
     expect(registry.find('nope')).toBeUndefined();
   });
 
-  it('offers at least help, clear, mode, model and exit', () => {
-    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'clear', 'mode', 'model', 'exit']));
+  it('offers at least help, mode, model and exit, and clear and resume in the default set', () => {
+    expect(registry.list().map((command) => command.name)).toEqual(expect.arrayContaining(['help', 'mode', 'model', 'exit']));
+    expect(DEFAULT_SLASH_COMMANDS.map((command) => command.name)).toEqual(expect.arrayContaining(['clear', 'resume']));
+    expect(createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('new')?.name).toBe('clear');
   });
 });
 
@@ -71,7 +80,7 @@ describe('built-in commands', () => {
       backend: fakeBackend(backendOptions),
       startRun: async () => undefined,
       info: (text) => void infos.push(text),
-      clear: () => void infos.push('cleared'),
+      sessions: { startNew: async () => void infos.push('new session'), resume: async (id) => void infos.push(`resumed ${id}`), now: () => 0, columns: () => 80 },
       exit: () => void infos.push('exited'),
       setMode: async (mode) => void modes.push(mode),
       setModel: async (alias) => void models.push(alias),
@@ -82,6 +91,8 @@ describe('built-in commands', () => {
       keys: DEFAULT_KEY_TABLE,
       negotiation: 'unknown',
       display: unusedDisplay,
+      keyBindings: unusedKeyBindings,
+      status: () => [],
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -140,11 +151,13 @@ describe('built-in commands', () => {
     expect(infos[0]).toContain('/model [alias]  list the model aliases with the current one marked, or switch the model from the next task');
   });
 
-  it('/clear and /exit call their hooks', async () => {
+  it('/clear, /resume <id> and /exit call their hooks', async () => {
     const { context, infos } = contextOf();
-    await run('clear', '', context);
+    const all = createSlashRegistry(DEFAULT_SLASH_COMMANDS);
+    await all.find('clear')?.run('', context);
+    await all.find('resume')?.run('0123456789abcdef', context);
     await run('quit', '', context);
-    expect(infos).toEqual(['cleared', 'exited']);
+    expect(infos).toEqual(['new session', 'resumed 0123456789abcdef', 'exited']);
   });
 });
 
@@ -184,7 +197,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     backend,
     info: (text) => void infos.push(text),
     startRun: async (text, options) => void runs.push({ text, ...options }),
-    clear: () => undefined,
+    sessions: { startNew: async () => undefined, resume: async () => undefined, now: () => 0, columns: () => 80 },
     exit: () => undefined,
     setMode: async () => undefined,
     setModel: async () => undefined,
@@ -195,6 +208,8 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     keys: DEFAULT_KEY_TABLE,
     negotiation: 'unknown',
     display: unusedDisplay,
+    keyBindings: unusedKeyBindings,
+    status: () => [],
   };
   return { context, infos, runs, backend };
 };

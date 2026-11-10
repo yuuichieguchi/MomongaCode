@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { assistantTextRows, rowsOfEntry } from '../../src/tui/screen/entry-rows.ts';
+import { assistantTextRows as assistantTextRowsWith, rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { MARKDOWN_UNIT_BYTES, markdownRows } from '../../src/tui/screen/markdown.ts';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { hyperlink, piecesOf } from '../../src/tui/screen/row-text.tsx';
 import { indexRangeOf } from '../../src/tui/screen/selection.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { displayWidth, logicalText } from '../../src/tui/screen/wrap.ts';
 import type { Row } from '../../src/tui/screen/wrap.ts';
 import { foldEvent } from '../../src/tui/transcript.ts';
-import { eventOf, seeded, storeOf } from './screen-fakes.ts';
+import { eventOf, seeded, storeOf, ROW_FACTS, ROW_RENDERERS } from './screen-fakes.ts';
+
+const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
+const assistantTextRows = (text: string, width: number) => assistantTextRowsWith(text, width, ROW_FACTS);
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 
 const texts = (rows: readonly Row[]): string[] => rows.map((row) => row.text);
 const spans = (rows: readonly Row[]): unknown[] => rows.map((row) => row.spans);

@@ -318,14 +318,15 @@ describe('App input', () => {
     app.unmount();
   });
 
-  it('keeps a second message in the input while a run is active and says how to stop the run', async () => {
+  it('queues a second message while a run is active and starts no run of its own', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');
     await runStarted(backend, app, 'one');
     await type(app, 'two', '> two');
     app.stdin.write(KEYS.enter);
-    const shown = await untilFrame(app, 'A task is running. Esc stops it.');
-    expect(shown).toContain('> two');
+    await backend.called('inbox:queue:two');
+    const shown = await untilFrame(app, 'queued  two');
+    expect(shown).not.toContain('A task is running. Esc stops it.');
     expect(backend.started).toHaveLength(1);
     app.unmount();
   });
@@ -400,7 +401,7 @@ describe('App slash commands', () => {
     app.unmount();
   });
 
-  it('/clear starts a fresh conversation for the next run', async () => {
+  it('/clear starts the next run in a new session', async () => {
     const { backend, app } = await start();
     await untilFrame(app, 'mode: manual');
     await type(app, '/clear', '> /clear');
@@ -410,7 +411,8 @@ describe('App slash commands', () => {
     app.stdin.write(KEYS.enter);
     await backend.called('openSession');
     await untilOutput(app, '> again');
-    expect(backend.started).toEqual([{ text: 'again', history: 'fresh' }]);
+    expect(backend.started).toEqual([{ text: 'again', history: 'inherit' }]);
+    expect(backend.opened.length).toBe(2);
     app.unmount();
   });
 

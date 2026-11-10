@@ -61,6 +61,32 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number];
 
 export type ImageAttachment = { mediaType: ImageMediaType; data: string };
 
+export const INBOX_DELIVERIES = ['steer', 'queue'] as const;
+
+export type InboxDelivery = (typeof INBOX_DELIVERIES)[number];
+
+export const INBOX_STATES = ['pending', 'delivered', 'withdrawn'] as const;
+
+export type InboxState = (typeof INBOX_STATES)[number];
+
+export const INBOX_MAX_PENDING = 20;
+
+export const INBOX_FULL_CODE = 'inbox_full';
+
+export const inboxFullMessage = (): string => `${INBOX_MAX_PENDING} messages are already waiting`;
+
+export type InboxRowView = {
+  id: string;
+  sessionId: string;
+  delivery: InboxDelivery;
+  text: string;
+  images?: { mediaType: ImageMediaType; byteLength: number }[];
+  seq: number;
+  state: InboxState;
+  createdAt: number;
+  settledAt: number | null;
+};
+
 export type ElicitationRequestView =
   | { key: string; mode: 'form'; message: string; requestedSchema: Record<string, unknown> }
   | { key: string; mode: 'url'; message: string; url: string };
@@ -126,7 +152,7 @@ export type InheritedCopyPayload = {
 };
 
 export type RunEventPayload =
-  | { type: 'user.message'; text: string; images?: ImageAttachment[] }
+  | { type: 'user.message'; text: string; images?: ImageAttachment[]; source?: InboxDelivery }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
   | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
   | { type: 'attempt.lost'; lastLiveAt: number }
@@ -282,7 +308,8 @@ export type RunEventPayload =
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
-  | { type: 'model.changed'; modelAlias: string; previousModelAlias: string };
+  | { type: 'model.changed'; modelAlias: string; previousModelAlias: string }
+  | { type: 'inbox.changed'; pending: InboxRowView[] };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 

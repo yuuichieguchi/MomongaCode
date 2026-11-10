@@ -5,8 +5,9 @@ import type { ModeAvailability } from '../modes.ts';
 import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
 import type { DisplayPort } from './commands/theme.ts';
 import type { TuiBackend } from './backend.ts';
+import { keyReported, needsReport, sentAsEscape, shownKey } from './keys/table.ts';
 import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
-import { NEWLINE_HINT } from './terminal/negotiation.ts';
+import type { KeyBindingsScreen } from './commands/keybindings.ts';
 import type { NegotiationState } from './terminal/negotiation.ts';
 import type { ScreenMode } from './terminal/modes.ts';
 
@@ -21,6 +22,8 @@ export type ShellPort = {
 
 export type ScreenPort = { current(): ScreenMode; set(mode: ScreenMode): Promise<void> };
 
+export type SessionsPort = { startNew(): Promise<void>; resume(id: string): Promise<void>; now(): number; columns(): number };
+
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
   readonly modelAlias: string | undefined;
@@ -28,7 +31,6 @@ export type SlashContext = ModeAvailability & {
   readonly backend: TuiBackend;
   info(text: string): void;
   startRun(text: string, options?: { skill?: string }): Promise<void>;
-  clear(): void;
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
   setModel(modelAlias: string): Promise<void>;
@@ -39,6 +41,9 @@ export type SlashContext = ModeAvailability & {
   readonly keys: KeyTable;
   readonly negotiation: NegotiationState;
   readonly display: DisplayPort;
+  readonly keyBindings: KeyBindingsScreen;
+  status(): readonly string[];
+  readonly sessions: SessionsPort;
 };
 
 export type SlashCommand = {
@@ -70,8 +75,6 @@ export const parseSlash = (line: string): ParsedSlash | undefined => {
 };
 
 const NEWLINE: ActionId = 'prompt.newline';
-const NEEDS_REPORT = /(^|\+)shift\+/;
-const SENT_AS_ESCAPE = /(^|\+)alt\+/;
 const KEY_JOIN = ' or ';
 const HELP_CONTEXTS: Readonly<Record<ScreenMode, readonly KeyContext[]>> = { fullscreen: ['chat', 'viewport', 'global'], scrollback: ['chat', 'global'] };
 const MOUSE_HELP: Readonly<Record<ScreenMode, readonly string[]>> = {
@@ -81,29 +84,30 @@ const MOUSE_HELP: Readonly<Record<ScreenMode, readonly string[]>> = {
 
 export const newlineHelpLines = (keys: KeyTable, negotiation: NegotiationState): string[] => {
   const description = keys.rows().find((row) => row.id === NEWLINE)?.description;
-  const reported = NEWLINE_HINT[negotiation] === 'shift+enter';
   const all = keys.keysFor(NEWLINE);
-  const escaped = all.filter((spec) => SENT_AS_ESCAPE.test(spec));
-  const direct = all.filter((spec) => !SENT_AS_ESCAPE.test(spec));
-  const unproven = reported ? [] : direct.filter((spec) => NEEDS_REPORT.test(spec));
+  const escaped = all.filter(sentAsEscape);
+  const direct = all.filter((spec) => !sentAsEscape(spec));
+  const unproven = direct.filter((spec) => needsReport(spec) && !keyReported(spec, negotiation));
   const acting = (spec: KeySpec): boolean => direct.includes(spec) && !unproven.includes(spec);
+  const actingKeys = keys.hintFor(NEWLINE, acting);
+  const submit = keys.hintFor('prompt.submit');
   return [
-    `${keys.hintFor(NEWLINE, acting)}: ${description}${unproven.length === 0 ? '' : ` (${unproven.join(KEY_JOIN)} works only if this terminal reports it; this one has not)`}`,
-    ...escaped.map((spec) => `${spec}: ${description} where the terminal sends Alt as Escape`),
-    `\\ then ${keys.hintFor('prompt.submit')}: ${description}`,
+    ...(actingKeys === '' && unproven.length === 0 ? [] : [`${actingKeys}: ${description}${unproven.length === 0 ? '' : ` (${unproven.map(shownKey).join(KEY_JOIN)} works only if this terminal reports it; this one has not)`}`]),
+    ...escaped.map((spec) => `${shownKey(spec)}: ${description} where the terminal sends Alt as Escape`),
+    ...(submit === '' ? [] : [`\\ then ${submit}: ${description}`]),
   ];
 };
 
-export type HelpFacts = { commands: readonly SlashCommand[]; keys: KeyTable; negotiation: NegotiationState; screen: ScreenMode };
+export type HelpFacts = { commands: readonly SlashCommand[]; keys: KeyTable; negotiation: NegotiationState; screen: ScreenMode; status?: readonly string[] };
 
 const indented = (lines: readonly string[]): string[] => lines.map((line) => `  ${line}`);
 
-export const helpText = ({ commands, keys, negotiation, screen }: HelpFacts): string => {
+export const helpText = ({ commands, keys, negotiation, screen, status }: HelpFacts): string => {
   const contexts = HELP_CONTEXTS[screen];
   const keyLines = keys
     .rows()
     .filter((row) => contexts.includes(row.context))
-    .flatMap((row) => (row.id === NEWLINE ? newlineHelpLines(keys, negotiation) : [`${keys.hintFor(row.id)}: ${row.description}`]));
+    .flatMap((row) => (row.id === NEWLINE ? newlineHelpLines(keys, negotiation) : keys.keysFor(row.id).length === 0 ? [] : [`${keys.hintFor(row.id)}: ${row.description}`]));
   const mouse = MOUSE_HELP[screen];
   return [
     'Commands',
@@ -111,6 +115,7 @@ export const helpText = ({ commands, keys, negotiation, screen }: HelpFacts): st
     'Keys',
     ...indented(keyLines),
     ...(mouse.length === 0 ? [] : ['Mouse', ...indented(mouse)]),
+    ...(status === undefined ? [] : ['Status', ...indented(status)]),
   ].join('\n');
 };
 
@@ -119,16 +124,8 @@ const help: SlashCommand = {
   needsSession: false,
   description: 'list the commands, the keys and the mouse actions',
   run: async (_args, context) => {
-    context.info(helpText({ commands: context.commands, keys: context.keys, negotiation: context.negotiation, screen: context.screen.current() }));
-  },
-};
-
-const clear: SlashCommand = {
-  name: 'clear',
-  needsSession: false,
-  description: 'clear the screen and start a new conversation',
-  run: async (_args, context) => {
-    context.clear();
+    const status = context.display.a11y().screenReader ? { status: context.status() } : {};
+    context.info(helpText({ commands: context.commands, keys: context.keys, negotiation: context.negotiation, screen: context.screen.current(), ...status }));
   },
 };
 
@@ -189,4 +186,4 @@ const model: SlashCommand = {
   },
 };
 
-export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, clear, mode, model, exit];
+export const BUILTIN_SLASH_COMMANDS: readonly SlashCommand[] = [help, mode, model, exit];

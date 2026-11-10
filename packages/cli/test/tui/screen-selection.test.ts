@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { DOUBLE_CLICK_MS } from '../../src/tui/screen/constants.ts';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createClickCounter, extractSelection, lineSelection, selectedColumns, wordSelection } from '../../src/tui/screen/selection.ts';
 import type { Selection } from '../../src/tui/screen/selection.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { sourceOf } from '../../src/tui/screen/viewport.ts';
 import { displayWidth } from '../../src/tui/screen/wrap.ts';
 import { appendEntry } from '../../src/tui/transcript.ts';
-import { randomText, seeded } from './screen-fakes.ts';
+import { randomText, seeded, ROW_RENDERERS } from './screen-fakes.ts';
+
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 
 const sourceWith = (texts: readonly string[], width: number) => {
   const store = createTranscriptStore();

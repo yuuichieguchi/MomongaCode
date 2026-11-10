@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { MomongaModelEntry, ToolCallingState } from '@momonga/protocol';
 import { followMeasurement } from '../../src/readiness.ts';
 import { describeRetryWait } from '../../src/retry-wait.ts';
-import { rowsOfEntry } from '../../src/tui/screen/entry-rows.ts';
+import { rowsOfEntry as rowsOfEntryWith } from '../../src/tui/screen/entry-rows.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { subagentLines } from '../../src/tui/screen/subagents.tsx';
-import { waitingOf, waitingRowText } from '../../src/tui/screen/waiting-row.tsx';
+import { waitingOf, waitingRowText as waitingRowTextWith } from '../../src/tui/screen/waiting-row.tsx';
 import type { WaitingFacts } from '../../src/tui/screen/waiting-row.tsx';
 import { runCreated, runLeft, setThoughtWindow, shownRunPhase, toggleNewestThought, toggleThought } from '../../src/tui/transcript.ts';
 import { capabilitiesOf } from '../fake-backend.ts';
 import { manualClock } from './screen-clock.ts';
-import { fold, plainOf, storeOf } from './screen-fakes.ts';
+import { fold, plainOf, storeOf, ROW_FACTS } from './screen-fakes.ts';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+
+const rowsOfEntry = (entry: Parameters<typeof rowsOfEntryWith>[0], width: number) => rowsOfEntryWith(entry, width, ROW_FACTS);
+const waitingRowText = (waiting: Parameters<typeof waitingRowTextWith>[0], tick: number, now: number) => waitingRowTextWith(waiting, { kind: 'spinner', tick }, now, DEFAULT_KEY_TABLE);
 
 const at = (createdAt: number, event: Record<string, unknown>): Record<string, unknown> => ({ ...event, createdAt });
 
@@ -89,27 +93,28 @@ describe('the phase of a run comes from its events (6.1)', () => {
 });
 
 describe('the waiting row (6.1)', () => {
-  const none: WaitingFacts = { startingSince: undefined, prompting: false, reconnectingSince: undefined, run: undefined, command: undefined, measuringSince: undefined, panelOwnsEscape: false };
+  const none: WaitingFacts = { startingSince: undefined, prompting: false, reconnectingSince: undefined, run: undefined, command: undefined, measuringSince: undefined, panelOwnsEscape: false, loading: undefined };
   const run = { text: 'thinking', startedAt: 1000 };
 
   it('writes the spinner frame, the phase, the whole seconds and the key that cancels', () => {
-    expect(waitingRowText({ phase: run, cancelKey: 'esc' }, 0, 1000)).toBe('⠋ thinking 0s · esc to cancel');
-    expect(waitingRowText({ phase: run, cancelKey: 'esc' }, 3, 13_999)).toBe('⠸ thinking 12s · esc to cancel');
-    expect(waitingRowText({ phase: run, cancelKey: 'ctrl+c' }, 10, 2000)).toBe('⠋ thinking 1s · ctrl+c to cancel');
+    expect(waitingRowText({ phase: run, cancelKey: 'run.stop' }, 0, 1000)).toBe('⠋ thinking 0s · esc to cancel');
+    expect(waitingRowText({ phase: run, cancelKey: 'run.stop' }, 3, 13_999)).toBe('⠸ thinking 12s · esc to cancel');
+    expect(waitingRowText({ phase: run, cancelKey: 'prompt.interrupt' }, 10, 2000)).toBe('⠋ thinking 1s · ctrl+c to cancel');
     expect(waitingRowText({ phase: run, cancelKey: undefined }, 9, 500)).toBe('⠏ thinking 0s');
   });
 
   it('is absent without a phase and shows one phase at a time', () => {
     expect(waitingOf(none)).toBeUndefined();
-    expect(waitingOf({ ...none, startingSince: 5, run })).toEqual({ phase: { text: 'starting the momonga daemon', startedAt: 5 }, cancelKey: 'ctrl+c' });
-    expect(waitingOf({ ...none, reconnectingSince: 7, run })).toEqual({ phase: { text: 'reconnecting to the daemon', startedAt: 7 }, cancelKey: 'esc' });
-    expect(waitingOf({ ...none, run, measuringSince: 3 })).toEqual({ phase: run, cancelKey: 'esc' });
-    expect(waitingOf({ ...none, command: { text: 'running /gateway', startedAt: 9 } })).toEqual({ phase: { text: 'running /gateway', startedAt: 9 }, cancelKey: 'esc' });
+    expect(waitingOf({ ...none, startingSince: 5, run })).toEqual({ phase: { text: 'starting the momonga daemon', startedAt: 5 }, cancelKey: 'prompt.interrupt' });
+    expect(waitingOf({ ...none, reconnectingSince: 7, run })).toEqual({ phase: { text: 'reconnecting to the daemon', startedAt: 7 }, cancelKey: 'run.stop' });
+    expect(waitingOf({ ...none, run, measuringSince: 3 })).toEqual({ phase: run, cancelKey: 'run.stop' });
+    expect(waitingOf({ ...none, command: { text: 'running /gateway', startedAt: 9 } })).toEqual({ phase: { text: 'running /gateway', startedAt: 9 }, cancelKey: 'run.stop' });
+    expect(waitingOf({ ...none, run, loading: { done: 500, total: 1200, startedAt: 4 } })).toEqual({ phase: { text: 'loading the conversation 500 of 1200 events', startedAt: 4 }, cancelKey: undefined });
     expect(waitingOf({ ...none, measuringSince: 3 })).toEqual({ phase: { text: 'measuring this model (once per model and OS build)', startedAt: 3 }, cancelKey: undefined });
   });
 
   it('names ctrl+c while a panel owns Esc and is hidden while an approval is open', () => {
-    expect(waitingOf({ ...none, run, panelOwnsEscape: true })?.cancelKey).toBe('ctrl+c');
+    expect(waitingOf({ ...none, run, panelOwnsEscape: true })?.cancelKey).toBe('prompt.interrupt');
     expect(waitingOf({ ...none, run, measuringSince: 3, prompting: true })).toBeUndefined();
   });
 });

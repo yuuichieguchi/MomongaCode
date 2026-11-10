@@ -13,6 +13,8 @@ import type {
   ElicitationRequestView,
   JobStatus,
   ImageAttachment,
+  InboxDelivery,
+  InboxState,
   PermissionMode,
   PermissionOption,
   PlanAccountRef,
@@ -114,6 +116,22 @@ export type CreateRunInput = {
   images?: ImageAttachment[];
 };
 
+export type InboxRow = {
+  id: string;
+  sessionId: string;
+  delivery: InboxDelivery;
+  text: string;
+  images?: ImageAttachment[];
+  seq: number;
+  state: InboxState;
+  createdAt: number;
+  settledAt: number | null;
+};
+
+export type QueuedRunTerms = { timeoutMs: number; limits: Record<string, unknown> };
+
+export type InboxAddInput = { delivery: InboxDelivery; text: string; images?: ImageAttachment[]; run: QueuedRunTerms };
+
 export type ClaimStatus = 'RUNNING' | 'CANCELLING';
 
 export type Claim = {
@@ -129,6 +147,18 @@ export type LeaseLost = { kind: 'lease_lost' };
 export type Conflict = { kind: 'conflict'; reason?: string };
 
 export type NotFound = { kind: 'not_found' };
+
+export type InboxAddResult = { kind: 'added'; row: InboxRow; pending: InboxRow[] } | NotFound | { kind: 'full' };
+export type InboxWithdrawResult = { kind: 'withdrawn' | 'already_delivered'; row: InboxRow; pending: InboxRow[] } | NotFound;
+export type InboxDeliverResult = { kind: 'ok'; delivered: InboxRow[] } | LeaseLost;
+
+export type InboxStore = {
+  add(sessionId: string, input: InboxAddInput): InboxAddResult;
+  withdraw(id: string): InboxWithdrawResult;
+  list(sessionId: string): InboxRow[];
+  deliverSteering(claim: Claim): InboxDeliverResult;
+  successorOf(runId: string): Run | undefined;
+};
 
 export type CreateRunResult = { kind: 'created' | 'existing'; run: Run } | NotFound | { kind: 'key_reused' };
 export type RequestCancelResult = { kind: 'ok'; run: Run; changed: boolean } | { kind: 'status_unknown'; run: Run } | NotFound;
@@ -645,6 +675,7 @@ export type RuntimeStore = {
   approvals: ApprovalStore;
   blobs: BlobStore;
   trust: TrustStore;
+  inbox: InboxStore;
   memories: RuntimeMemoryStore;
   sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;

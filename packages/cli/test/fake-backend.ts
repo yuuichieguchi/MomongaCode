@@ -1,9 +1,12 @@
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { INBOX_FULL_CODE, INBOX_MAX_PENDING, applyCapabilityOverride, inboxFullMessage } from '@momonga/protocol';
+import type { InboxRowView } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers } from '@momonga/testkit';
-import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, RunStatus, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
+import { isTerminalStatus } from '../src/run/follow.ts';
+import { continuedSession, resolveSession } from '../src/run/resolve-session.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
 
 export const SESSION: SessionView = {
@@ -40,7 +43,12 @@ export const runView = (overrides: Partial<RunView> = {}): RunView => ({
   ...overrides,
 });
 
+export type FakeConversationRun = { id: string; status?: RunStatus; frames: readonly RunEventFrame[] };
+
+export type FakeConversation = { session: Partial<SessionView> & { id: string }; firstPrompt: string; runs: readonly FakeConversationRun[] };
+
 export type FakeBackend = TuiBackend & {
+  readonly opened: { modelAlias: string | undefined; permissionMode: PermissionMode | undefined }[];
   readonly calls: string[];
   called(call: string): Promise<void>;
   readonly started: { text: string; history: 'inherit' | 'fresh'; options?: StartRunOptions }[];
@@ -51,6 +59,9 @@ export type FakeBackend = TuiBackend & {
   emit(frame: RunEventFrame): void;
   following(): FollowHandlers;
   finish(run: RunView): void;
+  readonly inboxRows: InboxRowView[];
+  deliverInbox(id: string): void;
+  succeed(runId: string, next: RunView): void;
 };
 
 export type FakeBackendOptions = {
@@ -72,6 +83,7 @@ export type FakeBackendOptions = {
   aliases?: readonly string[];
   windows?: Readonly<Record<string, number>>;
   toolCalling?: Readonly<Record<string, ToolCallingState>>;
+  conversations?: readonly FakeConversation[];
 };
 
 export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
@@ -123,6 +135,27 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   let handlers: FollowHandlers | undefined;
   let finishRun: ((run: RunView) => void) | undefined;
   let session: SessionView = { ...SESSION, ...options.session };
+  const opened: FakeBackend['opened'] = [];
+  let startedHere = false;
+  const conversations: FakeConversation[] = [...(options.conversations ?? [])];
+  const viewOf = (conversation: FakeConversation): SessionView => {
+    const newest = conversation.runs.at(-1);
+    const active = conversation.runs.find((run) => !isTerminalStatus(run.status ?? 'COMPLETED'));
+    return { ...SESSION, cwd: session.cwd, ...conversation.session, latestRunId: newest === undefined ? null : newest.id, activeRunId: active === undefined ? null : active.id };
+  };
+  const stored = { listSessions: async (cwd?: string) => conversations.map(viewOf).filter((view) => cwd === undefined || view.cwd === cwd) };
+  const conversationRun = (runId: string): { run: FakeConversationRun; view: RunView } | undefined => {
+    for (const conversation of conversations) {
+      const index = conversation.runs.findIndex((run) => run.id === runId);
+      const run = conversation.runs[index];
+      if (run !== undefined) return { run, view: runView({ id: run.id, sessionId: conversation.session.id, ordinal: index + 1, status: run.status ?? 'COMPLETED', lastSeq: run.frames.length }) };
+    }
+    return undefined;
+  };
+  const adopt = (view: SessionView): SessionView => {
+    session = view;
+    return session;
+  };
 
   const toolCallingOf = (alias: string): { toolCalling?: ToolCallingState } => {
     const toolCalling = options.toolCalling?.[alias];
@@ -131,6 +164,18 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const aliasCapabilities = (alias: string): Capabilities => ({ ...capabilitiesOf({ contextWindow: options.windows?.[alias] ?? options.contextWindow ?? 8192 }), ...toolCallingOf(alias) });
 
   const waiters: { call: string; resolve: () => void }[] = [];
+
+  const inboxRows: InboxRowView[] = [];
+  const successors = new Map<string, RunView>();
+  const pendingInbox = (): InboxRowView[] => inboxRows.filter((row) => row.state === 'pending');
+  const settleInbox = (id: string, state: 'delivered' | 'withdrawn'): InboxRowView => {
+    const index = inboxRows.findIndex((row) => row.id === id);
+    const found = inboxRows[index];
+    if (found === undefined) throw new Error(`no inbox row ${id}`);
+    const settled: InboxRowView = found.state === 'pending' ? { ...found, state, settledAt: 2 } : found;
+    inboxRows[index] = settled;
+    return settled;
+  };
 
   const record = (call: string): void => {
     calls.push(call);
@@ -145,6 +190,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   return {
     cwd: session.cwd,
     calls,
+    opened,
     started,
     elicitationAnswers,
     openedUrls,
@@ -171,10 +217,26 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     decideTrust: async (decision) => {
       record(`trust:${decision}`);
     },
-    openSession: async () => {
+    openSession: async (modelAlias, permissionMode) => {
       record('openSession');
-      return session;
+      opened.push({ modelAlias, permissionMode });
+      if (opened.length === 1) return session;
+      return adopt({ ...session, id: `session-${opened.length}`, latestRunId: null, activeRunId: null, ...(modelAlias === undefined ? {} : { modelAlias }), ...(permissionMode === undefined ? {} : { permissionMode }) });
     },
+    resumeSession: async (id) => {
+      record(`resume:${id}`);
+      return adopt(await resolveSession(stored, session.cwd, id));
+    },
+    continueSession: async () => {
+      record('continue');
+      return adopt(await continuedSession(stored, session.cwd));
+    },
+    sessions: async () =>
+      conversations
+        .filter((conversation) => conversation.session.id !== session.id && conversation.runs.length > 0 && viewOf(conversation).cwd === session.cwd)
+        .map((conversation) => ({ id: conversation.session.id, createdAt: viewOf(conversation).createdAt, runs: conversation.runs.length, firstPrompt: conversation.firstPrompt }))
+        .sort((left, right) => right.createdAt - left.createdAt),
+    runs: async () => (conversations.find((conversation) => conversation.session.id === session.id)?.runs ?? []).flatMap((run) => conversationRun(run.id)?.view ?? []),
     autoModeAvailable: async () => options.autoModeAvailable ?? false,
     models: async () =>
       (options.aliases ?? [session.modelAlias]).map((id) => ({
@@ -196,14 +258,50 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       return session;
     },
     startRun: async (text, history, runOptions = {}) => {
+      startedHere = true;
       started.push({ text, history, ...(Object.keys(runOptions).length === 0 ? {} : { options: runOptions }) });
-      return runView({ status: 'QUEUED' });
+      if (!conversations.some((conversation) => conversation.session.id === session.id)) conversations.push({ session: { ...session }, firstPrompt: text, runs: [{ id: 'run-1', frames: [] }] });
+      return runView({ status: 'QUEUED', sessionId: session.id });
     },
-    follow: (_runId, followHandlers) =>
-      new Promise<RunView>((resolve) => {
+    follow: (runId, followHandlers) => {
+      const kept = startedHere ? undefined : conversationRun(runId);
+      startedHere = false;
+      if (kept !== undefined) for (const frame of kept.run.frames) followHandlers.onEvent(frame);
+      if (kept !== undefined && isTerminalStatus(kept.view.status)) return Promise.resolve(kept.view);
+      return new Promise<RunView>((resolve) => {
         handlers = followHandlers;
         finishRun = resolve;
-      }),
+      });
+    },
+    inboxRows,
+    deliverInbox: (id) => void settleInbox(id, 'delivered'),
+    succeed: (runId, next) => void successors.set(runId, next),
+    inbox: {
+      add: async (delivery, text, images = []) => {
+        record(`inbox:${delivery}:${text}`);
+        if (pendingInbox().length >= INBOX_MAX_PENDING) throw Object.assign(new Error(inboxFullMessage()), { code: INBOX_FULL_CODE });
+        const row: InboxRowView = {
+          id: `row-${inboxRows.length + 1}`,
+          sessionId: session.id,
+          delivery,
+          text,
+          ...(images.length === 0 ? {} : { images: images.map((image) => ({ mediaType: image.mediaType, byteLength: image.data.length })) }),
+          seq: inboxRows.length + 1,
+          state: 'pending',
+          createdAt: 1,
+          settledAt: null,
+        };
+        inboxRows.push(row);
+        return { row, pending: pendingInbox() };
+      },
+      withdraw: async (id) => {
+        record(`inbox-withdraw:${id}`);
+        const row = settleInbox(id, 'withdrawn');
+        return { outcome: row.state === 'delivered' ? 'already_delivered' : 'withdrawn', row, pending: pendingInbox() };
+      },
+      list: async () => pendingInbox(),
+      successor: async (runId) => successors.get(runId),
+    },
     cancel: async (runId) => {
       record(`cancel:${runId}`);
     },

@@ -3,6 +3,7 @@ import type { DOMElement } from 'ink';
 import { useRef } from 'react';
 import { characterEndAfter } from '../editor.ts';
 import type { EditorState } from '../editor.ts';
+import { currentA11y } from './a11y.ts';
 import { INPUT_BOX_FRAME_ROWS } from './constants.ts';
 import { borderOf } from './theme.ts';
 import { displayWidth, segmentsOf } from './wrap.ts';
@@ -80,7 +81,7 @@ export function PanelInputBox({ editor }: { editor: EditorState }) {
   const after = editor.text.slice(editor.cursor + (blank ? 0 : atCaret.length));
   const lines = `${before}${CARET_OPEN}${blank ? ' ' : atCaret}${CARET_CLOSE}${after}`.split('\n');
   return (
-    <Box flexDirection="column" borderStyle="round" {...borderOf('border')} paddingX={1}>
+    <Box flexDirection="column" {...(currentA11y().screenReader ? {} : { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 })}>
       {lines.map((line, index) => {
         const open = line.indexOf(CARET_OPEN);
         const close = line.indexOf(CARET_CLOSE);
@@ -99,18 +100,18 @@ export function PanelInputBox({ editor }: { editor: EditorState }) {
   );
 }
 
-export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number | undefined };
+export type InputBoxProps = { editor: EditorState; columns: number; rows: number | undefined; top: number | undefined; framed: boolean };
 
-export function InputBox({ editor, columns, rows, top }: InputBoxProps) {
+export function InputBox({ editor, columns, rows, top, framed }: InputBoxProps) {
   const box = useRef<DOMElement>(null);
   const measured = useBoxMetrics(box);
   const { setCursorPosition } = useCursor();
   const layout = layoutInput(editor.text, editor.cursor, columns);
   const visible = rows ?? layout.rows.length;
   const first = windowTopOf(layout, visible);
-  setCursorPosition({ x: BOX_LEFT_COLUMNS + FIRST_PREFIX.length + layout.caretCol, y: (top ?? measured.top) + BOX_TOP_ROWS + layout.caretRow - first });
+  setCursorPosition({ x: (framed ? BOX_LEFT_COLUMNS : 0) + FIRST_PREFIX.length + layout.caretCol, y: (top ?? measured.top) + (framed ? BOX_TOP_ROWS : 0) + layout.caretRow - first });
   return (
-    <Box ref={box} flexDirection="column" borderStyle="round" {...borderOf('border')} paddingX={1}>
+    <Box ref={box} flexDirection="column" {...(framed ? { borderStyle: 'round' as const, ...borderOf('border'), paddingX: 1 } : {})}>
       {layout.rows.slice(first, first + visible).map((row, index) => (
         <Text key={first + index} wrap="truncate">{`${first + index === 0 ? FIRST_PREFIX : REST_PREFIX}${row.text}`}</Text>
       ))}

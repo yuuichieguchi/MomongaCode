@@ -1,12 +1,14 @@
-import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
-import { useApp, useStdout } from 'ink';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Text, useApp, useStdout } from 'ink';
 import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, USAGE_PAUSED_CODE, agentReadiness, autoModeNotice, isNotListedCapabilities } from '@momonga/protocol';
-import type { AliasCapabilities, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
+import type { AliasCapabilities, InboxDelivery, InboxRowView, MomongaModelEntry, PermissionMode, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
 import { followMeasurement, readinessNoticeOf } from '../readiness.ts';
+import { isTerminalStatus } from '../run/follow.ts';
 import { describeRunEnd } from '../run/headless.ts';
+import type { Reopen } from '../run/resolve-session.ts';
 import { accountsOf, profileOf } from '../plan/accounts.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
@@ -18,18 +20,25 @@ import { modelPickerCommand, planSlashCommands } from './commands/auth.ts';
 import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
 import type { StartupBanner, StartupConfig } from './startup.tsx';
+import { pickConversation } from './commands/resume.ts';
 import { skillCommands } from './commands/skills.ts';
-import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, isEditorAction, placeCaret, placeText, withHistory } from './editor.ts';
+import { createReplayQueue } from './replay.ts';
+import type { ReplayQueue } from './replay.ts';
+import { applyAction, emptyEditor, enterOf, expandedText, insertPaste, insertText, isEditorAction, placeCaret, placeText, pushHistory, withHistory } from './editor.ts';
+import { INBOX_FULL_HINT, busyDeliveryOf, busyHint, completionHint, draftOf, isInboxFull, onFirstLine, takenBack, waitingRows } from './busy-input.ts';
 import type { EditorState } from './editor.ts';
-import { EDITOR_UNSET_HINT } from './external-editor.ts';
+import { editorUnsetHint } from './external-editor.ts';
 import type { ExternalEditorPort } from './external-editor.ts';
-import { legacyKeyOf } from './keys/legacy.ts';
-import { DEFAULT_KEY_TABLE } from './keys/table.ts';
-import type { ActionId, KeyContext, KeyTable } from './keys/table.ts';
+import { fixedKeyBindings } from './keys/store.ts';
+import type { KeyBindings } from './keys/store.ts';
+import { chordPressOf, DEFAULT_KEY_TABLE, newlineKeyHint } from './keys/table.ts';
+import type { ActionId, KeyContext, KeySpec, KeyTable } from './keys/table.ts';
+import { a11yOf, applyA11y, NOTHING_ASKED, statusLine, statusLines } from './screen/a11y.ts';
+import type { AskedA11y, StoredA11y } from './screen/a11y.ts';
 import { AttachmentLines } from './screen/attachments.tsx';
 import type { Attachment } from './screen/attachments.tsx';
 import { SCREEN_SETTINGS } from './screen/constants.ts';
-import { contextPercentOf, Footer, newlineHintText, planRowFits } from './screen/footer.tsx';
+import { contextPercentOf, Footer, formatTokens, newlineHintText, planRowFits } from './screen/footer.tsx';
 import { HistoryView } from './screen/history-view.tsx';
 import { InputBox, inputContentRows, inputOffsetAt, inputRowsOf } from './screen/input-box.tsx';
 import type { ScreenTerminal } from './screen/input.ts';
@@ -44,7 +53,7 @@ import { useToolView } from './screen/tool-view.ts';
 import { useTranscriptView } from './screen/use-transcript-view.ts';
 import type { ScreenTimers } from './screen/timers.ts';
 import { commandPhaseText, WaitingRow, waitingOf } from './screen/waiting-row.tsx';
-import type { WaitingPhase } from './screen/waiting-row.tsx';
+import type { Loading, WaitingPhase } from './screen/waiting-row.tsx';
 import { createSlashRegistry, parseSlash } from './slash.ts';
 import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import type { KeyEvent, TerminalEvent } from './terminal/events.ts';
@@ -53,10 +62,10 @@ import { UNSTORED_TUI_SETTINGS, useAttention } from './screen/notify.ts';
 import type { NotifyMode, TuiSettingsPort } from './screen/notify.ts';
 import { UNREPORTED_COLOUR_HOST, appearanceOf, applyAppearance, applyTheme } from './screen/theme.ts';
 import type { ColourHost, ThemeId } from './screen/theme.ts';
-import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
+import { appendEntry, BANNER_KEY, foldChildEvent, foldEvent, foldReplayedEvent, nextMode, runCreated, runLeft, sessionTokens, setThoughtWindow, shownRunPhase, subagentEnded, subagentStarted, thoughtWindowOf } from './transcript.ts';
 import type { Entry } from './transcript.ts';
 
-export type TuiOutcome = { error?: Error };
+export type TuiOutcome = { error?: Error; reopen?: string };
 
 export type AppProps = {
   backend: TuiBackend;
@@ -65,12 +74,15 @@ export type AppProps = {
   initialPrompt?: string;
   initialImages?: readonly string[];
   initialSkill?: string;
+  reopen?: Reopen;
   startup?: StartupConfig;
   slash?: SlashRegistry;
   tasks?: BackgroundTasks;
   autoMode?: AutoModePort;
   shell?: ShellPort;
   keys?: KeyTable;
+  keyBindings?: KeyBindings;
+  a11y?: AskedA11y;
   externalEditor?: ExternalEditorPort;
   copyOnSelect?: boolean;
   colour?: ColourHost;
@@ -102,7 +114,10 @@ const unavailableExternalEditor: ExternalEditorPort = {
 };
 
 export const STILL_STARTING_HINT = 'Still starting. Your text is kept.';
-export const TASK_RUNNING_HINT = 'A task is running. Esc stops it.';
+export const taskRunningHint = (keys: KeyTable): string => {
+  const key = keys.keyHint('run.stop');
+  return key === '' ? 'A task is running.' : `A task is running. ${key.charAt(0).toUpperCase()}${key.slice(1)} stops it.`;
+};
 export const EXIT_ARM_MS = 3000;
 export const HISTORY_SEARCH_TITLE = 'History';
 
@@ -112,8 +127,10 @@ type ExitAction = Extract<ActionId, 'prompt.interrupt' | 'prompt.exit'>;
 
 const MENU_CONTEXTS: readonly KeyContext[] = ['menu'];
 const EDITOR_CONTEXTS: readonly KeyContext[] = ['chat', 'global'];
-
-const isTyped = (event: KeyEvent): event is KeyEvent & { text: string } => 'text' in event && !event.ctrl && !event.alt;
+const VIEWPORT_CONTEXTS: readonly KeyContext[] = ['viewport'];
+const VIEWER_CONTEXTS: readonly KeyContext[] = ['viewer'];
+const PANEL_CONTEXTS: readonly KeyContext[] = ['select', 'viewer'];
+const PROMPT_CONTEXTS: readonly KeyContext[] = ['select', 'viewer', 'chat'];
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
 
@@ -125,7 +142,7 @@ const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE
 
 const isUsageLimitCode = (code: string): boolean => USAGE_LIMIT_CODES.some((member) => member === code);
 
-const CLEAR_SCREEN = '\u001b[2J\u001b[3J\u001b[H';
+const CLEAR_SCREEN = '\u001b[2J\u001b[H';
 
 const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -141,6 +158,9 @@ export function App(props: AppProps) {
   const [previewedTheme, setPreviewedTheme] = useState<ThemeId | undefined>(undefined);
   const [notify, setNotify] = useState<NotifyMode>(tuiSettings.initial.notify);
   applyTheme(previewedTheme ?? theme);
+  const [storedA11y, setStoredA11y] = useState<StoredA11y>({ screenReader: tuiSettings.initial.screenReader, reducedMotion: tuiSettings.initial.reducedMotion });
+  const a11y = a11yOf(storedA11y, props.a11y ?? NOTHING_ASKED);
+  applyA11y(a11y);
   const [store] = useState(createTranscriptStore);
   useSyncExternalStore(store.subscribe, store.version);
   const transcript = store.state();
@@ -185,19 +205,29 @@ export function App(props: AppProps) {
   const [switching, setSwitching] = useState(false);
   const [historyGeneration, setHistoryGeneration] = useState(0);
   const [panelRows, setPanelRows] = useState<number | undefined>(undefined);
-  const nextHistory = useRef<'inherit' | 'fresh'>('inherit');
+  const [loading, setLoading] = useState<Loading | undefined>(undefined);
+  const openedSession = useRef<{ id: string; hasRun: boolean } | undefined>(undefined);
   const initialPromptSent = useRef(false);
   const exiting = useRef(false);
   const runIdRef = useRef<string | undefined>(undefined);
   const editorRef = useRef<EditorState>(editor);
   const attachmentsRef = useRef<readonly Attachment[]>([]);
+  const [waitingMessages, setWaitingState] = useState<readonly InboxRowView[]>([]);
+  const waitingRef = useRef<readonly InboxRowView[]>([]);
+  const lastEndedRun = useRef<string | undefined>(undefined);
+  const followingQueued = useRef(false);
   const [profiles, setProfiles] = useState<readonly PlanProfileView[]>([]);
   const [servedTarget, setServedTarget] = useState<string | undefined>(undefined);
   const typedRef = useRef(false);
   const aliasRef = useRef<string | undefined>(undefined);
   const signInFailedRun = useRef<{ text: string; options: StartRunOptions; alias: string } | undefined>(undefined);
   const busyRef = useRef(false);
-  const keys = props.keys ?? DEFAULT_KEY_TABLE;
+  const fixedKeys = props.keys ?? DEFAULT_KEY_TABLE;
+  const fixedBindings = useMemo(() => fixedKeyBindings(fixedKeys), [fixedKeys]);
+  const bindings = props.keyBindings ?? fixedBindings;
+  const keys = useSyncExternalStore(bindings.subscribe, bindings.table);
+  const chord = useRef<KeySpec | undefined>(undefined);
+  useEffect(() => bindings.listen((text) => appendEntry(store, { kind: 'notice', level: 'warning', text })), [bindings, store]);
   const externalEditor = props.externalEditor ?? unavailableExternalEditor;
   const [hint, setHint] = useState<string | undefined>(undefined);
   const armedExit = useRef<{ action: ExitAction; timer: unknown } | undefined>(undefined);
@@ -230,7 +260,8 @@ export function App(props: AppProps) {
 
   const finish = (outcome: TuiOutcome): void => {
     exiting.current = true;
-    onExit(outcome);
+    const opened = openedSession.current;
+    onExit(opened?.hasRun === true ? { ...outcome, reopen: opened.id } : outcome);
     exit();
   };
 
@@ -305,19 +336,24 @@ export function App(props: AppProps) {
     if (text !== undefined) append({ kind: 'notice', level: 'warning', text });
   };
 
-  const openSession = async (modelAlias: string | undefined): Promise<void> => {
-    const session = await backend.openSession(modelAlias);
+  const showSession = async (session: SessionView): Promise<void> => {
+    openedSession.current = { id: session.id, hasRun: session.latestRunId !== null };
     setModeState(session.permissionMode);
     aliasRef.current = session.modelAlias;
     setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
-    const history = await backend.loadHistory();
-    replaceEditor(withHistory(editorRef.current, history));
-    showBanner(session.modelAlias, []);
+    showBanner(session.modelAlias, notices);
     showAutoNotice(session);
     setPhase({ kind: 'ready' });
+    endMeasuring();
     void backend.model().then(showModel, modelUnread);
+  };
+
+  const enterFirstSession = async (session: SessionView): Promise<void> => {
+    await showSession(session);
+    const history = await backend.loadHistory();
+    replaceEditor(withHistory(editorRef.current, history));
     void backend.startupNotices().then(
       (found) => setNotices((previous) => [...previous, ...found]),
       (error: unknown) => {
@@ -336,6 +372,8 @@ export function App(props: AppProps) {
       },
     );
   };
+
+  const openSession = async (modelAlias: string | undefined): Promise<void> => enterFirstSession(await backend.openSession(modelAlias));
 
   const runFlow = (work: () => Promise<void>): void => {
     work().catch(reportError);
@@ -374,6 +412,15 @@ export function App(props: AppProps) {
     else setPhase({ kind: 'unconnected' });
   };
 
+  const setWaitingMessages = (rows: readonly InboxRowView[]): void => {
+    waitingRef.current = rows;
+    setWaitingState(rows);
+  };
+
+  const refreshInbox = async (): Promise<void> => {
+    setWaitingMessages(await backend.inbox.list());
+  };
+
   const cancelNewest = (): void => {
     const runId = runIdRef.current;
     if (runId === undefined) {
@@ -396,6 +443,8 @@ export function App(props: AppProps) {
     store,
     columns,
     panelRows: panelRowsCap(rows),
+    keys,
+    screenReader: a11y.screenReader,
     cancelNewest,
     reportError,
     fail,
@@ -447,7 +496,7 @@ export function App(props: AppProps) {
     const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
     rememberProfiles(listed);
     if (entries.length > 0) {
-      await openSession(undefined);
+      await openAtLaunch();
       runFlow(() => offerInvitation(listed));
       return;
     }
@@ -492,6 +541,207 @@ export function App(props: AppProps) {
     setHint(undefined);
   };
 
+  const follow = (runId: string, replay: { queue: ReplayQueue; before: number } | undefined): Promise<RunView> => {
+    let firstSeq: number | undefined;
+    const deliver = (work: () => void, position?: number): void => {
+      if (replay === undefined) work();
+      else replay.queue.push(work, position);
+    };
+    return backend.follow(runId, {
+      onEvent: (frame) => {
+        const event = frame.data;
+        const seq = 'seq' in event ? event.seq : undefined;
+        firstSeq ??= seq;
+        const first = firstSeq;
+        deliver(
+          () => {
+            setReconnectingSince(undefined);
+            if (event.type === 'model.responded' && event.target !== undefined) setServedTarget(event.target);
+            if (event.type === 'user.message' && event.source !== undefined) refreshInbox().catch(reportError);
+            if (replay === undefined) foldEvent(store, event);
+            else foldReplayedEvent(store, event, first);
+          },
+          replay === undefined || seq === undefined ? undefined : replay.before + seq,
+        );
+      },
+      onChildEvent: (frame, agent) =>
+        deliver(() => {
+          setReconnectingSince(undefined);
+          foldChildEvent(store, frame.data, agent);
+        }),
+      onChildStarted: (agent, childRunId) => deliver(() => subagentStarted(store, agent, childRunId, now())),
+      onChildEnded: (_agent, childRunId) => deliver(() => subagentEnded(store, childRunId)),
+      onReconnecting: () => setReconnectingSince((since) => since ?? now()),
+    });
+  };
+
+  const watchRun = async (runId: string, replay: { queue: ReplayQueue; before: number } | undefined, resubmit: { text: string; options: StartRunOptions; alias: string } | undefined): Promise<void> => {
+    runIdRef.current = runId;
+    const run = await follow(runId, replay);
+    await replay?.queue.drained();
+    setReconnectingSince(undefined);
+    attention.runEnded(run.status === 'COMPLETED' ? 'done' : run.status === 'FAILED' ? 'error' : undefined);
+    const stopped = run.error;
+    if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && resubmit !== undefined) signInFailedRun.current = resubmit;
+    const plan = stopped?.plan;
+    if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
+    else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
+    else if (run.status !== 'COMPLETED') append({ kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') });
+  };
+
+  const endReading = (): void => {
+    runIdRef.current = undefined;
+    setReconnectingSince(undefined);
+    runLeft(store);
+    setLoading(undefined);
+    setBusyState(false);
+  };
+
+  const readConversation = async (session: SessionView, enter: (session: SessionView) => Promise<void>): Promise<void> => {
+    const runs = await backend.runs();
+    const total = runs.reduce((sum, run) => sum + run.lastSeq, 0);
+    const startedAt = now();
+    setBusyState(true);
+    setLoading({ done: 0, total, startedAt });
+    try {
+      await enter(session);
+    } catch (error) {
+      endReading();
+      throw error;
+    }
+    const queue = createReplayQueue(timers, (done) => setLoading(done < total ? { done, total, startedAt } : undefined));
+    try {
+      let before = 0;
+      for (const run of runs) {
+        if (isTerminalStatus(run.status)) {
+          await follow(run.id, { queue, before });
+          queue.push(() => runLeft(store), before + run.lastSeq);
+        } else {
+          store.update({ runId: run.id });
+          await watchRun(run.id, { queue, before }, undefined);
+        }
+        before += run.lastSeq;
+      }
+      await queue.drained();
+    } catch (error) {
+      attention.runEnded('error');
+      if (!exiting.current) reportError(error);
+    } finally {
+      endReading();
+    }
+  };
+
+  const clearScreen = (): void => {
+    signInFailedRun.current = undefined;
+    resetTranscript();
+    if (terminal.state().screen === 'scrollback') stdout.write(CLEAR_SCREEN);
+  };
+
+  const refusedWhileWorking = (): boolean => {
+    if (busyRef.current) setHint(taskRunningHint(keys));
+    return busyRef.current;
+  };
+
+  const startNewSession = async (): Promise<void> => {
+    if (refusedWhileWorking()) return;
+    if (aliasRef.current === undefined) {
+      clearScreen();
+      return;
+    }
+    const session = await backend.openSession(aliasRef.current, mode);
+    clearScreen();
+    await showSession(session);
+  };
+
+  const resumeSession = async (id: string): Promise<void> => {
+    if (refusedWhileWorking()) return;
+    await readConversation(await backend.resumeSession(id), async (session) => {
+      clearScreen();
+      await showSession(session);
+    });
+  };
+
+  const resumePorts = { backend, pick: overlayPorts.pick, info: note, resume: resumeSession, now, columns: () => terminal.state().size.columns };
+
+  const openAtLaunch = async (): Promise<void> => {
+    const { reopen } = props;
+    if (reopen === undefined || reopen.kind === 'pick') {
+      await openSession(undefined);
+      if (reopen !== undefined) runFlow(() => pickConversation(resumePorts));
+      return;
+    }
+    await readConversation(reopen.kind === 'id' ? await backend.resumeSession(reopen.id) : await backend.continueSession(), enterFirstSession);
+  };
+
+  const watchQueuedRuns = async (endedRunId: string): Promise<void> => {
+    followingQueued.current = true;
+    try {
+      for (let ended = endedRunId; ; ) {
+        lastEndedRun.current = ended;
+        await refreshInbox();
+        const next = await backend.inbox.successor(ended);
+        if (next === undefined) return;
+        runLeft(store);
+        runCreated(store, next.id, now());
+        await watchRun(next.id, undefined, undefined);
+        ended = next.id;
+      }
+    } finally {
+      followingQueued.current = false;
+    }
+  };
+
+  const resumeQueuedRuns = async (): Promise<void> => {
+    const ended = lastEndedRun.current;
+    if (ended === undefined || followingQueued.current || busyRef.current) return;
+    setBusyState(true);
+    try {
+      await watchQueuedRuns(ended);
+    } catch (error) {
+      attention.runEnded('error');
+      if (!exiting.current) reportError(error);
+    } finally {
+      runIdRef.current = undefined;
+      setReconnectingSince(undefined);
+      runLeft(store);
+      setBusyState(false);
+    }
+  };
+
+  const sendWhileBusy = (delivery: InboxDelivery): void => {
+    const draft = draftOf(editorRef.current);
+    if (draft === undefined) return;
+    const sent = attachmentsRef.current;
+    replaceEditor(draft.state);
+    setAttachments([]);
+    backend.recordHistory(draft.text).catch(reportError);
+    const refused = (error: unknown): void => {
+      replaceEditor(placeText(editorRef.current, takenBack([draft.text], editorRef.current.text)));
+      setAttachments([...sent, ...attachmentsRef.current]);
+      if (!isInboxFull(error)) {
+        reportError(error);
+        return;
+      }
+      setHint(INBOX_FULL_HINT);
+      refreshInbox().catch(reportError);
+    };
+    const accepted = async (): Promise<void> => {
+      const added = await backend.inbox.add(delivery, draft.text, sent.map((attachment) => attachment.image));
+      setWaitingMessages(added.pending);
+      await resumeQueuedRuns();
+    };
+    accepted().catch(refused);
+  };
+
+  const takeBackWaiting = async (): Promise<void> => {
+    const rows = waitingRef.current.toSorted((left, right) => left.seq - right.seq);
+    const answers = await Promise.all(rows.map((row) => backend.inbox.withdraw(row.id)));
+    const texts = answers.filter((answer) => answer.outcome === 'withdrawn').map((answer) => answer.row.text);
+    const current = editorRef.current;
+    replaceEditor(placeText(withHistory(current, texts.reduce(pushHistory, current.history)), takenBack(texts, current.text)));
+    await refreshInbox();
+  };
+
   const runPrompt = async (text: string, options: StartRunOptions = {}): Promise<void> => {
     setBusyState(true);
     disarmExit();
@@ -502,35 +752,13 @@ export function App(props: AppProps) {
     append({ kind: 'user', text });
     for (const attachment of sent) note(`attached ${describeAttachment(attachment.file, attachment.image)}`);
     try {
-      const history = nextHistory.current;
-      nextHistory.current = 'inherit';
       const runOptions: StartRunOptions = { ...options, ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }) };
       const runAlias = aliasRef.current;
-      const started = await backend.startRun(text, history, runOptions);
-      runIdRef.current = started.id;
+      const started = await backend.startRun(text, 'inherit', runOptions);
+      if (openedSession.current !== undefined) openedSession.current.hasRun = true;
       runCreated(store, started.id, now());
-      const run: RunView = await backend.follow(started.id, {
-        onEvent: (frame) => {
-          setReconnectingSince(undefined);
-          if (frame.data.type === 'model.responded' && frame.data.target !== undefined) setServedTarget(frame.data.target);
-          foldEvent(store, frame.data);
-        },
-        onChildEvent: (frame, agent) => {
-          setReconnectingSince(undefined);
-          foldChildEvent(store, frame.data, agent);
-        },
-        onChildStarted: (agent, runId) => subagentStarted(store, agent, runId, now()),
-        onChildEnded: (_agent, runId) => subagentEnded(store, runId),
-        onReconnecting: () => setReconnectingSince((since) => since ?? now()),
-      });
-      setReconnectingSince(undefined);
-      attention.runEnded(run.status === 'COMPLETED' ? 'done' : run.status === 'FAILED' ? 'error' : undefined);
-      const stopped = run.error;
-      if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && runAlias !== undefined) signInFailedRun.current = { text, options: runOptions, alias: runAlias };
-      const plan = stopped?.plan;
-      if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
-      else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
-      else if (run.status !== 'COMPLETED') append({ kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') });
+      await watchRun(started.id, undefined, runAlias === undefined ? undefined : { text, options: runOptions, alias: runAlias });
+      await watchQueuedRuns(started.id);
     } catch (error) {
       attention.runEnded('error');
       if (!exiting.current) reportError(error);
@@ -564,17 +792,12 @@ export function App(props: AppProps) {
       info: note,
       startRun: async (task, runOptions) => {
         if (busyRef.current) {
-          setHint(TASK_RUNNING_HINT);
+          setHint(taskRunningHint(keys));
           return;
         }
         await runPrompt(task, runOptions);
       },
-      clear: () => {
-        signInFailedRun.current = undefined;
-        nextHistory.current = 'fresh';
-        resetTranscript();
-        if (terminal.state().screen === 'scrollback') stdout.write(CLEAR_SCREEN);
-      },
+      sessions: { startNew: startNewSession, resume: resumeSession, now, columns: () => terminal.state().size.columns },
       exit: () => finish({}),
       background: (label, work) => {
         const command: WaitingPhase = { text: commandPhaseText(label), startedAt: now() };
@@ -598,8 +821,16 @@ export function App(props: AppProps) {
           await tuiSettings.save('notify', chosen, signal);
           setNotify(chosen);
         },
+        a11y: () => a11y,
+        storedA11y: (name) => storedA11y[name],
+        storeA11y: async (name, value, signal) => {
+          await tuiSettings.save(name, value, signal);
+          setStoredA11y((before) => ({ ...before, [name]: value }));
+        },
         pick: overlayPorts.pick,
       },
+      keyBindings: { store: bindings, choose: overlayPorts.choose, captureKey: overlayPorts.captureKey },
+      status: () => statusLines(statusFacts()),
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
@@ -622,7 +853,7 @@ export function App(props: AppProps) {
       return;
     }
     if (busyRef.current) {
-      setHint(TASK_RUNNING_HINT);
+      setHint(taskRunningHint(keys));
       return;
     }
     if (alias === undefined) {
@@ -649,9 +880,10 @@ export function App(props: AppProps) {
     send().catch(reportError);
   });
 
+  const reading = loading !== undefined;
   useEffect(() => {
-    if (phase.kind === 'ready') sendInitialPrompt();
-  }, [phase.kind]);
+    if (phase.kind === 'ready' && !reading) sendInitialPrompt();
+  }, [phase.kind, reading]);
 
   const attach = async (files: readonly string[]): Promise<void> => {
     const added: Attachment[] = [];
@@ -726,7 +958,7 @@ export function App(props: AppProps) {
 
   const editExternally = async (): Promise<void> => {
     const outcome = await externalEditor.edit(expandedText(editorRef.current));
-    if (outcome.kind === 'unset') setHint(EDITOR_UNSET_HINT);
+    if (outcome.kind === 'unset') setHint(editorUnsetHint(keys));
     else replaceEditor(placeText(editorRef.current, outcome.text));
   };
 
@@ -743,7 +975,8 @@ export function App(props: AppProps) {
       return;
     }
     if (!command && busyRef.current) {
-      setHint(TASK_RUNNING_HINT);
+      if (busyDeliveryOf(keys, 'prompt.submit') === 'queue') sendWhileBusy('queue');
+      else setHint(taskRunningHint(keys));
       return;
     }
     if (!command && alias === undefined) {
@@ -755,11 +988,15 @@ export function App(props: AppProps) {
     submitSafely(outcome.text);
   };
 
-  const onEditorAction = (action: ActionId | undefined, event: KeyEvent): void => {
+  const onEditorAction = (action: ActionId | undefined, typed: string | undefined): void => {
     const starting = phase.kind === 'starting';
     const working = busyRef.current || commands.length > 0;
     const current = editorRef.current;
     if (action === 'prompt.submit') onEnter();
+    else if (action === 'prompt.queue' || action === 'prompt.steer') {
+      const delivery = busyDeliveryOf(keys, action);
+      if (busyRef.current && delivery !== undefined) sendWhileBusy(delivery);
+    } else if (action === 'editor.up' && waitingRef.current.length > 0 && onFirstLine(current)) runFlow(takeBackWaiting);
     else if (action === 'transcript.detail') {
       if (!starting) toolView.showNewest();
     } else if (action === 'run.stop') {
@@ -777,25 +1014,26 @@ export function App(props: AppProps) {
     else if (action === 'screen.repaint') writeThroughInk('');
     else if (action === 'editor.deleteBefore' && current.text === '' && attachmentsRef.current.length > 0) setAttachments(attachmentsRef.current.slice(0, -1));
     else if (isEditorAction(action)) replaceEditor(applyAction(current, action));
-    else if (action === undefined && isTyped(event)) replaceEditor(insertText(current, event.text));
+    else if (action === undefined && typed !== undefined) replaceEditor(insertText(current, typed));
   };
 
-  const onKey = (event: KeyEvent): void => {
-    const action = keys.actionOf(EDITOR_CONTEXTS, event);
+  const onKey = (event: KeyEvent, pressed: KeyTable): void => {
+    bindings.poll(now());
+    const action = pressed.actionOf(EDITOR_CONTEXTS, event);
     if (armedExit.current === undefined || armedExit.current.action !== action) {
       disarmExit();
       setHint(undefined);
     }
-    const { input, key } = legacyKeyOf(event);
+    const typed = pressed.typedOf(event);
     if (phase.kind === 'trust') {
-      prompts.trustKey(phase.path, input, key);
+      prompts.trustKey(phase.path, event, pressed);
       return;
     }
-    if (toolView.key(input, key)) return;
-    if (prompts.overlayKey(input, key)) return;
+    if (toolView.key(event, pressed)) return;
+    if (prompts.overlayKey(event, pressed)) return;
     if (phase.kind === 'welcome') return;
-    if (!busy && editorRef.current.text === '' && prompts.invitationKey(input, key)) return;
-    if (isTyped(event)) {
+    if (!busy && editorRef.current.text === '' && prompts.invitationKey(event, pressed)) return;
+    if (typed !== undefined) {
       typedRef.current = true;
       prompts.dismissInvitation();
     }
@@ -803,13 +1041,13 @@ export function App(props: AppProps) {
       if (alias !== undefined) cycleMode();
       return;
     }
-    if (prompts.runPromptKey(input, key)) return;
-    const menuAction = keys.actionOf(MENU_CONTEXTS, event);
+    if (prompts.runPromptKey(event, pressed)) return;
+    const menuAction = pressed.actionOf(MENU_CONTEXTS, event);
     const menuAct = isMenuAction(menuAction) ? slashMenu.act(editorRef.current.text, menuAction) : undefined;
     if (menuAct?.kind === 'handled') return;
     if (menuAct !== undefined) placeMenuText(menuAct.text);
     if (menuAct?.kind === 'complete') return;
-    onEditorAction(action, event);
+    onEditorAction(action, typed);
   };
 
   const onPaste = (text: string): void => {
@@ -827,7 +1065,7 @@ export function App(props: AppProps) {
 
   const onTyped = useEffectEvent((event: TerminalEvent): boolean => {
     if (event.type === 'paste') onPaste(event.text);
-    else if (event.type === 'key') onKey(event);
+    else if (event.type === 'key') onKey(event, keys);
     return event.type === 'paste' || event.type === 'key';
   });
 
@@ -842,6 +1080,8 @@ export function App(props: AppProps) {
   const shownPanel = fullscreen && panelRows === undefined ? undefined : panel;
   const inputShown = (phase.kind === 'starting' || phase.kind === 'ready' || phase.kind === 'unconnected') && shownPanel === undefined;
   const menuShown = inputShown && (invitationShown || slashMenu.open);
+  const waitingLines = inputShown ? waitingRows(waitingMessages, columns) : [];
+  const busyHintRow = !busy || !inputShown || phase.kind !== 'ready' ? undefined : slashMenu.open ? completionHint(keys) : busyHint(keys, waitingMessages.length > 0);
   const invitationInMenu = menuShown && phase.kind === 'ready' && invitationShown;
   const waiting = waitingOf({
     startingSince: phase.kind === 'starting' ? openedAt : undefined,
@@ -851,16 +1091,18 @@ export function App(props: AppProps) {
     command: commands.at(-1),
     measuringSince: phase.kind === 'ready' ? measuringSince : undefined,
     panelOwnsEscape: overlay !== undefined,
+    loading: phase.kind === 'ready' ? loading : undefined,
   });
   const allocation = allocate(rows, {
-    waiting: waiting === undefined ? 0 : 1,
+    waiting: waiting === undefined || a11y.screenReader ? 0 : 1,
     inputRows: inputRowsOf(editor, columns),
     menu: !menuShown ? 0 : invitationInMenu ? prompts.invitationRows : slashMenu.rows,
     subagents: transcript.subagents.length,
-    footerSecond: !fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0,
-    lines: inputShown ? attachments.length : 0,
+    footerSecond: (!fullscreen || planRowFits(planRow, columns) ? (planRow === undefined ? 0 : 1) : 0) + (busyHintRow === undefined ? 0 : 1),
+    lines: inputShown ? attachments.length + waitingLines.length : 0,
     panel: shownPanel === undefined ? undefined : panelRows,
   });
+  const busyHintRows = busyHintRow === undefined || (fullscreen && allocation.footer < 2) ? 0 : 1;
   const transcriptWidth = fullscreen ? Math.max(1, columns - SCROLLBAR_COLUMNS) : columns;
   const view = useTranscriptView({
     store,
@@ -874,12 +1116,16 @@ export function App(props: AppProps) {
     openLink: (url) => backend.openUrl(url, undefined, (message) => reportError(new Error(message))),
     reportError,
     keyFacts: () => ({ panelOpen: panel !== undefined || toolView.shown, menuOpen: menuShown, inputEmpty: editorRef.current.text === '' }),
+    keys,
+    a11y,
   });
   const toolView = useToolView({
     store,
     terminal,
     now,
     timers,
+    keys,
+    a11y,
     frame: { width: transcriptWidth, rows: fullscreen ? allocation.viewport : panelRowsCap(rows), border: false },
     yielded: panel !== undefined || switching,
     window: fullscreen && !switching ? view.window : undefined,
@@ -916,18 +1162,64 @@ export function App(props: AppProps) {
     return true;
   });
   useEffect(() => terminal.input.claim((event) => onInputPress(event)), [terminal]);
+  const chordContexts = (): readonly KeyContext[] => {
+    if (phase.kind === 'trust' || overlay !== undefined) return PANEL_CONTEXTS;
+    if (toolView.shown) return VIEWER_CONTEXTS;
+    if (transcript.approval !== undefined || transcript.elicitation !== undefined) return PROMPT_CONTEXTS;
+    return [...(menuShown ? MENU_CONTEXTS : []), ...(fullscreen ? VIEWPORT_CONTEXTS : []), ...EDITOR_CONTEXTS];
+  };
+  const onChord = useEffectEvent((event: TerminalEvent): boolean => {
+    if (event.type !== 'key') return false;
+    const step = keys.chordStep(chordContexts(), chord.current, event);
+    chord.current = step.kind === 'pending' ? step.prefix : undefined;
+    if (step.kind === 'none') return false;
+    if (step.kind === 'action' && !view.act(step.id)) onKey(event, chordPressOf(keys, step.id));
+    return true;
+  });
+  useEffect(() => terminal.input.claim((event) => onChord(event)), [terminal]);
+  const pollKeyFile = useEffectEvent((): void => bindings.poll(now()));
+  const keepHistory = useEffectEvent((): void => {
+    if (a11y.screenReader && terminalState.screen === 'fullscreen') switchScreen('scrollback').catch(reportError);
+  });
+  useEffect(() => {
+    keepHistory();
+  }, [a11y.screenReader, terminalState.screen]);
+  const statusFacts = (): { mode: string; tokens: string; context: string } => {
+    const percent = contextPercentOf(transcript.contextTokens, capabilities?.contextWindow);
+    return { mode, tokens: formatTokens(sessionTokens(transcript)), context: percent === undefined ? 'unknown' : `${percent}%` };
+  };
+  const say = useEffectEvent((text: string | undefined): void => {
+    if (a11y.screenReader && text !== undefined) note(text);
+  });
+  const waitingText = waiting?.phase.text;
+  useEffect(() => {
+    say(waitingText);
+  }, [waitingText, a11y.screenReader]);
+  const sayStatus = useEffectEvent((): void => {
+    if (phase.kind === 'ready') say(statusLine(statusFacts()));
+  });
+  useEffect(() => {
+    sayStatus();
+  }, [mode, phase.kind, a11y.screenReader]);
+  const shownHint = hint ?? view.toast;
+  useEffect(() => {
+    say(shownHint);
+  }, [shownHint]);
+  useEffect(() => {
+    say(planRow);
+  }, [planRow]);
   const thoughtWindow = thoughtWindowOf(allocation.viewport);
   useEffect(() => {
     setThoughtWindow(store, thoughtWindow);
   }, [store, thoughtWindow]);
   const footerFacts =
-    phase.kind === 'ready' && overlay === undefined
+    phase.kind === 'ready' && overlay === undefined && !a11y.screenReader
       ? {
           mode,
           tokens: sessionTokens(transcript),
           contextPercent: contextPercentOf(transcript.contextTokens, capabilities?.contextWindow),
           imageInput,
-          right: hint ?? view.toast ?? newlineHintText(terminalState.newlineHint),
+          right: shownHint ?? newlineHintText(newlineKeyHint(keys, terminalState.negotiation)),
         }
       : undefined;
 
@@ -949,11 +1241,29 @@ export function App(props: AppProps) {
           <HistoryView key={historyGeneration} store={store} source={view.source} />
         ),
         menu: !menuShown ? null : invitationInMenu ? prompts.invitationView() : slashMenu.view(fullscreen ? allocation.menu : slashMenu.rows),
-        waiting: waiting === undefined ? null : <WaitingRow waiting={waiting} now={now} timers={timers} />,
-        lines: inputShown ? <AttachmentLines attachments={attachments} /> : null,
-        input: inputShown ? <InputBox editor={editor} columns={columns} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
-        footer: <Footer facts={footerFacts} hint={hint} unconnected={phase.kind === 'unconnected'} planRow={planRow} width={columns} rows={fullscreen ? allocation.footer : 2} />,
-        subagents: <SubagentRows subagents={transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
+        waiting: waiting === undefined || a11y.screenReader ? null : <WaitingRow waiting={waiting} now={now} timers={timers} keys={keys} reducedMotion={a11y.reducedMotion} onTick={pollKeyFile} />,
+        lines: inputShown ? (
+          <>
+            <AttachmentLines attachments={attachments} keys={keys} />
+            {waitingLines.map((line, index) => (
+              <Text key={index} dimColor wrap="truncate">
+                {line}
+              </Text>
+            ))}
+          </>
+        ) : null,
+        input: inputShown ? <InputBox editor={editor} columns={columns} framed={!a11y.screenReader} rows={fullscreen ? inputContentRows(allocation.input) : undefined} top={fullscreen ? allocation.viewport + allocation.menu + allocation.waiting + allocation.lines : undefined} /> : null,
+        footer: (
+          <>
+            <Footer facts={footerFacts} hint={a11y.screenReader ? undefined : hint} unconnected={phase.kind === 'unconnected'} planRow={a11y.screenReader ? undefined : planRow} width={columns} rows={fullscreen ? allocation.footer - busyHintRows : 2} keys={keys} />
+            {busyHintRow === undefined || busyHintRows === 0 ? null : (
+              <Text dimColor wrap="truncate">
+                {busyHintRow}
+              </Text>
+            )}
+          </>
+        ),
+        subagents: <SubagentRows subagents={a11y.screenReader ? [] : transcript.subagents} rows={fullscreen ? allocation.subagents : transcript.subagents.length} now={now} timers={timers} />,
       }}
     />
   );

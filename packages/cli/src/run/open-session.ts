@@ -8,8 +8,12 @@ import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import type { DaemonPorts } from '../daemon/ensure-daemon.ts';
+import { reopenedSession } from './resolve-session.ts';
+import type { HeadlessReopen } from './resolve-session.ts';
 
 export type SessionOptions = { permissionMode?: PermissionMode; bypassAllowed?: boolean; modelAlias?: string; signal?: AbortSignal };
+
+export type OpenSessionOptions = SessionOptions & { reopen?: HeadlessReopen };
 
 export type CliSession = {
   client: RuntimeClient;
@@ -30,11 +34,15 @@ export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Prom
 
 export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
 
-export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: SessionOptions): Promise<CliSession> => {
+export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: OpenSessionOptions): Promise<CliSession> => {
   const onNotice = stderrStopNotice(ports);
   await ensureDaemon(ports, paths, options.signal === undefined ? { onNotice } : { signal: options.signal, onNotice });
   const client = connectRuntime(paths);
   try {
+    if (options.reopen !== undefined) {
+      const reopened: CreatedSession = { session: await reopenedSession(client, ports.cwd, options.reopen), strippedEnvKeys: [] };
+      return { client, created: reopened, close: () => client.close() };
+    }
     const created = await client.createSession({
       cwd: ports.cwd,
       env: await environmentSnapshot(ports),

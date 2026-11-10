@@ -336,7 +336,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       ports.info('no subscription account is saved');
       return;
     }
-    const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row) => `press enter again to sign out ${row.label}` });
+    const index = await ports.pick({ title: 'Sign out', rows: listed.accounts.map((account) => ({ label: accountRowLabel(account) })), confirm: (row, decideKey) => `press ${decideKey} again to sign out ${row.label}` });
     const chosen = index === undefined ? undefined : listed.accounts[index];
     if (chosen === undefined) return;
     const report = await backend.plan.signOut({ profile: chosen.profile, account: chosen.label });

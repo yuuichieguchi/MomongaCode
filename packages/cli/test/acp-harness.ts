@@ -243,6 +243,10 @@ export const fakeRuntime = (): FakeRuntime => {
       return { run: await runtime.createRunResult(input), location: '/v1/runs/run-1' };
     },
     getRun: unexpected('getRun'),
+    inboxAdd: unexpected('inboxAdd'),
+    inboxWithdraw: unexpected('inboxWithdraw'),
+    inboxList: unexpected('inboxList'),
+    runSuccessor: unexpected('runSuccessor'),
     cancel: async (id) => {
       record(`cancel ${id}`);
       const failure = runtime.failures.get('cancel');

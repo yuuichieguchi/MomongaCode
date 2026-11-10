@@ -6,10 +6,10 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, readinessText } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, INBOX_FULL_CODE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, inboxFullMessage, readinessText } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { JournalThreadError, sameRunRequest } from '@momonga/store';
+import { JournalThreadError, inboxRowView, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
 import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
@@ -37,7 +37,7 @@ import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
 import type { EventSource } from './event-stream.ts';
 import type { RunNotifier } from './notifier.ts';
 import { JSON_MEDIA_TYPES, PATCH_MEDIA_TYPES, parseCursor, parseIdempotencyKey, readJson, validateBody } from './request.ts';
-import type { CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
+import type { AddInboxBody, CreateRunBody, CreateSessionBody, PatchSessionBody, ResolveApprovalBody } from './request.ts';
 import { createRecordViews } from '../memory/views.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import { contextChargesText, contextChargesView } from './context-charges.ts';
@@ -335,6 +335,17 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ agents: agents.agents.map(toAgentView), warnings: [...agents.warnings] });
   };
 
+  const requireImageInput = async (session: Session, images: readonly unknown[] | undefined, signal: AbortSignal): Promise<void> => {
+    if (images === undefined || images.length === 0) return;
+    let capabilities: Capabilities;
+    try {
+      capabilities = await deps.modelCapabilities(session.modelAlias, signal);
+    } catch (error) {
+      throw capabilitiesReadFailure(error);
+    }
+    if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
+  };
+
   const createRun: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
     requireRootSession(session);
@@ -360,15 +371,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (replayed !== undefined) return replayed;
     await sessionSettingsOf(session.cwd, context.req.raw.signal);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
-    if (body.images !== undefined && body.images.length > 0) {
-      let capabilities: Capabilities;
-      try {
-        capabilities = await deps.modelCapabilities(session.modelAlias, context.req.raw.signal);
-      } catch (error) {
-        throw capabilitiesReadFailure(error);
-      }
-      if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
-    }
+    await requireImageInput(session, body.images, context.req.raw.signal);
     const drainedDuringChecks = replayWhileDraining();
     if (drainedDuringChecks !== undefined) return drainedDuringChecks;
     const result = store.createRunAndEnqueue(session.id, {
@@ -387,6 +390,42 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       location: `/v1/runs/${result.run.id}`,
       ...(result.kind === 'existing' ? { 'idempotent-replayed': 'true' } : {}),
     });
+  };
+
+  const addInbox: Handler = async (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    requireRootSession(session);
+    if (deps.isDraining()) throw drainingError();
+    const body = validateBody<AddInboxBody>('AddInboxRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
+    await requireImageInput(session, body.images, context.req.raw.signal);
+    if (deps.isDraining()) throw drainingError();
+    const result = store.inbox.add(session.id, {
+      delivery: body.delivery,
+      text: body.text,
+      ...(body.images === undefined ? {} : { images: body.images }),
+      run: { timeoutMs: deps.defaults.runTimeoutMs, limits: { ...deps.defaults.limits } },
+    });
+    if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
+    if (result.kind === 'full') throw conflict(INBOX_FULL_CODE, inboxFullMessage());
+    return json({ row: inboxRowView(result.row), pending: result.pending.map(inboxRowView) }, 201);
+  };
+
+  const listInbox: Handler = (context) => {
+    const session = requireSession(context.req.param('id') ?? '');
+    return json({ pending: store.inbox.list(session.id).map(inboxRowView) });
+  };
+
+  const withdrawInbox: Handler = (context) => {
+    const id = context.req.param('id') ?? '';
+    const result = store.inbox.withdraw(id);
+    if (result.kind === 'not_found') throw notFound(`waiting message ${id} does not exist`);
+    return json({ outcome: result.kind, row: inboxRowView(result.row), pending: result.pending.map(inboxRowView) });
+  };
+
+  const runSuccessor: Handler = (context) => {
+    const run = requireRun(context.req.param('id') ?? '');
+    const next = store.inbox.successorOf(run.id);
+    return json({ successor: next === undefined ? null : toRunView(next) });
   };
 
   const listChildRuns: Handler = (context) => {
@@ -554,6 +593,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions/:id/agents', { GET: listAgents });
   route('/v1/sessions/:id/jobs', { GET: listJobs });
   route('/v1/sessions/:id/events', { GET: sessionEvents });
+  route('/v1/sessions/:id/inbox', { GET: listInbox, POST: addInbox });
+  route('/v1/inbox/:id/withdraw', { POST: withdrawInbox });
+  route('/v1/runs/:id/successor', { GET: runSuccessor });
   route('/v1/runs/:id', { GET: getRun });
   route('/v1/runs/:id/answered-by', { GET: runAnsweredBy });
   route('/v1/runs/:id/children', { GET: listChildRuns });

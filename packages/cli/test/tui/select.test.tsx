@@ -3,6 +3,8 @@ import type { Key } from 'ink';
 import { joinHint, selectClick, selectHint, selectKey, selectLayout, selectRowAt, selectStart, selectText, selectWheel, SelectView } from '../../src/tui/select.tsx';
 import type { SelectOutcome, SelectSpec, SelectState } from '../../src/tui/select.tsx';
 import { renderObservable } from '../ink-helpers.ts';
+import { DEFAULT_KEY_TABLE } from '../../src/tui/keys/table.ts';
+import { keyEventOf } from './screen-fakes.ts';
 
 const NO_KEY: Key = {
   upArrow: false,
@@ -33,7 +35,7 @@ const spec = (given: Partial<SelectSpec> = {}): SelectSpec => ({ rows: labels(4)
 
 const PAGE = 3;
 
-const press = (of: SelectSpec, state: SelectState, input: string, key: Partial<Key> = {}): { state: SelectState; outcome?: SelectOutcome } => selectKey(of, state, input, { ...NO_KEY, ...key }, PAGE);
+const press = (of: SelectSpec, state: SelectState, input: string, key: Partial<Key> = {}): { state: SelectState; outcome?: SelectOutcome } => selectKey(of, state, keyEventOf(input, { ...NO_KEY, ...key }), DEFAULT_KEY_TABLE, PAGE);
 
 const after = (of: SelectSpec, keys: readonly (readonly [string, Partial<Key>?])[]): { state: SelectState; outcomes: SelectOutcome[] } => {
   let state = selectStart(of);
@@ -147,12 +149,12 @@ describe('the keys of the one selection component', () => {
 describe('the hint line is generated from the props', () => {
   it('names only the keys that act', () => {
     const rows = [{ label: 'Yes' }, { label: 'No, not now' }];
-    expect(selectHint(spec({ rows, decideOn: 'enter', escape: 1, interrupt: 'exit' }))).toBe('up/down to move · enter to choose · esc: No, not now');
-    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 1, interrupt: 'cancel-run' }))).toBe('1-9 or enter to choose · up/down to move · esc: No, not now · ctrl+c: cancel the run');
-    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'inactive', interrupt: 'cancel-run' }))).toBe('1-9 or enter to choose · up/down to move · ctrl+c: cancel the run');
-    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'back' }))).toBe('1-9 or enter to choose · up/down to move · esc: go back');
-    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'back', filter: true }))).toBe('enter to choose · up/down to move · type to filter · esc: go back');
-    expect(selectHint(spec({ rows, alt: { label: 'use from now on' } }))).toBe('1-9 or enter to choose · up/down to move · tab: use from now on · esc: go back');
+    expect(selectHint(spec({ rows, decideOn: 'enter', escape: 1, interrupt: 'exit' }), DEFAULT_KEY_TABLE)).toBe('up/down to move · enter to choose · esc: No, not now');
+    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 1, interrupt: 'cancel-run' }), DEFAULT_KEY_TABLE)).toBe('1-9 or enter to choose · up/down to move · esc: No, not now · ctrl+c: cancel the run');
+    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'inactive', interrupt: 'cancel-run' }), DEFAULT_KEY_TABLE)).toBe('1-9 or enter to choose · up/down to move · ctrl+c: cancel the run');
+    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'back' }), DEFAULT_KEY_TABLE)).toBe('1-9 or enter to choose · up/down to move · esc: go back');
+    expect(selectHint(spec({ rows, decideOn: 'immediate', escape: 'back', filter: true }), DEFAULT_KEY_TABLE)).toBe('enter to choose · up/down to move · type to filter · esc: go back');
+    expect(selectHint(spec({ rows, alt: { label: 'use from now on' } }), DEFAULT_KEY_TABLE)).toBe('1-9 or enter to choose · up/down to move · tab: use from now on · esc: go back');
     expect(joinHint(['enter to confirm', 'esc: go back'])).toBe('enter to confirm · esc: go back');
   });
 });
@@ -200,7 +202,7 @@ describe('the list in the rows it is given', () => {
 describe('the rows as drawn', () => {
   const drawn = (of: SelectSpec, state: SelectState, extra: { sending?: boolean; error?: string } = {}): string => {
     const frame = { width: 60, rows: 20, border: false };
-    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1)} state={state} border={false} sending={extra.sending === true} {...(extra.error === undefined ? {} : { error: extra.error })} />);
+    const app = renderObservable(<SelectView spec={of} layout={selectLayout(of, state, selectText(of, frame), frame, extra.error === undefined ? 0 : 1)} state={state} border={false} keys={DEFAULT_KEY_TABLE} sending={extra.sending === true} {...(extra.error === undefined ? {} : { error: extra.error })} />);
     const shown = app.lastFrame() ?? '';
     app.unmount();
     return shown;

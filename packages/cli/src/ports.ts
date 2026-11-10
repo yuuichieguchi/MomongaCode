@@ -29,7 +29,7 @@ export type AcpStdio = { input: ReadableStream<Uint8Array>; output: WritableStre
 
 export type Terminal = { stdin: NodeJS.ReadStream; stdout: NodeJS.WriteStream };
 
-export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & {
+export type CliFiles = Pick<FileSystem, 'readFile' | 'readTextFile' | 'stat' | 'mkdir' | 'mkdirPrivate' | 'mkdtemp' | 'rm' | 'rename'> & {
   readText(file: string): Promise<string>;
   writeText(file: string, text: string): Promise<void>;
   listFiles(directory: string): Promise<string[]>;

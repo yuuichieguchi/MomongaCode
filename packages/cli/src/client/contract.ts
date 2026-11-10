@@ -1,7 +1,7 @@
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, InboxAddResponse, InboxResponse, InboxWithdrawResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -50,3 +50,7 @@ export const checkCostBreakdown = guard<CostBreakdownView>(RUN_API_SCHEMAS.CostB
 export const checkGuidelines = guard<GuidelinesResponse>(RUN_API_SCHEMAS.GuidelinesResponse);
 export const checkGuideline = guard<GuidelineResponse>(RUN_API_SCHEMAS.GuidelineResponse);
 export const checkContextCharge = guard<ContextChargeResponse>(RUN_API_SCHEMAS.ContextChargeResponse);
+export const checkInbox = guard<InboxResponse>(RUN_API_SCHEMAS.InboxResponse);
+export const checkInboxAdd = guard<InboxAddResponse>(RUN_API_SCHEMAS.InboxAddResponse);
+export const checkInboxWithdraw = guard<InboxWithdrawResponse>(RUN_API_SCHEMAS.InboxWithdrawResponse);
+export const checkRunSuccessor = guard<{ successor: RunView | null }>(RUN_API_SCHEMAS.RunSuccessorResponse);

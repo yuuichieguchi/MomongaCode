@@ -79,6 +79,7 @@ const slashContext = () => {
     screen: { current: () => 'fullscreen', set: async () => undefined },
     keys: DEFAULT_KEY_TABLE,
     negotiation: 'unknown',
+    display: { a11y: () => ({ screenReader: false, reducedMotion: false }) },
   } as unknown as SlashContext;
   return { context, infos, backgrounds, controller };
 };

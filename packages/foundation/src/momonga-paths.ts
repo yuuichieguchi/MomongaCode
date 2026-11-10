@@ -16,6 +16,7 @@ export interface MomongaPaths {
   home: string;
   root: string;
   settingsFile: string;
+  keybindingsFile: string;
   run: string;
   current: string;
   generationLock: string;
@@ -123,6 +124,7 @@ export const momongaLayout = (
     home,
     root,
     settingsFile: join(root, 'settings.json'),
+    keybindingsFile: join(root, 'keybindings.json'),
     run,
     current: join(run, 'current'),
     generationLock: join(run, 'generation.lock'),

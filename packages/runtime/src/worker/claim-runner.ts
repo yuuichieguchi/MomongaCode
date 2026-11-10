@@ -552,6 +552,7 @@ const drive = async (
       await terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
+    journal.deliverSteering();
     flow = await runModelStep(ctx);
   }
 };

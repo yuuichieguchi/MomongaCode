@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createRowCache } from '../../src/tui/screen/row-cache.ts';
+import { createRowCache as createRowCacheWith } from '../../src/tui/screen/row-cache.ts';
 import { createTranscriptStore } from '../../src/tui/screen/store.ts';
 import { appendEntry, foldEvent, sessionTokens, subagentEnded, subagentStarted } from '../../src/tui/transcript.ts';
-import { eventOf, fold, foldChild, plainOf, seeded, storeOf } from './screen-fakes.ts';
+import { eventOf, fold, foldChild, plainOf, seeded, storeOf, ROW_RENDERERS } from './screen-fakes.ts';
+
+const createRowCache = (renderers: Parameters<typeof createRowCacheWith>[0] = ROW_RENDERERS) => createRowCacheWith(renderers);
 
 const call = { type: 'tool.call', callId: 'c1', providerCallId: 'p1', name: 'Read', kind: 'read', title: 'Read /a', rawInput: {} };
 const delta = (itemId: string, text: string) => ({ type: 'agent.message.delta', attempt: 0, itemId, text });

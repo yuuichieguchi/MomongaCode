@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { SocketResolver, UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, InboxAddResponse, InboxDelivery, InboxRowView, InboxWithdrawResponse, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -14,7 +14,11 @@ import {
   checkGuidelines,
   checkErrorBody,
   checkHealth,
+  checkInbox,
+  checkInboxAdd,
+  checkInboxWithdraw,
   checkJobs,
+  checkRunSuccessor,
   checkMcpAuthorization,
   checkMcpServers,
   checkMemories,
@@ -110,6 +114,10 @@ export type RuntimeClient = {
   setModelAlias(sessionId: string, modelAlias: string): Promise<SessionView>;
   createRun(sessionId: string, input: string, options?: CreateRunOptions): Promise<{ run: RunView; location: string }>;
   getRun(id: string): Promise<RunView>;
+  inboxAdd(sessionId: string, delivery: InboxDelivery, text: string, images?: readonly ImageAttachment[]): Promise<InboxAddResponse>;
+  inboxWithdraw(id: string): Promise<InboxWithdrawResponse>;
+  inboxList(sessionId: string): Promise<InboxRowView[]>;
+  runSuccessor(runId: string): Promise<RunView | undefined>;
   cancel(id: string): Promise<{ status: 200 | 202; run: RunView }>;
   trace(runId: string): Promise<RunTraceView>;
   approvals(runId: string): Promise<ApprovalView[]>;
@@ -323,6 +331,31 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     const path = `/v1/runs/${id}`;
     const { body } = await send('GET', path, [200]);
     return runOf(body, `GET ${path}`);
+  };
+
+  const inboxAdd = async (sessionId: string, delivery: InboxDelivery, text: string, images: readonly ImageAttachment[] = []): Promise<InboxAddResponse> => {
+    const path = `/v1/sessions/${sessionId}/inbox`;
+    const { body } = await send('POST', path, [201], { body: { delivery, text, ...(images.length === 0 ? {} : { images }) } });
+    return checkInboxAdd(body, `POST ${path}`);
+  };
+
+  const inboxWithdraw = async (id: string): Promise<InboxWithdrawResponse> => {
+    const path = `/v1/inbox/${id}/withdraw`;
+    const { body } = await send('POST', path, [200]);
+    return checkInboxWithdraw(body, `POST ${path}`);
+  };
+
+  const inboxList = async (sessionId: string): Promise<InboxRowView[]> => {
+    const path = `/v1/sessions/${sessionId}/inbox`;
+    const { body } = await send('GET', path, [200]);
+    return checkInbox(body, `GET ${path}`).pending;
+  };
+
+  const runSuccessor = async (runId: string): Promise<RunView | undefined> => {
+    const path = `/v1/runs/${runId}/successor`;
+    const { body } = await send('GET', path, [200]);
+    const { successor } = checkRunSuccessor(body, `GET ${path}`);
+    return successor === null ? undefined : successor;
   };
 
   const cancel = async (id: string): Promise<{ status: 200 | 202; run: RunView }> => {
@@ -606,6 +639,10 @@ export const createRuntimeClient = (options: { resolveSocket: SocketResolver }):
     setPermissionMode,
     setModelAlias,
     createRun,
+    inboxAdd,
+    inboxWithdraw,
+    inboxList,
+    runSuccessor,
     getRun,
     cancel,
     trace,

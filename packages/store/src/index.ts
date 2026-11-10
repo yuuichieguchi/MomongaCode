@@ -162,5 +162,13 @@ export type {
   TrustDecision,
   TrustStore,
   WaitTargets,
+  InboxAddInput,
+  InboxAddResult,
+  InboxDeliverResult,
+  InboxRow,
+  InboxStore,
+  InboxWithdrawResult,
+  QueuedRunTerms,
 } from './types.ts';
+export { inboxRowView } from './inbox.ts';
 export { UNKNOWN_ANSWERER } from '@momonga/protocol';
