@@ -9,7 +9,7 @@ export type {
   SamplingCapability,
   SamplingField,
   TopPRange,
-  AliasCapabilities,
+  ChainCapabilities,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -131,6 +131,10 @@ export {
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  CHAIN_ROOM_REFUSED_CODE,
+  MODEL_ID_CHANGED_CODE,
+  MODEL_NOT_LISTED_CODE,
+  REMEDY_SURFACES,
   TARGET_HEALTH_REASONS,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
@@ -141,12 +145,37 @@ export {
   isToolCallingState,
   isUnavailableCapabilities,
   notListedMessage,
+  readinessRemedy,
   readinessRemedyOf,
+  readinessShownText,
   readinessText,
 } from './capabilities.ts';
-export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
-export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
-export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
+export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, RemedySurface, TargetAnswers, TargetBilling } from './capabilities.ts';
+export { LOCAL_SERVER_CANDIDATES } from './local-servers.ts';
+export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerToolSupport } from './local-servers.ts';
+export { GENERIC_SERVER_KIND, SERVER_ADAPTER_LABELS, SERVER_KINDS } from './server-kinds.ts';
+export type { JsonCheck, ServerKind, ServerKindAdapter, ServerKindRead, ServerKindRecognise, ServerKinds } from './server-kinds.ts';
+export {
+  ModelRefError,
+  NO_MODEL_CONNECTED_TEXT,
+  PROVIDER_NAME_PATTERN,
+  STORED_MODEL_KEYS,
+  canonOf,
+  decodeStoredModel,
+  displayMapOf,
+  displayOf,
+  hasTag,
+  modelRefErrorOf,
+  parseCanon,
+  resolveStoredModelRef,
+  resolveTypedModelRef,
+  serverCountText,
+  shortOf,
+  storedModelRef,
+  typedModelText,
+  withDefaultTag,
+} from './model-ref.ts';
+export type { ModelRefErrorCode, ModelView, ModelViews, StoredModelRef, TypedModelText, TypedResolution } from './model-ref.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_READY_LIMIT_MS, MANAGED_RESTART_POLICY, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
@@ -575,8 +604,10 @@ export type {
   GatewayHealth,
   ModelList,
   ModelListEntry,
+  ChainMemberEntry,
   MomongaModelEntry,
   MomongaModelList,
+  MomongaModelRoles,
   MomongaEventName,
   TargetHealth,
   UsageReport,
@@ -598,7 +629,7 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   AdapterStop,
-  AliasRoomFacts,
+  ChainRoomFacts,
   ProviderAdapter,
   ClientOperation,
   ReasoningOrigin,
@@ -619,6 +650,6 @@ export type {
   SupervisorPhase,
   SupervisorShutdownResponse,
 } from './supervisor-api.ts';
-export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
+export { BILLING_CHANGE_ALLOWED, BILLING_CHANGE_REASONS, BILLING_CHANGE_REFUSED, describeFallbackCause, fallbackCauseName, isFallbackCause, isFallbackCauseList } from './fallback-cause.ts';
 export type { BillingChangeReason, BillingChangeRecord, FallbackCause } from './fallback-cause.ts';
 export { planAccountRefOf } from './plan-account.ts';

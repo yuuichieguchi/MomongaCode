@@ -75,8 +75,8 @@ describe('the server name derived from a connection (I-N11)', () => {
         const random = seeded(seed);
         const first = chatConnection(`https://${dnsHostOf(random)}.example.com:${portOf(random)}/v1`, ['m']);
         const second = chatConnection(`https://${dnsHostOf(random)}.example.org:${portOf(random)}/v1`, ['n']);
-        const alone = [...(await loadModelsSection({ connections: [first] })).models.keys()];
-        const beside = [...(await loadModelsSection({ connections: [second, first] })).models.keys()];
+        const alone = [...(await loadModelsSection({ connections: [first] })).models.models.keys()];
+        const beside = [...(await loadModelsSection({ connections: [second, first] })).models.models.keys()];
         expect(alone, `seed ${seed}`).toEqual([`${providerNameOf(first as Connection)}/m`]);
         expect(beside, `seed ${seed}`).toEqual([`${providerNameOf(second as Connection)}/n`, alone[0]]);
       }
@@ -112,7 +112,7 @@ describe('the server name derived from a connection (I-N11)', () => {
           const { file, message } = await refusalOf({ models: { connections } });
           expect(message, `seed ${seed}`).toBe(`${file}: models.connections[0] and models.connections[1] both resolve to the server name "${left as string}"; write "provider" on one of them`);
         } else {
-          expect([...(await loadModelsSection({ connections })).models.keys()], `seed ${seed}`).toEqual([`${left as string}/m`, `${right as string}/n`]);
+          expect([...(await loadModelsSection({ connections })).models.models.keys()], `seed ${seed}`).toEqual([`${left as string}/m`, `${right as string}/n`]);
         }
       }
     },

@@ -18,7 +18,7 @@ const load = async (target: Record<string, unknown>) => {
   return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
-const expectRejected = async (target: Record<string, unknown>, ...fragments: string[]): Promise<void> => {
+const expectRejected = async (target: Record<string, unknown>, ...fragments: (string | RegExp)[]): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { connections: [connectionOf('remote', target)] } });
   const failure = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
@@ -26,7 +26,7 @@ const expectRejected = async (target: Record<string, unknown>, ...fragments: str
   for (const fragment of fragments) await expect(failure).rejects.toThrow(fragment);
 };
 
-const thinkingWarningsOf = (warnings: readonly string[]): string[] => warnings.filter((warning) => warning.includes('remote') && /thinking/i.test(warning));
+const thinkingWarningsOf = (warnings: readonly string[]): string[] => warnings.filter((warning) => warning.includes('models.connections[0].models[0]') && /thinking/i.test(warning));
 
 describe('declared thinking form of an anthropic target', () => {
   it('accepts the adaptive form with the effort levels the target accepts', async () => {
@@ -69,7 +69,7 @@ describe('declared thinking form of an anthropic target', () => {
   });
 
   it('rejects a budget that is not below the target output maximum, naming the target', async () => {
-    await expectRejected(anthropicTarget({ control: 'thinking', form: 'budget', budgets: { low: 2048, high: CAPABILITIES.maxOutputTokens } }), 'remote');
+    await expectRejected(anthropicTarget({ control: 'thinking', form: 'budget', budgets: { low: 2048, high: CAPABILITIES.maxOutputTokens } }), /models[./]connections[[/]0/);
   });
 
   it('refuses the thinking control on an adapter that does not render it, naming the target', async () => {
@@ -80,7 +80,7 @@ describe('declared thinking form of an anthropic target', () => {
       baseUrl: 'http://127.0.0.1:1234/v1',
       capabilities: { ...CAPABILITIES, reasoning: { control: 'thinking', form: 'adaptive', efforts: ['low'] } },
     };
-    await expectRejected(chatCompletions, 'remote');
+    await expectRejected(chatCompletions, /models[./]connections[[/]0/);
   });
 
   it('a chat-completions target keeps its reasoning_effort declaration', async () => {

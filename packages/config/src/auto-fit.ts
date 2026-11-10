@@ -8,7 +8,7 @@ import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
 import { ConfigError } from './config-error.ts';
 import { isAbsentPathError } from './json-file.ts';
 import { layoutOf } from './layout.ts';
-import type { ResolvedModels } from './models.ts';
+import type { ResolvedModel, ResolvedModels } from './models.ts';
 import { endpointKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 import { knownKeyOf, probeKeyOf } from './probe-key.ts';
 import type { KnownProbeKey, ProbeKey } from './probe-key.ts';
@@ -27,7 +27,7 @@ export type AutoFitRecord = {
   falseBlock: AutoFitProportion;
   runs: number;
   unobserved: number;
-  agentAlias: string;
+  agentModel: string;
   recordedAt: string;
   version: string;
 };
@@ -57,12 +57,12 @@ export const measurement = (key: AutoFitKey, records: readonly AutoFitRecord[]):
   return autoGatePasses(record) ? 'passed' : 'did_not_pass';
 };
 
-export const autoFitViewOf = (alias: string, key: AutoFitKey, record: AutoFitRecord | undefined): AutoClassifierView => {
+export const autoFitViewOf = (model: string, key: AutoFitKey, record: AutoFitRecord | undefined): AutoClassifierView => {
   const state = measurement(key, record === undefined ? [] : [record]);
-  if (record === undefined || state === 'not_measured') return { alias, key, measurement: 'not_measured' };
+  if (record === undefined || state === 'not_measured') return { model, key, measurement: 'not_measured' };
   const failedBound = failedBoundOf(record);
   return {
-    alias,
+    model,
     key,
     measurement: state,
     facts: {
@@ -77,7 +77,7 @@ export const autoFitViewOf = (alias: string, key: AutoFitKey, record: AutoFitRec
 
 export const classifierIdentityOf = (target: ResolvedModelTarget, probeKey: KnownProbeKey | undefined): string => {
   if (target.adapter !== 'managed') return knownKeyOf({ subject: 'endpoint', endpoint: endpointKeyOf(upstreamEndpointOf(target)), model: target.model }).canonical;
-  if (probeKey === undefined) throw new Error(`the managed target of the classifier has no probe key that was read`);
+  if (probeKey === undefined) throw new Error(`the managed server of the classifier model has no probe key that was read`);
   return probeKey.canonical;
 };
 
@@ -91,42 +91,40 @@ export type ClassifierKeyPorts = {
   signal: AbortSignal;
 };
 
-const aliasMembersOf = (models: ResolvedModels, alias: string): string[] => {
-  const members = models.aliases[alias];
-  if (members === undefined) throw new ConfigError(`the auto mode classifier alias ${alias} is not defined in models.aliases`);
-  return [members].flat();
+const chainMembersOf = (models: ResolvedModels, classifier: string): ResolvedModel[] => {
+  const chain = models.chains.get(classifier);
+  if (chain === undefined) throw new TypeError(`the classifier model ${classifier} has no chain in the resolved models`);
+  return chain.map((canon) => models.models.get(canon) as ResolvedModel);
 };
 
-export const readClassifierProbeKeys = async (models: ResolvedModels, alias: string, ports: ClassifierKeyPorts): Promise<ClassifierProbeKeys> => {
+export const readClassifierProbeKeys = async (models: ResolvedModels, classifier: string, ports: ClassifierKeyPorts): Promise<ClassifierProbeKeys> => {
   const keys = new Map<string, ProbeKey>();
-  for (const name of aliasMembersOf(models, alias)) {
-    const target = models.targets[name] as ResolvedModelTarget;
-    if (target.adapter !== 'managed') continue;
-    const description = registeredServer(models.servers, target.server);
-    if (description === undefined) throw new ConfigError(`the target ${name} names the managed server ${target.server}, which is not registered`);
+  for (const member of chainMembersOf(models, classifier)) {
+    if (member.adapter !== 'managed') continue;
+    const description = registeredServer(models.servers, member.server);
+    if (description === undefined) throw new ConfigError(`the model ${member.canon} names the managed server ${member.server}, which is not registered`);
     const readings = await readProbeKeyComponents({
       identity: description.identity,
-      binary: target.binary,
+      binary: member.binary,
       platform: ports.platform,
       exec: ports.exec,
       signal: ports.signal,
       hashes: ports.hashes,
       ...(ports.host === undefined ? {} : { host: ports.host }),
     });
-    keys.set(name, probeKeyOf({ subject: description.id, identity: description.identity, readings, model: target.model }));
+    keys.set(member.canon, probeKeyOf({ subject: description.id, identity: description.identity, readings, model: member.model }));
   }
   return keys;
 };
 
 export type ClassifierIdentity = { kind: 'known'; identity: string } | { kind: 'unknown'; target: string; component: string; reason: string };
 
-export const classifierAliasIdentityOf = (models: ResolvedModels, alias: string, probeKeys: ClassifierProbeKeys): ClassifierIdentity => {
+export const classifierChainIdentityOf = (models: ResolvedModels, classifier: string, probeKeys: ClassifierProbeKeys): ClassifierIdentity => {
   const identities: string[] = [];
-  for (const name of aliasMembersOf(models, alias)) {
-    const target = models.targets[name] as ResolvedModelTarget;
-    const key = probeKeys.get(name);
-    if (key?.kind === 'unknown') return { kind: 'unknown', target: name, component: key.component, reason: key.reason };
-    identities.push(classifierIdentityOf(target, key));
+  for (const member of chainMembersOf(models, classifier)) {
+    const key = probeKeys.get(member.canon);
+    if (key?.kind === 'unknown') return { kind: 'unknown', target: member.canon, component: key.component, reason: key.reason };
+    identities.push(classifierIdentityOf(member, key));
   }
   return { kind: 'known', identity: identities.join(' > ') };
 };
@@ -144,8 +142,8 @@ export const autoModeDatasetDigest = (): string => {
 
 export type AutoFitKeyResult = { kind: 'known'; key: AutoFitKey } | Extract<ClassifierIdentity, { kind: 'unknown' }>;
 
-export const autoFitKeyOf = (models: ResolvedModels, classifierAlias: string, code: ClassifierCode, probeKeys: ClassifierProbeKeys): AutoFitKeyResult => {
-  const identity = classifierAliasIdentityOf(models, classifierAlias, probeKeys);
+export const autoFitKeyOf = (models: ResolvedModels, classifier: string, code: ClassifierCode, probeKeys: ClassifierProbeKeys): AutoFitKeyResult => {
+  const identity = classifierChainIdentityOf(models, classifier, probeKeys);
   if (identity.kind === 'unknown') return identity;
   return { kind: 'known', key: { classifier: identity.identity, codeDigest: classifierCodeDigestOf(code), datasetDigest: autoModeDatasetDigest() } };
 };
@@ -164,23 +162,20 @@ const isProportion = (value: unknown): value is AutoFitProportion =>
 const isKey = (value: unknown): value is AutoFitKey =>
   isRecord(value) && typeof value['classifier'] === 'string' && typeof value['codeDigest'] === 'string' && typeof value['datasetDigest'] === 'string';
 
-const recordOf = (value: unknown, file: string): AutoFitRecord => {
-  if (
-    !isRecord(value) ||
-    !isKey(value['key']) ||
-    !Array.isArray(value['cases']) ||
-    !value['cases'].every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['meetsMinimum'] === 'boolean') ||
-    !isProportion(value['falseAllow']) ||
-    !isProportion(value['falseBlock']) ||
-    typeof value['runs'] !== 'number' ||
-    typeof value['unobserved'] !== 'number' ||
-    typeof value['agentAlias'] !== 'string' ||
-    typeof value['recordedAt'] !== 'string' ||
-    typeof value['version'] !== 'string'
-  ) {
-    throw new ConfigError(`${file}: not an auto mode measurement record`);
-  }
-  return value as AutoFitRecord;
+const isMeasurement = (value: Record<string, unknown>): boolean =>
+  isKey(value['key']) &&
+  Array.isArray(value['cases']) &&
+  value['cases'].every((entry) => isRecord(entry) && typeof entry['id'] === 'string' && typeof entry['meetsMinimum'] === 'boolean') &&
+  isProportion(value['falseAllow']) &&
+  isProportion(value['falseBlock']) &&
+  typeof value['runs'] === 'number' &&
+  typeof value['unobserved'] === 'number' &&
+  typeof value['recordedAt'] === 'string' &&
+  typeof value['version'] === 'string';
+
+const recordOf = (value: unknown, file: string): AutoFitRecord | undefined => {
+  if (!isRecord(value) || !isMeasurement(value)) throw new ConfigError(`${file}: not an auto mode measurement record`);
+  return typeof value['agentModel'] === 'string' ? (value as AutoFitRecord) : undefined;
 };
 
 export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Promise<AutoFitRecord | undefined> => {

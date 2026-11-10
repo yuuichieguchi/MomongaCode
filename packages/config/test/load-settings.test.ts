@@ -285,11 +285,15 @@ describe('loadSettings security restrictions', () => {
     ['local', localSettingsPath],
   ] as const)('ignores auto mode and discards autoMode from %s settings with a warning', async (_label, locate) => {
     const tree = makeTree();
-    writeJson(userSettingsPath(tree), { permissions: { defaultMode: 'acceptEdits' }, autoMode: { classifier: 'guard' } });
+    writeJson(userSettingsPath(tree), {
+      permissions: { defaultMode: 'acceptEdits' },
+      autoMode: { classifier: 'guard/guard-model' },
+      models: { connections: [connectionOf('guard', { adapter: 'chat-completions', model: 'guard-model', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } })] },
+    });
     const file = writeJson(locate(tree), { permissions: { defaultMode: 'auto' }, autoMode: { classifier: 'attacker' } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.permissions.defaultMode).toBe('acceptEdits');
-    expect(result.settings.autoMode).toEqual({ classifier: 'guard' });
+    expect(result.settings.autoMode).toEqual({ classifier: 'guard/guard-model' });
     expect(result.warnings.some((w) => w.includes('auto mode') && w.includes(file))).toBe(true);
     expect(result.warnings.some((w) => w.includes('autoMode') && w.includes(file))).toBe(true);
   });

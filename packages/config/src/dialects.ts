@@ -1,6 +1,6 @@
 import { BUILTIN_DIALECT_IDS, DIALECT_ID_PATTERN } from '@momonga/protocol';
 import type { DialectDefinition } from '@momonga/protocol';
-import type { ResolvedModelTarget } from './settings.ts';
+import type { ModelConnection } from './settings.ts';
 
 const ID_PATTERN = new RegExp(DIALECT_ID_PATTERN);
 
@@ -20,10 +20,12 @@ export const resolveDialects = (declared: Record<string, DialectDefinition> | un
   return dialects;
 };
 
-export const checkTargetDialects = (targets: Record<string, ResolvedModelTarget>, dialects: Record<string, DialectDefinition>, source: string): void => {
-  for (const [name, target] of Object.entries(targets)) {
-    const id = target.capabilities !== undefined && 'schemaDialect' in target.capabilities ? target.capabilities.schemaDialect : undefined;
-    if (id === undefined || isBuiltin(id) || Object.hasOwn(dialects, id)) continue;
-    throw new Error(`${source}: models.targets.${name}: capabilities.schemaDialect ${JSON.stringify(id)} is neither a built-in dialect nor declared in models.dialects`);
-  }
+export const checkModelDialects = (connections: readonly ModelConnection[], dialects: Record<string, DialectDefinition>, source: string): void => {
+  connections.forEach((connection, index) => {
+    (connection.models ?? []).forEach((entry, entryIndex) => {
+      const id = entry.capabilities !== undefined && 'schemaDialect' in entry.capabilities ? entry.capabilities.schemaDialect : undefined;
+      if (id === undefined || isBuiltin(id) || Object.hasOwn(dialects, id)) return;
+      throw new Error(`${source}: models.connections[${index}].models[${entryIndex}]: capabilities.schemaDialect ${JSON.stringify(id)} is neither a built-in dialect nor declared in models.dialects`);
+    });
+  });
 };

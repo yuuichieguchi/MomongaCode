@@ -14,7 +14,7 @@ export const ADAPTER_NEUTRAL_ERROR_CODES = [
 
 export type AdapterNeutralErrorCode = (typeof ADAPTER_NEUTRAL_ERROR_CODES)[number];
 
-export type AdapterTarget = { name: string; model: string };
+export type AdapterTarget = { name: string; display: string; model: string };
 
 export type DecodedCompactionItem = { type: 'compaction_summary'; summary: string };
 
@@ -88,7 +88,7 @@ export type ClientOperation = 'create' | 'compact' | 'count_tokens';
 
 export type AdapterStop = { readonly managedServerStopGraceMs: number };
 
-export type AliasRoomFacts = { outputBounded: boolean; contextWindow: number | undefined; maxOutputTokens: number | undefined };
+export type ChainRoomFacts = { outputBounded: boolean; contextWindow: number | undefined; maxOutputTokens: number | undefined };
 
 export type ProviderAdapter = {
   readonly kind: string;
@@ -99,7 +99,7 @@ export type ProviderAdapter = {
   classify(error: unknown): ClassifiedError;
   health?(target: AdapterTarget): Promise<HealthResult>;
   servedAccount?(target: AdapterTarget): PlanAccountRef | undefined;
-  roomFacts?(target: AdapterTarget): Promise<AliasRoomFacts>;
+  roomFacts?(target: AdapterTarget): Promise<ChainRoomFacts>;
   close?(stop?: AdapterStop): Promise<void>;
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;

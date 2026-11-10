@@ -53,7 +53,7 @@ describe('declared sampling acceptance on the adapters that render sampling para
   it.for(ADAPTERS_THAT_RENDER_SAMPLING)('%s without a sampling declaration resolves with none, so values are forwarded as today', async (adapter) => {
     const target = targetOf(adapter, undefined);
     const { settings } = await settingsWith({ ...target, capabilities: CAPABILITIES }).loaded;
-    expect((modelOf(settings, 'remote') as { capabilities: Record<string, unknown> }).capabilities['sampling']).toBeUndefined();
+    expect((modelOf(settings, 'remote') as unknown as { capabilities: Record<string, unknown> }).capabilities['sampling']).toBeUndefined();
   });
 });
 
@@ -63,7 +63,7 @@ describe('a malformed sampling declaration is refused, naming the target and the
     async ({ adapter, sampling, fragment }) => {
       const { tree, loaded } = settingsWith(targetOf(adapter, sampling));
       await expect(loaded).rejects.toThrow(userSettingsPath(tree));
-      await expect(loaded).rejects.toThrow('remote');
+      await expect(loaded).rejects.toThrow(/models[./]connections[[/]0/);
       await expect(loaded).rejects.toThrow('sampling');
       await expect(loaded).rejects.toThrow(fragment);
     },

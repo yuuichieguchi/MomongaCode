@@ -1,0 +1,786 @@
+import path from 'node:path';
+import { isRecord } from '@momonga/foundation';
+import {
+  MANAGED_SERVERS,
+  PROVIDER_NAME_PATTERN,
+  SERVER_ADAPTER_LABELS,
+  SERVER_KINDS,
+  canonOf,
+  displayMapOf,
+  modelRefErrorOf,
+  resolveTypedModelRef,
+  typedModelText,
+  withDefaultTag,
+} from '@momonga/protocol';
+import type { ManagedServerDescription, ModelViews, ServerKinds, TargetBilling } from '@momonga/protocol';
+import { editUserSettings } from './edit-user-settings.ts';
+import { resolveModels } from './models.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
+import { PLAN_PROFILES } from './plan-profiles.ts';
+import { endpointKeyOf } from './probe-record-key.ts';
+import { providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
+import { serverRegistryOf } from './server-registry.ts';
+import { MODEL_ROLES } from './settings-schema.ts';
+import { assertSettings } from './settings.ts';
+import type { ConnectionDraft, ModelEntry, ModelRole } from './settings.ts';
+
+export type ModelsOperation =
+  | { kind: 'addModel'; choice: { connection: ConnectionDraft; model: ModelEntry } }
+  | { kind: 'removeModel'; model: string }
+  | { kind: 'removeConnection'; provider: string; forgetServer?: boolean }
+  | { kind: 'setStart'; model: string | null }
+  | { kind: 'setFallback'; models: readonly string[] }
+  | { kind: 'allowBillingChange'; from: TargetBilling; to: TargetBilling; model?: string }
+  | { kind: 'forbidBillingChange'; from: TargetBilling; to: TargetBilling; model?: string }
+  | { kind: 'setRole'; job: ModelRole; model: string | null }
+  | { kind: 'setClassifier'; model: string | null }
+  | { kind: 'setModelField'; model: string; path: readonly string[]; value: unknown }
+  | { kind: 'setConnectionField'; provider: string; path: readonly string[]; value: unknown }
+  | { kind: 'setProvider'; provider: string; name: string | null }
+  | { kind: 'declareServer'; id: string; command: string; args: readonly string[]; readyPath: string }
+  | { kind: 'setServerField'; id: string; field: 'command' | 'args' | 'readyPath'; value: unknown }
+  | { kind: 'forgetServer'; id: string }
+  | { kind: 'setTimeouts'; headersTimeoutMs?: number; idleTimeoutMs?: number }
+  | { kind: 'setDialects'; dialects: object };
+
+export type ModelsOperations = readonly [ModelsOperation, ...ModelsOperation[]];
+
+export type ModelsEditRefusalCode = 'would_not_load' | 'unresolved' | 'name_taken' | 'reserved_name' | 'duplicate' | 'invalid_value';
+
+export type ModelsEditRefusal = { code: ModelsEditRefusalCode; message: string };
+
+export type ModelsReference = { kind: 'start' | 'fallback' | 'role' | 'classifier' | 'billing'; position?: number; job?: string };
+
+export type ModelsEditPlan = { document: Record<string, unknown>; references: ModelsReference[]; warnings: string[]; summaries: string[]; model?: string } | { refused: ModelsEditRefusal };
+
+export type ModelsEditResult = { wrote: boolean; summaries: string[]; model?: string };
+
+export type ModelsEditPorts = { kinds: ServerKinds; planProfiles: PlanProfiles; servers: Readonly<Record<string, ManagedServerDescription>>; home?: string };
+
+export class ModelsEditRefused extends Error {
+  readonly code: ModelsEditRefusalCode;
+
+  constructor(code: ModelsEditRefusalCode, message: string) {
+    super(message);
+    this.name = 'ModelsEditRefused';
+    this.code = code;
+  }
+}
+
+const refuse = (code: ModelsEditRefusalCode, message: string): never => {
+  throw new ModelsEditRefused(code, message);
+};
+
+const SOURCE = 'settings';
+const SOURCE_PREFIX = `${SOURCE}: `;
+const NOT_SAVED = 'Not saved: ';
+const NAME_RULE_TEXT = 'Use lower-case letters, digits, . _ - and start with a lower-case letter.';
+
+const sentenceOf = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith(SOURCE_PREFIX) ? message.slice(SOURCE_PREFIX.length) : message;
+};
+
+type Json = Record<string, unknown>;
+
+type Place = { connection: number; entry: number };
+
+type State = { document: Json; resolved: ResolvedModels; warnings: string[]; views: ModelViews; displays: ReadonlyMap<string, string>; grid: string[][]; places: ReadonlyMap<string, Place> };
+
+const recordAt = (holder: Json, key: string): Json => {
+  const value = holder[key];
+  if (isRecord(value)) return value;
+  const created: Json = {};
+  holder[key] = created;
+  return created;
+};
+
+const modelsIn = (document: Json): Json => recordAt(document, 'models');
+
+const connectionsIn = (document: Json): Json[] => {
+  const models = modelsIn(document);
+  if (!Array.isArray(models['connections'])) models['connections'] = [];
+  return models['connections'] as Json[];
+};
+
+const entriesIn = (connection: Json): Json[] => {
+  if (!Array.isArray(connection['models'])) connection['models'] = [];
+  return connection['models'] as Json[];
+};
+
+const dropIfEmpty = (holder: Json, key: string): void => {
+  const value = holder[key];
+  if (Array.isArray(value) ? value.length === 0 : isRecord(value) && Object.keys(value).length === 0) delete holder[key];
+};
+
+const loadState = (document: Json, ports: ModelsEditPorts): State => {
+  let settings;
+  let servers;
+  try {
+    settings = assertSettings(document, SOURCE);
+    servers = { ...ports.servers, ...serverRegistryOf(settings.models?.servers, SOURCE) };
+  } catch (error) {
+    return refuse('invalid_value', sentenceOf(error));
+  }
+  const warnings: string[] = [];
+  let resolved: ResolvedModels;
+  try {
+    resolved = resolveModels(settings.models, { source: SOURCE, home: ports.home, warnings, servers, planProfiles: ports.planProfiles, classifier: settings.autoMode?.classifier, kinds: ports.kinds });
+  } catch (error) {
+    return refuse('would_not_load', `${NOT_SAVED}${sentenceOf(error)}`);
+  }
+  const grid = (settings.models?.connections ?? []).map((connection, index) => {
+    const { provider, defaultTag } = resolved.connections[index] as ResolvedModels['connections'][number];
+    return (connection.models ?? []).map((entry) => canonOf(provider, withDefaultTag(entry.id, defaultTag)));
+  });
+  const places = new Map(grid.flatMap((canons, connection) => canons.map((canon, entry): [string, Place] => [canon, { connection, entry }])));
+  return { document, resolved, warnings: warnings.map(sentenceOf), views: resolved.views, displays: displayMapOf(resolved.views), grid, places };
+};
+
+const displayIn = (state: State, canon: string): string => state.displays.get(canon) ?? canon;
+
+const notConfigured = (state: State, canon: string): never => refuse('unresolved', modelRefErrorOf(canon, { kind: 'not_found' }, state.views).message);
+
+const placeOf = (state: State, canon: string): Place => state.places.get(canon) ?? notConfigured(state, canon);
+
+const requireConfigured = (state: State, canon: string): string => {
+  placeOf(state, canon);
+  return canon;
+};
+
+const connectionIndexOf = (state: State, provider: string): number => {
+  const index = state.resolved.connections.findIndex((connection) => connection.provider === provider);
+  return index >= 0 ? index : refuse('unresolved', `The server "${provider}" is not configured.`);
+};
+
+const canonOfText = (state: State, text: unknown): string | undefined => {
+  if (typeof text !== 'string') return undefined;
+  const resolution = resolveTypedModelRef(typedModelText(text), state.views);
+  return resolution.kind === 'found' ? resolution.model.canon : undefined;
+};
+
+type Moves = ReadonlyMap<string, string | null>;
+
+const rewriteReferences = (document: Json, state: State, moves: Moves): ModelsReference[] => {
+  const references: ModelsReference[] = [];
+  const movedTo = (text: unknown): string | null | undefined => {
+    const canon = canonOfText(state, text);
+    return canon === undefined ? undefined : moves.get(canon);
+  };
+  const rewrite = (holder: Json, key: string, reference: ModelsReference): void => {
+    const target = movedTo(holder[key]);
+    if (target === undefined) return;
+    references.push(reference);
+    if (target === null) delete holder[key];
+    else holder[key] = target;
+  };
+  const models = modelsIn(document);
+  rewrite(models, 'start', { kind: 'start' });
+  if (Array.isArray(models['fallback'])) {
+    models['fallback'] = (models['fallback'] as unknown[]).flatMap((text, index) => {
+      const target = movedTo(text);
+      if (target === undefined) return [text];
+      references.push({ kind: 'fallback', position: index + 1 });
+      return target === null ? [] : [target];
+    });
+    dropIfEmpty(models, 'fallback');
+  }
+  if (isRecord(models['roles'])) {
+    for (const job of Object.keys(models['roles'])) rewrite(models['roles'], job, { kind: 'role', job });
+    dropIfEmpty(models, 'roles');
+  }
+  if (isRecord(document['autoMode'])) {
+    rewrite(document['autoMode'], 'classifier', { kind: 'classifier' });
+    dropIfEmpty(document, 'autoMode');
+  }
+  if (Array.isArray(models['billingChanges'])) {
+    models['billingChanges'] = (models['billingChanges'] as Json[]).flatMap((change) => {
+      const target = movedTo(change['model']);
+      if (target === undefined) return [change];
+      references.push({ kind: 'billing' });
+      return target === null ? [] : [{ ...change, model: target }];
+    });
+    dropIfEmpty(models, 'billingChanges');
+  }
+  return references;
+};
+
+const tagOf = (connection: Json, kinds: ServerKinds): string | undefined => serverKindOf({ adapter: String(connection['adapter']) }, kinds)?.defaultTag;
+
+const gridOf = (document: Json, kinds: ServerKinds): string[][] | undefined => {
+  try {
+    return connectionsIn(document).map((connection) => {
+      const provider = providerNameOf(connection as Parameters<typeof providerNameOf>[0], kinds);
+      const tag = tagOf(connection, kinds);
+      return entriesIn(connection).map((entry) => canonOf(provider, withDefaultTag(String(entry['id']), tag)));
+    });
+  } catch {
+    return undefined;
+  }
+};
+
+const rewriteMoved = (document: Json, state: State, kinds: ServerKinds): ModelsReference[] => {
+  const after = gridOf(document, kinds);
+  if (after === undefined) return [];
+  const moves = new Map<string, string>();
+  state.grid.forEach((canons, connection) =>
+    canons.forEach((canon, entry) => {
+      const moved = after[connection]?.[entry];
+      if (moved !== undefined && moved !== canon) moves.set(canon, moved);
+    }),
+  );
+  return rewriteReferences(document, state, moves);
+};
+
+type Applied = { references?: ModelsReference[]; model?: (after: State) => string; summary: (after: State) => string };
+
+const countText = (count: number): string => `${count} ${count === 1 ? 'model' : 'models'}`;
+
+const endpointIdentityOf = (connection: Json): string => {
+  if (typeof connection['socketPath'] === 'string') return endpointKeyOf({ kind: 'unix', socketPath: connection['socketPath'] });
+  return typeof connection['baseUrl'] === 'string' ? endpointKeyOf({ kind: 'tcp', baseUrl: connection['baseUrl'] }) : '';
+};
+
+const planIdentityOf = (connection: Json): string | undefined => (isRecord(connection['plan']) ? JSON.stringify([connection['plan']['profile'], connection['plan']['account']]) : undefined);
+
+const identityOf = (connection: Json): string => {
+  const plan = planIdentityOf(connection);
+  if (plan !== undefined) return JSON.stringify(['plan', connection['adapter'], plan]);
+  if (connection['adapter'] === 'managed') return JSON.stringify(['managed', connection['server'], connection['binary']]);
+  return JSON.stringify(['address', connection['adapter'], endpointIdentityOf(connection)]);
+};
+
+const withoutDerivableProvider = (draft: Json, kinds: ServerKinds): Json => {
+  const { provider, ...unnamed } = draft;
+  if (provider === undefined) return unnamed;
+  try {
+    return providerNameOf(unnamed as Parameters<typeof providerNameOf>[0], kinds) === provider ? unnamed : draft;
+  } catch {
+    return draft;
+  }
+};
+
+const addModel = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'addModel' }>, ports: ModelsEditPorts): Applied => {
+  const draft = structuredClone(operation.choice.connection) as Json;
+  const connections = connectionsIn(document);
+  const id = withDefaultTag(operation.choice.model.id, tagOf(draft, ports.kinds));
+  const entry = { ...structuredClone(operation.choice.model), id } as Json;
+  const found = connections.findIndex((connection) => identityOf(connection) === identityOf(draft));
+  if (found < 0) {
+    connections.push({ ...withoutDerivableProvider(draft, ports.kinds), models: [entry] });
+    const place = { connection: connections.length - 1, entry: 0 };
+    const canon = (after: State): string => after.grid[place.connection]?.[place.entry] as string;
+    return { model: canon, summary: (after) => `Added ${displayIn(after, canon(after))}. It is used from the next request.` };
+  }
+  const connection = connections[found] as Json;
+  const entries = entriesIn(connection);
+  const tag = tagOf(connection, ports.kinds);
+  const present = entries.findIndex((existing) => withDefaultTag(String(existing['id']), tag) === id);
+  if (present >= 0) {
+    const canon = (after: State): string => after.grid[found]?.[present] as string;
+    return { model: canon, summary: (after) => `${displayIn(after, canon(after))} is already in your settings.` };
+  }
+  entries.push(entry);
+  const canon = (after: State): string => after.grid[found]?.[entries.length - 1] as string;
+  return { model: canon, summary: (after) => `Added ${displayIn(after, canon(after))}. It is used from the next request.` };
+};
+
+const removeModel = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'removeModel' }>): Applied => {
+  const place = placeOf(state, operation.model);
+  const references = rewriteReferences(document, state, new Map([[operation.model, null]]));
+  const connections = connectionsIn(document);
+  const entries = entriesIn(connections[place.connection] as Json);
+  entries.splice(place.entry, 1);
+  if (entries.length === 0) connections.splice(place.connection, 1);
+  const display = displayIn(state, operation.model);
+  return { references, summary: () => `Removed ${display}.` };
+};
+
+const removeConnection = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'removeConnection' }>): Applied => {
+  const index = connectionIndexOf(state, operation.provider);
+  const canons = state.grid[index] as string[];
+  const references = rewriteReferences(document, state, new Map(canons.map((canon) => [canon, null])));
+  const [removed] = connectionsIn(document).splice(index, 1);
+  const models = modelsIn(document);
+  if (operation.forgetServer === true && isRecord(models['servers']) && typeof removed?.['server'] === 'string') {
+    delete models['servers'][removed['server']];
+    dropIfEmpty(models, 'servers');
+  }
+  return { references, summary: () => `Removed ${operation.provider} and its ${countText(canons.length)}.` };
+};
+
+const setStart = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setStart' }>): Applied => {
+  const models = modelsIn(document);
+  const { model } = operation;
+  if (model === null) {
+    delete models['start'];
+    return { summary: () => 'New sessions start with the first model in your settings.' };
+  }
+  models['start'] = requireConfigured(state, model);
+  return { summary: (after) => `New sessions start with ${displayIn(after, model)}.` };
+};
+
+const setFallback = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setFallback' }>): Applied => {
+  const order = [...new Set(operation.models.map((model) => requireConfigured(state, model)))];
+  const models = modelsIn(document);
+  if (order.length === 0) {
+    delete models['fallback'];
+    return { summary: () => 'Fallback order cleared.' };
+  }
+  models['fallback'] = order;
+  return { summary: (after) => `Fallback order saved: ${order.map((model) => displayIn(after, model)).join(' → ')}` };
+};
+
+type BillingOperation = Extract<ModelsOperation, { kind: 'allowBillingChange' | 'forbidBillingChange' }>;
+
+const sameBillingChange = (state: State, operation: BillingOperation) => (change: Json): boolean =>
+  change['from'] === operation.from && change['to'] === operation.to && canonOfText(state, change['model']) === operation.model;
+
+const billingChangesIn = (document: Json): Json[] => {
+  const models = modelsIn(document);
+  if (!Array.isArray(models['billingChanges'])) models['billingChanges'] = [];
+  return models['billingChanges'] as Json[];
+};
+
+const allowBillingChange = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'allowBillingChange' }>): Applied => {
+  const { from, to, model } = operation;
+  if (model !== undefined) requireConfigured(state, model);
+  const scope = model === undefined ? '' : ` for ${displayIn(state, model)}`;
+  const changes = billingChangesIn(document);
+  if (changes.some(sameBillingChange(state, operation))) refuse('duplicate', `Requests may already fall from ${from} to ${to}${scope}.`);
+  changes.push(model === undefined ? { from, to } : { from, to, model });
+  return { summary: () => `Requests may now fall from ${from} to ${to}${scope}.` };
+};
+
+const forbidBillingChange = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'forbidBillingChange' }>): Applied => {
+  if (operation.model !== undefined) requireConfigured(state, operation.model);
+  const models = modelsIn(document);
+  const same = sameBillingChange(state, operation);
+  models['billingChanges'] = billingChangesIn(document).filter((change) => !same(change));
+  dropIfEmpty(models, 'billingChanges');
+  return { summary: () => `Requests may no longer fall from ${operation.from} to ${operation.to}.` };
+};
+
+const JOB_LABELS: Readonly<Record<ModelRole, string>> = { compaction: 'Summaries', reflection: 'Reflection', analysis: 'Analysis' };
+
+const SESSION_MODEL_TEXT = "the session's model";
+
+const setRole = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setRole' }>): Applied => {
+  const { job, model } = operation;
+  if (!MODEL_ROLES.includes(job)) refuse('invalid_value', `"${String(job)}" is not a job a model can be chosen for; the jobs are ${MODEL_ROLES.join(', ')}.`);
+  const models = modelsIn(document);
+  const roles = recordAt(models, 'roles');
+  if (model === null) {
+    delete roles[job];
+    dropIfEmpty(models, 'roles');
+    return { summary: () => `${JOB_LABELS[job]} now uses ${SESSION_MODEL_TEXT}.` };
+  }
+  roles[job] = requireConfigured(state, model);
+  return { summary: (after) => `${JOB_LABELS[job]} now uses ${displayIn(after, model)}.` };
+};
+
+const setClassifier = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setClassifier' }>): Applied => {
+  const { model } = operation;
+  const autoMode = recordAt(document, 'autoMode');
+  if (model === null) {
+    delete autoMode['classifier'];
+    dropIfEmpty(document, 'autoMode');
+    return { summary: () => `The auto-mode classifier is now ${SESSION_MODEL_TEXT}.` };
+  }
+  autoMode['classifier'] = requireConfigured(state, model);
+  return { summary: (after) => `The auto-mode classifier is now ${displayIn(after, model)}.` };
+};
+
+type FieldKind = 'toggle' | 'duration' | 'plain';
+
+type FieldRow = { label: string; kind?: FieldKind; labels?: Readonly<Record<string, string>>; unset?: string };
+
+const ADAPTER_LABELS: Readonly<Record<string, string>> = SERVER_ADAPTER_LABELS;
+
+const CONNECTION_FIELDS: Readonly<Record<string, FieldRow>> = {
+  adapter: { label: 'API', labels: ADAPTER_LABELS },
+  baseUrl: { label: 'Address' },
+  socketPath: { label: 'Socket' },
+  apiKeyEnv: { label: 'Key' },
+  apiKeySecret: { label: 'Key' },
+  'plan.account': { label: 'Plan account', unset: 'Any account' },
+  server: { label: 'Server program' },
+  binary: { label: 'Program file' },
+  readyTimeoutMs: { label: 'Start wait', kind: 'duration' },
+  billing: { label: 'Billing' },
+  apiVersion: { label: 'API version' },
+  answers: { label: 'Who answers', labels: { model: 'A model', script: 'A script' } },
+  maxConcurrency: { label: 'Concurrent requests' },
+  admissionTimeoutMs: { label: 'Wait for a free slot', kind: 'duration' },
+};
+
+const ENTRY_FIELDS: Readonly<Record<string, FieldRow>> = {
+  toolCalling: { label: 'Tool calling' },
+  outputBoundField: { label: 'Output limit field' },
+  maxConcurrency: { label: 'Concurrent requests' },
+  admissionTimeoutMs: { label: 'Wait for a free slot', kind: 'duration' },
+  'capabilities.contextWindow': { label: 'Context window' },
+  'capabilities.maxOutputTokens': { label: 'Output limit' },
+  'capabilities.structuredOutput': { label: 'Structured output' },
+  'capabilities.jsonMode': { label: 'JSON mode' },
+  'capabilities.tokenCounting': { label: 'Token counting' },
+  'capabilities.source': { label: 'Source of the numbers' },
+  'capabilities.streaming': { label: 'Streaming', kind: 'toggle' },
+  'capabilities.stopSequences': { label: 'Stop sequences', kind: 'toggle' },
+  'capabilities.imageInput': { label: 'Image input', kind: 'toggle' },
+  'capabilities.parallelToolCalls': { label: 'Parallel tool calls', kind: 'toggle' },
+  'capabilities.usageReported': { label: 'Usage reported', kind: 'toggle' },
+  'capabilities.imageTokens': { label: 'Image tokens' },
+  'capabilities.imageTokens.pixelsPerToken': { label: 'Pixels per image token' },
+  'capabilities.imageTokens.maxTokens': { label: 'Largest image' },
+  'capabilities.imageTokens.minTokens': { label: 'Smallest image' },
+  'capabilities.allowedTools': { label: 'Allowed tool forms' },
+  'capabilities.schemaDialect': { label: 'Schema dialect' },
+  'capabilities.tokenErrorRatio': { label: 'Token count error' },
+  'capabilities.reasoning': { label: 'Reasoning' },
+  'capabilities.promptCache': { label: 'Prompt cache' },
+  'capabilities.sampling': { label: 'Sampling' },
+  'capabilities.outputBoundField': { label: 'Output limit field' },
+  'capabilities.systemRole': { label: 'System role' },
+  'capabilities.toolPlacement': { label: 'Tool placement' },
+  'capabilities.inputKinds': { label: 'Input kinds' },
+};
+
+const ENTRY_FIELD_PREFIX = 'models[].';
+
+const TIMEOUT_FIELDS: Readonly<Record<string, FieldRow>> = {
+  'models.headersTimeoutMs': { label: 'Wait for the first reply', kind: 'duration' },
+  'models.idleTimeoutMs': { label: 'Wait without any data', kind: 'duration' },
+};
+
+const rowIn = (table: Readonly<Record<string, FieldRow>>, field: string): FieldRow | undefined => {
+  const parts = field.split('.');
+  for (let length = parts.length; length > 0; length -= 1) {
+    const key = parts.slice(0, length).join('.');
+    if (Object.hasOwn(table, key)) return table[key];
+  }
+  return undefined;
+};
+
+const fieldRowOf = (field: string): FieldRow | undefined => {
+  if (Object.hasOwn(TIMEOUT_FIELDS, field)) return TIMEOUT_FIELDS[field];
+  return field.startsWith(ENTRY_FIELD_PREFIX) ? rowIn(ENTRY_FIELDS, field.slice(ENTRY_FIELD_PREFIX.length)) : rowIn(CONNECTION_FIELDS, field);
+};
+
+const MINUTE_MS = 60_000;
+const SECOND_MS = 1000;
+
+export const durationText = (milliseconds: number): string => {
+  if (milliseconds === 0) return 'never cut';
+  if (milliseconds % MINUTE_MS === 0) return `${milliseconds / MINUTE_MS} min`;
+  return milliseconds % SECOND_MS === 0 ? `${milliseconds / SECOND_MS} s` : `${milliseconds} ms`;
+};
+
+export const fieldLabel = (field: string): string => fieldRowOf(field)?.label ?? field;
+
+export const fieldValueText = (field: string, value: unknown): string => {
+  const row = fieldRowOf(field);
+  if (value === undefined) return row?.unset ?? (row?.kind === 'toggle' ? 'not declared' : 'not set');
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  if (typeof value === 'number') return row?.kind === 'duration' ? durationText(value) : String(value);
+  if (Array.isArray(value)) return value.map(String).join(', ');
+  if (typeof value === 'string') return row?.labels !== undefined && Object.hasOwn(row.labels, value) ? (row.labels[value] as string) : value;
+  return JSON.stringify(value);
+};
+
+const setAt = (holder: Json, keyPath: readonly string[], value: unknown): void => {
+  const [key, ...rest] = keyPath;
+  if (key === undefined) return refuse('invalid_value', 'A field needs a name.');
+  if (rest.length > 0) {
+    if (value !== undefined || isRecord(holder[key])) setAt(recordAt(holder, key), rest, value);
+    return;
+  }
+  if (value === undefined) delete holder[key];
+  else holder[key] = structuredClone(value);
+};
+
+const setModelField = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setModelField' }>): Applied => {
+  const { model, value } = operation;
+  const place = placeOf(state, model);
+  const entry = entriesIn(connectionsIn(document)[place.connection] as Json)[place.entry] as Json;
+  setAt(entry, operation.path, value);
+  const field = `${ENTRY_FIELD_PREFIX}${operation.path.join('.')}`;
+  const canon = (after: State): string => after.grid[place.connection]?.[place.entry] as string;
+  if (value === undefined) return { summary: (after) => `Cleared ${fieldLabel(field)} of ${displayIn(after, canon(after))}.` };
+  return { summary: (after) => `Set ${fieldLabel(field)} of ${displayIn(after, canon(after))} to ${fieldValueText(field, value)}.` };
+};
+
+const EXCLUSIVE_FIELDS: Readonly<Record<string, string>> = { baseUrl: 'socketPath', socketPath: 'baseUrl', apiKeyEnv: 'apiKeySecret', apiKeySecret: 'apiKeyEnv' };
+
+const reservedRefusal = (name: unknown, adapter: unknown, kinds: ServerKinds): void => {
+  if (typeof name !== 'string' || typeof adapter !== 'string') return;
+  const problem = reservedNameProblem(name, adapter, kinds);
+  if (problem !== undefined) refuse('reserved_name', problem);
+};
+
+const setConnectionField = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setConnectionField' }>, ports: ModelsEditPorts): Applied => {
+  const index = connectionIndexOf(state, operation.provider);
+  const connection = connectionsIn(document)[index] as Json;
+  const field = operation.path.join('.');
+  const { value } = operation;
+  if (field === 'adapter') reservedRefusal(connection['provider'], value, ports.kinds);
+  setAt(connection, operation.path, value);
+  if (value !== undefined && Object.hasOwn(EXCLUSIVE_FIELDS, field)) delete connection[EXCLUSIVE_FIELDS[field] as string];
+  if (field === 'adapter') {
+    const tag = tagOf(connection, ports.kinds);
+    for (const entry of entriesIn(connection)) entry['id'] = withDefaultTag(String(entry['id']), tag);
+  }
+  const references = rewriteMoved(document, state, ports.kinds);
+  const name = (after: State): string => after.resolved.connections[index]?.provider ?? operation.provider;
+  if (value === undefined) return { references, summary: (after) => `Cleared ${fieldLabel(field)} of ${name(after)}.` };
+  return { references, summary: (after) => `Set ${fieldLabel(field)} of ${name(after)} to ${fieldValueText(field, value)}.` };
+};
+
+const setProvider = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'setProvider' }>, ports: ModelsEditPorts): Applied => {
+  const index = connectionIndexOf(state, operation.provider);
+  const connection = connectionsIn(document)[index] as Json;
+  const { name } = operation;
+  if (name === null) {
+    delete connection['provider'];
+    const references = rewriteMoved(document, state, ports.kinds);
+    return { references, summary: (after) => `${operation.provider} is now named ${after.resolved.connections[index]?.provider ?? operation.provider}.` };
+  }
+  if (!PROVIDER_NAME_PATTERN.test(name)) refuse('invalid_value', NAME_RULE_TEXT);
+  if (state.resolved.connections.some((other, otherIndex) => otherIndex !== index && other.provider === name)) refuse('name_taken', `${name} is already used by another server.`);
+  reservedRefusal(name, connection['adapter'], ports.kinds);
+  connection['provider'] = name;
+  const references = rewriteMoved(document, state, ports.kinds);
+  return { references, summary: () => `Renamed ${operation.provider} to ${name}.` };
+};
+
+const declaredServersIn = (document: Json): Json => recordAt(modelsIn(document), 'servers');
+
+const declaredServerOf = (document: Json, id: string): Json => {
+  const servers = modelsIn(document)['servers'];
+  if (isRecord(servers) && Object.hasOwn(servers, id) && isRecord(servers[id])) return servers[id];
+  return refuse('unresolved', `The server program "${id}" is not declared.`);
+};
+
+const declareServer = (document: Json, operation: Extract<ModelsOperation, { kind: 'declareServer' }>, ports: ModelsEditPorts): Applied => {
+  const { id, command, args, readyPath } = operation;
+  const servers = declaredServersIn(document);
+  if (Object.hasOwn(servers, id) || Object.hasOwn(ports.servers, id)) refuse('name_taken', `${id} is already used by another server.`);
+  servers[id] = { command, args: [...args], readyPath };
+  return { summary: () => `Declared the server program ${id}.` };
+};
+
+const SERVER_FIELDS: readonly string[] = ['command', 'args', 'readyPath'];
+
+const setServerField = (document: Json, operation: Extract<ModelsOperation, { kind: 'setServerField' }>): Applied => {
+  const { id, field, value } = operation;
+  if (!SERVER_FIELDS.includes(field)) refuse('invalid_value', `"${String(field)}" is not a field of a server program; the fields are ${SERVER_FIELDS.join(', ')}.`);
+  declaredServerOf(document, id)[field] = structuredClone(value);
+  return { summary: () => `Set ${field} of ${id}.` };
+};
+
+const forgetServer = (document: Json, state: State, operation: Extract<ModelsOperation, { kind: 'forgetServer' }>): Applied => {
+  const { id } = operation;
+  declaredServerOf(document, id);
+  const user = state.resolved.connections.find((connection) => connection.server === id);
+  if (user !== undefined) refuse('duplicate', `${id} is used by ${user.provider}; remove that server first.`);
+  const models = modelsIn(document);
+  delete declaredServersIn(document)[id];
+  dropIfEmpty(models, 'servers');
+  return { summary: () => `Forgot the server program ${id}.` };
+};
+
+const setTimeouts = (document: Json, operation: Extract<ModelsOperation, { kind: 'setTimeouts' }>): Applied => {
+  const models = modelsIn(document);
+  if (operation.headersTimeoutMs !== undefined) models['headersTimeoutMs'] = operation.headersTimeoutMs;
+  if (operation.idleTimeoutMs !== undefined) models['idleTimeoutMs'] = operation.idleTimeoutMs;
+  return { summary: (after) => `Waits saved: first reply ${durationText(after.resolved.headersTimeoutMs)}, no data ${durationText(after.resolved.idleTimeoutMs)}.` };
+};
+
+const setDialects = (document: Json, operation: Extract<ModelsOperation, { kind: 'setDialects' }>): Applied => {
+  modelsIn(document)['dialects'] = structuredClone(operation.dialects);
+  return { summary: () => 'Schema dialects saved.' };
+};
+
+const apply = (document: Json, state: State, operation: ModelsOperation, ports: ModelsEditPorts): Applied => {
+  switch (operation.kind) {
+    case 'addModel':
+      return addModel(document, state, operation, ports);
+    case 'removeModel':
+      return removeModel(document, state, operation);
+    case 'removeConnection':
+      return removeConnection(document, state, operation);
+    case 'setStart':
+      return setStart(document, state, operation);
+    case 'setFallback':
+      return setFallback(document, state, operation);
+    case 'allowBillingChange':
+      return allowBillingChange(document, state, operation);
+    case 'forbidBillingChange':
+      return forbidBillingChange(document, state, operation);
+    case 'setRole':
+      return setRole(document, state, operation);
+    case 'setClassifier':
+      return setClassifier(document, state, operation);
+    case 'setModelField':
+      return setModelField(document, state, operation);
+    case 'setConnectionField':
+      return setConnectionField(document, state, operation, ports);
+    case 'setProvider':
+      return setProvider(document, state, operation, ports);
+    case 'declareServer':
+      return declareServer(document, operation, ports);
+    case 'setServerField':
+      return setServerField(document, operation);
+    case 'forgetServer':
+      return forgetServer(document, state, operation);
+    case 'setTimeouts':
+      return setTimeouts(document, operation);
+    case 'setDialects':
+      return setDialects(document, operation);
+  }
+};
+
+const loadedOrRefusal = (document: Json, ports: ModelsEditPorts): State | ModelsEditRefused => {
+  try {
+    return loadState(document, ports);
+  } catch (error) {
+    if (error instanceof ModelsEditRefused) return error;
+    throw error;
+  }
+};
+
+const planned = (given: unknown, operations: ModelsOperations, ports: ModelsEditPorts): Exclude<ModelsEditPlan, { refused: ModelsEditRefusal }> => {
+  if (!isRecord(given)) return refuse('invalid_value', 'The settings must be a JSON object.');
+  let state = loadState(structuredClone(given), ports);
+  let unloadable: ModelsEditRefused | undefined;
+  const references: ModelsReference[] = [];
+  const summaries: ((last: State) => string)[] = [];
+  const models: ((last: State) => string)[] = [];
+  for (const operation of operations) {
+    const document = structuredClone(state.document);
+    const applied = apply(document, state, operation, ports);
+    references.push(...(applied.references ?? []));
+    const after = loadedOrRefusal(document, ports);
+    if (after instanceof ModelsEditRefused) {
+      unloadable = after;
+      state = { ...state, document };
+      summaries.push(applied.summary);
+      if (applied.model !== undefined) models.push(applied.model);
+      continue;
+    }
+    unloadable = undefined;
+    state = after;
+    const summary = applied.summary(after);
+    summaries.push(() => summary);
+    const model = applied.model?.(after);
+    if (model !== undefined) models.push(() => model);
+  }
+  if (unloadable !== undefined) throw unloadable;
+  const last = state;
+  const model = models[0]?.(last);
+  return { document: last.document, references, warnings: last.warnings, summaries: summaries.map((summary) => summary(last)), ...(model === undefined ? {} : { model }) };
+};
+
+export const planModelsEdit = (document: unknown, operations: ModelsOperations, ports: ModelsEditPorts): ModelsEditPlan => {
+  try {
+    return planned(document, operations, ports);
+  } catch (error) {
+    if (error instanceof ModelsEditRefused) return { refused: { code: error.code, message: error.message } };
+    throw error;
+  }
+};
+
+const BUILT_IN_SERVERS: Readonly<Record<string, ManagedServerDescription>> = Object.fromEntries(MANAGED_SERVERS.map((server) => [server.id, server]));
+
+export const editModelsSettings = async (home: string, settingsFile: string, operations: ModelsOperations, options: { signal: AbortSignal }): Promise<ModelsEditResult> => {
+  let result: ModelsEditResult | undefined;
+  await editUserSettings(
+    home,
+    settingsFile,
+    (document) => {
+      const plan = planModelsEdit(document, operations, { kinds: SERVER_KINDS, planProfiles: PLAN_PROFILES, servers: BUILT_IN_SERVERS, home });
+      if ('refused' in plan) throw new ModelsEditRefused(plan.refused.code, plan.refused.message);
+      const wrote = JSON.stringify(plan.document) !== JSON.stringify(document);
+      result = { wrote, summaries: plan.summaries, ...(plan.model === undefined ? {} : { model: plan.model }) };
+      if (!wrote) return false;
+      for (const key of Object.keys(document)) delete document[key];
+      Object.assign(document, plan.document);
+      return true;
+    },
+    { signal: options.signal },
+  );
+  if (result === undefined) throw new TypeError(`${settingsFile}: the settings writer ended without a result`);
+  return result;
+};
+
+export const serverNameFromCommand = (command: string, taken: ReadonlySet<string>, platform: NodeJS.Platform): string | undefined => {
+  const file = platform === 'win32' ? path.win32.basename(command) : path.posix.basename(command);
+  const dot = file.lastIndexOf('.');
+  const stem = dot > 0 ? file.slice(0, dot) : file;
+  const name = stem.toLowerCase().replace(/[^a-z0-9._-]/g, '-').replace(/^[^a-z]+/, '');
+  if (name === '') return undefined;
+  if (!taken.has(name)) return name;
+  let suffix = 2;
+  while (taken.has(`${name}-${suffix}`)) suffix += 1;
+  return `${name}-${suffix}`;
+};
+
+export type ModelsSettingWriter = { path: string; operations: readonly ModelsOperation['kind'][]; inSession: readonly string[]; shell: readonly string[] };
+
+const CONNECTION_PATH = 'models.connections[]';
+const ENTRY_PATH = `${CONNECTION_PATH}.models[]`;
+
+const CONNECTION_FIELD_KEYS = ['adapter', 'baseUrl', 'socketPath', 'apiKeyEnv', 'apiKeySecret', 'plan.account', 'server', 'binary', 'readyTimeoutMs', 'billing', 'apiVersion', 'answers', 'maxConcurrency', 'admissionTimeoutMs'] as const;
+
+const ENTRY_FIELD_KEYS = [
+  'toolCalling',
+  'outputBoundField',
+  'maxConcurrency',
+  'admissionTimeoutMs',
+  'capabilities.contextWindow',
+  'capabilities.maxOutputTokens',
+  'capabilities.structuredOutput',
+  'capabilities.jsonMode',
+  'capabilities.streaming',
+  'capabilities.stopSequences',
+  'capabilities.imageInput',
+  'capabilities.imageTokens.pixelsPerToken',
+  'capabilities.imageTokens.maxTokens',
+  'capabilities.imageTokens.minTokens',
+  'capabilities.parallelToolCalls',
+  'capabilities.allowedTools',
+  'capabilities.schemaDialect',
+  'capabilities.tokenCounting',
+  'capabilities.tokenErrorRatio',
+  'capabilities.usageReported',
+  'capabilities.reasoning.*',
+  'capabilities.promptCache.*',
+  'capabilities.sampling.*',
+  'capabilities.source',
+  'capabilities.outputBoundField',
+  'capabilities.systemRole',
+  'capabilities.toolPlacement',
+  'capabilities.inputKinds.*',
+] as const;
+
+const REMOVAL_WRITER = { operations: ['removeConnection', 'removeModel'], inSession: ['/models'], shell: ['momonga models remove-server', 'momonga models remove'] } as const;
+
+export const MODELS_SETTING_WRITERS: readonly ModelsSettingWriter[] = [
+  ...CONNECTION_FIELD_KEYS.map((key) => ({ path: `${CONNECTION_PATH}.${key}`, operations: ['setConnectionField', 'addModel'] as const, inSession: ['/models'], shell: ['momonga models set-server', 'momonga models add'] })),
+  { path: `${CONNECTION_PATH}.plan.profile`, operations: ['addModel'], inSession: ['/login'], shell: ['momonga auth login'] },
+  { path: CONNECTION_PATH, operations: ['removeConnection'], inSession: ['/models'], shell: ['momonga models remove-server'] },
+  { path: 'models.servers.*', operations: ['removeConnection', 'declareServer', 'setServerField', 'forgetServer'], inSession: ['/models'], shell: ['momonga models remove-server --forget-program', 'momonga models add-program', 'momonga models set-program', 'momonga models forget-program'] },
+  { path: `${CONNECTION_PATH}.provider`, operations: ['setProvider'], inSession: ['/models'], shell: ['momonga models name'] },
+  { path: `${ENTRY_PATH}.id`, operations: ['addModel', 'removeModel'], inSession: ['/models'], shell: ['momonga models add', 'momonga models remove'] },
+  ...ENTRY_FIELD_KEYS.map((key) => ({ path: `${ENTRY_PATH}.${key}`, operations: ['setModelField'] as const, inSession: ['/models'], shell: ['momonga models set'] })),
+  { path: 'models.start', operations: ['setStart', ...REMOVAL_WRITER.operations], inSession: ['/models start', '/model --start', ...REMOVAL_WRITER.inSession], shell: ['momonga models start', ...REMOVAL_WRITER.shell] },
+  { path: 'models.fallback[]', operations: ['setFallback', ...REMOVAL_WRITER.operations], inSession: ['/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models fallback', ...REMOVAL_WRITER.shell] },
+  { path: 'models.roles.*', operations: ['setRole', ...REMOVAL_WRITER.operations], inSession: ['/models role', ...REMOVAL_WRITER.inSession], shell: ['momonga models role', ...REMOVAL_WRITER.shell] },
+  { path: 'autoMode.classifier', operations: ['setClassifier', ...REMOVAL_WRITER.operations], inSession: ['/models role', '/auto-mode', ...REMOVAL_WRITER.inSession], shell: ['momonga models role set classifier', ...REMOVAL_WRITER.shell] },
+  { path: 'models.billingChanges[].from', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].to', operations: ['allowBillingChange', 'forbidBillingChange'], inSession: ['/models billing', '/models fallback'], shell: ['momonga models billing'] },
+  { path: 'models.billingChanges[].model', operations: ['allowBillingChange', 'forbidBillingChange', ...REMOVAL_WRITER.operations], inSession: ['/models billing', '/models fallback', ...REMOVAL_WRITER.inSession], shell: ['momonga models billing', ...REMOVAL_WRITER.shell] },
+  { path: 'models.dialects.*', operations: ['setDialects'], inSession: ['/config'], shell: ['momonga models dialects set'] },
+  { path: 'models.headersTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+  { path: 'models.idleTimeoutMs', operations: ['setTimeouts'], inSession: ['/models timeouts'], shell: ['momonga models timeouts'] },
+];

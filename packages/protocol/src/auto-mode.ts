@@ -1,6 +1,6 @@
 export const AUTO_MODE_UNAVAILABLE = {
   code: 'mode_unavailable',
-  message: 'auto mode needs a classifier model alias: set autoMode.classifier in the user settings',
+  message: 'auto mode needs a classifier model: set autoMode.classifier in the user settings, or run /auto-mode and choose one',
 } as const;
 
 export const CLASSIFIER_VERDICTS = ['safe', 'unsafe'] as const;

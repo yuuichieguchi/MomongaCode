@@ -225,7 +225,7 @@ export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplet
 export type JsonReplyPath = 'enforced' | 'prompt';
 
 export type MomongaResponseExtension = {
-  alias: string;
+  model: string;
   target: string;
   counter: string;
   attempts: number;

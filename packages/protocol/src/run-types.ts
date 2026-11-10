@@ -159,7 +159,7 @@ export type RunEventPayload =
       type: 'tool.permission.classified';
       callId: string;
       subjectDigest: string;
-      alias?: string;
+      model?: string;
       outcome: 'allow' | 'ask';
       verdict?: 'safe' | 'unsafe';
       confidence?: 'high' | 'medium' | 'low';
@@ -265,7 +265,7 @@ export type RunEventPayload =
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: Stored<PermissionMode> }
-  | { type: 'model.changed'; modelAlias: string; previousModelAlias: string };
+  | { type: 'model.changed'; model: string; previousModel: string };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
 

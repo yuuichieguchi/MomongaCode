@@ -9,7 +9,7 @@ import {
   waitFor,
 } from '@momonga/testkit';
 
-const target = { name: 't', model: 'scripted-model' };
+const target = { name: 't', display: 't', model: 'scripted-model' };
 const request = { model: 'scripted-model', input: [] };
 
 const collect = async (iterable: AsyncIterable<{ type: string }>): Promise<string[]> => {

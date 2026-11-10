@@ -219,7 +219,7 @@ export type CapabilitiesCore = {
 
 export type Capabilities = CapabilitiesCore & ImageCapability;
 
-export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId; unboundedOutputTokens?: number };
+export type ChainCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId; unboundedOutputTokens?: number };
 
 export type CapabilityOverride = Partial<CapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel | undefined };
 
@@ -232,6 +232,12 @@ export const applyCapabilityOverride = (declared: Capabilities, override: Capabi
 };
 
 export const PRECONDITION_FAILED_CODE = 'precondition_failed';
+
+export const CHAIN_ROOM_REFUSED_CODE = 'chain_room_refused';
+
+export const MODEL_ID_CHANGED_CODE = 'model_id_changed';
+
+export const MODEL_NOT_LISTED_CODE = 'model_not_listed';
 
 export const TARGET_HEALTH_REASONS = ['not_running', 'unhealthy', PRECONDITION_FAILED_CODE, 'health_check_failed', SIGN_IN_REQUIRED_CODE, 'store_unreadable', 'store_unwritable', CAPABILITIES_UNKNOWN_CODE] as const;
 export type TargetHealthReason = (typeof TARGET_HEALTH_REASONS)[number];
@@ -265,30 +271,42 @@ export const NO_MODEL_TARGET = 'no model target is set up';
 
 export type Readiness =
   | { state: 'ready' }
-  | { state: 'no_tools'; message: string; remedy: string }
+  | { state: 'no_tools'; message: string }
   | { state: 'needs_probe'; message: string; evidence: string; remedy: string }
   | Probing
-  | { state: 'unavailable'; message: string; remedy: string };
+  | { state: 'unavailable'; message: string };
 
 export type ReadinessInput = ({ toolCalling: ToolCallingState; unavailable?: undefined } & Partial<Omit<CapabilitiesCore, 'toolCalling'>>) | { unavailable: string };
 
 const NO_TOOLS_MESSAGE = 'This model cannot call tools. MomongaCode will answer without reading or changing files.';
 
-const NO_TOOLS_REMEDY = 'For coding work, choose another model with /model; /models detect lists the local servers that are running.';
+export const REMEDY_SURFACES = ['tui', 'shell'] as const;
+export type RemedySurface = (typeof REMEDY_SURFACES)[number];
 
-const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
+const READINESS_REMEDIES: Readonly<Record<'no_tools' | 'unavailable', Readonly<Record<RemedySurface, string>>>> = {
+  no_tools: {
+    tui: 'For coding work, choose another model with /model; /models add lists the local servers that are running.',
+    shell: 'For coding work, choose another model with momonga --model <model>; momonga models detect lists the local servers that are running.',
+  },
+  unavailable: {
+    tui: 'Choose a model with /model, or set one up with /models add.',
+    shell: 'Choose a model with momonga --model <model>, or set one up with momonga models add.',
+  },
+};
+
+export const readinessRemedy = (state: 'no_tools' | 'unavailable', surface: RemedySurface): string => READINESS_REMEDIES[state][surface];
 
 export function agentReadiness(input: { unavailable: string }): Extract<Readiness, { state: 'unavailable' }>;
 export function agentReadiness(input: ReadinessInput): Readiness;
 export function agentReadiness(input: ReadinessInput): Readiness {
-  if (input.unavailable !== undefined) return { state: 'unavailable', message: input.unavailable, remedy: UNAVAILABLE_REMEDY };
+  if (input.unavailable !== undefined) return { state: 'unavailable', message: input.unavailable };
   const { toolCalling } = input;
   if (typeof toolCalling !== 'string') {
     if (toolCalling.state === 'probing') return { state: 'probing', message: toolCalling.message, retryAfterSeconds: toolCalling.retryAfterSeconds };
-    if (toolCalling.state === 'unavailable') return { state: 'unavailable', message: toolCalling.message, remedy: UNAVAILABLE_REMEDY };
+    if (toolCalling.state === 'unavailable') return { state: 'unavailable', message: toolCalling.message };
     return { state: 'needs_probe', message: toolCalling.message, evidence: toolCalling.evidence, remedy: toolCalling.remedy };
   }
-  return toolCalling === 'none' ? { state: 'no_tools', message: NO_TOOLS_MESSAGE, remedy: NO_TOOLS_REMEDY } : { state: 'ready' };
+  return toolCalling === 'none' ? { state: 'no_tools', message: NO_TOOLS_MESSAGE } : { state: 'ready' };
 }
 
 export const isProbingCapabilities = (capabilities: { toolCalling: ToolCallingState }): capabilities is ProbingCapabilities => agentReadiness({ toolCalling: capabilities.toolCalling }).state === 'probing';
@@ -302,6 +320,9 @@ export const isNotListedCapabilities = (capabilities: { toolCalling: ToolCalling
 export const notListedMessage = (capabilities: NotListedCapabilities): string => capabilities.toolCalling.message;
 
 export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => ('remedy' in readiness ? [readiness.message, readiness.remedy].join('\n') : readiness.message);
+
+export const readinessShownText = (readiness: Exclude<Readiness, { state: 'ready' }>, surface: RemedySurface): string =>
+  readiness.state === 'no_tools' || readiness.state === 'unavailable' ? [readiness.message, readinessRemedy(readiness.state, surface)].join('\n') : readinessText(readiness);
 
 export const readinessRemedyOf = (text: string): string => text.split('\n').at(-1) ?? text;
 

@@ -40,7 +40,7 @@ export type RunFactsView = {
   rootRunId: string;
   sessionId: string;
   definitionsVersion: number;
-  modelAlias: string;
+  model: string;
   mode: Stored<PermissionMode>;
   agent: string;
   origin: string;

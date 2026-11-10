@@ -41,7 +41,7 @@ const makeTree = () => {
 const cacheOf = (home: string, appliedRecord: string) =>
   createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, appliedRecord } as UserSettingsCacheOptions);
 
-const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => (modelOf(cache.get(), 'remote') as { model?: string } | undefined)?.model;
+const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => servedModelOf(cache.get());
 
 describe('S7: the applied record is ordered by seq (design-settings-live 15.1, NoRollbackAfterApply)', () => {
   it('a record at seq 2 wins over an own copy noted at seq 1', () => {

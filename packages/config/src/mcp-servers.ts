@@ -251,7 +251,7 @@ export const loadMcpServers = async ({ home, projectDir, trust, env, user, kept,
     return { enabled, pendingApproval, failed, warnings };
   }
 
-  const protectedNames = new Set(credentialEnvNames({ models: loaded.models }));
+  const protectedNames = new Set(credentialEnvNames(loaded.models));
   const refuseCredentialVariable: VariableGuard = (variable) => looksLikeCredentialName(variable) || SENSITIVE_VARIABLE.test(variable) || protectedNames.has(variable);
   const projectServers = await readProjectServers(mcpJson, projectDir, seen, warnings);
   for (const [name, rawConfig] of Object.entries(projectServers ?? {})) {

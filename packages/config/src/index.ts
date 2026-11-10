@@ -1,5 +1,22 @@
-export { addModelConnection, connectionTargetName, editUserSettings } from './add-model-connection.ts';
-export type { ModelConnection, WrittenConnection } from './add-model-connection.ts';
+export { editUserSettings } from './edit-user-settings.ts';
+export type { EditUserSettingsOptions } from './edit-user-settings.ts';
+export { MODELS_SETTING_WRITERS, ModelsEditRefused, durationText, editModelsSettings, fieldLabel, fieldValueText, planModelsEdit, serverNameFromCommand } from './models-writers.ts';
+export type {
+  ModelsEditPlan,
+  ModelsEditPorts,
+  ModelsEditRefusal,
+  ModelsEditRefusalCode,
+  ModelsEditResult,
+  ModelsOperation,
+  ModelsOperations,
+  ModelsReference,
+  ModelsSettingWriter,
+} from './models-writers.ts';
+export { chainRoomVerdict, roomVerdictText } from './chain-room.ts';
+export type { ChainMember, RoomRefusal, RoomVerdict } from './chain-room.ts';
+export { isProviderName, providerNameOf, reservedNameProblem, serverKindOf } from './provider-name.ts';
+export type { ProviderNameInput } from './provider-name.ts';
+export { viewsOf } from './model-ref-views.ts';
 export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { systemFileLockPorts } from '@momonga/foundation';
@@ -13,7 +30,7 @@ export {
   autoGatePasses,
   autoModeDatasetDigest,
   autoModeDatasetDigestOf,
-  classifierAliasIdentityOf,
+  classifierChainIdentityOf,
   classifierCodeDigestOf,
   classifierIdentityOf,
   failedBoundOf,
@@ -28,15 +45,13 @@ export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
-export { aliasRoomVerdict } from './alias-room.ts';
-export type { AliasMember, AliasRoomVerdict } from './alias-room.ts';
 export { PROBE_KEY_DIGEST_CHARS, knownKeyOf, managedServerDigest, probeKeyOf } from './probe-key.ts';
 export type { EndpointProbeKeyInput, KnownProbeKey, ManagedProbeKeyInput, ProbeKey, ProbeKeyInput, UnknownProbeKey } from './probe-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
-export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
+export { FIVE_MINUTES_MS, chainOf, credentialEnvNames, outputBoundFieldOf, planAccountNames, resolveModels, secretNames } from './models.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
-export type { PlanProfiles, ResolvedModels } from './models.ts';
+export type { PlanProfiles, ResolveModelsOptions, ResolvedConnection, ResolvedModel, ResolvedModels } from './models.ts';
 export { registeredIds, registeredServer, registeredServers } from './server-registry.ts';
 export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, writeAppliedRecord, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
@@ -76,7 +91,9 @@ export type {
   ManagedTarget,
   ToolCallingSetting,
   BillingChange,
-  ModelAlias,
+  ConnectionDraft,
+  ModelConnection,
+  ModelEntry,
   ModelRole,
   ModelRoles,
   ModelTarget,

@@ -28,7 +28,7 @@ describe('one registry for every reader of the user settings, built from the one
 
   it('loadUserSettings without a managedServers port resolves it', async () => {
     const { tree, command } = await declaredHome();
-    expectWorkbench((await loadUserSettings({ home: tree.home })).modelOf(settings, 'workbench'), command);
+    expectWorkbench(modelOf((await loadUserSettings({ home: tree.home })).settings, 'workbench'), command);
   });
 
   it("the supervisor's createUserSettingsCache resolves it and gives no error snapshot", async () => {
@@ -41,7 +41,7 @@ describe('one registry for every reader of the user settings, built from the one
 
   it('the layered loader of a session resolves it from the user layer', async () => {
     const { tree, command } = await declaredHome();
-    expectWorkbench((await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).modelOf(settings, 'workbench'), command);
+    expectWorkbench(modelOf((await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).settings, 'workbench'), command);
   });
 
   it("the gateway's pinned inputs cover the declared server it resolved", async () => {

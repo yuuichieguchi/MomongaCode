@@ -19,7 +19,7 @@ const settingsWith = (target: Record<string, unknown>) => {
   return { tree, loaded: loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }) };
 };
 
-const expectRefused = async (target: Record<string, unknown>, ...fragments: string[]): Promise<void> => {
+const expectRefused = async (target: Record<string, unknown>, ...fragments: (string | RegExp)[]): Promise<void> => {
   const { tree, loaded } = settingsWith(target);
   await expect(loaded).rejects.toThrow(userSettingsPath(tree));
   for (const fragment of fragments) await expect(loaded).rejects.toThrow(fragment);
@@ -37,7 +37,7 @@ describe('the declared API version of an anthropic target', () => {
   });
 
   it('refuses a version outside the enum, naming apiVersion', async () => {
-    await expectRefused(anthropicTarget({ apiVersion: '2024-01-01' }), 'remote', 'apiVersion');
+    await expectRefused(anthropicTarget({ apiVersion: '2024-01-01' }), /models[./]connections[[/]0/, 'apiVersion');
   });
 
   it.for([
@@ -45,7 +45,7 @@ describe('the declared API version of an anthropic target', () => {
     { adapter: 'open-responses', provider: 'fake', model: 'model-a', baseUrl: 'https://api.example.com/v1', capabilities: CAPABILITIES },
     { adapter: 'ollama', model: 'model-a', baseUrl: 'http://127.0.0.1:11434', capabilities: CAPABILITIES },
   ])('$adapter refuses apiVersion', async (target) => {
-    await expectRefused({ ...target, apiVersion: '2023-06-01' }, 'remote', 'apiVersion');
+    await expectRefused({ ...target, apiVersion: '2023-06-01' }, /models[./]connections[[/]0/, 'apiVersion');
   });
 });
 
@@ -55,7 +55,7 @@ describe('a sampling declaration that the API version can never honour is refuse
     { label: 'without_thinking with the default version', extra: {}, sampling: { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } } },
     { label: 'free with an explicit 2026-10-21', extra: { apiVersion: '2026-10-21' }, sampling: { accepts: 'free' } },
   ])('$label names sampling and apiVersion', async ({ extra, sampling }) => {
-    await expectRefused(anthropicTarget(extra, { sampling }), 'remote', 'sampling', 'apiVersion');
+    await expectRefused(anthropicTarget(extra, { sampling }), /models[./]connections[[/]0/, 'sampling', 'apiVersion');
   });
 
   it.for([{}, { apiVersion: '2026-10-21' }])('accepts none under 2026-10-21 (%o)', async (extra) => {

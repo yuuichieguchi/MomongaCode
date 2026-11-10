@@ -1,5 +1,5 @@
 import type { ErrorShape } from './budget-constants.ts';
-import type { AliasCapabilities, Capabilities, HealthResult, ProbingCapabilities, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
+import type { Capabilities, ChainCapabilities, HealthResult, ProbingCapabilities, TargetAnswers, TargetBilling, UnavailableCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
@@ -39,7 +39,7 @@ export type TargetHealth = {
 
 export type GatewayHealth = {
   ok: boolean;
-  targets: Record<string, TargetHealth>;
+  models: Record<string, TargetHealth>;
   version: string;
   apiVersion: 1;
   pid: number;
@@ -87,16 +87,29 @@ export const TARGET_PROBING = 'target_probing';
 
 export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
 
+export type ChainMemberEntry = {
+  model: string;
+  counter: string;
+  billing: TargetBilling;
+  adapter: string;
+  answers: TargetAnswers;
+  upstream: string;
+  plan?: { profile: string; account?: string };
+  key?: { group: string };
+  capabilities: Capabilities | ProbingCapabilities | UnavailableCapabilities;
+};
+
 export type MomongaModelEntry = {
   id: string;
   object: 'model';
-  targets: string[];
-  targetCounters: Record<string, string>;
-  capabilities: AliasCapabilities | ProbingCapabilities | UnavailableCapabilities;
-  targetCapabilities: Record<string, Capabilities | ProbingCapabilities | UnavailableCapabilities>;
-  targetBilling?: Record<string, TargetBilling>;
-  targetPlan?: Record<string, { profile: string; account?: string }>;
-  targetKey?: Record<string, { group: string }>;
+  provider: string;
+  ownName: string;
+  defaultTag?: string;
+  billing: TargetBilling;
+  capabilities: ChainCapabilities | ProbingCapabilities | UnavailableCapabilities;
+  chain: ChainMemberEntry[];
 };
 
-export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };
+export type MomongaModelRoles = { compaction?: string; reflection?: string; analysis?: string };
+
+export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[]; start: string | null; roles: MomongaModelRoles };

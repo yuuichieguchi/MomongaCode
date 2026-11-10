@@ -14,7 +14,7 @@ import type { UserLayer } from './layers.ts';
 import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { PlanProfiles, ResolvedModels } from './models.ts';
-import type { ModelsSettings, SandboxSetting } from './settings.ts';
+import type { SandboxSetting } from './settings.ts';
 
 export type LoadUserSettingsOptions = { home: string; planProfiles?: PlanProfiles };
 
@@ -41,15 +41,14 @@ const loadUserSettingsSync = (home: string, planProfiles?: PlanProfiles): LoadUs
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
-export type UserModels = { declared: ModelsSettings; resolved: ResolvedModels; sandbox?: SandboxSetting; autoModeClassifier?: string };
+export type UserModels = { resolved: ResolvedModels; sandbox?: SandboxSetting; autoModeClassifier?: string };
 
 export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels => {
   try {
     const user = readUserLayer(home);
     const sandbox = user.layer?.settings.sandbox;
-    const autoModeClassifier = user.layer?.settings.autoMode?.classifier;
+    const autoModeClassifier = user.models.classifier;
     return {
-      declared: user.layer?.settings.models ?? {},
       resolved: user.models,
       ...(sandbox === undefined ? {} : { sandbox }),
       ...(autoModeClassifier === undefined ? {} : { autoModeClassifier }),

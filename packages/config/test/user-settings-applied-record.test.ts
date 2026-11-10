@@ -43,7 +43,7 @@ const makeHome = () => {
 const cacheOf = (home: string, appliedRecord?: string) =>
   createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords, ...(appliedRecord === undefined ? {} : { appliedRecord }) } as UserSettingsCacheOptions);
 
-const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => (modelOf(cache.get(), 'remote') as { model?: string } | undefined)?.model;
+const modelOf = (cache: ReturnType<typeof cacheOf>): string | undefined => servedModelOf(cache.get());
 
 describe('S7: the settings cache reads the applied record only on an invalid file (design-settings-live 15.1)', () => {
   it('a valid file is used directly even when the record holds other content', () => {

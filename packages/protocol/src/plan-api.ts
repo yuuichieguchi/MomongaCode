@@ -192,4 +192,4 @@ export type PlanModelsResponse = { readAt: string; models: readonly PlanCatalogE
 
 export type PlanTargetRequest = { profile: string; slug: string };
 
-export type PlanTargetResponse = { target: string; alias: string };
+export type PlanTargetResponse = { model: string };

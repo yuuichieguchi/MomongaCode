@@ -1,4 +1,4 @@
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, isRecord, sha256Hex } from '@momonga/foundation';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { UserSettingsCache } from './user-settings.ts';
 
@@ -20,11 +20,18 @@ export type DerivedObjectId = (typeof DERIVED_OBJECTS)[number]['id'];
 
 export const settingsInputsDigest = (inputs: unknown): string => sha256Hex(canonicalJson(inputs));
 
+const plainOf = (value: unknown): unknown => {
+  if (value instanceof Map) return [...value].map(([key, entry]) => [key, plainOf(entry)]);
+  if (Array.isArray(value)) return value.map(plainOf);
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).flatMap(([key, entry]) => (entry === undefined ? [] : [[key, plainOf(entry)]])));
+  return value;
+};
+
 const inputValueOf = (settings: ResolvedSettings, input: SettingsSection): unknown => {
   const [section, key] = input.split('.');
   const value = (settings as Record<string, unknown>)[section as string];
-  if (key === undefined) return value ?? null;
-  return (value as Record<string, unknown> | undefined)?.[key] ?? null;
+  if (key === undefined) return plainOf(value ?? null);
+  return plainOf((value as Record<string, unknown> | undefined)?.[key] ?? null);
 };
 
 export const derivedInputsOf =
