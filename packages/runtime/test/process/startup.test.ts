@@ -6,7 +6,7 @@ import { ConfigError } from '@momonga/config';
 import { FIRST_GENERATION, ProcessLockHeldError, ensureGenerationDirs, ensureMomongaDirs, generationLayout, momongaPaths } from '@momonga/foundation';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { createPlaceholderJournal, identityOf } from '@momonga/sandbox';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, startLockHolder, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError, trackGroup, writeInvalidUserSettings, writeUserSettings } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -26,6 +26,8 @@ import {
   stepsLogged,
 } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const control = vi.hoisted(() => ({
   events: [] as string[],
@@ -105,8 +107,6 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
-
 beforeEach(() => {
   control.events = [];
   control.failTelemetry = undefined;
@@ -137,7 +137,7 @@ const sandboxNoneHome = (): RunHome => {
 };
 
 describe('startRuntimeProcess startup (system timers)', () => {
-  it('logs startup.step lines in the pinned order', PROCESS_TIMEOUT, async () => {
+  it('logs startup.step lines in the pinned order', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toEqual([...STARTUP_STEPS]);
@@ -145,7 +145,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(entriesNamed(launched.logger, 'runtime ready')).toHaveLength(1);
   });
 
-  it('writes exactly one ready line to stdout, equal to RuntimeProcess.ready', PROCESS_TIMEOUT, async () => {
+  it('writes exactly one ready line to stdout, equal to RuntimeProcess.ready', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp, { clock: createFakeClock(START_MS) });
     const lines = launched.stdout.lines();
@@ -161,7 +161,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(launched.handle.sandbox).toBe('none');
   });
 
-  it('takes the lock before the database: a held lock on a fresh home throws ProcessLockHeldError and state/runtime.db does not exist', PROCESS_TIMEOUT, async (context) => {
+  it('takes the lock before the database: a held lock on a fresh home throws ProcessLockHeldError and state/runtime.db does not exist', async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
     await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
@@ -176,7 +176,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('a second instance on the same home throws ProcessLockHeldError whose lockPath is the runtime lock', PROCESS_TIMEOUT, async () => {
+  it('a second instance on the same home throws ProcessLockHeldError whose lockPath is the runtime lock', async () => {
     const stack = await startStack();
     await launchRuntime(stack.temp);
     const { started, stdout } = startBare(stack.temp);
@@ -187,7 +187,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((await clientOf(stack.temp).http('GET', '/v1/health')).status).toBe(200);
   });
 
-  it('a ProcessLockHeldError from the runtime socket lock (a live pid in runtime.sock.lock) has a lockPath other than the runtime lock', PROCESS_TIMEOUT, async (context) => {
+  it('a ProcessLockHeldError from the runtime socket lock (a live pid in runtime.sock.lock) has a lockPath other than the runtime lock', async (context) => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
     await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
@@ -201,7 +201,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('invalid user settings throw ConfigError, release the lock and print no ready line', PROCESS_TIMEOUT, async () => {
+  it('invalid user settings throw ConfigError, release the lock and print no ready line', async () => {
     const temp = makeRunHome();
     fs.mkdirSync(temp.paths.root, { recursive: true, mode: 0o700 });
     writeInvalidUserSettings(temp.home);
@@ -214,7 +214,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('an EMFILE during the startup settings read is thrown unchanged, not as ConfigError (exit class 1)', PROCESS_TIMEOUT, async () => {
+  it('an EMFILE during the startup settings read is thrown unchanged, not as ConfigError (exit class 1)', async () => {
     const temp = sandboxNoneHome();
     const injected = errnoError('EMFILE');
     const realStatSync = fs.statSync;
@@ -234,7 +234,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 
-  it('a missing sandbox-exec (sandboxExecPath) throws ConfigError with the remediation text', PROCESS_TIMEOUT, async () => {
+  it('a missing sandbox-exec (sandboxExecPath) throws ConfigError with the remediation text', async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });
     const missing = path.join(temp.root, 'no-sandbox-exec');
@@ -249,7 +249,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('a missing bwrap throws ConfigError naming bwrap on linux', PROCESS_TIMEOUT, async () => {
+  it('a missing bwrap throws ConfigError naming bwrap on linux', async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
     const missing = path.join(temp.root, 'no-bwrap');
@@ -274,7 +274,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       return leftover;
     };
 
-    it.each(['bubblewrap', 'none'] as const)('is removed at start with the setting %s, found by its journal record, before any command runs', PROCESS_TIMEOUT, async (setting) => {
+    it.each(['bubblewrap', 'none'] as const)('is removed at start with the setting %s, found by its journal record, before any command runs', async (setting) => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: setting });
       const leftover = await leave(temp);
@@ -285,7 +285,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       expect(logger.entries).toContainEqual(expect.objectContaining({ level: 'warn', msg: expect.stringContaining(leftover) }));
     });
 
-    it('is removed even when bwrap is missing and the start fails because of it', PROCESS_TIMEOUT, async () => {
+    it('is removed even when bwrap is missing and the start fails because of it', async () => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
       const leftover = await leave(temp);
@@ -302,7 +302,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       return file;
     };
 
-    it('is a ConfigError carrying the stderr of bwrap and the advice to set the sandbox to none', PROCESS_TIMEOUT, async () => {
+    it('is a ConfigError carrying the stderr of bwrap and the advice to set the sandbox to none', async () => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
       const { started } = startBare(temp, { sandboxExecPath: blockedBwrap(temp), platform: 'linux' });
@@ -322,7 +322,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       return { file, log };
     };
 
-    it('is the shell that Bash runs commands with, found through the same candidates', PROCESS_TIMEOUT, async () => {
+    it('is the shell that Bash runs commands with, found through the same candidates', async () => {
       const stack = await prepareStack();
       stack.settings({ sandbox: 'bubblewrap' });
       const { file, log } = recordingBwrap(stack.temp);
@@ -333,7 +333,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
       expect(lines).not.toContain('/bin/true');
     });
 
-    it('stops the start with a ConfigError when no shell is found, before bwrap runs', PROCESS_TIMEOUT, async () => {
+    it('stops the start with a ConfigError when no shell is found, before bwrap runs', async () => {
       const temp = makeRunHome();
       writeUserSettings(temp.home, { sandbox: 'bubblewrap' });
       const { file, log } = recordingBwrap(temp);
@@ -347,7 +347,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     });
   });
 
-  it('a sandbox kind from another operating system is a ConfigError', PROCESS_TIMEOUT, async () => {
+  it('a sandbox kind from another operating system is a ConfigError', async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'seatbelt' });
     const { started } = startBare(temp, { platform: 'linux' });
@@ -356,7 +356,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((error as Error).message).toContain('sandbox "seatbelt" is only available on darwin');
   });
 
-  it('sandbox none skips the sandbox-exec check and logs the warning', PROCESS_TIMEOUT, async () => {
+  it('sandbox none skips the sandbox-exec check and logs the warning', async () => {
     const stack = await prepareStack();
     const launched = await launchRuntime(stack.temp, { sandboxExecPath: path.join(stack.temp.root, 'no-sandbox-exec') });
     expect(launched.handle.sandbox).toBe('none');
@@ -364,7 +364,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
   });
 
-  it('a late failure (runtime.sock path occupied by a regular file) unwinds: the lock is free, the store is closed and the error is rethrown unchanged', PROCESS_TIMEOUT, async () => {
+  it('a late failure (runtime.sock path occupied by a regular file) unwinds: the lock is free, the store is closed and the error is rethrown unchanged', async () => {
     const temp = sandboxNoneHome();
     await ensureMomongaDirs(temp.paths);
     await ensureGenerationDirs(temp.paths, FIRST_GENERATION);
@@ -380,7 +380,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('a telemetry failure after the trace store opened closes the trace store', PROCESS_TIMEOUT, async () => {
+  it('a telemetry failure after the trace store opened closes the trace store', async () => {
     const temp = sandboxNoneHome();
     const injected = new Error('telemetry failed');
     control.failTelemetry = injected;
@@ -393,7 +393,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('a failure on worker 1 aborts worker 0 first and closes the store after it', PROCESS_TIMEOUT, async () => {
+  it('a failure on worker 1 aborts worker 0 first and closes the store after it', async () => {
     const temp = sandboxNoneHome();
     control.failWorkerAt = 1;
     const { started, stdout } = startBare(temp, { workerCount: 3, clock: createFakeClock(START_MS) });
@@ -405,7 +405,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('a fatal latched during startup, in any step before ready, fails startup with that error and unwinds', PROCESS_TIMEOUT, async () => {
+  it('a fatal latched during startup, in any step before ready, fails startup with that error and unwinds', async () => {
     const temp = sandboxNoneHome();
     const fatal = new Error('fatal while starting');
     control.fatalOnStart = fatal;
@@ -419,7 +419,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(stdout.chunks).toEqual([]);
   });
 
-  it('starts without the gateway running', PROCESS_TIMEOUT, async () => {
+  it('starts without the gateway running', async () => {
     const stack = await prepareStack();
     const launched = await launchRuntime(stack.temp);
     expect(launched.stdout.lines()).toHaveLength(1);
@@ -427,7 +427,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect((await launched.http('GET', '/v1/health')).status).toBe(200);
   });
 
-  it('an invalid home, gatewaySocketPath, workerCount, leaseMs or drainTimeoutMs throws before any step', PROCESS_TIMEOUT, async () => {
+  it('an invalid home, gatewaySocketPath, workerCount, leaseMs or drainTimeoutMs throws before any step', async () => {
     const temp = sandboxNoneHome();
     const cases: [Record<string, unknown>, ErrorConstructor | TypeErrorConstructor | RangeErrorConstructor][] = [
       [{ home: 'relative/home' }, TypeError],
@@ -449,13 +449,13 @@ describe('startRuntimeProcess startup (system timers)', () => {
     expect(fs.existsSync(temp.paths.run)).toBe(false);
   });
 
-  it('accepts drainTimeoutMs 0', PROCESS_TIMEOUT, async () => {
+  it('accepts drainTimeoutMs 0', async () => {
     const stack = await prepareStack();
     const launched = await launchRuntime(stack.temp, { drainTimeoutMs: 0 });
     expect(launched.stdout.lines()).toHaveLength(1);
   });
 
-  it('uses the canonical home everywhere for a symlinked or case-variant home', PROCESS_TIMEOUT, async () => {
+  it('uses the canonical home everywhere for a symlinked or case-variant home', async () => {
     const stack = await prepareStack();
     const link = path.join(stack.temp.root, 'link');
     fs.symlinkSync(stack.temp.home, link);
@@ -482,7 +482,7 @@ describe('startRuntimeProcess startup (system timers)', () => {
 });
 
 describe('startup cancellation through signal (system timers)', () => {
-  it('a signal aborted on entry throws its reason before step 1', PROCESS_TIMEOUT, async () => {
+  it('a signal aborted on entry throws its reason before step 1', async () => {
     const temp = sandboxNoneHome();
     const controller = new AbortController();
     const reason = new Error('cancelled before start');
@@ -518,10 +518,9 @@ describe('startup cancellation through signal (system timers)', () => {
       expect(stdout.chunks).toEqual([]);
       expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
     },
-    DAEMON_PROCESS_TEST_TIMEOUT_MS,
   );
 
-  it('a signal aborted during step 16 is honoured before the ready line', PROCESS_TIMEOUT, async () => {
+  it('a signal aborted during step 16 is honoured before the ready line', async () => {
     const temp = sandboxNoneHome();
     const controller = new AbortController();
     const reason = new Error('cancelled at ready');
@@ -538,7 +537,7 @@ describe('startup cancellation through signal (system timers)', () => {
     expect(await isLockFree(firstGeneration(temp.paths).locks.runtime)).toBe(true);
   });
 
-  it('a signal aborted after ready has no effect', PROCESS_TIMEOUT, async () => {
+  it('a signal aborted after ready has no effect', async () => {
     const stack = await prepareStack();
     const controller = new AbortController();
     const launched = await launchRuntime(stack.temp, { signal: controller.signal });
@@ -551,7 +550,7 @@ describe('startup cancellation through signal (system timers)', () => {
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(false);
   });
 
-  it('the abort reason is not mapped to a config or lock class', PROCESS_TIMEOUT, async () => {
+  it('the abort reason is not mapped to a config or lock class', async () => {
     const temp = sandboxNoneHome();
     const plain = new AbortController();
     plain.abort();

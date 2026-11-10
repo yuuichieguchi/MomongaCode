@@ -74,7 +74,6 @@ describe('ready parsing', () => {
   it('ready line during stopping is ignored', async (context) => {
     const stops: ((harness: ManagerHarness) => void)[] = [
       (harness) => void harness.manager.stop('shutdown', 'term'),
-      (harness) => void harness.manager.stop('plan-restart', 'term'),
       (harness) => harness.timers.advance(STARTUP_TIMEOUT_MS),
     ];
     for (const stop of stops) {
@@ -162,42 +161,6 @@ describe('exit classification in the manager', () => {
     expect(spawnReasons(harness)).toEqual(['initial', 'backoff']);
   });
 
-  it('exit 1 after a plan stop does not back off and does not double-spawn', async (context) => {
-    const harness = createManagerHarness(context);
-    harness.spawnInitial();
-    void harness.manager.stop('plan-restart', 'term');
-    await exitAndWait(harness, 'stopped', 1);
-    expect(harness.manager.isPlanStopped()).toBe(true);
-    expect(harness.timers.pending()).toEqual([]);
-    expect(harness.manager.health().consecutiveFailures).toBe(0);
-    harness.timers.advance(HELD_RETRY_MS);
-    expect(harness.spawnCount()).toBe(1);
-    harness.manager.planStart();
-    expect(harness.spawnCount()).toBe(2);
-    expect(harness.manager.state()).toBe('starting');
-    expect(harness.manager.isPlanStopped()).toBe(false);
-    expect(spawnReasons(harness)).toEqual(['initial', 'plan']);
-  });
-
-  it('plan stop of a ready child exits 0', async (context) => {
-    for (const exit of [
-      { code: 0, signal: null },
-      { code: null, signal: 'SIGKILL' as const },
-    ]) {
-      const harness = createManagerHarness(context);
-      harness.spawnInitial();
-      harness.port.last().ready();
-      await waitFor(() => harness.manager.state() === 'ready');
-      void harness.manager.stop('plan-restart', 'term');
-      await exitAndWait(harness, 'stopped', exit.code, exit.signal);
-      expect(harness.manager.isPlanStopped()).toBe(true);
-      expect(harness.timers.pending()).toEqual([]);
-      expect(harness.manager.health().consecutiveFailures).toBe(0);
-      harness.manager.planStart();
-      expect(harness.spawnCount()).toBe(2);
-    }
-  });
-
   it('shutdown stop that exits 1 ends stopped', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
@@ -206,19 +169,18 @@ describe('exit classification in the manager', () => {
     await expect(stopped).resolves.toEqual({ killed: false, leaked: false });
     expect(harness.timers.pending()).toEqual([]);
     expect(harness.manager.health().lastExit?.reason).toBe('requested');
-    expect(harness.manager.isPlanStopped()).toBe(false);
   });
 
-  it('plan supersedes startup-timeout', async (context) => {
+  it('shutdown supersedes startup-timeout', async (context) => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     harness.timers.advance(STARTUP_TIMEOUT_MS);
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
-    void harness.manager.stop('plan-restart', 'term');
+    void harness.manager.stop('shutdown', 'term');
     expect(harness.port.last().signals).toEqual(['SIGTERM']);
-    expect(harness.events('child.stop').some((line) => line['superseded'] !== undefined && line['stop'] === 'plan-restart')).toBe(true);
+    expect(harness.events('child.stop').some((line) => line['superseded'] === 'startup-timeout' && line['stop'] === 'shutdown')).toBe(true);
     await exitAndWait(harness, 'stopped', 0);
-    expect(harness.manager.isPlanStopped()).toBe(true);
+    expect(harness.manager.health().lastExit?.reason).toBe('requested');
     expect(harness.manager.health().consecutiveFailures).toBe(0);
     expect(harness.timers.pending()).toEqual([]);
   });
@@ -429,16 +391,6 @@ describe('exit classification in the manager', () => {
     expect(harness.spawnCount()).toBe(1);
   });
 
-  it('a plan stop of a child without a process changes nothing', async (context) => {
-    const harness = createManagerHarness(context);
-    harness.spawnInitial();
-    await exitAndWait(harness, 'held-config', 78);
-    await harness.manager.stop('plan-restart', 'term');
-    expect(harness.manager.state()).toBe('held-config');
-    expect(harness.manager.isPlanStopped()).toBe(false);
-    harness.manager.planStart();
-    expect(harness.spawnCount()).toBe(1);
-  });
 });
 
 describe('spawn failures', () => {
@@ -533,9 +485,9 @@ describe('stop', () => {
     const harness = createManagerHarness(context);
     harness.spawnInitial();
     void harness.manager.stop('shutdown', 'term');
-    void harness.manager.stop('plan-restart', 'term');
+    void harness.manager.stop('startup-timeout', 'term');
     await exitAndWait(harness, 'stopped', 0);
-    expect(harness.manager.isPlanStopped()).toBe(false);
+    expect(harness.manager.health().lastExit?.reason).toBe('requested');
   });
 
   it('stop escalation sends SIGINT once', (context) => {
@@ -705,20 +657,6 @@ describe('draining is enforced by the manager', () => {
       expect(harness.spawnCount()).toBe(0);
       expect(harness.events('child.spawn')).toEqual([]);
       expect(harness.markers()).toEqual([]);
-    });
-
-    it('planStart of a plan-stopped child spawns nothing', async (context) => {
-      const harness = createManagerHarness(context);
-      harness.spawnInitial();
-      void harness.manager.stop('plan-restart', 'term');
-      await exitAndWait(harness, 'stopped', 0);
-      expect(harness.manager.isPlanStopped()).toBe(true);
-      drain(harness);
-      harness.manager.planStart();
-      harness.timers.advance(HELD_RETRY_MS);
-      expect(harness.spawnCount()).toBe(1);
-      expect(spawnReasons(harness)).toEqual(['initial']);
-      expect(harness.manager.state()).toBe('stopped');
     });
 
     it('retryHeld of a held child spawns nothing', async (context) => {

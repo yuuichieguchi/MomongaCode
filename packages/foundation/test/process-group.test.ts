@@ -2,12 +2,13 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
 import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 
-const FORK_STORM_TEST_TIMEOUT_MS = 4 * REAL_PROCESS_TEST_TIMEOUT_MS;
+vi.setConfig({ testTimeout: 4 * REAL_PROCESS_TEST_TIMEOUT_MS });
+
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -311,7 +312,7 @@ describe('terminateGroup', () => {
     expect(await groupAlive(pgid)).toBe(false);
   });
 
-  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('reports a group that keeps forking while SIGKILL is delivered as killed only when no member is left, and otherwise as unconfirmed within its grace', async () => {
     const iterations = FORK_LOOP_ITERATIONS;
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
@@ -326,7 +327,7 @@ describe('terminateGroup', () => {
 });
 
 describe('forceKillGroup', () => {
-  it('returns true once every member of a group that keeps forking is gone', { timeout: FORK_STORM_TEST_TIMEOUT_MS }, async () => {
+  it('returns true once every member of a group that keeps forking is gone', async () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < FORK_LOOP_ITERATIONS; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
@@ -337,7 +338,7 @@ describe('forceKillGroup', () => {
     expect(outcomes).toEqual(Array.from({ length: FORK_LOOP_ITERATIONS }, () => 'gone=true alive=false'));
   });
 
-  it('signals a live group at least once even when the deadline has already passed', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('signals a live group at least once even when the deadline has already passed', async () => {
     const group = await spawnGroup('normal');
     await forceKillGroup(group.pgid, { deadline: Date.now() - 1 });
     expect(await settlesWithin(group.exited, LEADER_REAP_WAIT_MS)).toBe(true);

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import type { McpStdioServerConfig } from '@momonga/config';
 import {
@@ -27,6 +27,8 @@ import {
   readRecords,
   waitUntil,
 } from './mcp-harness.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const hash8 = (value: string): string => createHash('sha256').update(value).digest('hex').slice(0, 8);
 
@@ -162,7 +164,7 @@ describe('deterministic hashed names', () => {
   });
 });
 
-describe('close during backoff and connect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('close during backoff and connect', () => {
   it('resolves promptly during a reconnect backoff and spawns nothing after close began', async () => {
     const launcher = makeLauncher(() => 'exit 1');
     const harness = makePool([entry('flaky', launcher.config)], { random: () => 0.999 });
@@ -200,7 +202,7 @@ describe('close during backoff and connect', { timeout: REAL_PROCESS_TEST_TIMEOU
   });
 });
 
-describe('close aborting the first connect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('close aborting the first connect', () => {
   it('leaves no abort error and no failure behind in diagnostics', async () => {
     const launcher = makeLauncher(() => 'exec sleep 600');
     const harness = makePool([entry('stuck', launcher.config)], { connectTimeoutMs: 60_000 });
@@ -213,7 +215,7 @@ describe('close aborting the first connect', { timeout: REAL_PROCESS_TEST_TIMEOU
   });
 });
 
-describe('lastError after reconnect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('lastError after reconnect', () => {
   it('clears lastError once the server reconnects successfully', async () => {
     const recordFile = makeRecordFile();
     const harness = makePool([entry('modern', modernConfig(recordFile))]);

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { StoreIdentityError } from '@momonga/store';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, firstGeneration } from '@momonga/testkit';
 import { START_MS, errnoError } from './helpers.ts';
 import {
   RUNTIME_VERSION,
@@ -20,7 +20,7 @@ import {
 import type { Launched, RunHome } from './run-helpers.ts';
 import { FIRST_GENERATION } from '@momonga/foundation';
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const fakeTime = () => {
   const clock = createFakeClock(START_MS);
@@ -63,7 +63,7 @@ const started = async (stack: { temp: RunHome }) => {
 };
 
 describe('database identity check (fake timers and fake clock, in-process gateway)', () => {
-  it('an unchanged database file never latches', PROCESS_TIMEOUT, async () => {
+  it('an unchanged database file never latches', async () => {
     const stack = await startStack();
     const { launched, timers } = await started(stack);
     for (let index = 0; index < 5; index += 1) await tick(timers, STORE_IDENTITY_CHECK_MS);
@@ -72,7 +72,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     expect(timers.pending().map((timer) => timer.delayMs)).toContain(STORE_IDENTITY_CHECK_MS);
   });
 
-  it('renaming runtime.db latches fatal on the next identity tick', PROCESS_TIMEOUT, async () => {
+  it('renaming runtime.db latches fatal on the next identity tick', async () => {
     const stack = await startStack();
     const { launched, timers } = await started(stack);
     const db = stack.temp.paths.databases.runtime;
@@ -84,7 +84,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     await expectLatched(launched, timers);
   });
 
-  it('unlinking runtime.db latches fatal on the next identity tick', PROCESS_TIMEOUT, async () => {
+  it('unlinking runtime.db latches fatal on the next identity tick', async () => {
     const stack = await startStack();
     const { launched, timers } = await started(stack);
     fs.unlinkSync(stack.temp.paths.databases.runtime);
@@ -95,7 +95,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     await expectLatched(launched, timers);
   });
 
-  it('replacing runtime.db before ready fails startup with StoreIdentityError and unwinds', PROCESS_TIMEOUT, async () => {
+  it('replacing runtime.db before ready fails startup with StoreIdentityError and unwinds', async () => {
     const stack = await startStack();
     const { clock, timers } = fakeTime();
     const logger = hookLogger((step, msg) => {
@@ -111,7 +111,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     expect(timers.pending()).toEqual([]);
   });
 
-  it('a latched identity error aborts the process: close() afterwards returns the same result with fatal set', PROCESS_TIMEOUT, async () => {
+  it('a latched identity error aborts the process: close() afterwards returns the same result with fatal set', async () => {
     const stack = await startStack();
     const { launched, timers } = await started(stack);
     replaceFile(stack.temp.paths.databases.runtime);
@@ -126,7 +126,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     expect(timers.pending()).toEqual([]);
   });
 
-  it('an EMFILE in the identity timer is reported, does not latch, and the timer keeps running', PROCESS_TIMEOUT, async () => {
+  it('an EMFILE in the identity timer is reported, does not latch, and the timer keeps running', async () => {
     const stack = await startStack();
     const { launched, timers } = await started(stack);
     const injected = errnoError('EMFILE');
@@ -147,7 +147,7 @@ describe('database identity check (fake timers and fake clock, in-process gatewa
     await launched.handle.close();
   });
 
-  it('an EMFILE in the identity check before ready fails startup with that error, not StoreIdentityError', PROCESS_TIMEOUT, async () => {
+  it('an EMFILE in the identity check before ready fails startup with that error, not StoreIdentityError', async () => {
     const stack = await startStack();
     const { clock, timers } = fakeTime();
     const injected = errnoError('EMFILE');

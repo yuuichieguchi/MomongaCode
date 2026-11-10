@@ -1,0 +1,199 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { flush, ownedHarness, settled } from './derived-fixture.ts';
+import type { Built, Lease } from './derived-fixture.ts';
+
+type OpName = 'admitOp' | 'acquireOp';
+type Action = { kind: 'edit' } | { kind: 'start'; op: OpName } | { kind: 'abort'; op: OpName } | { kind: 'release'; op: OpName } | { kind: 'finish' } | { kind: 'fail' };
+
+type Op = {
+  phase: 'idle' | 'waiting' | 'holding';
+  controller: AbortController;
+  outcome: ReturnType<typeof settled<Lease<Built>>> | undefined;
+  lease: Lease<Built> | undefined;
+  target: number;
+};
+
+const DEPTH = 5;
+const OPS: readonly OpName[] = ['admitOp', 'acquireOp'];
+
+const labelOf = (action: Action): string => ('op' in action ? `${action.kind}(${action.op})` : action.kind);
+
+const bootstrap = async () => {
+  const h = ownedHarness();
+  const first = h.derivation.acquire(new AbortController().signal);
+  await flush();
+  h.gates.shift()?.release();
+  (await first).release();
+  await flush();
+  const ops: Record<OpName, Op> = {
+    admitOp: { phase: 'idle', controller: new AbortController(), outcome: undefined, lease: undefined, target: 0 },
+    acquireOp: { phase: 'idle', controller: new AbortController(), outcome: undefined, lease: undefined, target: 0 },
+  };
+  return { h, ops };
+};
+
+type World = Awaited<ReturnType<typeof bootstrap>>;
+
+const enabled = ({ h, ops }: World): Action[] => {
+  const actions: Action[] = [{ kind: 'edit' }];
+  for (const op of OPS) {
+    if (ops[op].phase === 'idle') actions.push({ kind: 'start', op });
+    if (ops[op].phase === 'waiting') actions.push({ kind: 'abort', op });
+    if (ops[op].phase === 'holding') actions.push({ kind: 'release', op });
+  }
+  if (h.gates.length > 0) actions.push({ kind: 'finish' }, { kind: 'fail' });
+  return actions;
+};
+
+const absorb = (ops: Record<OpName, Op>): void => {
+  for (const op of OPS) {
+    const state = ops[op];
+    if (state.phase !== 'waiting' || state.outcome === undefined) continue;
+    if (state.outcome.outcome === 'resolved') {
+      state.phase = 'holding';
+      state.lease = state.outcome.value;
+    } else if (state.outcome.outcome === 'rejected') {
+      state.phase = 'idle';
+      state.controller = new AbortController();
+    }
+  }
+};
+
+const step = async (world: World, action: Action, trace: string): Promise<void> => {
+  const { h, ops } = world;
+  const warningsBefore = h.warnings.length;
+  const waitingBefore = OPS.filter((op) => ops[op].phase === 'waiting');
+  const finishing = h.gates[0];
+  const finishingVersion = h.derived.at(-1)?.version;
+  if (action.kind === 'edit') h.edit();
+  if (action.kind === 'start') {
+    const state = ops[action.op];
+    state.target = h.version();
+    state.phase = 'waiting';
+    const call = action.op === 'admitOp' ? h.derivation.admit(state.controller.signal) : h.derivation.acquire(state.controller.signal);
+    state.outcome = settled(call);
+  }
+  if (action.kind === 'abort') ops[action.op].controller.abort(new Error(`abort of ${action.op}`));
+  if (action.kind === 'release') {
+    ops[action.op].lease?.release();
+    ops[action.op].lease = undefined;
+    ops[action.op].phase = 'idle';
+  }
+  if (action.kind === 'finish') h.gates.shift()?.release();
+  if (action.kind === 'fail') h.gates.shift()?.fail(new Error('derive failed'));
+  await flush();
+  absorb(ops);
+
+  expect(h.gates.length, `${trace}: at most one derivation in flight`).toBeLessThanOrEqual(1);
+  expect(new Set(h.retired).size, `${trace}: each object is retired once`).toBe(h.retired.length);
+  for (const op of OPS) {
+    const lease = ops[op].lease;
+    if (lease !== undefined) expect(h.retired, `${trace}: an object held by ${op} is not retired`).not.toContain(lease.value);
+  }
+  if (action.kind === 'abort') {
+    expect(ops[action.op].phase, `${trace}: the aborted caller is detached`).toBe('idle');
+    for (const other of waitingBefore.filter((op) => op !== action.op)) expect(ops[other].phase, `${trace}: an abort leaves ${other} waiting`).toBe('waiting');
+    expect(h.warnings.length, `${trace}: an abort is not reported`).toBe(warningsBefore);
+    expect(h.gates[0], `${trace}: an abort leaves the flight running`).toBe(finishing);
+  }
+  if (action.kind === 'finish') {
+    for (const op of waitingBefore) {
+      if (ops[op].target !== finishingVersion) continue;
+      expect(ops[op].phase, `${trace}: ${op} takes its lease in the completion step`).toBe('holding');
+      expect(ops[op].lease?.value.version).toBe(finishingVersion);
+    }
+  }
+  if (action.kind === 'fail') {
+    if (waitingBefore.includes('admitOp') && ops.admitOp.target === finishingVersion) expect(ops.admitOp.phase, `${trace}: admit rejects with the failure`).toBe('idle');
+    if (waitingBefore.includes('acquireOp') && ops.acquireOp.target === finishingVersion) {
+      expect(ops.acquireOp.phase, `${trace}: acquire gets the previous object`).toBe('holding');
+      expect(ops.acquireOp.lease?.value.version).toBeLessThan(finishingVersion ?? 0);
+    }
+  }
+  if (action.kind !== 'fail') expect(h.warnings.length, `${trace}: only a derive failure is reported`).toBe(warningsBefore);
+};
+
+const replay = async (prefix: readonly Action[]): Promise<World> => {
+  const world = await bootstrap();
+  const labels: string[] = [];
+  for (const action of prefix) {
+    labels.push(labelOf(action));
+    await step(world, action, labels.join(' > '));
+  }
+  return world;
+};
+
+const sequences = async (prefix: Action[], found: Action[][]): Promise<number> => {
+  if (prefix.length === DEPTH) {
+    found.push(prefix);
+    return 1;
+  }
+  const world = await replay(prefix);
+  let leaves = 0;
+  for (const action of enabled(world)) leaves += await sequences([...prefix, action], found);
+  return leaves;
+};
+
+describe('createPinnedDerivation conforms to SettingsSwap.tla over every action sequence of depth 5 (design-settings-live 15.6)', () => {
+  it('every sequence the generator yields to depth 5 is replayed and checked after each step', { timeout: 600_000 }, async () => {
+    const found: Action[][] = [];
+    const generated = await sequences([], found);
+    let checked = 0;
+    for (const sequence of found) {
+      await replay(sequence);
+      checked += 1;
+    }
+    expect(generated).toBeGreaterThan(0);
+    expect(found.every((sequence) => sequence.length === DEPTH)).toBe(true);
+    expect(checked).toBe(generated);
+  });
+});
+
+const specText = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla', 'SettingsSwap.tla'), 'utf8');
+
+const specActions = (): string[] => {
+  const next = /^Next ==\n([\s\S]*?)\n\n/m.exec(specText);
+  if (next === null) throw new Error('SettingsSwap.tla has no Next definition');
+  const names = [...(next[1] as string).matchAll(/\b([A-Z][A-Za-z]+)(?=\s*(?:\(|$|\n|\s\\\/))/gm)].map((match) => match[1] as string);
+  return [...new Set(names.filter((name) => name !== 'UNCHANGED'))].sort();
+};
+
+type Mapping = { driven: Action['kind'] } | { outside: string };
+
+const SPEC_ACTION_MAPPING: Readonly<Record<string, Mapping>> = {
+  WriteValid: { driven: 'edit' },
+  StartDirect: { driven: 'start' },
+  StartDerive: { driven: 'start' },
+  BeginDerive: { driven: 'start' },
+  StartJoin: { driven: 'start' },
+  StartQueue: { driven: 'start' },
+  StartRefuse: { driven: 'fail' },
+  FinishDerive: { driven: 'finish' },
+  Wake: { driven: 'finish' },
+  Abort: { driven: 'abort' },
+  Finish: { driven: 'release' },
+  Reap: { driven: 'release' },
+  WriteBroken: { outside: 'an invalid file is decided by the settings cache (user-settings tests), not by the derivation' },
+  Observe: { outside: 'the supervisor writes the applied record (settings-applied-record tests)' },
+  CorruptRecord: { outside: 'an unreadable record is decided by the settings cache (user-settings-applied-unreadable tests)' },
+  LockStart: { outside: 'a managed instance lock belongs to the gateway (settings-live-managed tests)' },
+  Use: { outside: 'the use of a derived object belongs to its process' },
+  Spawn: { outside: 'a sandboxed child belongs to the runtime' },
+  JobExit: { outside: 'a background job belongs to the runtime' },
+  Crash: { outside: 'a process crash ends the derivation with the process' },
+  SupervisorRestart: { outside: 'the supervisor restart belongs to the supervisor' },
+  Restart: { outside: 'a child restart belongs to the supervisor' },
+};
+
+describe('the conformance test covers every action of SettingsSwap.tla', () => {
+  it('every action of Next is driven by this test or stated as belonging to another layer, and no mapping names an action the spec lacks', () => {
+    expect(Object.keys(SPEC_ACTION_MAPPING).sort()).toEqual(specActions());
+  });
+
+  it('every driven action kind is one the enumeration generates', () => {
+    const generated: ReadonlySet<Action['kind']> = new Set(['edit', 'start', 'abort', 'release', 'finish', 'fail']);
+    for (const [action, mapping] of Object.entries(SPEC_ACTION_MAPPING)) if ('driven' in mapping) expect(generated.has(mapping.driven), action).toBe(true);
+  });
+});

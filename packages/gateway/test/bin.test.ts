@@ -1,16 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FIRST_GENERATION, createUdsClient, momongaPaths, fixedSocket } from '@momonga/foundation';
-import { BUILT_BINARY_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, readJsonLinesFile, registerCleanup, startDaemonBin, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import packageJson from '../package.json' with { type: 'json' };
 import { MINIMAL_PATH, ccTarget, writeSettings } from './gateway-process-helpers.ts';
 
-const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/bin.ts');
-const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
+const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/bin.ts');
 const prepare = (context: CleanupContext) => {
   const home = withTempDir(context, { asHome: true });
   const aux = withTempDir(context);
@@ -19,7 +19,7 @@ const prepare = (context: CleanupContext) => {
 };
 
 describe('gateway bin (real process, §5.3)', () => {
-  it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, gateway.log 0600 ending with entry.exit', PROCESS_TIMEOUT, async (context) => {
+  it('bin smoke: one ready line on stdout, SIGTERM exits 0, JSON stderr, gateway.log 0600 ending with entry.exit', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`], env);
 
@@ -36,7 +36,7 @@ describe('gateway bin (real process, §5.3)', () => {
     expect(log.at(-1)).toMatchObject({ msg: 'entry.exit', service: 'gateway', pid: daemon.child.pid, code: 0, path: 'close', clean: true, trigger: 'sigterm' });
   });
 
-  it('--log-target=file writes nothing to stderr and the gateway serves health until signalled', PROCESS_TIMEOUT, async (context) => {
+  it('--log-target=file writes nothing to stderr and the gateway serves health until signalled', async (context) => {
     const { home, paths, env } = prepare(context);
     const daemon = startDaemonBin(context, BIN, [`--home=${home}`, `--generation=${FIRST_GENERATION}`, '--log-target=file'], env);
     await daemon.waitForReady();

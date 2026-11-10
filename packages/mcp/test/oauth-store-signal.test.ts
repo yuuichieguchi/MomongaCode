@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOCK_TIMEOUT_MS, createFileCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
 import { createMcpOAuthProvider, credentialKey } from '../src/mcp-oauth.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
   const start = 1_000_000;
@@ -21,7 +23,7 @@ const steppedPorts = (): FileLockPorts & { waitedMs(): number } => {
   };
 };
 
-describe('MCP OAuth provider store waits (N81)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('MCP OAuth provider store waits (N81)', () => {
   it('a record lock wait outlasts the default lock timeout and ends only on the signal of the operation', async (context) => {
     const directory = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-oauth-'))), 'mcp-credentials');
     const url = 'https://mcp.example.com/mcp';

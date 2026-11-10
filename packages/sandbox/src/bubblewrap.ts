@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createOwnedDirectorySync, fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
@@ -322,8 +322,6 @@ export function planBubblewrap(policy: SandboxPolicy, options: BubblewrapOptions
   return { args, placeholders: reserved, forms: Object.fromEntries(reserved.map((placeholder): [string, PlaceholderForm] => [placeholder, policy.protectedSet.forms[placeholder] ?? EMPTY_FILE_FORM])) };
 }
 
-export const BWRAP_PROBE_TIMEOUT_MS = SANDBOX_STOP_BOUND_MS;
-
 export const bwrapProbeArguments = (shell: string): string[] => [
   '--unshare-pid',
   '--unshare-ipc',
@@ -344,21 +342,23 @@ export const bwrapProbeArguments = (shell: string): string[] => [
   ':',
 ];
 
-export type ProbeRunner = (file: string, args: readonly string[], timeoutMs: number) => { status: number | null; stderr: string; timedOut: boolean };
+export type ProbeRunner = (file: string, args: readonly string[], signal: AbortSignal) => Promise<{ status: number | null; stderr: string }>;
 
 export type BubblewrapProbe = { ok: true } | { ok: false; stderr: string };
 
-export type BubblewrapProbeOptions = { timeoutMs?: number; run?: ProbeRunner };
+export type BubblewrapProbeOptions = { signal: AbortSignal; run?: ProbeRunner };
 
-const nodeProbeRunner: ProbeRunner = (file, args, timeoutMs) => {
-  const done = spawnSync(file, [...args], { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' });
-  if (done.error !== undefined && (done.error as NodeJS.ErrnoException).code !== 'ETIMEDOUT') throw done.error;
-  return { status: done.status, stderr: done.stderr, timedOut: done.error !== undefined };
-};
+const nodeProbeRunner: ProbeRunner = (file, args, signal) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(file, [...args], { stdio: ['ignore', 'ignore', 'pipe'], signal, killSignal: 'SIGKILL' });
+    const stderr: Buffer[] = [];
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.once('error', reject);
+    child.once('close', (status) => resolve({ status, stderr: Buffer.concat(stderr).toString('utf8') }));
+  });
 
-export const probeBubblewrap = (bwrapPath: string, shell: string, { timeoutMs = BWRAP_PROBE_TIMEOUT_MS, run = nodeProbeRunner }: BubblewrapProbeOptions = {}): BubblewrapProbe => {
-  const { status, stderr, timedOut } = run(bwrapPath, bwrapProbeArguments(shell), timeoutMs);
-  if (timedOut) return { ok: false, stderr: `bwrap did not finish within ${timeoutMs} ms` };
+export const probeBubblewrap = async (bwrapPath: string, shell: string, { signal, run = nodeProbeRunner }: BubblewrapProbeOptions): Promise<BubblewrapProbe> => {
+  const { status, stderr } = await run(bwrapPath, bwrapProbeArguments(shell), signal);
   if (status === 0) return { ok: true };
   return { ok: false, stderr: status === null ? 'bwrap ended without an exit status' : stderr.trim() };
 };

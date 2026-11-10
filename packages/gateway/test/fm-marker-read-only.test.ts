@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { readMarkerGroup } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import { registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, makeHome, until } from './gateway-process-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const WRITE_THROUGH_MARKER = [
   "const fs = require('node:fs');",
@@ -15,7 +17,7 @@ const WRITE_THROUGH_MARKER = [
 ].join(' ');
 
 describe('the marker descriptor the managed group spawn hands to its child, whose marker holds the attempt record of decision 12', () => {
-  it('is read-only: the child writing through fd 3 gets EBADF', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('is read-only: the child writing through fd 3 gets EBADF', async () => {
     const dir = makeHome();
     const markers = path.join(dir, 'markers');
     fs.mkdirSync(markers, { mode: 0o700 });

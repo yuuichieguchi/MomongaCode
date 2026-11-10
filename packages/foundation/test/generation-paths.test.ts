@@ -21,6 +21,7 @@ describe('generation-scoped sockets and locks', () => {
         runtime: '/Users/alexandra-wilkinson/.momonga/run/g1/runtime.lock',
         supervisor: '/Users/alexandra-wilkinson/.momonga/run/g1/supervisor.lock',
       },
+      settingsApplied: '/Users/alexandra-wilkinson/.momonga/run/g1/settings-applied.json',
     });
   });
 

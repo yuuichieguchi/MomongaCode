@@ -6,7 +6,7 @@ import { afterEach, expect } from 'vitest';
 import { DEFAULT_STOP_VALUES, createUdsClient, gatewayMaxCloseMs, decodeSse, managedServerStopBoundMs, fixedSocket } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
 import { createGateway } from '@momonga/gateway';
-import type { Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
+import type { FixedModelsOptions, Gateway, GatewayConfig, GatewayOptions, ProviderAdapter } from '@momonga/gateway';
 import type { Telemetry } from '@momonga/observability';
 import type { StreamEvent } from '@momonga/protocol';
 import { CLEANUP_KILL_DEADLINE_MS, createFakeClock, createFakeTimers, createOpenResponsesValidator } from '@momonga/testkit';
@@ -124,7 +124,7 @@ export type HarnessOptions = {
   onError?: GatewayOptions['onError'];
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
-  priceTable?: GatewayOptions['priceTable'];
+  priceTable?: FixedModelsOptions['priceTable'];
   random?: () => number;
 };
 

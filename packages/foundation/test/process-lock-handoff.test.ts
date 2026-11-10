@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   LOCK_FD,
   LOCK_FD_ENV,
@@ -18,6 +18,8 @@ import type { InheritedLockRequest, KernelLockMechanism } from '@momonga/foundat
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { ADOPTER_FIXTURE, exitOf, firstLine, spawnFixture } from './support/lock-processes.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const INHERITABLE = hostKernelLock().claimInheritable !== undefined;
 
@@ -67,7 +69,7 @@ describe('the hand-off goes through the lock mechanism on both sides', () => {
   });
 });
 
-describe.skipIf(!INHERITABLE)('lock hand-off to a child with real processes', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.skipIf(!INHERITABLE)('lock hand-off to a child with real processes', () => {
   it('puts the claim in the child: the parent copy is closed after spawn and the child adopts, records its pid and scrubs its env', async (context) => {
     const lockPath = path.join(withTempDir(context), 'runtime.lock');
     const handoff = claimed(lockPath);

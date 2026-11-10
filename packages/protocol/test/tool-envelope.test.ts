@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as protocol from '@momonga/protocol';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 type Envelope = { content: string; callId: string; tool: string };
 

@@ -22,7 +22,7 @@ describe('hookRunContextFor', () => {
     } as unknown as ClaimContext;
     const policy = { sandboxPolicy: {}, env: {}, tmpDir: '/tmp/x' } as never;
 
-    const context = hookRunContextFor(ctx, session as never, {} as never, policy, () => undefined);
+    const context = hookRunContextFor(ctx, session as never, {} as never, policy, {} as never, () => undefined);
 
     expect(context.shellHost).toBe(shellHost);
   });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup } from '@momonga/testkit';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -7,7 +7,9 @@ import { pollUntil } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 
-describe('child manager with the real SpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+describe('child manager with the real SpawnPort', () => {
   it('error event after spawn does not become an uncaught exception', async (context) => {
     const uncaught: unknown[] = [];
     const onUncaught = (error: unknown): void => {

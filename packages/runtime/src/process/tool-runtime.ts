@@ -18,7 +18,7 @@ import {
 import type { Clock, CredentialSecretStore, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ProcessInspector, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
-import type { Sandbox } from '@momonga/sandbox';
+import type { SandboxBindings } from '../ports.ts';
 import type { RuntimeStore } from '@momonga/store';
 import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BundledRipgrepResolver, MarkerOwners, ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
@@ -38,6 +38,7 @@ import { createSessionStates } from './session-states.ts';
 import type { SessionStates } from './session-states.ts';
 import type { SettingsComposition } from './settings-port.ts';
 import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
+import type { EnforcedPolicyFor } from './tool-policy.ts';
 
 export type ToolRuntimeOptions = {
   lockCapability?: LockCapabilityProbe;
@@ -50,7 +51,7 @@ export type ToolRuntimeOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
-  sandbox: Sandbox;
+  sandboxes: SandboxBindings;
   shellHost: ShellHost;
   settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
@@ -79,7 +80,7 @@ export type ToolRuntime = {
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
 
 export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
-  const { paths, home, store, notifier, clock, timers, logger, report, sandbox, settings, reapTiming } = options;
+  const { paths, home, store, notifier, clock, timers, logger, report, sandboxes, settings, reapTiming } = options;
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
   const createPool = options.createPool ?? createMcpPool;
   const mcpRemote: McpRemotePorts = options.mcpRemote ?? {
@@ -139,9 +140,13 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   });
   const mcpPools = createMcpPoolCache({ store, notifier, timers, logger, report });
   const sessionStates = createSessionStates({ clock, store, logger });
-  const ruleEnforcement: RuleEnforcement = ruleEnforcementOf(sandbox.kind);
-  const policyOptions = { paths, home, fs: policyFilesystem, ruleEnforcement, sessionStates, ensureSessionTmpDir };
-  const policyFor = createPolicyFor(policyOptions);
+  const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
+  const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
+  const policyFor: ToolRuntimePort['policyFor'] = (session, request) => {
+    const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
+    policyBuilders.set(request.ruleEnforcement, builder);
+    return builder(session, request);
+  };
   const recoveryContextFor = createRecoveryContextFor(policyOptions);
 
   const toolSet: ToolRuntimePort['toolSet'] = async (runId, { signal, env, additionalTools, only }) => {
@@ -223,7 +228,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     policyFor,
     recoveryContextFor,
     executor,
-    sandbox,
+    sandboxes,
     ripgrepLocator: (env) =>
       createHostRipgrepLocator({
         setting: settings.takeUserSnapshot().settings.tools.ripgrep,

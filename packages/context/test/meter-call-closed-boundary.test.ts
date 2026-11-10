@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { InputItem } from '@momonga/protocol';
 import { callClosedBoundary, callClosedBoundaryWithWork } from '../src/token-meter.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const call = (id: string): InputItem => ({ type: 'function_call', call_id: id, name: 'tool', arguments: '{}' });
 const output = (id: string, text = 'ok'): InputItem => ({ type: 'function_call_output', call_id: id, output: text });

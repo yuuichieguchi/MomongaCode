@@ -1,10 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { foldMeter } from '@momonga/context';
 import type { FoldedEvent, MeterCount, MeterObservation, ObservedEvent, TokenMeter } from '@momonga/context';
 import type { Capabilities, CapabilityOverride, CreateResponseBody, FunctionTool, InputItem } from '@momonga/protocol';
 import { MODEL, capabilitiesFor, seeded } from './helpers.ts';
 import { ESTIMATED, EXACT, meterOf, piece, pieceCounter, toolOf } from './meter-fixtures.ts';
 import type { PieceCounterOptions } from './meter-fixtures.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const W = 1600;
 

@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createKernelLockMechanism, createOwnedDirectory, lockFormOf, sweepLeftovers } from '@momonga/foundation';
 import type { LeftoverFiles, LockForm } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startClaimHolder } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
 import { makeTemporaryDirectory } from './support/temporary-directory.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const ENTRY_NAME = 'entry.json.tmp';
 
@@ -35,7 +37,6 @@ describe('the kernel lock is released when its holder is killed with SIGKILL', (
         expect(after.kind).toBe('claimed');
         if (after.kind === 'claimed') after.lock.release();
       },
-      REAL_PROCESS_TEST_TIMEOUT_MS,
     );
   }
 });
@@ -58,7 +59,6 @@ describe('R1 on real kernel locks: the sweep keeps an entry whose holder lives a
         await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
         expect(fs.readdirSync(directory)).toEqual([]);
       },
-      REAL_PROCESS_TEST_TIMEOUT_MS,
     );
   }
 });
@@ -89,7 +89,6 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
         await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
         expect(fs.readdirSync(parent)).toEqual([]);
       },
-      REAL_PROCESS_TEST_TIMEOUT_MS,
     );
 
     it(
@@ -107,7 +106,6 @@ describe('S2: a directory entry has the sidecar form under every mechanism, on r
         await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
         expect(fs.readdirSync(parent)).toEqual([]);
       },
-      REAL_PROCESS_TEST_TIMEOUT_MS,
     );
 
     it(`${platform} mechanism: createOwnedDirectory locks the sidecar before the directory exists, and dispose removes the directory, then the sidecar`, async () => {

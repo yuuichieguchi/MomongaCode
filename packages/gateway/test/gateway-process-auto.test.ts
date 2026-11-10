@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { momongaPaths, FIRST_GENERATION } from '@momonga/foundation';
 import { PROBE_METHOD_VERSION, endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
@@ -9,6 +10,8 @@ import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome,
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { TARGET_PROBING } from '@momonga/protocol';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const request = { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
 

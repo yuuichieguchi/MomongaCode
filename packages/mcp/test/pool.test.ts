@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { holderGroups } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_GRANDCHILD_ENV, MODERN_FIXTURE_RECORD_ENV, MODERN_FIXTURE_STDERR_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import {
@@ -19,6 +19,8 @@ import {
   waitUntil,
 } from './mcp-harness.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const makeLauncher = (recordFile: string) => {
   const dir = makeDir();
   const script = path.join(dir, 'launch-modern.sh');
@@ -33,7 +35,7 @@ const makeLauncher = (recordFile: string) => {
   return { config: { command: script, env: { [MODERN_FIXTURE_RECORD_ENV]: recordFile } }, healthy, broken, launches };
 };
 
-describe('createMcpPool sources', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createMcpPool sources', () => {
   it('creates one source per server named mcp__<server>', () => {
     const harness = makePool([entry('modern', modernConfig(makeRecordFile())), entry('legacy', legacyConfig())]);
     expect(harness.pool.sources.map((source) => source.id)).toEqual(['mcp__modern', 'mcp__legacy']);
@@ -73,7 +75,7 @@ describe('createMcpPool sources', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () 
   });
 });
 
-describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createMcpPool diagnostics and close', () => {
   it('reports idle before the first listing and connected details after it', async () => {
     const harness = makePool([entry('modern', modernConfig(makeRecordFile())), entry('legacy', legacyConfig())]);
     expect(harness.pool.diagnostics()).toEqual([
@@ -115,7 +117,7 @@ describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIM
   });
 });
 
-describe('createMcpPool crash and reconnect', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('createMcpPool crash and reconnect', () => {
   it('reports a crash naming the server and exit code, then reconnects on the next call', async () => {
     const recordFile = makeRecordFile();
     const harness = makePool([entry('modern', modernConfig(recordFile))]);

@@ -10,13 +10,13 @@ import { GatewayError, gatewayClosedError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
 import { createRedactor } from '../core/redaction.ts';
 import { createRouter } from '../core/router.ts';
-import type { Services } from '../core/services.ts';
+import type { GatewayEpoch, GatewayEpochs, GatewayServices } from '../core/services.ts';
 import { openGatewayStore } from '../core/store.ts';
 import { createUnaryService } from '../core/unary.ts';
 import { createRequestValidator, createStoredDataChecks } from '../core/validation.ts';
-import type { Gateway, GatewayOptions } from '../types.ts';
+import type { DerivedModelsOptions, FixedModelsOptions, Gateway, GatewayEpochsShared, GatewayOptions } from '../types.ts';
 import { createApp } from './app.ts';
-import { checkGatewayOptions, isLoopbackAddress } from './config-check.ts';
+import { checkGatewayOptions, isLoopbackAddress, limitsOf } from './config-check.ts';
 import { createRequestTracker } from './tracker.ts';
 import { createWebSocketTransport } from './websocket.ts';
 import type { WebSocketTransport } from './websocket.ts';
@@ -69,7 +69,7 @@ const closeServer = (server: http.Server): Promise<void> =>
     server.close((error) => (error === undefined ? resolve() : reject(error)));
   });
 
-const closeAdapters = (adapters: GatewayOptions['adapters']) => async (values: StopValues | undefined): Promise<unknown[]> => {
+const closeAdapters = (adapters: FixedModelsOptions['adapters']) => async (values: StopValues | undefined): Promise<void> => {
   const failures: unknown[] = [];
   await Promise.all(
     [...new Set(Object.values(adapters))].map(async (adapter) => {
@@ -80,8 +80,24 @@ const closeAdapters = (adapters: GatewayOptions['adapters']) => async (values: S
       }
     }),
   );
-  return failures;
+  if (failures.length > 0) throw new AggregateError(failures, 'one or more adapters failed to close');
 };
+
+type ClosableEpochs = { epochs: GatewayEpochs; close(values: StopValues | undefined): Promise<void> };
+
+const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' | 'timers'>, shared: GatewayEpochsShared): ClosableEpochs => {
+  const epoch: GatewayEpoch = {
+    router: createRouter({ config: options.config, adapters: options.adapters, clock: options.clock, timers: options.timers, ...shared }),
+    priceTable: options.priceTable,
+    telemetry: options.telemetry,
+  };
+  return {
+    epochs: { acquire: async () => ({ value: epoch, release: () => undefined }), close: async () => undefined },
+    close: closeAdapters(options.adapters),
+  };
+};
+
+const derivedEpochs = (epochs: DerivedModelsOptions['epochs']): ClosableEpochs => ({ epochs, close: () => epochs.close() });
 
 const watchServerErrors = (server: http.Server, onFatal: (error: Error) => void): void => {
   server.on('error', (error: Error) => onFatal(error));
@@ -89,6 +105,7 @@ const watchServerErrors = (server: http.Server, onFatal: (error: Error) => void)
 
 export const createGateway = async (options: GatewayOptions): Promise<Gateway> => {
   checkGatewayOptions(options);
+  const limits = limitsOf(options);
   const { clock, timers } = options;
   const validator = createRequestValidator();
   const store = openGatewayStore(options.dbPath, createStoredDataChecks());
@@ -97,20 +114,22 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   const closeController = new AbortController();
   const forceCloseController = new AbortController();
   try {
-    const redactor = createRedactor({ credentials: options.credentials });
+    const shared: GatewayEpochsShared =
+      'epochs' in options
+        ? { redactor: options.redactor, reasoningOrigin: options.reasoningOrigin }
+        : { redactor: createRedactor({ credentials: options.credentials }), reasoningOrigin: createReasoningOriginCodec(options.hmacKey) };
+    const { redactor, reasoningOrigin } = shared;
     options.credentialFeed?.((credential) => redactor.add(credential));
-    const reasoningOrigin = createReasoningOriginCodec(options.hmacKey);
-    const services: Services = {
-      config: options.config,
+    const source = 'epochs' in options ? derivedEpochs(options.epochs) : fixedEpochs(options, shared);
+    const services: GatewayServices = {
+      config: limits,
       clock,
       timers,
       random: options.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor, reasoningOrigin }),
+      epochs: source.epochs,
       store,
       codec: createCompactionCodec(options.hmacKey),
       reasoningOrigin,
-      telemetry: options.telemetry,
-      priceTable: options.priceTable,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,
     };
@@ -137,7 +156,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       services,
       responses,
       tracker,
-      connectionLimitMs: options.config.websocketConnectionMs,
+      connectionLimitMs: limits.websocketConnectionMs,
       ...(options.onError === undefined ? {} : { onError: options.onError }),
     });
     transports.push(webSocket);
@@ -155,7 +174,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         services,
         responses,
         tracker,
-        connectionLimitMs: options.config.websocketConnectionMs,
+        connectionLimitMs: limits.websocketConnectionMs,
         authorize: (request) => tokenMatches(token, request.headers.authorization ?? null),
         ...(options.onError === undefined ? {} : { onError: options.onError }),
       });
@@ -182,7 +201,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         for (const transport of transports) transport.beginClose();
         const closed = servers.map((server) => closeServer(server));
         for (const server of servers) server.closeIdleConnections();
-        const graceMs = values === undefined ? options.config.closeGraceMs : values.closeGraceMs;
+        const graceMs = values === undefined ? limits.closeGraceMs : values.closeGraceMs;
         let graceHandle: unknown;
         const grace =
           graceMs === 0
@@ -202,9 +221,11 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
         for (const transport of transports) transport.terminateAll();
         for (const server of servers) server.closeAllConnections();
         await Promise.all(closed);
-        const adapterFailures = await closeAdapters(options.adapters)(values);
-        store.close();
-        if (adapterFailures.length > 0) throw new AggregateError(adapterFailures, 'one or more adapters failed to close');
+        try {
+          await source.close(values);
+        } finally {
+          store.close();
+        }
       })();
       return closing;
     };

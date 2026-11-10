@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CommandResult } from '../../src/platform/command-runner.ts';
 import { createDarwinInspector } from '../../src/platform/darwin-inspector.ts';
 import { defaultProcessInspector } from '../../src/platform/process-inspector.ts';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, spawnTracked, withTempDir } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const LIVE = { signal: new AbortController().signal };
 
@@ -120,7 +122,7 @@ describe('darwin inspector: groupsOf', () => {
   });
 });
 
-describe.skipIf(process.platform !== 'darwin')('darwin inspector against the real lsof and ps', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.skipIf(process.platform !== 'darwin')('darwin inspector against the real lsof and ps', () => {
   const holder = (context: Parameters<typeof withTempDir>[0], marker: string) => {
     const fd = fs.openSync(marker, 'r');
     try {

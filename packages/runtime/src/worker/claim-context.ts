@@ -4,7 +4,7 @@ import type { Capabilities, FunctionTool, RunEventPayload } from '@momonga/proto
 import type { SkillSet } from '@momonga/skills';
 import type { Claim, Run, StatusPatch, WaitTargets } from '@momonga/store';
 import type { OutputFit, ToolSet } from '@momonga/tools';
-import type { MemorySet, ToolEnv, TraceSpan } from '../ports.ts';
+import type { MemorySet, ToolEnv, TracerPort, TraceSpan } from '../ports.ts';
 import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
@@ -52,6 +52,7 @@ export type ClaimContext = {
   control: ClaimControl;
   terminals: Terminals;
   agentSpan: TraceSpan;
+  tracer: TracerPort;
   meter: TokenMeter;
   fallbackMeters: readonly TokenMeter[];
   counter: string;

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { BackgroundJobs, ToolHooks } from '@momonga/tools';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -7,6 +7,8 @@ import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { makeLayout, policyFor, ruleFor } from './helpers.ts';
 import { realSandbox, recordingSandbox, scratchRootOf } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const setup = async (jobs?: BackgroundJobs) => {
   const scratch = scratchRootOf(makeLayout().root);
@@ -27,7 +29,7 @@ const expectReadOnlyCall = (spawn: RecordedSpawn | undefined): void => {
   expect(spawn?.command.tmpDir).toBeUndefined();
 };
 
-describe('rule 2: the sandbox policy of each path that approves a Bash call', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('rule 2: the sandbox policy of each path that approves a Bash call', () => {
   it.each(['default', 'plan', 'acceptEdits'] as const)('a read-only analysis in %s mode leaves no path writable but the scratch directory of the spawn', async (mode) => {
     const built = await setup();
     resultOf(await built.run('Bash', { command: 'pwd' }, { mode }));

@@ -13,7 +13,7 @@ export type HistoryPortOptions = {
   clock: Clock;
   home: string;
   redactor: Redactor;
-  enforcement: RuleEnforcement;
+  enforcement: () => RuleEnforcement;
 };
 
 export const createHistoryPort = ({ store, settings, clock, home, redactor, enforcement }: HistoryPortOptions): HistoryPort => ({
@@ -24,7 +24,7 @@ export const createHistoryPort = ({ store, settings, clock, home, redactor, enfo
       const own = project === session.cwd;
       const rules = await permissionRulesFor({ store, settings, clock, home }, own ? session : { ...session, cwd: project, additionalDirectories: [] });
       const roots = own ? [session.cwd, ...session.additionalDirectories] : [project];
-      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project, enforcement });
+      return createReadDenial({ rules, roots: roots.map(canonicalPath), cwd: project, enforcement: enforcement() });
     };
     const toolPort: HistoryStorePort = {
       search: async (request) => {

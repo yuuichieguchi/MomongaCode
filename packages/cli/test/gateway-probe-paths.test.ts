@@ -4,7 +4,7 @@ import { shortTempBase } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -12,6 +12,8 @@ import { buildProgram } from '../src/program.ts';
 import type { UpdatePorts } from '../src/update/ports.ts';
 import { GITHUB_ENDPOINTS } from '../src/update/source.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {
@@ -55,7 +57,7 @@ const runCli = async (home: string, args: readonly string[]): Promise<{ codes: n
   return { codes, stdout: stdout.join(''), stderr: stderr.join('') };
 };
 
-describe('gateway probe on a HOME that has never run momonga', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway probe on a HOME that has never run momonga', () => {
   it('creates the private ~/.momonga tree before fm serve is started on its socket under it, and completes the probe', async () => {
     const home = freshDir('mm-home-');
     const fm = await createFakeFm({ dir: freshDir('mm-fm-') });

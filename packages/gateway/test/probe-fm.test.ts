@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBinaryHashCache, managedInstancePaths, momongaPaths } from '@momonga/foundation';
 import { loadProbeRecord, managedRecordPath, probeManagedFm } from '@momonga/gateway';
 import { FM_SERVER } from '@momonga/protocol';
 import { FAKE_OS_BUILD, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
 import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const setup = async () => {
   const dir = makeHome();
@@ -35,7 +37,7 @@ const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] 
   onWarning: (message: string) => void warnings.push(message),
 });
 
-describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('probeManagedFm', () => {
   it('serves fm on its own instance socket, probes it and records the report under its probe key', async () => {
     const context = await setup();
 

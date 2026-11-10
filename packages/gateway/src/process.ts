@@ -1,9 +1,28 @@
 import path from 'node:path';
-import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
+import {
+  createPinnedDerivation,
+  createStopValuesReader,
+  createUserSettingsCache,
+  credentialEnvNames,
+  derivedInputsOf,
+  diskKeptRecords,
+  keptSettingsDirectory,
+  loadUserSettings,
+  probeRecordKeyOf,
+  readUserStopValues,
+  registeredIds,
+  registeredServer,
+  resolveNetwork,
+  resolveTelemetrySettings,
+  settingsInputsDigest,
+  upstreamEndpointOf,
+} from '@momonga/config';
+import type { ResolvedSettings } from '@momonga/config';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
   acquireProcessLock,
+  JsonDepthError,
+  parseOutsideJson,
   SecretEmptyError,
   SecretUnavailableError,
   announceReady,
@@ -12,6 +31,12 @@ import {
   givenSecretStoreChildEnv,
   EntryUsageError,
   minimalChildEnv,
+  CREDENTIAL_CAPABILITY_ENV,
+  CREDENTIAL_CAPABILITY_HEADER,
+  createUdsClient,
+  fixedSocket,
+  SETTINGS_APPLIED_ENV,
+  nodeFileSystemSync,
   startDeadlineSignal,
   codeDigestOfRunningProcess,
   createBinaryHashCache,
@@ -25,12 +50,11 @@ import {
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
-import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
+import type { EndpointProbeKey, ServerRegistry, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
-import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
+import { installTrust, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
-  closeTelemetry,
   definePriceTable,
   formatCostReport,
   createTelemetry,
@@ -39,7 +63,7 @@ import {
   pageBilledCalls,
   startBodyPurge,
 } from '@momonga/observability';
-import type { Telemetry, TraceStore } from '@momonga/observability';
+import type { PriceTable, Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, DialectId, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from './dialect/choice.ts';
 import type { UserDialects } from './dialect/choice.ts';
@@ -85,9 +109,14 @@ import type { EndpointKey, EndpointLockKey } from './probe/endpoint-record.ts';
 import { createManagedTarget } from './managed/target.ts';
 import type { ExecWithStdinFn, ManagedTarget } from './managed/target.ts';
 import { createGateway } from './server/gateway.ts';
+import { createUnservedAdapter } from './adapters/unserved-adapter.ts';
+import { createRouter } from './core/router.ts';
+import { createReasoningOriginCodec } from './core/reasoning-origin.ts';
+import { createRedactor } from './core/redaction.ts';
+import type { GatewayEpoch, GatewayEpochs } from './core/services.ts';
 import { systemProcessPorts } from './process-ports.ts';
 import type { ProcessFilePorts } from './process-ports.ts';
-import type { GatewayConfig, GatewayTimers } from './types.ts';
+import type { GatewayConfig, GatewayEpochsShared, GatewayTimers } from './types.ts';
 
 export type StartGatewayProcessOptions = {
   home: string;
@@ -107,7 +136,6 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
-  managedServers?: readonly ManagedServerDescription[];
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
@@ -158,24 +186,49 @@ const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabiliti
 const startupFailureOf = (error: unknown): Error | undefined =>
   error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
 
-const warmSecrets = async (resolver: SecretResolver, names: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, Error>> => {
-  const failures = new Map<string, Error>();
-  for (const name of names) {
-    try {
-      await resolver.read(name, signal);
-    } catch (error) {
-      const failure = startupFailureOf(error);
-      if (failure === undefined) throw error;
-      failures.set(name, failure);
-    }
+type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | undefined>;
+
+const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
+
+const handedValueOf = (text: string): string | undefined => {
+  let answer: unknown;
+  try {
+    answer = parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return undefined;
+    throw error;
   }
-  return failures;
+  if (typeof answer !== 'object' || answer === null) return undefined;
+  const value = (answer as Record<string, unknown>)['value'];
+  return typeof value === 'string' && value !== '' ? value : undefined;
 };
+
+const credentialFromSupervisor =
+  (socketPath: string, capability: string | undefined, redact: (value: string) => void): HandedCredential =>
+  async (name, signal) => {
+    if (capability === undefined || capability === '') return undefined;
+    const client = createUdsClient(fixedSocket(socketPath));
+    try {
+      const response = await client.request({ method: 'GET', path: `/v1/credentials/${encodeURIComponent(name)}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability }, signal });
+      const text = await response.text();
+      if (response.status !== 200) return undefined;
+      const value = handedValueOf(text);
+      if (value === undefined) return undefined;
+      redact(value);
+      return value;
+    } catch (error) {
+      if (UNREACHABLE_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return undefined;
+      throw error;
+    } finally {
+      client.destroy();
+    }
+  };
 
 const apiKeyReader = (
   env: StartGatewayProcessOptions['env'],
   resolver: SecretResolver,
   target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>,
+  handed: HandedCredential,
 ): ((target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>) => {
   const { apiKeyEnv, apiKeySecret } = target;
   return async (_target, signal) => {
@@ -189,8 +242,10 @@ const apiKeyReader = (
       }
     }
     if (apiKeyEnv === undefined) return undefined;
-    const value = env[apiKeyEnv];
-    if (value === undefined || value === '') throw missingApiKeyError(apiKeyEnv);
+    const own = env[apiKeyEnv];
+    if (own !== undefined && own !== '') return own;
+    const value = await handed(apiKeyEnv, signal);
+    if (value === undefined) throw missingApiKeyError(apiKeyEnv);
     return value;
   };
 };
@@ -238,9 +293,9 @@ const onRecordKey =
 
 const SAMPLING_OF: Record<ManagedServerDescription['sampling'], { renders: [] }> = { none: { renders: [] } };
 
-const requiredServer = (servers: readonly ManagedServerDescription[], id: string): ManagedServerDescription => {
-  const description = managedServerOf(servers, id);
-  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`);
+const requiredServer = (servers: ServerRegistry | undefined, id: string): ManagedServerDescription => {
+  const description = registeredServer(servers, id);
+  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`);
   return description;
 };
 
@@ -260,10 +315,9 @@ type ManagedAdapterWiring = {
   timers: ManagedServerTimers;
   readStopGraceMs: () => number;
   requestLimitMs: number;
-  startSignal: AbortSignal;
+  keySignal: AbortSignal;
+  incarnation: number;
   userDialects: UserDialects;
-  clock: Clock;
-  liveness: UpstreamLiveness;
   spawn?: SpawnFn;
   onWarning: (message: string) => void;
 };
@@ -274,9 +328,11 @@ const listedModelOf = async (wiring: ManagedAdapterWiring, key: ManagedRecordKey
   return report?.modelId;
 };
 
-const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ adapter: ProviderAdapter; probeKey: string | undefined; listedModel: string | undefined }> => {
+type ManagedCore = { managed: ManagedTarget; probeKey: string | undefined; listedModel: string | undefined };
+
+const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedCore> => {
   const { name, target, description, paths } = wiring;
-  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', target: name });
+  const serving = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'serve', target: name, incarnation: wiring.incarnation });
   const probing = managedInstancePaths(paths, { owner: 'gateway', generation: wiring.generation, purpose: 'probe', target: name });
   const host = createHeldHostReadings();
   const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
@@ -297,6 +353,10 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     timers: wiring.timers,
     readStopGraceMs: wiring.readStopGraceMs,
     onWarning: wiring.onWarning,
+    onChildStart: async (signal) => {
+      if (managed === undefined) throw new Error(`the server of the target ${name} started a child before its target was wired`);
+      await managed.childStarting(signal);
+    },
     onChildExit: () => managed?.childExited(),
     ...spawnPort,
   });
@@ -355,10 +415,9 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
-  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
-  if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
-  return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
+  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.keySignal) : undefined;
+  if (startKey?.kind !== 'known') return { managed, probeKey: undefined, listedModel: undefined };
+  return { managed, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
 };
 
 const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
@@ -523,7 +582,7 @@ const DEBUG_TCP_HOST = '127.0.0.1';
 
 const NOT_LISTED_YET = 'not listed yet';
 
-const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerDescription[]): string => {
+const providerNameOf = (target: ResolvedTarget, servers: ServerRegistry | undefined): string => {
   switch (target.adapter) {
     case 'managed':
       return requiredServer(servers, target.server).provider;
@@ -558,7 +617,7 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
 export const gatewayConfigOf = (
   targets: ResolvedTargets,
   aliases: Record<string, string | string[]>,
-  servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
+  servers?: ServerRegistry,
   listedModels: ReadonlyMap<string, string> = new Map(),
 ): UncountedGatewayConfig => ({
   models: {
@@ -580,13 +639,42 @@ export const gatewayConfigOf = (
   ...GATEWAY_CONFIG_DEFAULTS,
 });
 
+const appliedRecordOf = (env: StartGatewayProcessOptions['env']): { appliedRecord?: string } => {
+  const record = env[SETTINGS_APPLIED_ENV];
+  return record === undefined ? {} : { appliedRecord: record };
+};
+
+type Closable = { close(values: StopValues | undefined): Promise<void> };
+
+type ManagedPart = ManagedCore & { readonly key: string; readonly closable: Closable };
+
+type TargetPart = {
+  readonly key: string;
+  readonly adapter: ProviderAdapter;
+  readonly counter: string;
+  readonly listedModel: string | undefined;
+  readonly managed?: ManagedPart;
+  readonly closables: readonly Closable[];
+};
+
+type ProcessEpoch = {
+  readonly gateway: GatewayEpoch;
+  readonly priceTable: PriceTable;
+  readonly parts: ReadonlyMap<string, TargetPart>;
+  readonly network: OutboundNetwork;
+  readonly networkDigest: string;
+};
+
+const adapterClosable = (adapter: ProviderAdapter): Closable => ({ close: async (values) => adapter.close?.(values) });
+
+const unmanagedPart = (key: string, adapter: ProviderAdapter, counter: string): TargetPart => ({ key, adapter, counter, listedModel: undefined, closables: [adapterClosable(adapter)] });
+
 export const startGatewayProcess = async (options: StartGatewayProcessOptions): Promise<GatewayProcess> => {
   const clock = options.clock ?? systemProcessPorts.clock;
   const timers = options.timers ?? systemProcessPorts.timers;
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
-  const managedServers = options.managedServers ?? MANAGED_SERVERS;
   const { signal } = options;
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
@@ -597,7 +685,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
+  const lifetime = new AbortController();
   const unwind = async (): Promise<Error[]> => {
+    lifetime.abort(new Error('the gateway is closing'));
     const failures: Error[] = [];
     for (const cleanup of cleanups.splice(0).reverse()) {
       try {
@@ -660,32 +750,57 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
   try {
     signal?.throwIfAborted();
-    const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers });
-    for (const warning of warnings) logger.warn(warning);
+    const cache = createUserSettingsCache({
+      home: options.home,
+      onWarning: (message) => logger.warn(message),
+      keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(options.home)),
+      ...appliedRecordOf(options.env),
+    });
+    const started = cache.snapshot();
+    if ('error' in started) throw started.error;
+    const { settings } = started;
     stopValues.remember(settings.gateway);
-    const networkConfig = resolveNetwork(settings.network, options.env);
-    const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
-    for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+    const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
+      const config = resolveNetwork(section, options.env);
+      const outbound: OutboundNetwork = { config, trust: await installTrust(config, files, installSignal === undefined ? {} : { signal: installSignal }) };
+      for (const failure of outbound.trust.failures) logger.warn(trustFailureText(failure));
+      return outbound;
+    };
+    const network = await outboundNetworkOf(settings.network, signal);
     signal?.throwIfAborted();
     await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
     const hmacKey = secretKeyFile(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,
     });
-    const priceTable = definePriceTable(settings.pricing === undefined ? [] : settings.pricing);
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
-    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
-    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
-    const telemetry: Telemetry = createTelemetry({
-      serviceName: 'momonga-gateway',
-      serviceVersion: options.version,
-      clock,
-      store: traceStore,
-      exporters: exportersFor(settings.telemetry, network),
-      captureMessageContent: telemetrySettings.captureMessageContent,
-      contentRetentionMs,
+    cleanups.push(() => traceStore.close());
+    const telemetryOf = (current: ResolvedSettings, outbound: OutboundNetwork): Telemetry => {
+      const resolved = resolveTelemetrySettings(current.telemetry);
+      return createTelemetry({
+        serviceName: 'momonga-gateway',
+        serviceVersion: options.version,
+        clock,
+        store: traceStore,
+        exporters: exportersFor(current.telemetry, outbound),
+        captureMessageContent: resolved.captureMessageContent,
+        contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+      });
+    };
+    const telemetries = createPinnedDerivation<Telemetry>({
+      cache,
+      signal: lifetime.signal,
+      inputsOf: derivedInputsOf('D2'),
+      derive: async (current, _previous, deriveSignal) => telemetryOf(current, await outboundNetworkOf(current.network, deriveSignal)),
+      retire: async (retired) => {
+        await retired.forceFlush();
+        await retired.shutdown();
+      },
+      onWarning: (message) => logger.warn(message),
     });
-    cleanups.push(() => closeTelemetry(telemetry, traceStore));
+    cleanups.push(() => telemetries.retireAll());
+    (await telemetries.admit(startSignal)).release();
+    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
     const bodyPurge = startBodyPurge({
       store: traceStore,
       timers,
@@ -697,16 +812,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
-    const targets = Object.entries(settings.models.targets).map(([name, target]): [string, ServedTarget] => {
-      if ('plan' in target) throw new Error(`target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`);
-      return [name, target];
-    });
-    const adapters: Record<string, ProviderAdapter> = {};
-    const listedModels = new Map<string, string>();
-    const closeAdapters = async (): Promise<void> => {
-      await Promise.all(Object.values(adapters).map((adapter) => adapter.close?.()));
-    };
-    cleanups.push(closeAdapters);
 
     const autoProbe = createAutoProbe({
       dir: paths.probe,
@@ -733,96 +838,255 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const execWithStdin = options.execWithStdin ?? createExecWithStdin(childEnv);
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
-    const counters: Record<string, string> = {};
-    const referencedSecrets = secretNames(settings);
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
-    const secretResolver = createSecretResolver(secretStore);
-    const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
-    for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
+    const secretResolverOfPart = (): SecretResolver => {
+      const resolver = createSecretResolver(secretStore);
+      resolver.onResolved((name, value) => {
+        for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) shared.redactor.add(credential);
+      });
+      return resolver;
+    };
     signal?.throwIfAborted();
-    const userDialects = settings.models.dialects;
-    const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs, timers };
-    for (const [name, target] of targets) {
-      signal?.throwIfAborted();
+
+    let handedCredential: HandedCredential = async () => undefined;
+    const holds = new Map<Closable, number>();
+    const hold = (closable: Closable): void => {
+      holds.set(closable, (holds.get(closable) ?? 0) + 1);
+    };
+    const letGo = async (closable: Closable): Promise<void> => {
+      const left = (holds.get(closable) ?? 0) - 1;
+      if (left > 0) {
+        holds.set(closable, left);
+        return;
+      }
+      holds.delete(closable);
+      await closable.close(closeValues);
+    };
+    const closablesOf = (epoch: ProcessEpoch): Closable[] => [...epoch.parts.values()].flatMap((part) => part.closables);
+    const liveEpochs = new Set<ProcessEpoch>();
+    const incarnations = new Map<string, number>();
+    const nextIncarnation = (name: string): number => {
+      const incarnation = (incarnations.get(name) ?? 0) + 1;
+      incarnations.set(name, incarnation);
+      return incarnation;
+    };
+
+    const buildPart = async (
+      name: string,
+      target: ServedTarget,
+      current: ResolvedSettings,
+      outbound: OutboundNetwork,
+      keySignal: AbortSignal,
+      previous: TargetPart | undefined,
+      keys: { part: string; core: string },
+    ): Promise<TargetPart> => {
+      const userDialects = current.models.dialects;
+      const liveness: UpstreamLiveness = { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers };
       if (target.adapter === 'managed') {
-        const wired = await createManagedAdapter({
-          name,
-          target,
-          description: requiredServer(managedServers, target.server),
-          paths,
-          childEnv,
-          exec,
-          execWithStdin,
-          hashes,
-          files,
-          autoProbe,
-          probeServers,
-          timers: managedTimers,
-          readStopGraceMs,
-          requestLimitMs: settings.models.headersTimeoutMs,
-          startSignal,
-          generation: options.generation,
-          userDialects,
-          clock,
-          liveness,
-          onWarning: (message) => logger.warn(message),
-          ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-        });
-        adapters[name] = wired.adapter;
-        if (wired.listedModel !== undefined) listedModels.set(name, wired.listedModel);
-        counters[name] = targetCounterOf({ target, codeDigest, ...(wired.probeKey === undefined ? {} : { probeKey: wired.probeKey }) });
-        continue;
+        const server = requiredServer(current.models.servers, target.server);
+        const carried = previous?.managed !== undefined && previous.managed.key === keys.core ? previous.managed : undefined;
+        const core =
+          carried ??
+          (await (async (): Promise<ManagedPart> => {
+            const built = await createManagedCore({
+              name,
+              target,
+              description: server,
+              paths,
+              childEnv,
+              exec,
+              execWithStdin,
+              hashes,
+              files,
+              autoProbe,
+              probeServers,
+              timers: managedTimers,
+              readStopGraceMs,
+              requestLimitMs: current.models.headersTimeoutMs,
+              keySignal,
+              incarnation: nextIncarnation(name),
+              generation: options.generation,
+              userDialects,
+              onWarning: (message) => logger.warn(message),
+              ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+            });
+            return { key: keys.core, ...built, closable: { close: (values) => built.managed.close(values) } };
+          })());
+        const { close: _stopsTheServer, ...serving } = core.managed;
+        const adapter = createChatCompletionsAdapter({ ...serving, sampling: SAMPLING_OF[server.sampling], clock, userDialects, liveness });
+        return {
+          key: keys.part,
+          adapter,
+          counter: targetCounterOf({ target, server, codeDigest, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
+          listedModel: core.listedModel,
+          managed: core,
+          closables: [adapterClosable(adapter), core.closable],
+        };
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, network, probes);
-        adapters[name] = probed.adapter;
-        counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
-        continue;
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
+        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      const readKey = apiKeyReader(options.env, secretResolver, target);
-      const identify = identificationOf(name, target, network);
+      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
+      const identify = identificationOf(name, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, network, probes);
-        adapters[name] = probed.adapter;
-        counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
-        continue;
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
+        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      counters[name] = targetCounterOf({ target, codeDigest });
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
       const common = {
         resolveEndpoint: async (_target: AdapterTarget, requestSignal: AbortSignal) => {
           await identify(requestSignal);
-          return reachableEndpoint(upstreamEndpointOf(target), network);
+          return reachableEndpoint(upstreamEndpointOf(target), outbound);
         },
         capabilities: async () => capabilitiesOf(target, mode),
         clock,
         userDialects,
         liveness,
       };
+      const counter = targetCounterOf({ target, codeDigest });
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), apiKey: readKey });
-          break;
+          return unmanagedPart(keys.part, createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), apiKey: readKey }), counter);
         case 'open-responses':
-          adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
-          break;
+          return unmanagedPart(keys.part, createOpenResponsesAdapter({ ...common, apiKey: readKey }), counter);
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
-          break;
+          return unmanagedPart(
+            keys.part,
+            createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, apiKey: (adapterTarget, keyedSignal) => requiredKey(readKey, adapterTarget, keyedSignal) }),
+            counter,
+          );
       }
-    }
+    };
+
+    const deriveEpoch = async (shared: GatewayEpochsShared, current: ResolvedSettings, previous: ProcessEpoch | undefined, keySignal: AbortSignal): Promise<ProcessEpoch> => {
+      const networkDigest = settingsInputsDigest(current.network ?? null);
+      const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
+      const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
+      const parts = new Map<string, TargetPart>();
+      const built: Closable[] = [];
+      try {
+        for (const [name, target] of Object.entries(current.models.targets) as Array<[string, ResolvedTarget]>) {
+          if ('plan' in target) {
+            const reason = `target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`;
+            logger.warn(reason);
+            parts.set(name, unmanagedPart(settingsInputsDigest({ target }), createUnservedAdapter(reason), targetCounterOf({ target, codeDigest })));
+            continue;
+          }
+          const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
+          const keys = {
+            part: settingsInputsDigest({ target, server, ...shape, network: target.adapter === 'managed' ? null : (current.network ?? null) }),
+            core: settingsInputsDigest({ target, server, userDialects: shape.userDialects, requestLimitMs: shape.headersTimeoutMs }),
+          };
+          const livePartsOf = [previous, ...liveEpochs].flatMap((epoch) => {
+            const part = epoch?.parts.get(name);
+            return part === undefined ? [] : [part];
+          });
+          const kept = livePartsOf.find((part) => part.key === keys.part);
+          if (kept !== undefined) {
+            parts.set(name, kept);
+            continue;
+          }
+          const carriedCore = livePartsOf.find((part) => part.managed?.key === keys.core);
+          const part = await buildPart(name, target, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys);
+          built.push(...part.closables.filter((closable) => !holds.has(closable)));
+          parts.set(name, part);
+        }
+      } catch (error) {
+        await Promise.all(built.map((closable) => closable.close(undefined)));
+        throw error;
+      }
+      const listedModels = new Map([...parts].flatMap(([name, part]): Array<[string, string]> => (part.listedModel === undefined ? [] : [[name, part.listedModel]])));
+      const counters = Object.fromEntries([...parts].map(([name, part]) => [name, part.counter]));
+      const config = withCounters(gatewayConfigOf(current.models.targets, current.models.aliases, current.models.servers, listedModels), counters);
+      const adapters: Record<string, ProviderAdapter> = {};
+      for (const [name, part] of parts) {
+        adapters[name] = part.adapter;
+      }
+      const router = createRouter({
+        config,
+        adapters,
+        clock,
+        timers,
+        redactor: shared.redactor,
+        reasoningOrigin: shared.reasoningOrigin,
+        ...(previous === undefined ? {} : { previous: previous.gateway.router }),
+        live: [...liveEpochs].map((epoch) => epoch.gateway.router),
+      });
+      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
+      const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
+      const epoch: ProcessEpoch = {
+        gateway: { router, priceTable, telemetry: undefined },
+        priceTable,
+        parts,
+        network: outbound,
+        networkDigest,
+      };
+      for (const closable of closablesOf(epoch)) hold(closable);
+      liveEpochs.add(epoch);
+      return epoch;
+    };
+
+    const shared: GatewayEpochsShared = { redactor: createRedactor({ credentials: [] }), reasoningOrigin: createReasoningOriginCodec(hmacKey) };
+    handedCredential = credentialFromSupervisor(own.sockets.supervisor, options.env[CREDENTIAL_CAPABILITY_ENV], (value) => shared.redactor.add(value));
+    const derivation = createPinnedDerivation<ProcessEpoch>({
+      cache,
+      signal: lifetime.signal,
+      inputsOf: derivedInputsOf('D1'),
+      derive: (current, previous, deriveSignal) => deriveEpoch(shared, current, previous, deriveSignal),
+      retire: async (epoch) => {
+        liveEpochs.delete(epoch);
+        await Promise.all(closablesOf(epoch).map(letGo));
+      },
+      onWarning: (message) => logger.warn(message),
+    });
+    const retireEpochsAtFailedStart = (): Promise<void> => derivation.retireAll();
+    cleanups.push(retireEpochsAtFailedStart);
+    (await derivation.admit(startSignal)).release();
+    const epochs: GatewayEpochs = {
+      acquire: async (requestSignal) => {
+        const lease = await derivation.acquire(requestSignal);
+        try {
+          const traced = await telemetries.acquire(requestSignal);
+          return {
+            value: { ...lease.value.gateway, telemetry: traced.value },
+            release: () => {
+              traced.release();
+              lease.release();
+            },
+          };
+        } catch (error) {
+          lease.release();
+          throw error;
+        }
+      },
+      close: () => derivation.retireAll(),
+    };
+    const flushTelemetry = async (requestSignal: AbortSignal): Promise<void> => {
+      const traced = await telemetries.acquire(requestSignal);
+      try {
+        await traced.value.forceFlush();
+      } finally {
+        traced.release();
+      }
+    };
+    const withPriceTable = async <T>(signal: AbortSignal, work: (priceTable: PriceTable) => Promise<T>): Promise<T> => {
+      const lease = await derivation.acquire(signal);
+      try {
+        return await work(lease.value.priceTable);
+      } finally {
+        lease.release();
+      }
+    };
 
     signal?.throwIfAborted();
     const gateway = await createGateway({
       startSignal,
-      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels), counters),
-      adapters,
-      credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
-      credentialFeed: (add) =>
-        secretResolver.onResolved((name, value) => {
-          for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) add(credential);
-        }),
+      limits: GATEWAY_CONFIG_DEFAULTS,
+      epochs,
+      ...shared,
+      credentials: [],
       clock,
       timers,
       random,
@@ -830,24 +1094,24 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       hmacKey,
       socketPath: own.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
-      telemetry,
-      priceTable,
-      costReport: async (runs, includeRunless) => {
-        await telemetry.forceFlush();
-        const report = buildCostReport(traceStore, runs, { table: priceTable, includeRunless });
-        return { report, text: formatCostReport(report) };
-      },
-      billedCalls: async (runIds, cursor, limit, includeRunless) => {
-        await telemetry.forceFlush();
-        return pageBilledCalls(traceStore, runIds, priceTable, cursor, limit, includeRunless);
-      },
+      costReport: (runs, includeRunless, requestSignal) =>
+        withPriceTable(requestSignal, async (table) => {
+          await flushTelemetry(requestSignal);
+          const report = buildCostReport(traceStore, runs, { table, includeRunless });
+          return { report, text: formatCostReport(report) };
+        }),
+      billedCalls: (runIds, cursor, limit, includeRunless, requestSignal) =>
+        withPriceTable(requestSignal, async (table) => {
+          await flushTelemetry(requestSignal);
+          return pageBilledCalls(traceStore, runIds, table, cursor, limit, includeRunless);
+        }),
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,
     });
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
-    cleanups.splice(cleanups.indexOf(closeAdapters), 1);
     cleanups.splice(cleanups.indexOf(closeProbes), 1);
+    cleanups.splice(cleanups.indexOf(retireEpochsAtFailedStart), 1);
     cleanups.push(() => closeTogether([abortRequested ? gateway.abort(closeValues) : gateway.close(closeValues), closeProbes()]));
     requestGatewayAbort = () => void gateway.abort(closeValues);
     gatewayAbandonedRuns = () => gateway.abandonedRuns;

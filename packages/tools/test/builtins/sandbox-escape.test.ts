@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
@@ -9,7 +9,7 @@ import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 const escapeFixture = async (realSandbox: boolean) => {
   const tools = await makeBuiltins({ realSandbox });
@@ -34,7 +34,7 @@ const escapeFixture = async (realSandbox: boolean) => {
 const bash = (tools: Builtins, command: string, extra: RunExtra) => tools.run('Bash', { command }, extra, 'allow_once');
 
 describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash', () => {
-  it('cwd / cannot write home/.momonga', PROCESS_TIMEOUT, async () => {
+  it('cwd / cannot write home/.momonga', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.momonga, 'x');
     const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor(['/'])}' && printf escaped > '${target}'`, fx.extraFor(['/'], '/')));
@@ -43,7 +43,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
     expect(fs.existsSync(target)).toBe(false);
   });
 
-  it('cwd home cannot write home/.momonga', PROCESS_TIMEOUT, async () => {
+  it('cwd home cannot write home/.momonga', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.momonga, 'x');
     const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor([fx.home])}' && printf escaped > '${target}'`, fx.extraFor([fx.home], fx.home)));
@@ -52,7 +52,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
     expect(fs.existsSync(target)).toBe(false);
   });
 
-  it('cwd home cannot write home/Library/Keychains', PROCESS_TIMEOUT, async () => {
+  it('cwd home cannot write home/Library/Keychains', async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.keychains, 'x');
     const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor([fx.home])}' && printf escaped > '${target}'`, fx.extraFor([fx.home], fx.home)));
@@ -61,7 +61,7 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
     expect(fs.existsSync(target)).toBe(false);
   });
 
-  it("cwd home cannot write another session's tmp dir", PROCESS_TIMEOUT, async () => {
+  it("cwd home cannot write another session's tmp dir", async () => {
     const fx = await escapeFixture(true);
     const target = path.join(fx.other, 'x');
     const result = resultOf(await bash(fx.tools, `touch '${fx.markerFor([fx.home])}' && printf escaped > '${target}'`, fx.extraFor([fx.home], fx.home)));
@@ -70,14 +70,14 @@ describe.runIf(HAS_REAL_SANDBOX)('always-denied writes under real sandbox Bash',
     expect(fs.existsSync(target)).toBe(false);
   });
 
-  it('cwd home can still write its own session tmp dir', PROCESS_TIMEOUT, async () => {
+  it('cwd home can still write its own session tmp dir', async () => {
     const fx = await escapeFixture(true);
     const result = resultOf(await bash(fx.tools, `printf own > "$TMPDIR/own"`, fx.extraFor([fx.home], fx.home)));
     expect(result.status).toBe('completed');
     expect(fs.readFileSync(path.join(fx.mine, 'own'), 'utf8')).toBe('own');
   });
 
-  it('a normal project cwd still writes the project and not home/.momonga', PROCESS_TIMEOUT, async () => {
+  it('a normal project cwd still writes the project and not home/.momonga', async () => {
     const fx = await escapeFixture(true);
     const project = fx.tools.layout.project;
     const inside = path.join(project, 'inside.txt');

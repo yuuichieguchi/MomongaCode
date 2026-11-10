@@ -12,6 +12,8 @@ import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-supp
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const ALIAS = 'default';
 const CONTEXT_WINDOW = 12288;
 
@@ -115,7 +117,7 @@ const splitCountOf = async (client: Client, tools: FunctionTool[]) => {
   return { capabilities, rejections, outcome };
 };
 
-describe('the token meter split on an output rewritten in place, per target kind', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the token meter split on an output rewritten in place, per target kind', () => {
   it('counts it on an ollama target, whose count estimates the input without rendering the history', async () => {
     const { rejections, outcome } = await splitCountOf(await ollamaClient(), [READ_TOOL]);
     expect(rejections).toEqual([]);

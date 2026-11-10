@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { HOUR_MS, entriesNamed, launchRuntime, settledState, startStack } from './run-helpers.ts';
+
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
 type Injection = { error: Error; frame: string } | undefined;
 
@@ -68,7 +70,6 @@ vi.mock('@momonga/mcp', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const POOL_REFERENCE_AUDIT_MS = 300_000;
 
 beforeEach(() => {
@@ -122,7 +123,7 @@ const poolCheckSource = async (launched: Awaited<ReturnType<typeof launchFake>>,
 const MCP_SETTINGS = { mcpServers: { fx: { command: '/usr/bin/true', args: [] } } };
 
 describe('error routing of composition-owned callbacks through report (fake timers and fake clock, in-process gateway)', () => {
-  it('a fatal store error from the hourly purge latches fatal', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error from the hourly purge latches fatal', async () => {
     const launched = await launchFake();
     const error = fatalStoreError();
     control.purge = { error, frame: '' };
@@ -131,7 +132,7 @@ describe('error routing of composition-owned callbacks through report (fake time
     await expectLatched(launched, error);
   });
 
-  it('a non-fatal error from the hourly purge is only logged and the purge keeps running', PROCESS_TIMEOUT, async () => {
+  it('a non-fatal error from the hourly purge is only logged and the purge keeps running', async () => {
     const launched = await launchFake();
     const error = new Error('purge failed');
     control.purge = { error, frame: '' };
@@ -143,28 +144,28 @@ describe('error routing of composition-owned callbacks through report (fake time
     expect(control.injected).toBe(2);
   });
 
-  it('a fatal store error from the hourly session sweep latches fatal', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error from the hourly session sweep latches fatal', async () => {
     const launched = await launchFake();
     const error = fatalStoreError();
     await sweepSource(launched, error);
     await expectLatched(launched, error);
   });
 
-  it('a non-fatal error from the hourly session sweep is only logged', PROCESS_TIMEOUT, async () => {
+  it('a non-fatal error from the hourly session sweep is only logged', async () => {
     const launched = await launchFake();
     const error = new Error('session activity failed');
     await sweepSource(launched, error);
     await expectLoggedOnly(launched, error);
   });
 
-  it('a fatal store error from a pool-cache check latches fatal', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error from a pool-cache check latches fatal', async () => {
     const launched = await launchFake({}, MCP_SETTINGS);
     const error = fatalStoreError();
     await poolCheckSource(launched, error);
     await expectLatched(launched, error);
   });
 
-  it('a non-fatal error from a pool-cache check is only logged', PROCESS_TIMEOUT, async () => {
+  it('a non-fatal error from a pool-cache check is only logged', async () => {
     const launched = await launchFake({}, MCP_SETTINGS);
     const error = new Error('pool check failed');
     await poolCheckSource(launched, error);

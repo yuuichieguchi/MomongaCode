@@ -1,13 +1,12 @@
-import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
+import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
-import { processOutboundNetwork } from '../network.ts';
+import { withOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 type OllamaConfig = Extract<Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'][string], { adapter: 'ollama' }>;
@@ -39,8 +38,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'managed') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
+  if (configured?.adapter === 'chat-completions') return withOutboundNetwork(ports, options.interrupt, (network) => probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, network));
+  if (configured?.adapter === 'ollama') return withOutboundNetwork(ports, options.interrupt, (network) => probeOllama(ports, paths, target, configured, options, settings.models.dialects, network));
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -171,7 +170,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
   const configured: ManagedConfig | undefined = targets[target]?.adapter === 'managed' ? (targets[target] as ManagedConfig) : undefined;
   if (configured === undefined) throw new NotAProbeableTarget(target, targets);
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
-  const description = managedServerOf(MANAGED_SERVERS, configured.server);
+  const description = registeredServer(settings.models.servers, configured.server);
   if (description === undefined) throw new NotAProbeableTarget(target, targets);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,

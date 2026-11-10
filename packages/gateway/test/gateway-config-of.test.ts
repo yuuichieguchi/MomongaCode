@@ -10,7 +10,7 @@ const targetsFor = async (models: Record<string, unknown>) => {
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models }), { mode: 0o600 });
   const { settings } = await loadUserSettings({ home });
-  return gatewayConfigOf(settings.models.targets, settings.models.aliases).models.targets;
+  return gatewayConfigOf(settings.models.targets, settings.models.aliases, settings.models.servers).models.targets;
 };
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };

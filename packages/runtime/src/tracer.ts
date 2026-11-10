@@ -2,7 +2,7 @@ import { contextOf, recordError, recordToolBackend, recordToolContent, startAgen
 import type { Telemetry } from '@momonga/observability';
 import type { Span } from '@opentelemetry/api';
 import { GatewayRequestError } from './gateway-client.ts';
-import type { TracerPort, TraceSpan } from './ports.ts';
+import type { TracerLeases, TracerPort, TraceSpan } from './ports.ts';
 import { LeaseLostError, ShutdownError } from './worker/errors.ts';
 
 const AGENT_NAME = 'momonga';
@@ -54,3 +54,5 @@ export const createTracerPort = (telemetry: Telemetry): TracerPort => ({
       telemetry.captureMessageContent,
     ),
 });
+
+export const fixedTracers = (tracer: TracerPort): TracerLeases => ({ acquire: async () => ({ value: tracer, release: () => undefined }) });

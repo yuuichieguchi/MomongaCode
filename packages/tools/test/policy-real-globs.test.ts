@@ -1,11 +1,13 @@
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeRealWorkspace } from './real-workspace.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const ALLOW_CAT = [['allow', 'Bash(cat:*)']] as const;
 
-describe('a glob or brace read operand is judged by the files it expands to (real /bin/bash)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a glob or brace read operand is judged by the files it expands to (real /bin/bash)', () => {
   it('bash reads every brace alternative and every glob match', () => {
     const workspace = makeRealWorkspace();
     workspace.write('a', 'A\n');

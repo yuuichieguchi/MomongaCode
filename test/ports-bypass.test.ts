@@ -144,6 +144,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/store/src/blobs.ts': { 'node:fs': 1 },
   'packages/store/src/runtime-store.ts': { 'node:fs': 1 },
   'packages/store/src/trust.ts': { 'node:fs': 1 },
+  'packages/supervisor/src/child-manager.ts': { 'randomBytes': 1 },
   'packages/supervisor/src/orphans.ts': { 'node:fs': 1 },
   'packages/supervisor/src/settings-watch.ts': { 'node:fs': 1 },
   'packages/supervisor/src/start-supervisor.ts': { 'setTimeout': 1, 'node:fs': 1 },

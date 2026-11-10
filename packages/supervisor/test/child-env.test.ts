@@ -27,7 +27,7 @@ const configErrorMessage = (home: string): string => {
 };
 
 describe('gatewayEnv', () => {
-  it('gateway env has exactly the minimal names plus declared credentials', () => {
+  it('gateway env has exactly the minimal names, the secret store location and the declared credentials', () => {
     const source = {
       PATH: '/opt/homebrew/bin:/usr/bin',
       HOME: '/Users/u',
@@ -39,12 +39,9 @@ describe('gatewayEnv', () => {
       FOO: 'foo',
       NODE_OPTIONS: '--require /x.js',
     };
-    const env = gatewayEnv(
-      source,
-      declaring('UPSTREAM_X', 'ABSENT_KEY'),
-      '/canonical/home',
-    );
+    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home');
     expect(env).toEqual({
+      ...secretStoreEnvFor(source),
       PATH: MINIMAL_CHILD_PATH,
       HOME: '/Users/u',
       LANG: 'en_US.UTF-8',
@@ -90,14 +87,13 @@ describe('gatewayEnv', () => {
       '/canonical/home',
       (name) => skipped.push(name),
     );
-    expect(env).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8', ...secretStoreEnvFor(source) });
+    expect(env).toEqual({ ...secretStoreEnvFor(source), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
     for (const value of ['declared-path-value', 'declared-node-options', 'declared-ld-preload', 'declared-dyld']) expect(Object.values(env)).not.toContain(value);
     expect([...skipped].sort()).toEqual(['DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL', 'LD_PRELOAD', 'NODE_OPTIONS', 'PATH']);
   });
 
   it('gateway HOME comes from the canonical home when the env lacks it', () => {
-    const source = { PATH: '/bin', LANG: 'C' };
-    expect(gatewayEnv(source, declaring(), '/canonical/home')).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C', ...secretStoreEnvFor(source) });
+    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home')).toEqual({ ...secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
   });
 });
 
@@ -217,7 +213,7 @@ describe('undefined values', () => {
     expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...secretStoreEnvFor(definedEnv(source)) });
     expect(Object.keys(runtime.env)).not.toContain('GONE');
     const gateway = gatewayEnv(source, declaring(), '/h');
-    expect(gateway).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/h', ...secretStoreEnvFor(definedEnv(source)) });
+    expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source)), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
     expect(Object.values(gateway)).not.toContain(undefined);
   });
 });

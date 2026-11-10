@@ -2,16 +2,18 @@ import fs from 'node:fs';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import net from 'node:net';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSeatbeltSandbox, createUnsandboxed } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy, SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { collect, isAlive, makeTempDir, run, waitUntilDead } from './helpers.ts';
 
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
 const KILL_GRACE_MS = 300;
 const BASE_ENV = { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' };
 
-describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-exec)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe.runIf(process.platform === 'darwin')('seatbelt sandbox (real sandbox-exec)', () => {
   let created: string[] = [];
   let spawned: SandboxedProcess[] = [];
   let servers: net.Server[] = [];

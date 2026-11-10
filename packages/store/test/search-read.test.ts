@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import type { HistoryVisibility, RuntimeStore } from '@momonga/store';
 import { harness } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, openRun, projectDir, redactor } from './search-fixture.ts';
+import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const OWN: HistoryVisibility = { trusted: true, project: '/work/a' };
 

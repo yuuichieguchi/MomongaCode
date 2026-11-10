@@ -25,6 +25,7 @@ import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
 import { E2E_MARGIN_MS } from './wait.ts';
 import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
+import { fixedSandboxBindings } from '@momonga/runtime';
 
 export { budgetFor, errorBoundFor, wireOf, wireTokensOf };
 
@@ -462,9 +463,9 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
         clock: systemClock,
         home: plan.home.home,
         redactor: createRedactor({ credentials: [] }),
-        enforcement: 'exact-paths',
+        enforcement: () => 'exact-paths',
       }),
-      tools: { sandbox: createUnsandboxed() },
+      tools: { sandboxes: fixedSandboxBindings(createUnsandboxed()) },
       onContextOverflow: (error: ContextOverflowError) => {
         overflows.push({ inputTokens: error.inputTokens, inputBudget: error.inputBudget, level: error.level });
       },

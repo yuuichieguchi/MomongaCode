@@ -1,11 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks } from '@momonga/testkit';
 import { pollUntil, processGroupOf } from './support/p2-poll.ts';
 import { CHILD_FIXTURE, portOptions, readOnlyScratchFd, watch } from './support/p2-real-children.ts';
 import { trackedSpawnPort } from './support/tracked-spawn-port.ts';
 
-describe('real SpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
+
+describe('real SpawnPort', () => {
   it('spawns a detached child with piped output and a lifeline', async (context) => {
     const markerFd = readOnlyScratchFd(context);
     const port = trackedSpawnPort(context);
