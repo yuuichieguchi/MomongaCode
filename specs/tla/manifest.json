@@ -4835,6 +4835,70 @@
       "measuredSeconds": 1.15,
       "measuredCpuSeconds": 1.46,
       "budgetCpuSeconds": 6
+    },
+    {
+      "config": "CredentialKey.osFails",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 63049,
+      "measuredSeconds": 2.06,
+      "measuredCpuSeconds": 3.12,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "CredentialKey.osFailsRemoves",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 212399,
+      "measuredSeconds": 4.03,
+      "measuredCpuSeconds": 5.84,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "CredentialKey.noExit",
+      "role": "evidence",
+      "expect": {
+        "violates": "OsWaitHasExit",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9,
+      "measuredSeconds": 1.11,
+      "measuredCpuSeconds": 1.43,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "CredentialKey.failWritesMarker",
+      "role": "evidence",
+      "expect": {
+        "violates": "MarkerImpliesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 57,
+      "measuredSeconds": 1.17,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.failWritesRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "FailureLeavesNoTrace",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 57,
+      "measuredSeconds": 1.24,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
     }
   ]
 }

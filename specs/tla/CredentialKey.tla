@@ -3,7 +3,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS Writers, MaxNames, MaxCrash, Attempts, Toggles, CanRemove, OsStore, Variant
 
-ASSUME Variant \in {"decided", "noLock", "recordBeforeKey", "markerBeforeKey", "recreateOnReadFailure", "plaintextFallback"}
+ASSUME Variant \in {"decided", "noLock", "recordBeforeKey", "markerBeforeKey", "recreateOnReadFailure", "plaintextFallback", "osFails", "noExit", "failWritesMarker", "failWritesRecord"}
 ASSUME MaxNames \in Nat \ {0}
 ASSUME MaxCrash \in Nat
 ASSUME Attempts \in Nat \ {0}
@@ -185,8 +185,38 @@ UserTogglesPlaintext ==
     /\ optIn' = ~optIn
     /\ UNCHANGED <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, removed>>
 
+FailsOs == Variant \in {"osFails", "failWritesMarker", "failWritesRecord"}
+
+OsTouching(p) ==
+    /\ OsStore
+    /\ \/ pc[p] = "fast" /\ ~optIn /\ marker /= 0
+       \/ pc[p] = "locked"
+       \/ pc[p] = "creating" /\ Order[ix[p]] = "os"
+
+OsFail(p) ==
+    /\ FailsOs
+    /\ OsTouching(p)
+    /\ pc' = [pc EXCEPT ![p] = "done"]
+    /\ lock' = IF lock = p THEN 0 ELSE lock
+    /\ marker' = IF Variant = "failWritesMarker" /\ pc[p] = "creating" THEN gen[p] ELSE marker
+    /\ records' = IF Variant = "failWritesRecord" /\ pc[p] = "creating"
+                  THEN records \cup {[key |-> gen[p], kind |-> "enc"]}
+                  ELSE records
+    /\ UNCHANGED <<items, ever, nextName, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
+OsFailAfterWrite(p) ==
+    /\ Variant = "osFails"
+    /\ OsStore
+    /\ pc[p] = "creating"
+    /\ Order[ix[p]] = "os"
+    /\ items' = items \cup {gen[p]}
+    /\ ever' = ever \cup {gen[p]}
+    /\ pc' = [pc EXCEPT ![p] = "done"]
+    /\ lock' = IF lock = p THEN 0 ELSE lock
+    /\ UNCHANGED <<marker, records, nextName, ix, base, gen, key, todo, crashes, optIn, toggled, removed>>
+
 Next ==
-    \/ \E p \in Writers : Start(p) \/ Fast(p) \/ Lock(p) \/ Reread(p) \/ Gen(p) \/ Creating(p) \/ Rec(p) \/ Finish(p) \/ Crash(p)
+    \/ \E p \in Writers : Start(p) \/ Fast(p) \/ Lock(p) \/ Reread(p) \/ Gen(p) \/ Creating(p) \/ Rec(p) \/ Finish(p) \/ Crash(p) \/ OsFail(p) \/ OsFailAfterWrite(p)
     \/ \E n \in Names : UserRemovesItem(n)
     \/ UserRemovesMarker
     \/ UserTogglesPlaintext
@@ -219,5 +249,15 @@ MarkerWrittenOnce ==
 
 NoPlaintextUnlessOptIn ==
     [][\A r \in records' \ records : r.kind = "plain" => optIn]_vars
+
+OsWaitHasExit ==
+    \A p \in Writers : OsTouching(p) => ENABLED OsFail(p)
+
+DoneReleasesLock ==
+    \A p \in Writers : pc[p] = "done" => lock /= p
+
+FailureLeavesNoTrace ==
+    [][\A p \in Writers :
+        (pc[p] \in {"fast", "locked", "creating"} /\ pc'[p] = "done") => (records' = records /\ marker' = marker)]_vars
 
 ===============================================================================
