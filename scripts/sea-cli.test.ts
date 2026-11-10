@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { startFakeChatCompletions, testHostPath } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
 import { chatCompletions, textReply, toolCallReply } from '../e2e/support/upstream.ts';
@@ -51,7 +51,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
 
   const run = (...args: string[]): Promise<Invocation> =>
     new Promise((resolve, reject) => {
-      execFile(binary, args, { cwd: project, env: { PATH: '/usr/bin:/bin', HOME: root }, encoding: 'utf8' }, (error, stdout, stderr) => {
+      execFile(binary, args, { cwd: project, env: { PATH: testHostPath('/usr/bin:/bin'), HOME: root }, encoding: 'utf8' }, (error, stdout, stderr) => {
         if (error !== null && typeof error.code !== 'number') reject(error);
         else resolve({ status: error === null ? 0 : (error.code as number), stdout, stderr });
       });

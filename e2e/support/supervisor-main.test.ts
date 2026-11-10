@@ -6,7 +6,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BASE_ENTRY_FLAGS, EntryUsageError, parseFlags } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { registerCleanup, spawnTracked, startFakeChatCompletions, testHostPath, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { STDERR_FLOOD_BYTES } from './fixtures/stderr-flood-supervisor.ts';
 import type { StackParentReport, StackParentRequest } from './fixtures/stack-parent.ts';
@@ -73,7 +73,7 @@ const manualE2eRoot = (context: CleanupContext): string => {
 };
 
 const guardEnv = (home: string, overrides: Record<string, string> = {}): Record<string, string> => ({
-  PATH: SUPERVISOR_ENV_PATH,
+  PATH: testHostPath(SUPERVISOR_ENV_PATH),
   HOME: home,
   TMPDIR: home,
   LANG: 'C',
@@ -163,7 +163,7 @@ describe('supervisor argv and env', () => {
     const home = await createE2eHome();
     const depsFile = path.join(home.root, 'deps-1.json');
     expect(supervisorEnv(home, depsFile)).toEqual({
-      PATH: '/usr/bin:/bin:/usr/sbin:/sbin',
+      PATH: testHostPath('/usr/bin:/bin:/usr/sbin:/sbin'),
       HOME: home.home,
       TMPDIR: home.root,
       LANG: 'C',

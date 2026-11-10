@@ -4,6 +4,7 @@ import path from 'node:path';
 import { registerE2eCleanup } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { CLI_BUNDLE, CLI_FAKES_BUNDLE } from './cli-bundles.ts';
+import { testHostPath } from '@momonga/testkit';
 import { SESSION_PATH } from './runtime-client.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, withinBound } from './wait.ts';
 
@@ -17,7 +18,7 @@ export type CliResult = { readonly code: number | null; readonly signal: NodeJS.
 export type RunCliOptions = { env?: Readonly<Record<string, string>>; cwd?: string; boundMs?: number; bundle?: string };
 
 export const cliEnv = (home: E2eHome, extra: Readonly<Record<string, string>> = {}): Record<string, string> => ({
-  PATH: SESSION_PATH,
+  PATH: testHostPath(SESSION_PATH),
   HOME: home.home,
   TMPDIR: home.root,
   LANG: 'C',

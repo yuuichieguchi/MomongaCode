@@ -8,6 +8,7 @@ import { buildSea } from './sea.ts';
 import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
+import { testHostPath } from '@momonga/testkit';
 
 const ARCHIVE = 'node-v26.12.1-darwin-arm64.tar.gz';
 const OTHER_SHA = 'a'.repeat(64);
@@ -51,7 +52,7 @@ describe('SHASUMS256 verification', () => {
 });
 
 describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the fixture entry', () => {
-  const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: '/usr/bin:/bin', HOME: home });
+  const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: testHostPath('/usr/bin:/bin'), HOME: home });
   let root = '';
   let binary = '';
 

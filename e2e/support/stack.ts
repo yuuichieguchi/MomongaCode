@@ -5,11 +5,11 @@ import type { ChildProcessByStdio } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import { expect } from 'vitest';
 import type { SandboxSetting } from '@momonga/config';
-import { parseReadyLine } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
 import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
-import { startFakeChatCompletions } from '@momonga/testkit';
+import { startFakeChatCompletions, testHostPath } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { SUPERVISOR_APP_VERSION } from './app-version.ts';
 import { registerE2eCleanup } from './home.ts';
@@ -27,7 +27,7 @@ import { pinnedRipgrepPath } from '../../test/support/pinned-ripgrep.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
 export { SUPERVISOR_APP_VERSION };
-export const SUPERVISOR_ENV_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+export const SUPERVISOR_ENV_PATH = MINIMAL_CHILD_PATH;
 export const STDERR_TAIL_BYTES = 64 * 1024;
 export const UPSTREAM_MODEL = 'system';
 export const UPSTREAM_TARGET = 'primary';
@@ -197,7 +197,7 @@ export const writeDepsFile = (home: E2eHome, deps: E2eDeps, stackNumber: number,
 export const supervisorArgv = (home: E2eHome): string[] => [`--home=${home.home}`, '--log-target=file'];
 
 export const supervisorEnv = (home: E2eHome, depsFile: string): Record<string, string> => ({
-  PATH: SUPERVISOR_ENV_PATH,
+  PATH: testHostPath(SUPERVISOR_ENV_PATH),
   HOME: home.home,
   TMPDIR: home.root,
   LANG: 'C',
