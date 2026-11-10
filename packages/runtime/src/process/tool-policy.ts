@@ -16,7 +16,7 @@ export type RecoveryContextOptions = {
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<SessionScratch>;
 };
 
-export type PolicyForOptions = RecoveryContextOptions & { ruleEnforcement: RuleEnforcement };
+export type PolicyForOptions = RecoveryContextOptions & { ruleEnforcement: RuleEnforcement; unixSocketAllow?: () => readonly string[] };
 
 const wrapperFor =
   (sessionId: string) =>
@@ -49,7 +49,7 @@ const contextBuilder = ({ paths, home, sessionStates, ensureSessionTmpDir = defa
 export type EnforcedPolicyFor = (session: Parameters<ToolRuntimePort['policyFor']>[0], options: Omit<Parameters<ToolRuntimePort['policyFor']>[1], 'ruleEnforcement'>) => ReturnType<ToolRuntimePort['policyFor']>;
 
 export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor => {
-  const { paths, home, fs, ruleEnforcement } = options;
+  const { paths, home, fs, ruleEnforcement, unixSocketAllow = () => [] } = options;
   const contextFor = contextBuilder(options);
 
   return async (session, { env, rules, readableDirectories }) => {
@@ -59,7 +59,7 @@ export const createPolicyFor = (options: PolicyForOptions): EnforcedPolicyFor =>
       const protectedSet = protectedSetFor(roots, fs);
       const skillsRoot = canonicalPath(paths.skills);
       const readAllowed = (readableDirectories ?? []).filter((directory) => comparableContains(skillsRoot, directory));
-      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed });
+      const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: paths.tmp.sessions, fileRules, protectedSet, network: 'deny', readAllowed, unixSocketAllow: unixSocketAllow() });
       return { roots, sandboxPolicy, tmpDir, env };
     } catch (error) {
       if (isTransientErrno(error)) throw error;

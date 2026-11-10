@@ -30,6 +30,7 @@ describe('SETTINGS_SCHEMA', () => {
         'pricing',
         'runtime',
         'sandbox',
+        'sandboxUnixSockets',
         'telemetry',
         'tools',
         'tui',

@@ -288,6 +288,10 @@ export type McpCallSettings = { toolIdleTimeoutMs?: number; toolTotalTimeoutMs?:
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
 
+export type SandboxUnixSocketsSettings = { allow?: string[] };
+
+export type ResolvedSandboxUnixSockets = { allow: string[] };
+
 export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platform): SandboxSetting =>
   platform === 'darwin' ? 'seatbelt' : platform === 'linux' ? 'bubblewrap' : 'none';
 
@@ -356,6 +360,7 @@ export type Settings = {
   gateway?: GatewaySettings;
   runtime?: RuntimeSettings;
   sandbox?: SandboxSetting;
+  sandboxUnixSockets?: SandboxUnixSocketsSettings;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
@@ -489,6 +494,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   });
   (settings.network?.extraCaFiles ?? []).forEach((file, index) => {
     if (!path.isAbsolute(file)) throw new Error(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
+  });
+  (settings.sandboxUnixSockets?.allow ?? []).forEach((entry, index) => {
+    if (!path.isAbsolute(entry)) throw new Error(`${source}: invalid settings at /sandboxUnixSockets/allow/${index}: not an absolute path`);
   });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {

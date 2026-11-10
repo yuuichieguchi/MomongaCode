@@ -564,6 +564,7 @@ export const SETTINGS_SCHEMA = {
       },
     },
     sandbox: { enum: ['seatbelt', 'bubblewrap', 'none'] },
+    sandboxUnixSockets: { type: 'object', properties: { allow: { type: 'array', items: { type: 'string', minLength: 1 } } }, additionalProperties: false },
     telemetry: {
       type: 'object',
       properties: {

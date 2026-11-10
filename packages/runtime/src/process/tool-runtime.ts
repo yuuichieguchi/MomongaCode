@@ -169,7 +169,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const policyOptions = { paths, home, fs: policyFilesystem, sessionStates, ensureSessionTmpDir };
   const policyBuilders = new Map<RuleEnforcement, EnforcedPolicyFor>();
   const policyFor: ToolRuntimePort['policyFor'] = (session, request) => {
-    const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement });
+    const builder = policyBuilders.get(request.ruleEnforcement) ?? createPolicyFor({ ...policyOptions, ruleEnforcement: request.ruleEnforcement, unixSocketAllow: () => settings.takeUserSnapshot().settings.sandboxUnixSockets.allow });
     policyBuilders.set(request.ruleEnforcement, builder);
     return builder(session, request);
   };

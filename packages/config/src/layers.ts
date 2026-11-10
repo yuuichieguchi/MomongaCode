@@ -100,6 +100,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.sandbox;
   }
 
+  if (settings.sandboxUnixSockets !== undefined) {
+    warnings.push(`${source}: sandboxUnixSockets is only honored in user settings; discarded`);
+    delete restricted.sandboxUnixSockets;
+  }
+
   if (settings.telemetry !== undefined) {
     warnings.push(`${source}: telemetry is only honored in user settings; discarded`);
     delete restricted.telemetry;

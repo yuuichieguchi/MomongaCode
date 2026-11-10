@@ -167,6 +167,7 @@ describe('buildSandboxPolicy', () => {
       protectedSet,
       readAllowed: ['/s/sessions/one'],
       network: 'deny',
+      unixSocketAllow: [],
     });
   });
 
@@ -206,6 +207,7 @@ describe('buildSandboxPolicy', () => {
       protectedSet,
       readAllowed: ['/s/sessions/one'],
       network: 'allow',
+      unixSocketAllow: [],
     });
   });
 });

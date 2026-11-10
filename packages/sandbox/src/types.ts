@@ -7,6 +7,7 @@ export interface SandboxPolicy {
   readDenied: readonly string[];
   readAllowed?: readonly string[];
   network: 'deny' | 'allow';
+  unixSocketAllow?: readonly string[];
   fileRules: FileRuleSet;
   protectedSet: ProtectedSet;
 }
