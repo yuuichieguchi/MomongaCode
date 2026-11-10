@@ -107,6 +107,7 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/foundation/src/code-digest.ts': { 'node:fs/promises': 1 },
   'packages/foundation/src/file-lock.ts': { 'setTimeout': 1, 'randomBytes': 1 },
   'packages/foundation/src/generation-reaper.ts': { 'node:fs': 1 },
+  'packages/foundation/src/handover-leftovers.ts': { 'node:fs': 1 },
   'packages/foundation/src/host-identity.ts': { 'node:fs': 1 },
   'packages/foundation/src/leftover-sweep.ts': { 'node:fs': 1 },
   'packages/foundation/src/lifeline.ts': { 'node:fs': 1 },

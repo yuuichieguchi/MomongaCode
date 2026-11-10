@@ -6,6 +6,7 @@ import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, o
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
 import { isAtomicWriteTemporary } from './atomic-file.ts';
+import { handoverLeftovers } from './handover-leftovers.ts';
 import type { LeftoverDirectory } from './leftover-sweep.ts';
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
@@ -353,6 +354,7 @@ export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] =>
   { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
   { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
   { directory: paths.run, isLeftover: isAtomicWriteTemporary },
+  handoverLeftovers(paths),
 ];
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {

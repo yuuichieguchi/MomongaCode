@@ -1,6 +1,6 @@
 import { Box, Static } from 'ink';
 import { useEffect, useEffectEvent, useState } from 'react';
-import { createHistoryFeed } from './history-feed.ts';
+import type { HistoryFeed } from './history-feed.ts';
 import { RowText } from './row-text.tsx';
 import type { TranscriptStore } from './store.ts';
 import type { ViewSource } from './viewport.ts';
@@ -14,10 +14,9 @@ const rowsFrom = (source: ViewSource, entryIndex: number, rowOffset: number): Ro
   return rows;
 };
 
-export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledCount'>; source: ViewSource };
+export type HistoryViewProps = { store: Pick<TranscriptStore, 'settledCount'>; source: ViewSource; feed: HistoryFeed };
 
-export function HistoryView({ store, source }: HistoryViewProps) {
-  const [feed] = useState(createHistoryFeed);
+export function HistoryView({ store, source, feed }: HistoryViewProps) {
   const [chunks, setChunks] = useState<readonly (readonly Row[])[]>([]);
   const [caughtUp, setCaughtUp] = useState(false);
   const settled = store.settledCount();

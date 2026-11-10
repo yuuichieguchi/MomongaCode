@@ -1,11 +1,12 @@
 import path from 'node:path';
-import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, hostKernelLock, inspectProcessLock, listGenerations, readCurrentGeneration, versionSocketResolver } from '@momonga/foundation';
+import { CONTROL_REQUEST_TIMEOUT_MS, generationLayout, hostKernelLock, inspectProcessLock, listGenerations, orderVersions, readCurrentGeneration, versionSocketResolver } from '@momonga/foundation';
 import type { GenerationProcessRole, GenerationRole, KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import type { CliClock } from '../ports.ts';
 import type { RetiringWork } from '../update/ports.ts';
 import { DaemonStartError, STOP_WAIT_WHEN_UNKNOWN_MS, healthAt, liveGenerationsUnderLock, reopenSessionMessage } from './ensure-daemon.ts';
+import type { NewerListener } from './ensure-daemon.ts';
 
 const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
 
@@ -45,10 +46,12 @@ export const sessionSocketResolver = (paths: MomongaPaths, version: string, role
   versionSocketResolver(paths, version, role, { lock: options.lock ?? hostKernelLock() });
 
 export const endSessionWhenMovedAway =
-  (paths: MomongaPaths, version: string): (() => Promise<void>) =>
+  (paths: MomongaPaths, version: string, onNewer?: NewerListener): (() => Promise<void>) =>
   async () => {
     const current = await readCurrentGeneration(paths);
-    if (current !== undefined && current.version !== version) throw new DaemonStartError(reopenSessionMessage(current.version), paths.logFiles.supervisor, { pointsAtLog: false });
+    if (current === undefined || current.version === version) return;
+    if (orderVersions(version, current.version) === 'older') await onNewer?.(current.version);
+    throw new DaemonStartError(reopenSessionMessage(current.version), paths.logFiles.supervisor, { pointsAtLog: false });
   };
 
 const KILL_WAIT_MS = 5_000;

@@ -33,14 +33,14 @@ describe('ReadOutput', () => {
 
   it('reads 2000 lines by default and notes where to continue', async () => {
     const tools = await makeBuiltins({ outputLimitChars: 100_000 });
-    const { handle } = tools.blobs.port.put(range(1, 2500).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put(range(1, 2500).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }));
     expect(result.output).toBe(`${catN(range(1, 2000).map((n) => `out ${n}`))}\n[Showed lines 1–2000. Continue with offset=2001.]`);
   });
 
   it('adds no continuation note when the blob ends exactly at the line limit', async () => {
     const tools = await makeBuiltins({ outputLimitChars: 100_000 });
-    const { handle } = tools.blobs.port.put(range(1, 2000).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put(range(1, 2000).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }));
     expect(result.output).toBe(catN(range(1, 2000).map((n) => `out ${n}`)));
   });
@@ -48,7 +48,7 @@ describe('ReadOutput', () => {
   it('pages itself within the default budget and continues exactly where it stopped', async () => {
     const tools = await makeBuiltins();
     const lines = range(1, 2200).map((n) => `${String(n).padStart(5, '0')} ${'y'.repeat(40)}`);
-    const { handle } = tools.blobs.port.put(lines.join('\n'), { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put(lines.join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const pages: string[] = [];
     let offset = 1;
     for (let guard = 0; guard < 20; guard += 1) {
@@ -70,21 +70,21 @@ describe('ReadOutput', () => {
 
   it('honors offset and limit', async () => {
     const tools = await makeBuiltins();
-    const { handle } = tools.blobs.port.put('a\nb\nc\nd\ne', { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put('a\nb\nc\nd\ne', { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle, offset: 2, limit: 3 }));
     expect(result).toMatchObject({ status: 'completed', output: `${catN(['b', 'c', 'd'], 2)}\n[Showed lines 2–4. Continue with offset=5.]` });
   });
 
   it('cuts long lines like Read', async () => {
     const tools = await makeBuiltins();
-    const { handle } = tools.blobs.port.put(`${'z'.repeat(2100)}\nshort`, { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put(`${'z'.repeat(2100)}\nshort`, { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }));
     expect(result.output).toBe(`     1\t${'z'.repeat(2000)}… [line truncated]\n     2\tshort`);
   });
 
   it('reports an offset past the end', async () => {
     const tools = await makeBuiltins();
-    const { handle } = tools.blobs.port.put('a\nb\nc', { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put('a\nb\nc', { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle, offset: 5 }));
     expect(result.output).toMatch(/^offset 5 is past the end of the .+ \(3 lines\)$/);
   });
@@ -104,7 +104,7 @@ describe('ReadOutput', () => {
 
   it('needs no permission in any mode', async () => {
     const tools = await makeBuiltins();
-    const { handle } = tools.blobs.port.put('x', { mediaType: 'text/plain; charset=utf-8' });
+    const { handle } = await tools.blobs.port.put('x', { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }, { mode: 'plan' }));
     expect(result).toMatchObject({ status: 'completed', output: '     1\tx' });
   });

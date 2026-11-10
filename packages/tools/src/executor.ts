@@ -556,8 +556,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     read: ((handle: string, range: never) => blobs.read(handle, range, { runId })) as BlobPort['read'],
   });
 
-  const storedHandle = (text: string, runId: string): string => {
-    const stored = scopedBlobs(runId).put(text, { mediaType: OUTPUT_MEDIA_TYPE });
+  const storedHandle = async (text: string, runId: string): Promise<string> => {
+    const stored = await scopedBlobs(runId).put(text, { mediaType: OUTPUT_MEDIA_TYPE });
     if (!HANDLE_PATTERN.test(stored.handle)) {
       throw new TypeError(`blob handle must be ${HANDLE_LENGTH} lowercase hex characters, got ${JSON.stringify(stored.handle)}`);
     }
@@ -581,7 +581,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return undefined;
     }
     if (formatted === undefined) return undefined;
-    const handle = storedHandle(result.output, runId);
+    const handle = await storedHandle(result.output, runId);
     const text = `${formatted.header(handle)}\n${formatted.output}`;
     const fitsInline = await fit.fits(text);
     return {
@@ -594,7 +594,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const fittedOutput = async (result: ToolResult, fit: CallOutputFit, runId: string): Promise<FittedOutput> => {
     if (await fit.fits(result.output)) return { output: result.output };
-    const handle = storedHandle(result.output, runId);
+    const handle = await storedHandle(result.output, runId);
     return { output: await fit.fit(result.output, handle), truncated: true, handle };
   };
 

@@ -382,7 +382,7 @@ describe('executor execution', () => {
     expect(ctx.session).toBe(harness.session);
     expect(ctx.sandbox).toBe(batch.sandbox);
     expect(ctx.sandboxPolicy).toBe(batch.sandboxPolicy);
-    const stored = ctx.blobs.put('kept', { mediaType: 'text/plain' });
+    const stored = await ctx.blobs.put('kept', { mediaType: 'text/plain' });
     expect((await ctx.blobs.read(stored.handle, { lineStart: 1, lineEnd: 1 })).text).toBe('kept');
     expect(ctx.clock.now()).toBe(harness.clock.now());
     expect(ctx.signal.aborted).toBe(false);

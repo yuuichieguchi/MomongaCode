@@ -9,8 +9,8 @@ export type HistoryFeed = {
   cursor(): { entryIndex: number; rowOffset: number };
 };
 
-export const createHistoryFeed = (): HistoryFeed => {
-  let entryIndex = 0;
+export const createHistoryFeed = (printed = 0): HistoryFeed => {
+  let entryIndex = printed;
   let rowOffset = 0;
   return {
     pending: (settled) => entryIndex < settled,

@@ -4,10 +4,13 @@ export type BackgroundTasks = {
   run<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   abortNewest(): boolean;
   settle(): Promise<void>;
+  count(): number;
+  subscribe(listener: () => void): () => void;
 };
 
 export const createBackgroundTasks = (): BackgroundTasks => {
   const tasks: Task[] = [];
+  const listeners = new Set<() => void>();
 
   const run = <T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const controller = new AbortController();
@@ -16,6 +19,7 @@ export const createBackgroundTasks = (): BackgroundTasks => {
     tasks.push(task);
     void task.settled.then(() => {
       tasks.splice(tasks.indexOf(task), 1);
+      for (const listener of [...listeners]) listener();
     });
     return running;
   };
@@ -32,5 +36,12 @@ export const createBackgroundTasks = (): BackgroundTasks => {
     await Promise.all(tasks.map((task) => task.settled));
   };
 
-  return { run, abortNewest, settle };
+  const subscribe = (listener: () => void): (() => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+
+  return { run, abortNewest, settle, count: () => tasks.length, subscribe };
 };

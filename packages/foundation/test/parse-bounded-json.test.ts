@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { JsonDepthError, MAX_JSON_DEPTH, parseBoundedJson, parseJsonOrText } from '@momonga/foundation';
+import * as foundation from '@momonga/foundation';
+import { JsonDepthError, MAX_JSON_DEPTH, TOO_DEEP_PLACEHOLDER, parseBoundedJson, spanValueOfJsonText } from '@momonga/foundation';
 
 const nested = (depth: number): string => `${'['.repeat(depth)}${']'.repeat(depth)}`;
 
@@ -48,7 +49,19 @@ describe('parseBoundedJson', () => {
     ).toThrow(typed);
   });
 
-  it('keeps the old parseJsonOrText export until its callers move', () => {
-    expect(parseJsonOrText('{"a":1}')).toEqual({ a: 1 });
+  it('no longer exports parseJsonOrText', () => {
+    expect(Object.keys(foundation)).not.toContain('parseJsonOrText');
+  });
+});
+
+describe('spanValueOfJsonText', () => {
+  it('gives the parsed value for valid JSON and the text for malformed text', () => {
+    expect(spanValueOfJsonText('{"a":1}')).toEqual({ a: 1 });
+    expect(spanValueOfJsonText('{not json')).toBe('{not json');
+  });
+
+  it('gives the placeholder that names the bound, and not the text, for JSON deeper than the bound', () => {
+    expect(TOO_DEEP_PLACEHOLDER).toBe('[arguments nest deeper than 128 levels]');
+    expect(spanValueOfJsonText(nested(MAX_JSON_DEPTH + 1))).toBe(TOO_DEEP_PLACEHOLDER);
   });
 });

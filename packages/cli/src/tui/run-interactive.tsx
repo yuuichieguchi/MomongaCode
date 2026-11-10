@@ -34,11 +34,95 @@ import { TerminalFrame } from './terminal/frame.tsx';
 import { hostProcess, hostTerminalOutput } from './terminal/host.ts';
 import { createInkStdin } from './terminal/ink-stdin.ts';
 import { createTerminalLayer } from './terminal/layer.ts';
+import type { HandoverTerminal, TerminalLayer } from './terminal/layer.ts';
+import type { NegotiationState } from './terminal/negotiation.ts';
+import { startWithHandoverTerminal } from './terminal/handover.ts';
+import { orderVersions, readCurrentGeneration } from '@momonga/foundation';
+import { HANDOVER_FORMAT, recordFileOf } from '../handover/record.ts';
+import { adoptionOf, refuseStart } from '../handover/start.ts';
+import type { TuiAdoption, TuiMovePort, TuiSurface } from './handover.ts';
 import type { TuiSettingsPort } from './screen/notify.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[]; reopen?: Reopen; screenReader?: boolean };
 
+const newerCurrentVersion = async (ports: Pick<CliPorts, 'version'>, paths: MomongaPaths): Promise<string | undefined> => {
+  const current = await readCurrentGeneration(paths);
+  return current !== undefined && orderVersions(ports.version, current.version) === 'older' ? current.version : undefined;
+};
+
+type MoveWiring = { port: TuiMovePort; detach(): void };
+
+const NO_MOVE: MoveWiring = { port: { attach: () => () => undefined, check: () => undefined, probe: () => undefined }, detach: () => undefined };
+
+const wireMove = (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, layer: TerminalLayer, report: (error: unknown) => void): MoveWiring => {
+  const mover = ports.handover?.mover;
+  if (mover === undefined) return NO_MOVE;
+  let surface: TuiSurface | undefined;
+  let released: { terminal: HandoverTerminal; negotiation: NegotiationState } | undefined;
+  let probing = false;
+  const attached = (): TuiSurface => {
+    if (surface === undefined) throw new Error('the interface has attached no surface to move');
+    return surface;
+  };
+  const detach = mover.attach({
+    recordFile: () => {
+      const session = surface?.session();
+      return session === undefined ? undefined : recordFileOf(paths, session);
+    },
+    quiet: () => surface?.quiet() === true,
+    snapshot: (toVersion) => {
+      const snapshot = attached().snapshot();
+      if (snapshot === undefined) throw new Error('the interface has no open session to move');
+      return { format: HANDOVER_FORMAT, fromVersion: ports.version, toVersion, ...snapshot };
+    },
+    terminal: () => released?.terminal ?? layer.handoverTerminal(),
+    suspend: () => attached().suspend(),
+    release: () => {
+      released = { terminal: layer.handoverTerminal(), negotiation: layer.state().negotiation };
+      layer.release();
+      terminal.stdout.write = () => true;
+    },
+    resume: () => {
+      if (released !== undefined) {
+        Reflect.deleteProperty(terminal.stdout, 'write');
+        layer.adopt(released.terminal, released.negotiation);
+        released = undefined;
+      }
+      attached().resume();
+    },
+    say: (text) => attached().say(text),
+  });
+  const probe = async (): Promise<void> => {
+    probing = true;
+    try {
+      const newer = await newerCurrentVersion(ports, paths);
+      if (newer !== undefined) await mover.learned(newer);
+    } finally {
+      probing = false;
+    }
+  };
+  return {
+    port: {
+      attach: (next) => {
+        surface = next;
+        return () => {
+          if (surface === next) surface = undefined;
+        };
+      },
+      check: () => {
+        mover.check().catch(report);
+      },
+      probe: () => {
+        if (!probing) probe().catch(report);
+      },
+    },
+    detach,
+  };
+};
+
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring, shell: ShellPort): Promise<number> => {
+  const adoption = adoptionOf(ports.handover?.started, ['tui']);
+  if (adoption.kind === 'refused') return refuseStart({ stderr: ports.stderr, terminal: { output: hostTerminalOutput(terminal.stdout), input: terminal.stdin } }, adoption);
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
@@ -76,7 +160,11 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     mouse: tuiSettings.initial.mouse,
     onEvents: input.push,
   });
-  layer.start();
+  if (adoption.kind === 'record') startWithHandoverTerminal(layer, ports.handover?.started?.terminal, adoption.record.neg);
+  else layer.start();
+  const moveFailures: unknown[] = [];
+  const moving = wireMove(ports, paths, terminal, layer, (error) => moveFailures.push(error));
+  const adopted: { adoption?: TuiAdoption } = adoption.kind === 'record' ? { adoption: { record: adoption.record, attached: () => ports.handover?.removeRecord(adoption.file) } } : {};
   const externalEditor = createExternalEditor({
     env: ports.env,
     temporaryDirectory: () => ports.files.mkdtemp(path.join(os.tmpdir(), 'momonga-draft-')),
@@ -90,7 +178,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
   try {
     const instance = render(
       <TerminalFrame layer={layer}>
-        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
+        <App backend={backend} terminal={{ state: layer.state, subscribe: layer.subscribe, subscribeScreen: layer.subscribeScreen, setScreen: layer.setScreen, setTitle: layer.setTitle, bell: layer.bell, enable: layer.enable, disable: layer.disable, input }} tuiSettings={tuiSettings} move={moving.port} {...adopted} keyBindings={keyBindings} a11y={asked} copyOnSelect={tuiSettings.initial.copyOnSelect} now={() => ports.clock.now()} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: !noColor }} colour={{ noColor, level: colorLevelOfDepth(terminal.stdout.getColorDepth()) }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
           {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
           {...(options.images === undefined ? {} : { initialImages: options.images })}
           {...(options.reopen === undefined ? {} : { reopen: options.reopen })}
@@ -106,8 +194,11 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     );
     await instance.waitUntilExit();
   } finally {
+    moving.detach();
     layer.close();
   }
+  const [moveFailure] = moveFailures;
+  if (moveFailure !== undefined) throw moveFailure;
   await tasks.settle();
   await backend.close();
   const exitCode = exitCodeOf(ports, refusalOf(outcome, paths));

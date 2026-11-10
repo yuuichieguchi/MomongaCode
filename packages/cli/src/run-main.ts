@@ -30,7 +30,8 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
         process.exitCode = code;
       },
     });
-    await program.parseAsync();
+    if (ports.handover === undefined) await program.parseAsync();
+    else await program.parseAsync([...ports.handover.args], { from: 'user' });
   } catch (error) {
     terminalSink(() => process.stderr).write(`momonga: ${describeFailure(error)}\n`);
     process.exitCode = 1;

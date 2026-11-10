@@ -11,7 +11,7 @@ export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
 export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
-export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
+export { TOO_DEEP_PLACEHOLDER, isRecord, parseBoundedJson, spanValueOfJsonText } from './json.ts';
 export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
@@ -110,6 +110,8 @@ export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeH
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
 export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, SyncClaimUnsupportedError, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf, sidecarSuffixOf } from './platform/lock-form.ts';
 export type { EntryKind, LockForm } from './platform/lock-form.ts';
+export { HANDOVER_DIRECTORY, HANDOVER_RECORD_MAX_BYTES, HANDOVER_RECORD_OWNER_FIELD, HANDOVER_RECORD_SUFFIX, handoverDirectoryOf, handoverLeftovers, handoverRecordOwner } from './handover-leftovers.ts';
+export type { ProcessProbe } from './handover-leftovers.ts';
 export { nodeLeftoverFiles, sweepLeftovers } from './leftover-sweep.ts';
 export type { LeftoverDirectory, LeftoverFiles, LeftoverSweep, SweepLeftoversOptions } from './leftover-sweep.ts';
 export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';
@@ -433,3 +435,41 @@ export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
+export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export type { WindowsKeeperDistributionPorts, WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export {
+  KEEPER_EXIT_CODES,
+  KEEPER_FAILURE_REASONS,
+  KEEPER_JOB_PREFIX,
+  KEEPER_OWNER_LOSS,
+  KEEPER_PIPE_PREFIX,
+  KeeperLostError,
+  KeeperProtocolError,
+  attachKept,
+  confirmByAttach,
+  keeperExitName,
+  launchKept,
+  stopKeptGroup,
+} from './platform/windows-keeper.ts';
+export type {
+  CommandExitAnswer,
+  ConfirmByName,
+  KeeperConnection,
+  KeeperExitName,
+  KeeperFailureReason,
+  KeeperHost,
+  KeeperListener,
+  KeeperOwnerLoss,
+  KeeperRun,
+  KeptAttach,
+  KeptCommand,
+  KeptGroup,
+  KeptLaunch,
+  KeptLaunchRequest,
+  KeptStopOptions,
+  KeptStopOutcome,
+  MembersAnswer,
+  NameConfirmation,
+} from './platform/windows-keeper.ts';
+export { createNodeKeeperHost, listenForKeeper, startDetachedKeeper } from './platform/windows-keeper-host.ts';
+export type { NodeKeeperHostOptions } from './platform/windows-keeper-host.ts';

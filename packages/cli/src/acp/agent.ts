@@ -5,6 +5,7 @@ import type { ElicitationAnswerRecord, Readiness } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
+import { isTerminalStatus } from '../run/follow.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { availableCommandsOf } from './commands.ts';
 import { elicitationAnswerOf, elicitationRequestOf } from './elicitation.ts';
@@ -93,11 +94,35 @@ const featuresOf = (
   elicitation: { form: capabilities?.elicitation?.form != null, url: capabilities?.elicitation?.url != null },
 });
 
-export const createAcpAgent = (deps: AcpDeps): AgentApp => {
+export type AcpHandoverState = { initialize: unknown; sessions: string[]; lastSeq: Record<string, number> };
+
+export type AcpBridge = {
+  app: AgentApp;
+  quiet(): boolean;
+  snapshot(): AcpHandoverState | undefined;
+  adopt(state: Pick<AcpHandoverState, 'sessions' | 'lastSeq'>): Promise<void>;
+  onActivity(listener: () => void): void;
+};
+
+export const createAcpAgent = (deps: AcpDeps): AgentApp => createAcpBridge(deps).app;
+
+export const createAcpBridge = (deps: AcpDeps): AcpBridge => {
   const app = agent({ name: 'momonga' });
   const sessions = new Map<string, BridgeSession>();
   let connection: AgentConnection | undefined;
   let features: ClientFeatures | undefined;
+  let initialize: { params: unknown } | undefined;
+  const initialized = Promise.withResolvers<void>();
+  const lastSeq = new Map<string, number>();
+  const activityListeners = new Set<() => void>();
+
+  const active = (): void => {
+    for (const listener of [...activityListeners]) listener();
+  };
+
+  const liveSessions = (): BridgeSession[] => [...sessions.values()].filter((session) => !session.lifetime.signal.aborted);
+
+  const quiet = (): boolean => initialize !== undefined && liveSessions().every((session) => session.turn === undefined && session.pendingRequests.size === 0);
 
   const peer = (): AgentConnection['client'] => {
     if (connection === undefined) throw new Error('the ACP connection is not open');
@@ -178,6 +203,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw error;
     } finally {
       session.pendingRequests.delete(effect.approvalId);
+      active();
     }
   };
 
@@ -216,6 +242,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
       throw error;
     } finally {
       session.pendingRequests.delete(effect.inputId);
+      active();
     }
   };
 
@@ -250,31 +277,35 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     }
   };
 
-  const handleFrame = (session: BridgeSession, frame: RunEventFrame, replayThrough: number): void => {
+  const handleFrame = (session: BridgeSession, frame: RunEventFrame, replayThrough: number, mutedThrough = 0): void => {
     const event = frame.data;
-    const phase: Phase = 'seq' in event && event.seq <= replayThrough ? 'history' : 'live';
-    for (const effect of mapRunEvent(event, phase, session.mapper, clientFeatures())) dispatch(session, effect);
+    const seq = 'seq' in event ? event.seq : undefined;
+    if ('seq' in event) lastSeq.set(event.runId, Math.max(lastSeq.get(event.runId) ?? 0, event.seq));
+    const phase: Phase = seq !== undefined && seq <= replayThrough ? 'history' : 'live';
+    const effects = mapRunEvent(event, phase, session.mapper, clientFeatures());
+    if (seq === undefined || seq > mutedThrough) for (const effect of effects) dispatch(session, effect);
+    active();
   };
 
   const handleChildFrame = (session: BridgeSession, frame: RunEventFrame, agent: string): void => {
     for (const effect of mapChildEvent(frame.data, agent, session.mapper, clientFeatures())) dispatch(session, effect);
   };
 
-  const followInto = (session: BridgeSession, runId: string, replayThrough: number, onCaughtUp?: () => void): Promise<RunView> =>
+  const followInto = (session: BridgeSession, runId: string, replayThrough: number, onCaughtUp?: () => void, mutedThrough = 0): Promise<RunView> =>
     deps.follow({
       runId,
       signal: session.lifetime.signal,
       onChildEvent: (frame, agent) => handleChildFrame(session, frame, agent),
       onEvent: (frame) => {
-        handleFrame(session, frame, replayThrough);
+        handleFrame(session, frame, replayThrough, mutedThrough);
         if ('seq' in frame.data && frame.data.seq >= replayThrough) onCaughtUp?.();
       },
     });
 
-  const replayRun = async (session: BridgeSession, run: RunView): Promise<void> => {
+  const replayRun = async (session: BridgeSession, run: RunView, through = run.lastSeq, mutedThrough = 0): Promise<void> => {
     const caughtUp = Promise.withResolvers<void>();
-    if (run.lastSeq === 0) caughtUp.resolve();
-    const finished = followInto(session, run.id, run.lastSeq, () => caughtUp.resolve()).then(
+    if (through === 0) caughtUp.resolve();
+    const finished = followInto(session, run.id, through, () => caughtUp.resolve(), mutedThrough).then(
       () => caughtUp.resolve(),
       (error: unknown) => {
         caughtUp.reject(error);
@@ -356,9 +387,29 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     );
   });
 
+  const adoptSession = async (id: string, seen: Readonly<Record<string, number>>): Promise<void> => {
+    await deps.daemonReady();
+    const view = await deps.runtime.getSession(id);
+    const session = register(view, await deps.autoModeAvailable());
+    session.skillNames = (await deps.runtime.skills(view.id)).skills.map((skill) => skill.name);
+    for (const run of await deps.runtime.listRuns(view.id)) {
+      const through = seen[run.id] ?? 0;
+      if (!isTerminalStatus(run.status)) await replayRun(session, run, through, through);
+    }
+  };
+
+  const adopt: AcpBridge['adopt'] = async (state) => {
+    await initialized.promise;
+    for (const [runId, seq] of Object.entries(state.lastSeq)) lastSeq.set(runId, seq);
+    for (const id of state.sessions) await adoptSession(id, state.lastSeq);
+    active();
+  };
+
   app.onRequest('initialize', ({ params }) => {
     if (params.protocolVersion < PROTOCOL_VERSION) throw RequestError.unsupportedProtocolVersion(params.protocolVersion, [PROTOCOL_VERSION]);
     features = featuresOf(params.clientCapabilities);
+    initialize = { params };
+    initialized.resolve();
     return {
       protocolVersion: PROTOCOL_VERSION,
       agentInfo: { name: 'momonga', title: 'MomongaCode', version: deps.version },
@@ -451,6 +502,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     } finally {
       signal.removeEventListener('abort', cancelTurn);
       session.turn = undefined;
+      active();
     }
   });
 
@@ -459,5 +511,13 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     if (session?.turn !== undefined) await cancelTurnOf(session, session.turn);
   });
 
-  return app;
+  return {
+    app,
+    quiet,
+    snapshot: () => (initialize === undefined ? undefined : { initialize: initialize.params, sessions: liveSessions().map((session) => session.id), lastSeq: Object.fromEntries(lastSeq) }),
+    adopt,
+    onActivity: (listener) => {
+      activityListeners.add(listener);
+    },
+  };
 };

@@ -18,7 +18,7 @@ export const frame = (event: Record<string, unknown>): RunEventFrame => {
   return { id: sequence, event: String(event['type']), data: { ...base, id: sequence, seq: sequence, ...event } as PublicRunEvent };
 };
 
-export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'startup' | 'copyOnSelect' | 'now' | 'timers' | 'reopen' | 'tuiSettings'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
+export const start = async (options: FakeBackendOptions = {}, extra: Partial<Pick<AppProps, 'initialPrompt' | 'initialImages' | 'initialSkill' | 'startup' | 'copyOnSelect' | 'now' | 'timers' | 'reopen' | 'tuiSettings' | 'tasks' | 'move' | 'adoption'>> = {}, screen: Parameters<typeof fakeScreenTerminal>[0] = {}) => {
   const backend = fakeBackend(options);
   const terminal = fakeScreenTerminal(screen);
   const outcomes: TuiOutcome[] = [];

@@ -49,7 +49,7 @@ describe('blob handle contract', () => {
     listeners.push(listener);
     process.on('unhandledRejection', listener);
     const harness = makeHarness({ outputLimitChars: 300 });
-    harness.blobs.port.put = (data) => ({ handle, sha256: 'a'.repeat(64), byteLength: String(data).length, lineCount: 1 });
+    harness.blobs.port.put = async (data) => ({ handle, sha256: 'a'.repeat(64), byteLength: String(data).length, lineCount: 1 });
     const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output: 'z'.repeat(1000) }) }));
     const outcome = harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
     await expect(outcome).rejects.toThrow(/handle/i);

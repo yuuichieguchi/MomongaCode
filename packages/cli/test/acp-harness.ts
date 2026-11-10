@@ -1,6 +1,8 @@
-import { createAcpAgent } from '../src/acp/agent.ts';
-import type { AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
-import type { AgentApp, AnyMessage } from '@agentclientprotocol/sdk';
+import { createAcpBridge } from '../src/acp/agent.ts';
+import type { AcpBridge, AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
+import { withReplayedInitialize } from '../src/acp/handover.ts';
+import type { AgentConnection, AnyMessage } from '@agentclientprotocol/sdk';
+import type { MessageStream } from '../src/acp/handover.ts';
 import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
 import { RunApiError } from '../src/client/runtime-client.ts';
 import type { CreatedSession, RunEventFrame, RuntimeClient } from '../src/client/runtime-client.ts';
@@ -32,7 +34,9 @@ const isRequest = (message: AnyMessage): message is AnyMessage & { id: string | 
 
 const isResponseTo = (message: AnyMessage, id: number): boolean => !('method' in message) && 'id' in message && message.id === id;
 
-export const connectPeer = (app: AgentApp): Peer => {
+export type Connectable = { connect(stream: MessageStream): AgentConnection };
+
+export const connectPeer = (app: Connectable): Peer => {
   const toAgent = new TransformStream<AnyMessage, AnyMessage>();
   const fromAgent = new TransformStream<AnyMessage, AnyMessage>();
   const connection = app.connect({ readable: toAgent.readable, writable: fromAgent.writable });
@@ -372,6 +376,7 @@ export const modelChangedFrame = (id: number, modelAlias: string, previousModelA
 export const MODEL_ALIASES = [SESSION.modelAlias, 'fm-large'] as const;
 
 export type Harness = {
+  readonly bridge: AcpBridge;
   readonly runtime: FakeRuntime;
   readonly peer: Peer;
   readonly reports: string[];
@@ -383,7 +388,7 @@ export type Harness = {
   failSessionStream(error: Error): void;
 };
 
-export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
+export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?: unknown): Harness => {
   const runtime = fakeRuntime();
   const scripts = new Map<string, RunScript>();
   const contextWindows = new Map<string, number>([[SESSION.modelAlias, 8192]]);
@@ -436,8 +441,11 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
     },
     ...overrides,
   };
-  const peer = connectPeer(createAcpAgent(deps));
+  const bridge = createAcpBridge(deps);
+  const adopting: Connectable = { connect: (stream) => bridge.app.connect(withReplayedInitialize(stream, replayedInitialize)) };
+  const peer = connectPeer(replayedInitialize === undefined ? bridge.app : adopting);
   return {
+    bridge,
     runtime,
     peer,
     reports,

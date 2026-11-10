@@ -1,4 +1,4 @@
-import { parseJsonOrText } from '@momonga/foundation';
+import { spanValueOfJsonText } from '@momonga/foundation';
 import type { ChatRequestContent, GenAiMessage, GenAiPart, GenAiToolDefinition } from '@momonga/observability';
 import type { AdapterInputItem, ContentPart, FunctionTool, ItemField } from '@momonga/protocol';
 
@@ -22,14 +22,14 @@ const textOfPart = (part: ContentPart): string => {
 const textParts = (content: string | readonly ContentPart[]): GenAiPart[] =>
   typeof content === 'string' ? [{ type: 'text', content }] : content.map((part): GenAiPart => ({ type: 'text', content: textOfPart(part) }));
 
-const responseOf = (output: string | readonly ContentPart[]): unknown => (typeof output === 'string' ? parseJsonOrText(output) : output.map(textOfPart).join('\n'));
+const responseOf = (output: string | readonly ContentPart[]): unknown => (typeof output === 'string' ? spanValueOfJsonText(output) : output.map(textOfPart).join('\n'));
 
 const inputMessageOf = (item: AdapterInputItem): GenAiMessage[] => {
   switch (item.type) {
     case 'message':
       return [{ role: item.role, parts: textParts(item.content) }];
     case 'function_call':
-      return [{ role: 'assistant', parts: [{ type: 'tool_call', id: item.call_id, name: item.name, arguments: parseJsonOrText(item.arguments) }] }];
+      return [{ role: 'assistant', parts: [{ type: 'tool_call', id: item.call_id, name: item.name, arguments: spanValueOfJsonText(item.arguments) }] }];
     case 'function_call_output':
       return [{ role: 'tool', parts: [{ type: 'tool_call_response', id: item.call_id, response: responseOf(item.output) }] }];
     case 'compaction_summary':
@@ -62,7 +62,7 @@ export const chatResponseMessagesOf = (output: readonly ItemField[], finishReaso
       case 'message':
         return item.content.map((part): GenAiPart => ({ type: 'text', content: textOfPart(part) }));
       case 'function_call':
-        return [{ type: 'tool_call', id: item.call_id, name: item.name, arguments: parseJsonOrText(item.arguments) }];
+        return [{ type: 'tool_call', id: item.call_id, name: item.name, arguments: spanValueOfJsonText(item.arguments) }];
       case 'function_call_output':
       case 'reasoning':
       case 'compaction':
