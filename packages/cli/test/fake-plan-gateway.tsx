@@ -53,6 +53,7 @@ export type FakePlanOptions = FakeBackendOptions & {
   planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
   detected?: readonly DetectedServer[];
   dismissed?: Readonly<Record<string, string>>;
+  callbackArrives?: boolean;
 };
 
 export type FakePlanBackend = FakeBackend & {
@@ -142,7 +143,13 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
     return {
       port: LISTENER_PORT,
       redirectUrl,
-      callback: async ({ state }) => new URL(`${redirectUrl}?code=code-1&state=${state}`),
+      callback: async ({ state, signal }) => {
+        if (options.callbackArrives !== false) return new URL(`${redirectUrl}?code=code-1&state=${state}`);
+        return new Promise<URL>((_resolve, reject) => {
+          if (signal.aborted) reject(signal.reason);
+          else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        });
+      },
       close: async () => undefined,
     };
   };
