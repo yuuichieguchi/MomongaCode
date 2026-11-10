@@ -25,7 +25,7 @@ describe('installFakeSecretPrograms', () => {
     expect(findProgramOnPath(program, { PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin` })).toBe(path.join(bin, program));
   });
 
-  it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s that a Windows PATHEXT lookup finds in the fake directory', (program) => {
+  it.each(SECRET_STORE_SEARCHED_PROGRAMS)('installs a fake %s.cmd that a simulated Windows PATHEXT lookup resolves in the fake directory; starting it is not verified on a Windows host', (program) => {
     const bin = installFakeSecretPrograms(freshRoot(), 'win32');
     const found = findProgramOnPath(program, { PATH: bin, PATHEXT: WINDOWS_PATHEXT });
     expect(found).toBe(path.join(bin, `${program}.cmd`));
