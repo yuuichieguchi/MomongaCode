@@ -1,4 +1,7 @@
 import { nodeFileSystem } from '../node-file-system.ts';
+import { KEEPER_NAME_BYTES } from '../process-contract.ts';
+import { hostProcessGroupPort } from './group-port.ts';
+import type { GroupNames } from './group-port.ts';
 
 export const RETRY_KINDS = ['guard', 'sweep', 'startup', 'shutdown'] as const;
 
@@ -10,8 +13,9 @@ export const EMPTY_RECORD_TEXT = 'r00000\n';
 
 const GROUP_DIGITS = 10;
 const GROUP_POSITION = EMPTY_RECORD_TEXT.length;
-const RECORD_FORM = new RegExp(`^r[01]{5}\\n(g\\d{${GROUP_DIGITS}}\\n)?$`);
-const GROUP_FORM = new RegExp(`^r[01]{5}\\ng(\\d{${GROUP_DIGITS}})\\n$`);
+const NAME_LINE = `j([0-9a-f]{${KEEPER_NAME_BYTES * 2}})\\n`;
+const RECORD_FORM = new RegExp(`^r[01]{5}\\n(g\\d{${GROUP_DIGITS}}\\n(${NAME_LINE})?)?$`);
+const GROUP_FORM = new RegExp(`^r[01]{5}\\ng(\\d{${GROUP_DIGITS}})\\n(?:${NAME_LINE})?$`);
 const IGNORED_POSITION = RETRY_KINDS.length + 1;
 
 const allSpent = (): AttemptRecord => ({ spent: { guard: true, sweep: true, startup: true, shutdown: true }, ignored: false });
@@ -77,18 +81,21 @@ export const claimRetry = (marker: string, kind: RetryKind, { signal, files = no
     }
   });
 
-const groupText = (pgid: number): string => `g${String(pgid).padStart(GROUP_DIGITS, '0')}\n`;
+const groupText = (pgid: number, name: string | undefined): string => `g${String(pgid).padStart(GROUP_DIGITS, '0')}\n${name === undefined ? '' : `j${name}\n`}`;
 
-export const recordMarkerGroup = (marker: string, pgid: number, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<void> =>
+export type RecordGroupOptions = { files?: RecordFiles; names?: GroupNames | undefined };
+
+export const recordMarkerGroup = (marker: string, pgid: number, { files = nodeRecordFiles, names = hostProcessGroupPort().names }: RecordGroupOptions = {}): Promise<void> =>
   singleFlight(marker, async () => {
     if (!Number.isInteger(pgid) || pgid <= 0 || String(pgid).length > GROUP_DIGITS) throw new RangeError(`process group ${pgid} cannot be recorded in a marker`);
+    const recorded = groupText(pgid, names?.nameOf(pgid));
     const text = await files.read(marker);
     if (text === '') {
-      await files.writeByte(marker, 0, `${EMPTY_RECORD_TEXT}${groupText(pgid)}`);
+      await files.writeByte(marker, 0, `${EMPTY_RECORD_TEXT}${recorded}`);
       return;
     }
     if (!RECORD_FORM.test(text)) throw new Error(`the marker ${marker} holds no attempt record the group can follow`);
-    await files.writeByte(marker, GROUP_POSITION, groupText(pgid));
+    await files.writeByte(marker, GROUP_POSITION, recorded);
   });
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -108,6 +115,10 @@ export const parseRecordedGroup = (text: string): number | undefined => {
   const found = GROUP_FORM.exec(text);
   return found === null ? undefined : Number(found[1]);
 };
+
+export const parseRecordedGroupName = (text: string): string | undefined => GROUP_FORM.exec(text)?.[2];
+
+export const readMarkerGroupName = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<string | undefined> => parseRecordedGroupName(await files.read(marker));
 
 export const readMarkerGroup = async (marker: string, { files = nodeRecordFiles }: { files?: RecordFiles } = {}): Promise<number | undefined> => parseRecordedGroup(await files.read(marker));
 

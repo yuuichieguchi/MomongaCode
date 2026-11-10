@@ -72,9 +72,9 @@ describe('Windows start times are compared as the FILETIME at 100 ns', () => {
   });
 
   it('tells apart two creation times 100 ns apart', async () => {
-    const first = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV }).startTimeOf(321, LIVE);
-    const hundredNanosecondsLater = await createWindowsInspector({ run: runnerPrinting('133400000000000002\r\n'), env: ENV }).startTimeOf(321, LIVE);
-    const same = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV }).startTimeOf(321, LIVE);
+    const first = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => [] }, alive: () => false }).startTimeOf(321, LIVE);
+    const hundredNanosecondsLater = await createWindowsInspector({ run: runnerPrinting('133400000000000002\r\n'), env: ENV, groups: { members: async () => [] }, alive: () => false }).startTimeOf(321, LIVE);
+    const same = await createWindowsInspector({ run: runnerPrinting('133400000000000001\r\n'), env: ENV, groups: { members: async () => [] }, alive: () => false }).startTimeOf(321, LIVE);
     expect(first.kind).toBe('value');
     expect(hundredNanosecondsLater).not.toEqual(first);
     expect(same).toEqual(first);

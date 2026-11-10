@@ -126,7 +126,7 @@ export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
 export { UNNAMED_REASON, commandMayStillRun, refusedReason } from './command-liveness.ts';
 export type { CommandLiveness, CommandLivenessEvidence, GroupLiveness, HolderListing } from './command-liveness.ts';
-export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, groupRecordNotice, groupRecordOutcome, readAttemptRecord, readMarkerGroup, recordMarkerGroup, unreadableMarkerNotice } from './platform/marker-record.ts';
+export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, groupRecordNotice, groupRecordOutcome, readAttemptRecord, readMarkerGroup, readMarkerGroupName, recordMarkerGroup, unreadableMarkerNotice } from './platform/marker-record.ts';
 export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
 export type { CreateMarkerOptions, MarkerHandle } from './platform/marker-file.ts';
@@ -349,7 +349,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { EventPayload, JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, LogValue, ReadyFields, ReservedLogKey, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, recallMarkerGroup, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export type { LiveIdentities, LiveIdentitiesPorts } from './platform/live-identities.ts';
@@ -398,10 +398,14 @@ export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailur
 export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, StartTime, UninspectableProcess } from './platform/inspector-types.ts';
 export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
-export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, groupPortOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
+export { JOB_GROUP_SIGNALS, POSIX_GROUP_SIGNALS, createAsyncSignalSender, createJobGroupPort, createPosixGroupPort, createProcessGroupPort, groupPortOf, groupSignalsOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
+export { GroupContainmentError, createKeptGroupControl, hostKeptGroups } from './platform/windows-kept-groups.ts';
+export { launchApart, launchGroupLeader } from './platform/group-launch.ts';
+export type { ApartOptions, GroupLaunch, GroupLaunchMarker, GroupLaunchRequest, LaunchSlot, LeaderExit } from './platform/group-launch.ts';
+export type { KeptExit, KeptGroupControl, KeptOpenRequest, KeptOpening, KeptProcess } from './platform/windows-kept-groups.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { GroupReading, GroupStatesReader } from './platform/run-state.ts';
-export type { AsyncSignalSender, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
+export type { AsyncSignalSender, GroupIdentity, GroupKeeper, GroupNames, GroupSignals, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
 export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
 export type { ProbeTiming } from './platform/probe-timing.ts';
 export { nodeProcFs } from './platform/procfs.ts';
@@ -442,27 +446,15 @@ export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
 export { readStopRecord, writeStopRecord } from './stop-record.ts';
 export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
 export { SETTINGS_APPLIED_ENV, SETTINGS_APPLIED_FILE } from './momonga-paths.ts';
-export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, WindowsKeeperDistributionError, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
+export { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, WINDOWS_KEEPER_STAGED_INFIX, WINDOWS_KEEPER_STAGED_NAME_BYTES, WindowsKeeperDistributionError, checkedWindowsKeeper, ensureBundledWindowsKeeper, parseWindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
 export type { WindowsKeeperDistributionPorts, WindowsKeeperManifest } from './platform/windows-keeper-asset.ts';
-export {
-  KEEPER_EXIT_CODES,
-  KEEPER_FAILURE_REASONS,
-  KEEPER_JOB_PREFIX,
-  KEEPER_OWNER_LOSS,
-  KEEPER_PIPE_PREFIX,
-  KeeperLostError,
-  KeeperProtocolError,
-  attachKept,
-  confirmByAttach,
-  keeperExitName,
-  launchKept,
-  stopKeptGroup,
-} from './platform/windows-keeper.ts';
+export { KEEPER_EXIT_CODES, KEEPER_JOB_PREFIX, KEEPER_NAME_BYTES, KEEPER_NAME_FORM, KEEPER_PIPE_PREFIX, keeperExitName } from './process-contract.ts';
+export type { KeeperExitName } from './process-contract.ts';
+export { KEEPER_FAILURE_REASONS, KEEPER_OWNER_LOSS, KeeperLostError, KeeperProtocolError, attachKept, confirmByAttach, launchKept, openKeptLaunch, stopKeptGroup } from './platform/windows-keeper.ts';
 export type {
   CommandExitAnswer,
   ConfirmByName,
   KeeperConnection,
-  KeeperExitName,
   KeeperFailureReason,
   KeeperHost,
   KeeperListener,
@@ -476,7 +468,8 @@ export type {
   KeptStopOptions,
   KeptStopOutcome,
   MembersAnswer,
+  OpenedLaunch,
   NameConfirmation,
 } from './platform/windows-keeper.ts';
-export { createNodeKeeperHost, listenForKeeper, startDetachedKeeper } from './platform/windows-keeper-host.ts';
+export { createNodeKeeperHost, hostKeeperHost, listenForKeeper, provideCheckedWindowsKeeper, provideWindowsKeeper, startDetachedKeeper } from './platform/windows-keeper-host.ts';
 export type { NodeKeeperHostOptions } from './platform/windows-keeper-host.ts';

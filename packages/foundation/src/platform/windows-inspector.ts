@@ -1,13 +1,17 @@
 import type { CommandRunner } from './command-runner.ts';
 import { failureOfError, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
-import type { GroupProbeOptions } from './group-port.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
-import type { GroupLedger } from './windows-parsers.ts';
-import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTime } from './windows-parsers.ts';
-import { PROCESS_TABLE_SCRIPT, holdersScript, powershellArgs, powershellPath, startTimeScript, taskkillPath } from './windows-scripts.ts';
+import type { KeptGroupControl } from './windows-kept-groups.ts';
+import { parsePidList, parseStartTime } from './windows-parsers.ts';
+import { holdersScript, powershellArgs, powershellPath, startTimeScript } from './windows-scripts.ts';
 
-export type WindowsInspectorPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>> };
+export type WindowsInspectorPorts = {
+  run: CommandRunner;
+  env: Readonly<Record<string, string | undefined>>;
+  groups: Pick<KeptGroupControl, 'members'>;
+  alive(pid: number): boolean;
+};
 
 const probeEnv = (env: Readonly<Record<string, string | undefined>>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined));
@@ -37,7 +41,7 @@ const failureOf = (error: unknown): ProbeFailure => {
   return failureOfError(error);
 };
 
-export const createWindowsInspector = ({ run, env }: WindowsInspectorPorts): ProcessInspector => {
+export const createWindowsInspector = ({ run, env, groups, alive }: WindowsInspectorPorts): ProcessInspector => {
   const execute = async (script: string, signal: AbortSignal): Promise<string> => {
     const result = await run(powershellPath(env), powershellArgs(script), { env: probeEnv(env), signal });
     if (result.exitCode !== 0) throw new PowerShellExit(result.exitCode, `powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
@@ -64,44 +68,14 @@ export const createWindowsInspector = ({ run, env }: WindowsInspectorPorts): Pro
       }),
     groupsOf: (pids, candidateGroups, { signal }) =>
       guarded(async () => {
-        const output = await execute(PROCESS_TABLE_SCRIPT, signal);
-        const rows = parseOutput(() => parseProcessTable(output));
-        const alive = new Set(rows.map((row) => row.pid));
-        return { kind: 'value', value: new Map(pids.filter((pid) => alive.has(pid)).map((pid) => [pid, groupOfPid(rows, pid, candidateGroups)])) };
+        const jobs = await Promise.all(candidateGroups.map(async (candidate) => ({ candidate, members: new Set(await groups.members(candidate, { signal })) })));
+        const value = new Map<number, number>();
+        for (const pid of pids) {
+          const job = jobs.find(({ candidate, members }) => members.has(pid) || (candidate === pid && alive(pid)));
+          if (job !== undefined) value.set(pid, job.candidate);
+          else if (alive(pid)) value.set(pid, pid);
+        }
+        return { kind: 'value', value };
       }),
   });
-};
-
-export type WindowsGroupPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>> };
-
-export const TASKKILL_NOT_FOUND_EXIT_CODE = 128;
-
-export type GroupControl = {
-  members(root: number, options: GroupProbeOptions): Promise<number[]>;
-  terminate(root: number, options: GroupProbeOptions): Promise<void>;
-};
-
-export const createWindowsGroupControl = ({ run, env }: WindowsGroupPorts): GroupControl => {
-  const ledgers = new Map<number, GroupLedger>();
-  const members = async (root: number, options: GroupProbeOptions): Promise<number[]> => {
-    const result = await run(powershellPath(env), powershellArgs(PROCESS_TABLE_SCRIPT), { env: probeEnv(env), signal: options.signal });
-    if (result.exitCode !== 0) throw new Error(`powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
-    const rows = parseProcessTable(result.stdout);
-    const ledger = ledgers.get(root) ?? new Map();
-    ledgers.set(root, ledger);
-    const found = groupMembers(rows, root, ledger);
-    if (found.length === 0) ledgers.delete(root);
-    return found;
-  };
-  return {
-    members,
-    terminate: async (root, options) => {
-      const targets = await members(root, options);
-      if (targets.length === 0) return;
-      const result = await run(taskkillPath(env), ['/F', ...targets.flatMap((pid) => ['/PID', String(pid)])], { env: probeEnv(env), signal: options.signal });
-      if (result.exitCode !== 0 && result.exitCode !== TASKKILL_NOT_FOUND_EXIT_CODE) {
-        throw new Error(`taskkill exited with ${result.exitCode}: ${result.stderr.trim()}`);
-      }
-    },
-  };
 };

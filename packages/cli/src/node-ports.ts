@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -25,8 +25,11 @@ import {
   systemRandom,
   writeFileAtomically,
   writeFileAtomicallySync,
+  launchApart,
 } from '@momonga/foundation';
 import type { HeldKernelLock, LaunchProgram } from '@momonga/foundation';
+import { sourceBuiltWindowsKeeper } from './keeper/source.ts';
+import type { SourceKeeperFiles } from './keeper/source.ts';
 import { createHandoverHost } from './handover/host.ts';
 import type { RecordFiles } from './handover/host.ts';
 import { HANDOVER_RECORD_MAX_BYTES } from './handover/record.ts';
@@ -98,7 +101,7 @@ export const createWorkspaceProbe = (env: Readonly<Record<string, string>>): Wor
 
 export const launchProgram: LaunchProgram = (file, args) =>
   new Promise((resolve, reject) => {
-    const child = spawn(file, [...args], { detached: true, stdio: 'ignore', windowsHide: true });
+    const child = launchApart(file, args, { stdio: 'ignore', windowsHide: true });
     child.once('error', reject);
     child.once('exit', (exitCode, signal) => resolve({ exitCode, signal }));
     child.unref();
@@ -159,11 +162,30 @@ export const nodeFiles: CliFiles = {
   },
 };
 
+export const WINDOWS_KEEPER_BUILD_SCRIPT = path.resolve(import.meta.dirname, '..', '..', '..', 'scripts', 'windows-keeper.ts');
+
+export const nodeSourceKeeperFiles: SourceKeeperFiles = {
+  exists: (file) => existsSync(file),
+  read: (file) => readFileSync(file),
+  mkdirPrivate: (directory) => void mkdirSync(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE }),
+  write: (file, bytes) => writeFileSync(file, bytes, { mode: PRIVATE_DIRECTORY_MODE }),
+  rename: (from, to) => renameSync(from, to),
+  remove: (target) => rmSync(target, { recursive: true, force: true }),
+};
+
+export const runKeeperBuild = (script: string, workDir: string): number | null => {
+  const run = spawnSync(process.execPath, [script, '--work-dir', workDir], { stdio: ['ignore', 'ignore', 'inherit'], windowsHide: true });
+  if (run.error !== undefined) throw run.error;
+  return run.status;
+};
+
+export const hostSourceBuiltWindowsKeeper = (executablesRoot: string): (() => string) =>
+  sourceBuiltWindowsKeeper({ script: WINDOWS_KEEPER_BUILD_SCRIPT, executablesRoot, build: runKeeperBuild, files: nodeSourceKeeperFiles, random: systemRandom });
+
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
-  const child = spawn(spec.command, [...spec.args], {
+  const child = launchApart(spec.command, spec.args, {
     cwd: spec.cwd,
-    env: { ...spec.env },
-    detached: true,
+    env: spec.env,
     stdio: spec.lifeline === true ? ['ignore', 'ignore', 'ignore', 'pipe'] : 'ignore',
   });
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {

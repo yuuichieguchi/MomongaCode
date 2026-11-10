@@ -1,9 +1,8 @@
-import { spawn as nodeSpawn } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHostExec, groupRecordOutcome, recordMarkerGroup, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
+import { createHostExec, groupRecordOutcome, launchGroupLeader, recordMarkerGroup, reapMarkedProcesses, reapMarkerDirectory, signalGroup } from '@momonga/foundation';
+import type { GroupLaunch } from '@momonga/foundation';
 import type { ExecFn } from './preconditions.ts';
 import type { ManagedChild, SpawnFn } from './server.ts';
 
@@ -21,26 +20,35 @@ const MARKER_FD_INDEX = 3;
 
 export type WarningSink = (message: string) => void;
 
-const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSink): ManagedChild => {
+const groupChildOf = ({ child, pgid, onExit }: GroupLaunch, marker: string, onWarning: WarningSink): ManagedChild => {
   const removeMarker = (): void => fs.rmSync(marker, { force: true });
   child.once('error', removeMarker);
   const recorded =
-    child.pid === undefined
+    pgid === undefined
       ? Promise.resolve()
-      : groupRecordOutcome(recordMarkerGroup(marker, child.pid), marker).then((notice) => {
+      : groupRecordOutcome(recordMarkerGroup(marker, pgid), marker).then((notice) => {
           if (notice !== undefined) onWarning(notice);
         });
   return {
     kill: async (signal = 'SIGTERM', stop) => {
-      if (child.pid === undefined) return false;
-      await signalGroup(child.pid, signal, undefined, stop);
+      if (pgid === undefined) return false;
+      await signalGroup(pgid, signal, undefined, stop);
       return true;
     },
     finalize: async (graceMs) => {
       await recorded;
-      await reapMarkedProcesses({ marker, pgid: child.pid, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning });
+      await reapMarkedProcesses({ marker, pgid, killGraceMs: graceMs, label: MANAGED_SERVER_LABEL, onWarning });
     },
-    once: child.once.bind(child) as ManagedChild['once'],
+    once: ((event: 'error' | 'exit', listener: (...values: never[]) => void): void => {
+      if (event === 'error') {
+        const failed = listener as unknown as (error: Error) => void;
+        child.once('error', failed);
+        onExit(() => undefined, failed);
+        return;
+      }
+      const exited = listener as unknown as (code: number | null, signal: NodeJS.Signals | null) => void;
+      onExit(({ code, signal }) => exited(code, signal), () => undefined);
+    }) as ManagedChild['once'],
   };
 };
 
@@ -50,28 +58,15 @@ export const createGroupSpawn =
   ({ env, markerDirectory, onWarning }: GroupSpawnOptions): SpawnFn =>
   (file, args) => {
     const marker = path.join(markerDirectory, randomUUID());
-    const creator = fs.openSync(marker, 'w', 0o600);
-    let markerFd: number;
+    fs.closeSync(fs.openSync(marker, 'w', 0o600));
+    let launched: GroupLaunch;
     try {
-      markerFd = fs.openSync(marker, 'r');
+      launched = launchGroupLeader({ file, args, ...envOption(env), stdio: ['ignore', 'ignore', 'ignore'], marker: { slot: MARKER_FD_INDEX, file: marker } });
     } catch (error) {
       fs.rmSync(marker, { force: true });
       throw error;
-    } finally {
-      fs.closeSync(creator);
     }
-    const stdio: Array<'ignore' | number> = ['ignore', 'ignore', 'ignore'];
-    stdio[MARKER_FD_INDEX] = markerFd;
-    let child: ChildProcess;
-    try {
-      child = nodeSpawn(file, [...args], { ...envOption(env), detached: true, stdio });
-    } catch (error) {
-      fs.rmSync(marker, { force: true });
-      throw error;
-    } finally {
-      fs.closeSync(markerFd);
-    }
-    return groupChildOf(child, marker, onWarning);
+    return groupChildOf(launched, marker, onWarning);
   };
 
 export type ReapStaleGroupsOptions = { markerDirectory: string; graceMs: number; onWarning: WarningSink; signal: AbortSignal };

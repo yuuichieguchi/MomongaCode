@@ -7,6 +7,7 @@ export const WINDOWS_KEEPER_MANIFEST_ASSET = 'windows-keeper-manifest.json';
 export const WINDOWS_KEEPER_BINARY_ASSET = 'windows-keeper.exe';
 export const WINDOWS_KEEPER_STAGED_INFIX = '.partial-';
 export const WINDOWS_KEEPER_STAGED_NAME_BYTES = 8;
+export const WINDOWS_KEEPER_COMPILER_MISSING_EXIT = 3;
 
 export type WindowsKeeperManifest = {
   target: string;
@@ -80,3 +81,10 @@ export const ensureBundledWindowsKeeper = async ({ asset, executablesRoot, rando
   if (!(await matches(files, final, sha256))) throw new WindowsKeeperDistributionError(`${final} changed after it was extracted and does not match the embedded keeper`);
   return final;
 };
+
+export const checkedWindowsKeeper =
+  (file: string, sha256: string, read: (file: string) => Uint8Array): (() => string) =>
+  () => {
+    if (sha256Hex(read(file)) !== sha256) throw new WindowsKeeperDistributionError(`${file} does not match the embedded keeper, so it was not started`);
+    return file;
+  };

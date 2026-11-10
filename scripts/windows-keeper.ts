@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_MANIFEST_ASSET, sha256Hex } from '@momonga/foundation';
+import { WINDOWS_KEEPER_BINARY_ASSET, WINDOWS_KEEPER_COMPILER_MISSING_EXIT, WINDOWS_KEEPER_MANIFEST_ASSET, sha256Hex } from '@momonga/foundation';
 import type { ReleaseTargetName, WindowsKeeperManifest } from '@momonga/foundation';
 import { repoRoot } from './bundle.ts';
 
@@ -30,6 +30,11 @@ export const compileWindowsProgram = (source: string, output: string, zigTarget:
   execFileSync(file, args, { env: { ...process.env, ZIG_GLOBAL_CACHE_DIR: zigCacheDir, ZIG_LOCAL_CACHE_DIR: zigCacheDir }, stdio: ['ignore', 'inherit', 'inherit'] });
 };
 
+export const compilerMissing = (error: unknown): boolean => {
+  const { code, syscall } = error as NodeJS.ErrnoException;
+  return code === 'ENOENT' && syscall === 'spawnSync zig';
+};
+
 export const buildWindowsKeeperAssets = async (workDir: string, target: ReleaseTargetName): Promise<Record<string, string>> => {
   const row = WINDOWS_KEEPER_TARGETS[target];
   if (row === undefined) return {};
@@ -53,6 +58,13 @@ if (import.meta.main) {
     },
   });
   if (!Object.hasOwn(WINDOWS_KEEPER_TARGETS, values.target)) throw new Error(`unknown --target ${values.target}; expected one of ${Object.keys(WINDOWS_KEEPER_TARGETS).join(', ')}`);
-  const assets = await buildWindowsKeeperAssets(values['work-dir'], values.target as ReleaseTargetName);
+  let assets: Record<string, string>;
+  try {
+    assets = await buildWindowsKeeperAssets(values['work-dir'], values.target as ReleaseTargetName);
+  } catch (error) {
+    if (!compilerMissing(error)) throw error;
+    process.stderr.write('zig was not found on PATH, so the keeper cannot be compiled\n');
+    process.exit(WINDOWS_KEEPER_COMPILER_MISSING_EXIT);
+  }
   process.stdout.write(`${assets[WINDOWS_KEEPER_BINARY_ASSET]}\n`);
 }
