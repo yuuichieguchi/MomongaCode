@@ -4603,11 +4603,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 621952,
+      "distinctStates": 1535159,
       "measuredSeconds": 23.73,
       "measuredCpuSeconds": 41.54,
       "budgetCpuSeconds": 87,
-      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 35.32 at start)"
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
     },
     {
       "config": "ProcessStop.escapeGenerations",
@@ -4615,11 +4615,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 429087,
+      "distinctStates": 1019647,
       "measuredSeconds": 19.64,
       "measuredCpuSeconds": 32.43,
       "budgetCpuSeconds": 68,
-      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 37.13 at start)"
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
     },
     {
       "config": "ProcessStop.groupProofIgnoresGroup",
@@ -4630,11 +4630,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 333,
+      "distinctStates": 309,
       "measuredSeconds": 4.08,
       "measuredCpuSeconds": 2.6,
       "budgetCpuSeconds": 9,
-      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.79 at start)"
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
     },
     {
       "config": "ProcessStop.noRelist",
@@ -4645,11 +4645,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 12764,
+      "distinctStates": 26303,
       "measuredSeconds": 4.79,
       "measuredCpuSeconds": 5.7,
       "budgetCpuSeconds": 15,
-      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 38.81 at start)"
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
     },
     {
       "config": "GroupFollowers",
@@ -4677,6 +4677,36 @@
       "measuredCpuSeconds": 1.85,
       "budgetCpuSeconds": 7,
       "measuredNote": "measured above the load gate, to be re-measured (1-minute load 37.13 at start)"
+    },
+    {
+      "config": "ProcessStop.listFailAsUnconfirmed",
+      "role": "evidence",
+      "expect": {
+        "violates": "ListFailureSaysUnlisted",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 306,
+      "measuredSeconds": 1.9,
+      "measuredCpuSeconds": 2.42,
+      "budgetCpuSeconds": 8,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
+    },
+    {
+      "config": "ProcessStop.listFailAsEmpty",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoWordFromFailedListing",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 306,
+      "measuredSeconds": 1.9,
+      "measuredCpuSeconds": 2.42,
+      "budgetCpuSeconds": 8,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 20 at start; ListFails added, design 19.6 point 10)"
     }
   ]
 }

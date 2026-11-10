@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant, StopScope, Gen2Members, SameSecondReuse, Escape
 
-ASSUME Variant \in {"decided", "retireSignalsOther", "crossGenWithoutHold", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent", "sameSecondWithoutHold", "groupProofIgnoresGroup", "noRelist"}
+ASSUME Variant \in {"decided", "retireSignalsOther", "crossGenWithoutHold", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent", "sameSecondWithoutHold", "groupProofIgnoresGroup", "noRelist", "listFailAsUnconfirmed", "listFailAsEmpty"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME StopScope \in {"userStop", "retire"}
 ASSUME Gen2Members \subseteq Members
@@ -51,7 +51,7 @@ TypeOK ==
     /\ phase \in {"idle", "termWait", "killWait", "done", "settle", "listing", "groupProbe"}
     /\ termSent \in BOOLEAN
     /\ killSent \in BOOLEAN
-    /\ outcome \in {"none", "gone", "terminated", "killed", "unconfirmed", "throw", "free", "silent", "job", "unchecked"}
+    /\ outcome \in {"none", "gone", "terminated", "killed", "unconfirmed", "throw", "free", "silent", "job", "unchecked", "unlisted"}
     /\ marker \in {"kept", "none"}
     /\ unprovedSignalled \in BOOLEAN
     /\ begunUnproved \in BOOLEAN
@@ -288,7 +288,7 @@ Sweep ==
     /\ ~Settle
     /\ ListFresh
     /\ phase = "done"
-    /\ outcome = "unconfirmed"
+    /\ outcome \in {"unconfirmed", "unlisted"}
     /\ ~OursVisible
     /\ marker = "kept"
     /\ marker' = "none"
@@ -296,7 +296,7 @@ Sweep ==
 
 Retry ==
     /\ phase = "done"
-    /\ (outcome = "unconfirmed" \/ (Settle /\ ObsHeld))
+    /\ (outcome \in {"unconfirmed", "unlisted"} \/ (Settle /\ ObsHeld))
     /\ marker = "kept"
     /\ attempts < MaxAttempts
     /\ \E e \in Events :
@@ -355,6 +355,17 @@ Relist ==
     /\ listed # FreshListing
     /\ listed' = FreshListing
     /\ UNCHANGED <<crossGen, held, inGroup, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+ListFails ==
+    /\ Escape
+    /\ mode = "recorded"
+    /\ ~listFailed
+    /\ phase \in {"idle", "termWait", "killWait"}
+    /\ listFailed' = TRUE
+    /\ (CASE Variant = "listFailAsUnconfirmed" -> Finish("unconfirmed", KeepOnUnconfirmed)
+          [] Variant = "listFailAsEmpty" -> Finish(IF phase = "idle" THEN "gone" ELSE IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
+          [] OTHER -> Finish("unlisted", KeepOnUnconfirmed))
+    /\ UNCHANGED <<crossGen, held, inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved, shown, basis, groupKnown>>
 
 Settled ==
     /\ phase = "done"
@@ -524,6 +535,7 @@ Next ==
     \/ CallerAborts
     \/ Sweep
     \/ Relist
+    \/ ListFails
     \/ Retry
     \/ Settled
     \/ SettleObserve
@@ -562,6 +574,10 @@ FairSpec ==
     /\ WF_vars(FinalNotice)
     /\ \A m \in Members : WF_vars(MemberFinishesExit(m))
 
+ListFailureSaysUnlisted == [][ListFails => outcome' = "unlisted"]_vars
+
+NoWordFromFailedListing == [][ListFails => outcome' \notin {"gone", "terminated", "killed"}]_vars
+
 NoThrow == outcome # "throw"
 
 NoSignalToUnprovedGroup == ~unprovedSignalled
@@ -590,7 +606,7 @@ ExhaustedIsFinal ==
 UnconfirmedOnlyWhileOneCanRun ==
     [][((Begin \/ TermWaitEnds \/ KillWaitEnds) /\ mode = "live" /\ outcome' = "unconfirmed") => GroupRunnable # {}]_vars
 
-UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupRunnable # {}) => (outcome = "unconfirmed" /\ marker = "kept")
+UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupRunnable # {}) => (outcome \in {"unconfirmed", "unlisted"} /\ marker = "kept")
 
 TeardownOnlyFreed == []((marker = "kept" /\ ~SomeoneRuns) => <>(marker = "none"))
 
