@@ -54,6 +54,16 @@ describe('CI configuration', () => {
     for (const reference of uses) expect(reference).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
   });
 
+  it('turns on the reuse of model-checking results only in its own script, never in the gate, CI or the container', () => {
+    expect(packageJson.scripts['test']).toBe('vitest run --project unit');
+    expect(packageJson.scripts['test:reuse']).toBe('MOMONGA_TLC_REUSE=1 vitest run --project unit');
+    expect(packageJson.scripts['test:tlc-deep']).toBe('MOMONGA_TLC_TIER=deep vitest run --project unit test/formal');
+    for (const text of [workflow, fs.readFileSync(`${repoRoot}scripts/release.sh`, 'utf8'), fs.readFileSync(`${repoRoot}scripts/test-linux.sh`, 'utf8')]) {
+      expect(text).not.toContain('MOMONGA_TLC_REUSE');
+      expect(text).not.toContain('test:reuse');
+    }
+  });
+
   it('a project with no matching test file fails the run instead of passing green', () => {
     expect(vitestConfig).not.toContain('passWithNoTests');
   });
