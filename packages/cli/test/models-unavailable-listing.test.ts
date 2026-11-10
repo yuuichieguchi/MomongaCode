@@ -12,6 +12,7 @@ import { formatModels } from '../src/commands/models.ts';
 import { BUILTIN_SLASH_COMMANDS } from '../src/tui/slash.ts';
 import type { SlashContext } from '../src/tui/slash.ts';
 import { CHATGPT } from './fake-plan-gateway.tsx';
+import { serveModelsListing } from './fake-models-listing.ts';
 
 const M =
   'the model plan-model cannot be used yet: the settings give no context window and output limit for it, and the model list of its account reports none; momonga models --catalog reads the list';
@@ -65,6 +66,26 @@ describe('the CLI shows an alias that is not listed with capabilities by its rea
     const models = await client.models();
     expect(models.map((model) => model.id)).toEqual(['plan-alias', 'mixed', 'local-alias', 'probing-alias']);
     expect(models[0]?.capabilities).toEqual(UNAV);
+  });
+
+  it('refuses a listing whose targetCapabilities holds a malformed value, as it refuses a malformed alias capabilities', async (context) => {
+    const malformed = { ...LOCAL, contextWindow: 'wide' };
+    const answerTo = async (entry: Record<string, unknown>): Promise<{ refusal: string | undefined; expected: string }> => {
+      const data = [entry];
+      const gateway = await serveModelsListing(context, data);
+      const client = createGatewayClient({ resolveSocket: fixedSocket(gateway.socketPath) });
+      registerCleanup(context, () => client.close());
+      const refusal = await client.models().then(
+        () => undefined,
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      );
+      return { refusal, expected: `GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify({ object: 'list', data })}` };
+    };
+    const base = { id: 'local-alias', object: 'model', targets: ['local'], targetBilling: { local: 'metered' } };
+    const aliasLevel = await answerTo({ ...base, capabilities: malformed, targetCapabilities: { local: LOCAL } });
+    expect(aliasLevel.refusal).toBe(aliasLevel.expected);
+    const targetLevel = await answerTo({ ...base, capabilities: LOCAL, targetCapabilities: { local: malformed } });
+    expect(targetLevel.refusal).toBe(targetLevel.expected);
   });
 
   it('momonga models prints the reason line for a not-listed alias and the block for a listed one', () => {

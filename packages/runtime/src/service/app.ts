@@ -6,12 +6,12 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, agentReadiness } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, TARGET_PROBING_MESSAGE, agentReadiness, readinessText } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
-import { GatewayRequestError } from '../gateway-client.ts';
+import { GatewayRequestError, ModelUnlistedError, isTargetProbing } from '../gateway-client.ts';
 import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
 import type { SandboxKind } from '../process/sandbox-kind.ts';
 import {
@@ -20,6 +20,7 @@ import {
   configError,
   contributionUnavailable,
   errorResponse,
+  gatewayAnswer,
   imageInputUnsupported,
   idempotencyKeyReused,
   internalErrorResponse,
@@ -113,6 +114,18 @@ const protectedAreaOf = (areas: readonly string[], target: string): string | und
 
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
+
+const isClientErrorStatus = (status: number): boolean => status >= 400 && status < 500;
+
+const capabilitiesReadFailure = (error: unknown): unknown => {
+  if (error instanceof GatewayRequestError && isTargetProbing(error)) return targetNotReady(TARGET_PROBING_MESSAGE);
+  if (error instanceof ModelUnlistedError) return targetNotReady(readinessText(agentReadiness({ unavailable: error.message })));
+  if (isGatewayUnavailable(error)) return serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
+  if (error instanceof GatewayRequestError && isClientErrorStatus(error.status)) {
+    return gatewayAnswer({ status: error.status, type: error.type, code: error.code, message: error.message });
+  }
+  return error;
+};
 
 const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
   if (mode === 'auto') {
@@ -352,8 +365,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       try {
         capabilities = await deps.modelCapabilities(session.modelAlias, context.req.raw.signal);
       } catch (error) {
-        if (isGatewayUnavailable(error)) throw serviceUnavailable('gateway_unavailable', 'the model gateway is unavailable');
-        throw error;
+        throw capabilitiesReadFailure(error);
       }
       if (!capabilities.imageInput) throw imageInputUnsupported(session.modelAlias);
     }

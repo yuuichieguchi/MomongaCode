@@ -1,5 +1,5 @@
 import type { PlanProfile } from '@momonga/config';
-import { isRecord, parseOutsideJson } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { Clock, CredentialStore, EventPayload } from '@momonga/foundation';
 import { maxOutputTokensFor } from '@momonga/protocol';
 import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
@@ -55,15 +55,24 @@ const listErrorOf = (response: ListAnswer, clock: Clock): UpstreamHttpError => {
 
 export const catalogKey = (profile: string, account: string): string => `${profile}/${account}`;
 
+const parsedRecordText = (text: string): unknown => {
+  try {
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof JsonDepthError) throw error;
+    throw new Error('the plan catalog record is not valid JSON', { cause: error });
+  }
+};
+
 const parseRecord = (text: string): CatalogRecord => {
-  const value: unknown = parseOutsideJson(text);
+  const value: unknown = parsedRecordText(text);
   if (!isRecord(value) || typeof value['readAt'] !== 'string' || !isRecord(value['models'])) throw new Error('the plan catalog record has an unrecognised shape');
   const models: Record<string, RecordEntry> = {};
   for (const [slug, entry] of Object.entries(value['models'])) {
     if (isRecord(entry) && entry['unreported'] === true) models[slug] = { unreported: true };
     else if (isRecord(entry) && typeof entry['contextWindow'] === 'number' && typeof entry['maxOutputTokens'] === 'number') {
       models[slug] = { contextWindow: entry['contextWindow'], maxOutputTokens: entry['maxOutputTokens'], source: 'reported' };
-    } else throw new Error(`the plan catalog record has an unrecognised entry for ${JSON.stringify(slug)}`);
+    } else throw new Error('the plan catalog record has an unrecognised entry');
   }
   return { readAt: value['readAt'], models };
 };

@@ -5,7 +5,7 @@ import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDatas
 import type { GoldenDataset } from '@momonga/eval';
 import { autoModeNotice } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
-import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
+import { createHomes, liveSettingsFor, needsPlanRelay, readCredentials, readPlanRelay, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
@@ -82,7 +82,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = await classifierKeyOf(ports.models, classifier, ports.effects.platform, signal);
   const aliases = [options.agent, classifier];
-  const relay = needsPlanRelay(ports.models, aliases) ? { planRelaySocket: await currentSocketResolver(momongaPaths(ports.home), 'gateway')() } : undefined;
+  const relay = needsPlanRelay(ports.models, aliases) ? await readPlanRelay(await currentSocketResolver(momongaPaths(ports.home), 'gateway')(), signal) : undefined;
   const settings = liveSettingsFor(ports.models, aliases, relay);
   const credentialValues = await readCredentials(ports.effects, settings.credentials, signal ?? new AbortController().signal);
   const swept = await sweepStaleHomes(ports.effects);

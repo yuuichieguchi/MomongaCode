@@ -12,6 +12,7 @@ import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_PO
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
 import type { AutoModeCheckPorts } from '../src/commands/auto-mode.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+import { LISTED_CONTEXT_WINDOW, LISTED_MAX_OUTPUT_TOKENS, LISTED_PLAN, MODELS_LISTING_REQUEST, PLAN_MODEL, PLAN_TARGET, absentGatewaySocket, listingEntry, modelsFailureOn, productWrittenPlanModels, serveModelsListing } from './fake-models-listing.ts';
 
 const AUTO_MODE_RUNS = 148;
 
@@ -291,78 +292,86 @@ describe('a check aborted by its signal leaves no daemon and no home behind (C1,
   });
 });
 
-const RELAYED_PLAN_CAPABILITIES = {
-  contextWindow: 272000,
-  maxOutputTokens: 128000,
-  structuredOutput: 'json_schema',
-  streaming: true,
-  stopSequences: true,
-  imageInput: false,
-  parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
-  tokenCounting: 'estimated',
-  usageReported: true,
-  source: 'config',
-};
-
-const RESOLVED_PLAN_CAPABILITIES = { ...RELAYED_PLAN_CAPABILITIES, maxConcurrency: 4 };
-
-const GATE_GATEWAY_SOCKET = '/tmp/gate-home-sockets/gateway-2.sock';
-
-const withPlanAgent = (models: UserModels): UserModels => {
+const withPlanAgent = (models: UserModels, plan: UserModels): UserModels => {
   const user = models as unknown as { declared: { aliases: Record<string, string[]>; targets: Record<string, unknown> }; resolved: { aliases: Record<string, string[]>; targets: Record<string, unknown> } };
   return {
     ...user,
-    declared: { aliases: { ...user.declared.aliases, planner: ['p'] }, targets: { ...user.declared.targets, p: { adapter: 'open-responses', model: 'plan-model', plan: { profile: 'chatgpt', account: 'gate' } } } },
-    resolved: {
-      ...user.resolved,
-      aliases: { ...user.resolved.aliases, planner: ['p'] },
-      targets: {
-        ...user.resolved.targets,
-        p: {
-          adapter: 'open-responses',
-          model: 'plan-model',
-          provider: 'openai',
-          toolCalling: 'native',
-          baseUrl: 'https://chatgpt.invalid/backend-api/codex',
-          plan: { profile: 'chatgpt', account: 'gate' },
-          billing: 'plan',
-          capabilities: RESOLVED_PLAN_CAPABILITIES,
-          maxConcurrency: 4,
-          admissionTimeoutMs: 30000,
-        },
-      },
-    },
+    declared: { aliases: { ...user.declared.aliases, planner: [PLAN_TARGET] }, targets: { ...user.declared.targets, [PLAN_TARGET]: plan.declared.targets?.[PLAN_TARGET] } },
+    resolved: { ...user.resolved, aliases: { ...user.resolved.aliases, planner: [PLAN_TARGET] }, targets: { ...user.resolved.targets, [PLAN_TARGET]: plan.resolved.targets[PLAN_TARGET] } },
   } as unknown as UserModels;
 };
 
-describe('auto-mode check with a plan alias relays through the gateway of the gate home (O-R5-6 J 7, P6.10)', () => {
-  it('writes the relay target with exactly the keys of the rule into every case home and does not refuse', async () => {
+const publishGateGateway = async (home: string, gatewaySocket: string): Promise<void> => {
+  fs.mkdirSync(path.dirname(momongaPaths(home).current), { recursive: true, mode: 0o700 });
+  await publishCurrentGeneration(
+    momongaPaths(home),
+    { generation: 2, version: '0.0.0-test', sockets: { gateway: gatewaySocket, runtime: '/tmp/gate-home-sockets/runtime-2.sock', supervisor: '/tmp/gate-home-sockets/supervisor-2.sock' } },
+    nodeFileSystem,
+    createFakeKernelLock({ inheritable: false }),
+  );
+};
+
+const RELAY_TARGET_KEYS = ['adapter', 'admissionTimeoutMs', 'billing', 'capabilities', 'maxConcurrency', 'model', 'provider', 'socketPath', 'toolCalling'];
+
+describe('auto-mode check with a plan alias relays through the gateway of the gate home (O-R5-6 J 7, P6.10, K4)', () => {
+  it('reads the listing of the gate home gateway once and writes the relay target with exactly the keys of the rule and the numbers of the listing into every case home', async (context) => {
+    const gateway = await serveModelsListing(context, [listingEntry('planner', { [PLAN_TARGET]: LISTED_PLAN })]);
     const state = fake();
     const { ports, home } = portsFor(state.effects);
-    fs.mkdirSync(path.dirname(momongaPaths(home).current), { recursive: true, mode: 0o700 });
-    await publishCurrentGeneration(
-      momongaPaths(home),
-      { generation: 2, version: '0.0.0-test', sockets: { gateway: GATE_GATEWAY_SOCKET, runtime: '/tmp/gate-home-sockets/runtime-2.sock', supervisor: '/tmp/gate-home-sockets/supervisor-2.sock' } },
-      nodeFileSystem,
-      createFakeKernelLock({ inheritable: false }),
-    );
-    await autoModeCheck({ ...ports, models: withPlanAgent(ports.models) }, { classifier: 'guard', agent: 'planner' });
+    await publishGateGateway(home, gateway.socketPath);
+    await autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner' });
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
     expect(state.roots.size).toBe(AUTO_MODE_RUNS);
     for (const entry of state.roots.values()) {
-      const settings = JSON.parse(entry.settings ?? '{}') as { models?: { aliases?: Record<string, unknown>; targets?: Record<string, unknown> } };
-      expect(settings.models?.aliases).toEqual({ planner: ['p'], guard: ['g'] });
-      expect(settings.models?.targets?.['p']).toEqual({
+      const settings = JSON.parse(entry.settings ?? '{}') as { models?: { aliases?: Record<string, unknown>; targets?: Record<string, { capabilities?: Record<string, unknown> }> } };
+      expect(settings.models?.aliases).toEqual({ planner: [PLAN_TARGET], guard: ['g'] });
+      const target = settings.models?.targets?.[PLAN_TARGET];
+      expect(Object.keys(target ?? {}).sort()).toEqual(RELAY_TARGET_KEYS);
+      expect(target).toMatchObject({
         adapter: 'open-responses',
-        model: 'plan-model',
-        provider: 'openai',
+        model: PLAN_MODEL,
+        provider: 'chatgpt',
         toolCalling: 'native',
-        socketPath: GATE_GATEWAY_SOCKET,
+        socketPath: gateway.socketPath,
         billing: 'plan',
-        capabilities: RELAYED_PLAN_CAPABILITIES,
         maxConcurrency: 4,
         admissionTimeoutMs: 30000,
       });
+      expect(target?.capabilities).toMatchObject({ contextWindow: LISTED_CONTEXT_WINDOW, maxOutputTokens: LISTED_MAX_OUTPUT_TOKENS });
+      expect(target?.capabilities).not.toHaveProperty('maxConcurrency');
     }
+  });
+
+  it('waits for the listing under the signal of the command and opens no home when it is aborted', async (context) => {
+    const gateway = await serveModelsListing(context, 'never');
+    const state = fake();
+    const { ports, home } = portsFor(state.effects);
+    await publishGateGateway(home, gateway.socketPath);
+    const controller = new AbortController();
+    const running = autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner', signal: controller.signal });
+    const settled = running.then(
+      () => 'settled' as const,
+      () => 'settled' as const,
+    );
+    expect(await Promise.race([gateway.firstRequest, settled])).toBe('requested');
+    const reason = new Error('interrupted');
+    controller.abort(reason);
+    expect(await running.catch((error: unknown) => error)).toBe(reason);
+    expect(gateway.requests).toEqual([MODELS_LISTING_REQUEST]);
+    expect(state.roots.size).toBe(0);
+    expect(recordsIn(home)).toEqual([]);
+  });
+
+  it('rejects with the error of the gateway client and opens no home when the gateway of the gate home is not running', async (context) => {
+    const absent = absentGatewaySocket(context);
+    const expected = await modelsFailureOn(absent);
+    const state = fake();
+    const { ports, home } = portsFor(state.effects);
+    await publishGateGateway(home, absent);
+    const failure = await autoModeCheck({ ...ports, models: withPlanAgent(ports.models, productWrittenPlanModels(context)) }, { classifier: 'guard', agent: 'planner' }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(expected.constructor);
+    expect((failure as Error).message).toBe(expected.message);
+    expect(state.roots.size).toBe(0);
+    expect(recordsIn(home)).toEqual([]);
   });
 });

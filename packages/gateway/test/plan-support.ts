@@ -493,6 +493,56 @@ export const failingWrites = (inner: ListableCredentialStore, fails: (value: str
   listKeys: () => inner.listKeys(),
 });
 
+export const refusingLocks = (inner: ListableCredentialStore, refuses: () => Error | undefined): ListableCredentialStore => ({
+  read: (key) => inner.read(key),
+  remove: (key) => inner.remove(key),
+  write: (key, value) => inner.write(key, value),
+  update: (key, change) => inner.update(key, change),
+  withKey: (key, action) => {
+    const error = refuses();
+    return error === undefined ? inner.withKey(key, action) : Promise.reject(error);
+  },
+  listKeys: () => inner.listKeys(),
+});
+
+export type HeldWrite = { store: ListableCredentialStore; lockRequests(): number; reached: Promise<void>; fail(error: Error): void };
+
+export const holdingOneWrite = (inner: ListableCredentialStore, matches: (value: string) => boolean): HeldWrite => {
+  let armed = true;
+  let requests = 0;
+  let arrive = (): void => undefined;
+  let fail = (_error: Error): void => undefined;
+  const reached = new Promise<void>((resolve) => {
+    arrive = resolve;
+  });
+  const parked = new Promise<void>((_resolve, reject) => {
+    fail = reject;
+  });
+  const store: ListableCredentialStore = {
+    read: (key) => inner.read(key),
+    remove: (key) => inner.remove(key),
+    write: (key, value) => inner.write(key, value),
+    update: (key, change) => inner.update(key, change),
+    withKey: (key, action) => {
+      requests += 1;
+      return inner.withKey(key, (entry) =>
+        action({
+          read: () => entry.read(),
+          remove: () => entry.remove(),
+          write: (value) => {
+            if (!armed || !matches(value)) return entry.write(value);
+            armed = false;
+            arrive();
+            return parked;
+          },
+        }),
+      );
+    },
+    listKeys: () => inner.listKeys(),
+  };
+  return { store, lockRequests: () => requests, reached, fail: (error) => fail(error) };
+};
+
 export const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: simulated`), { code });
 
 export const storeKeyFailure = (): CredentialStoreError =>

@@ -69,7 +69,7 @@ export type PlanGatewayClient = {
 };
 
 export type GatewayClient = {
-  models(): Promise<readonly MomongaModelEntry[]>;
+  models(signal?: AbortSignal): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
   capabilitiesOf(alias: string): Promise<MomongaModelEntry['capabilities']>;
   contextWindowOf(alias: string): Promise<number>;
@@ -113,6 +113,8 @@ const isOptional = (value: unknown, holds: (entry: unknown) => boolean): boolean
 
 const isTargetPlan = (value: unknown): boolean => isRecord(value) && isString(value['profile']) && isOptional(value['account'], isString);
 
+const isListedCapabilities = (value: unknown): boolean => isCapabilities(value) || isNotListedListing(value);
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
@@ -122,7 +124,8 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      (isCapabilities(entry['capabilities']) || isNotListedListing(entry['capabilities'])) &&
+      isListedCapabilities(entry['capabilities']) &&
+      isRecordOf(entry['targetCapabilities'], isListedCapabilities) &&
       isOptional(entry['targetBilling'], (billing) => isRecordOf(billing, (kind) => oneOf(kind, TARGET_BILLINGS))) &&
       isOptional(entry['targetPlan'], (plans) => isRecordOf(plans, isTargetPlan)),
   );
@@ -221,8 +224,8 @@ const isUsageReport = (value: unknown): value is UsageReport =>
 export const createGatewayClient = (options: { resolveSocket: SocketResolver }): GatewayClient => {
   const http = createUdsClient(options.resolveSocket);
 
-  const getJson = async (path: string): Promise<unknown> => {
-    const response = await http.request({ method: 'GET', path });
+  const getJson = async (path: string, signal?: AbortSignal): Promise<unknown> => {
+    const response = await http.request({ method: 'GET', path, ...(signal === undefined ? {} : { signal }) });
     const text = await response.text();
     if (response.status !== 200) throw new Error(`GET ${path} answered ${response.status}: ${text}`);
     return JSON.parse(text);
@@ -258,8 +261,8 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
 
   const health = (): Promise<GatewayHealth> => checked('GET', '/v1/momonga/health', undefined, isGatewayHealth, 'a gateway health report');
 
-  const models = async (): Promise<readonly MomongaModelEntry[]> => {
-    const body = await getJson('/v1/momonga/models');
+  const models = async (signal?: AbortSignal): Promise<readonly MomongaModelEntry[]> => {
+    const body = await getJson('/v1/momonga/models', signal);
     if (!isModelList(body)) throw new Error(`GET /v1/momonga/models answered a body that is not a model list: ${JSON.stringify(body)}`);
     return body.data;
   };

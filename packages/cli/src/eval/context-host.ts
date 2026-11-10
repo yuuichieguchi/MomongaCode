@@ -1,12 +1,14 @@
 import path from 'node:path';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE, escapeTerminalLine, isProbingCapabilities, isUnavailableCapabilities, notListedMessage } from '@momonga/protocol';
+import type { Capabilities, ProbingCapabilities, UnavailableCapabilities } from '@momonga/protocol';
 import { probeRecordKeyOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, OpenResponsesTarget, ResolvedModels, ResolvedPlanTarget, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, fixedSocket, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
+import { createGatewayClient } from '../client/gateway-client.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
@@ -93,7 +95,22 @@ const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
 export type ManagedRecordSource = { target: string; server: string; binary: string; model: string | undefined };
 
-export type PlanRelay = { planRelaySocket: string };
+export type ListedTargetCapabilities = Capabilities | ProbingCapabilities | UnavailableCapabilities;
+
+export type PlanRelay = { planRelaySocket: string; listed: Readonly<Record<string, ListedTargetCapabilities>> };
+
+export const readPlanRelay = async (planRelaySocket: string, signal: AbortSignal | undefined): Promise<PlanRelay> => {
+  const gateway = createGatewayClient({ resolveSocket: fixedSocket(planRelaySocket) });
+  try {
+    const entries = await gateway.models(signal);
+    return { planRelaySocket, listed: Object.fromEntries(entries.flatMap((entry) => Object.entries(entry.targetCapabilities))) };
+  } catch (error) {
+    signal?.throwIfAborted();
+    throw error;
+  } finally {
+    await gateway.close();
+  }
+};
 
 export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): boolean =>
   aliases.some((alias) => membersOf(user.resolved, alias).some((name) => {
@@ -101,19 +118,74 @@ export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): bo
     return target !== undefined && 'plan' in target;
   }));
 
-const relayTargetOf = (name: string, resolved: ResolvedPlanTarget, socketPath: string): OpenResponsesTarget => {
-  const { maxConcurrency: _maxConcurrency, contextWindow, maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
-  if (contextWindow === undefined || maxOutputTokens === undefined) {
-    throw new ContextHostError(`the target ${name} has no known context window or output limit, so a case home cannot be given it; read the account's models first with momonga models --catalog`);
+type ImagePairField = 'imageInput' | 'imageTokens';
+
+type ListedField = Exclude<keyof ResolvedPlanTarget['capabilities'] & keyof Capabilities, 'contextWindow' | 'maxOutputTokens' | 'maxConcurrency' | ImagePairField>;
+
+type ImagePair = Pick<OpenResponsesTarget['capabilities'], ImagePairField>;
+
+const LISTED_FIELDS: Record<ListedField | 'imagePair', true> = {
+  promptCache: true,
+  sampling: true,
+  reasoning: true,
+  structuredOutput: true,
+  jsonMode: true,
+  streaming: true,
+  stopSequences: true,
+  outputBoundField: true,
+  systemRole: true,
+  toolPlacement: true,
+  inputKinds: true,
+  parallelToolCalls: true,
+  allowedTools: true,
+  schemaDialect: true,
+  tokenCounting: true,
+  tokenErrorRatio: true,
+  usageReported: true,
+  source: true,
+  imagePair: true,
+};
+
+const isListedField = (key: string): key is ListedField => key !== 'imagePair' && Object.hasOwn(LISTED_FIELDS, key);
+
+const imagePairOf = (side: { imageInput: boolean | undefined; imageTokens: ImagePair['imageTokens'] | undefined }): ImagePair => ({
+  ...(side.imageInput === undefined ? {} : { imageInput: side.imageInput }),
+  ...(side.imageTokens === undefined ? {} : { imageTokens: side.imageTokens }),
+});
+
+const putField = <Holder, Field extends keyof Holder>(holder: Holder, field: Field, value: Holder[Field]): void => {
+  holder[field] = value;
+};
+
+const describedEntryOf = (name: string, relay: PlanRelay): Capabilities => {
+  const entry = Object.hasOwn(relay.listed, name) ? relay.listed[name] : undefined;
+  if (entry === undefined) throw new ContextHostError(`the target ${name} is not in the model list of the running gateway`);
+  if (isUnavailableCapabilities(entry)) throw new ContextHostError(notListedMessage(entry));
+  if (isProbingCapabilities(entry)) throw new ContextHostError(TARGET_PROBING_MESSAGE);
+  return entry;
+};
+
+const relayTargetOf = (name: string, resolved: ResolvedPlanTarget, relay: PlanRelay): OpenResponsesTarget => {
+  const entry = describedEntryOf(name, relay);
+  const { maxConcurrency: _maxConcurrency, contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, imageInput, imageTokens, ...core } = resolved.capabilities;
+  const capabilities: OpenResponsesTarget['capabilities'] = {
+    ...core,
+    contextWindow: entry.contextWindow,
+    maxOutputTokens: entry.maxOutputTokens,
+    ...imagePairOf(entry.imageInput === undefined ? { imageInput, imageTokens } : { imageInput: entry.imageInput, imageTokens: entry.imageTokens }),
+  };
+  const listed: Partial<Pick<OpenResponsesTarget['capabilities'], ListedField>> = entry;
+  for (const field of Object.keys(LISTED_FIELDS).filter(isListedField)) {
+    if (capabilities[field] !== undefined && listed[field] !== undefined) putField(capabilities, field, listed[field]);
   }
   return {
     adapter: 'open-responses',
     model: resolved.model,
     provider: resolved.provider,
     toolCalling: resolved.toolCalling,
-    socketPath,
+    socketPath: relay.planRelaySocket,
     billing: resolved.billing,
-    capabilities: { ...core, contextWindow, maxOutputTokens, ...(imageInput === undefined ? {} : { imageInput }), ...(imageTokens === undefined ? {} : { imageTokens }) },
+    capabilities,
     maxConcurrency: resolved.maxConcurrency,
     admissionTimeoutMs: resolved.admissionTimeoutMs,
   };
@@ -136,7 +208,7 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[], re
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
     if ('plan' in resolved) {
       if (relay === undefined) throw new ContextHostError(`the target ${name} uses a ${resolved.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
-      targets[name] = relayTargetOf(name, resolved, relay.planRelaySocket);
+      targets[name] = relayTargetOf(name, resolved, relay);
       return;
     }
     const recordKey = probeRecordKeyOf(name, resolved);
@@ -455,7 +527,7 @@ export type ContextLiveInput = {
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt?.throwIfAborted();
-  const relay = needsPlanRelay(input.models, [input.alias]) && input.planRelaySocket !== undefined ? { planRelaySocket: await input.planRelaySocket() } : undefined;
+  const relay = needsPlanRelay(input.models, [input.alias]) && input.planRelaySocket !== undefined ? await readPlanRelay(await input.planRelaySocket(), interrupt) : undefined;
   const settings = liveSettingsFor(input.models, [input.alias], relay);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   const swept = await sweepStaleHomes(effects);

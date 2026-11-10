@@ -74,6 +74,8 @@ export const idempotencyKeyReused = (): ApiError =>
 export const serviceUnavailable = (code: 'draining' | 'gateway_unavailable', message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code, message, headers: { 'retry-after': '1' } });
 
+export const gatewayAnswer = (answer: { status: number; type: string; code: string; message: string }): ApiError => new ApiError(answer);
+
 export const contributionUnavailable = (message: string): ApiError =>
   new ApiError({ status: 503, type: 'server_error', code: 'contribution_unavailable', message, headers: { 'retry-after': '1' } });
 

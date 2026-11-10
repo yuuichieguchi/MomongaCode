@@ -1,4 +1,6 @@
-import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, ProviderAdapter, StreamEvent } from '@momonga/protocol';
+import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, PlanAccountRef, ProviderAdapter, StreamEvent } from '@momonga/protocol';
+import { isRecord } from '@momonga/foundation';
+import { isPlanLabel } from '../plan/label.ts';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
 import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
@@ -22,6 +24,19 @@ const UNNAMED_FAILURE_CODE = 'upstream_error';
 
 const CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
+
+type ShapedPlan = { plan?: PlanAccountRef };
+
+const shapedPlan = (plan: unknown): ShapedPlan => {
+  if (!isRecord(plan)) return {};
+  const { profile, account } = plan;
+  if (!isPlanLabel(profile)) return {};
+  if (account === undefined) return { plan: { profile } as PlanAccountRef };
+  return isPlanLabel(account) ? { plan: { profile, account } } : {};
+};
+
+const planUnchanged = (original: unknown, shaped: ShapedPlan): boolean =>
+  shaped.plan === undefined ? original === undefined : isRecord(original) && Object.keys(original).length === Object.keys(shaped.plan).length;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -71,7 +86,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     type: body.type,
     code: namedCode(body.code),
     param: shaped(body.param, PARAM_SHAPE),
-    ...(body.plan === undefined ? {} : { plan: body.plan }),
+    ...shapedPlan(body.plan),
   });
 
   const guardedClassified = (classified: ClassifiedError): ClassifiedError => ({ ...classified, error: guardedBody(classified.error) });
@@ -83,8 +98,9 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     const message = redactor.text(error.body.message);
     const code = namedCode(error.body.code);
     const param = shaped(error.body.param, PARAM_SHAPE);
-    if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
-    return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...(error.body.plan === undefined ? {} : { plan: error.body.plan }) });
+    const plan = shapedPlan(error.body.plan);
+    if (message === error.body.message && code === error.body.code && param === error.body.param && planUnchanged(error.body.plan, plan)) return error;
+    return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message, ...plan });
   };
 
   const guardedError = (error: unknown): unknown => {
@@ -108,7 +124,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
           ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-          ...(error.plan === undefined ? {} : { plan: error.plan }),
+          ...shapedPlan(error.plan),
         },
       },
     };

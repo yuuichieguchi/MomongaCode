@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
+import { PLAN_LABEL_PATTERN, isPlanLabel } from './label.ts';
 
 export type ActivePointer = Record<string, string>;
 
@@ -11,8 +12,8 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 const parsedPointer = (file: string, text: string): unknown => {
   try {
     return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`the active plan account file ${file} is not valid JSON: ${messageOf(error)}`);
+  } catch {
+    throw new Error(`the active plan account file ${file} is not valid JSON`);
   }
 };
 
@@ -28,7 +29,8 @@ export const readActivePointer = async (fileSystem: FileSystem, file: string): P
   if (!isRecord(parsed)) throw new Error(`the active plan account file ${file} is not a JSON object`);
   const pointer: ActivePointer = {};
   for (const [profile, account] of Object.entries(parsed)) {
-    if (typeof account !== 'string') throw new Error(`the active plan account file ${file} names a non-string account for ${JSON.stringify(profile)}`);
+    if (typeof account !== 'string') throw new Error(`the active plan account file ${file} names an account that is not text`);
+    if (!isPlanLabel(account)) throw new Error(`the active plan account file ${file} names an account that does not match ${PLAN_LABEL_PATTERN}`);
     pointer[profile] = account;
   }
   return pointer;

@@ -78,6 +78,10 @@ export class ModelUnlistedError extends GatewayRequestError {
   }
 }
 
+const SERVICE_UNAVAILABLE_STATUS = 503;
+
+export const isTargetProbing = (error: GatewayRequestError): boolean => error.status === SERVICE_UNAVAILABLE_STATUS && error.code === TARGET_PROBING;
+
 export type GatewayClientOptions = {
   resolveSocket: SocketResolver;
   clock: Clock;

@@ -1,6 +1,6 @@
 import { addModelConnection } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { SECRET_NAME_PATTERN, isRecord } from '@momonga/foundation';
+import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { PLAN_ACCOUNT_NOT_SELECTABLE_CODE } from '@momonga/protocol';
 import type {
@@ -22,6 +22,7 @@ import { PlanCredentialError, credentialErrorType, statusOf } from './auth-sourc
 import type { AccountView } from './auth-source.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
+import { PLAN_LABEL_PATTERN, isPlanLabel } from './label.ts';
 import { PlanAccountNotSelectableError } from './session.ts';
 import type { PlanSessions } from './session.ts';
 import type { PlanSignIn } from './signin.ts';
@@ -57,10 +58,8 @@ const stringField = (body: unknown, name: string): string => {
   return value;
 };
 
-const LABEL = new RegExp(SECRET_NAME_PATTERN);
-
 const accountLabelOf = (value: string): string => {
-  if (!LABEL.test(value)) throw invalidRequest('invalid_account_label', `the account label must match ${SECRET_NAME_PATTERN}`, 'account');
+  if (!isPlanLabel(value)) throw invalidRequest('invalid_account_label', `the account label must match ${PLAN_LABEL_PATTERN}`, 'account');
   return value;
 };
 

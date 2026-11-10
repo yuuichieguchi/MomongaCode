@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, recordFileOf, profileFor, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
@@ -183,7 +184,7 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     {
       name: 'a file that is not valid JSON',
       damage: (file) => fs.writeFile(file, '{'),
-      cause: (file) => new RegExp(`^the active plan account file ${escaped(file)} is not valid JSON: .+`),
+      cause: (file) => `the active plan account file ${file} is not valid JSON`,
     },
     {
       name: 'a file that is not a JSON object',
@@ -193,7 +194,12 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
     {
       name: 'a file that names a non-string account',
       damage: (file) => fs.writeFile(file, JSON.stringify({ [PROFILE_ID]: 1 })),
-      cause: (file) => `the active plan account file ${file} names a non-string account for "${PROFILE_ID}"`,
+      cause: (file) => `the active plan account file ${file} names an account that is not text`,
+    },
+    {
+      name: 'a file that names an account that does not match the label pattern',
+      damage: (file) => fs.writeFile(file, JSON.stringify({ [PROFILE_ID]: 'not/a-label' })),
+      cause: (file) => `the active plan account file ${file} names an account that does not match ${SECRET_NAME_PATTERN}`,
     },
   ];
 

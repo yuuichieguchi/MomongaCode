@@ -18,6 +18,12 @@ export const recordAccess = async <T>(kind: 'read' | 'write', what: string, acti
   }
 };
 
+const refusedEntry = (failure: PlanCredentialError): CredentialEntry => ({
+  read: () => Promise.reject(failure),
+  write: () => Promise.reject(failure),
+  remove: () => Promise.reject(failure),
+});
+
 export const withRecord = async <T>(store: Pick<CredentialStore, 'withKey'>, key: string, what: string, action: (entry: CredentialEntry) => Promise<T>): Promise<T> => {
   let started = false;
   try {
@@ -27,6 +33,6 @@ export const withRecord = async <T>(store: Pick<CredentialStore, 'withKey'>, key
     });
   } catch (error) {
     if (started) throw error;
-    throw storeWriteFailure(what, error);
+    return action(refusedEntry(storeWriteFailure(what, error)));
   }
 };

@@ -5,8 +5,8 @@ import { InheritanceError, JournalThreadError } from '@momonga/store';
 import type { RunError, StatusPatch } from '@momonga/store';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
-import { GatewayRequestError } from '../gateway-client.ts';
-import { TARGET_PROBING, USAGE_LIMIT_CODES } from '@momonga/protocol';
+import { GatewayRequestError, isTargetProbing } from '../gateway-client.ts';
+import { USAGE_LIMIT_CODES } from '@momonga/protocol';
 import type { PlanAccountRef, StopReason } from '@momonga/protocol';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
@@ -64,7 +64,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (isUsageLimitCode(error.code)) return { kind: 'stop', reason: 'usage_limit', code: error.code, message: error.message, ...planOf(error) };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };
-  if (error.status === SERVICE_UNAVAILABLE_STATUS && error.code === TARGET_PROBING) return { kind: 'wait', code: error.code, message: error.message, retryAfterMs };
+  if (isTargetProbing(error)) return { kind: 'wait', code: error.code, message: error.message, retryAfterMs };
   if (error.deferred === true) return { kind: 'defer', code: DEFERRAL_FAILURE_CODE, message: error.message, retryAfterMs };
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
