@@ -24,7 +24,7 @@ const variants = (): string[] => {
   return (match[1] ?? '').split(',').map((item) => item.trim().replace(/^"|"$/g, ''));
 };
 
-type Entry = { pgid: number; holdsMarker: boolean; startMs: bigint; startUnreadable?: boolean };
+type Entry = { pgid: number; holdsMarker: boolean; startedAt: bigint; startUnreadable?: boolean };
 
 type World = { signals: Array<{ target: number; signal: NodeJS.Signals }>; kill: (target: number, signal: NodeJS.Signals | 0) => void; inspector: ProcessInspector; groupPort: ProcessGroupPort };
 
@@ -42,7 +42,7 @@ const world = (initial: Record<number, Entry>, reuseAtGroupRead: Record<number, 
       const entry = table.get(pid);
       if (entry === undefined) return { kind: 'gone' };
       if (entry.startUnreadable === true) return { kind: 'failed', cause: 'deterministic', evidence: { kind: 'exit', exitCode: 1, detail: 'ps exited with 1' } };
-      return { kind: 'value', value: entry.startMs };
+      return { kind: 'value', value: entry.startedAt };
     },
     holdersOf: async () => ({ kind: 'value', value: [...table].filter(([, entry]) => entry.holdsMarker).map(([pid]) => pid) }),
     groupsOf: async (pids: readonly number[]) => {
@@ -86,7 +86,7 @@ const markerFile = (): string => {
 
 const reconcile = async (scene: World) => reconcileProcessGroup({ pgid: 100, marker: markerFile() }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: scene.inspector });
 
-const stranger = (pgid: number): Entry => ({ pgid, holdsMarker: false, startMs: 999_999n });
+const stranger = (pgid: number): Entry => ({ pgid, holdsMarker: false, startedAt: 999_999n });
 
 describe('the reap signals only a target proved ours by the same start time at the listing and just before the signal, as specs/tla/ProcessStop.tla states', () => {
   it('the model proves a holder target only while its pid is not reused, and proves the group only by a listed holder in it that is not gone', () => {
@@ -160,29 +160,29 @@ describe('the reap signals only a target proved ours by the same start time at t
   });
 
   it('signalUnprovedHolder: a holder whose pid is reused before the SIGTERM is not signalled', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n }, 200: { pgid: 200, holdsMarker: true, startMs: 2n } }, { 1: { 200: stranger(300) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n } }, { 1: { 200: stranger(300) } });
     await reconcile(scene);
     expect(scene.signals.filter(({ target }) => target === 200)).toEqual([]);
   });
 
   it('killWithoutReproof: a holder whose pid is reused after the SIGTERM pass is not sent SIGKILL', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n }, 200: { pgid: 200, holdsMarker: true, startMs: 2n } }, { 3: { 200: stranger(300) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n } }, { 3: { 200: stranger(300) } });
     await reconcile(scene);
     expect(scene.signals.filter(({ target }) => target === 200)).toEqual([{ target: 200, signal: 'SIGTERM' }]);
   });
 
   it('groupProofWithoutStartTime: a group whose only listed holder is replaced by a process of a reused group is not signalled', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n } }, { 1: { 100: stranger(100) } });
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n } }, { 1: { 100: stranger(100) } });
     await reconcile(scene);
     expect(scene.signals).toEqual([]);
   });
 
   it('a target whose start time cannot be read is never proved, on either reap path, and is reported left alone', async () => {
-    const recorded = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n, startUnreadable: true }, 200: { pgid: 200, holdsMarker: true, startMs: 2n, startUnreadable: true } }, {});
+    const recorded = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n, startUnreadable: true }, 200: { pgid: 200, holdsMarker: true, startedAt: 2n, startUnreadable: true } }, {});
     const result = await reconcile(recorded);
     expect(recorded.signals).toEqual([]);
     expect([...result.leftAlonePids].sort()).toEqual([100, 200]);
-    const unrecorded = world({ 200: { pgid: 200, holdsMarker: true, startMs: 2n, startUnreadable: true } }, {});
+    const unrecorded = world({ 200: { pgid: 200, holdsMarker: true, startedAt: 2n, startUnreadable: true } }, {});
     const warnings: string[] = [];
     await reapMarkedProcesses({ marker: markerFile(), killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill: unrecorded.kill, groupPort: unrecorded.groupPort, timing: instantTiming(), inspector: unrecorded.inspector });
     expect(unrecorded.signals).toEqual([]);
@@ -199,7 +199,7 @@ describe('a stop whose listing fails ends with the outcome unlisted, as specs/tl
   });
 
   it('the code, like the model, ends a stop whose first listing fails with the whole could-not-check text, says no stop word as an outcome, signals nothing and keeps the marker', async () => {
-    const scene = world({ 100: { pgid: 100, holdsMarker: true, startMs: 1n } }, {});
+    const scene = world({ 100: { pgid: 100, holdsMarker: true, startedAt: 1n } }, {});
     const failing = { ...scene.inspector, holdersOf: async () => ({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the listing was slow' } }) } as unknown as ProcessInspector;
     const marker = markerFile();
     const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: failing });

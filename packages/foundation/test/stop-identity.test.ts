@@ -429,3 +429,129 @@ describe('a listing that cannot be made ends the stop with "could not check", ne
     expect(fs.existsSync(marker)).toBe(true);
   });
 });
+
+describe('a group read that cannot be made ends the stop like a listing that cannot be made (design 19.6 points 9, 10, 18, 19)', () => {
+  const OUTSIDE = 80_005;
+  const UNKNOWN = ' The effect of the interrupted command is unknown; inspect the current state before retrying it.';
+  const ASKER_REASON = 'the asker stopped the call';
+  const SLOW_GROUPS: ProbeResult<Map<number, number>> = { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the group read was slow' } };
+  const ABORTED_GROUPS: ProbeResult<Map<number, number>> = { kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'ABORT_ERR', detail: 'The operation was aborted' } };
+
+  type Place = {
+    name: string;
+    initial: () => Record<number, Proc>;
+    failsAt: (sent: World['sent'], readsSinceLastSignal: number) => boolean;
+    readPids: string;
+    sentBefore: Array<{ target: number; signal: NodeJS.Signals }>;
+    stoppedHolders: number[];
+  };
+
+  const lastSignalOf = (sent: World['sent']): NodeJS.Signals | undefined => sent.filter(({ signal }) => signal !== 0).at(-1)?.signal as NodeJS.Signals | undefined;
+
+  const places: Place[] = [
+    {
+      name: "the first pass's split",
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true } }),
+      failsAt: (sent, reads) => lastSignalOf(sent) === undefined && reads === 1,
+      readPids: `${ENTRY}`,
+      sentBefore: [],
+      stoppedHolders: [],
+    },
+    {
+      name: "the first pass's group re-read before the group send",
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true } }),
+      failsAt: (sent, reads) => lastSignalOf(sent) === undefined && reads === 2,
+      readPids: `${ENTRY}`,
+      sentBefore: [],
+      stoppedHolders: [],
+    },
+    {
+      name: "the SIGKILL pass's split",
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } }),
+      failsAt: (sent, reads) => lastSignalOf(sent) === 'SIGTERM' && reads === 1,
+      readPids: `${ENTRY}`,
+      sentBefore: [{ target: -GROUP, signal: 'SIGTERM' }],
+      stoppedHolders: [ENTRY],
+    },
+    {
+      name: "the SIGKILL pass's group re-read before the group send",
+      initial: () => ({ [ENTRY]: { start: 100n, group: GROUP, holds: true, survives: ['SIGTERM'] } }),
+      failsAt: (sent, reads) => lastSignalOf(sent) === 'SIGTERM' && reads === 2,
+      readPids: `${ENTRY}`,
+      sentBefore: [{ target: -GROUP, signal: 'SIGTERM' }],
+      stoppedHolders: [ENTRY],
+    },
+    {
+      name: 'the read after the final window',
+      initial: () => ({ [OUTSIDE]: { start: 400n, group: OUTSIDE, holds: true, survives: ['SIGTERM', 'SIGKILL'] } }),
+      failsAt: (sent) => lastSignalOf(sent) === 'SIGKILL',
+      readPids: `${OUTSIDE}`,
+      sentBefore: [
+        { target: OUTSIDE, signal: 'SIGTERM' },
+        { target: OUTSIDE, signal: 'SIGKILL' },
+      ],
+      stoppedHolders: [OUTSIDE],
+    },
+  ];
+
+  const expectedOutput = (reason: string, signalled: boolean): string =>
+    `MomongaCode could not check whether a process started by the interrupted command is still running (${reason}).${signalled ? '' : ' Nothing was stopped.'}${UNKNOWN}`;
+
+  const failingGroupReads = (world: World, place: Place, failure: () => ProbeResult<Map<number, number>>): void => {
+    const groupsOf = world.inspector.groupsOf.bind(world.inspector);
+    let lastSignal: NodeJS.Signals | undefined;
+    let readsSinceLastSignal = 0;
+    world.inspector.groupsOf = async (...args) => {
+      const signalNow = lastSignalOf(world.sent);
+      if (signalNow !== lastSignal) {
+        lastSignal = signalNow;
+        readsSinceLastSignal = 0;
+      }
+      readsSinceLastSignal += 1;
+      return place.failsAt(world.sent, readsSinceLastSignal) ? failure() : groupsOf(...args);
+    };
+  };
+
+  const stopWith = (world: World, marker: string, asker: AbortController): Promise<MarkerReconcileResult> =>
+    reconcileProcessGroup({ pgid: GROUP, marker }, { killGraceMs: 100, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: asker.signal });
+
+  const expectEndedAt = async (place: Place, world: World, marker: string, settled: Promise<MarkerReconcileResult>, reason: string): Promise<void> => {
+    const result = await settled;
+    const signalled = place.sentBefore.length > 0;
+    expect(result.output).toBe(expectedOutput(reason, signalled));
+    expect(result.stopped).toBe(signalled);
+    expect(result.stoppedHolders).toEqual(place.stoppedHolders);
+    expect(world.sent.filter(({ signal }) => signal !== 0)).toEqual(place.sentBefore);
+    expect(fs.existsSync(marker)).toBe(true);
+  };
+
+  it.each(places)('a group read at $name that fails after its retries resolves with the could-not-check result', async (place) => {
+    const world = worldOf(place.initial());
+    failingGroupReads(world, place, () => SLOW_GROUPS);
+    const marker = realMarker();
+    await expectEndedAt(place, world, marker, stopWith(world, marker, new AbortController()), `reading the process groups of ${place.readPids} failed (transient): the group read was slow`);
+  });
+
+  it.each(places)('a group read at $name ended by the asker signal resolves with the could-not-check result naming the asker reason', async (place) => {
+    const world = worldOf(place.initial());
+    const asker = new AbortController();
+    failingGroupReads(world, place, () => {
+      asker.abort(new Error(ASKER_REASON));
+      return ABORTED_GROUPS;
+    });
+    const marker = realMarker();
+    await expectEndedAt(place, world, marker, stopWith(world, marker, asker), ASKER_REASON);
+  });
+
+  it('a sweep whose group read fails after its retries still rejects with the probe error and keeps the marker', async () => {
+    const world = worldOf({ [ENTRY]: { start: 100n, group: GROUP, holds: true } });
+    const groupsOf = world.inspector.groupsOf.bind(world.inspector);
+    world.inspector.groupsOf = async (pids, ...rest) => (pids.includes(ENTRY) ? SLOW_GROUPS : groupsOf(pids, ...rest));
+    const marker = realMarker();
+    await expect(
+      reapMarkedProcesses({ marker, pgid: GROUP, killGraceMs: 100, label: 'tool', onWarning: () => undefined, kill: world.kill, groupPort: world.groupPort, timing: world.timing, inspector: world.inspector, signal: new AbortController().signal }),
+    ).rejects.toBeInstanceOf(ProbeFailedError);
+    expect(targetsOf(world)).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+});
