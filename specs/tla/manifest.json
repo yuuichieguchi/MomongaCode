@@ -4879,11 +4879,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1752,
-      "measuredSeconds": 5.62,
-      "measuredCpuSeconds": 2.82,
-      "budgetCpuSeconds": 9,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 37.3 at start (above the gate 15): re-measure in the quiet window"
+      "distinctStates": 115968,
+      "measuredSeconds": 7.61,
+      "measuredCpuSeconds": 28.92,
+      "budgetCpuSeconds": 61,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.18 at start"
     },
     {
       "config": "Handover.echoKept",
@@ -4894,11 +4894,53 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 5,
-      "measuredSeconds": 2.29,
-      "measuredCpuSeconds": 1.76,
-      "budgetCpuSeconds": 7,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 9.8 at start"
+      "distinctStates": 14,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.envLost",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 251008,
+      "measuredSeconds": 13.85,
+      "measuredCpuSeconds": 55.31,
+      "budgetCpuSeconds": 114,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.45 at start"
+    },
+    {
+      "config": "Handover.envLostNoLeave",
+      "role": "evidence",
+      "expect": {
+        "violates": "EnabledKnown",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1082,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 3.02,
+      "budgetCpuSeconds": 10,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.envLostNoLeaveRefuse",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoneLeftSet",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1084,
+      "measuredSeconds": 1.41,
+      "measuredCpuSeconds": 2.99,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
     },
     {
       "config": "Handover.moveWithDialog",
@@ -4909,11 +4951,26 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 26,
-      "measuredSeconds": 1.52,
-      "measuredCpuSeconds": 1.68,
+      "distinctStates": 154,
+      "measuredSeconds": 1.21,
+      "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 10.9 at start"
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.moveWithSwitch",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoMoveWithSwitch",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 194,
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 2.0,
+      "budgetCpuSeconds": 7,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.59 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
     },
     {
       "config": "Handover.noPrintedSkip",
@@ -4924,11 +4981,41 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 384,
+      "distinctStates": 1483,
       "measuredSeconds": 1.59,
-      "measuredCpuSeconds": 1.96,
-      "budgetCpuSeconds": 7,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 10.9 at start"
+      "measuredCpuSeconds": 3.91,
+      "budgetCpuSeconds": 11,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.38 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.reenterWrites",
+      "role": "evidence",
+      "expect": {
+        "violates": "ModesKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1068,
+      "measuredSeconds": 1.39,
+      "measuredCpuSeconds": 2.89,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
+    },
+    {
+      "config": "Handover.refuseLeavesModes",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoneLeftSet",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1154,
+      "measuredSeconds": 1.54,
+      "measuredCpuSeconds": 3.43,
+      "budgetCpuSeconds": 10,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
     },
     {
       "config": "Handover.relay",
@@ -4936,11 +5023,26 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1752,
-      "measuredSeconds": 4.01,
-      "measuredCpuSeconds": 2.73,
+      "distinctStates": 115968,
+      "measuredSeconds": 7.78,
+      "measuredCpuSeconds": 30.04,
+      "budgetCpuSeconds": 64,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 8.08 at start"
+    },
+    {
+      "config": "Handover.restoreBeforeExec",
+      "role": "evidence",
+      "expect": {
+        "violates": "ModesKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 566,
+      "measuredSeconds": 1.42,
+      "measuredCpuSeconds": 2.85,
       "budgetCpuSeconds": 9,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 38.1 at start (above the gate 15): re-measure in the quiet window"
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 6.99 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
     },
     {
       "config": "Handover.retryOnExecFail",
@@ -4951,11 +5053,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 86,
-      "measuredSeconds": 1.77,
-      "measuredCpuSeconds": 1.72,
-      "budgetCpuSeconds": 7,
-      "note": "new row; CPU is user + sys of the TLC process tree (getrusage of children), workers 2; 1-minute load 12.4 at start"
+      "distinctStates": 477,
+      "measuredSeconds": 1.37,
+      "measuredCpuSeconds": 2.58,
+      "budgetCpuSeconds": 9,
+      "note": "re-measured for the screen modes and the lost-value path (screens design 13.1, coordinator rulings): one TLC process, 5 workers (the test runner's TLC_WORKERS), nice 15, CPU is user + sys of the process tree, 1-minute load 7.43 at start; the distinct-state count of an evidence run is the count at the first violation and varies with the worker count"
     },
     {
       "config": "UpdateSwitch.gwRefuseNoYield",

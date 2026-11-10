@@ -7,7 +7,11 @@ const repoRoot = path.resolve(import.meta.dirname, '..');
 const specDir = path.join(repoRoot, 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'Handover.tla'), 'utf8');
 
-const actors = JSON.parse(fs.readFileSync(path.join(specDir, 'Handover.actors.json'), 'utf8')) as { actor: string; file: string; symbol: string }[];
+type Actor = { actor: string; file?: string; symbol?: string; design?: string; section?: string; model?: string; status?: string };
+
+const allActors = JSON.parse(fs.readFileSync(path.join(specDir, 'Handover.actors.json'), 'utf8')) as Actor[];
+const actors = allActors.filter((actor) => actor.file !== undefined);
+const designActors = allActors.filter((actor) => actor.file === undefined);
 
 const assumedVariants = (): string[] => {
   const line = spec.split('\n').find((text) => text.startsWith('ASSUME Variant \\in')) ?? '';
@@ -28,10 +32,17 @@ const handoverConfigs = fs.readdirSync(specDir).filter((file) => file.startsWith
 describe('the Handover model and the code it describes do not drift', () => {
   it('every actor the model derives still exists at the cited file', () => {
     const missing = actors.filter((actor) => {
-      const file = path.join(repoRoot, actor.file);
-      return !fs.existsSync(file) || !fs.readFileSync(file, 'utf8').includes(actor.symbol);
+      const file = path.join(repoRoot, actor.file ?? '');
+      return !fs.existsSync(file) || !fs.readFileSync(file, 'utf8').includes(actor.symbol ?? '');
     });
     expect(missing.map((actor) => `${actor.actor}: ${actor.file} no longer contains ${JSON.stringify(actor.symbol)}`)).toEqual([]);
+  });
+
+  it('every actor derived from the screens design names its design, section, model part and status', () => {
+    expect(designActors.length).toBeGreaterThan(0);
+    for (const actor of designActors) {
+      expect([actor.design, actor.section, actor.model, actor.status].every((field) => typeof field === 'string' && field !== ''), actor.actor).toBe(true);
+    }
   });
 
   it('every Next action of the model is defined', () => {
@@ -41,9 +52,19 @@ describe('the Handover model and the code it describes do not drift', () => {
 
   it('every configuration names a variant the module assumes', () => {
     const assumed = assumedVariants();
-    expect(assumed).toEqual(['decided', 'echoKept', 'moveWithDialog', 'noPrintedSkip', 'retryOnExecFail']);
+    expect(assumed).toEqual(['decided', 'echoKept', 'envLost', 'envLostNoLeave', 'moveWithDialog', 'moveWithSwitch', 'noPrintedSkip', 'reenterWrites', 'refuseLeavesModes', 'restoreBeforeExec', 'retryOnExecFail']);
     for (const config of handoverConfigs) {
       const match = fs.readFileSync(path.join(specDir, config), 'utf8').match(/Variant = "([^"]+)"/);
+      expect(assumed, config).toContain(match?.[1]);
+    }
+  });
+
+  it('every configuration names a screen the module assumes', () => {
+    const line = spec.split('\n').find((text) => text.startsWith('ASSUME Screen \\in')) ?? '';
+    const assumed = [...line.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string).sort();
+    expect(assumed).toEqual(['both', 'fullscreen', 'scrollback']);
+    for (const config of handoverConfigs) {
+      const match = fs.readFileSync(path.join(specDir, config), 'utf8').match(/Screen = "([^"]+)"/);
       expect(assumed, config).toContain(match?.[1]);
     }
   });
