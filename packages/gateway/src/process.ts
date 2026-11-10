@@ -25,7 +25,6 @@ import {
   acquireProcessLock,
   JsonDepthError,
   parseOutsideJson,
-  HOST_READ_BOUND_MS,
   SecretEmptyError,
   SecretStoreAbsentError,
   SecretStoreAnswerError,
@@ -83,6 +82,8 @@ import { withImageDefault } from './probe/decide.ts';
 import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
+import { keyReadLimitOf } from './key-read-limit.ts';
+import type { KeyReadLimit } from './key-read-limit.ts';
 import { createSecretResolver } from './secrets.ts';
 import { readsOutputPolicy, targetCounterOf } from './target-counter.ts';
 import type { ReportedNumbers, ServedAccount } from './target-counter.ts';
@@ -207,11 +208,6 @@ const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): De
 const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
 
 const READ_AGAIN_ON_THE_NEXT_REQUEST = 'the gateway reads the secret again on the next request';
-
-type KeyReadLimit = { limitMs: number; label: string };
-
-const keyReadLimitOf = (headersTimeoutMs: number): KeyReadLimit =>
-  headersTimeoutMs > 0 ? { limitMs: headersTimeoutMs, label: 'the request limit' } : { limitMs: HOST_READ_BOUND_MS, label: 'the secret read limit' };
 
 const startupFailureOf = (error: unknown): Error | undefined => {
   if (error instanceof SecretUnavailableError || error instanceof SecretEmptyError) return error;
