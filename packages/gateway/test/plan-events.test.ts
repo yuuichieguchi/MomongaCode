@@ -50,6 +50,7 @@ const observed = async (options: PlanGatewayOptions = {}): Promise<Observed> => 
       signedIn.callback.toString(),
       gateway.auth.identity.email,
       gateway.auth.identity.sub,
+      ...gateway.auth.registrations().flatMap((registration) => [registration.clientId, registration.hostId]),
     ].filter((value) => value !== '');
   return { gateway, events, secrets };
 };

@@ -137,7 +137,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     expect([0, 1]).toContain(sizing.code);
     expect(readReport(sized).format).toBe(REPORT_FORMAT);
 
-    const forbidden = [...gateway.auth.issuedSecrets(), ...exposed, gateway.auth.identity.email, gateway.auth.identity.sub].filter((value) => value !== '');
+    const forbidden = [...gateway.auth.issuedSecrets(), ...exposed, gateway.auth.identity.email, gateway.auth.identity.sub, ...gateway.auth.registrations().flatMap((registration) => [registration.clientId, registration.hostId])].filter((value) => value !== '');
     const outputs = [collected, carriage, sized].map((file) => fs.readFileSync(file, 'utf8')).join('\n') + collect.stdout + carried.stdout + sizing.stdout;
     for (const value of forbidden) expect(outputs.includes(value), 'a report carries a value the design forbids (O-R5-6 L10)').toBe(false);
     const log = fs.readFileSync(momongaLayout(gateway.home).logFiles.gateway, 'utf8');

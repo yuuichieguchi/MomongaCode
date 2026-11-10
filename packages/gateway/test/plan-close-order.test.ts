@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { credentialFileFor } from '@momonga/foundation';
+import { createUdsClient, credentialFileFor, fixedSocket } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { ACCOUNT, accountRoute, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
-import { PROFILE_ID } from './plan-support.ts';
+import { writeSettings } from './gateway-process-helpers.ts';
+import { CONDITION_WAIT, PROFILE_ID } from './plan-support.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
@@ -29,7 +30,20 @@ describe('O-R5-6 L1: the close order keeps a refresh in flight to its end', () =
     clock.advance(86_400_000);
     void gateway.get(`${accountRoute(PLAN_ROUTES.accountModels)}?profile=${PROFILE_ID}&refresh=1`).catch(() => undefined);
     await reached;
+    writeSettings(gateway.home, {
+      credentials: { plaintextTokenFiles: true },
+      gateway: { closeGraceMs: 0, managedServerStopGraceMs: 0 },
+      models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'plan-model', capabilities: { contextWindow: 128000, maxOutputTokens: 16000 }, plan: { profile: PROFILE_ID, account: ACCOUNT } } } },
+    });
     const closing = gateway.close();
+    await vi.waitFor(async () => {
+      const probe = createUdsClient(fixedSocket(gateway.socketPath));
+      try {
+        await expect(probe.request({ method: 'GET', path: '/v1/momonga/models' }).then((response) => response.text())).rejects.toThrow();
+      } finally {
+        probe.destroy();
+      }
+    }, CONDITION_WAIT);
     release();
     await closing;
     const after = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
