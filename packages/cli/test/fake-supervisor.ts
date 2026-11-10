@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { FIRST_GENERATION, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, acquireProcessLock, generationLayout, publishCurrentGeneration } from '@momonga/foundation';
+import type { MomongaPaths, ProcessLock } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorHealth } from '@momonga/protocol';
 import type { CliClock, DetachedExit, SpawnDetached } from '../src/ports.ts';
 
@@ -18,6 +18,8 @@ export type FakeSupervisorOptions = {
   generation?: number;
   work?: FakeWork;
   publishGate?: Promise<void>;
+  holdsKernelLock?: boolean;
+  publishes?: boolean;
 };
 
 export type FakeWork = {
@@ -110,7 +112,9 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     response.writeHead(404).end();
   });
   fs.mkdirSync(layout.dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(layout.locks.supervisor, String(process.pid));
+  let kernelLock: ProcessLock | undefined;
+  if (options.holdsKernelLock !== false) kernelLock = await acquireProcessLock(layout.locks.supervisor);
+  else fs.writeFileSync(layout.locks.supervisor, String(process.pid));
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(layout.sockets.supervisor, resolve);
@@ -120,13 +124,14 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
   };
   const publishWhenServing = (): Promise<void> =>
-    phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
+    options.publishes !== false && phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
   const startPublish = publishWhenServing();
   if (options.publishGate === undefined) await startPublish;
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
     stopping ??= new Promise<void>((resolve) => {
       server.close(() => {
+        kernelLock?.release();
         fs.rmSync(layout.locks.supervisor, { force: true });
         resolve();
       });
