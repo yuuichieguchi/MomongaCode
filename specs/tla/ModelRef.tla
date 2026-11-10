@@ -28,6 +28,25 @@
 (*     claim and keeps them (3.10, R06-76); the chain of a model is the   *)
 (*     model followed by the resolved fallback entries, without repeats   *)
 (*                                                                         *)
+(* The short form (R10-model-names-approved, design 2.2.1-2.2.2)          *)
+(*   - DefTag[p]: the kind of server p has a default tag; Short(p, i) is  *)
+(*     "x" exactly when DefTag[p] and i is "x:latest" (a table; "x" and   *)
+(*     "x:latest" stand for every untagged and tagged own name)           *)
+(*   - Norm(p, i): an own name "x" under a DefTag server is stored as     *)
+(*     "x:latest"; a duplicate after normalising is refused               *)
+(*   - Holders(t): the models whose own name or whose short form is t,    *)
+(*     looked up together                                                  *)
+(*   - Resolve (typed): 1 the Canon of a configured model; 2 P/short of   *)
+(*     a model of server P; 3 the holders of a bare text: one, several    *)
+(*     (ambiguous), none                                                    *)
+(*   - Display(c): the first of short-or-own-name, P/short-or-own-name,   *)
+(*     the Canon that Resolve maps to c                                    *)
+(*   - the kind travels with the server, so SetProvider renames only to a *)
+(*     name of the same DefTag (ModelRef.rename.cfg gives both servers a  *)
+(*     default tag; ModelRef.slash.cfg gives none)                         *)
+(*   - Sessions has one element in every configuration: every property is *)
+(*     per session and sessions share only the settings                    *)
+(*                                                                         *)
 (* Actors, derived from the code at commit 924b2d8c (every reader and     *)
 (* writer of the configured models or of a stored model reference)         *)
 (*   writers of models.connections / start / fallback / roles:             *)
@@ -129,6 +148,10 @@
 (*   storeDisplay  the session keeps the display name, not the Canon      *)
 (*   lastWins      a bare name held by several models resolves to one of  *)
 (*                 them (file order) instead of being refused              *)
+(*   shortFirst    the short form is looked up before an exact own name   *)
+(*   displayShortOnly the display is the short form or own name only      *)
+(*   shortEverywhere Short is applied to a server without a default tag   *)
+(*   noNorm        an own name "x" under a DefTag server is kept as written *)
 (*   storedBareName a stored value is resolved by the typed rule (Canon  *)
 (*                 first, then a unique own name); it breaks NoRebind     *)
 (*                 once an own name looks like another model's Canon      *)
@@ -140,18 +163,31 @@
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
-CONSTANTS Provs, Ids, Sessions, MaxEdits, None, Variant
+CONSTANTS Provs, Ids, Sessions, MaxEdits, None, DefTag, Variant
 
-ASSUME Variant \in {"decided", "storeDisplay", "lastWins", "unpinned", "noCascade", "storedBareName"}
+ASSUME Variant \in {"decided", "storeDisplay", "lastWins", "unpinned", "noCascade", "storedBareName", "shortFirst", "displayShortOnly", "shortEverywhere", "noNorm"}
+ASSUME DefTag \in [Provs -> BOOLEAN]
 ASSUME MaxEdits \in Nat
 ASSUME \A i \in Ids : Len(i) >= 1
 
 IdsPlain == {<<"x">>, <<"y">>}
 IdsSlash == {<<"x">>, <<"p1", "x">>}
+IdsTag == {<<"x">>, <<"x:latest">>, <<"y">>}
+IdsSlashTag == {<<"x">>, <<"x:latest">>, <<"p1", "x">>}
+DefTagMixed == [p \in Provs |-> p = "p1"]
+DefTagNone == [p \in Provs |-> FALSE]
+DefTagAll == [p \in Provs |-> TRUE]
+
+Short(p, i) ==
+    IF (DefTag[p] \/ Variant = "shortEverywhere") /\ i = <<"x:latest">> THEN <<"x">> ELSE None
+
+Norm(p, i) == IF DefTag[p] /\ Variant # "noNorm" /\ i = <<"x">> THEN <<"x:latest">> ELSE i
+ONames == {Norm(p, i) : p \in Provs, i \in Ids}
+AllNames == ONames \cup ({Short(p, n) : p \in Provs, n \in ONames} \ {None})
 
 Canon(c) == <<c.prov>> \o c.id
-Texts == Ids \cup {<<p>> \o i : p \in Provs, i \in Ids}
-Confs0 == {[prov |-> p, id |-> i] : p \in Provs, i \in Ids}
+Texts == AllNames \cup {<<p>> \o n : p \in Provs, n \in AllNames}
+Confs0 == {[prov |-> p, id |-> i] : p \in Provs, i \in ONames}
 
 Slots == {"role", "classifier", "scope"}
 
@@ -164,12 +200,18 @@ vars == <<conns, models, win, start, slots, fallback, edits, pend, stored, origi
 ConfsOf(cn, md) == UNION {{[prov |-> p, id |-> i] : i \in md[p]} : p \in cn}
 Confs == ConfsOf(conns, models)
 
-Holders(cs, t) == {c \in cs : c.id = t}
+Holders(cs, t) == {c \in cs : c.id = t \/ Short(c.prov, c.id) = t}
 ByCanon(cs, t) == {c \in cs : Canon(c) = t}
+ByShortRef(cs, t) == {c \in cs : Len(t) >= 2 /\ t[1] = c.prov /\ Short(c.prov, c.id) = Tail(t)}
+ShortHolders(cs, t) == {c \in cs : Short(c.prov, c.id) = t}
 
 ResolveIn(cs, t) ==
     IF ByCanon(cs, t) # {}
     THEN [k |-> "found", m |-> CHOOSE c \in ByCanon(cs, t) : TRUE]
+    ELSE IF ByShortRef(cs, t) # {}
+    THEN [k |-> "found", m |-> CHOOSE c \in ByShortRef(cs, t) : TRUE]
+    ELSE IF Variant = "shortFirst" /\ ShortHolders(cs, t) # {}
+    THEN [k |-> "found", m |-> CHOOSE c \in ShortHolders(cs, t) : TRUE]
     ELSE IF Cardinality(Holders(cs, t)) = 1
     THEN [k |-> "found", m |-> CHOOSE c \in Holders(cs, t) : TRUE]
     ELSE IF Cardinality(Holders(cs, t)) = 0
@@ -187,9 +229,12 @@ StoredResolve(t) ==
     THEN [k |-> "found", m |-> CHOOSE c \in ByCanon(Confs, t) : TRUE]
     ELSE [k |-> "missing"]
 
+ShownName(c) == IF Short(c.prov, c.id) # None THEN Short(c.prov, c.id) ELSE c.id
+
 Display(c) ==
-    IF Cardinality(Holders(Confs, c.id)) = 1 /\ \A c2 \in Confs : Canon(c2) # c.id
-    THEN c.id
+    IF Variant = "displayShortOnly" THEN ShownName(c)
+    ELSE IF Resolve(ShownName(c)).k = "found" /\ Resolve(ShownName(c)).m = c THEN ShownName(c)
+    ELSE IF Resolve(<<c.prov>> \o ShownName(c)).k = "found" /\ Resolve(<<c.prov>> \o ShownName(c)).m = c THEN <<c.prov>> \o ShownName(c)
     ELSE Canon(c)
 
 StartModel ==
@@ -213,17 +258,17 @@ FallbackSeqs == {<<>>} \cup {<<a>> : a \in Texts} \cup {<<a, b>> : a \in Texts, 
 
 Valid(cn, md, st, sl, fb) ==
     LET cs == ConfsOf(cn, md) IN
-    /\ st = None \/ ResolveIn(cs, st).k = "found"
-    /\ \A k \in Slots : sl[k] = None \/ ResolveIn(cs, sl[k]).k = "found"
+    /\ IF st = None THEN TRUE ELSE ResolveIn(cs, st).k = "found"
+    /\ \A k \in Slots : IF sl[k] = None THEN TRUE ELSE ResolveIn(cs, sl[k]).k = "found"
     /\ \A k \in 1..Len(fb) : ResolveIn(cs, fb[k]).k = "found"
 
 TypeOK ==
     /\ conns \subseteq Provs
-    /\ models \in [Provs -> SUBSET Ids]
+    /\ models \in [Provs -> SUBSET ONames]
     /\ \A p \in Provs : p \notin conns => models[p] = {}
     /\ start \in Texts \cup {None}
     /\ slots \in [Slots -> Texts \cup {None}]
-    /\ win \in [Provs -> [Ids -> {1, 2}]]
+    /\ win \in [Provs -> [ONames -> {1, 2}]]
     /\ fallback \in FallbackSeqs
     /\ edits \in 0..MaxEdits
     /\ stored \in [Sessions -> Texts \cup {None}]
@@ -233,7 +278,7 @@ Init ==
     /\ conns = {}
     /\ models = [p \in Provs |-> {}]
     /\ start = None /\ slots = [k \in Slots |-> None] /\ fallback = <<>>
-    /\ win = [p \in Provs |-> [i \in Ids |-> 1]]
+    /\ win = [p \in Provs |-> [i \in ONames |-> 1]]
     /\ edits = 0
     /\ pend = [s \in Sessions |-> None]
     /\ stored = [s \in Sessions |-> None]
@@ -251,7 +296,7 @@ Edited(cn, md, wn, st, sl, fb) ==
     /\ Valid(cn, md, st, sl, fb)
     /\ Applied(cn, md, wn, st, sl, fb)
 
-Dropped(M) == [p \in Provs |-> [i \in Ids |-> IF [prov |-> p, id |-> i] \in M THEN 1 ELSE win[p][i]]]
+Dropped(M) == [p \in Provs |-> [i \in ONames |-> IF [prov |-> p, id |-> i] \in M THEN 1 ELSE win[p][i]]]
 
 RefersTo(M, t) == t # None /\ Resolve(t).k = "found" /\ Resolve(t).m \in M
 
@@ -268,11 +313,11 @@ Removed(cn, md, M) ==
 
 AddConn(p, i) ==
     /\ p \notin conns
-    /\ Edited(conns \cup {p}, [models EXCEPT ![p] = {i}], win, start, slots, fallback)
+    /\ Edited(conns \cup {p}, [models EXCEPT ![p] = {Norm(p, i)}], win, start, slots, fallback)
 
 AddModel(p, i) ==
-    /\ p \in conns /\ i \notin models[p]
-    /\ Edited(conns, [models EXCEPT ![p] = @ \cup {i}], win, start, slots, fallback)
+    /\ p \in conns /\ Norm(p, i) \notin models[p]
+    /\ Edited(conns, [models EXCEPT ![p] = @ \cup {Norm(p, i)}], win, start, slots, fallback)
 
 RemoveConn(p) ==
     /\ p \in conns
@@ -307,15 +352,15 @@ SetModelField(p, i, v) ==
     /\ Edited(conns, models, [win EXCEPT ![p][i] = v], start, slots, fallback)
 
 Renamed(p, q, t) ==
-    IF t # None /\ \E c \in ByCanon(Confs, t) : c.prov = p
-    THEN <<q>> \o (CHOOSE c \in ByCanon(Confs, t) : TRUE).id
+    IF t # None /\ ((\E c \in ByCanon(Confs, t) : c.prov = p) \/ (ByCanon(Confs, t) = {} /\ Len(t) >= 2 /\ t[1] = p /\ ByShortRef(Confs, t) # {}))
+    THEN <<q>> \o Tail(t)
     ELSE t
 
 SetProvider(p, q) ==
-    /\ p \in conns /\ q \notin conns
+    /\ p \in conns /\ q \notin conns /\ DefTag[q] = DefTag[p]
     /\ Edited((conns \ {p}) \cup {q},
                [models EXCEPT ![q] = models[p], ![p] = {}],
-               [win EXCEPT ![q] = win[p], ![p] = [i \in Ids |-> 1]],
+               [win EXCEPT ![q] = win[p], ![p] = [i \in ONames |-> 1]],
                Renamed(p, q, start),
                [k \in Slots |-> Renamed(p, q, slots[k])],
                [k \in 1..Len(fallback) |-> Renamed(p, q, fallback[k])])
@@ -358,10 +403,11 @@ EndRun(s) ==
     /\ UNCHANGED <<settingsVars, pend, stored, origin>>
 
 Next ==
-    \/ \E p \in Provs, i \in Ids : AddConn(p, i) \/ AddModel(p, i) \/ RemoveModel(p, i) \/ RemoveModelCascade(p, i)
+    \/ \E p \in Provs, i \in Ids : AddConn(p, i) \/ AddModel(p, i)
+    \/ \E p \in Provs, i \in ONames : RemoveModel(p, i) \/ RemoveModelCascade(p, i)
     \/ \E p \in Provs : RemoveConn(p) \/ RemoveConnCascade(p)
     \/ \E p \in Provs, q \in Provs : SetProvider(p, q)
-    \/ \E p \in Provs, i \in Ids, v \in {1, 2} : SetModelField(p, i, v)
+    \/ \E p \in Provs, i \in ONames, v \in {1, 2} : SetModelField(p, i, v)
     \/ \E t \in Texts \cup {None} : SetStart(t)
     \/ \E k \in Slots, t \in Texts \cup {None} : SetRole(k, t)
     \/ \E fb \in FallbackSeqs : SetFallback(fb)
@@ -377,7 +423,11 @@ NoRebind ==
 
 NoGuess ==
     \A t \in Texts :
-        (ByCanon(Confs, t) = {} /\ Resolve(t).k = "found") => Cardinality(Holders(Confs, t)) = 1
+        (ByCanon(Confs, t) = {} /\ ByShortRef(Confs, t) = {} /\ Resolve(t).k = "found") => Cardinality(Holders(Confs, t)) = 1
+
+ShortOnlyWithDefaultTag == \A c \in Confs : Short(c.prov, c.id) # None => DefTag[c.prov]
+
+OneOwnNamePerModel == \A c \in Confs : DefTag[c.prov] => c.id # <<"x">>
 
 RunKeepsPin == \A s \in Sessions : claim[s] # None => eff[s] = claim[s]
 

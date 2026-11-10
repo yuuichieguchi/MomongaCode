@@ -5007,10 +5007,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 230627,
-      "measuredSeconds": 28.63,
-      "measuredCpuSeconds": 32.25,
-      "budgetCpuSeconds": 68
+      "distinctStates": 19801,
+      "measuredSeconds": 5.1,
+      "measuredCpuSeconds": 6.76,
+      "budgetCpuSeconds": 17
     },
     {
       "config": "ModelRef.slash",
@@ -5018,10 +5018,32 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 226544,
-      "measuredSeconds": 25.92,
-      "measuredCpuSeconds": 29.28,
-      "budgetCpuSeconds": 62
+      "distinctStates": 9666,
+      "measuredSeconds": 2.64,
+      "measuredCpuSeconds": 4.02,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "ModelRef.slashTag",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 19307,
+      "measuredSeconds": 4.8,
+      "measuredCpuSeconds": 6.34,
+      "budgetCpuSeconds": 16
+    },
+    {
+      "config": "ModelRef.rename",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 19965,
+      "measuredSeconds": 5.39,
+      "measuredCpuSeconds": 6.9,
+      "budgetCpuSeconds": 17
     },
     {
       "config": "ModelRef.storeDisplay",
@@ -5032,10 +5054,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1724,
-      "measuredSeconds": 1.61,
-      "measuredCpuSeconds": 2.61,
-      "budgetCpuSeconds": 9
+      "distinctStates": 4807,
+      "measuredSeconds": 2.07,
+      "measuredCpuSeconds": 3.31,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "ModelRef.storedBareName",
@@ -5046,9 +5068,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3699,
-      "measuredSeconds": 1.67,
-      "measuredCpuSeconds": 2.74,
+      "distinctStates": 1981,
+      "measuredSeconds": 1.96,
+      "measuredCpuSeconds": 2.88,
       "budgetCpuSeconds": 9
     },
     {
@@ -5060,9 +5082,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 8,
-      "measuredSeconds": 1.19,
-      "measuredCpuSeconds": 1.55,
+      "distinctStates": 7,
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 1.67,
       "budgetCpuSeconds": 7
     },
     {
@@ -5074,10 +5096,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 11558,
-      "measuredSeconds": 2.29,
-      "measuredCpuSeconds": 3.47,
-      "budgetCpuSeconds": 10
+      "distinctStates": 8680,
+      "measuredSeconds": 2.35,
+      "measuredCpuSeconds": 3.78,
+      "budgetCpuSeconds": 11
     },
     {
       "config": "ModelRef.noCascade",
@@ -5088,9 +5110,65 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 240,
-      "measuredSeconds": 1.32,
-      "measuredCpuSeconds": 1.93,
+      "distinctStates": 396,
+      "measuredSeconds": 1.38,
+      "measuredCpuSeconds": 2.17,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "ModelRef.shortFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoGuess",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.64,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "ModelRef.displayShortOnly",
+      "role": "evidence",
+      "expect": {
+        "violates": "DisplayRoundTrip",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7,
+      "measuredSeconds": 1.19,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "ModelRef.shortEverywhere",
+      "role": "evidence",
+      "expect": {
+        "violates": "ShortOnlyWithDefaultTag",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6,
+      "measuredSeconds": 1.18,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "ModelRef.noNorm",
+      "role": "evidence",
+      "expect": {
+        "violates": "OneOwnNamePerModel",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2,
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     }
   ]
