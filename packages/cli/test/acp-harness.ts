@@ -1,5 +1,6 @@
-import { createAcpAgent } from '../src/acp/agent.ts';
-import type { AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
+import { createAcpBridge } from '../src/acp/agent.ts';
+import type { AcpBridge, AcpDeps, FollowRequest, FollowSessionRequest } from '../src/acp/agent.ts';
+import { withReplayedInitialize } from '../src/acp/handover.ts';
 import type { AgentApp, AnyMessage } from '@agentclientprotocol/sdk';
 import type { PublicRunEvent, SkillsResponse } from '@momonga/protocol';
 import { RunApiError } from '../src/client/runtime-client.ts';
@@ -372,6 +373,7 @@ export const modelChangedFrame = (id: number, modelAlias: string, previousModelA
 export const MODEL_ALIASES = [SESSION.modelAlias, 'fm-large'] as const;
 
 export type Harness = {
+  readonly bridge: AcpBridge;
   readonly runtime: FakeRuntime;
   readonly peer: Peer;
   readonly reports: string[];
@@ -383,7 +385,7 @@ export type Harness = {
   failSessionStream(error: Error): void;
 };
 
-export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
+export const startAgent = (overrides: Partial<AcpDeps> = {}, replayedInitialize?: unknown): Harness => {
   const runtime = fakeRuntime();
   const scripts = new Map<string, RunScript>();
   const contextWindows = new Map<string, number>([[SESSION.modelAlias, 8192]]);
@@ -436,8 +438,11 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
     },
     ...overrides,
   };
-  const peer = connectPeer(createAcpAgent(deps));
+  const bridge = createAcpBridge(deps);
+  const adopting: AgentApp = { ...bridge.app, connect: (stream) => bridge.app.connect(withReplayedInitialize(stream, replayedInitialize)) };
+  const peer = connectPeer(replayedInitialize === undefined ? bridge.app : adopting);
   return {
+    bridge,
     runtime,
     peer,
     reports,
