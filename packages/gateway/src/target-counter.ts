@@ -21,7 +21,7 @@ export type TargetCounterInput = {
 };
 
 export const readsOutputPolicy = (target: ResolvedTarget): boolean =>
-  target.adapter === 'managed' || target.adapter === 'ollama' || (target.adapter === 'chat-completions' && target.toolCalling === 'auto');
+  target.adapter === 'managed' || (target.adapter === 'chat-completions' && target.toolCalling === 'auto');
 
 export const targetCounterOf = ({ target, codeDigest, probeKey, upstreamIdentity, server, served, reported, outputPolicy }: TargetCounterInput): string =>
   sha256Hex(

@@ -196,17 +196,19 @@ const stepR7 = (events: readonly Event[]): Step => {
   const [signOut] = named(events, 'plan.sign_out');
   if (signOut === undefined) return notRun('R7', 'no plan.sign_out event in the gateway log');
   const revocation = text(signOut, 'revocation');
-  return { step: 'R7', verdict: revocation === 'confirmed' ? 'recorded' : 'failed', facts: { revocation } };
+  if (revocation === 'confirmed') return { step: 'R7', verdict: 'recorded', facts: { revocation } };
+  return { step: 'R7', verdict: 'failed', facts: { revocation, reason: 'the revocation was not confirmed' } };
 };
 
-type Rejection = { rejected: Event; terminal: Event; terminalIndex: number };
+type Rejection = { rejected: Event; terminal: Event };
+
+const isTerminalRefresh = (event: Event, interrupted: boolean): boolean => event['msg'] === 'plan.refresh' && event['outcome'] === 'terminal' && event['interrupted'] === interrupted;
 
 const rejectionOf = (events: readonly Event[]): Rejection | undefined => {
   for (const [index, rejected] of events.entries()) {
     if (rejected['msg'] !== 'plan.rejected') continue;
-    const terminalIndex = events.findIndex((event, later) => later > index && event['msg'] === 'plan.refresh' && event['outcome'] === 'terminal');
-    const terminal = events[terminalIndex];
-    if (terminal !== undefined) return { rejected, terminal, terminalIndex };
+    const terminal = events.find((event, later) => later > index && isTerminalRefresh(event, false));
+    if (terminal !== undefined) return { rejected, terminal };
   }
   return undefined;
 };
@@ -231,16 +233,14 @@ const stepR8 = (rejection: Rejection | undefined, statusFile: string | undefined
   if (accounts === undefined) return { step: 'R8', verdict: 'failed', facts: { ...found, reason: 'the status file is not momonga auth status --json output' } };
   const account = text(rejection.rejected, 'account');
   const statusShowsSignInRequired = accounts.some((entry) => entry['label'] === account && entry['state'] === 'needs_sign_in');
-  return { step: 'R8', verdict: statusShowsSignInRequired ? 'recorded' : 'failed', facts: { ...found, statusShowsSignInRequired } };
+  if (statusShowsSignInRequired) return { step: 'R8', verdict: 'recorded', facts: { ...found, statusShowsSignInRequired } };
+  return { step: 'R8', verdict: 'failed', facts: { ...found, statusShowsSignInRequired, reason: 'the status file does not show the account as sign-in required' } };
 };
 
-const stepR9 = (events: readonly Event[], rejection: Rejection | undefined): Step => {
-  const refreshes = events.flatMap((event, index) => (event['msg'] === 'plan.refresh' ? [{ event, index }] : []));
-  const found =
-    refreshes.find(({ event }) => event['outcome'] === 'ambiguous_recovery') ??
-    refreshes.find(({ event, index }) => event['outcome'] === 'terminal' && (rejection === undefined || index > rejection.terminalIndex));
-  if (found === undefined) return notRun('R9', 'no ambiguous or second terminal plan.refresh event in the gateway log');
-  return { step: 'R9', verdict: 'recorded', facts: { outcome: text(found.event, 'outcome'), code: text(found.event, 'code') } };
+const stepR9 = (events: readonly Event[]): Step => {
+  const found = events.find((event) => isTerminalRefresh(event, true));
+  if (found === undefined) return notRun('R9', 'no plan.refresh event with outcome terminal and interrupted true in the gateway log');
+  return { step: 'R9', verdict: 'recorded', facts: { code: text(found, 'code') } };
 };
 
 const stepR10 = (events: readonly Event[]): Step => {
@@ -293,7 +293,7 @@ const collect = (events: readonly Event[], args: Arguments): Step[] => {
     stepR5(events),
     stepR7(events),
     stepR8(rejection, args.statusFile),
-    stepR9(events, rejection),
+    stepR9(events),
     stepR10(events),
     stepR11(events, args.screensSeen),
     stepR12(args.evalReports),

@@ -214,9 +214,14 @@ describe('O-R5-6 (N) 3: the active pointer of the gateway is the one reader', ()
         expect(h.warnings.filter((warning) => warning.startsWith('could not list plan-active.json: ') && cause.test(warning.slice('could not list plan-active.json: '.length)))).toHaveLength(1);
       }
       expect((await pinned(h, 'work').read(new AbortController().signal)).bearer).toBe(work.tokens.access_token);
+      const before = await pointerContent(h.paths.active);
       await expect(h.sessions.selectActive({ profile: PROFILE_ID, account: 'work' })).rejects.toThrow(cause);
+      expect(await pointerContent(h.paths.active)).toEqual(before);
     });
   }
 });
+
+const pointerContent = async (file: string): Promise<{ kind: 'directory'; entries: string[] } | { kind: 'file'; bytes: string }> =>
+  (await fs.stat(file)).isDirectory() ? { kind: 'directory', entries: await fs.readdir(file) } : { kind: 'file', bytes: (await fs.readFile(file)).toString('hex') };
 
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

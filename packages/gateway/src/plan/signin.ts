@@ -33,7 +33,7 @@ export type PlanSignInOptions = {
   clock: Clock;
   outbound: PlanOutbound;
   lifetime: AbortSignal;
-  ports: { sleep: PlanSleep };
+  sleep: PlanSleep;
   fileSystem: FileSystem;
   hostFile: string;
   events?: PlanEvents;
@@ -144,7 +144,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   const verifierOf = (profile: PlanProfile): IdTokenVerifier => {
     const existing = verifiers.get(profile.id);
     if (existing !== undefined) return existing;
-    const created = createIdTokenVerifier({ jwksUrl: profile.oauth.jwksUrl, outbound: options.outbound, lifetime: options.lifetime, ports: options.ports, clock: options.clock });
+    const created = createIdTokenVerifier({ jwksUrl: profile.oauth.jwksUrl, outbound: options.outbound, lifetime: options.lifetime, sleep: options.sleep, clock: options.clock });
     verifiers.set(profile.id, created);
     return created;
   };
@@ -217,7 +217,7 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     const { profile } = attempt;
     const form = { grant_type: 'authorization_code', client_id: clientId, code, code_verifier: attempt.verifier, redirect_uri: attempt.redirectUri, resource: profile.oauth.resource };
     const answer = await cappedSend(
-      { fetch, sleep: options.ports.sleep },
+      { fetch, sleep: options.sleep },
       profile.oauth.tokenUrl,
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(form).toString() },
       PLAN_SIGN_IN_DEFAULTS.exchangeTimeoutMs,

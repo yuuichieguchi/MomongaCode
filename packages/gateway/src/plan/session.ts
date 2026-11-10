@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
 import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, sweepLeftovers, systemRandom } from '@momonga/foundation';
 import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
@@ -5,7 +6,7 @@ import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import type { PlanAccountState, PlanListProblem } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
 import type { WaitPolicy } from '../core/retry.ts';
-import { readActiveAccount, writeActiveAccount } from './active-account.ts';
+import { readActivePointer, writeActiveAccount } from './active-account.ts';
 import {
   PlanCredentialError,
   blockingCondition,
@@ -126,6 +127,7 @@ type Account = {
   inflight: Promise<void> | undefined;
   forced: Map<number, Promise<void>>;
   persisting: boolean;
+  resumedSignOut: Promise<SignOutReport> | undefined;
 };
 
 type RefreshTrigger = { kind: 'lazy' } | { kind: 'forced'; generation: number };
@@ -305,6 +307,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const waitPolicy: WaitPolicy = { totalWaitMs: retry.totalWaitMs, baseMs: retry.baseMs, maxMs: retry.maxMs, random: options.random ?? systemRandom.float };
   const events = options.events ?? noPlanEvents;
   const activeLabels = new Map<string, string>();
+  let pointerProblem: string | undefined;
   const accounts = new Map<string, Account>();
   const background = new Set<Promise<void>>();
   const backgroundFailures: unknown[] = [];
@@ -333,6 +336,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       inflight: undefined,
       forced: new Map(),
       persisting: false,
+      resumedSignOut: undefined,
     };
     accounts.set(key, created);
     return created;
@@ -365,7 +369,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       const record = parseRecord(raw);
       adopt(account, record);
       account.interrupted = record.pendingRefresh !== undefined;
-      if (record.state === 'signing_out') runInBackground(endedAtClose(signOutAccount(account, closing.signal, true).then(() => undefined)));
+      if (record.state === 'signing_out') resumeSignOut(account);
     } catch (error) {
       const cause = describeError(error);
       account.loaded = { kind: 'unreadable', cause };
@@ -457,21 +461,21 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     return record.expiresAt - clock.now() <= defaults.marginMs;
   };
 
-  const applyRefreshEnd = async (account: Account, entry: CredentialEntry, record: PlanRecord, end: RefreshEnd): Promise<void> => {
+  const applyRefreshEnd = async (account: Account, entry: CredentialEntry, record: PlanRecord, end: RefreshEnd, interrupted: boolean): Promise<void> => {
     if (end.kind === 'transient') return;
     if (end.kind === 'configuration') {
       await persistAfterSend(account, entry, { ...record, state: 'needs_sign_in', cause: end.code });
       return;
     }
     if (end.kind === 'terminal') {
-      await persistAfterSend(account, entry, withoutTokens(record, end.code, sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore })));
+      await persistAfterSend(account, entry, withoutTokens(record, end.code, interrupted));
       account.interrupted = false;
       return;
     }
     const { tokens } = end;
     const scope = tokens.scope;
     const replaced = tokens.refresh_token !== undefined && tokens.refresh_token !== record.refresh_token;
-    const intentKept = !replaced && sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore });
+    const intentKept = !replaced && interrupted;
     const next: PlanRecord = {
       ...withoutPending(record),
       ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
@@ -488,12 +492,13 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     account.interrupted = intentKept;
   };
 
-  const refreshEvent = (account: Account, end: RefreshEnd, startedAt: number, remainingMs: number): void => {
+  const refreshEvent = (account: Account, end: RefreshEnd, interrupted: boolean, startedAt: number, remainingMs: number): void => {
     events('plan.refresh', {
       profile: account.profile.id,
       account: account.label,
       outcome: end.kind,
       ...(end.kind === 'terminal' || end.kind === 'configuration' ? { code: end.code } : {}),
+      ...(end.kind === 'terminal' ? { interrupted } : {}),
       attempts: end.attempts,
       latencyMs: clock.now() - startedAt,
       remainingMs,
@@ -527,8 +532,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         attemptTimeoutMs: defaults.attemptTimeoutMs,
         waitPolicy,
       });
-      await applyRefreshEnd(account, entry, intent, end);
-      refreshEvent(account, end, startedAt, expiresAt - startedAt);
+      const interrupted = (end.kind === 'terminal' || end.kind === 'adopted') && sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore });
+      await applyRefreshEnd(account, entry, intent, end, interrupted);
+      refreshEvent(account, end, interrupted, startedAt, expiresAt - startedAt);
     });
 
   const refreshInScope = (account: Account, trigger: RefreshTrigger): Promise<void> =>
@@ -623,12 +629,24 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       return { revocation: answer === 'confirmed' && latestKnown ? 'confirmed' : 'unconfirmed', usageUrl: account.profile.usageUrl };
     });
 
-  async function signOutAccount(account: Account, signal: AbortSignal, resumed: boolean): Promise<SignOutReport> {
-    await load(account);
+  const runSignOut = async (account: Account, signal: AbortSignal, resumed: boolean): Promise<SignOutReport> => {
     const report = await options.outbound(signal, (fetch) => signOutWith(fetch, account));
     events('plan.sign_out', { profile: account.profile.id, account: account.label, revocation: report.revocation, resumed });
     return report;
+  };
+
+  function resumeSignOut(account: Account): void {
+    const flight = runSignOut(account, closing.signal, true).finally(() => {
+      account.resumedSignOut = undefined;
+    });
+    account.resumedSignOut = flight;
+    runInBackground(endedAtClose(flight.then(() => undefined)));
   }
+
+  const signOutAccount = async (account: Account, signal: AbortSignal): Promise<SignOutReport> => {
+    await load(account);
+    return account.resumedSignOut === undefined ? runSignOut(account, signal, false) : waitFor(account.resumedSignOut, signal);
+  };
 
   const moveActive = async (ref: PlanAccountRef): Promise<void> => {
     await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
@@ -732,13 +750,16 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     await moveActive(ref);
   };
 
-  const signInRequired = (profile: PlanProfile): PlanCredentialError => conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, undefined) });
+  const noActiveAccount = (profile: PlanProfile): PlanCredentialError =>
+    pointerProblem === undefined
+      ? conditionFailure({ reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, undefined) })
+      : conditionFailure({ reason: 'store_unreadable', code: 'plan_store_unreadable', detail: pointerProblem });
 
   const signedOutSource = (profileId: string): AuthSource => {
     const profile = profileOf(profileId);
     return {
       read: async () => {
-        throw signInRequired(profile);
+        throw noActiveAccount(profile);
       },
       rejected: async () => 'unchanged',
       pause: async () => undefined,
@@ -753,7 +774,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     let servedLabel = target.account;
     const resolve = async (): Promise<Account> => {
       const label = target.account ?? activeLabels.get(profile.id);
-      if (label === undefined) throw signInRequired(profile);
+      if (label === undefined) throw noActiveAccount(profile);
       servedLabel = label;
       const account = accountOf(profile.id, label);
       await load(account);
@@ -793,11 +814,17 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     else if (Object.hasOwn(options.profiles, ref.profile)) accountOf(ref.profile, ref.account);
     else options.warn(`a saved account of profile ${ref.profile} is not listed: this build ships no such profile`);
   }
-  for (const problem of listProblems) options.warn(`could not list ${problem.file}: ${problem.cause}`);
-  for (const profile of Object.keys(options.profiles)) {
-    const label = await readActiveAccount(fileSystem, paths.active, profile);
-    if (label !== undefined) activeLabels.set(profile, label);
+  try {
+    const pointer = await readActivePointer(fileSystem, paths.active);
+    for (const profile of Object.keys(options.profiles)) {
+      const label = Object.hasOwn(pointer, profile) ? pointer[profile] : undefined;
+      if (label !== undefined) activeLabels.set(profile, label);
+    }
+  } catch (error) {
+    pointerProblem = describeError(error);
+    listProblems.push({ file: path.basename(paths.active), cause: pointerProblem });
   }
+  for (const problem of listProblems) options.warn(`could not list ${problem.file}: ${problem.cause}`);
   await serve(options.accounts);
 
   return {
@@ -817,7 +844,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     listProblems: () => listProblems,
     resume,
     selectActive,
-    signOut: (ref, signal) => signOutAccount(accountOf(ref.profile, ref.account), signal, false),
+    signOut: (ref, signal) => signOutAccount(accountOf(ref.profile, ref.account), signal),
     authSource,
     signedOutSource,
     serve,

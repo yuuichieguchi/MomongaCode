@@ -70,7 +70,7 @@ export const idTokenFacts = (idToken: string): IdTokenFacts => {
   };
 };
 
-export type IdTokenVerifierOptions = { jwksUrl: string; outbound: PlanOutbound; lifetime: AbortSignal; ports: { sleep: PlanSleep }; clock: Clock };
+export type IdTokenVerifierOptions = { jwksUrl: string; outbound: PlanOutbound; lifetime: AbortSignal; sleep: PlanSleep; clock: Clock };
 
 export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenVerifier => {
   let cached: KeySet | undefined;
@@ -78,7 +78,7 @@ export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenV
 
   const fetchKeys = async (fetch: PlanFetch): Promise<KeySet> => {
     const outcome = await cappedSend(
-      { fetch, sleep: options.ports.sleep },
+      { fetch, sleep: options.sleep },
       options.jwksUrl,
       { method: 'GET', headers: { accept: 'application/json' } },
       PLAN_SIGN_IN_DEFAULTS.keysTimeoutMs,

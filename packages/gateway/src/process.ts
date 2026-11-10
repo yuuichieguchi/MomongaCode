@@ -1024,7 +1024,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         clock,
         outbound: withOutboundNetwork,
         lifetime: sessions.lifetime,
-        ports: { sleep: planSleep },
+        sleep: planSleep,
         fileSystem: nodeFileSystem,
         hostFile: paths.planHost,
         events: planEvents,

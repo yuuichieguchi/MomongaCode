@@ -68,10 +68,10 @@ const parseRecord = (text: string): CatalogRecord => {
 
 type Listed = { models: PlanCatalogEntry[]; entryKeys: string[] };
 
-const listedOf = (profile: PlanProfile, body: unknown): Listed => {
+const listedOf = (profile: PlanProfile, body: unknown): Listed | undefined => {
   const { listKey, filter, idKey, labelKey } = profile.catalog;
   const listed = isRecord(body) ? body[listKey] : undefined;
-  if (!Array.isArray(listed)) throw new Error(`the ${profile.messages.identityLabel} model list has no ${listKey} array`);
+  if (!Array.isArray(listed)) return undefined;
   const entryKeys = new Set<string>();
   const models = listed.flatMap((entry: unknown): PlanCatalogEntry[] => {
     if (!isRecord(entry) || entry[filter.field] !== filter.equals) return [];
@@ -85,6 +85,8 @@ const listedOf = (profile: PlanProfile, body: unknown): Listed => {
   });
   return { models, entryKeys: [...entryKeys].sort() };
 };
+
+const UNCLASSIFIED = 'unclassified';
 
 const requestIdHeaderNames = (headers: Record<string, string>): string[] => Object.keys(requestIdsOf(headers)).sort();
 
@@ -146,18 +148,22 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       response = await fetchList(fetch, request);
     } catch (error) {
       const body = classify(error).error;
-      events('plan.catalog', { ...identity, outcome: body.code });
+      events('plan.catalog', { ...identity, outcome: body.code ?? UNCLASSIFIED });
       throw gatewayErrorFromBody(body);
     }
     const requestIdHeaders = requestIdHeaderNames(response.headers);
     if (response.status !== SUCCESS_STATUS) {
       const classified = classify(await listErrorOf(response, options.clock));
       await applyCredentialEffect(request.auth, classified, options.clock);
-      events('plan.catalog', { ...identity, outcome: classified.error.code, requestIdHeaders });
+      events('plan.catalog', { ...identity, outcome: classified.error.code ?? UNCLASSIFIED, requestIdHeaders });
       throw gatewayErrorFromBody(classified.error);
     }
     const { text } = await readTextLimited(response.body, PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
     const listed = listedOf(request.profile, parseOutsideJson(text));
+    if (listed === undefined) {
+      events('plan.catalog', { ...identity, outcome: 'list_invalid', requestIdHeaders });
+      throw new Error(`the ${request.profile.messages.identityLabel} model list has no ${request.profile.catalog.listKey} array`);
+    }
     events('plan.catalog', { ...identity, outcome: 'ok', listed: listed.models.length, usable: listed.models.filter((entry) => entry.usable).length, entryKeys: listed.entryKeys, requestIdHeaders });
     return { readAt: new Date(options.clock.now()).toISOString(), models: listed.models };
   };
