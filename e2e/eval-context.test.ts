@@ -12,7 +12,7 @@ import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { calibrationRoute, compactableTokens, fillerOfTokens, measureWindow, prefixProbeRoute, stepTokensToOverflowTheRoom } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -161,7 +161,7 @@ describe('momonga eval context live', () => {
     const liveFile = path.join(home.root, 'live.json');
     const replayFile = path.join(home.root, 'replay.json');
 
-    const live = await runCli(home, ['eval', 'context', dataset, '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
+    const live = await runCli(home, ['eval', 'context', dataset, '--model', UPSTREAM_MODEL_REF, '--seed', '7', '--record', recordings, '--report', liveFile], {
       boundMs: DATASET.cases.length * E2E_RUN_COMPLETED_BOUND_MS,
     });
 
@@ -170,7 +170,7 @@ describe('momonga eval context live', () => {
     expect(live.code).toBe(1);
 
     const report = JSON.parse(fs.readFileSync(liveFile, 'utf8'));
-    expect(report).toMatchObject({ model: 'fake', modelAliases: ['default'], datasetSeed: 7, stopped: [] });
+    expect(report).toMatchObject({ model: 'fake', models: [UPSTREAM_MODEL_REF], datasetSeed: 7, stopped: [] });
     const cases = report.cases as CaseLine[];
     const byId = new Map(cases.map((entry) => [entry.id, entry]));
     expect(cases.map((entry) => entry.id)).toEqual(['shell-on', 'shell-off', 'long-on', 'long-off', 'revised-on', 'revised-off', 'stale-on', 'stale-off']);
@@ -210,7 +210,7 @@ describe('momonga eval context live', () => {
     const names = fs.readdirSync(recordings).sort();
     expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
-    expect(header).toMatchObject({ format: TRANSCRIPT_FORMAT, policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
+    expect(header).toMatchObject({ format: TRANSCRIPT_FORMAT, policy: {}, datasetSeed: 7, run: { model: UPSTREAM_MODEL_REF } });
 
     const callsBefore = chatCompletions(fake).length;
     const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--report', replayFile]);

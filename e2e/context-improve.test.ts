@@ -18,12 +18,13 @@ import {
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, settingsWithTarget, startUpstream, withStructuredRole, writeSettingsFile } from './support/stack.ts';
+import { UPSTREAM_MODEL_REF, baseSettings, sandboxChoiceOf, settingsWithTarget, startUpstream, upstreamModelRef, withStructuredRole, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, e2eTestTimeoutMs } from './support/wait.ts';
 
 const STEPS = 14;
-const ANALYSIS_ALIAS = 'analyst';
+const ANALYSIS_MODEL_ID = 'analyst';
+const ANALYSIS_MODEL = upstreamModelRef(ANALYSIS_MODEL_ID);
 const WALK_LINE = CALIBRATION_LINE;
 const FRAGILE_TASK = 'Walk fragile.txt step by step.';
 const FOLLOW_UP_TASK = 'Walk follow-up.txt step by step.';
@@ -243,7 +244,7 @@ describe('momonga context improve', () => {
       routes: [...routesWith(() => benchmarkStepText, () => candidateCallTokens), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
     });
     const settingsAnsweredBy = (answers: 'model' | 'script'): Record<string, unknown> =>
-      withStructuredRole(settingsWithTarget(baseSettings(home, sandboxChoiceOf({ home }).kind), { answers }), 'analysis', ANALYSIS_ALIAS);
+      withStructuredRole(settingsWithTarget(baseSettings(home, sandboxChoiceOf({ home }).kind), { answers }), 'analysis', ANALYSIS_MODEL_ID);
     writeSettingsFile(home, settingsAnsweredBy('script'));
     expect(
       STEPS,
@@ -283,11 +284,11 @@ describe('momonga context improve', () => {
     const baselineOutcome = path.join(home.root, 'baseline-outcome.json');
     const analysisOutcome = path.join(home.root, 'analysis-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
-    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--alias', 'default', '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome];
+    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--model', UPSTREAM_MODEL_REF, '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome];
     type WrittenOutcome = {
       digest: string;
       status: string;
-      alias: string;
+      analysisModel: string;
       tokenCap: number;
       tokens: { benchmark: number; charged: number };
       derivation?: { affordable: number };
@@ -340,8 +341,8 @@ describe('momonga context improve', () => {
     const improved = await cli(improveArgs(tokenCap, realOutcome));
     expect(improved.code, `${improved.stdout}\n${improved.stderr}`).toBe(0);
     expect(improved.stdout).toContain('model: real');
-    expect(improved.stdout).toMatch(/derived from the pinned provenance of the targets that answered the benchmark/);
-    expect(improved.stdout).toContain(`the analysis and candidate calls used the alias ${ANALYSIS_ALIAS}`);
+    expect(improved.stdout).toMatch(/derived from the pinned provenance of the models that answered the benchmark/);
+    expect(improved.stdout).toContain(`the analysis and candidate calls used the model ${ANALYSIS_MODEL}`);
     expect(improved.stdout).toContain(`token cap ${tokenCap}, K=${CANDIDATES} distinct candidates (the cap affords ${CANDIDATES}:`);
     expect(improved.stdout).toContain('gate: PASS');
     expect(improved.stdout).toContain(`text of the winner:\n  ${WINNER}`);
@@ -351,7 +352,7 @@ describe('momonga context improve', () => {
     expect(improved.stdout).not.toContain(GUIDELINE_CAP_REASON);
     expect((await cli(['context', 'guideline', 'list'])).stdout).not.toContain(WINNER);
     const written = readOutcome(realOutcome);
-    expect(written).toMatchObject({ status: 'winner', alias: ANALYSIS_ALIAS, tokenCap, derivation: { affordable: CANDIDATES } });
+    expect(written).toMatchObject({ status: 'winner', analysisModel: ANALYSIS_MODEL, tokenCap, derivation: { affordable: CANDIDATES } });
     expect(written.tokens.benchmark + written.tokens.charged).toBeGreaterThanOrEqual(tokenCap);
     expect(written.winner).toMatchObject({ text: WINNER, parent: null });
     expect(written.parent).toBeNull();

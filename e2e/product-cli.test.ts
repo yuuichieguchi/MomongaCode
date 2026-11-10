@@ -7,6 +7,7 @@ import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFake
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
+import { UPSTREAM_MODEL, UPSTREAM_MODEL_REF, UPSTREAM_PROVIDER } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
@@ -36,11 +37,13 @@ describe('momonga models, cost and memory', () => {
 
     expect(text.stderr).toBe('');
     expect(text.code).toBe(0);
-    expect(text.stdout).toContain('default  -> primary');
-    expect(text.stdout).toContain('context window: 8192, max output: 1024');
-    expect(text.stdout).toContain('image input: yes');
+    expect(text.stdout.split('\n')[0]).toBe(UPSTREAM_PROVIDER);
+    expect(text.stdout).toMatch(new RegExp(`^ +${UPSTREAM_MODEL} .*starts new sessions$`, 'm'));
     const json = jsonOf((await runCli(home, ['models', '--json'])).stdout);
-    expect(json).toMatchObject([{ id: 'default', targets: ['primary'], capabilities: { contextWindow: 8192, maxOutputTokens: 1024, imageInput: true } }]);
+    expect(json).toMatchObject({
+      start: UPSTREAM_MODEL_REF,
+      models: [{ model: UPSTREAM_MODEL_REF, name: UPSTREAM_MODEL, provider: UPSTREAM_PROVIDER, address: null, contextWindow: 8192, fallback: [] }],
+    });
   });
 
   it(titleOf('cli-policy-verify'), { timeout: POLICY_PRODUCT_PREPARATIONS * E2E_TEST_TIMEOUT_MS + POLICY_VERIFY_CALLS * POLICY_VERIFY_BOUND_MS }, async () => {
@@ -197,7 +200,7 @@ describe('momonga -p with skills and images', () => {
     writePng(incapable.home.project, 'shot.png');
     const declined = await runCli(incapable.home, ['-p', 'What is in the picture?', '--image', 'shot.png']);
     expect(declined.code).toBe(1);
-    expect(declined.stderr).toContain('the model alias default does not declare image input');
+    expect(declined.stderr).toContain(`the model "${UPSTREAM_MODEL}" does not declare image input`);
     expect(chatCompletions(incapable.fake)).toHaveLength(0);
   });
 });

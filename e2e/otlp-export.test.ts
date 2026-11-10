@@ -3,13 +3,13 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { systemClock } from '@momonga/foundation';
 import { GENAI_SEMCONV, buildCostReport, definePriceTable, formatCostReport, openTraceStore } from '@momonga/observability';
-import { OTLP_SPAN_KIND, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
+import { OTLP_SPAN_KIND, decodeOtlpSpans, modelSettings, startOtlpCollector } from '@momonga/testkit';
 import type { DecodedOtlpSpan, OtlpCollector } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome, registerE2eCleanup } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { shutdownBarrier, startStack } from './support/stack.ts';
-import { UPSTREAM_MODEL, UPSTREAM_TARGET } from './support/stack.ts';
+import { UPSTREAM_MODEL } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -105,18 +105,9 @@ describe('OTLP export through real processes', () => {
       home,
       script: [toolCallReply('Read', { file_path: file }), textReply('read it')],
       settings: {
-        models: {
-          aliases: { default: [UPSTREAM_TARGET] },
-          targets: {
-            [UPSTREAM_TARGET]: {
-              adapter: 'chat-completions',
-              model: UPSTREAM_MODEL,
-              socketPath: home.upstreamSocket,
-              provider: 'apple',
-              capabilities: { contextWindow: 8192, maxOutputTokens: 1024 },
-            },
-          },
-        },
+        ...modelSettings({
+          models: [{ adapter: 'chat-completions', provider: 'apple', id: UPSTREAM_MODEL, socketPath: home.upstreamSocket, capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } }],
+        }),
         pricing: UPSTREAM_PRICES,
       },
     });
