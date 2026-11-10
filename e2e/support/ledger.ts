@@ -100,8 +100,7 @@ export const formatPidsLine = (entry: LedgerEntry): string => `${entry.pgid}${PI
 
 const decimalStartTime = (text: string): StartTime | undefined => {
   if (!/^\d+$/.test(text)) return undefined;
-  const value = Number(text);
-  return Number.isSafeInteger(value) ? value : BigInt(text);
+  return BigInt(text);
 };
 
 export const parsePidsFile = (text: string): LedgerEntry[] =>

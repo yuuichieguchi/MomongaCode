@@ -59,13 +59,13 @@ describe('the uninspectable registry', () => {
   it('shares its pruning with the identity set the inspector uses', () => {
     const alive = new Set([5150]);
     const identities = createLiveIdentities({ isAlive: (pid) => alive.has(pid) });
-    identities.add('', 5150, 10);
-    expect(identities.has('', 5150, 10)).toBe(true);
-    identities.add('', 5150, 11);
+    identities.add('', 5150, 10n);
+    expect(identities.has('', 5150, 10n)).toBe(true);
+    identities.add('', 5150, 11n);
     expect(identities.size()).toBe(1);
-    expect(identities.has('', 5150, 10)).toBe(false);
+    expect(identities.has('', 5150, 10n)).toBe(false);
     alive.clear();
-    expect(identities.has('', 5150, 11)).toBe(false);
+    expect(identities.has('', 5150, 11n)).toBe(false);
     expect(identities.size()).toBe(0);
   });
 

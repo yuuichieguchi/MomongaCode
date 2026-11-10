@@ -15,7 +15,7 @@ export type ProbeFailure = { kind: 'failed'; cause: ProbeCause; evidence: ProbeE
 
 export type ProbeResult<T> = { kind: 'gone' } | { kind: 'value'; value: T } | ProbeFailure;
 
-export type StartTime = number | bigint;
+export type StartTime = bigint;
 
 export type UninspectableProcess = { pid: number; command: string; startedAt: StartTime };
 

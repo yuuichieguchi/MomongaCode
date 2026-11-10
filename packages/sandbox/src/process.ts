@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import { closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, markerHoldersOutsideGroup, signalGroup, terminateGroup } from '@momonga/foundation';
-import type { ProbeTiming, ProcessGroupPort, ProcessInspector, TerminateOutcome } from '@momonga/foundation';
+import { closeMarkerDescriptor, deadlineSignal, groupTerminationBoundMs, hostProbeTiming, signalGroup, terminateGroup } from '@momonga/foundation';
+import type { ProbeTiming, ProcessGroupPort, TerminateOutcome } from '@momonga/foundation';
 import type { SandboxExit, SandboxedProcess } from './types.ts';
 
 export const SANDBOX_KILL_GRACE_MS = 1000;
@@ -23,7 +23,6 @@ export interface LaunchOptions {
   signalTerm?: (pgid: number, stop: AbortSignal) => Promise<void> | void;
   groupPort?: ProcessGroupPort;
   timing?: ProbeTiming;
-  inspector?: ProcessInspector;
 }
 
 export function launch(options: LaunchOptions): SandboxedProcess {
@@ -31,7 +30,7 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   const stdinMode = options.stdin === undefined ? 'ignore' : 'pipe';
   const { signal, killGraceMs } = options;
   const timing = options.timing ?? hostProbeTiming;
-  const { groupPort, markerFile, inspector } = options;
+  const { groupPort } = options;
   const markerFd = options.markerFd ?? (options.markerFile === undefined ? undefined : fs.openSync(options.markerFile, 'r'));
   let child: ReturnType<typeof spawn>;
   try {
@@ -111,7 +110,6 @@ export function launch(options: LaunchOptions): SandboxedProcess {
       ...(groupPort === undefined ? {} : { port: groupPort }),
       timing,
       signal: stop,
-      outsideHolders: async () => (markerFile === undefined ? [] : markerHoldersOutsideGroup(markerFile, pid, { signal: stop, ...(inspector === undefined ? {} : { inspector }) })),
     });
   };
 

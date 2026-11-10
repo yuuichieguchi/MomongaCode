@@ -9,6 +9,6 @@ export const judgeProcessIdentity = (recordedStart: StartTime | undefined, curre
     case 'gone':
       return { kind: 'gone' };
     case 'value':
-      return recordedStart !== undefined && BigInt(current.value) === BigInt(recordedStart) ? { kind: 'same' } : { kind: 'replaced' };
+      return current.value === recordedStart ? { kind: 'same' } : { kind: 'replaced' };
   }
 };
