@@ -26,7 +26,7 @@ describe('the test harness asks whether a group exists by the product rule: aliv
     const clock = createFakeClock(0);
     const timing: GroupTiming = { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
     const port = createProcessGroupPort('darwin', { run: ps, env: {} });
-    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal, outsideHolders: async () => [] })).toBe('killed');
+    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal })).toBe('killed');
     expect(memberStat).toBe('?E');
     expect(await harnessGroupExists(PGID)).toBe(false);
     expect(await rawGroupExists(PGID)).toBe(false);
@@ -46,7 +46,7 @@ describe('the test harness asks whether a group exists by the product rule: aliv
     const clock = createFakeClock(0);
     const timing: GroupTiming = { now: () => clock.now(), sleep: async (ms) => void clock.advance(ms) };
     const port = createProcessGroupPort('darwin', { run: ps, env: {} });
-    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal, outsideHolders: async () => [] })).toBe('killed');
+    expect(await terminateGroup(PGID, { graceMs: 100, port, timing, signal: new AbortController().signal })).toBe('killed');
     expect(pidAlive(member)).toBe(true);
     expect(await harnessGroupExists(PGID)).toBe(false);
   });

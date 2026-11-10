@@ -262,7 +262,7 @@ describe('waitForGroupGone', () => {
 describe('terminateGroup', () => {
   it('ends a cooperative group with SIGTERM within the grace and reaps the grandchild', async () => {
     const group = await spawnGroup('normal');
-    const outcome = await terminateGroup(group.pgid, { graceMs: 5000, outsideHolders: async () => [] });
+    const outcome = await terminateGroup(group.pgid, { graceMs: 5000 });
     expect(outcome).toBe('terminated');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGTERM' });
     expect(await groupAlive(group.pgid)).toBe(false);
@@ -271,7 +271,7 @@ describe('terminateGroup', () => {
 
   it('escalates to SIGKILL after the grace when the group ignores SIGTERM', async () => {
     const group = await spawnGroup('ignore-term');
-    const outcome = await terminateGroup(group.pgid, { graceMs: 200, outsideHolders: async () => [] });
+    const outcome = await terminateGroup(group.pgid, { graceMs: 200 });
     expect(outcome).toBe('killed');
     expect(await group.exited).toEqual({ code: null, signal: 'SIGKILL' });
     expect(await groupAlive(group.pgid)).toBe(false);
@@ -279,7 +279,7 @@ describe('terminateGroup', () => {
   });
 
   it('returns gone without signalling when the group no longer exists', async () => {
-    expect(await terminateGroup(reapedGroupId(), { graceMs: 100, outsideHolders: async () => [] })).toBe('gone');
+    expect(await terminateGroup(reapedGroupId(), { graceMs: 100 })).toBe('gone');
   });
 
   it('terminates a group whose readiness is signalled through a ready file', async () => {
@@ -306,7 +306,7 @@ describe('terminateGroup', () => {
         resolve();
       }
     });
-    expect(await terminateGroup(pgid, { graceMs: 5000, outsideHolders: async () => [] })).toBe('terminated');
+    expect(await terminateGroup(pgid, { graceMs: 5000 })).toBe('terminated');
     expect(await exited).toBe('SIGTERM');
     expect(await groupAlive(pgid)).toBe(false);
   });
@@ -316,7 +316,7 @@ describe('terminateGroup', () => {
     const outcomes: string[] = [];
     for (let iteration = 0; iteration < iterations; iteration += 1) {
       const { pgid, exited } = await spawnForkLoopGroup();
-      const outcome = await terminateGroup(pgid, { graceMs: 50, outsideHolders: async () => [] }).catch((error: Error) => error.message);
+      const outcome = await terminateGroup(pgid, { graceMs: 50 }).catch((error: Error) => error.message);
       if (!(await settlesWithin(exited, LEADER_REAP_WAIT_MS))) outcomes.push(`${outcome} (leader not reaped)`);
       else outcomes.push((await groupAlive(pgid)) ? `${outcome} (group still alive)` : outcome);
       await killGroupsForCleanup([pgid]);
@@ -354,7 +354,7 @@ describe('forceKillGroup', () => {
   });
 });
 
-describe('terminateGroup says gone, terminated or killed only after a fresh holder listing after the last signal shows no holder outside the group', () => {
+describe('terminateGroup answers only whether the group ended, by the group probe, and makes no holder listing', () => {
   const instantTiming = () => {
     let now = 0;
     return { now: () => now, sleep: async (ms: number) => void (now += ms) };
@@ -371,26 +371,34 @@ describe('terminateGroup says gone, terminated or killed only after a fresh hold
     };
   };
 
-  const listingOf = (holders: number[], events: string[]) => async (): Promise<number[]> => {
-    events.push('list');
-    return holders;
-  };
-
-  it.each<[NodeJS.Signals | undefined, string]>([
-    [undefined, 'gone'],
-    ['SIGTERM', 'terminated'],
-    ['SIGKILL', 'killed'],
-  ])('with the group ending on %s it says %s when the listing after the last signal shows no holder', async (fatal, word) => {
+  it.each<[NodeJS.Signals | undefined, string, string[]]>([
+    [undefined, 'gone', []],
+    ['SIGTERM', 'terminated', ['signal SIGTERM']],
+    ['SIGKILL', 'killed', ['signal SIGTERM', 'signal SIGKILL']],
+  ])('with the group ending on %s it says %s from the group probe alone', async (fatal, word, signals) => {
     const events: string[] = [];
-    const outcome = await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming(), outsideHolders: listingOf([], events) });
-    expect(outcome).toBe(word);
-    const lastSignal = events.map((event) => event.startsWith('signal')).lastIndexOf(true);
-    expect(events.indexOf('list', lastSignal + 1)).toBeGreaterThan(lastSignal);
+    expect(await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming() })).toBe(word);
+    expect(events).toEqual(signals);
   });
 
-  it.each<NodeJS.Signals | undefined>([undefined, 'SIGTERM', 'SIGKILL'])('with the group ending on %s it says unconfirmed while a holder outside the group remains', async (fatal) => {
+  it.each<NodeJS.Signals | undefined>([undefined, 'SIGTERM', 'SIGKILL'])('with the group ending on %s it never calls a holder listing handed to it', async (fatal) => {
     const events: string[] = [];
-    const outcome = await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming(), outsideHolders: listingOf([6100], events) });
-    expect(outcome).toBe('unconfirmed');
+    const listings: string[] = [];
+    const options = {
+      graceMs: 50,
+      port: groupDyingOn(fatal, events),
+      timing: instantTiming(),
+      outsideHolders: async (): Promise<number[]> => {
+        listings.push('list');
+        return [6100];
+      },
+    };
+    expect(await terminateGroup(6000, options)).not.toBe('unconfirmed');
+    expect(listings).toEqual([]);
+  });
+
+  it('exports no listing of marker holders outside a group', async () => {
+    const foundation: Record<string, unknown> = await import('@momonga/foundation');
+    expect(Object.keys(foundation).filter((name) => /OutsideGroup|outsideHolders/i.test(name))).toEqual([]);
   });
 });

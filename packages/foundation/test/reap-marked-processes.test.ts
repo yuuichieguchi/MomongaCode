@@ -920,7 +920,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   });
 });
 
-type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: number; startUnreadable?: boolean };
+type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: bigint; startUnreadable?: boolean };
 
 type Reuses = { atListing?: Record<number, Record<number, TableProcess>>; afterGroupRead?: Record<number, Record<number, TableProcess>>; afterStartRead?: Record<number, TableProcess> };
 
@@ -952,7 +952,7 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
         pendingStartReuse.delete(pid);
         table.set(pid, replacement);
       }
-      return { kind: 'value', value: entry.startMs ?? pid };
+      return { kind: 'value', value: entry.startMs ?? BigInt(pid) };
     },
     holdersOf: async () => {
       listings += 1;
@@ -972,7 +972,7 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
   return { signals, kill, inspector };
 };
 
-const stranger = (pgid: number): TableProcess => ({ pgid, holdsMarker: false, ignoresTerm: false, startMs: 999_999 });
+const stranger = (pgid: number): TableProcess => ({ pgid, holdsMarker: false, ignoresTerm: false, startMs: 999_999n });
 
 describe('a target is signalled only when its start time read at the listing reads the same just before the signal (decision 12: a process whose start time cannot be read is never signalled; ProcessStop HolderTargetProved)', () => {
   it('a holder outside the group whose pid is reused after the group read gets no SIGTERM', async (context) => {
@@ -1087,7 +1087,7 @@ describe('a holder the group read no longer finds is never signalled by its pid 
     const marker = markerFile(withTempDir(context));
     const world = processTable(
       { 100: { pgid: 100, holdsMarker: true, ignoresTerm: true }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: true } },
-      { 4: [200] },
+      { 2: [200] },
     );
     const fake = fakeTiming();
     await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fake.timing, inspector: world.inspector });

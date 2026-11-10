@@ -21,14 +21,14 @@ const DETACHED_GRANDCHILD_SCRIPT = [
 
 type FakeWorld = {
   ports: LedgerPorts;
-  alive: Map<number, number>;
+  alive: Map<number, bigint>;
   groups: Set<number>;
   killed: number[];
   survivors: Set<number>;
 };
 
-const fakeWorld = (initial: Record<number, number>): FakeWorld => {
-  const alive = new Map<number, number>(Object.entries(initial).map(([pid, start]) => [Number(pid), start]));
+const fakeWorld = (initial: Record<number, bigint>): FakeWorld => {
+  const alive = new Map<number, bigint>(Object.entries(initial).map(([pid, start]) => [Number(pid), start]));
   const groups = new Set<number>(alive.keys());
   const killed: number[] = [];
   const survivors = new Set<number>();
@@ -96,7 +96,7 @@ describe('process ledger: kill', () => {
   });
 
   it('kills the union of recorded and freshly read groups', async (context) => {
-    const world = fakeWorld({ 101: 1000, 201: 2000, 202: 2001 });
+    const world = fakeWorld({ 101: 1000n, 201: 2000n, 202: 2001n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(101, 'supervisor');
     const killed = await ledger.sweep({ health: async () => healthWith([201, 202]) });
@@ -105,7 +105,7 @@ describe('process ledger: kill', () => {
   });
 
   it('still kills when the health fetch fails, then rethrows the failure', async (context) => {
-    const world = fakeWorld({ 101: 1000, 102: 1001 });
+    const world = fakeWorld({ 101: 1000n, 102: 1001n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(101, 'supervisor');
     await ledger.record(healthWith([102]));
@@ -122,7 +122,7 @@ describe('process ledger: kill', () => {
   });
 
   it('treats an unreachable supervisor as no error', async (context) => {
-    const world = fakeWorld({ 101: 1000 });
+    const world = fakeWorld({ 101: 1000n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(101, 'supervisor');
     for (const code of ['ECONNREFUSED', 'ENOENT']) {
@@ -138,7 +138,7 @@ describe('process ledger: kill', () => {
   });
 
   it('throws naming a group that survives', async (context) => {
-    const world = fakeWorld({ 301: 3000 });
+    const world = fakeWorld({ 301: 3000n });
     world.survivors.add(301);
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(301, 'fixture');
@@ -146,17 +146,17 @@ describe('process ledger: kill', () => {
   });
 
   it('never signals a recorded pid whose process now has another start time', async (context) => {
-    const world = fakeWorld({ 401: 4000 });
+    const world = fakeWorld({ 401: 4000n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(401, 'health');
-    world.alive.set(401, 4999);
+    world.alive.set(401, 4999n);
     const killed = await ledger.kill();
     expect(killed).toEqual([]);
     expect(world.killed).toEqual([]);
   });
 
   it('kills a group whose leader is gone but whose members live, and drops a group that is dead', async (context) => {
-    const world = fakeWorld({ 501: 5000, 502: 5001 });
+    const world = fakeWorld({ 501: 5000n, 502: 5001n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: world.ports });
     await ledger.add(501, 'db');
     await ledger.add(502, 'db');
@@ -172,7 +172,7 @@ describe('process ledger: kill', () => {
 
 describe('process ledger: persistence', () => {
   it('appends one line per new group and none for a repeat', async (context) => {
-    const world = fakeWorld({ 101: 1000, 102: 1001 });
+    const world = fakeWorld({ 101: 1000n, 102: 1001n });
     const pidsFile = pidsFileIn(context);
     const ledger = createProcessLedger({ pidsFile, ports: world.ports });
     await ledger.add(101, 'supervisor');
@@ -181,11 +181,21 @@ describe('process ledger: persistence', () => {
     const text = fs.readFileSync(pidsFile, 'utf8');
     expect(text.split('\n').filter((line) => line !== '')).toHaveLength(2);
     expect(parsePidsFile(text)).toEqual([
-      { pgid: 101, startTime: 1000, source: 'supervisor' },
-      { pgid: 102, startTime: 1001, source: 'fixture' },
+      { pgid: 101, startTime: 1000n, source: 'supervisor' },
+      { pgid: 102, startTime: 1001n, source: 'fixture' },
     ]);
     expect(fs.statSync(pidsFile).mode & 0o777).toBe(0o600);
     expect(ledger.pidsFile).toBe(pidsFile);
+  });
+
+  it('round-trips a Windows FILETIME of 2^60 through the ledger line as the same bigint', () => {
+    const entry = { pgid: 77, startTime: 2n ** 60n, source: 'marker-holder' } as const;
+    expect(formatPidsLine(entry)).toBe('77\t1152921504606846976\tmarker-holder\n');
+    expect(parsePidsFile(formatPidsLine(entry))).toEqual([entry]);
+  });
+
+  it('reads every start time back as a bigint, whatever its size', () => {
+    expect(parsePidsFile(formatPidsLine({ pgid: 101, startTime: 1000n, source: 'supervisor' }))).toEqual([{ pgid: 101, startTime: 1000n, source: 'supervisor' }]);
   });
 
   it('formats a line that parses back to the same entry', () => {
@@ -218,7 +228,7 @@ describe('process ledger: sources', () => {
     fs.mkdirSync(paths.markers.tools, { recursive: true, mode: 0o700 });
     const marker = path.join(paths.markers.tools, 'tool-marker');
     fs.writeFileSync(marker, '');
-    const world = fakeWorld({ 301: 1, 401: 1, 601: 1, 602: 1, 701: 1, 801: 1, 802: 1, 803: 1, 901: 1, 990: 1 });
+    const world = fakeWorld({ 301: 1n, 401: 1n, 601: 1n, 602: 1n, 701: 1n, 801: 1n, 802: 1n, 803: 1n, 901: 1n, 990: 1n });
     const ports: LedgerPorts = {
       ...world.ports,
       findHolders: async (file) => (fs.realpathSync(file) === fs.realpathSync(marker) ? [901] : []),
@@ -281,13 +291,13 @@ describe('process ledger: isolated sources', () => {
   it('still collects, persists and kills a marker holder when the supervisor log source throws, then sweep rethrows', async (context) => {
     const fixture = sourceFixture(context);
     fs.writeFileSync(fixture.paths.logFiles.supervisor, 'not json\n');
-    const world = fakeWorld({ 990: 1 });
+    const world = fakeWorld({ 990: 1n });
     const pidsFile = pidsFileIn(context);
     const ledger = createProcessLedger({ pidsFile, ports: holderPorts(world, fixture.marker, 901, 990) });
     const failure = await failureOf(ledger.sweep({ paths: fixture.paths }));
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toContain('not JSON');
-    expect(persistedIn(pidsFile)).toEqual([{ pgid: 990, startTime: 1, source: 'marker-holder' }]);
+    expect(persistedIn(pidsFile)).toEqual([{ pgid: 990, startTime: 1n, source: 'marker-holder' }]);
     expect(world.killed).toEqual([990]);
   });
 
@@ -296,7 +306,7 @@ describe('process ledger: isolated sources', () => {
     fs.writeFileSync(fixture.paths.logFiles.supervisor, 'not json\n');
     fs.writeFileSync(fixture.recordFile, 'not a record\n');
     writeToolGroupRow(fixture.paths.databases.runtime, 701);
-    const world = fakeWorld({ 701: 7, 990: 9 });
+    const world = fakeWorld({ 701: 7n, 990: 9n });
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context), ports: holderPorts(world, fixture.marker, 901, 990) });
     const failure = await failureOf(ledger.collect({ paths: fixture.paths, recordFiles: [fixture.recordFile] }));
     expect(failure).toBeInstanceOf(AggregateError);
@@ -324,7 +334,7 @@ describe('process ledger: current persisted file', () => {
   it('a health reading persists a group seen only in the DB and never scans the marker holders', async (context) => {
     const fixture = sourceFixture(context);
     writeToolGroupRow(fixture.paths.databases.runtime, 701);
-    const world = fakeWorld({ 401: 4, 701: 7, 990: 9 });
+    const world = fakeWorld({ 401: 4n, 701: 7n, 990: 9n });
     const pidsFile = pidsFileIn(context);
     const { ports, holderQueries } = recordingHolderPorts(world, fixture.marker, 901, 990);
     const ledger = createProcessLedger({ pidsFile, ports, sources: { paths: fixture.paths, recordFiles: [fixture.recordFile] } });
@@ -336,7 +346,7 @@ describe('process ledger: current persisted file', () => {
 
   it('the sweep after health readings still scans the marker holders and kills a group visible only through a marker', async (context) => {
     const fixture = sourceFixture(context);
-    const world = fakeWorld({ 401: 4, 990: 9 });
+    const world = fakeWorld({ 401: 4n, 990: 9n });
     const pidsFile = pidsFileIn(context);
     const { ports, holderQueries } = recordingHolderPorts(world, fixture.marker, 901, 990);
     const ledger = createProcessLedger({ pidsFile, ports, sources: { paths: fixture.paths, recordFiles: [fixture.recordFile] } });
@@ -351,7 +361,7 @@ describe('process ledger: current persisted file', () => {
     const fixture = sourceFixture(context);
     fs.writeFileSync(fixture.paths.logFiles.supervisor, 'not json\n');
     writeToolGroupRow(fixture.paths.databases.runtime, 701);
-    const world = fakeWorld({ 401: 4, 701: 7 });
+    const world = fakeWorld({ 401: 4n, 701: 7n });
     const pidsFile = pidsFileIn(context);
     const ledger = createProcessLedger({
       pidsFile,
@@ -365,7 +375,7 @@ describe('process ledger: current persisted file', () => {
   it('retains a per-poll failure and the later sweep kills, then rethrows it together with its own failure', async (context) => {
     const fixture = sourceFixture(context);
     fs.writeFileSync(fixture.recordFile, 'not a record\n');
-    const world = fakeWorld({ 401: 4 });
+    const world = fakeWorld({ 401: 4n });
     const ledger = createProcessLedger({
       pidsFile: pidsFileIn(context),
       ports: world.ports,
@@ -391,7 +401,7 @@ describe('process ledger: current persisted file', () => {
   it('a sweep given only health still collects from the configured sources and kills a record-file pid', async (context) => {
     const fixture = sourceFixture(context);
     fs.writeFileSync(fixture.recordFile, `${JSON.stringify({ type: 'ready', pid: 801 })}\n`);
-    const world = fakeWorld({ 801: 8 });
+    const world = fakeWorld({ 801: 8n });
     const ledger = createProcessLedger({
       pidsFile: pidsFileIn(context),
       ports: world.ports,
@@ -437,19 +447,19 @@ describe('teardown helpers', () => {
     fs.writeFileSync(
       pidsFile,
       [
-        formatPidsLine({ pgid: 101, startTime: 1000, source: 'supervisor' }),
-        formatPidsLine({ pgid: 102, startTime: 1001, source: 'health' }),
-        formatPidsLine({ pgid: 103, startTime: 1002, source: 'db' }),
+        formatPidsLine({ pgid: 101, startTime: 1000n, source: 'supervisor' }),
+        formatPidsLine({ pgid: 102, startTime: 1001n, source: 'health' }),
+        formatPidsLine({ pgid: 103, startTime: 1002n, source: 'db' }),
       ].join(''),
     );
-    const world = fakeWorld({ 101: 1000, 102: 9999 });
+    const world = fakeWorld({ 101: 1000n, 102: 9999n });
     const killed = await killListedGroups(pidsFile, world.ports);
     expect(killed).toEqual([101]);
     expect(world.killed).toEqual([101]);
   });
 
   it('killListedGroups kills nothing when the ledger file does not exist', async (context) => {
-    const world = fakeWorld({ 101: 1000 });
+    const world = fakeWorld({ 101: 1000n });
     await expect(killListedGroups(path.join(withTempDir(context), 'mme-none-pids'), world.ports)).resolves.toEqual([]);
     expect(world.killed).toEqual([]);
   });

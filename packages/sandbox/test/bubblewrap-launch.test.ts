@@ -228,7 +228,7 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     const controller = new AbortController();
     const proc = monitored.spawn({ argv: ['/bin/sh', '-c', 'sleep 30'], cwd: work, env: { PATH: '/usr/bin:/bin', SETUP_GATE: gate } }, policy([]), controller.signal);
     const finished = run(proc);
-    await waitFor(() => psGroupMembers(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
+    await waitFor(() => psGroupMembers.members(proc.pgid).length === 1, { description: 'bwrap is setting up alone in its group' });
     const abortedAt = Date.now();
     controller.abort();
     const exit = await finished;

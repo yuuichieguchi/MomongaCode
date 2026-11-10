@@ -127,8 +127,9 @@ const expectStopped = (output: string): void => {
 
 const expectLeftAlone = async (group: Group, result: { outcome: string; output: string }): Promise<void> => {
   expect(result.outcome).toBe('unknown');
-  expect(result.output).toMatch(/\(marker \S+\) may still be running/);
-  expect(result.output).toMatch(/run \/markers ignore \S+\./);
+  expect(result.output).toContain(`Still running but no longer verified as belonging to this call, so left alone: group ${group.pgid}.`);
+  expect(result.output).not.toContain('retries');
+  expect(result.output).not.toContain('/markers ignore');
   expect(alive(-group.pgid)).toBe(true);
   expect(fs.existsSync(path.join(group.dir, 'term'))).toBe(false);
 };
@@ -453,7 +454,7 @@ describe('markerReapClockBoundMs', () => {
   const RECORDED_GROUP = 424_242;
   const OWN_GROUP = 424_241;
   const HOLDER = 424_243;
-  const HOLDER_STARTED_AT = 1_700_000_000;
+  const HOLDER_STARTED_AT = 1_700_000_000n;
   const FAILURES_PER_WINDOW = KILL_GRACE_MS / REAP_POLL_INTERVAL_MS - 1;
   const SLOW_PROBE: ProbeResult<number[]> = { kind: 'failed', cause: 'transient', evidence: { kind: 'timeout', detail: 'the probe was slow' } };
 

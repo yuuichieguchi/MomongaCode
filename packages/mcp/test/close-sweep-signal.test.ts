@@ -21,6 +21,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
     fs.mkdirSync(dir, { mode: 0o700 });
     const warnings: string[] = [];
     const terminateSignals: AbortSignal[] = [];
+    const terminateOptionKeys: string[] = [];
     const transport = createStdioTransport({
       name: 'raw',
       config: rawConfig(),
@@ -31,6 +32,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
       timing: elapsedStopBound,
       terminate: async (_pgid, options): Promise<TerminateOutcome> => {
         if (options.signal !== undefined) terminateSignals.push(options.signal);
+        terminateOptionKeys.push(...Object.keys(options));
         return 'gone';
       },
     });
@@ -42,6 +44,7 @@ describe('mcp close sweeps its marker under the close operation signal, not the 
 
     expect(terminateSignals).toHaveLength(1);
     expect(terminateSignals[0]?.aborted).toBe(true);
+    expect(terminateOptionKeys.sort()).toEqual(['graceMs', 'signal']);
     expect(fs.readdirSync(dir)).toEqual([]);
     expect(warnings).toEqual([]);
   });

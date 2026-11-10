@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { reconcileProcessGroup } from '../../src/process-markers.ts';
+import type { ProcessGroupPort } from '../../src/platform/group-port.ts';
 import type { WindowsProcessRow } from '../../src/platform/windows-parsers.ts';
 import type { CommandResult, CommandRunner } from '../../src/platform/command-runner.ts';
 import { createAsyncSignalSender, createProcessGroupPort } from '../../src/platform/group-port.ts';
@@ -261,5 +263,45 @@ describe('windows group control keeps what it observed between probes', () => {
   it('does not report the orphans of an earlier process that had the same pid', async () => {
     const control = createWindowsGroupControl({ run: rowsOf([{ pid: 50, ppid: 7, startMs: 1000 }]), env: ENV });
     expect(await control.members(7, LIVE)).toEqual([]);
+  });
+});
+
+describe('a Windows start time read that OpenProcess refuses (design 19.6 point 15)', () => {
+  const failingWith = (stderr: string): CommandRunner => async () => ({ exitCode: 1, stdout: '', stderr });
+
+  it('asks the process table for the pid when OpenProcess answers error 87, instead of taking 87 alone as gone', () => {
+    const script = startTimeScript(4242);
+    expect(script).toContain('Win32_Process');
+    expect(script).toContain('4242');
+  });
+
+  it('reports gone when the script finds no row for the pid', async () => {
+    expect(await createWindowsInspector({ run: async () => ({ exitCode: 0, stdout: '\r\n', stderr: '' }), env: ENV }).startTimeOf(4242, LIVE)).toEqual({ kind: 'gone' });
+  });
+
+  it.each([
+    ['error 87 with a row in the process table', 'Exception calling "Creation" with "1" argument(s): "The parameter is incorrect" (87)'],
+    ['error 5', 'Exception calling "Creation" with "1" argument(s): "Access is denied" (5)'],
+  ])('reports %s as a failed read', async (_case, stderr) => {
+    expect(await createWindowsInspector({ run: failingWith(stderr), env: ENV }).startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed' });
+  });
+
+  it('gives a holder whose start time read fails with error 5 no signal, and reports it left alone', async () => {
+    const runner: CommandRunner = async (_file, args) => {
+      const script = decodeScript(args);
+      if (script.includes('GetProcessTimes')) return { exitCode: 1, stdout: '', stderr: 'Exception calling "Creation" with "1" argument(s): "Access is denied" (5)' };
+      if (script.includes('rstrtmgr.dll')) return { exitCode: 0, stdout: '[4242]', stderr: '' };
+      return { exitCode: 0, stdout: JSON.stringify([{ pid: 4242, ppid: 1, startMs: 5000 }]), stderr: '' };
+    };
+    const inspector = createWindowsInspector({ run: runner, env: ENV });
+    const sent: Array<[number, NodeJS.Signals | 0]> = [];
+    const groupPort: ProcessGroupPort = { signal: async (pgid, signal) => void sent.push([-pgid, signal]), alive: async () => false };
+    let now = 0;
+    const result = await reconcileProcessGroup(
+      { pgid: 4000, marker: 'C:\\Users\\a\\marker' },
+      { killGraceMs: 100, kill: (pid, signal) => void sent.push([pid, signal]), groupPort, timing: { now: () => now, sleep: async (ms) => void (now += ms) }, inspector, signal: new AbortController().signal },
+    );
+    expect(sent.filter(([, signal]) => signal !== 0)).toEqual([]);
+    expect(result.leftAlonePids).toEqual([4242]);
   });
 });

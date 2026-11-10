@@ -30,7 +30,7 @@ const survivingWorld = () => {
   const warnings: string[] = [];
   let now = 0;
   const inspector = {
-    startTimeOf: async () => ({ kind: 'value', value: 1 }),
+    startTimeOf: async () => ({ kind: 'value', value: 1n }),
     holdersOf: async () => ({ kind: 'value', value: [SURVIVOR_PID] }),
     groupsOf: async () => ({ kind: 'value', value: new Map([[SURVIVOR_PID, SURVIVOR_PID]]) }),
     markerState: async () => 'held',
@@ -44,12 +44,12 @@ const survivingWorld = () => {
 
 type ReapOptions = Parameters<typeof reapMarkerDirectory>[0];
 
-const reapAt = (dir: string, occasion: string, world: ReturnType<typeof survivingWorld>) =>
+const reapAt = (dir: string, occasion: string, world: ReturnType<typeof survivingWorld>, label = 'managed server') =>
   reapMarkerDirectory({
     dir,
     occasion,
     killGraceMs: KILL_GRACE_MS,
-    label: 'managed server',
+    label,
     onWarning: (message: string) => world.warnings.push(message),
     kill: world.kill,
     timing: world.timing,
@@ -83,5 +83,23 @@ describe('a managed server marker follows decision 12 (design-managed-servers se
     await reapAt(dir, 'startup', world);
     expect(world.sent).toEqual([]);
     expect(world.warnings).toEqual([]);
+  });
+});
+
+describe('the final notice of a survivor is said only after the fourth chance, with the label of the asker (design 19.6 point 12, decision R06-12)', () => {
+  it.each(['tool', 'mcp', 'job', 'daemon'])('says the %s notice exactly once all four chances are spent', async (label) => {
+    const world = survivingWorld();
+    const { dir } = markerDirectoryWith('r01110\n');
+    await reapAt(dir, 'guard', world, label);
+    expect(world.warnings).toContain(
+      `a ${label} process (marker ${MARKER_NAME}) may still be running. MomongaCode has used its 4 retries and will not try again. If it can stay running, run /markers ignore ${MARKER_NAME}.`,
+    );
+  });
+
+  it.each(['tool', 'mcp', 'job', 'daemon'])('says neither the retries nor /markers ignore for %s at a chance that leaves others', async (label) => {
+    const world = survivingWorld();
+    const { dir } = markerDirectoryWith('r00000\n');
+    await reapAt(dir, 'startup', world, label);
+    expect(world.warnings.filter((warning) => warning.includes('retries') || warning.includes('/markers ignore'))).toEqual([]);
   });
 });

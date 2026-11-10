@@ -95,7 +95,7 @@ describe('process group termination on an injected timing', () => {
       },
       alive: async () => !killed,
     };
-    expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing, outsideHolders: async () => [] })).toBe('killed');
+    expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('killed');
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(fake.now()).toBeGreaterThanOrEqual(100);
   });
@@ -103,7 +103,7 @@ describe('process group termination on an injected timing', () => {
   it('terminateGroup reports unconfirmed when SIGKILL does not take within one grace', async () => {
     const fake = fakeGroupTiming();
     const { port } = groupPort(() => true);
-    expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing, outsideHolders: async () => [] })).toBe('unconfirmed');
+    expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('unconfirmed');
     expect(fake.now()).toBeGreaterThanOrEqual(200);
     expect(fake.now()).toBeLessThanOrEqual(220);
   });
