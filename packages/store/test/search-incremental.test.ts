@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { setImmediate as eventLoopTurn } from 'node:timers/promises';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canonicalJson, migrate } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
-import { createFakeClock } from '@momonga/testkit';
+import { PROPERTY_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { SEARCH_DRAFT_DERIVATION } from '../src/append-records.ts';
 import { DERIVATIONS } from '../src/derived-repair.ts';
 import { MIGRATIONS } from '../src/schema.ts';
@@ -17,6 +17,8 @@ import { seeded } from './support/seeded.ts';
 import type { Random } from './support/seeded.ts';
 import { wholeExtraction } from './support/whole-extraction.ts';
 import type { WholeDocument } from './support/whole-extraction.ts';
+
+vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });
 
 const DRAFT_TABLES = ['search_draft_runs', 'search_draft_steps', 'search_draft_parts', 'search_draft_paths'] as const;
 
