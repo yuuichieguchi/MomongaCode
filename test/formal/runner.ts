@@ -44,6 +44,13 @@ export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
 
 const liveGroups = new Set<number>();
 
+export const trackGroup = (pgid: number): (() => void) => {
+  liveGroups.add(pgid);
+  return () => {
+    liveGroups.delete(pgid);
+  };
+};
+
 export type GroupHost = {
   signalGroup: (pgid: number) => void;
   groupStates: () => string;
@@ -95,7 +102,7 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     });
     const pid = child.pid;
     if (pid === undefined) throw new Error(`${options.script} did not start`);
-    liveGroups.add(pid);
+    const untrackGroup = trackGroup(pid);
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8');
@@ -145,7 +152,7 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
       finished = true;
       wake();
       killGroup(pid);
-      liveGroups.delete(pid);
+      untrackGroup();
     }
   } finally {
     fs.rmSync(metadir, { recursive: true, force: true });
