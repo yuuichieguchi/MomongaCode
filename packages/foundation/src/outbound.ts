@@ -1,4 +1,6 @@
 import { X509Certificate } from 'node:crypto';
+import { isIP } from 'node:net';
+import type { LookupFunction } from 'node:net';
 import tls from 'node:tls';
 import { Worker } from 'node:worker_threads';
 import { Agent, Dispatcher, Pool, ProxyAgent, fetch as undiciFetch } from 'undici';
@@ -216,6 +218,7 @@ export type OutboundOptions = {
   readonly connectReplyTimeoutMs: number;
   readonly headersTimeout?: number;
   readonly bodyTimeout?: number;
+  readonly lookup?: LookupFunction;
 };
 
 const PROXY_HOP = Symbol('momonga.proxyHop');
@@ -396,12 +399,36 @@ class OutboundDispatcher extends Dispatcher {
   readonly #direct: Agent;
   readonly #proxies = new Map<string, ProxyAgent>();
   readonly #refusals = new Map<string, Agent>();
+  readonly #siteRefusals = new WeakSet<object>();
+  readonly #siteLookup: LookupFunction | undefined;
 
   constructor(network: OutboundNetwork, options: OutboundOptions) {
     super();
     this.#network = network;
     this.#options = options;
-    this.#direct = new Agent(siteTimeouts(options));
+    this.#siteLookup = options.lookup === undefined ? undefined : this.#recordingRefusals(options.lookup);
+    this.#direct = new Agent({ ...siteTimeouts(options), ...(this.#siteLookup === undefined ? {} : { connect: { lookup: this.#siteLookup } }) });
+  }
+
+  #recordingRefusals(lookup: LookupFunction): LookupFunction {
+    return (hostname, options, callback) =>
+      lookup(hostname, options, (error, address, family) => {
+        if (error !== null) this.#siteRefusals.add(error);
+        callback(error, address, family);
+      });
+  }
+
+  #refusedBySite(error: unknown): boolean {
+    return causeChain(error).some((entry) => typeof entry === 'object' && entry !== null && this.#siteRefusals.has(entry));
+  }
+
+  #answeredBySite(lookup: LookupFunction, hostname: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      lookup(hostname, { all: true }, (error) => {
+        if (error === null) resolve();
+        else reject(error);
+      });
+    });
   }
 
   override dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
@@ -409,11 +436,18 @@ class OutboundDispatcher extends Dispatcher {
     const signal: unknown = 'signal' in options ? options.signal : undefined;
     const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true, signal });
     if (plan.kind === 'refuse') return this.#refuse(plan.error, options, handler);
-    const target = plan.route.kind === 'proxy' ? this.#proxyFor(plan.route) : this.#direct;
-    return target.dispatch(options, labelledHandler(handler, plan.label));
+    const labelled = labelledHandler(handler, (error) => (this.#refusedBySite(error) ? error : plan.label(error)));
+    if (plan.route.kind !== 'proxy') return this.#direct.dispatch(options, labelled);
+    const proxy = this.#proxyFor(plan.route);
+    const hostname = destination.hostname.replace(/^\[|\]$/g, '');
+    if (this.#siteLookup === undefined || isIP(hostname) !== 0) return proxy.dispatch(options, labelled);
+    void this.#answeredBySite(this.#siteLookup, hostname)
+      .then(() => proxy.dispatch(options, labelled))
+      .catch((error: unknown) => this.#refuse(error instanceof Error ? error : new Error(String(error)), options, handler));
+    return true;
   }
 
-  #refuse(error: OutboundConnectionError, options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
+  #refuse(error: Error, options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
     let refusal = this.#refusals.get(error.message);
     if (refusal === undefined) {
       refusal = new Agent({ connect: (_options, callback) => callback(error, null) });

@@ -579,11 +579,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
 
     const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, platform, cache, store });
+      const mcpNetwork = await outboundNetworkOf(settings.network, startDeadlineSignal(undefined));
       const runtime: ToolRuntime = createToolRuntime({
         owners: markerOwners,
         lockCapability,
         kernelLock,
         paths,
+        network: mcpNetwork,
         sharedPaths,
         generation: options.generation,
         role: rolePort,

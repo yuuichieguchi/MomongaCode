@@ -335,7 +335,7 @@ class ManagedConnection implements McpServerConnection {
     const { config, scope, remote } = this.options;
     if (!('url' in config)) throw new Error(`MCP server "${this.name}" is not a remote server and has no authorization`);
     if (remote === undefined) throw new Error(`MCP server "${this.name}" has no credential store configured`);
-    const guarded = createGuardedFetch({ scope, ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
+    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
     try {
       await authorizeMcpServer({
         server: this.name,
@@ -688,7 +688,7 @@ class ManagedConnection implements McpServerConnection {
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }
     if (remote === undefined) throw new Error(`MCP server "${this.name}" is remote but no credential store was configured`);
-    const guarded = createGuardedFetch({ scope, ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
+    const guarded = createGuardedFetch({ scope, network: remote.network, connectTimeoutMs: this.connectLimitMs(), ...(remote.resolver === undefined ? {} : { resolver: remote.resolver }) });
     const staticAuthorization = Object.keys(config.headers ?? {}).some((header) => header.toLowerCase() === 'authorization');
     const authProvider: McpOAuthProvider | undefined = staticAuthorization
       ? undefined
