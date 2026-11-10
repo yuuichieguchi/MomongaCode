@@ -263,6 +263,8 @@ export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem }
 export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
 export { HOST_READ_BOUND_MS } from './host-read-bound.ts';
+export { startSharedCall } from './shared-call.ts';
+export type { SharedCall } from './shared-call.ts';
 export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError, readSystemCertificatesInWorker, trustFailureText } from './outbound.ts';
 export type { InstallTrustOptions, OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
@@ -353,7 +355,7 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { PIPE_NAME_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, endpointFormsOfSocket, isPipePath, setSocketBind, socketBindRefusalOf, pipePathFor } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
 export type { EndpointForm, SocketBind, SocketBindRefusal } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';

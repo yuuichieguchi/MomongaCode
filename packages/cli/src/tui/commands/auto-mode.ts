@@ -2,6 +2,8 @@ import { describeFailure } from '../../failure.ts';
 import { runClassifierFlow } from '../models/order.ts';
 import type { SlashCommand } from '../slash.ts';
 
+const READING_MEASUREMENT_PHASE = 'reading the stored measurement';
+
 const USAGE = 'usage: /auto-mode | /auto-mode check [<model>] [--agent <model>] | /auto-mode status [<model>]';
 
 type Parsed = { classifier?: string; agent?: string };
@@ -41,7 +43,7 @@ export const autoModeCommand: SlashCommand = {
     }
     const classifier = parsed.classifier === undefined ? {} : { classifier: parsed.classifier };
     if (action === 'status') {
-      await context.autoMode.status({ ...classifier, surface: 'tui' }, context.info);
+      await context.wait(READING_MEASUREMENT_PHASE, (signal) => context.autoMode.status({ ...classifier, surface: 'tui', signal }, context.info));
       return;
     }
     const agent = parsed.agent ?? context.model;

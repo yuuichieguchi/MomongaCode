@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { EntryIo } from '@momonga/foundation';
-import { FIRST_GENERATION, SocketPathUnsupportedError, generationLayout, momongaPaths, shortTempBase, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, generationLayout, momongaPaths, shortTempBase } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
 import type { DaemonEntries } from '../src/daemon/entries.ts';
 import { describeFailure } from '../src/failure.ts';
@@ -9,12 +9,13 @@ import { nodePorts } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { buildProgram } from '../src/program.ts';
 import { nodePolicyVerifyHost } from '../src/verify/host.ts';
-import { registerCleanup, testHostPath } from '@momonga/testkit';
+import { firstRefusedSocketPathBytes, registerCleanup, testHostPath } from '@momonga/testkit';
 
 const SUPERVISOR_SOCKET_SUFFIX = Buffer.byteLength(path.join('.momonga', 'run', `g${FIRST_GENERATION}`, 'supervisor.sock')) + 1;
 
-const homeWhoseFirstSupervisorSocketIs = (byteLength: number): string => {
+const homeWhoseFirstSupervisorSocketIsRefused = async (): Promise<string> => {
   const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(shortTempBase(process.platform), 'mm-fit-')));
+  const byteLength = await firstRefusedSocketPathBytes(parent);
   const home = path.join(parent, 'h'.repeat(byteLength - SUPERVISOR_SOCKET_SUFFIX - Buffer.byteLength(parent) - 1));
   fs.mkdirSync(home);
   return home;
@@ -22,7 +23,7 @@ const homeWhoseFirstSupervisorSocketIs = (byteLength: number): string => {
 
 describe.skipIf(process.platform === 'win32')('daemon start on a home too long for the sockets of a generation (20.19)', () => {
   it('refuses with SocketPathUnsupportedError at the start of the generation, reported as the socket path refusal: no number is consumed and no supervisor is spawned', async (context) => {
-    const LONG_HOME = homeWhoseFirstSupervisorSocketIs(socketPathLimit(process.platform) + 1);
+    const LONG_HOME = await homeWhoseFirstSupervisorSocketIsRefused();
     registerCleanup(context, () => fs.rmSync(path.dirname(LONG_HOME), { recursive: true, force: true }));
     const stdout: string[] = [];
     const codes: number[] = [];

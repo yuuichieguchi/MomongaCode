@@ -6,8 +6,6 @@ import type { CapabilityResult } from './capability-probe.ts';
 import { nodeFileSystemSync } from './node-file-system.ts';
 import { systemRandom } from './system-random.ts';
 
-export const SOCKET_PATH_LIMIT = 104;
-export const LINUX_SOCKET_PATH_LIMIT = 108;
 export const PIPE_NAME_LIMIT = 256;
 
 const PIPE_PREFIX = '\\\\.\\pipe\\';
@@ -20,8 +18,6 @@ export type EndpointForm = 'unix' | 'pipe';
 const ENDPOINT_FORMS_OF_PATH_FLAVOUR: Readonly<Record<'filesystem' | 'pipe', readonly EndpointForm[]>> = { filesystem: ['unix'], pipe: ['pipe'] };
 
 export const endpointFormsOfSocket = (hostSocketPath: string): readonly EndpointForm[] => ENDPOINT_FORMS_OF_PATH_FLAVOUR[isPipePath(hostSocketPath) ? 'pipe' : 'filesystem'];
-
-export const socketPathLimit = (platform: NodeJS.Platform): number => (platform === 'linux' ? LINUX_SOCKET_PATH_LIMIT : SOCKET_PATH_LIMIT);
 
 export const pipePathFor = (home: string, name: string): string => {
   const scope = createHash('sha256').update(home.toLowerCase()).digest('hex').slice(0, 16);

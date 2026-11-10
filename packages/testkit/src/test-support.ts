@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import { FIRST_GENERATION, SocketPathUnsupportedError, assertUnixSocketPathFits, forceKillGroup, generationLayout, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import { stopSupervisorHolders } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
@@ -46,13 +46,27 @@ const longestSocketOf = (home: string): string => {
   return sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
 };
 
-export const assertHomeSocketBudget = (home: string): void => {
+const pathOfLengthIn = (directory: string, byteLength: number): string => path.join(directory, 's'.repeat(byteLength - Buffer.byteLength(directory) - 1));
+
+export const assertHomeSocketBudget = async (home: string): Promise<void> => {
   const socket = longestSocketOf(home);
   const length = Buffer.byteLength(socket);
-  if (length < SOCKET_PATH_LIMIT) return;
-  throw new Error(
-    `home ${home} leaves no socket-path budget: ${socket} is ${length} bytes, the limit is ${SOCKET_PATH_LIMIT - 1} bytes (budget ${SOCKET_PATH_LIMIT - 1 - length})`,
-  );
+  try {
+    await assertUnixSocketPathFits(pathOfLengthIn(home, length));
+  } catch (error) {
+    throw new Error(`home ${home} leaves no socket-path budget: ${socket} is ${length} bytes`, { cause: error });
+  }
+};
+
+export const firstRefusedSocketPathBytes = async (directory: string): Promise<number> => {
+  for (let byteLength = Buffer.byteLength(directory) + 2; ; byteLength += 1) {
+    try {
+      await assertUnixSocketPathFits(pathOfLengthIn(directory, byteLength));
+    } catch (error) {
+      if (error instanceof SocketPathUnsupportedError) return byteLength;
+      throw error;
+    }
+  }
 };
 
 const restoreWritable = (target: string): void => {
@@ -88,12 +102,6 @@ export const createTempDir = (options: TempDirOptions = {}): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken()))));
   fs.chmodSync(dir, 0o700);
   if (!asHome) return dir;
-  try {
-    assertHomeSocketBudget(dir);
-  } catch (error) {
-    removeDirectoryTree(dir);
-    throw error;
-  }
   createdHomes.add(dir);
   return dir;
 };

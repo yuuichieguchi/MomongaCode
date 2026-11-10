@@ -697,7 +697,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         modelListing: (requestSignal) => gatewayClient.listing({ signal: requestSignal }),
         modelCapabilities: (model, requestSignal) => gatewayClient.capabilities(model, { signal: requestSignal }),
         sessionCreateSettings: async (cwd, requestSignal) => {
-          const admittedSettings = await settingsComposition.sessionCreateSettings(cwd);
+          const admittedSettings = await settingsComposition.sessionCreateSettings(cwd, requestSignal);
           await settingsComposition.admitted(async () => (await sandboxes.admit(requestSignal)).release());
           return admittedSettings;
         },
