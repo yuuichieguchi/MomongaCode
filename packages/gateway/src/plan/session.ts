@@ -7,6 +7,7 @@ import type { PlanAccountState, PlanListProblem } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { readActivePointer, writeActiveAccount } from './active-account.ts';
+import type { ActivePointer } from './active-account.ts';
 import {
   PlanCredentialError,
   blockingCondition,
@@ -648,9 +649,16 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     return account.resumedSignOut === undefined ? runSignOut(account, signal, false) : waitFor(account.resumedSignOut, signal);
   };
 
+  const adoptPointer = (pointer: ActivePointer): void => {
+    for (const profile of Object.keys(options.profiles)) {
+      const label = Object.hasOwn(pointer, profile) ? pointer[profile] : undefined;
+      if (label !== undefined) activeLabels.set(profile, label);
+    }
+    pointerProblem = undefined;
+  };
+
   const moveActive = async (ref: PlanAccountRef): Promise<void> => {
-    await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
-    activeLabels.set(ref.profile, ref.account);
+    adoptPointer(await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account));
   };
 
   const register = async (input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected> => {
@@ -807,24 +815,20 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
 
   await sweepTemporaries(fileSystem, paths.sessions, options.lock ?? hostKernelLock(), options.warn);
   const listing = await store.listKeys();
-  const listProblems: PlanListProblem[] = [...listing.problems];
+  const recordProblems: PlanListProblem[] = [...listing.problems];
+  const listProblems = (): readonly PlanListProblem[] => (pointerProblem === undefined ? recordProblems : [...recordProblems, { file: path.basename(paths.active), cause: pointerProblem }]);
   for (const { key, file } of listing.keys) {
     const ref = refOfKey(key);
-    if (ref === undefined) listProblems.push({ file, cause: `the record key ${JSON.stringify(key)} does not name a plan account` });
+    if (ref === undefined) recordProblems.push({ file, cause: `the record key ${JSON.stringify(key)} does not name a plan account` });
     else if (Object.hasOwn(options.profiles, ref.profile)) accountOf(ref.profile, ref.account);
     else options.warn(`a saved account of profile ${ref.profile} is not listed: this build ships no such profile`);
   }
   try {
-    const pointer = await readActivePointer(fileSystem, paths.active);
-    for (const profile of Object.keys(options.profiles)) {
-      const label = Object.hasOwn(pointer, profile) ? pointer[profile] : undefined;
-      if (label !== undefined) activeLabels.set(profile, label);
-    }
+    adoptPointer(await readActivePointer(fileSystem, paths.active));
   } catch (error) {
     pointerProblem = describeError(error);
-    listProblems.push({ file: path.basename(paths.active), cause: pointerProblem });
   }
-  for (const problem of listProblems) options.warn(`could not list ${problem.file}: ${problem.cause}`);
+  for (const problem of listProblems()) options.warn(`could not list ${problem.file}: ${problem.cause}`);
   await serve(options.accounts);
 
   return {
@@ -841,7 +845,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     registration,
     load: (ref) => load(accountOf(ref.profile, ref.account)),
     known,
-    listProblems: () => listProblems,
+    listProblems,
     resume,
     selectActive,
     signOut: (ref, signal) => signOutAccount(accountOf(ref.profile, ref.account), signal),

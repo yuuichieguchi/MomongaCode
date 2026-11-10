@@ -159,7 +159,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       throw gatewayErrorFromBody(classified.error);
     }
     const { text } = await readTextLimited(response.body, PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
-    const listed = listedOf(request.profile, parseOutsideJson(text));
+    const listed = listedOf(request.profile, usableUpstreamJson(text));
     if (listed === undefined) {
       events('plan.catalog', { ...identity, outcome: 'list_invalid', requestIdHeaders });
       throw new Error(`the ${request.profile.messages.identityLabel} model list has no ${request.profile.catalog.listKey} array`);

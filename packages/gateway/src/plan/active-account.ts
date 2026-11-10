@@ -2,7 +2,7 @@ import path from 'node:path';
 import { isRecord, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { FileSystem } from '@momonga/foundation';
 
-type ActivePointer = Record<string, string>;
+export type ActivePointer = Record<string, string>;
 
 const FILE_MODE = 0o600;
 
@@ -34,8 +34,9 @@ export const readActivePointer = async (fileSystem: FileSystem, file: string): P
   return pointer;
 };
 
-export const writeActiveAccount = async (fileSystem: FileSystem, file: string, profile: string, account: string): Promise<void> => {
-  const pointer = await readActivePointer(fileSystem, file);
+export const writeActiveAccount = async (fileSystem: FileSystem, file: string, profile: string, account: string): Promise<ActivePointer> => {
+  const pointer = { ...(await readActivePointer(fileSystem, file)), [profile]: account };
   await fileSystem.mkdirPrivate(path.dirname(file));
-  await writeFileAtomically(fileSystem, systemRandom, file, JSON.stringify({ ...pointer, [profile]: account }), { mode: FILE_MODE });
+  await writeFileAtomically(fileSystem, systemRandom, file, JSON.stringify(pointer), { mode: FILE_MODE });
+  return pointer;
 };
