@@ -3,8 +3,8 @@ import type { webcrypto } from 'node:crypto';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { writeFileAtomically } from './atomic-file.ts';
-import { createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
-import type { CredentialEntry, CredentialStore } from './credential-store.ts';
+import { CREDENTIAL_RECORD_MAX_BYTES, createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
+import type { CredentialEntry, CredentialKeyListing, ListableCredentialStore } from './credential-store.ts';
 import { systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
@@ -39,6 +39,7 @@ export type EncryptedCredentialStoreOptions = {
   stateDirectory: string;
   secretStore: CredentialSecretStore;
   plaintextTokenFiles: () => boolean;
+  keyOfPlaintext?: (text: string) => string;
   ports?: FileLockPorts;
 };
 
@@ -126,6 +127,10 @@ const noStoreRefusal = (reason: string): string =>
 const notEncrypted = (file: string): string =>
   `The credential file ${file} is not encrypted. Delete it and sign in again, or set credentials.plaintextTokenFiles to true to keep using it.`;
 
+const RECORD_FILE_NAME = /^[0-9a-f]{64}\.json$/;
+
+const errorCodeOf = (error: unknown): unknown => (isRecord(error) ? error['code'] : undefined);
+
 const KEY_NAME_SHAPE = new RegExp(`^${CREDENTIAL_KEY_PREFIX}[0-9a-f]{${KEY_NAME_BYTES * 2}}$`);
 
 const keyNameOfMarker = (text: string, markerFile: string): string => {
@@ -135,7 +140,7 @@ const keyNameOfMarker = (text: string, markerFile: string): string => {
   return name;
 };
 
-export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): CredentialStore => {
+export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): ListableCredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
   const records = createFileCredentialStore(options.directory, { ports });
   const markerFile = path.join(options.stateDirectory, CREDENTIAL_KEY_MARKER_FILE);
@@ -228,8 +233,43 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     };
   };
 
-  return storeThroughScope({
-    read: async (key, signal) => decode(key, await records.read(key, signal), options.plaintextTokenFiles(), signal),
-    withKey: (key, action, signal) => records.withKey(key, (inner) => action(entryOf(key, inner, signal)), signal),
-  });
+  const keyOfText = (text: string, file: string): string => {
+    const envelope = envelopeOf(text);
+    if (envelope !== undefined) return envelope.key;
+    if (options.keyOfPlaintext === undefined) throw new Error(notEncrypted(file));
+    return options.keyOfPlaintext(text);
+  };
+
+  const listKeys = async (): Promise<CredentialKeyListing> => {
+    const listing: CredentialKeyListing = { keys: [], problems: [] };
+    let names: string[];
+    try {
+      names = await nodeFileSystem.readdir(options.directory);
+    } catch (error) {
+      if (errorCodeOf(error) === 'ENOENT') return listing;
+      listing.problems.push({ file: path.basename(options.directory), cause: messageOf(error) });
+      return listing;
+    }
+    for (const name of names.filter((entry) => RECORD_FILE_NAME.test(entry)).sort()) {
+      const file = path.join(options.directory, name);
+      try {
+        const text = await nodeFileSystem.readOwnerOnlyTextFile(file, `credential file ${file}`, CREDENTIAL_RECORD_MAX_BYTES);
+        if (text === undefined) continue;
+        const key = keyOfText(text, file);
+        if (credentialFileFor(options.directory, key) !== file) throw new Error(`the credential file ${file} holds the record of ${JSON.stringify(key)}, which belongs in another file`);
+        listing.keys.push({ key, file: name });
+      } catch (error) {
+        listing.problems.push({ file: name, cause: messageOf(error) });
+      }
+    }
+    return listing;
+  };
+
+  return {
+    ...storeThroughScope({
+      read: async (key, signal) => decode(key, await records.read(key, signal), options.plaintextTokenFiles(), signal),
+      withKey: (key, action, signal) => records.withKey(key, (inner) => action(entryOf(key, inner, signal)), signal),
+    }),
+    listKeys,
+  };
 };

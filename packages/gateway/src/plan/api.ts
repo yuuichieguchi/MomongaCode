@@ -16,13 +16,14 @@ import type {
   PlanSignInCompleteResponse,
   PlanSignOutResponse,
 } from '@momonga/protocol';
-import { GatewayError, invalidRequest, notFound } from '../core/errors.ts';
-import { PlanCredentialError, statusOf } from './auth-source.ts';
+import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
+import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
 import type { AccountView } from './auth-source.ts';
 import { readActiveAccount } from './active-account.ts';
 import { resetHostIdentity } from './host-identity.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
+import { PlanAccountNotSelectableError } from './session.ts';
 import type { PlanSessions } from './session.ts';
 import type { PlanSignIn } from './signin.ts';
 
@@ -74,9 +75,14 @@ const portOf = (body: unknown): number => {
   return value;
 };
 
+const RETRYABLE_STATUS = 503;
+const CONFLICT_STATUS = 409;
+
 export const gatewayErrorOfCredential = (error: unknown): unknown => {
+  if (error instanceof PlanAccountNotSelectableError) return invalidRequest('plan_account_not_selectable', error.message, null, CONFLICT_STATUS);
   if (!(error instanceof PlanCredentialError)) return error;
-  return new GatewayError({ status: error.retryable ? 503 : 409, type: error.retryable ? 'server_error' : 'invalid_request', code: error.code, message: error.message });
+  const type = credentialErrorType(error.code);
+  return new GatewayError({ status: error.retryable ? RETRYABLE_STATUS : statusFor(type, error.code), type, code: error.code, message: error.message });
 };
 
 const translated = async <T>(work: () => Promise<T>): Promise<T> => {
@@ -145,7 +151,9 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     ];
     await Promise.all(referenced.map((ref) => sessions.load(ref)));
     const known = await sessions.known();
+    const listProblems = sessions.listProblems();
     return {
+      ...(listProblems.length === 0 ? {} : { listProblems }),
       profiles: Object.values(options.profiles).map((profile) => ({ id: profile.id, usageUrl: profile.usageUrl, messages: profile.messages, loginLabel: profile.loginLabel })),
       accounts: known.flatMap((entry) => {
         const ref = { profile: entry.profile, account: entry.account };
@@ -218,6 +226,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         return { resumed: await sessions.resume(ref) };
       }),
     resetHost: async () => {
+      if (options.signIn.waiting()) throw invalidRequest('plan_sign_in_pending', 'A sign-in is waiting for the browser. Finish or cancel it, then reset the host.', null, CONFLICT_STATUS);
       const { hostId } = await resetHostIdentity(options.fileSystem, options.paths.host);
       return { hostId };
     },

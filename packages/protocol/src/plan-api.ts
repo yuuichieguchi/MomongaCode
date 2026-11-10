@@ -49,6 +49,10 @@ export type PlanAccountState = (typeof PLAN_ACCOUNT_STATES)[number];
 
 export const SIGN_IN_REQUIRED_CODE = 'sign_in_required';
 
+export const PLAN_USE_NOT_ENABLED_CODE = 'plan_use_not_enabled';
+
+export const PLAN_NOT_ELIGIBLE_CODE = 'plan_not_eligible';
+
 export const PLAN_API_PREFIX = '/v1/momonga/plan';
 
 export const PLAN_ROUTES = {
@@ -79,7 +83,9 @@ export type PlanAccountView = {
 
 export type PlanProfileView = { id: string; usageUrl: string; messages: PlanProfileMessages; loginLabel: string };
 
-export type PlanAccountsResponse = { profiles: readonly PlanProfileView[]; accounts: readonly PlanAccountView[] };
+export type PlanListProblem = { file: string; cause: string };
+
+export type PlanAccountsResponse = { profiles: readonly PlanProfileView[]; accounts: readonly PlanAccountView[]; listProblems?: readonly PlanListProblem[] };
 
 export type PlanActiveRequest = PlanAccountRef;
 

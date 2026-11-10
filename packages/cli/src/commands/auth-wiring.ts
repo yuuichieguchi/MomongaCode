@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { currentSocketResolver } from '@momonga/foundation';
+import { currentSocketResolver, systemTiming } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -28,6 +28,9 @@ export const runAuthStatus = (ports: CliPorts, paths: MomongaPaths, json: boolea
 const terminalPorts = (ports: CliPorts, interrupt: AbortSignal) =>
   ports.terminal === undefined ? { isTerminal: false as const } : { isTerminal: true as const, choose: terminalChoice(ports.terminal, interrupt) };
 
+const loginTerminalPorts = (ports: CliPorts, interrupt: AbortSignal) =>
+  ports.terminal === undefined ? { isTerminal: false as const } : { isTerminal: true as const, choose: terminalChoice(ports.terminal, interrupt), terminal: ports.terminal };
+
 export const runAuthResume = (ports: CliPorts, paths: MomongaPaths, account: string): Promise<number> =>
   withGateway(ports, paths, (gateway) => authResume({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, { account }));
 
@@ -47,7 +50,9 @@ export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: Auth
         stdout: ports.stdout,
         stderr: ports.stderr,
         plan: gateway.plan,
-        ...terminalPorts(ports, interrupt),
+        ...loginTerminalPorts(ports, interrupt),
+        signal: interrupt,
+        timers: systemTiming,
         startListener: loopbackSignInListener(interrupt),
         openUrl: (url) => ports.openUrl(url, interrupt),
         sandbox: async () => {

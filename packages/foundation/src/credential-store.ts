@@ -20,6 +20,14 @@ export interface CredentialStore {
   withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
 }
 
+export type CredentialKeyListing = { keys: { key: string; file: string }[]; problems: { file: string; cause: string }[] };
+
+export interface ListableCredentialStore extends CredentialStore {
+  listKeys(): Promise<CredentialKeyListing>;
+}
+
+export const CREDENTIAL_RECORD_MAX_BYTES = 256 * 1024;
+
 export type ScopedOperations = {
   read(key: string, signal?: AbortSignal): Promise<string | undefined>;
   withKey<T>(key: string, action: (entry: CredentialEntry) => Promise<T>, signal?: AbortSignal): Promise<T>;
@@ -33,7 +41,7 @@ export const storeThroughScope = ({ read, withKey }: ScopedOperations): Credenti
   remove: (key, signal) => withKey(key, (entry) => entry.remove(), signal),
 });
 
-export const createMemoryCredentialStore = (): CredentialStore => {
+export const createMemoryCredentialStore = (): ListableCredentialStore => {
   const entries = new Map<string, string>();
   const serialized = createKeyedSerializer();
   const entryOf = (key: string): CredentialEntry => ({
@@ -47,10 +55,13 @@ export const createMemoryCredentialStore = (): CredentialStore => {
       return Promise.resolve();
     },
   });
-  return storeThroughScope({
-    read: (key) => Promise.resolve(entries.get(key)),
-    withKey: (key, action) => serialized(key, () => action(entryOf(key))),
-  });
+  return {
+    ...storeThroughScope({
+      read: (key) => Promise.resolve(entries.get(key)),
+      withKey: (key, action) => serialized(key, () => action(entryOf(key))),
+    }),
+    listKeys: () => Promise.resolve({ keys: [...entries.keys()].map((key) => ({ key, file: key })), problems: [] }),
+  };
 };
 
 const FILE_MODE = 0o600;

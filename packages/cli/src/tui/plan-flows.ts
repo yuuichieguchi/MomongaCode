@@ -2,7 +2,9 @@ import { SECRET_NAME_PATTERN } from '@momonga/foundation';
 import type { DetectedLocalServer, DetectedManagedServer, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import type { ModelConnection } from '@momonga/config';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
-import { signIn } from '../plan/sign-in.ts';
+import { systemTiming } from '@momonga/foundation';
+import { SignInAttemptNotFoundError, SignInGatewayStoppedError, SignInListenerError, signIn, waitForPaste } from '../plan/sign-in.ts';
+import type { SignInShown } from '../plan/sign-in.ts';
 import type { TuiBackend } from './backend.ts';
 import type { OverlayPorts, PickRow } from './picker.tsx';
 
@@ -22,6 +24,8 @@ export type PlanFlows = {
   catalogPicker(profile: PlanProfileView, account: string): Promise<void>;
   welcome(profiles: readonly PlanProfileView[]): Promise<void>;
   usageLimit(profile: PlanProfileView): Promise<void>;
+  planUseNotEnabled(profile: PlanProfileView, account: string): Promise<void>;
+  notEligible(profile: PlanProfileView): Promise<void>;
 };
 
 type Choice = { row: PickRow; act(): Promise<void> };
@@ -34,6 +38,8 @@ const API_KEY_HELP = [
   '  keep it in an environment variable and name the variable in the target as apiKeyEnv.',
   'Declare the target in your user settings under models.targets and models.aliases.',
 ].join('\n');
+
+const USE_API_KEY = 'Use an API key';
 
 const UNREPORTED_TRAINED_CONTEXT = 'the server reports no trained context length for this model';
 
@@ -112,19 +118,42 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const signInFlow = async (profile: PlanProfileView, account: string, reconsent: boolean): Promise<void> => {
     if (!(await sandboxAccepted())) return;
     const cancel = new AbortController();
-    const authorize = async (url: URL): Promise<void> => {
+    let deliver: (text: string) => void = () => undefined;
+    const deliveries = new Promise<string>((resolve) => {
+      deliver = resolve;
+    });
+    const handlers = { cancel: () => cancel.abort(), deliver: (text: string) => deliver(text) };
+    const authorize = async ({ url, state }: SignInShown): Promise<void> => {
       const lines = ['Open this URL in your browser if it does not open by itself:', url.href];
-      ports.waiting({ title: profile.loginLabel, lines }, () => cancel.abort());
+      ports.waiting({ title: profile.loginLabel, lines, url, state }, handlers);
       await backend.openUrl(url).catch((error: unknown) => {
-        ports.waiting({ title: profile.loginLabel, lines: [...lines, `Could not open the browser (${error instanceof Error ? error.message : String(error)}). Copy the URL and continue manually.`] }, () => cancel.abort());
+        ports.waiting({ title: profile.loginLabel, lines: [...lines, `Could not open the browser (${error instanceof Error ? error.message : String(error)}). Copy the URL and continue manually.`], url, state }, handlers);
       });
     };
     let answer;
     try {
-      answer = await signIn({ plan: backend.plan, startListener: backend.startSignInListener, authorize, signal: cancel.signal }, { profile: profile.id, account, reconsent });
+      answer = await signIn(
+        {
+          plan: backend.plan,
+          startListener: backend.startSignInListener,
+          authorize,
+          pasted: (_state, signal) => waitForPaste(deliveries, signal),
+          signal: cancel.signal,
+          timers: systemTiming,
+        },
+        { profile: profile.id, account, reconsent },
+      );
     } catch (error) {
       if (cancel.signal.aborted && error === cancel.signal.reason) {
         ports.info('sign-in cancelled');
+        return;
+      }
+      if (error instanceof SignInListenerError || error instanceof SignInGatewayStoppedError) {
+        ports.info(error.message);
+        return;
+      }
+      if (error instanceof SignInAttemptNotFoundError) {
+        ports.info(`${error.message} Run /login to try again.`);
         return;
       }
       throw error;
@@ -206,6 +235,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const providerFlowOf = async (profile: PlanProfileView, listed: PlanAccountsResponse): Promise<void> => {
+    for (const problem of listed.listProblems ?? []) ports.info(`could not list ${problem.file}: ${problem.cause}`);
     if (accountsOf(profile.id, listed.accounts).length === 0) {
       await sentence(profile, nextAccountLabel(profile.id, listed.accounts), false);
       return;
@@ -363,7 +393,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   const welcome = async (profiles: readonly PlanProfileView[]): Promise<void> => {
     await chooseFrom({ title: 'Connect a model to start', hint: 'up/down and enter to choose, esc to go on to the prompt' }, [
       ...profiles.map((profile) => ({ row: { label: profile.loginLabel }, act: () => providerFlow(profile) })),
-      { row: { label: 'Use an API key' }, act: apiKeyHelp },
+      { row: { label: USE_API_KEY }, act: apiKeyHelp },
       { row: { label: 'Use a local server' }, act: addLocalServer },
     ]);
   };
@@ -375,5 +405,20 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     ]);
   };
 
-  return { login, logout, modelPicker, providerFlow, catalogPicker, welcome, usageLimit };
+  const planUseNotEnabled = async (profile: PlanProfileView, account: string): Promise<void> => {
+    await chooseFrom({}, [
+      { row: { label: `Enable ${profile.messages.identityLabel} plan use` }, act: () => sentence(profile, account, true) },
+      { row: { label: USE_API_KEY }, act: apiKeyHelp },
+    ]);
+  };
+
+  const notEligible = async (profile: PlanProfileView): Promise<void> => {
+    await chooseFrom({}, [
+      { row: { label: 'Use another account' }, act: () => providerFlow(profile) },
+      { row: { label: USE_API_KEY }, act: apiKeyHelp },
+      { row: { label: 'Dismiss' }, act: async () => undefined },
+    ]);
+  };
+
+  return { login, logout, modelPicker, providerFlow, catalogPicker, welcome, usageLimit, planUseNotEnabled, notEligible };
 };

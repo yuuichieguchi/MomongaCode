@@ -153,6 +153,8 @@ export {
   PLAN_SIGN_IN_FAILURE_RULES,
   ID_TOKEN_CHECKS,
   SIGN_IN_REQUIRED_CODE,
+  PLAN_USE_NOT_ENABLED_CODE,
+  PLAN_NOT_ELIGIBLE_CODE,
 } from './plan-api.ts';
 export type {
   BreakerVerdict,
@@ -165,6 +167,7 @@ export type {
   PlanAccountState,
   PlanAccountView,
   PlanAccountsResponse,
+  PlanListProblem,
   PlanActiveRequest,
   PlanActiveResponse,
   PlanCatalogEntry,

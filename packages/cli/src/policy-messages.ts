@@ -1,4 +1,4 @@
-import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { PlanAccountRef } from '@momonga/protocol';
 import type { PermissionDenial, PermissionDenialSource, PublicRunEvent } from '@momonga/protocol';
 
@@ -67,7 +67,25 @@ export const signInCommandOf = (surface: MessageSurface, plan: PlanAccountRef | 
   return plan === undefined ? 'momonga auth login' : `momonga auth login ${plan.profile} --account ${plan.account}`;
 };
 
+const defaultRunErrorLines = (error: { code: string; message: string }): string[] => {
+  const [first = '', ...rest] = PRODUCT_COMPOSED_CODES.has(error.code) ? error.message.split('\n') : [error.message];
+  return [`${error.code}: ${first}`, ...rest];
+};
+
+const planRunErrorLines = (error: { code: string; message: string }, plan: PlanAccountRef): string[] | undefined => {
+  switch (error.code) {
+    case PLAN_USE_NOT_ENABLED_CODE:
+      return [`${error.message} · Run momonga auth login ${plan.profile} --account ${plan.account} --reconsent to enable it`, `cause: ${error.code}`];
+    case PLAN_NOT_ELIGIBLE_CODE:
+      return [error.message, `cause: ${error.code}`, `Run momonga auth login ${plan.profile} --account <new label> to use another account, or use an API key.`];
+    default:
+      return undefined;
+  }
+};
+
 export const describeRunError = (error: { code: string; message: string; plan?: PlanAccountRef }, surface: MessageSurface): string[] => {
+  const planLines = surface === 'headless' && error.plan !== undefined ? planRunErrorLines(error, error.plan) : undefined;
+  if (planLines !== undefined) return planLines;
   switch (error.code) {
     case SIGN_IN_REQUIRED_CODE:
       return [`${error.message} · Run ${signInCommandOf(surface, error.plan)} to sign in again`, `cause: ${error.code}`];
@@ -75,9 +93,7 @@ export const describeRunError = (error: { code: string; message: string; plan?: 
       return [`a UserPromptSubmit hook blocked the prompt: ${error.message}`];
     case HOOK_STOPPED_CODE:
       return [`a hook stopped the run: ${error.message}`];
-    default: {
-      const [first = '', ...rest] = PRODUCT_COMPOSED_CODES.has(error.code) ? error.message.split('\n') : [error.message];
-      return [`${error.code}: ${first}`, ...rest];
-    }
+    default:
+      return defaultRunErrorLines(error);
   }
 };

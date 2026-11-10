@@ -4,12 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { planProfileOf } from '@momonga/config';
 import type { PlanProfile } from '@momonga/config';
-import { createFileCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
-import type { CredentialStore, KernelLockMechanism } from '@momonga/foundation';
+import { createEncryptedCredentialStore, momongaLayout, nodeFileSystem } from '@momonga/foundation';
+import type { KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
 import { SIWC_RESOURCE, createFakeClock, siwcBrowse, startFakeSiwcAuth } from '@momonga/testkit';
 import type { FakeClock, SiwcAuth } from '@momonga/testkit';
 import { ensureHostIdentity } from '../src/plan/host-identity.ts';
-import { openPlanSessions } from '../src/plan/session.ts';
+import { openPlanSessions, planRecordKeyOfPlaintext } from '../src/plan/session.ts';
 import type { PlanSessions, PlanTokenResponse } from '../src/plan/session.ts';
 
 export const START_MS = 1_800_000_000_000;
@@ -35,7 +35,7 @@ export type Harness = {
   clock: FakeClock;
   auth: SiwcAuth;
   profile: PlanProfile;
-  store: CredentialStore;
+  store: ListableCredentialStore;
   sessions: PlanSessions;
   sleeps: number[];
   secrets: string[];
@@ -46,7 +46,7 @@ export type Harness = {
   pendingBounds(): number[];
   fireLatestBound(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
-  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: CredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
+  reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: ListableCredentialStore; lock?: KernelLockMechanism }): Promise<PlanSessions>;
   close(): Promise<void>;
 };
 
@@ -70,7 +70,13 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const clock = createFakeClock(START_MS);
   const auth = await startFakeSiwcAuth({ now: clock.now });
   const profile = (options.profile ?? profileFor)(auth);
-  const store = createFileCredentialStore(paths.sessions);
+  const store = createEncryptedCredentialStore({
+    directory: paths.sessions,
+    stateDirectory: layout.state,
+    secretStore: { kind: 'none', reason: 'the harness keeps plaintext records' },
+    plaintextTokenFiles: () => true,
+    keyOfPlaintext: planRecordKeyOfPlaintext,
+  });
   const sleeps: number[] = [];
   const secrets: string[] = [];
   const warnings: string[] = [];
@@ -109,7 +115,7 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     });
     return { held, release };
   };
-  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: CredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
+  const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: ListableCredentialStore = store, lock?: KernelLockMechanism): Promise<PlanSessions> =>
     openPlanSessions({
       ...(lock === undefined ? {} : { lock }),
       profiles: { [PROFILE_ID]: profile },
@@ -284,7 +290,7 @@ export const rotateAtFake = async (h: Harness, clientId: string, refreshToken: s
   if (response.status !== 200) throw new Error(`the fake refused the rotation: ${response.status}`);
 };
 
-export const failingWrites = (inner: CredentialStore, fails: (value: string) => NodeJS.ErrnoException | undefined): CredentialStore => ({
+export const failingWrites = (inner: ListableCredentialStore, fails: (value: string) => NodeJS.ErrnoException | undefined): ListableCredentialStore => ({
   read: (key) => inner.read(key),
   remove: (key) => inner.remove(key),
   write: (key, value) => {
@@ -309,6 +315,7 @@ export const failingWrites = (inner: CredentialStore, fails: (value: string) => 
       if (error !== undefined) throw error;
       return next;
     }),
+  listKeys: () => inner.listKeys(),
 });
 
 export const errno = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: simulated`), { code });

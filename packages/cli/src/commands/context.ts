@@ -168,6 +168,7 @@ export const contextImprove = async (
               limits,
               reflection,
               codeDigest,
+              planRelaySocket: currentSocketResolver(paths, 'gateway'),
               ...(guideline === undefined ? {} : { guideline }),
               onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),

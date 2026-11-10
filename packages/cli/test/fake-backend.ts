@@ -209,6 +209,9 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
       if (options.openUrlFailure !== undefined) throw options.openUrlFailure;
       openedUrls.push(url.href);
     },
+    copyToClipboard: (text) => {
+      record(`copy:${text}`);
+    },
     skills: async () => ({ skills: [...(options.skills ?? [])], warnings: [...(options.skillWarnings ?? [])] }),
     memories: async () => memories,
     memory: async (id) => {

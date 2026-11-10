@@ -37,7 +37,9 @@ describe('startup of the session engine', () => {
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     expect(source.status().state).toBe('store_unreadable');
     expect(source.status().cause).toBeDefined();
-    expect(h.warnings).toHaveLength(1);
+    expect(h.warnings).toHaveLength(2);
+    expect(h.warnings.filter((warning) => warning.startsWith(`could not list ${path.basename(recordFileOf(h, 'work'))}: `))).toHaveLength(1);
+    expect(h.warnings.filter((warning) => warning.startsWith('the plan session of '))).toHaveLength(1);
     expect(source.health()).toMatchObject({ ok: false, reason: 'store_unreadable' });
     expect((await planError(source.read(new AbortController().signal))).code).toBe('plan_store_unreadable');
   });

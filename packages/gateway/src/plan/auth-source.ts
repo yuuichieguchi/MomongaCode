@@ -1,5 +1,5 @@
 import type { PlanProfile } from '@momonga/config';
-import type { PlanAccountState } from '@momonga/protocol';
+import type { ErrorType, PlanAccountState } from '@momonga/protocol';
 import type { PlanRecord } from './session.ts';
 
 export class PlanCredentialError extends Error {
@@ -15,6 +15,14 @@ export class PlanCredentialError extends Error {
     this.retryAfterMs = retryAfterMs;
   }
 }
+
+const CREDENTIAL_ERROR_TYPES: Readonly<Record<string, ErrorType>> = {
+  sign_in_required: 'invalid_request',
+  plan_use_not_enabled: 'invalid_request',
+  plan_usage_paused: 'too_many_requests',
+};
+
+export const credentialErrorType = (code: string): ErrorType => CREDENTIAL_ERROR_TYPES[code] ?? 'server_error';
 
 export type AccountView = { kind: 'absent' } | { kind: 'unreadable'; cause: string } | { kind: 'record'; record: PlanRecord; unwritable: string | undefined };
 

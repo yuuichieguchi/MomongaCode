@@ -1,8 +1,17 @@
 import type { MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
-import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf } from '../plan/accounts.ts';
-import { signIn } from '../plan/sign-in.ts';
-import type { SandboxKind, StartSignInListener } from '../plan/sign-in.ts';
+import { createInterface } from 'node:readline';
+import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf, savedAccountAction } from '../plan/accounts.ts';
+import {
+  PASTE_LABEL,
+  SignInAttemptNotFoundError,
+  SignInExpiredError,
+  SignInGatewayStoppedError,
+  SignInListenerError,
+  pastedCallbackProblem,
+  signIn,
+} from '../plan/sign-in.ts';
+import type { SandboxKind, SignInShown, SignInWaitTimers, StartSignInListener } from '../plan/sign-in.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 export { nextAccountLabel };
@@ -11,6 +20,7 @@ type Writer = { write(text: string): void };
 
 const EXIT_USAGE = 2;
 const EXIT_NOT_SIGNED_IN = 1;
+const EXIT_INTERRUPTED = 130;
 
 const print = (writer: Writer, lines: readonly string[]): void => writer.write(`${escapedLines(lines)}\n`);
 
@@ -51,6 +61,7 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
     return [
       `${profile.messages.pickerLabel} (${profile.id})`,
       ...(accounts.length === 0 ? ['  not signed in'] : accounts.flatMap(accountLines)),
+      ...(listed.listProblems ?? []).map((problem) => `  could not list ${problem.file}: ${problem.cause}`),
       `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`,
     ];
   });
@@ -62,6 +73,10 @@ type Choose = (question: string, choices: readonly string[]) => Promise<number |
 
 type TerminalPorts = { isTerminal: false } | { isTerminal: true; choose: Choose };
 
+export type PasteTerminal = { stdin: NodeJS.ReadableStream; stdout: NodeJS.WritableStream };
+
+type LoginTerminalPorts = { isTerminal: false } | { isTerminal: true; choose: Choose; terminal: PasteTerminal };
+
 export type AuthLoginPorts = {
   stdout: Writer;
   stderr: Writer;
@@ -69,9 +84,43 @@ export type AuthLoginPorts = {
   startListener: StartSignInListener;
   openUrl(url: URL): Promise<void>;
   sandbox(): Promise<SandboxKind>;
-} & TerminalPorts;
+  signal: AbortSignal;
+  timers: SignInWaitTimers;
+} & LoginTerminalPorts;
 
-const NEVER_INTERRUPTED = new AbortController().signal;
+const SENSITIVE_URL_LINE = 'Open this URL (it is sensitive: do not share it):';
+
+const PASTE_PROMPT = `${PASTE_LABEL}, then press Enter. Otherwise finish the sign-in in the browser.`;
+
+const waitForAbort = (signal: AbortSignal): Promise<never> =>
+  new Promise<never>((_resolve, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+
+const pastedLine =
+  (terminal: PasteTerminal, stderr: Writer) =>
+  async (state: string, signal: AbortSignal): Promise<string> => {
+    signal.throwIfAborted();
+    const lines = createInterface({ input: terminal.stdin, output: terminal.stdout });
+    const close = (): void => lines.close();
+    signal.addEventListener('abort', close, { once: true });
+    try {
+      for await (const line of lines) {
+        if (line.trim() === '') continue;
+        const problem = pastedCallbackProblem(line, state);
+        if (problem === undefined) return line;
+        print(stderr, [problem]);
+      }
+      return await waitForAbort(signal);
+    } finally {
+      signal.removeEventListener('abort', close);
+      lines.close();
+    }
+  };
+
+const unfixableAccount = (listed: PlanAccountsResponse, profile: string, label: string): PlanAccountView | undefined =>
+  accountsOf(profile, listed.accounts).find((account) => account.label === label && savedAccountAction(account) === 'none');
 
 export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean };
 
@@ -106,23 +155,55 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   const profile = await chosenProfile(ports, listed, options.provider);
   if (profile === undefined) return EXIT_USAGE;
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
+  const unfixable = unfixableAccount(listed, profile.id, account);
+  if (unfixable !== undefined) {
+    print(ports.stderr, [`${unfixable.label}: ${accountStateWord(unfixable)}`, ...(unfixable.cause === undefined ? [] : [`cause: ${unfixable.cause}`])]);
+    return EXIT_NOT_SIGNED_IN;
+  }
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
-  const answer = await signIn(
-    {
-      plan: ports.plan,
-      startListener: ports.startListener,
-      signal: NEVER_INTERRUPTED,
-      authorize: async (url) => {
-        print(ports.stdout, [`${profile.loginLabel}: open this URL in your browser if it does not open by itself:`, url.href]);
-        if (options.browser === false) return;
-        await ports.openUrl(url).catch((error: unknown) => {
-          print(ports.stderr, [`Could not open the browser (${error instanceof Error ? error.message : String(error)}). Open the URL above to continue.`]);
-        });
+  const tryAgain = `Run momonga auth login ${profile.id} --account ${account} to try again.`;
+  const pasted =
+    ports.isTerminal
+      ? (state: string, signal: AbortSignal): Promise<string> => {
+          print(ports.stdout, [PASTE_PROMPT]);
+          return pastedLine(ports.terminal, ports.stderr)(state, signal);
+        }
+      : (_state: string, signal: AbortSignal): Promise<string> => waitForAbort(signal);
+  let answer: PlanSignInCompleteResponse;
+  try {
+    answer = await signIn(
+      {
+        plan: ports.plan,
+        startListener: ports.startListener,
+        signal: ports.signal,
+        timers: ports.timers,
+        pasted,
+        authorize: async ({ url }: SignInShown) => {
+          print(ports.stdout, [SENSITIVE_URL_LINE, url.href]);
+          if (options.browser === false) return;
+          await ports.openUrl(url).catch((error: unknown) => {
+            print(ports.stderr, [`Could not open the browser (${error instanceof Error ? error.message : String(error)}). Open the URL above to continue.`]);
+          });
+        },
       },
-    },
-    { profile: profile.id, account, reconsent: options.reconsent === true },
-  );
+      { profile: profile.id, account, reconsent: options.reconsent === true },
+    );
+  } catch (error) {
+    if (ports.signal.aborted && error === ports.signal.reason) {
+      print(ports.stderr, ['momonga: sign-in cancelled']);
+      return EXIT_INTERRUPTED;
+    }
+    if (error instanceof SignInExpiredError || error instanceof SignInAttemptNotFoundError) {
+      print(ports.stderr, [`${error.message} ${tryAgain}`]);
+      return EXIT_NOT_SIGNED_IN;
+    }
+    if (error instanceof SignInListenerError || error instanceof SignInGatewayStoppedError) {
+      print(ports.stderr, [error.message]);
+      return EXIT_NOT_SIGNED_IN;
+    }
+    throw error;
+  }
   print(ports.stdout, outcomeLines(profile, answer));
   return answer.outcome === 'signed_in' ? 0 : EXIT_NOT_SIGNED_IN;
 };

@@ -93,7 +93,15 @@ const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
 export type ManagedRecordSource = { target: string; server: string; binary: string; model: string | undefined };
 
-export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): LiveSettings => {
+export type PlanRelay = { planRelaySocket: string };
+
+export const needsPlanRelay = (user: UserModels, aliases: readonly string[]): boolean =>
+  aliases.some((alias) => membersOf(user.resolved, alias).some((name) => {
+    const target = user.resolved.targets[name];
+    return target !== undefined && 'plan' in target;
+  }));
+
+export const liveSettingsFor = (user: UserModels, aliases: readonly string[], relay?: PlanRelay): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
   const aliasMembers: Record<string, string[]> = {};
   const credentials: SecretCredential[] = [];
@@ -107,6 +115,21 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
     const declared = user.declared.targets?.[name];
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
+    if ('plan' in resolved) {
+      if (relay === undefined) throw new ContextHostError(`the target ${name} uses a ${resolved.plan.profile} plan sign-in, which a case home can reach only through the gateway of this home; this command has no relay for it`);
+      targets[name] = {
+        adapter: 'open-responses',
+        model: resolved.model,
+        provider: resolved.provider,
+        toolCalling: resolved.toolCalling,
+        socketPath: relay.planRelaySocket,
+        billing: resolved.billing,
+        capabilities: resolved.capabilities,
+        maxConcurrency: resolved.maxConcurrency,
+        admissionTimeoutMs: resolved.admissionTimeoutMs,
+      } as NonNullable<ModelsSettings['targets']>[string];
+      return;
+    }
     const recordKey = probeRecordKeyOf(name, resolved);
     if (resolved.adapter === 'managed') {
       managedTargets.push({ target: name, server: resolved.server, binary: resolved.binary, model: resolved.model });
@@ -415,12 +438,14 @@ export type ContextLiveInput = {
   onTranscript?(transcript: Transcript): Promise<void>;
   onUnreadableHomes?(count: number): void;
   onUnownedHomes?(roots: readonly string[]): void;
+  planRelaySocket?(): Promise<string>;
 };
 
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt?.throwIfAborted();
-  const settings = liveSettingsFor(input.models, [input.alias]);
+  const relay = needsPlanRelay(input.models, [input.alias]) && input.planRelaySocket !== undefined ? { planRelaySocket: await input.planRelaySocket() } : undefined;
+  const settings = liveSettingsFor(input.models, [input.alias], relay);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);

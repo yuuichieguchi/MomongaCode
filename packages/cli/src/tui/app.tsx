@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
+import { PLAN_NOT_ELIGIBLE_CODE, PLAN_USE_NOT_ENABLED_CODE, SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
@@ -21,7 +21,8 @@ import type { AutoNoticePair } from './notices.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
 import { modelPickerCommand, planSlashCommands } from './commands/auth.ts';
 import { OverlayView } from './picker.tsx';
-import type { Overlay, OverlayPorts } from './picker.tsx';
+import type { Overlay, OverlayPorts, WaitingOverlay } from './picker.tsx';
+import { PASTED_CALLBACK_MAX_BYTES, pastedCallbackProblem } from '../plan/sign-in.ts';
 import { createPlanFlows } from './plan-flows.ts';
 import type { PlanFlows } from './plan-flows.ts';
 import { StartupScreen } from './startup.tsx';
@@ -81,6 +82,8 @@ const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first 
 const UNCONNECTED_FOOTER = 'no model connected · /login';
 const INVITATION_ROWS = 2;
 const USAGE_PAUSED_CODE = 'plan_usage_paused';
+
+const PLAN_BLOCK_CODES: ReadonlySet<string> = new Set([PLAN_USE_NOT_ENABLED_CODE, PLAN_NOT_ELIGIBLE_CODE]);
 
 const isUsageLimitCode = (code: string): boolean => USAGE_LIMIT_CODES.some((member) => member === code);
 
@@ -307,6 +310,22 @@ function ElicitationPrompt({ elicitation, title, editor, selected }: { elicitati
   );
 }
 
+const WAITING_INPUT_BYTES = PASTED_CALLBACK_MAX_BYTES + 1;
+
+const prefixWithin = (text: string, bytes: number): string => {
+  let kept = '';
+  let used = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character, 'utf8');
+    if (used + size > bytes) break;
+    kept += character;
+    used += size;
+  }
+  return kept;
+};
+
+const CLIPBOARD_ASKED = 'Asked the terminal to copy the sign-in URL.';
+
 const errorOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 export function App(props: AppProps) {
@@ -327,6 +346,8 @@ export function App(props: AppProps) {
     catalogPicker: (profile, account) => flows.catalogPicker(profile, account),
     welcome: (listed) => flows.welcome(listed),
     usageLimit: (profile) => flows.usageLimit(profile),
+    planUseNotEnabled: (profile, account) => flows.planUseNotEnabled(profile, account),
+    notEligible: (profile) => flows.notEligible(profile),
   };
   const slash = createSlashRegistry([
     ...baseSlash.list().map((command) => (command.name === 'model' ? modelPickerCommand(delegatingFlows) : command)),
@@ -548,7 +569,15 @@ export function App(props: AppProps) {
         replaceOverlayEditor({ ...emptyEditor(), text: initial, cursor: initial.length });
         showOverlay({ kind: 'text', request, resolve });
       }),
-    waiting: (view, cancel) => showOverlay({ kind: 'waiting', view, cancel }),
+    waiting: (view, handlers) => {
+      const current = overlayRef.current;
+      if (current?.kind === 'waiting') {
+        showOverlay({ ...current, view, handlers });
+        return;
+      }
+      replaceOverlayEditor(emptyEditor());
+      showOverlay({ kind: 'waiting', view, handlers, delivered: false });
+    },
     closeWaiting: () => {
       if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
     },
@@ -574,6 +603,15 @@ export function App(props: AppProps) {
     const profile = profileOf(listed.profiles, plan.profile);
     dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `${profile.messages.identityLabel}\n${profile.messages.usageLimitMessage}` } });
     if (code !== USAGE_PAUSED_CODE) await flows.usageLimit(profile);
+  };
+
+  const showPlanBlock = async (error: { code: string; message: string }, plan: PlanAccountRef): Promise<void> => {
+    const listed = await backend.plan.accounts();
+    rememberProfiles(listed);
+    const profile = profileOf(listed.profiles, plan.profile);
+    dispatch({ kind: 'append', entry: { kind: 'notice', level: 'error', text: `${profile.messages.identityLabel}\n${error.message}` } });
+    if (error.code === PLAN_USE_NOT_ENABLED_CODE) await flows.planUseNotEnabled(profile, plan.account);
+    else await flows.notEligible(profile);
   };
 
   const offerInvitation = async (listed: PlanAccountsResponse): Promise<void> => {
@@ -657,6 +695,7 @@ export function App(props: AppProps) {
       if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && runAlias !== undefined) signInFailedRun.current = { text, options: runOptions, alias: runAlias };
       const plan = stopped?.plan;
       if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
+      else if (stopped !== undefined && plan !== undefined && PLAN_BLOCK_CODES.has(stopped.code)) runFlow(() => showPlanBlock(stopped, plan));
       else if (run.status !== 'COMPLETED') dispatch({ kind: 'append', entry: { kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') } });
     } catch (error) {
       if (!exiting.current) reportError(error);
@@ -784,6 +823,11 @@ export function App(props: AppProps) {
 
   usePaste(
     (text) => {
+      const pastedInto = overlayRef.current;
+      if (pastedInto?.kind === 'waiting') {
+        if (!pastedInto.delivered) editWaiting(pastedInto, { input: text });
+        return;
+      }
       const paths = imageInput ? pastedImagePaths(text) : undefined;
       if (paths !== undefined) {
         attach(paths).catch(reportError);
@@ -795,7 +839,7 @@ export function App(props: AppProps) {
       }
       replaceEditor(applyKey(editorRef.current, { input: text }).state);
     },
-    { isActive: phase.kind === 'ready' && transcript.approval === undefined },
+    { isActive: (phase.kind === 'ready' && transcript.approval === undefined) || overlay?.kind === 'waiting' },
   );
 
   const flowOf = (pending: PendingElicitation): ElicitationFlow =>
@@ -902,9 +946,50 @@ export function App(props: AppProps) {
     current.resolve(index);
   };
 
+  const cancelWaiting = (current: WaitingOverlay): void => {
+    if (!current.delivered) current.handlers.cancel();
+  };
+
+  const editWaiting = (current: WaitingOverlay, key: Parameters<typeof applyKey>[1]): void => {
+    const before = overlayEditorRef.current;
+    const room = WAITING_INPUT_BYTES - Buffer.byteLength(before.text, 'utf8');
+    const fitted = key.ctrl === true || key.meta === true ? key : { ...key, input: prefixWithin(key.input, room) };
+    const after = applyKey(before, fitted).state;
+    replaceOverlayEditor(after);
+    if (after.text === before.text) return;
+    if (current.problem !== undefined) {
+      const { problem: _problem, ...rest } = current;
+      showOverlay(rest);
+    }
+  };
+
+  const submitWaiting = (current: WaitingOverlay): void => {
+    const text = overlayEditorRef.current.text;
+    if (text.trim() === '') return;
+    const problem = pastedCallbackProblem(text, current.view.state);
+    replaceOverlayEditor(emptyEditor());
+    if (problem !== undefined) {
+      showOverlay({ ...current, problem });
+      return;
+    }
+    const { problem: _problem, ...rest } = current;
+    showOverlay({ ...rest, delivered: true });
+    current.handlers.deliver(text);
+  };
+
+  const waitingKey = (current: WaitingOverlay, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
+    if (current.delivered) return;
+    if (key.escape || (key.ctrl && input === 'c')) cancelWaiting(current);
+    else if (key.ctrl && input === 'y') {
+      backend.copyToClipboard(current.view.url.href);
+      showOverlay({ ...current, status: CLIPBOARD_ASKED });
+    } else if (key.return) submitWaiting(current);
+    else editWaiting(current, { ...key, input });
+  };
+
   const overlayKey = (current: Overlay, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
     if (current.kind === 'waiting') {
-      if (key.escape) current.cancel();
+      waitingKey(current, input, key);
       return;
     }
     if (current.kind === 'loading') return;
@@ -974,8 +1059,7 @@ export function App(props: AppProps) {
     }
     const currentOverlay = overlayRef.current;
     if (currentOverlay !== undefined) {
-      if (key.ctrl && input === 'c' && currentOverlay.kind === 'waiting') currentOverlay.cancel();
-      else overlayKey(currentOverlay, input, key);
+      overlayKey(currentOverlay, input, key);
       return;
     }
     if (phase.kind === 'welcome') return;

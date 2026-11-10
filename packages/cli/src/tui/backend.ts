@@ -23,6 +23,9 @@ import { readImageAttachment } from '../images.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import type { SessionOptions } from '../run/open-session.ts';
 
+const OSC = '\u001b]';
+const BEL = '\u0007';
+
 export type FollowHandlers = {
   onEvent(frame: RunEventFrame): void;
   onChildEvent(frame: RunEventFrame, agent: string): void;
@@ -48,6 +51,7 @@ export type TuiBackend = {
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   resolveElicitation(inputId: string, responses: Readonly<Record<string, ElicitationAnswerRecord>>): Promise<void>;
   openUrl(url: URL): Promise<void>;
+  copyToClipboard(text: string): void;
   skills(): Promise<SkillsResponse>;
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   memory(id: string): Promise<MemoryView>;
@@ -187,6 +191,11 @@ export const createTuiBackend = (
       await runtime().resolveElicitation(inputId, responses);
     },
     openUrl: (url) => ports.openUrl(url, closing.signal),
+    copyToClipboard: (text) => {
+      const terminal = ports.terminal;
+      if (terminal === undefined) throw new Error('the clipboard request needs a terminal');
+      terminal.stdout.write(`${OSC}52;c;${Buffer.from(text, 'utf8').toString('base64')}${BEL}`);
+    },
     skills: () => runtime().skills(current().id),
     memories: (filter) => runtime().memories(filter),
     memory: (id) => runtime().memory(id),

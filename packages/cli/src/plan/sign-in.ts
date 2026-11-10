@@ -1,6 +1,8 @@
 import { AUTHORIZATION_WAIT_MS, startLoopbackRedirect, systemTiming } from '@momonga/foundation';
+import type { Timing } from '@momonga/foundation';
 import { planProfileOf } from '@momonga/config';
 import type { PlanSignInCompleteResponse } from '@momonga/protocol';
+import { GatewayAnswerError } from '../client/gateway-client.ts';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 
 export type SignInListener = {
@@ -31,34 +33,124 @@ export const loopbackSignInListener =
 
 export type SignInRequest = { profile: string; account: string; reconsent: boolean };
 
+export type SignInWaitTimers = Pick<Timing, 'setTimeout' | 'clearTimeout'>;
+
+export type SignInShown = { url: URL; state: string };
+
 export type SignInPorts = {
   plan: PlanGatewayClient;
   startListener: StartSignInListener;
-  authorize(url: URL): Promise<void>;
+  authorize(shown: SignInShown): Promise<void>;
+  pasted(state: string, signal: AbortSignal): Promise<string>;
   signal: AbortSignal;
+  timers: SignInWaitTimers;
 };
+
+export const PASTE_LABEL = 'On a remote machine? Paste the redirect URL here';
+
+export const SIGN_IN_WAIT_SECONDS = AUTHORIZATION_WAIT_MS / 1000;
+
+export class SignInListenerError extends Error {
+  constructor(cause: unknown) {
+    super(`Could not start the local sign-in listener (${cause instanceof Error ? cause.message : String(cause)}). Nothing was changed.`, { cause });
+    this.name = 'SignInListenerError';
+  }
+}
+
+export class SignInExpiredError extends Error {
+  constructor() {
+    super(`Sign-in was not completed within ${SIGN_IN_WAIT_SECONDS} seconds.`);
+    this.name = 'SignInExpiredError';
+  }
+}
+
+export class SignInGatewayStoppedError extends Error {
+  constructor(cause: unknown) {
+    super('The gateway stopped before the sign-in finished. Start the sign-in again.', { cause });
+    this.name = 'SignInGatewayStoppedError';
+  }
+}
+
+export class SignInAttemptNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SignInAttemptNotFoundError';
+  }
+}
+
+const ATTEMPT_NOT_FOUND = 'attempt_not_found';
 
 export const callbackPathOf = (profile: string): string => planProfileOf(profile).oauth.callbackPath;
 
+const firstValue = async (sources: readonly ((signal: AbortSignal) => Promise<string>)[], signal: AbortSignal): Promise<string> => {
+  const losers = new AbortController();
+  const both = AbortSignal.any([signal, losers.signal]);
+  const running = sources.map((source) => source(both));
+  try {
+    return await Promise.race(running);
+  } finally {
+    losers.abort();
+    await Promise.allSettled(running);
+  }
+};
+
+const completed = async (plan: PlanGatewayClient, attemptId: string, callbackUrl: string): Promise<PlanSignInCompleteResponse> => {
+  try {
+    return await plan.signInComplete({ attemptId, callbackUrl });
+  } catch (error) {
+    if (!(error instanceof GatewayAnswerError)) throw new SignInGatewayStoppedError(error);
+    if (error.answer?.code === ATTEMPT_NOT_FOUND) throw new SignInAttemptNotFoundError(error.answer.message);
+    throw error;
+  }
+};
+
 export const signIn = async (ports: SignInPorts, request: SignInRequest): Promise<PlanSignInCompleteResponse> => {
-  const listener = await ports.startListener(callbackPathOf(request.profile));
+  let listener: SignInListener;
+  try {
+    listener = await ports.startListener(callbackPathOf(request.profile));
+  } catch (error) {
+    throw new SignInListenerError(error);
+  }
   try {
     const begun = await ports.plan.signInBegin({ profile: request.profile, account: request.account, port: listener.port, ...(request.reconsent ? { reconsent: true } : {}) });
-    const returned = async (): Promise<URL> => {
-      await ports.authorize(new URL(begun.authorizationUrl));
-      return listener.callback({ state: begun.state, signal: ports.signal });
-    };
-    const callback = await returned().catch(async (error: unknown) => {
-      await ports.plan.signInCancel({ attemptId: begun.attemptId });
+    const expiry = new AbortController();
+    const timer = ports.timers.setTimeout(() => expiry.abort(new SignInExpiredError()), AUTHORIZATION_WAIT_MS);
+    let value: string;
+    try {
+      const waiting = AbortSignal.any([ports.signal, expiry.signal]);
+      await ports.authorize({ url: new URL(begun.authorizationUrl), state: begun.state });
+      waiting.throwIfAborted();
+      value = await firstValue([async (signal) => (await listener.callback({ state: begun.state, signal })).href, (signal) => ports.pasted(begun.state, signal)], waiting);
+    } catch (error) {
+      await ports.plan.signInCancel({ attemptId: begun.attemptId }).catch(() => undefined);
       throw error;
-    });
-    return await ports.plan.signInComplete({ attemptId: begun.attemptId, callbackUrl: callback.href });
+    } finally {
+      ports.timers.clearTimeout(timer);
+    }
+    return await completed(ports.plan, begun.attemptId, value);
   } finally {
     await listener.close();
   }
 };
 
-const PASTED_CALLBACK_MAX_BYTES = 8 * 1024;
+export const waitForPaste = (deliveries: Promise<string>, signal: AbortSignal): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const aborted = (): void => reject(signal.reason);
+    signal.addEventListener('abort', aborted, { once: true });
+    deliveries.then(
+      (value) => {
+        signal.removeEventListener('abort', aborted);
+        resolve(value);
+      },
+      reject,
+    );
+  });
+
+export const PASTED_CALLBACK_MAX_BYTES = 8 * 1024;
 
 export const PASTED_CALLBACK_PROBLEMS = {
   tooLong: 'That text is too long to be a redirect URL.',

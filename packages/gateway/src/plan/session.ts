@@ -1,8 +1,8 @@
 import type { PlanProfile } from '@momonga/config';
 import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, sweepLeftovers } from '@momonga/foundation';
-import type { Clock, CredentialEntry, CredentialStore, FileSystem, KernelLockMechanism } from '@momonga/foundation';
+import type { Clock, CredentialEntry, FileSystem, KernelLockMechanism, ListableCredentialStore } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
-import type { PlanAccountState } from '@momonga/protocol';
+import type { PlanAccountState, PlanListProblem } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../defaults.ts';
 import type { WaitPolicy } from '../core/retry.ts';
 import { readActiveAccount, writeActiveAccount } from './active-account.ts';
@@ -64,7 +64,7 @@ export type PlanAccountRef = { profile: string; account: string };
 export type OpenPlanSessionsOptions = {
   profiles: Readonly<Record<string, PlanProfile>>;
   paths: PlanPaths;
-  store: CredentialStore;
+  store: ListableCredentialStore;
   fileSystem: FileSystem;
   accounts: readonly PlanAccountRef[];
   clock: Clock;
@@ -81,7 +81,7 @@ export type InstallInput = RegisterInput & { subject: string; email?: string; id
 
 export type Installed = { outcome: 'signed_in' | 'plan_disabled'; firstSignIn: boolean };
 
-export type Registration = { clientId: string; subject?: string; email?: string; idToken?: string };
+export type Registration = { state: RecordState; clientId: string; subject?: string; email?: string; idToken?: string };
 
 export type KnownAccount = { profile: string; account: string; view: AccountView };
 
@@ -95,6 +95,7 @@ export type PlanSessions = {
   registration(ref: PlanAccountRef): Promise<Registration | undefined>;
   load(ref: PlanAccountRef): Promise<void>;
   known(): Promise<readonly KnownAccount[]>;
+  listProblems(): readonly PlanListProblem[];
   resume(ref: PlanAccountRef): Promise<boolean>;
   selectActive(ref: PlanAccountRef): Promise<void>;
   signOut(ref: PlanAccountRef): Promise<SignOutReport>;
@@ -120,7 +121,22 @@ type Account = {
 
 type RefreshTrigger = { kind: 'lazy' } | { kind: 'forced'; generation: number };
 
-const recordKey = (profile: string, account: string): string => `plan/${profile}/${account}`;
+const RECORD_KEY_PREFIX = 'plan/';
+
+const recordKey = (profile: string, account: string): string => `${RECORD_KEY_PREFIX}${profile}/${account}`;
+
+const refOfKey = (key: string): PlanAccountRef | undefined => {
+  if (!key.startsWith(RECORD_KEY_PREFIX)) return undefined;
+  const rest = key.slice(RECORD_KEY_PREFIX.length);
+  const separator = rest.indexOf('/');
+  if (separator <= 0 || separator === rest.length - 1) return undefined;
+  return { profile: rest.slice(0, separator), account: rest.slice(separator + 1) };
+};
+
+export const planRecordKeyOfPlaintext = (text: string): string => {
+  const record = parseRecord(text);
+  return recordKey(record.profile, record.account);
+};
 
 const optional = <K extends string, V>(name: K, value: V | undefined): { [P in K]?: V } => (value === undefined ? {} : ({ [name]: value } as { [P in K]?: V }));
 
@@ -231,6 +247,18 @@ const withoutPause = (record: PlanRecord): PlanRecord => {
 };
 
 const signingOutRecord = (record: PlanRecord): PlanRecord => ({ ...record, state: 'signing_out' });
+
+const SELECTABLE_STATES: ReadonlySet<RecordState | undefined> = new Set<RecordState | undefined>(['active', 'plan_disabled']);
+
+export class PlanAccountNotSelectableError extends Error {
+  readonly ref: PlanAccountRef;
+
+  constructor(ref: PlanAccountRef) {
+    super(`${ref.account} has no verified sign-in to switch to. Sign in to it first.`);
+    this.name = 'PlanAccountNotSelectableError';
+    this.ref = ref;
+  }
+}
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -636,7 +664,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     if (account.loaded?.kind === 'unreadable') throw conditionFailure({ reason: 'store_unreadable', code: 'plan_store_unreadable', detail: account.loaded.cause });
     const record = recordOf(account);
     if (record === undefined) return undefined;
-    return { clientId: record.client_id, ...optional('subject', record.subject), ...optional('email', record.email), ...optional('idToken', record.id_token) };
+    return { state: record.state, clientId: record.client_id, ...optional('subject', record.subject), ...optional('email', record.email), ...optional('idToken', record.id_token) };
   };
 
   const known = async (): Promise<readonly KnownAccount[]> => {
@@ -656,7 +684,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const selectActive = async (ref: PlanAccountRef): Promise<void> => {
     const account = accountOf(ref.profile, ref.account);
     await load(account);
-    if (recordOf(account)?.subject === undefined) throw new Error(`the ${ref.profile} account ${JSON.stringify(ref.account)} has no validated sign-in to select`);
+    if (!SELECTABLE_STATES.has(recordOf(account)?.state)) throw new PlanAccountNotSelectableError(ref);
     await writeActiveAccount(fileSystem, paths.active, ref.profile, ref.account);
   };
 
@@ -684,6 +712,15 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   await sweepTemporaries(fileSystem, paths.sessions, options.lock ?? hostKernelLock(), options.warn);
+  const listing = await store.listKeys();
+  const listProblems: PlanListProblem[] = [...listing.problems];
+  for (const { key, file } of listing.keys) {
+    const ref = refOfKey(key);
+    if (ref === undefined) listProblems.push({ file, cause: `the record key ${JSON.stringify(key)} does not name a plan account` });
+    else if (Object.hasOwn(options.profiles, ref.profile)) accountOf(ref.profile, ref.account);
+    else options.warn(`a saved account of profile ${ref.profile} is not listed: this build ships no such profile`);
+  }
+  for (const problem of listProblems) options.warn(`could not list ${problem.file}: ${problem.cause}`);
   const startup = options.accounts.map((ref) => accountOf(ref.profile, ref.account));
   await Promise.all(startup.map(load));
   for (const account of startup) {
@@ -704,6 +741,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     registration,
     load: (ref) => load(accountOf(ref.profile, ref.account)),
     known,
+    listProblems: () => listProblems,
     resume,
     selectActive,
     signOut: (ref) => signOutAccount(accountOf(ref.profile, ref.account)),

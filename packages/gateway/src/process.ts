@@ -63,7 +63,7 @@ import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
 import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts';
 import type { AdapterAuth } from './adapters/shared/auth.ts';
-import { openPlanSessions } from './plan/session.ts';
+import { openPlanSessions, planRecordKeyOfPlaintext } from './plan/session.ts';
 import { createPlanApi } from './plan/api.ts';
 import { createPlanCatalog } from './plan/catalog.ts';
 import { readActiveAccount } from './plan/active-account.ts';
@@ -875,6 +875,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
             : { kind: 'available', store: options.secretStore },
         plaintextTokenFiles: () => settingsNow().credentials.plaintextTokenFiles,
+        keyOfPlaintext: planRecordKeyOfPlaintext,
       }),
       fileSystem: nodeFileSystem,
       accounts: planTargets.flatMap(([, target]) => (target.plan.account === undefined ? [] : [{ profile: target.plan.profile, account: target.plan.account }])),

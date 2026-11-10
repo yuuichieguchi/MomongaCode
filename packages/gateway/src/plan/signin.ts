@@ -6,6 +6,7 @@ import { PLAN_SIGN_IN_FAILURE_RULES } from '@momonga/protocol';
 import type { PlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure } from '@momonga/protocol';
 import { GatewayError, invalidRequest } from '../core/errors.ts';
 import { PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
+import { hostIdentityFailure } from './auth-source.ts';
 import { cappedSend } from './capped-send.ts';
 import { ensureHostIdentity } from './host-identity.ts';
 import { createIdTokenVerifier } from './id-token.ts';
@@ -20,6 +21,7 @@ export type PlanSignIn = {
   begin(request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse>;
   complete(attemptId: string, callbackUrl: string): Promise<SignInEnd>;
   cancel(attemptId: string): boolean;
+  waiting(): boolean;
 };
 
 export type PlanSignInOptions = {
@@ -52,6 +54,7 @@ const LABEL = new RegExp(SECRET_NAME_PATTERN);
 const MIN_PORT = 1;
 const MAX_PORT = 65_535;
 
+const CONFLICT_STATUS = 409;
 const SUCCESS_STATUS = 200;
 const TOO_MANY_REQUESTS = 429;
 const SERVER_ERROR_FLOOR = 500;
@@ -126,13 +129,20 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
     return attempt;
   };
 
+  let completing = 0;
+
+  const waiting = (): boolean => completing > 0 || [...attempts.values()].some((attempt) => options.clock.now() < attempt.expiresAt);
+
   const begin = async (request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse> => {
     const profile = profileOf(request.profile);
     if (!LABEL.test(request.account)) throw invalidRequest('invalid_account_label', `the account label must match ${SECRET_NAME_PATTERN}`, 'account');
     if (!Number.isInteger(request.port) || request.port < MIN_PORT || request.port > MAX_PORT) throw invalidRequest('invalid_port', `the port must be an integer from ${MIN_PORT} to ${MAX_PORT}`, 'port');
     const saved = await options.sessions.registration({ profile: profile.id, account: request.account });
+    if (saved?.state === 'signing_out') throw invalidRequest('plan_sign_out_in_progress', `${request.account} is still signing out. Try again in a moment.`, null, CONFLICT_STATUS);
     const accountsExist = saved !== undefined || (await options.sessions.known()).length > 0;
-    const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist });
+    const { hostId } = await ensureHostIdentity(options.fileSystem, options.hostFile, { accountsExist }).catch((error: unknown) => {
+      throw hostIdentityFailure(error);
+    });
     const key = attemptKey(profile.id, request.account);
     const replaced = pendingByAccount.get(key);
     if (replaced !== undefined) attempts.delete(replaced);
@@ -198,6 +208,15 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
   };
 
   const complete = async (attemptId: string, callbackUrl: string): Promise<SignInEnd> => {
+    completing += 1;
+    try {
+      return await completeAttempt(attemptId, callbackUrl);
+    } finally {
+      completing -= 1;
+    }
+  };
+
+  const completeAttempt = async (attemptId: string, callbackUrl: string): Promise<SignInEnd> => {
     const attempt = consume(attemptId);
     if (attempt === undefined) throw signInFailure('attempt_not_found', undefined);
     const { profile } = attempt;
@@ -239,5 +258,5 @@ export const createPlanSignIn = (options: PlanSignInOptions): PlanSignIn => {
 
   const cancel = (attemptId: string): boolean => consume(attemptId) !== undefined;
 
-  return { begin, complete, cancel };
+  return { begin, complete, cancel, waiting };
 };

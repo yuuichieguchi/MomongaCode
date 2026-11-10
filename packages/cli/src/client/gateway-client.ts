@@ -1,4 +1,4 @@
-import { createUdsClient, isRecord } from '@momonga/foundation';
+import { createUdsClient, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
 import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_ROUTES, TARGET_BILLINGS, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
 import type {
@@ -33,6 +33,31 @@ import type {
   UsageReport,
 } from '@momonga/protocol';
 
+export type GatewayAnswerBody = { code: string; message: string };
+
+export class GatewayAnswerError extends Error {
+  readonly status: number;
+  readonly answer: GatewayAnswerBody | undefined;
+
+  constructor(message: string, status: number, answer: GatewayAnswerBody | undefined) {
+    super(message);
+    this.name = 'GatewayAnswerError';
+    this.status = status;
+    this.answer = answer;
+  }
+}
+
+const answerBodyOf = (text: string): GatewayAnswerBody | undefined => {
+  let parsed: unknown;
+  try {
+    parsed = parseOutsideJson(text);
+  } catch {
+    return undefined;
+  }
+  const error = isRecord(parsed) ? parsed['error'] : undefined;
+  return isRecord(error) && typeof error['code'] === 'string' && typeof error['message'] === 'string' ? { code: error['code'], message: error['message'] } : undefined;
+};
+
 export type PlanGatewayClient = {
   accounts(): Promise<PlanAccountsResponse>;
   signInBegin(request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse>;
@@ -56,6 +81,8 @@ export type GatewayClient = {
   readonly plan: PlanGatewayClient;
   close(): Promise<void>;
 };
+
+const OK_STATUS = 200;
 
 const oneOf = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
 
@@ -146,8 +173,15 @@ const isAccountView = (value: unknown): value is PlanAccountView =>
   isOptional(value['paused'], (paused) => isRecord(paused) && isOptional(paused['until'], isString)) &&
   isOptional(value['cause'], isString);
 
+const isListProblem = (value: unknown): boolean => isRecord(value) && isString(value['file']) && isString(value['cause']);
+
 const isAccountsResponse = (value: unknown): value is PlanAccountsResponse =>
-  isRecord(value) && Array.isArray(value['profiles']) && value['profiles'].every(isProfileView) && Array.isArray(value['accounts']) && value['accounts'].every(isAccountView);
+  isRecord(value) &&
+  Array.isArray(value['profiles']) &&
+  value['profiles'].every(isProfileView) &&
+  Array.isArray(value['accounts']) &&
+  value['accounts'].every(isAccountView) &&
+  isOptional(value['listProblems'], (problems) => Array.isArray(problems) && problems.every(isListProblem));
 
 const isBeginResponse = (value: unknown): value is PlanSignInBeginResponse =>
   isRecord(value) && isString(value['attemptId']) && isString(value['authorizationUrl']) && isString(value['state']) && isString(value['expiresAt']);
@@ -204,13 +238,13 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
   const answer = async (method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {
     const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
     const text = await response.text();
-    if (response.status < 200 || response.status > 299) throw new Error(`${method} ${path} answered ${response.status}: ${text}`);
+    if (response.status < 200 || response.status > 299) throw new GatewayAnswerError(`${method} ${path} answered ${response.status}: ${text}`, response.status, answerBodyOf(text));
     return text === '' ? undefined : JSON.parse(text);
   };
 
   const checked = async <T>(method: 'GET' | 'POST', path: string, body: unknown, holds: (value: unknown) => value is T, what: string): Promise<T> => {
     const value = await answer(method, path, body);
-    if (!holds(value)) throw new Error(`${method} ${path} answered a body that is not ${what}: ${JSON.stringify(value)}`);
+    if (!holds(value)) throw new GatewayAnswerError(`${method} ${path} answered a body that is not ${what}: ${JSON.stringify(value)}`, OK_STATUS, undefined);
     return value;
   };
 
