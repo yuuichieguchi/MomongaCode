@@ -1,3 +1,4 @@
+import { loadUserSettings } from '@momonga/config';
 import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import { currentSocketResolver } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES, agentReadiness, isProbingCapabilities } from '@momonga/protocol';
@@ -69,12 +70,13 @@ export const detectModels = async (
   options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch: OutboundFetch | typeof fetch },
 ): Promise<number> => {
   const { detectLocalServers } = await import('@momonga/gateway');
+  const { settings } = await loadUserSettings({ home: paths.home });
   const found = await detectLocalServers({
     candidates: LOCAL_SERVER_CANDIDATES,
     typed: options.typed,
     signal: options.interrupt,
     fetch: options.fetch,
-    ...localManagedPorts(),
+    ...localManagedPorts(settings.models.servers),
   });
   ports.stdout.write(`${options.json ? JSON.stringify(found) : formatDetected(found, paths.settingsFile)}\n`);
   return 0;

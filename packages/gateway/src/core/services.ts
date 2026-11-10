@@ -5,9 +5,15 @@ import type { CompactionCodec } from './compaction.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 import type { Router } from './router.ts';
 import type { GatewayStore } from './store.ts';
+import type { PlanTargetRef } from '../plan/api.ts';
 import type { GatewayLimits, GatewayTimers } from '../types.ts';
 
-export type GatewayEpoch = { readonly router: Router; readonly priceTable: PriceTable | undefined; readonly telemetry: Telemetry | undefined };
+export type GatewayEpoch = {
+  readonly router: Router;
+  readonly priceTable: PriceTable | undefined;
+  readonly telemetry: Telemetry | undefined;
+  readonly planTargets: readonly PlanTargetRef[];
+};
 
 export type GatewayEpochs = {
   acquire(signal: AbortSignal): Promise<Lease<GatewayEpoch>>;
@@ -29,7 +35,7 @@ export type GatewayServices = {
 
 export type Services = GatewayServices & GatewayEpoch;
 
-export const pinnedServices = (services: GatewayServices, epoch: GatewayEpoch): Services => ({ ...services, router: epoch.router, priceTable: epoch.priceTable, telemetry: epoch.telemetry });
+export const pinnedServices = (services: GatewayServices, epoch: GatewayEpoch): Services => ({ ...services, router: epoch.router, priceTable: epoch.priceTable, telemetry: epoch.telemetry, planTargets: epoch.planTargets });
 
 export const withPinnedServices = async <T>(services: GatewayServices, signal: AbortSignal, work: (pinned: Services) => Promise<T>): Promise<T> => {
   const lease = await services.epochs.acquire(signal);

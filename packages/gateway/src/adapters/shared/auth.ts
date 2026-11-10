@@ -46,5 +46,7 @@ export const sendAuthorized = async (
 
 export const applyCredentialEffect = async (auth: AuthSource, classified: ClassifiedError, clock: Clock): Promise<void> => {
   if (classified.credential !== 'pause') return;
-  await auth.pause(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs });
+  const { code } = classified.error;
+  if (code === null) throw new Error('a classification that pauses the credential carries no code');
+  await auth.pause({ code, ...(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs }) });
 };

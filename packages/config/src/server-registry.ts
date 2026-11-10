@@ -50,3 +50,8 @@ export const registeredServer = (registry: ServerRegistry | undefined, id: strin
   registry !== undefined && Object.hasOwn(registry, id) ? registry[id] : undefined;
 
 export const registeredIds = (registry: ServerRegistry | undefined): string[] => Object.keys(registry ?? {}).sort();
+
+export const registeredServers = (registry: ServerRegistry): readonly ManagedServerDescription[] =>
+  Object.entries(registry)
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([, description]) => description);

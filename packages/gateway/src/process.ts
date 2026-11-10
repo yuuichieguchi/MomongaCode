@@ -78,7 +78,8 @@ import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEn
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
 import { createSecretResolver } from './secrets.ts';
-import { targetCounterOf } from './target-counter.ts';
+import { readsOutputPolicy, targetCounterOf } from './target-counter.ts';
+import type { ReportedNumbers, ServedAccount } from './target-counter.ts';
 import type { SecretResolver } from './secrets.ts';
 import { reachableEndpoint } from './adapters/shared/http-client.ts';
 import type { UpstreamLiveness } from './adapters/shared/http-client.ts';
@@ -91,14 +92,15 @@ import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions, planRecordKeyOfPlaintext } from './plan/session.ts';
 import { createPlanApi } from './plan/api.ts';
 import { createPlanCatalog } from './plan/catalog.ts';
-import { readActiveAccount } from './plan/active-account.ts';
 import { createPlanSignIn } from './plan/signin.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
-import type { PlanFetch } from './plan/refresh.ts';
+import type { PlanEvents } from './plan/events.ts';
+import type { PlanOutbound, PlanScope } from './plan/outbound.ts';
+import type { PlanTargetRef } from './plan/api.ts';
 import type { ProbeOutputPolicy } from './probe/decide.ts';
 import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
 import { ANTHROPIC_PROVIDER_NAME, OLLAMA_PROVIDER_NAME, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
-import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
+import { invalidRequest, missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import { createManagedServer } from './managed/server.ts';
@@ -316,7 +318,6 @@ const requiredServer = (servers: ServerRegistry | undefined, id: string): Manage
 
 type ManagedAdapterWiring = {
   name: string;
-  outputPolicy: () => ProbeOutputPolicy;
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
@@ -403,7 +404,6 @@ const createManagedCore = async (wiring: ManagedAdapterWiring): Promise<ManagedC
     currency,
   });
   managed = await createManagedTarget({
-    outputPolicy: wiring.outputPolicy,
     description,
     server,
     binary: target.binary,
@@ -629,16 +629,34 @@ const healthResultOf = (health: PlanHealth): HealthResult => ({
 
 type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: UpstreamLiveness; network: OutboundNetwork };
 
+type PlanNumbers = { contextWindow: number; maxOutputTokens: number };
+
+type PlanReported = () => PlanNumbers | undefined;
+
+const PRECONDITION_STATUS = 412;
+
+const planCapabilityNumbers = (target: PlanTarget, reported: PlanReported): PlanNumbers | undefined => {
+  const { contextWindow, maxOutputTokens } = target.capabilities;
+  return contextWindow !== undefined && maxOutputTokens !== undefined ? { contextWindow, maxOutputTokens } : reported();
+};
+
+const declaresPlanNumbers = (target: PlanTarget): boolean => planCapabilityNumbers(target, () => undefined) !== undefined;
+
+const unknownCapabilitiesText = (name: string, target: PlanTarget): string =>
+  `the plan target ${name} declares no contextWindow and maxOutputTokens, and the model list of its account reports none for ${target.model}; momonga models --catalog reads the list`;
+
 const planCapabilitiesOf = (name: string, target: PlanTarget, reported: PlanReported): Capabilities => {
-  const { contextWindow, maxOutputTokens, ...rest } = target.capabilities;
-  const numbers = contextWindow !== undefined && maxOutputTokens !== undefined ? { contextWindow, maxOutputTokens } : reported();
-  if (numbers === undefined) {
-    throw new Error(`the plan target ${name} declares no contextWindow and maxOutputTokens, and the model list of its account reports none for ${target.model}; momonga models --catalog reads the list`);
-  }
+  const { contextWindow: _contextWindow, maxOutputTokens: _maxOutputTokens, ...rest } = target.capabilities;
+  const numbers = planCapabilityNumbers(target, reported);
+  if (numbers === undefined) throw invalidRequest('capabilities_unknown', unknownCapabilitiesText(name, target), 'model', PRECONDITION_STATUS);
   return withImageDefault({ ...rest, ...numbers, toolCalling: target.toolCalling });
 };
 
-type PlanReported = () => { contextWindow: number; maxOutputTokens: number } | undefined;
+const planHealthOf = (name: string, target: PlanTarget, auth: AuthSource, reported: PlanReported): HealthResult => {
+  const authHealth = healthResultOf(auth.health());
+  if (!authHealth.ok || planCapabilityNumbers(target, reported) !== undefined) return authHealth;
+  return { ok: false, reason: 'capabilities_unknown', detail: unknownCapabilitiesText(name, target) };
+};
 
 const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, reported: PlanReported, wiring: PlanAdapterWiring): ProviderAdapter => {
   const profile = profiles[target.plan.profile];
@@ -646,7 +664,7 @@ const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, p
   return createOpenResponsesAdapter({
     resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
     capabilities: async () => planCapabilitiesOf(name, target, reported),
-    health: async () => healthResultOf(auth.health()),
+    health: async () => planHealthOf(name, target, auth, reported),
     authSource: () => auth,
     errorRules: profile.errorRules,
     clock: wiring.clock,
@@ -654,6 +672,12 @@ const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, p
     liveness: wiring.liveness,
   });
 };
+
+const planTargetsOf = (settings: ResolvedSettings): Array<[string, PlanTarget]> =>
+  (Object.entries(settings.models.targets) as Array<[string, ResolvedTarget]>).flatMap(([name, target]): Array<[string, PlanTarget]> => ('plan' in target ? [[name, target]] : []));
+
+const planTargetRefsOf = (settings: ResolvedSettings): PlanTargetRef[] =>
+  planTargetsOf(settings).map(([name, target]) => ({ name, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }));
 
 const NOT_LISTED_YET = 'not listed yet';
 
@@ -852,7 +876,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const started = cache.snapshot();
     if ('error' in started) throw started.error;
     const { settings } = started;
-    const outputPolicy = (): ProbeOutputPolicy => ({ unboundedOutputReserve: cache.get().context.unboundedOutputReserve });
     stopValues.remember(settings.gateway);
     const outboundNetworkOf = async (section: ResolvedSettings['network'], installSignal: AbortSignal | undefined): Promise<OutboundNetwork> => {
       const config = resolveNetwork(section, options.env);
@@ -860,7 +883,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       for (const failure of outbound.trust.failures) logger.warn(trustFailureText(failure));
       return outbound;
     };
-    const network = await outboundNetworkOf(settings.network, signal);
     signal?.throwIfAborted();
     await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
     const hmacKey = secretKeyFile(paths.gatewayKey, {
@@ -921,9 +943,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       await Promise.all([autoProbe.close(), ...[...probeServers].map((server) => server.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
-    const probes: ProbeWiring = {
+    const probePorts: Omit<ProbeWiring, 'outputPolicy'> = {
       autoProbe,
-      outputPolicy,
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
@@ -936,9 +957,35 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
     const shared: GatewayEpochsShared = { redactor: createRedactor({ credentials: [] }), reasoningOrigin: createReasoningOriginCodec(hmacKey) };
-    const planDispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: Math.max(PLAN_SESSION_DEFAULTS.attemptTimeoutMs, PLAN_SESSION_DEFAULTS.revocationTimeoutMs) });
-    cleanups.push(() => planDispatcher.close());
-    const planFetch: PlanFetch = (url, init) => outboundFetch(planDispatcher)(url, init as never) as unknown as Promise<Response>;
+    type HeldPlanScope = PlanScope & { close(): Promise<void> };
+    const planScopes = createPinnedDerivation<HeldPlanScope>({
+      cache,
+      signal: lifetime.signal,
+      inputsOf: derivedInputsOf('D5'),
+      derive: async (current, _previous, deriveSignal) => {
+        const dispatcher = createOutboundDispatcher(await outboundNetworkOf(current.network, deriveSignal), {
+          connectReplyTimeoutMs: Math.max(PLAN_SESSION_DEFAULTS.attemptTimeoutMs, PLAN_SESSION_DEFAULTS.revocationTimeoutMs),
+        });
+        return {
+          fetch: (url, init) => outboundFetch(dispatcher)(url, init as never) as unknown as Promise<Response>,
+          plaintextTokenFiles: current.credentials.plaintextTokenFiles,
+          close: () => dispatcher.close(),
+        };
+      },
+      retire: (scope) => scope.close(),
+      onWarning: (message) => logger.warn(message),
+    });
+    cleanups.push(() => planScopes.retireAll());
+    (await planScopes.admit(startSignal)).release();
+    const withOutboundNetwork: PlanOutbound = async (operationSignal, use) => {
+      const lease = await planScopes.acquire(operationSignal);
+      try {
+        return await use(lease.value.fetch);
+      } finally {
+        lease.release();
+      }
+    };
+    const planEvents: PlanEvents = (name, data) => logger.info(name, { data });
     const planSleep = (ms: number, sleepSignal?: AbortSignal): Promise<void> => sleepOn(timers, ms, sleepSignal);
     await nodeFileSystem.mkdirPrivate(paths.planSessions);
     const sessions = await openPlanSessions({
@@ -951,33 +998,58 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           options.secretStore === undefined
             ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
             : { kind: 'available', store: options.secretStore },
-        plaintextTokenFiles: () => cache.get().credentials.plaintextTokenFiles,
+        plaintextTokenFiles: () => planScopes.current().plaintextTokenFiles,
         keyOfPlaintext: planRecordKeyOfPlaintext,
       }),
       fileSystem: nodeFileSystem,
-      accounts: Object.values(settings.models.targets).flatMap((target) => ('plan' in target && target.plan.account !== undefined ? [{ profile: target.plan.profile, account: target.plan.account }] : [])),
+      accounts: [],
       clock,
-      fetch: planFetch,
+      outbound: withOutboundNetwork,
       sleep: planSleep,
+      random,
+      events: planEvents,
       onSecret: (value) => shared.redactor.add(value),
       warn: (message) => logger.warn(message),
     });
     cleanups.push(() => sessions.close());
-    const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog), clock, fetch: planFetch, sleep: planSleep });
+    const catalog = createPlanCatalog({ store: createFileCredentialStore(paths.planCatalog), clock, outbound: withOutboundNetwork, sleep: planSleep, events: planEvents });
     const planApi = createPlanApi({
       catalog,
       settingsFile: paths.settingsFile,
       profiles: planProfiles,
       sessions,
-      signIn: createPlanSignIn({ profiles: planProfiles, sessions, clock, ports: { fetch: planFetch, sleep: planSleep }, fileSystem: nodeFileSystem, hostFile: paths.planHost }),
+      signIn: createPlanSignIn({
+        profiles: planProfiles,
+        sessions,
+        clock,
+        outbound: withOutboundNetwork,
+        lifetime: sessions.lifetime,
+        ports: { sleep: planSleep },
+        fileSystem: nodeFileSystem,
+        hostFile: paths.planHost,
+        events: planEvents,
+      }),
       fileSystem: nodeFileSystem,
-      paths: { host: paths.planHost, active: paths.planActive },
+      paths: { host: paths.planHost },
       clock,
-      planTargets: () =>
-        Object.entries(cache.get().models.targets).flatMap(([name, target]) =>
-          'plan' in target ? [{ name, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }] : [],
-        ),
     });
+    const servedOf = (target: PlanTarget): ServedAccount => ({ profile: target.plan.profile, account: target.plan.account ?? sessions.activeLabel(target.plan.profile) ?? null });
+    const reportedOf = (target: PlanTarget, served: ServedAccount): ReportedNumbers | undefined => {
+      if (declaresPlanNumbers(target)) return undefined;
+      return served.account === null ? null : (catalog.capabilitiesOf(served.profile, served.account, target.model) ?? null);
+    };
+    const planComponentsOf = (target: PlanTarget): { served: ServedAccount; reported?: ReportedNumbers } => {
+      const served = servedOf(target);
+      const reported = reportedOf(target, served);
+      return { served, ...(reported === undefined ? {} : { reported }) };
+    };
+    const planInputsOf = (current: ResolvedSettings): Record<string, { account: string | null; reported?: ReportedNumbers }> =>
+      Object.fromEntries(
+        planTargetsOf(current).map(([name, target]) => {
+          const { served, ...reported } = planComponentsOf(target);
+          return [name, { account: served.account, ...reported }];
+        }),
+      );
     const secretResolverOfPart = (): SecretResolver => {
       const resolver = createSecretResolver(secretStore);
       resolver.onResolved((name, value) => {
@@ -1018,7 +1090,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       keySignal: AbortSignal,
       previous: TargetPart | undefined,
       keys: { part: string; core: string },
+      outputPolicy: ProbeOutputPolicy,
     ): Promise<TargetPart> => {
+      const probes: ProbeWiring = { ...probePorts, outputPolicy: () => outputPolicy };
       const userDialects = current.models.dialects;
       const liveness: UpstreamLiveness = { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers };
       if (target.adapter === 'managed') {
@@ -1029,7 +1103,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           (await (async (): Promise<ManagedPart> => {
             const built = await createManagedCore({
               name,
-              outputPolicy,
               target,
               description: server,
               paths,
@@ -1053,11 +1126,19 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             return { key: keys.core, ...built, closable: { close: (values) => built.managed.close(values) } };
           })());
         const { close: _stopsTheServer, ...serving } = core.managed;
-        const adapter = createChatCompletionsAdapter({ ...serving, authSource: unauthenticatedSource, sampling: SAMPLING_OF[server.sampling], clock, userDialects, liveness });
+        const adapter = createChatCompletionsAdapter({
+          ...serving,
+          capabilities: (adapterTarget) => serving.capabilities(adapterTarget, outputPolicy),
+          authSource: unauthenticatedSource,
+          sampling: SAMPLING_OF[server.sampling],
+          clock,
+          userDialects,
+          liveness,
+        });
         return {
           key: keys.part,
           adapter,
-          counter: targetCounterOf({ target, server, codeDigest, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
+          counter: targetCounterOf({ target, server, codeDigest, outputPolicy, ...(core.probeKey === undefined ? {} : { probeKey: core.probeKey }) }),
           listedModel: core.listedModel,
           managed: core,
           closables: [adapterClosable(adapter), core.closable],
@@ -1065,13 +1146,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
       if (target.adapter === 'ollama') {
         const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
-        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
+        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
       const identify = identificationOf(name, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
         const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
-        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
+        return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, outputPolicy, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
       const common = {
@@ -1084,7 +1165,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         userDialects,
         liveness,
       };
-      const counter = targetCounterOf({ target, codeDigest });
+      const counter = targetCounterOf({ target, codeDigest, outputPolicy });
       switch (target.adapter) {
         case 'chat-completions':
           return unmanagedPart(keys.part, createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), authSource: authSourceOf(target, readKey) }), counter);
@@ -1099,31 +1180,52 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
     };
 
-    const buildPlanPart = async (name: string, target: PlanTarget, current: ResolvedSettings, outbound: OutboundNetwork, key: string): Promise<TargetPart> => {
-      const account = target.plan.account ?? (await readActiveAccount(nodeFileSystem, paths.planActive, target.plan.profile));
-      if (account !== undefined) await catalog.load(target.plan.profile, account);
-      const reported: PlanReported = () => (account === undefined ? undefined : catalog.capabilitiesOf(target.plan.profile, account, target.model));
-      const auth = sessions.authSource({ profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) });
-      const adapter = createPlanAdapter(name, target, auth, planProfiles, reported, {
+    const buildPlanPart = (
+      name: string,
+      target: PlanTarget,
+      current: ResolvedSettings,
+      outbound: OutboundNetwork,
+      key: string,
+      { served, reported }: { served: ServedAccount; reported?: ReportedNumbers },
+    ): TargetPart => {
+      const auth = served.account === null ? sessions.signedOutSource(served.profile) : sessions.authSource({ profile: served.profile, account: served.account });
+      const adapter = createPlanAdapter(name, target, auth, planProfiles, () => reported ?? undefined, {
         clock,
         userDialects: current.models.dialects,
         liveness: { headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs, timers },
         network: outbound,
       });
-      return unmanagedPart(key, adapter, targetCounterOf({ target, codeDigest }));
+      return unmanagedPart(key, adapter, targetCounterOf({ target, codeDigest, served, ...(reported === undefined ? {} : { reported }) }));
+    };
+
+    const servePlanAccounts = async (current: ResolvedSettings): Promise<void> => {
+      const served = planTargetsOf(current).map(([, target]) => servedOf(target));
+      const refs = new Map(served.flatMap(({ profile, account }): Array<[string, { profile: string; account: string }]> => (account === null ? [] : [[JSON.stringify([profile, account]), { profile, account }]])));
+      await sessions.serve([...refs.values()]);
+      await Promise.all([...refs.values()].map((ref) => catalog.load(ref.profile, ref.account)));
     };
 
     const deriveEpoch = async (shared: GatewayEpochsShared, current: ResolvedSettings, previous: ProcessEpoch | undefined, keySignal: AbortSignal): Promise<ProcessEpoch> => {
       const networkDigest = settingsInputsDigest(current.network ?? null);
       const outbound = previous !== undefined && previous.networkDigest === networkDigest ? previous.network : await outboundNetworkOf(current.network, keySignal);
       const shape = { userDialects: current.models.dialects, headersTimeoutMs: current.models.headersTimeoutMs, idleTimeoutMs: current.models.idleTimeoutMs };
+      const outputPolicy: ProbeOutputPolicy = { unboundedOutputReserve: current.context.unboundedOutputReserve };
+      await servePlanAccounts(current);
       const parts = new Map<string, TargetPart>();
       const built: Closable[] = [];
       try {
         for (const [name, target] of Object.entries(current.models.targets) as Array<[string, ResolvedTarget]>) {
           const server = target.adapter === 'managed' ? requiredServer(current.models.servers, target.server) : null;
+          const plan = 'plan' in target ? planComponentsOf(target) : undefined;
           const keys = {
-            part: settingsInputsDigest({ target, server, ...shape, network: target.adapter === 'managed' ? null : (current.network ?? null) }),
+            part: settingsInputsDigest({
+              target,
+              server,
+              ...shape,
+              network: target.adapter === 'managed' ? null : (current.network ?? null),
+              ...(plan ?? {}),
+              ...(readsOutputPolicy(target) ? { outputPolicy } : {}),
+            }),
             core: settingsInputsDigest({ target, server, userDialects: shape.userDialects, requestLimitMs: shape.headersTimeoutMs }),
           };
           const livePartsOf = [previous, ...liveEpochs].flatMap((epoch) => {
@@ -1136,7 +1238,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             continue;
           }
           const carriedCore = livePartsOf.find((part) => part.managed?.key === keys.core);
-          const part = 'plan' in target ? await buildPlanPart(name, target, current, outbound, keys.part) : await buildPart(name, target, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys);
+          const part =
+            'plan' in target && plan !== undefined
+              ? buildPlanPart(name, target, current, outbound, keys.part, plan)
+              : await buildPart(name, target as ServedTarget, current, outbound, keySignal, carriedCore ?? livePartsOf[0], keys, outputPolicy);
           built.push(...part.closables.filter((closable) => !holds.has(closable)));
           parts.set(name, part);
         }
@@ -1164,7 +1269,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const epoch: ProcessEpoch = {
-        gateway: { router, priceTable, telemetry: undefined },
+        gateway: { router, priceTable, telemetry: undefined, planTargets: planTargetRefsOf(current) },
         priceTable,
         parts,
         network: outbound,
@@ -1179,7 +1284,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const derivation = createPinnedDerivation<ProcessEpoch>({
       cache,
       signal: lifetime.signal,
-      inputsOf: derivedInputsOf('D1'),
+      inputsOf: (current) => ({ ...derivedInputsOf('D1')(current), plan: planInputsOf(current) }),
       derive: (current, previous, deriveSignal) => deriveEpoch(shared, current, previous, deriveSignal),
       retire: async (epoch) => {
         liveEpochs.delete(epoch);

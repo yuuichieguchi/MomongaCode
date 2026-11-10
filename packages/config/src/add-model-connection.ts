@@ -111,9 +111,8 @@ const withConnection = (document: Record<string, unknown>, file: string, connect
   return { written: { target: name, alias: name }, changed: true };
 };
 
-export const addModelConnection = async (settingsFile: string, connection: ModelConnection): Promise<WrittenConnection> => {
-  assertConnection(connection);
-  return serializeInProcess(settingsFile, () =>
+export const editUserSettings = (settingsFile: string, edit: (document: Record<string, unknown>) => boolean): Promise<void> =>
+  serializeInProcess(settingsFile, () =>
     withFileLock(
       path.join(path.dirname(settingsFile), `${path.basename(settingsFile)}.lock`),
       async () => {
@@ -123,12 +122,21 @@ export const addModelConnection = async (settingsFile: string, connection: Model
           if (!isRecord(read.value)) throw new Error(`${settingsFile}: settings must be a JSON object`);
           document = read.value;
         }
-        const { written, changed } = withConnection(document, settingsFile, connection);
-        if (!changed) return written;
+        if (!edit(document)) return;
         await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: systemFileLockPorts.randomHex }, settingsFile, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
-        return written;
       },
       { ports: systemFileLockPorts },
     ),
   );
+
+export const addModelConnection = async (settingsFile: string, connection: ModelConnection): Promise<WrittenConnection> => {
+  assertConnection(connection);
+  const placed: { written?: WrittenConnection } = {};
+  await editUserSettings(settingsFile, (document) => {
+    const { written, changed } = withConnection(document, settingsFile, connection);
+    placed.written = written;
+    return changed;
+  });
+  if (placed.written === undefined) throw new Error(`${settingsFile}: the connection was not placed`);
+  return placed.written;
 };

@@ -211,7 +211,7 @@ export interface LogFields {
   count?: number;
   ids?: readonly string[];
   err?: Error;
-  data?: Readonly<Record<string, string | number | boolean | null>>;
+  data?: Readonly<Record<string, LogValue>>;
 }
 
 export interface JsonLogger {
@@ -228,10 +228,34 @@ export interface JsonLoggerOptions {
   level?: LogLevel;
 }
 
-const RESERVED_LOG_KEYS: ReadonlySet<string> = new Set(['ts', 'level', 'service', 'pid', 'msg', 'runId', 'workerId', 'traceId', 'step', 'count', 'ids', 'err']);
+export const RESERVED_LOG_KEYS = ['ts', 'level', 'service', 'pid', 'msg', 'runId', 'workerId', 'traceId', 'step', 'count', 'ids', 'err'] as const;
 
-const extraFields = (data: NonNullable<LogFields['data']>): Record<string, string | number | boolean | null> =>
-  Object.fromEntries(Object.entries(data).filter(([key]) => !RESERVED_LOG_KEYS.has(key)));
+export type ReservedLogKey = (typeof RESERVED_LOG_KEYS)[number];
+
+export type LogValue = string | number | boolean | null | readonly string[];
+
+export type EventPayload = Readonly<Record<string, LogValue>> & { readonly [K in ReservedLogKey]?: never };
+
+export const LOG_LIST_MAX_ITEMS = 64;
+export const LOG_ITEM_MAX_CHARS = 64;
+
+const RESERVED_LOG_KEY_SET: ReadonlySet<string> = new Set(RESERVED_LOG_KEYS);
+
+type WrittenLogValue = string | number | boolean | null | string[];
+
+const extraFields = (data: NonNullable<LogFields['data']>): Record<string, WrittenLogValue> => {
+  const written: Record<string, WrittenLogValue> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (RESERVED_LOG_KEY_SET.has(key)) continue;
+    if (typeof value !== 'object' || value === null) {
+      written[key] = value;
+      continue;
+    }
+    written[key] = value.slice(0, LOG_LIST_MAX_ITEMS).map((item) => item.slice(0, LOG_ITEM_MAX_CHARS));
+    if (value.length > LOG_LIST_MAX_ITEMS) written[`${key}Omitted`] = value.length - LOG_LIST_MAX_ITEMS;
+  }
+  return written;
+};
 
 export interface LogLineInput {
   ts: string;

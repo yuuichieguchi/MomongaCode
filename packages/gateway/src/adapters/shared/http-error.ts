@@ -37,7 +37,7 @@ export const httpErrorOf = async (
 
 const REQUEST_ID_SUFFIX = 'request-id';
 
-const requestIdsOf = (headers: Record<string, string>): Record<string, string> =>
+export const requestIdsOf = (headers: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (name.toLowerCase().endsWith(REQUEST_ID_SUFFIX) ? [[name.toLowerCase(), value]] : [])));
 
 export const retryAfterOf = (response: { headers: Record<string, string> }, clock: Clock): number | undefined =>

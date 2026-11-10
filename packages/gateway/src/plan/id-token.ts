@@ -3,7 +3,8 @@ import type { Clock, ParsedJwt } from '@momonga/foundation';
 import type { IdTokenCheck } from '@momonga/protocol';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { cappedSend } from './capped-send.ts';
-import type { BoundedSendPorts } from './refresh.ts';
+import type { PlanOutbound } from './outbound.ts';
+import type { PlanFetch, PlanSleep } from './refresh.ts';
 
 export type IdTokenExpectation = { issuer: string; clientId: string; nonce: string; algorithms: readonly string[] };
 
@@ -46,24 +47,73 @@ const claimsCheck = (jwt: ParsedJwt, expected: IdTokenExpectation, nowMs: number
   return { kind: 'valid', subject: sub, ...(typeof email === 'string' && email !== '' ? { email } : {}) };
 };
 
-export const createIdTokenVerifier = (options: { jwksUrl: string; ports: BoundedSendPorts; clock: Clock }): IdTokenVerifier => {
-  let cached: KeySet | undefined;
+export type IdTokenFacts = { alg?: string; kid?: string; audShape?: 'string' | 'array'; claimNames?: string[] };
 
-  const fetchKeys = async (): Promise<KeySet> => {
-    const outcome = await cappedSend(options.ports, options.jwksUrl, { method: 'GET', headers: { accept: 'application/json' } }, PLAN_SIGN_IN_DEFAULTS.keysTimeoutMs, PLAN_SIGN_IN_DEFAULTS.keysBodyBytes);
+const audShapeOf = (aud: unknown): { audShape?: 'string' | 'array' } => {
+  if (typeof aud === 'string') return { audShape: 'string' };
+  return Array.isArray(aud) ? { audShape: 'array' } : {};
+};
+
+export const idTokenFacts = (idToken: string): IdTokenFacts => {
+  let jwt: ParsedJwt;
+  try {
+    jwt = parseJwt(idToken);
+  } catch {
+    return {};
+  }
+  const { alg, kid } = jwt.header;
+  return {
+    ...(typeof alg === 'string' ? { alg } : {}),
+    ...(typeof kid === 'string' ? { kid } : {}),
+    ...audShapeOf(jwt.claims['aud']),
+    claimNames: Object.keys(jwt.claims).sort(),
+  };
+};
+
+export type IdTokenVerifierOptions = { jwksUrl: string; outbound: PlanOutbound; lifetime: AbortSignal; ports: { sleep: PlanSleep }; clock: Clock };
+
+export const createIdTokenVerifier = (options: IdTokenVerifierOptions): IdTokenVerifier => {
+  let cached: KeySet | undefined;
+  let flight: Promise<KeySet> | undefined;
+
+  const fetchKeys = async (fetch: PlanFetch): Promise<KeySet> => {
+    const outcome = await cappedSend(
+      { fetch, sleep: options.ports.sleep },
+      options.jwksUrl,
+      { method: 'GET', headers: { accept: 'application/json' } },
+      PLAN_SIGN_IN_DEFAULTS.keysTimeoutMs,
+      PLAN_SIGN_IN_DEFAULTS.keysBodyBytes,
+    );
     if (outcome.kind === 'unanswered' || outcome.status !== 200 || outcome.truncated) throw new KeysUnavailable('the key set could not be fetched');
-    const fetched = { keys: keysOf(outcome.body), fetchedAt: options.clock.now() };
-    cached = fetched;
-    return fetched;
+    return { keys: keysOf(outcome.body), fetchedAt: options.clock.now() };
+  };
+
+  const fetchOnce = async (): Promise<KeySet> => {
+    try {
+      const fetched = await options.outbound(options.lifetime, fetchKeys);
+      cached = fetched;
+      return fetched;
+    } catch (error) {
+      throw new KeysUnavailable('the key set could not be fetched', { cause: error });
+    }
+  };
+
+  const keySet = (): Promise<KeySet> => {
+    if (flight !== undefined) return flight;
+    const started = fetchOnce().finally(() => {
+      flight = undefined;
+    });
+    flight = started;
+    return started;
   };
 
   const keyFor = async (kid: string): Promise<Jwk | undefined> => {
-    const current = cached ?? (await fetchKeys());
+    const current = cached ?? (await keySet());
     const found = current.keys.get(kid);
     if (found !== undefined) return found;
     const elapsed = options.clock.now() - current.fetchedAt;
     if (elapsed >= 0 && elapsed < PLAN_SIGN_IN_DEFAULTS.keysRefetchMs) return undefined;
-    return (await fetchKeys()).keys.get(kid);
+    return (await keySet()).keys.get(kid);
   };
 
   return async (idToken, expected) => {

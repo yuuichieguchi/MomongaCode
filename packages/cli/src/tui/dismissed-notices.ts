@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { createKeyedSerializer, isRecord, nodeFileSystem, systemRandom, writeFileAtomically } from '@momonga/foundation';
 
@@ -6,7 +5,6 @@ export type DismissedNotices = Readonly<Record<string, string>>;
 
 const FILE_NAME = 'dismissed-notices.json';
 const FILE_MODE = 0o600;
-const DIRECTORY_MODE = 0o700;
 
 const serializeInProcess = createKeyedSerializer();
 
@@ -16,7 +14,7 @@ const isDismissedNotices = (value: unknown): value is DismissedNotices => isReco
 
 const readText = async (file: string): Promise<string | undefined> => {
   try {
-    return await fs.promises.readFile(file, 'utf8');
+    return await nodeFileSystem.readTextFile(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
@@ -47,6 +45,6 @@ export const dismissNotice = (stateDirectory: string, key: string, at: Date): Pr
   serializeInProcess(fileIn(stateDirectory), async () => {
     const file = fileIn(stateDirectory);
     const earlier = await readDismissedNotices(stateDirectory, () => undefined);
-    await fs.promises.mkdir(stateDirectory, { recursive: true, mode: DIRECTORY_MODE });
+    await nodeFileSystem.mkdirPrivate(stateDirectory);
     await writeFileAtomically(nodeFileSystem, systemRandom, file, `${JSON.stringify({ ...earlier, [key]: at.toISOString() })}\n`, { mode: FILE_MODE });
   });

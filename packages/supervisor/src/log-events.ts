@@ -1,14 +1,10 @@
-import type { JsonLogger, LogLevel } from '@momonga/foundation';
+import type { EventPayload, JsonLogger, LogLevel, LogValue, ReservedLogKey } from '@momonga/foundation';
 import type { SupervisorExitReason, SupervisorPhase } from '@momonga/protocol';
 import type { HeldSource, SpawnReason } from './child-manager.ts';
 import type { ChildRole } from './launcher.ts';
 import type { StopMode, StopReason } from './restart-policy.ts';
 
-export type ReservedLogKey = 'ts' | 'level' | 'service' | 'pid' | 'msg' | 'runId' | 'workerId' | 'traceId' | 'step' | 'count' | 'ids' | 'err';
-
-export type LogValue = string | number | boolean | null;
-
-export type EventPayload = Readonly<Record<string, LogValue>> & { readonly [K in ReservedLogKey]?: never };
+export type { EventPayload, LogValue, ReservedLogKey };
 
 export type SupervisorLogEvent = {
   readonly level: LogLevel;

@@ -13,6 +13,7 @@ import { claimNewEntry } from './platform/lock-form.ts';
 import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
+  home: string;
   root: string;
   settingsFile: string;
   run: string;
@@ -119,6 +120,7 @@ export const momongaLayout = (
   const cacheBase = cacheBaseOf(home, platform, env);
   const tmp = join(cacheBase, 'tmp');
   return {
+    home,
     root,
     settingsFile: join(root, 'settings.json'),
     run,

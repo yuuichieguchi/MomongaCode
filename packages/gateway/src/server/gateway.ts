@@ -90,6 +90,7 @@ const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' 
     router: createRouter({ config: options.config, adapters: options.adapters, clock: options.clock, timers: options.timers, ...shared }),
     priceTable: options.priceTable,
     telemetry: options.telemetry,
+    planTargets: Object.entries(options.config.models.targets).flatMap(([name, target]) => (target.plan === undefined ? [] : [{ name, ...target.plan }])),
   };
   return {
     epochs: { acquire: async () => ({ value: epoch, release: () => undefined }), close: async () => undefined },

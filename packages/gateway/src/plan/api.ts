@@ -19,7 +19,6 @@ import type {
 import { GatewayError, invalidRequest, notFound, statusFor } from '../core/errors.ts';
 import { PlanCredentialError, credentialErrorType, statusOf } from './auth-source.ts';
 import type { AccountView } from './auth-source.ts';
-import { readActiveAccount } from './active-account.ts';
 import { resetHostIdentity } from './host-identity.ts';
 import { NO_REPORTED_WINDOW } from './catalog.ts';
 import type { PlanCatalog } from './catalog.ts';
@@ -30,13 +29,13 @@ import type { PlanSignIn } from './signin.ts';
 export type PlanTargetRef = { name: string; profile: string; account?: string };
 
 export type PlanApi = {
-  accounts(): Promise<PlanAccountsResponse>;
+  accounts(targets: readonly PlanTargetRef[]): Promise<PlanAccountsResponse>;
   setActive(body: unknown): Promise<PlanActiveResponse>;
   begin(body: unknown): Promise<PlanSignInBeginResponse>;
-  complete(body: unknown): Promise<PlanSignInCompleteResponse>;
+  complete(body: unknown, targets: readonly PlanTargetRef[], signal: AbortSignal): Promise<PlanSignInCompleteResponse>;
   cancel(body: unknown): PlanSignInCancelResponse;
-  signOut(body: unknown): Promise<PlanSignOutResponse>;
-  resume(account: string, body: unknown): Promise<PlanResumeResponse>;
+  signOut(body: unknown, signal: AbortSignal): Promise<PlanSignOutResponse>;
+  resume(account: string, body: unknown, targets: readonly PlanTargetRef[]): Promise<PlanResumeResponse>;
   resetHost(): Promise<PlanHostResetResponse>;
   models(account: string, query: { profile: string | undefined; refresh: string | undefined }, signal: AbortSignal): Promise<PlanModelsResponse>;
   addTarget(account: string, body: unknown): Promise<PlanTargetResponse>;
@@ -47,9 +46,8 @@ export type PlanApiOptions = {
   sessions: PlanSessions;
   signIn: PlanSignIn;
   fileSystem: FileSystem;
-  paths: { host: string; active: string };
+  paths: { host: string };
   clock: Clock;
-  planTargets: () => readonly PlanTargetRef[];
   catalog: PlanCatalog;
   settingsFile: string;
 };
@@ -118,36 +116,30 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
     return profile;
   };
 
-  const activeLabels = async (): Promise<ReadonlyMap<string, string>> => {
-    const entries = await Promise.all(
-      Object.keys(options.profiles).map(async (profile): Promise<Array<[string, string]>> => {
-        const label = await readActiveAccount(options.fileSystem, options.paths.active, profile);
+  const activeLabels = (): ReadonlyMap<string, string> =>
+    new Map(
+      Object.keys(options.profiles).flatMap((profile): Array<[string, string]> => {
+        const label = sessions.activeLabel(profile);
         return label === undefined ? [] : [[profile, label]];
       }),
     );
-    return new Map(entries.flat());
-  };
 
-  const pinnedBy = (ref: PlanAccountRef): string[] =>
-    options
-      .planTargets()
-      .filter((target) => target.profile === ref.profile && target.account === ref.account)
-      .map((target) => target.name);
+  const pinnedBy = (ref: PlanAccountRef, targets: readonly PlanTargetRef[]): string[] => targets.filter((target) => target.profile === ref.profile && target.account === ref.account).map((target) => target.name);
 
-  const viewNamed = async (ref: PlanAccountRef): Promise<PlanAccountView> => {
-    const active = await activeLabels();
+  const viewNamed = async (ref: PlanAccountRef, targets: readonly PlanTargetRef[]): Promise<PlanAccountView> => {
+    const active = activeLabels();
     await sessions.load(ref);
     const found = (await sessions.known()).find((entry) => entry.profile === ref.profile && entry.account === ref.account);
-    const view = found === undefined ? undefined : accountViewOf(ref, found.view, active.get(ref.profile) === ref.account, pinnedBy(ref), options.clock.now());
+    const view = found === undefined ? undefined : accountViewOf(ref, found.view, active.get(ref.profile) === ref.account, pinnedBy(ref, targets), options.clock.now());
     if (view === undefined) throw notFound('plan_account_not_found', `no ${ref.profile} account is labelled ${JSON.stringify(ref.account)}`, 'account');
     return view;
   };
 
-  const accounts = async (): Promise<PlanAccountsResponse> => {
-    const active = await activeLabels();
+  const accounts = async (targets: readonly PlanTargetRef[]): Promise<PlanAccountsResponse> => {
+    const active = activeLabels();
     const referenced: PlanAccountRef[] = [
       ...[...active].map(([profile, account]) => ({ profile, account })),
-      ...options.planTargets().flatMap((target) => (target.account === undefined ? [] : [{ profile: target.profile, account: target.account }])),
+      ...targets.flatMap((target) => (target.account === undefined ? [] : [{ profile: target.profile, account: target.account }])),
     ];
     await Promise.all(referenced.map((ref) => sessions.load(ref)));
     const known = await sessions.known();
@@ -157,7 +149,7 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
       profiles: Object.values(options.profiles).map((profile) => ({ id: profile.id, usageUrl: profile.usageUrl, messages: profile.messages, loginLabel: profile.loginLabel })),
       accounts: known.flatMap((entry) => {
         const ref = { profile: entry.profile, account: entry.account };
-        const view = accountViewOf(ref, entry.view, active.get(entry.profile) === entry.account, pinnedBy(ref), options.clock.now());
+        const view = accountViewOf(ref, entry.view, active.get(entry.profile) === entry.account, pinnedBy(ref, targets), options.clock.now());
         return view === undefined ? [] : [view];
       }),
     };
@@ -204,25 +196,25 @@ export const createPlanApi = (options: PlanApiOptions): PlanApi => {
         const reconsent = optionalBoolean(body, 'reconsent');
         return options.signIn.begin({ ...accountRefOf(body), port: portOf(body), ...(reconsent === undefined ? {} : { reconsent }) });
       }),
-    complete: (body) =>
+    complete: (body, targets, signal) =>
       translated(async () => {
-        const end = await options.signIn.complete(stringField(body, 'attemptId'), stringField(body, 'callbackUrl'));
+        const end = await options.signIn.complete(stringField(body, 'attemptId'), stringField(body, 'callbackUrl'), signal);
         if (end.outcome === 'retry') return end;
-        return { outcome: end.outcome, account: await viewNamed(end.ref), firstSignIn: end.firstSignIn };
+        return { outcome: end.outcome, account: await viewNamed(end.ref, targets), firstSignIn: end.firstSignIn };
       }),
     cancel: (body) => ({ cancelled: options.signIn.cancel(stringField(body, 'attemptId')) }),
-    signOut: (body) =>
+    signOut: (body, signal) =>
       translated(async () => {
         const ref = accountRefOf(body);
         profileOf(ref.profile);
-        const report = await sessions.signOut(ref);
+        const report = await sessions.signOut(ref, signal);
         return { revocation: report.revocation, usageUrl: report.usageUrl };
       }),
-    resume: (account, body) =>
+    resume: (account, body, targets) =>
       translated(async () => {
         const ref = { profile: stringField(body, 'profile'), account };
         profileOf(ref.profile);
-        await viewNamed(ref);
+        await viewNamed(ref, targets);
         return { resumed: await sessions.resume(ref) };
       }),
     resetHost: async () => {

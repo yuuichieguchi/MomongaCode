@@ -39,7 +39,7 @@ export type PlanRead = { bearer: string | undefined; generation: number };
 export type AuthSource = {
   read(signal: AbortSignal): Promise<PlanRead>;
   rejected(generation: number, signal: AbortSignal): Promise<'renewed' | 'unchanged'>;
-  pause(pause: { untilMs?: number }): Promise<void>;
+  pause(pause: { untilMs?: number; code: string }): Promise<void>;
   resume(): Promise<void>;
   status(): PlanStatus;
   health(): PlanHealth;

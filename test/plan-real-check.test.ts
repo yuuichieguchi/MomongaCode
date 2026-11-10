@@ -83,7 +83,7 @@ describe('O-R5-6 L10: scripts/plan-real-check.ts against the fakes only', () => 
     const injected = tokenShaped();
     const logger = fileLogger(home, clock);
     for (const scope of [injected, 'openid']) {
-      logger.info('plan.sign_in', { data: { profile: PROFILE_ID, account: ACCOUNT, outcome: 'signed_in', endStep: 10, durationMs: 5, port: 49152, alg: 'RS256', kid: 'kid-1', audShape: 'string', scope, earliestRefreshAt: 'opaque-1', claimNames: ['sub'] } } as unknown as LogFields);
+      logger.info('plan.sign_in', { data: { profile: PROFILE_ID, account: ACCOUNT, outcome: 'signed_in', endStep: 10, durationMs: 5, port: 49152, alg: 'RS256', kid: 'kid-1', audShape: 'string', scope, earliestRefreshAt: 'opaque-1', claimNames: ['sub'] } });
     }
     const report = path.join(withTempDir(context), 'report.json');
     const run = await runScript(['collect', '--home', home, '--report', report]);

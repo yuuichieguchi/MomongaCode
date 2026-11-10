@@ -224,6 +224,9 @@ export {
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
+  LOG_ITEM_MAX_CHARS,
+  LOG_LIST_MAX_ITEMS,
+  RESERVED_LOG_KEYS,
   gatewayStopBudgetMs,
   killedChildSettleMs,
   runtimeStopBudgetMs,
@@ -238,7 +241,7 @@ export {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
-export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
+export type { EventPayload, JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, LogValue, ReadyFields, ReservedLogKey, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
 export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';

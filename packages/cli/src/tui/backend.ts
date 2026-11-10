@@ -2,7 +2,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { currentSocketResolver, systemTiming } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
-import { addModelConnection } from '@momonga/config';
+import { addModelConnection, loadUserSettings } from '@momonga/config';
 import type { ModelConnection, WrittenConnection } from '@momonga/config';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.ts';
@@ -133,7 +133,10 @@ export const createTuiBackend = (
     signInTimers: systemTiming,
     detectLocalServers: async (typed) => {
       const { detectLocalServers } = await import('@momonga/gateway');
-      return withIdentityReadFetch(ports, closing.signal, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts() }));
+      const { settings } = await loadUserSettings({ home: paths.home });
+      return withIdentityReadFetch(ports, closing.signal, (fetch) =>
+        detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts(settings.models.servers) }),
+      );
     },
     addModelConnection: (connection) => addModelConnection(paths.settingsFile, connection),
     dismissedNotices: () => readDismissedNotices(paths.state, onNotice),

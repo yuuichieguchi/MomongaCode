@@ -2,27 +2,37 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ResolvedSettings } from './load-settings.ts';
 import type { UserSettingsCache } from './user-settings.ts';
 
-export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox';
+export type SettingsKeyPath = 'context.unboundedOutputReserve' | 'credentials.plaintextTokenFiles';
+
+export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox' | SettingsKeyPath;
 
 export type DerivedObjectDeclaration = { readonly id: DerivedObjectId; readonly inputs: readonly SettingsSection[] };
 
 export const DERIVED_OBJECTS = [
-  { id: 'D1', inputs: ['models', 'network', 'pricing'] },
+  { id: 'D1', inputs: ['models', 'network', 'pricing', 'context.unboundedOutputReserve'] },
   { id: 'D2', inputs: ['network', 'telemetry'] },
   { id: 'D3', inputs: ['sandbox'] },
   { id: 'D4', inputs: ['network'] },
+  { id: 'D5', inputs: ['network', 'credentials.plaintextTokenFiles'] },
 ] as const satisfies readonly { id: string; inputs: readonly SettingsSection[] }[];
 
 export type DerivedObjectId = (typeof DERIVED_OBJECTS)[number]['id'];
 
 export const settingsInputsDigest = (inputs: unknown): string => sha256Hex(canonicalJson(inputs));
 
+const inputValueOf = (settings: ResolvedSettings, input: SettingsSection): unknown => {
+  const [section, key] = input.split('.');
+  const value = (settings as Record<string, unknown>)[section as string];
+  if (key === undefined) return value ?? null;
+  return (value as Record<string, unknown> | undefined)?.[key] ?? null;
+};
+
 export const derivedInputsOf =
   (id: DerivedObjectId) =>
   (settings: ResolvedSettings): Record<string, unknown> => {
     const declaration = DERIVED_OBJECTS.find((object) => object.id === id);
     if (declaration === undefined) throw new Error(`unknown derived object ${id}`);
-    return Object.fromEntries(declaration.inputs.map((section) => [section, (settings as Record<string, unknown>)[section] ?? null]));
+    return Object.fromEntries(declaration.inputs.map((input) => [input, inputValueOf(settings, input)]));
   };
 
 export type Lease<T> = { readonly value: T; release(): void };

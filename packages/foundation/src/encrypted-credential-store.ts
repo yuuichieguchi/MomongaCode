@@ -1,7 +1,5 @@
-import { randomBytes } from 'node:crypto';
 import type { webcrypto } from 'node:crypto';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { writeFileAtomically } from './atomic-file.ts';
 import { AUTH_DOCUMENT_MAX_BYTES, createFileCredentialStore, credentialFileFor, storeThroughScope } from './credential-store.ts';
 import type { CredentialEntry, CredentialKeyListing, ListableCredentialStore } from './credential-store.ts';
@@ -9,6 +7,7 @@ import { systemFileLockPorts, withFileLock } from './file-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import type { FileLockPorts } from './file-lock.ts';
 import { nodeFileSystem } from './node-file-system.ts';
+import type { Random } from './random.ts';
 import type { SecretStore } from './secret-store.ts';
 import { systemRandom } from './system-random.ts';
 
@@ -42,6 +41,7 @@ export type EncryptedCredentialStoreOptions = {
   plaintextTokenFiles: () => boolean;
   keyOfPlaintext?: (text: string) => string;
   ports?: FileLockPorts;
+  random?: Random;
 };
 
 type CreationStep = (typeof CREDENTIAL_KEY_CREATION_STEPS)[number];
@@ -65,8 +65,6 @@ type Envelope = { format: string; key: string; nonce: string; ciphertext: string
 const ENVELOPE_FIELDS: readonly (keyof Envelope)[] = ['format', 'key', 'nonce', 'ciphertext', 'tag'];
 
 const NEVER_ABORTED = new AbortController().signal;
-
-const randomBytesAsync = promisify(randomBytes);
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -95,8 +93,8 @@ const cipherKeyOf = (keyHex: string): Promise<webcrypto.CryptoKey> => {
   return globalThis.crypto.subtle.importKey('raw', bytes, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 };
 
-const seal = async (keyHex: string, storeKey: string, value: string): Promise<Envelope> => {
-  const nonce = await randomBytesAsync(NONCE_BYTES);
+const seal = async (random: Random, keyHex: string, storeKey: string, value: string): Promise<Envelope> => {
+  const nonce = Buffer.from(random.bytes(NONCE_BYTES));
   const sealed = Buffer.from(
     await globalThis.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv: nonce, additionalData: additionalDataOf(storeKey), tagLength: TAG_BYTES * 8 },
@@ -143,6 +141,7 @@ const keyNameOfMarker = (text: string, markerFile: string): string => {
 
 export const createEncryptedCredentialStore = (options: EncryptedCredentialStoreOptions): ListableCredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
+  const random = options.random ?? systemRandom;
   const records = createFileCredentialStore(options.directory, { ports });
   const markerFile = path.join(options.stateDirectory, CREDENTIAL_KEY_MARKER_FILE);
   const lockFile = path.join(options.stateDirectory, CREDENTIAL_KEY_LOCK_NAME);
@@ -164,8 +163,8 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
         creation.found = await readNamedKey(store, signal);
       },
       write_os_item: async () => {
-        const keyHex = (await randomBytesAsync(KEY_BYTES)).toString('hex');
-        const name = `${CREDENTIAL_KEY_PREFIX}${(await randomBytesAsync(KEY_NAME_BYTES)).toString('hex')}`;
+        const keyHex = Buffer.from(random.bytes(KEY_BYTES)).toString('hex');
+        const name = `${CREDENTIAL_KEY_PREFIX}${Buffer.from(random.bytes(KEY_NAME_BYTES)).toString('hex')}`;
         await store.write(name, keyHex, signal ?? NEVER_ABORTED);
         creation.created = { keyHex, name };
       },
@@ -222,7 +221,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
       throwIfCancelled(error, signal);
       throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${messageOf(error)}`, { cause: error });
     });
-    return JSON.stringify(await seal(keyHex, key, value));
+    return JSON.stringify(await seal(random, keyHex, key, value));
   };
 
   const entryOf = (key: string, inner: CredentialEntry, signal: AbortSignal | undefined): CredentialEntry => {

@@ -111,10 +111,10 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): Refr
 export const sendWasInterrupted = ({ intentLoaded, unansweredBefore }: { intentLoaded: boolean; unansweredBefore: boolean }): boolean => intentLoaded || unansweredBefore;
 
 export type RefreshEnd =
-  | { kind: 'adopted'; tokens: RefreshTokens; unansweredBefore: boolean }
-  | { kind: 'terminal'; code: string; unansweredBefore: boolean }
-  | { kind: 'configuration'; code: string }
-  | { kind: 'transient' };
+  | { kind: 'adopted'; tokens: RefreshTokens; unansweredBefore: boolean; attempts: number }
+  | { kind: 'terminal'; code: string; unansweredBefore: boolean; attempts: number }
+  | { kind: 'configuration'; code: string; attempts: number }
+  | { kind: 'transient'; attempts: number };
 
 export type RefreshRequest = {
   ports: BoundedSendPorts;
@@ -129,26 +129,28 @@ export type RefreshRequest = {
 export const sendRefresh = async (request: RefreshRequest): Promise<RefreshEnd> => {
   const startedAt = request.clock.now();
   let unansweredBefore = false;
-  for (let attempt = 0; attempt < request.attempts; attempt += 1) {
+  let attempts = 0;
+  while (attempts < request.attempts) {
     const outcome = await boundedSend(
       request.ports,
       request.tokenUrl,
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(request.form).toString() },
       request.attemptTimeoutMs,
     );
+    attempts += 1;
     const answer = classifyRefreshAnswer(outcome, request.clock.now());
-    if (answer.kind === 'terminal' || answer.kind === 'adopted') return { ...answer, unansweredBefore };
-    if (answer.kind !== 'transient') return answer;
+    if (answer.kind === 'terminal' || answer.kind === 'adopted') return { ...answer, unansweredBefore, attempts };
+    if (answer.kind !== 'transient') return { ...answer, attempts };
     unansweredBefore ||= outcome.kind === 'unanswered';
-    if (!answer.resend || attempt + 1 >= request.attempts) return { kind: 'transient' };
+    if (!answer.resend || attempts >= request.attempts) return { kind: 'transient', attempts };
     const decision = nextWait({
-      attempt,
+      attempt: attempts - 1,
       ...(answer.retryAfterMs === undefined ? {} : { retryAfterMs: answer.retryAfterMs }),
       elapsedMs: request.clock.now() - startedAt,
       policy: request.waitPolicy,
     });
-    if (decision.kind === 'leave') return { kind: 'transient' };
+    if (decision.kind === 'leave') return { kind: 'transient', attempts };
     await request.ports.sleep(decision.ms);
   }
-  return { kind: 'transient' };
+  return { kind: 'transient', attempts };
 };

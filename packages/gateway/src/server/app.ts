@@ -14,7 +14,7 @@ const probingOr = async <Measured>(capabilities: Promise<Measured>): Promise<Mea
   }
 };
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
-import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
+import { ClientDisconnectedError, GatewayError, gatewayClosedError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
 import type { PlanApi } from '../plan/api.ts';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
@@ -266,15 +266,35 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     return account;
   };
 
-  app.get(planRoute(PLAN_ROUTES.accounts), async (context) => context.json(await planApi().accounts()));
+  const closedOr = (error: unknown): never => {
+    throw services.closeSignal.aborted ? gatewayClosedError() : error;
+  };
+
+  app.get(planRoute(PLAN_ROUTES.accounts), (context) =>
+    withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().accounts(planTargets))),
+  );
   app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context))));
   app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context))));
-  app.post(planRoute(PLAN_ROUTES.signInComplete), async (context) => context.json(await planApi().complete(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signInComplete), async (context) => {
+    const body = await planBody(context);
+    const signal = requestSignalOf(context);
+    return withPinnedServices(services, signal, async ({ planTargets }) => context.json(await planApi().complete(body, planTargets, signal))).catch(closedOr);
+  });
   app.post(planRoute(PLAN_ROUTES.signInCancel), async (context) => context.json(planApi().cancel(await planBody(context))));
-  app.post(planRoute(PLAN_ROUTES.signOut), async (context) => context.json(await planApi().signOut(await planBody(context))));
-  app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => context.json(await planApi().resume(accountParam(context), await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signOut), async (context) => {
+    const body = await planBody(context);
+    return context.json(await planApi().signOut(body, requestSignalOf(context)).catch(closedOr));
+  });
+  app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => {
+    const body = await planBody(context);
+    return withPinnedServices(services, requestSignalOf(context), async ({ planTargets }) => context.json(await planApi().resume(accountParam(context), body, planTargets)));
+  });
   app.get(planRoute(PLAN_ROUTES.accountModels), async (context) =>
-    context.json(await planApi().models(accountParam(context), { profile: context.req.query('profile'), refresh: context.req.query('refresh') }, requestSignalOf(context))),
+    context.json(
+      await planApi()
+        .models(accountParam(context), { profile: context.req.query('profile'), refresh: context.req.query('refresh') }, requestSignalOf(context))
+        .catch(closedOr),
+    ),
   );
   app.post(planRoute(PLAN_ROUTES.accountTargets), async (context) => context.json(await planApi().addTarget(accountParam(context), await planBody(context))));
   app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
