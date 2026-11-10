@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_DETERMINISTIC_REPLY, FAKE_OS_BUILD, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, countFakeTokens, createFakeFm, fakeExec, killGroupsForCleanup, testHostPath } from '@momonga/testkit';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const MINIMAL_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
+const MINIMAL_PATH = testHostPath('/usr/bin:/bin:/usr/sbin:/sbin');
 const TESTKIT_SRC_URL = pathToFileURL(path.resolve(import.meta.dirname, '..', 'src')).href;
 
 const cleanups: Array<() => void | Promise<void>> = [];
